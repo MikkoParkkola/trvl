@@ -113,7 +113,7 @@ jobs:
           go-version: "1.26.2"
       # Register QEMU user-static interpreters so buildx can emit
       # linux/arm64 images on the amd64 GitHub-hosted runner.
-      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
