@@ -116,7 +116,23 @@ func SearchFlightsWithClient(ctx context.Context, client *batchexec.Client, orig
 		}
 		return &models.FlightSearchResult{Error: err.Error()}, err
 	}
-	return v.(*models.FlightSearchResult), nil
+	// singleflight.Do returns the same *FlightSearchResult to all callers that
+	// coalesce on the same key. Callers mutate result.Flights and result.Count
+	// (e.g. preferences filtering in mcp/tools_flights.go), which would race
+	// across concurrent callers. Return a shallow copy per caller: a fresh
+	// struct header with its own Flights slice header so Count / Flights
+	// writes are caller-private. The underlying FlightResult elements are
+	// treated as immutable after search completes and remain safely shared.
+	shared := v.(*models.FlightSearchResult)
+	if shared == nil {
+		return nil, nil
+	}
+	cp := *shared
+	if shared.Flights != nil {
+		cp.Flights = make([]models.FlightResult, len(shared.Flights))
+		copy(cp.Flights, shared.Flights)
+	}
+	return &cp, nil
 }
 
 // searchFlightsCore performs the actual flight search without singleflight wrapping.
