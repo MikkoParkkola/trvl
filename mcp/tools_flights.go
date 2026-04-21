@@ -158,6 +158,7 @@ func searchFlightsTool() ToolDef {
 				"layover_at":          {Type: "array", Description: "Restrict qualifying layovers to these IATA codes (empty = any airport). Post-fetch filter."},
 				"no_early_connection": {Type: "boolean", Description: "Drop flights whose post-overnight leg departs before preferences.early_connection_floor (default 10:00)."},
 				"lounge_required":     {Type: "boolean", Description: "Drop flights where a layover airport lacks lounge coverage from user's cards."},
+				"first_result":        {Type: "boolean", Description: "Return only the first result with a valid price after sorting. Combine with sort_by to get e.g. the shortest priced flight (duration) or cheapest. Default: false."},
 			},
 			Required: []string{"origin", "destination", "departure_date"},
 		},
@@ -230,6 +231,7 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		CarryOnBags:       argInt(args, "carry_on_bags", 0),
 		CheckedBags:       argInt(args, "checked_bags", 0),
 		RequireCheckedBag: argBool(args, "require_checked_bag", false),
+		FirstResult:       argBool(args, "first_result", false),
 		Currency:          argString(args, "currency"),
 	}
 
@@ -310,6 +312,13 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 			result.Flights = flights.FilterByEarlyConnection(result.Flights, floor)
 			result.Count = len(result.Flights)
 		}
+	}
+
+	// --first: trim to single best-priced result. Runs last so mental-model
+	// filters narrow candidates before we pick one.
+	if opts.FirstResult && result != nil && result.Success {
+		result.Flights = flights.FirstPricedResult(result.Flights)
+		result.Count = len(result.Flights)
 	}
 
 	// Enrich flights with all-in cost (base fare + baggage - FF benefits).

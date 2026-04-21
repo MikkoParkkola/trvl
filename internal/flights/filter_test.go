@@ -134,6 +134,33 @@ func TestFilterFlightsByBudget_ZeroPrice_Kept(t *testing.T) {
 	}
 }
 
+func TestFirstPricedResult_SkipsZeroPrice(t *testing.T) {
+	flts := []models.FlightResult{{Price: 0}, {Price: 150}, {Price: 200}}
+	got := FirstPricedResult(flts)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 flight, got %d", len(got))
+	}
+	if got[0].Price != 150 {
+		t.Errorf("expected price 150, got %.0f", got[0].Price)
+	}
+}
+
+func TestFirstPricedResult_AllZero(t *testing.T) {
+	flts := []models.FlightResult{{Price: 0}, {Price: 0}}
+	got := FirstPricedResult(flts)
+	if got != nil {
+		t.Errorf("all zero prices: expected nil, got %v", got)
+	}
+}
+
+func TestFirstPricedResult_AllPriced(t *testing.T) {
+	flts := []models.FlightResult{{Price: 100}, {Price: 200}}
+	got := FirstPricedResult(flts)
+	if len(got) != 1 || got[0].Price != 100 {
+		t.Errorf("all priced: expected [{Price:100}], got %v", got)
+	}
+}
+
 func TestExtractDepartureHHMM(t *testing.T) {
 	tests := []struct {
 		name string

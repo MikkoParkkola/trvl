@@ -56,6 +56,17 @@ func FilterFlightsByBudget(flights []models.FlightResult, maxPrice float64) []mo
 	return out
 }
 
+// FirstPricedResult returns the first flight with Price > 0 from a pre-sorted slice.
+// Returns nil if no priced flight exists.
+func FirstPricedResult(flights []models.FlightResult) []models.FlightResult {
+	for _, f := range flights {
+		if f.Price > 0 {
+			return []models.FlightResult{f}
+		}
+	}
+	return nil
+}
+
 // extractDepartureHHMM extracts the "HH:MM" departure time from the first leg.
 // Returns "" if the flight has no legs or the time cannot be parsed.
 func extractDepartureHHMM(f models.FlightResult) string {

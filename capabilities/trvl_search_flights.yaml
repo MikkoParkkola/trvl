@@ -68,6 +68,12 @@ schema:
       currency:
         type: string
         description: "Target currency for prices (ISO 4217, e.g. USD, EUR, JPY). Controls server-side pricing via Google's curr parameter. Empty = IP-based default."
+      first_result:
+        type: boolean
+        description: >-
+          Return only the first result with a valid price after sorting.
+          Use with sort_by to get e.g. the cheapest or shortest priced flight.
+          Default: false.
     required: [origin, destination, departure_date]
   output:
     type: object

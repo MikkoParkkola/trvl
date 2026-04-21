@@ -57,6 +57,7 @@ type SearchOptions struct {
 
 	// Client-side post-filters (applied after server response).
 	RequireCheckedBag bool // Only show flights with ≥1 free checked bag
+	FirstResult       bool // Return only the first flight with Price > 0 after sorting
 }
 
 // defaults fills in zero-value fields with sensible defaults.

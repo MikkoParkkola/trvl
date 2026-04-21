@@ -43,6 +43,7 @@ func flightsCmd() *cobra.Command {
 		layoverAirports []string
 		noEarlyConn     bool
 		loungeRequired  bool
+		firstResult     bool
 	)
 
 	cmd := &cobra.Command{
@@ -112,13 +113,14 @@ Examples:
 			}
 
 			opts := flights.SearchOptions{
-				ReturnDate: returnDate,
-				CabinClass: cabinClass,
-				MaxStops:   stops,
-				SortBy:     sort,
-				Airlines:   airlines,
-				Adults:     adults,
-				Currency:   targetCurrency,
+				ReturnDate:  returnDate,
+				CabinClass:  cabinClass,
+				MaxStops:    stops,
+				SortBy:      sort,
+				Airlines:    airlines,
+				Adults:      adults,
+				Currency:    targetCurrency,
+				FirstResult: firstResult,
 			}
 
 			var result *models.FlightSearchResult
@@ -228,6 +230,11 @@ Examples:
 				})
 			}
 
+			if opts.FirstResult && result != nil && result.Success {
+				result.Flights = flights.FirstPricedResult(result.Flights)
+				result.Count = len(result.Flights)
+			}
+
 			if format == "json" {
 				return models.FormatJSON(os.Stdout, result)
 			}
@@ -267,6 +274,7 @@ Examples:
 	cmd.Flags().BoolVar(&loungeRequired, "lounge-required", false, "Drop flights where any layover airport lacks lounge coverage for your cards")
 	cmd.Flags().BoolVar(&award, "award", false, "Scan Flying Blue miles prices. DATE is a month (2026-06) or a day (2026-06-15). Requires KLM session cookies via AFKL_KLM_COOKIES or --award-cookies.")
 	cmd.Flags().StringVar(&awardCookies, "award-cookies", "", "Raw KLM session Cookie header for award search (alternative to AFKL_KLM_COOKIES env var)")
+	cmd.Flags().BoolVar(&firstResult, "first", false, "Return only the first result with a valid price (respects --sort order)")
 
 	cmd.ValidArgsFunction = airportCompletion
 
