@@ -21,10 +21,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"os/exec"
+	"strings"
 	"time"
 
-	"github.com/MikkoParkkola/trvl/internal/find"
+	"github.com/MikkoParkkola/trvl/internal/tripsearch"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/spf13/cobra"
 )
@@ -50,6 +52,8 @@ func findCmdWith(use string, hidden bool) *cobra.Command {
 		hiddenCity      bool
 		topN            int
 		calendarInsert  bool
+		withinDays      int
+		relax           []string
 	)
 
 	cmd := &cobra.Command{
@@ -77,18 +81,22 @@ Example:
 		Args: cobra.RangeArgs(1, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			origin, dest, date := inferFindArgs(args)
-			req := find.Request{
+			req := tripsearch.Request{
 				Origin:            origin,
 				Destination:       dest,
 				Date:              date,
 				ReturnDate:        returnDate,
 				Cabin:             cabin,
-				MinLayoverMinutes: find.ParseDuration(minLayoverStr),
+				MinLayoverMinutes: tripsearch.ParseDuration(minLayoverStr),
 				LayoverAirports:   layoverAirports,
 				NoEarlyConnection: noEarlyConn,
 				LoungeRequired:    loungeRequired,
 				HiddenCity:        hiddenCity,
 				TopN:              topN,
+			}
+			applyRelax(&req, relax)
+			if withinDays > 0 {
+				return runFindSweep(cmd.Context(), req, format, withinDays)
 			}
 			return runFind(cmd.Context(), req, format, calendarInsert, len(args))
 		},
@@ -106,6 +114,8 @@ Example:
 	cmd.Flags().BoolVar(&hiddenCity, "hidden-city", false, "Also detect hidden-city candidates")
 	cmd.Flags().IntVar(&topN, "top", 3, "Number of top bundles to present")
 	cmd.Flags().BoolVar(&calendarInsert, "calendar", false, "Insert chosen bundle (top 1) into Google Calendar via gws CLI")
+	cmd.Flags().IntVar(&withinDays, "within", 0, "Sweep every Saturday in the next N days (starting from the default 14-day buffer) and merge bundles across all dates. 0 = single-date search using DATE only.")
+	cmd.Flags().StringSliceVar(&relax, "relax", nil, "Pre-disable one or more filters before searching. Values: lounge, no-early-connection, layover. Example: --relax lounge,no-early-connection")
 
 	return cmd
 }
@@ -116,7 +126,7 @@ Example:
 //
 // argCount is how many positional args the user actually supplied. Used
 // only to decide whether to surface the "filled in defaults" banner.
-func runFind(ctx context.Context, req find.Request, format string, calendarInsert bool, argCount int) error {
+func runFind(ctx context.Context, req tripsearch.Request, format string, calendarInsert bool, argCount int) error {
 	if format != "json" && argCount < 3 {
 		if argCount < 2 {
 			fmt.Printf("Inferred origin=%s  date=%s (override with positional args)\n\n",
@@ -127,7 +137,7 @@ func runFind(ctx context.Context, req find.Request, format string, calendarInser
 		}
 	}
 
-	result, err := find.Search(ctx, req, nil, nil)
+	result, err := tripsearch.Search(ctx, req, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -156,12 +166,12 @@ func runFind(ctx context.Context, req find.Request, format string, calendarInser
 	baseline := baselineDirectPrice(result.Flights)
 	fmt.Printf("trvl find: top %d bundles\n\n", len(result.Flights))
 	for i, f := range result.Flights {
-		hacks := find.Annotations(f, result.Origins)
+		hacks := tripsearch.Annotations(f, result.Origins)
 		savings := ""
 		if baseline > 0 && f.Price < baseline && hacks != "" {
 			savings = fmt.Sprintf("  [saves €%.0f vs direct]", baseline-f.Price)
 		}
-		fmt.Printf("%d. €%.0f  %s  %s%s\n", i+1, f.Price, find.RouteSummary(f), hacks, savings)
+		fmt.Printf("%d. €%.0f  %s  %s%s\n", i+1, f.Price, tripsearch.RouteSummary(f), hacks, savings)
 	}
 
 	if calendarInsert && len(result.Flights) > 0 {
@@ -175,7 +185,7 @@ func runFind(ctx context.Context, req find.Request, format string, calendarInser
 
 // filterSummary renders which filters dropped how many flights. Used in the
 // "no results" explainer so the user knows which knob to loosen.
-func filterSummary(log find.FilterLog) string {
+func filterSummary(log tripsearch.FilterLog) string {
 	parts := []string{}
 	if log.LongLayover.Ran {
 		parts = append(parts, fmt.Sprintf("long-layover=-%d", log.LongLayover.Dropped))
@@ -199,7 +209,7 @@ func filterSummary(log find.FilterLog) string {
 // insertBundleCalendar shells out to `gws calendar insert` for the flight.
 // Non-fatal on failure — printed to stderr.
 func insertBundleCalendar(f models.FlightResult) error {
-	title, start, end, desc, err := find.CalendarEventForBundle(f)
+	title, start, end, desc, err := tripsearch.CalendarEventForBundle(f)
 	if err != nil {
 		return err
 	}
@@ -263,4 +273,109 @@ func baselineDirectPrice(fls []models.FlightResult) float64 {
 		}
 	}
 	return best
+}
+
+
+// applyRelax pre-disables filters listed in the --relax flag. Filter names
+// that are not recognised are silently skipped so a typo never blocks a
+// search — the user can rerun with a corrected value.
+func applyRelax(req *tripsearch.Request, relax []string) {
+	for _, r := range relax {
+		switch r {
+		case "lounge", "lounge-required":
+			req.LoungeRequired = false
+		case "no-early-connection", "early-connection":
+			req.NoEarlyConnection = false
+		case "layover", "long-layover":
+			req.MinLayoverMinutes = 0
+			req.LayoverAirports = nil
+		}
+	}
+}
+
+// runFindSweep iterates over the next N Saturdays starting from req.Date,
+// runs tripsearch.Search for each, merges the bundles, re-ranks by price,
+// and presents the combined top-N. Capped at 4 probes to avoid runaway
+// fan-out on slow scrapers.
+func runFindSweep(ctx context.Context, base tripsearch.Request, format string, withinDays int) error {
+	dates := sweepSaturdays(base.Date, withinDays, 4)
+	if format != "json" {
+		fmt.Printf("Sweeping %d dates: %s\n\n", len(dates), strings.Join(dates, ", "))
+	}
+
+	merged := &tripsearch.Result{}
+	topN := base.TopN
+	if topN == 0 {
+		topN = 3
+	}
+	for _, d := range dates {
+		req := base
+		req.Date = d
+		res, err := tripsearch.Search(ctx, req, nil, nil)
+		if err != nil || res == nil {
+			continue
+		}
+		merged.Flights = append(merged.Flights, res.Flights...)
+		merged.Origins = res.Origins
+		merged.TripType = res.TripType
+		merged.PreFilterCount += res.PreFilterCount
+	}
+	sort.SliceStable(merged.Flights, func(i, j int) bool {
+		return merged.Flights[i].Price < merged.Flights[j].Price
+	})
+	if len(merged.Flights) > topN {
+		merged.Flights = merged.Flights[:topN]
+	}
+	merged.Count = len(merged.Flights)
+
+	if format == "json" {
+		return models.FormatJSON(os.Stdout, &models.FlightSearchResult{
+			Success: true, TripType: merged.TripType,
+			Flights: merged.Flights, Count: merged.Count,
+		})
+	}
+	if merged.Count == 0 {
+		fmt.Println("Swept 0 profile-compliant bundles across all dates.")
+		return nil
+	}
+	baseline := baselineDirectPrice(merged.Flights)
+	fmt.Printf("trvl find --within %dd: top %d bundles across %d dates\n\n",
+		withinDays, merged.Count, len(dates))
+	for i, f := range merged.Flights {
+		hacks := tripsearch.Annotations(f, merged.Origins)
+		dep := ""
+		if len(f.Legs) > 0 {
+			dep = f.Legs[0].DepartureTime
+		}
+		savings := ""
+		if baseline > 0 && f.Price < baseline && hacks != "" {
+			savings = fmt.Sprintf("  [saves EUR %.0f vs direct]", baseline-f.Price)
+		}
+		fmt.Printf("%d. EUR %.0f  %s  %s  %s%s\n",
+			i+1, f.Price, dep, tripsearch.RouteSummary(f), hacks, savings)
+	}
+	return nil
+}
+
+// sweepSaturdays returns up to `cap` Saturdays starting from fromISO and
+// extending windowDays days forward. When fromISO is already a Saturday it
+// is included; otherwise the sweep snaps to the first Saturday at or after
+// fromISO. Safety cap prevents runaway fan-out on slow scrapers.
+func sweepSaturdays(fromISO string, windowDays, cap int) []string {
+	start, err := time.Parse("2006-01-02", fromISO)
+	if err != nil {
+		return []string{fromISO}
+	}
+	offset := (int(time.Saturday) - int(start.Weekday()) + 7) % 7
+	cur := start.AddDate(0, 0, offset)
+	end := start.AddDate(0, 0, windowDays)
+	var out []string
+	for !cur.After(end) && len(out) < cap {
+		out = append(out, cur.Format("2006-01-02"))
+		cur = cur.AddDate(0, 0, 7)
+	}
+	if len(out) == 0 {
+		out = append(out, fromISO)
+	}
+	return out
 }

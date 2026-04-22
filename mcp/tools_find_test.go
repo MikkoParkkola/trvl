@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikkoParkkola/trvl/internal/find"
+	"github.com/MikkoParkkola/trvl/internal/tripsearch"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -58,10 +58,10 @@ func TestFindRequestFromArgs_RoundTrip(t *testing.T) {
 
 func TestRelaxOptions_OnlyFiltersThatRanAndDropped(t *testing.T) {
 	t.Parallel()
-	log := find.FilterLog{
-		LoungeAccess:      find.FilterStep{Ran: true, Dropped: 5},
-		NoEarlyConnection: find.FilterStep{Ran: true, Dropped: 0}, // ran but dropped nothing
-		LongLayover:       find.FilterStep{Ran: false},            // did not run
+	log := tripsearch.FilterLog{
+		LoungeAccess:      tripsearch.FilterStep{Ran: true, Dropped: 5},
+		NoEarlyConnection: tripsearch.FilterStep{Ran: true, Dropped: 0}, // ran but dropped nothing
+		LongLayover:       tripsearch.FilterStep{Ran: false},            // did not run
 	}
 	opts := relaxOptions(log)
 	have := map[string]bool{}
@@ -84,8 +84,8 @@ func TestRelaxOptions_OnlyFiltersThatRanAndDropped(t *testing.T) {
 
 func TestFilterImpactText_OmitsFiltersThatDidntRun(t *testing.T) {
 	t.Parallel()
-	log := find.FilterLog{
-		LoungeAccess: find.FilterStep{Ran: true, Dropped: 3},
+	log := tripsearch.FilterLog{
+		LoungeAccess: tripsearch.FilterStep{Ran: true, Dropped: 3},
 	}
 	got := filterImpactText(log)
 	if !strings.Contains(got, "lounge −3") {
@@ -126,7 +126,7 @@ func TestPlanFlightBundleTool_SchemaShape(t *testing.T) {
 
 func TestReorderFlightsFirst_HoistsPicked(t *testing.T) {
 	t.Parallel()
-	result := &find.Result{
+	result := &tripsearch.Result{
 		Flights: makeFakeFlightsByCode("AMS", "BRU", "CDG", "DUS"),
 	}
 	reorderFlightsFirst(result, 2) // move "CDG" to index 0

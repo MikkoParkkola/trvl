@@ -1,4 +1,4 @@
-package find
+package tripsearch
 
 import (
 	"context"

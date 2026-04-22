@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MikkoParkkola/trvl/internal/find"
+	"github.com/MikkoParkkola/trvl/internal/tripsearch"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -63,7 +63,7 @@ func handlePlanFlightBundle(ctx context.Context, args map[string]any, _ ElicitFu
 		progress(float64(done), float64(total), stage)
 	}
 
-	result, err := find.Search(ctx, req, nil, reportProgress)
+	result, err := tripsearch.Search(ctx, req, nil, reportProgress)
 	if err != nil {
 		return nil, nil, toolExecutionError("plan_flight_bundle", err)
 	}
@@ -116,7 +116,7 @@ func handleFindInteractive(ctx context.Context, args map[string]any, elicit Elic
 	}
 
 	req := findRequestFromArgs(args)
-	result, err := find.Search(ctx, req, nil, reportProgress)
+	result, err := tripsearch.Search(ctx, req, nil, reportProgress)
 	if err != nil {
 		return nil, nil, toolExecutionError("find_interactive", err)
 	}
@@ -150,7 +150,7 @@ func handleFindInteractive(ctx context.Context, args map[string]any, elicit Elic
 
 // relaxAndRetry asks the user which filter to drop, then re-runs Hunt with
 // that filter disabled. Returns the new result (or nil when user cancels).
-func relaxAndRetry(ctx context.Context, req find.Request, original *find.Result, elicit ElicitFunc, progress find.Progress) (*find.Result, error) {
+func relaxAndRetry(ctx context.Context, req tripsearch.Request, original *tripsearch.Result, elicit ElicitFunc, progress tripsearch.Progress) (*tripsearch.Result, error) {
 	options := relaxOptions(original.FiltersApplied)
 	if len(options) == 1 { // only "cancel" — nothing to relax
 		return nil, nil
@@ -193,12 +193,12 @@ func relaxAndRetry(ctx context.Context, req find.Request, original *find.Result,
 		return nil, fmt.Errorf("relax action %q not supported", action)
 	}
 
-	return find.Search(ctx, relaxed, nil, progress)
+	return tripsearch.Search(ctx, relaxed, nil, progress)
 }
 
 // relaxOptions returns the list of relax-actions available for the current
 // filter-log, plus the sentinel "cancel".
-func relaxOptions(log find.FilterLog) []string {
+func relaxOptions(log tripsearch.FilterLog) []string {
 	options := []string{}
 	if log.LoungeAccess.Ran && log.LoungeAccess.Dropped > 0 {
 		options = append(options, "drop_lounge_required")
@@ -215,14 +215,14 @@ func relaxOptions(log find.FilterLog) []string {
 
 // sampleBestPick asks the LLM which bundle best matches the user's profile.
 // Returns the index into result.Flights, or -1 when the LLM declines.
-func sampleBestPick(result *find.Result, sampling SamplingFunc) int {
+func sampleBestPick(result *tripsearch.Result, sampling SamplingFunc) int {
 	lines := []string{
 		"Pick the single best bundle for a traveler who prefers afternoon/evening departures, direct flights when affordable, and rail+fly via Belgium when it saves more than €50. Reply with just the index number (0-indexed).",
 		"",
 	}
 	for i, f := range result.Flights {
 		lines = append(lines, fmt.Sprintf("%d. €%.0f  %s  %s",
-			i, f.Price, find.RouteSummary(f), find.Annotations(f, result.Origins)))
+			i, f.Price, tripsearch.RouteSummary(f), tripsearch.Annotations(f, result.Origins)))
 	}
 	prompt := strings.Join(lines, "\n")
 
@@ -246,7 +246,7 @@ func sampleBestPick(result *find.Result, sampling SamplingFunc) int {
 
 // reorderFlightsFirst moves the bundle at idx to position 0, preserving the
 // relative order of the remaining bundles.
-func reorderFlightsFirst(result *find.Result, idx int) {
+func reorderFlightsFirst(result *tripsearch.Result, idx int) {
 	if idx <= 0 || idx >= len(result.Flights) {
 		return
 	}
@@ -264,11 +264,11 @@ func reorderFlightsFirst(result *find.Result, idx int) {
 
 // --- Shared helpers ---
 
-// findRequestFromArgs parses the MCP arg map into a find.Request. Missing
+// findRequestFromArgs parses the MCP arg map into a tripsearch.Request. Missing
 // fields fall back to zero values (which hunt.Hunt interprets as "use profile
 // default").
-func findRequestFromArgs(args map[string]any) find.Request {
-	return find.Request{
+func findRequestFromArgs(args map[string]any) tripsearch.Request {
+	return tripsearch.Request{
 		Origin:            argString(args, "origin"),
 		Destination:       argString(args, "destination"),
 		Date:              argString(args, "departure_date"),
@@ -285,7 +285,7 @@ func findRequestFromArgs(args map[string]any) find.Request {
 
 // formatFindSummary renders a one-paragraph human-readable summary of the
 // result. Used as the user-facing text ContentBlock.
-func formatFindSummary(r *find.Result) string {
+func formatFindSummary(r *tripsearch.Result) string {
 	if r == nil || r.Count == 0 {
 		pre := 0
 		if r != nil {
@@ -299,7 +299,7 @@ func formatFindSummary(r *find.Result) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Found %d bundle(s) across origins %v. Cheapest: €%.0f (%s).\n",
-		r.Count, r.Origins, r.Flights[0].Price, find.RouteSummary(r.Flights[0]))
+		r.Count, r.Origins, r.Flights[0].Price, tripsearch.RouteSummary(r.Flights[0]))
 	if r.PreFilterCount > r.Count {
 		fmt.Fprintf(&b, "Filter impact: %s\n", filterImpactText(r.FiltersApplied))
 	}
@@ -307,7 +307,7 @@ func formatFindSummary(r *find.Result) string {
 }
 
 // filterImpactText summarises which filters dropped how many.
-func filterImpactText(log find.FilterLog) string {
+func filterImpactText(log tripsearch.FilterLog) string {
 	parts := []string{}
 	if log.LongLayover.Ran {
 		parts = append(parts, fmt.Sprintf("long-layover −%d", log.LongLayover.Dropped))

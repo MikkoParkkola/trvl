@@ -11,7 +11,7 @@
 //
 // Reference: ~/.claude/data/travel_search_mental_model.md — "TRVL IMPROVEMENT
 // PROPOSAL, section 7-step algorithm".
-package find
+package tripsearch
 
 import (
 	"context"

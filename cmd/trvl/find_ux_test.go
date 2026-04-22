@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/tripsearch"
 )
 
 func TestInferFindArgs_OneArgDestOnly(t *testing.T) {
@@ -105,5 +106,59 @@ func TestBaselineDirectPrice_AllRailFlyReturnsZero(t *testing.T) {
 	}
 	if got := baselineDirectPrice(flts); got != 0 {
 		t.Errorf("expected 0 when all bundles are rail+fly, got %.0f", got)
+	}
+}
+
+func TestApplyRelax_TogglesCorrectFilters(t *testing.T) {
+	t.Parallel()
+	req := tripsearch.Request{LoungeRequired: true, NoEarlyConnection: true, MinLayoverMinutes: 720, LayoverAirports: []string{"AMS"}}
+	applyRelax(&req, []string{"lounge", "no-early-connection", "layover"})
+	if req.LoungeRequired {
+		t.Error("lounge should be relaxed")
+	}
+	if req.NoEarlyConnection {
+		t.Error("no-early-connection should be relaxed")
+	}
+	if req.MinLayoverMinutes != 0 || len(req.LayoverAirports) != 0 {
+		t.Errorf("layover should be cleared, got mins=%d airports=%v", req.MinLayoverMinutes, req.LayoverAirports)
+	}
+}
+
+func TestApplyRelax_UnrecognisedNameIsSkipped(t *testing.T) {
+	t.Parallel()
+	req := tripsearch.Request{LoungeRequired: true}
+	applyRelax(&req, []string{"bogus-filter-name", "lounge"})
+	if req.LoungeRequired {
+		t.Error("known name after bogus should still apply")
+	}
+}
+
+func TestSweepSaturdays_CapsAndAlignsToSaturday(t *testing.T) {
+	t.Parallel()
+	// Wed 2026-05-06 + 30d window, cap 4.
+	got := sweepSaturdays("2026-05-06", 30, 4)
+	if len(got) == 0 || len(got) > 4 {
+		t.Fatalf("got %d dates, want 1..4: %v", len(got), got)
+	}
+	for _, d := range got {
+		dt, err := time.Parse("2006-01-02", d)
+		if err != nil {
+			t.Fatalf("date %q not ISO 8601: %v", d, err)
+		}
+		if dt.Weekday() != time.Saturday {
+			t.Errorf("date %q is %v, not Saturday", d, dt.Weekday())
+		}
+	}
+	// First date must be at/after the input Wed.
+	if got[0] < "2026-05-06" {
+		t.Errorf("first sweep date %q should be on/after 2026-05-06", got[0])
+	}
+}
+
+func TestSweepSaturdays_BadInputReturnsAsIs(t *testing.T) {
+	t.Parallel()
+	got := sweepSaturdays("not-a-date", 30, 4)
+	if len(got) != 1 || got[0] != "not-a-date" {
+		t.Errorf("bad input should round-trip as singleton: %v", got)
 	}
 }
