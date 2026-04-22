@@ -49,7 +49,8 @@ func init() {
 	}
 
 	rootCmd.AddCommand(flightsCmd())
-	rootCmd.AddCommand(huntCmd())
+	rootCmd.AddCommand(findCmd()) // primary orchestrated search
+	rootCmd.AddCommand(huntCmd()) // hidden back-compat alias of `find`
 	rootCmd.AddCommand(datesCmd())
 	rootCmd.AddCommand(hotelsCmd())
 	rootCmd.AddCommand(pricesCmd())

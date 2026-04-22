@@ -2,7 +2,9 @@
 //
 // MCP adapters for internal/hunt. Two tools:
 //
-//   - plan_flight_bundle : non-interactive parity with `trvl hunt`. Takes
+//   - plan_flight_bundle : non-interactive parity with `trvl find` (the CLI
+//     command previously named `trvl hunt`; hunt is retained as a hidden
+//     alias for back-compat). Takes
 //     structured args, runs the full pipeline, returns ranked bundles.
 //
 //   - hunt_interactive   : MCP-native flow. Uses elicitation to ask the user

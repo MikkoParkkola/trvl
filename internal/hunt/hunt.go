@@ -1,7 +1,8 @@
 // Package hunt implements Mikko's mental-model flight search orchestrator.
 //
-// It is the single shared implementation behind both the `trvl hunt` CLI
-// command and the `plan_flight_bundle` / `hunt_interactive` MCP tools. Having
+// It is the single shared implementation behind both the `trvl find` CLI
+// command (plus its hidden back-compat alias `trvl hunt`) and the
+// `plan_flight_bundle` / `hunt_interactive` MCP tools. Having
 // one orchestrator guarantees CLI↔MCP feature parity structurally — adding a
 // capability here surfaces it on every adapter without extra wiring.
 //
@@ -393,7 +394,7 @@ func CalendarEventForBundle(f models.FlightResult) (title, start, end, desc stri
 	)
 	start = f.Legs[0].DepartureTime
 	end = f.Legs[len(f.Legs)-1].ArrivalTime
-	desc = fmt.Sprintf("Booked via trvl hunt\nPrice: %s%.0f\nRoute: %s",
+	desc = fmt.Sprintf("Booked via trvl find\nPrice: %s%.0f\nRoute: %s",
 		f.Currency, f.Price, RouteSummary(f))
 	return
 }
