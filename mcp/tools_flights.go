@@ -152,6 +152,12 @@ func searchFlightsTool() ToolDef {
 				"checked_bags":        {Type: "integer", Description: "Checked bags pricing hint (0 = default, 1+ = recalculate prices including N checked bags). Changes price display, does not remove flights. Use require_checked_bag for actual filtering."},
 				"require_checked_bag": {Type: "boolean", Description: "Only show flights with ≥1 free checked bag included (default: false). Client-side post-filter on response data."},
 				"currency":            {Type: "string", Description: "Target currency for prices (ISO 4217, e.g. USD, EUR, JPY). Controls server-side pricing via Google's curr parameter. Empty = IP-based default."},
+				// Mental-model filter args — parity with plan_flight_bundle/hunt_interactive
+				// so agents using the lower-level search_flights still get Mikko's filter stack.
+				"min_layover_minutes": {Type: "integer", Description: "Only keep flights with a layover of at least N minutes (0 = no duration constraint). Post-fetch filter."},
+				"layover_at":          {Type: "array", Description: "Restrict qualifying layovers to these IATA codes (empty = any airport). Post-fetch filter."},
+				"no_early_connection": {Type: "boolean", Description: "Drop flights whose post-overnight leg departs before preferences.early_connection_floor (default 10:00)."},
+				"lounge_required":     {Type: "boolean", Description: "Drop flights where a layover airport lacks lounge coverage from user's cards."},
 			},
 			Required: []string{"origin", "destination", "departure_date"},
 		},
@@ -278,6 +284,32 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		result.Flights = flights.FilterFlightsByTimePreference(result.Flights, prefs.FlightTimeEarliest, prefs.FlightTimeLatest)
 		result.Flights = flights.AdjustBagAllowance(result.Flights, prefs.FrequentFlyerPrograms)
 		result.Count = len(result.Flights)
+	}
+
+	// Apply Mikko-mental-model filters when the caller set them. Parity with
+	// plan_flight_bundle — lets agents stick with search_flights and still
+	// get the filter stack.
+	if result != nil && result.Success {
+		if mins := argInt(args, "min_layover_minutes", 0); mins > 0 || len(argStringSlice(args, "layover_at")) > 0 {
+			result.Flights = flights.FilterByLongLayover(result.Flights, mins, argStringSlice(args, "layover_at"))
+			result.Count = len(result.Flights)
+		}
+		if argBool(args, "lounge_required", false) {
+			var cards []string
+			if prefs != nil {
+				cards = prefs.LoungeCards
+			}
+			result.Flights = flights.FilterByLoungeAccess(result.Flights, cards, nil)
+			result.Count = len(result.Flights)
+		}
+		if argBool(args, "no_early_connection", false) {
+			floor := ""
+			if prefs != nil {
+				floor = prefs.EarlyConnectionFloor
+			}
+			result.Flights = flights.FilterByEarlyConnection(result.Flights, floor)
+			result.Count = len(result.Flights)
+		}
 	}
 
 	// Enrich flights with all-in cost (base fare + baggage - FF benefits).

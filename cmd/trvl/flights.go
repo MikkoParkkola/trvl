@@ -16,6 +16,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/flights/afklm"
 	"github.com/MikkoParkkola/trvl/internal/hacks"
+	"github.com/MikkoParkkola/trvl/internal/hunt"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/points"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
@@ -74,55 +75,20 @@ Examples:
 			destinations := flights.ParseFlightLocations(args[1])
 			date := args[2]
 
-			// --home-fan: expand origins to include all home + nearby airports from preferences.
+			// --home-fan: delegate to internal/hunt so CLI and MCP share the
+			// single implementation of the home-airport fan-out rule.
 			if homeFan {
 				if prefs, err := preferences.Load(); err == nil {
-					fanned := map[string]bool{}
-					for _, o := range origins {
-						fanned[o] = true
-						for _, nb := range prefs.NearbyAirportsFor(o) {
-							fanned[nb] = true
-						}
-					}
-					// Also add all home airports when any home was in origins.
-					for _, h := range prefs.HomeAirports {
-						if fanned[h] {
-							for _, nb := range prefs.NearbyAirportsFor(h) {
-								fanned[nb] = true
-							}
-						}
-					}
-					origins = origins[:0]
-					for a := range fanned {
-						origins = append(origins, a)
+					if expanded, eerr := hunt.ExpandOrigins(strings.Join(origins, ","), prefs); eerr == nil {
+						origins = expanded
 					}
 				}
 			}
 
-			// --rail-fly: add rail+fly origins (ZYR, ANR, BRU) when AMS is already in origins.
-			// Requires AFKL provider under the hood; annotate results when appropriate.
+			// --rail-fly: delegate to internal/hunt so rail+fly origin logic
+			// (ZYR/ANR/BRU when AMS present) lives in one place.
 			if railFly {
-				hasAMS := false
-				for _, o := range origins {
-					if strings.EqualFold(o, "AMS") {
-						hasAMS = true
-						break
-					}
-				}
-				if hasAMS {
-					for _, rf := range []string{"ZYR", "ANR", "BRU"} {
-						already := false
-						for _, o := range origins {
-							if strings.EqualFold(o, rf) {
-								already = true
-								break
-							}
-						}
-						if !already {
-							origins = append(origins, rf)
-						}
-					}
-				}
+				origins = hunt.AddRailFlyOrigins(origins)
 			}
 
 			// --award: Flying Blue miles price scanner across a date or month range.
@@ -216,36 +182,28 @@ Examples:
 				return err
 			}
 
-			// Apply Mikko-mental-model post-search filters (additive, non-destructive).
+			// Apply Mikko-mental-model post-search filters via internal/hunt so
+			// CLI and MCP share the same filter stack. Pre-validate duration
+			// string here to preserve the specific --min-layover error message.
 			if result != nil && result.Success && len(result.Flights) > 0 {
-				if minLayoverStr != "" || len(layoverAirports) > 0 {
-					mins := 0
-					if minLayoverStr != "" {
-						if d, perr := time.ParseDuration(minLayoverStr); perr == nil {
-							mins = int(d.Minutes())
-						} else {
-							return fmt.Errorf("invalid --min-layover %q: %w", minLayoverStr, perr)
-						}
+				mins := 0
+				if minLayoverStr != "" {
+					d, perr := time.ParseDuration(minLayoverStr)
+					if perr != nil {
+						return fmt.Errorf("invalid --min-layover %q: %w", minLayoverStr, perr)
 					}
-					result.Flights = flights.FilterByLongLayover(result.Flights, mins, layoverAirports)
-					result.Count = len(result.Flights)
+					mins = int(d.Minutes())
 				}
-				if loungeRequired {
-					var cards []string
-					if prefs, perr := preferences.Load(); perr == nil {
-						cards = prefs.LoungeCards
-					}
-					result.Flights = flights.FilterByLoungeAccess(result.Flights, cards, nil)
-					result.Count = len(result.Flights)
+				prefs, _ := preferences.Load()
+				huntReq := hunt.HuntRequest{
+					MinLayoverMinutes: mins,
+					LayoverAirports:   layoverAirports,
+					LoungeRequired:    loungeRequired,
+					NoEarlyConnection: noEarlyConn,
 				}
-				if noEarlyConn {
-					floor := ""
-					if prefs, perr := preferences.Load(); perr == nil {
-						floor = prefs.EarlyConnectionFloor
-					}
-					result.Flights = flights.FilterByEarlyConnection(result.Flights, floor)
-					result.Count = len(result.Flights)
-				}
+				flts, _ := hunt.ApplyFilters(result.Flights, huntReq, prefs)
+				result.Flights = flts
+				result.Count = len(flts)
 			}
 
 			// Cache best result for `trvl share --last`.

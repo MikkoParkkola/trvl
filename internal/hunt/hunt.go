@@ -59,9 +59,19 @@ type HuntRequest struct {
 	// lounge coverage from any of the user's lounge cards.
 	LoungeRequired bool
 
-	// HiddenCity, when true, also considers hidden-city candidates. (Not yet
-	// wired into the main pipeline — reserved.)
+	// HiddenCity, when true, runs flights.DetectHiddenCity after the main
+	// search and returns candidates where the full origin→hub→beyond
+	// itinerary is cheaper than the direct origin→hub flight.
 	HiddenCity bool
+
+	// HiddenCityMinSavings is the minimum €/$ saving required to flag a
+	// hidden-city candidate. 0 → library default (currently 30).
+	HiddenCityMinSavings float64
+
+	// HiddenCityHub is the transit hub used as pivot for hidden-city probing.
+	// When empty, Hunt picks the first destination in Destination as the hub
+	// (matches "book origin→HUB→beyond, discard beyond" cases).
+	HiddenCityHub string
 
 	// TopN caps the returned bundle list (post-ranking). 0 → no cap.
 	TopN int
@@ -92,6 +102,10 @@ type HuntResult struct {
 	// PreFilterCount is the flight count before filters. Helps detect
 	// "filters too strict" states.
 	PreFilterCount int `json:"pre_filter_count"`
+
+	// HiddenCityCandidates lists detected savings opportunities when
+	// HuntRequest.HiddenCity was set. Empty slice otherwise.
+	HiddenCityCandidates []flights.HiddenCityCandidate `json:"hidden_city_candidates,omitempty"`
 }
 
 // HuntFilterLog records which filters executed and how many flights each
@@ -193,14 +207,35 @@ func Hunt(ctx context.Context, req HuntRequest, search SearchFunc, progress Prog
 		flts = flts[:req.TopN]
 	}
 
+	// Optional hidden-city probe — runs before "done" so progress reflects it.
+	var hcCandidates []flights.HiddenCityCandidate
+	if req.HiddenCity && len(origins) > 0 {
+		progress("hidden_city_probe", 4, 5)
+		hub := req.HiddenCityHub
+		if hub == "" && len(destinations) > 0 {
+			hub = destinations[0]
+		}
+		if hub != "" {
+			// Wrap the multi-airport search into the single-pair signature
+			// DetectHiddenCity expects. Uses same CabinClass/opts.
+			pair := func(c context.Context, o, d, dt string) (*models.FlightSearchResult, error) {
+				return search(c, []string{o}, []string{d}, dt, opts)
+			}
+			if cands, cerr := flights.DetectHiddenCity(ctx, origins[0], hub, req.Date, pair, req.HiddenCityMinSavings); cerr == nil {
+				hcCandidates = cands
+			}
+		}
+	}
+
 	progress("done", 5, 5)
 	return &HuntResult{
-		Flights:        flts,
-		Count:          len(flts),
-		TripType:       result.TripType,
-		Origins:        origins,
-		FiltersApplied: log,
-		PreFilterCount: preFilterCount,
+		Flights:              flts,
+		Count:                len(flts),
+		TripType:             result.TripType,
+		Origins:              origins,
+		FiltersApplied:       log,
+		PreFilterCount:       preFilterCount,
+		HiddenCityCandidates: hcCandidates,
 	}, nil
 }
 
