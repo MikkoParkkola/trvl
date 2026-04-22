@@ -76,6 +76,15 @@ type Preferences struct {
 
 	// Family members for booking on behalf of
 	FamilyMembers []FamilyMember `json:"family_members,omitempty"`
+
+	// Multi-airport expansion: airports close enough to home to consider as
+	// origin alternatives. Keyed by home airport IATA code.
+	// e.g. {"AMS":["EIN"],"HEL":["TKU","TMP","TLL","ARN"]}
+	NearbyAirports map[string][]string `json:"nearby_airports,omitempty"`
+
+	// AamuyoFloor is the earliest acceptable departure time (HH:MM) after an
+	// overnight layover (≥8h). Default "10:00" per Mikko's travel mental model.
+	AamuyoFloor string `json:"aamuyo_floor,omitempty"`
 }
 
 // FamilyMember represents a person the user may book travel for.
@@ -155,6 +164,18 @@ func LoadFrom(path string) (*Preferences, error) {
 	// If the value looks like the old 0-5 scale, double it.
 	if p.MinHotelRating > 0 && p.MinHotelRating <= 5 {
 		p.MinHotelRating *= 2
+	}
+
+	// Default-populate NearbyAirports when not set. These defaults match
+	// Mikko's two-base lifestyle (AMS primary, HEL secondary) from the
+	// travel mental model document.
+	if len(p.NearbyAirports) == 0 {
+		p.NearbyAirports = defaultNearbyAirports()
+	}
+
+	// Default aamuyö floor when not set.
+	if p.AamuyoFloor == "" {
+		p.AamuyoFloor = "10:00"
 	}
 
 	return p, nil
@@ -478,6 +499,60 @@ func filterByDistrict(hotels []models.HotelResult, districts []string) ([]models
 		}
 	}
 	return out, len(out) > 0
+}
+
+// defaultNearbyAirports returns the built-in nearby-airport seed based on
+// Mikko's two-base lifestyle (Amsterdam + Helsinki). Keys are home-airport
+// IATA codes; values are airports close enough to justify searching.
+//
+// Source: travel_search_mental_model.md — MULTI-AIRPORT ORIGIN SPREAD section.
+func defaultNearbyAirports() map[string][]string {
+	return map[string][]string{
+		"AMS": {"EIN"},
+		"HEL": {"TKU", "TMP", "TLL", "ARN"},
+	}
+}
+
+// NearbyAirportsFor returns the nearby airports for a given home airport.
+// It also includes the home airport itself. The result is deduplicated.
+// Returns a slice containing at minimum the home airport itself.
+func (p *Preferences) NearbyAirportsFor(homeAirport string) []string {
+	seen := make(map[string]bool)
+	var out []string
+	add := func(code string) {
+		code = strings.ToUpper(strings.TrimSpace(code))
+		if code != "" && !seen[code] {
+			seen[code] = true
+			out = append(out, code)
+		}
+	}
+	add(homeAirport)
+	for _, nb := range p.NearbyAirports[strings.ToUpper(strings.TrimSpace(homeAirport))] {
+		add(nb)
+	}
+	return out
+}
+
+// ExpandHomeOrigins returns the full set of origin airports to search when
+// --home-fan is enabled: all home airports plus their nearby airports.
+// Duplicates are deduplicated.
+func (p *Preferences) ExpandHomeOrigins() []string {
+	seen := make(map[string]bool)
+	var out []string
+	add := func(code string) {
+		code = strings.ToUpper(strings.TrimSpace(code))
+		if code != "" && !seen[code] {
+			seen[code] = true
+			out = append(out, code)
+		}
+	}
+	for _, home := range p.HomeAirports {
+		add(home)
+		for _, nb := range p.NearbyAirports[strings.ToUpper(strings.TrimSpace(home))] {
+			add(nb)
+		}
+	}
+	return out
 }
 
 // prioritiseByDistrict reorders hotels so those whose address contains one of

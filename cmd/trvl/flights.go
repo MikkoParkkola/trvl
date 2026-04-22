@@ -36,6 +36,12 @@ func flightsCmd() *cobra.Command {
 		provider       string
 		award          bool
 		awardCookies   string
+		homeFan         bool
+		railFly         bool
+		minLayoverStr   string
+		layoverAirports []string
+		noAamuyo        bool
+		loungeRequired  bool
 	)
 
 	cmd := &cobra.Command{
@@ -67,6 +73,57 @@ Examples:
 			origins := flights.ParseFlightLocations(originArg)
 			destinations := flights.ParseFlightLocations(args[1])
 			date := args[2]
+
+			// --home-fan: expand origins to include all home + nearby airports from preferences.
+			if homeFan {
+				if prefs, err := preferences.Load(); err == nil {
+					fanned := map[string]bool{}
+					for _, o := range origins {
+						fanned[o] = true
+						for _, nb := range prefs.NearbyAirportsFor(o) {
+							fanned[nb] = true
+						}
+					}
+					// Also add all home airports when any home was in origins.
+					for _, h := range prefs.HomeAirports {
+						if fanned[h] {
+							for _, nb := range prefs.NearbyAirportsFor(h) {
+								fanned[nb] = true
+							}
+						}
+					}
+					origins = origins[:0]
+					for a := range fanned {
+						origins = append(origins, a)
+					}
+				}
+			}
+
+			// --rail-fly: add rail+fly origins (ZYR, ANR, BRU) when AMS is already in origins.
+			// Requires AFKL provider under the hood; annotate results when appropriate.
+			if railFly {
+				hasAMS := false
+				for _, o := range origins {
+					if strings.EqualFold(o, "AMS") {
+						hasAMS = true
+						break
+					}
+				}
+				if hasAMS {
+					for _, rf := range []string{"ZYR", "ANR", "BRU"} {
+						already := false
+						for _, o := range origins {
+							if strings.EqualFold(o, rf) {
+								already = true
+								break
+							}
+						}
+						if !already {
+							origins = append(origins, rf)
+						}
+					}
+				}
+			}
 
 			// --award: Flying Blue miles price scanner across a date or month range.
 			if award {
@@ -143,6 +200,38 @@ Examples:
 				return err
 			}
 
+			// Apply Mikko-mental-model post-search filters (additive, non-destructive).
+			if result != nil && result.Success && len(result.Flights) > 0 {
+				if minLayoverStr != "" || len(layoverAirports) > 0 {
+					mins := 0
+					if minLayoverStr != "" {
+						if d, perr := time.ParseDuration(minLayoverStr); perr == nil {
+							mins = int(d.Minutes())
+						} else {
+							return fmt.Errorf("invalid --min-layover %q: %w", minLayoverStr, perr)
+						}
+					}
+					result.Flights = flights.FilterByLongLayover(result.Flights, mins, layoverAirports)
+					result.Count = len(result.Flights)
+				}
+				if loungeRequired {
+					var cards []string
+					if prefs, perr := preferences.Load(); perr == nil {
+						cards = prefs.LoungeCards
+					}
+					result.Flights = flights.FilterByLoungeAccess(result.Flights, cards, nil)
+					result.Count = len(result.Flights)
+				}
+				if noAamuyo {
+					floor := ""
+					if prefs, perr := preferences.Load(); perr == nil {
+						floor = prefs.AamuyoFloor
+					}
+					result.Flights = flights.FilterByAamuyo(result.Flights, floor)
+					result.Count = len(result.Flights)
+				}
+			}
+
 			// Cache best result for `trvl share --last`.
 			if result != nil && result.Success && len(result.Flights) > 0 {
 				f := result.Flights[0]
@@ -194,6 +283,12 @@ Examples:
 	cmd.Flags().StringVar(&targetCurrency, "currency", "", "Convert prices to this currency (e.g. EUR, USD). Empty = show API default")
 	cmd.Flags().BoolVar(&compareCabins, "compare-cabins", false, "Compare prices across all cabin classes (economy, premium, business, first)")
 	cmd.Flags().StringVar(&provider, "provider", "", "Flight data provider (e.g. afklm). Default: Google Flights")
+	cmd.Flags().BoolVar(&homeFan, "home-fan", false, "Expand origin to all home + nearby airports from preferences (e.g. AMS+EIN, HEL+TKU+TMP+TLL+ARN)")
+	cmd.Flags().BoolVar(&railFly, "rail-fly", false, "KL/AF rail+fly: also search ZYR (Brussels-Midi station), ANR, BRU as origins via AFKL provider. Requires origin to include AMS.")
+	cmd.Flags().StringVar(&minLayoverStr, "min-layover", "", "Only show flights with at least this layover duration (e.g. 12h, 90m)")
+	cmd.Flags().StringSliceVar(&layoverAirports, "layover-at", nil, "Restrict qualifying layovers to these airports (IATA codes, comma list)")
+	cmd.Flags().BoolVar(&noAamuyo, "no-aamuyo", false, "After an overnight layover (≥8h), require next departure >= preference aamuyö floor (default 10:00)")
+	cmd.Flags().BoolVar(&loungeRequired, "lounge-required", false, "Drop flights where any layover airport lacks lounge coverage for your cards")
 	cmd.Flags().BoolVar(&award, "award", false, "Scan Flying Blue miles prices. DATE is a month (2026-06) or a day (2026-06-15). Requires KLM session cookies via AFKL_KLM_COOKIES or --award-cookies.")
 	cmd.Flags().StringVar(&awardCookies, "award-cookies", "", "Raw KLM session Cookie header for award search (alternative to AFKL_KLM_COOKIES env var)")
 
