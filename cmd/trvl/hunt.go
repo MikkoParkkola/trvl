@@ -32,7 +32,7 @@ func huntCmd() *cobra.Command {
 		format          string
 		minLayoverStr   string
 		layoverAirports []string
-		noAamuyo        bool
+		noEarlyConn        bool
 		loungeRequired  bool
 		hiddenCity      bool
 		topN            int
@@ -56,7 +56,7 @@ ORIGIN is typically "home" (expanded from preferences.home_airports).
 DATE is ISO 8601 (2026-04-23).
 
 Example:
-  trvl hunt home PRG 2026-04-23 --return 2026-06-03 --no-aamuyo --lounge-required`,
+  trvl hunt home PRG 2026-04-23 --return 2026-06-03 --no-early-connection --lounge-required`,
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runHunt(cmd.Context(), huntOpts{
@@ -68,7 +68,7 @@ Example:
 				format:          format,
 				minLayoverStr:   minLayoverStr,
 				layoverAirports: layoverAirports,
-				noAamuyo:        noAamuyo,
+				noEarlyConn:        noEarlyConn,
 				loungeRequired:  loungeRequired,
 				hiddenCity:      hiddenCity,
 				topN:            topN,
@@ -82,7 +82,9 @@ Example:
 	cmd.Flags().StringVar(&format, "format", "table", "Output format: table, json")
 	cmd.Flags().StringVar(&minLayoverStr, "min-layover", "", "Minimum layover duration (e.g. 12h)")
 	cmd.Flags().StringSliceVar(&layoverAirports, "layover-at", nil, "Restrict layovers to these airports")
-	cmd.Flags().BoolVar(&noAamuyo, "no-aamuyo", true, "Enforce post-overnight 10:00 rule (default on for hunt)")
+	cmd.Flags().BoolVar(&noEarlyConn, "no-early-connection", true, "After overnight layover, require next departure at or after preferences.early_connection_floor (default 10:00) — the 'unhurried wake + breakfast' rule")
+	cmd.Flags().BoolVar(&noEarlyConn, "no-aamuyo", true, "Deprecated alias for --no-early-connection")
+	_ = cmd.Flags().MarkHidden("no-aamuyo")
 	cmd.Flags().BoolVar(&loungeRequired, "lounge-required", true, "Require lounge at transit airports (default on for hunt)")
 	cmd.Flags().BoolVar(&hiddenCity, "hidden-city", false, "Also detect hidden-city candidates")
 	cmd.Flags().IntVar(&topN, "top", 3, "Number of top bundles to present")
@@ -95,7 +97,7 @@ type huntOpts struct {
 	origin, destination, date, returnDate string
 	cabin, format, minLayoverStr          string
 	layoverAirports                       []string
-	noAamuyo, loungeRequired, hiddenCity  bool
+	noEarlyConn, loungeRequired, hiddenCity  bool
 	topN                                  int
 	calendarInsert                        bool
 }
@@ -255,12 +257,12 @@ func applyHuntFilters(flts []models.FlightResult, o huntOpts) []models.FlightRes
 		}
 		flts = flights.FilterByLoungeAccess(flts, cards, nil)
 	}
-	if o.noAamuyo {
+	if o.noEarlyConn {
 		floor := ""
 		if prefs, err := preferences.Load(); err == nil {
-			floor = prefs.AamuyoFloor
+			floor = prefs.EarlyConnectionFloor
 		}
-		flts = flights.FilterByAamuyo(flts, floor)
+		flts = flights.FilterByEarlyConnection(flts, floor)
 	}
 	return flts
 }

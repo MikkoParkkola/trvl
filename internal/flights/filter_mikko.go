@@ -182,39 +182,53 @@ func expandLoungeCards(cards []string) map[string]bool {
 }
 
 // aamuyoFloorDefault is used when no preference is set.
-const aamuyoFloorDefault = "10:00"
+// boardingFloorDefault is the default earliest departure time after an
+// overnight layover. Unhurried wake + breakfast per Mikko's travel model.
+const boardingFloorDefault = "10:00"
 
-// aamuyoOvernightMinutes is the layover duration that triggers the aamuyo rule.
-// Per mental model: 8h+ layover = overnight.
-const aamuyoOvernightMinutes = 8 * 60
+// overnightLayoverMinutes is the layover duration that triggers the
+// early-connection rule. Per mental model: 8h+ layover = overnight.
+const overnightLayoverMinutes = 8 * 60
 
-// FilterByAamuyo drops flights that violate the "aamuyo rule": when there is
-// an overnight layover (>= 8 h), the subsequent leg must depart at or after
-// aamuyoFloor (HH:MM, 24-hour format, local time).
+// FilterByEarlyConnection drops flights that violate the no-early-connection
+// rule: when there is an overnight layover (>= 8 h), the subsequent leg must
+// depart at or after boardingFloor (HH:MM, 24-hour format, local time).
 //
-// aamuyoFloor="" uses the default ("10:00"). Flights with no overnight layovers
-// are not affected.
-func FilterByAamuyo(flts []models.FlightResult, aamuyoFloor string) []models.FlightResult {
-	if aamuyoFloor == "" {
-		aamuyoFloor = aamuyoFloorDefault
+// boardingFloor="" uses the default ("10:00"). Flights with no overnight
+// layovers are not affected.
+//
+// Rationale: after sleeping at a transfer hub, the traveler wants to wake
+// without hurry and have breakfast before the next departure. Per-user
+// configurable via preferences.EarlyConnectionFloor (or legacy AamuyoFloor).
+func FilterByEarlyConnection(flts []models.FlightResult, boardingFloor string) []models.FlightResult {
+	if boardingFloor == "" {
+		boardingFloor = boardingFloorDefault
 	}
 
 	out := make([]models.FlightResult, 0, len(flts))
 	for _, f := range flts {
-		if aamuyoOK(f, aamuyoFloor) {
+		if earlyConnectionOK(f, boardingFloor) {
 			out = append(out, f)
 		}
 	}
 	return out
 }
 
-// aamuyoOK returns true when the flight does not violate the aamuyo rule.
-func aamuyoOK(f models.FlightResult, floor string) bool {
+// FilterByAamuyo is a deprecated alias for FilterByEarlyConnection. Retained
+// for backwards compatibility with callers written before the rename.
+//
+// Deprecated: Use FilterByEarlyConnection instead.
+func FilterByAamuyo(flts []models.FlightResult, boardingFloor string) []models.FlightResult {
+	return FilterByEarlyConnection(flts, boardingFloor)
+}
+
+// earlyConnectionOK returns true when the flight does not violate the rule.
+func earlyConnectionOK(f models.FlightResult, floor string) bool {
 	for i, leg := range f.Legs {
 		if i == 0 {
 			continue
 		}
-		if leg.LayoverMinutes < aamuyoOvernightMinutes {
+		if leg.LayoverMinutes < overnightLayoverMinutes {
 			continue
 		}
 		// Overnight layover found. Check departure time of THIS leg.

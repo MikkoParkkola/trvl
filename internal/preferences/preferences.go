@@ -82,8 +82,15 @@ type Preferences struct {
 	// e.g. {"AMS":["EIN"],"HEL":["TKU","TMP","TLL","ARN"]}
 	NearbyAirports map[string][]string `json:"nearby_airports,omitempty"`
 
-	// AamuyoFloor is the earliest acceptable departure time (HH:MM) after an
-	// overnight layover (≥8h). Default "10:00" per Mikko's travel mental model.
+	// EarlyConnectionFloor is the earliest acceptable departure time (HH:MM)
+	// after an overnight layover (≥8h). Default "10:00" per Mikko's travel
+	// mental model ("unhurried wake + breakfast" rule). Per-user configurable.
+	EarlyConnectionFloor string `json:"early_connection_floor,omitempty"`
+
+	// AamuyoFloor is the deprecated alias for EarlyConnectionFloor, kept for
+	// backwards compatibility with profiles written before the rename.
+	//
+	// Deprecated: Use EarlyConnectionFloor instead.
 	AamuyoFloor string `json:"aamuyo_floor,omitempty"`
 }
 
@@ -173,9 +180,16 @@ func LoadFrom(path string) (*Preferences, error) {
 		p.NearbyAirports = defaultNearbyAirports()
 	}
 
-	// Default aamuyö floor when not set.
+	// Migrate legacy AamuyoFloor → EarlyConnectionFloor, default when neither set.
+	if p.EarlyConnectionFloor == "" && p.AamuyoFloor != "" {
+		p.EarlyConnectionFloor = p.AamuyoFloor
+	}
+	if p.EarlyConnectionFloor == "" {
+		p.EarlyConnectionFloor = "10:00"
+	}
+	// Keep AamuyoFloor in sync for legacy readers.
 	if p.AamuyoFloor == "" {
-		p.AamuyoFloor = "10:00"
+		p.AamuyoFloor = p.EarlyConnectionFloor
 	}
 
 	return p, nil

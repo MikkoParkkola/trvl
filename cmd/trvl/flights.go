@@ -40,7 +40,7 @@ func flightsCmd() *cobra.Command {
 		railFly         bool
 		minLayoverStr   string
 		layoverAirports []string
-		noAamuyo        bool
+		noEarlyConn     bool
 		loungeRequired  bool
 	)
 
@@ -176,14 +176,30 @@ Examples:
 					Adults:     opts.Adults,
 					Currency:   opts.Currency,
 				}
-				result, err = p.SearchFlights(cmd.Context(), origins[0], destinations[0], date, mopts)
-				if err != nil {
-					return err
+				// Fan out across all origins (rail-fly adds ZYR/ANR/BRU) and all destinations.
+				// Merge results into a single FlightSearchResult ranked by price.
+				result = &models.FlightSearchResult{Success: true, TripType: "one_way"}
+				if opts.ReturnDate != "" {
+					result.TripType = "round_trip"
+				}
+				for _, o := range origins {
+					for _, d := range destinations {
+						r, rerr := p.SearchFlights(cmd.Context(), o, d, date, mopts)
+						if rerr != nil || r == nil || !r.Success {
+							continue
+						}
+						result.Flights = append(result.Flights, r.Flights...)
+					}
+				}
+				result.Count = len(result.Flights)
+				if result.Count == 0 {
+					result.Success = false
+					result.Error = "no flights returned from afklm for any origin/destination combination"
 				}
 				if format == "json" {
 					return models.FormatJSON(os.Stdout, result)
 				}
-				return printFlightsTable(cmd.Context(), origins[0], destinations[0], targetCurrency, result)
+				return printFlightsTable(cmd.Context(), strings.Join(origins, ","), strings.Join(destinations, ","), targetCurrency, result)
 			}
 
 			// --compare-cabins: search all cabin classes in parallel.
@@ -222,12 +238,12 @@ Examples:
 					result.Flights = flights.FilterByLoungeAccess(result.Flights, cards, nil)
 					result.Count = len(result.Flights)
 				}
-				if noAamuyo {
+				if noEarlyConn {
 					floor := ""
 					if prefs, perr := preferences.Load(); perr == nil {
-						floor = prefs.AamuyoFloor
+						floor = prefs.EarlyConnectionFloor
 					}
-					result.Flights = flights.FilterByAamuyo(result.Flights, floor)
+					result.Flights = flights.FilterByEarlyConnection(result.Flights, floor)
 					result.Count = len(result.Flights)
 				}
 			}
@@ -287,7 +303,9 @@ Examples:
 	cmd.Flags().BoolVar(&railFly, "rail-fly", false, "KL/AF rail+fly: also search ZYR (Brussels-Midi station), ANR, BRU as origins via AFKL provider. Requires origin to include AMS.")
 	cmd.Flags().StringVar(&minLayoverStr, "min-layover", "", "Only show flights with at least this layover duration (e.g. 12h, 90m)")
 	cmd.Flags().StringSliceVar(&layoverAirports, "layover-at", nil, "Restrict qualifying layovers to these airports (IATA codes, comma list)")
-	cmd.Flags().BoolVar(&noAamuyo, "no-aamuyo", false, "After an overnight layover (≥8h), require next departure >= preference aamuyö floor (default 10:00)")
+	cmd.Flags().BoolVar(&noEarlyConn, "no-early-connection", false, "After overnight layover (≥8h), require next departure at or after preferences.early_connection_floor (default 10:00) — the 'unhurried wake + breakfast' rule")
+	cmd.Flags().BoolVar(&noEarlyConn, "no-aamuyo", false, "Deprecated alias for --no-early-connection")
+	_ = cmd.Flags().MarkHidden("no-aamuyo")
 	cmd.Flags().BoolVar(&loungeRequired, "lounge-required", false, "Drop flights where any layover airport lacks lounge coverage for your cards")
 	cmd.Flags().BoolVar(&award, "award", false, "Scan Flying Blue miles prices. DATE is a month (2026-06) or a day (2026-06-15). Requires KLM session cookies via AFKL_KLM_COOKIES or --award-cookies.")
 	cmd.Flags().StringVar(&awardCookies, "award-cookies", "", "Raw KLM session Cookie header for award search (alternative to AFKL_KLM_COOKIES env var)")

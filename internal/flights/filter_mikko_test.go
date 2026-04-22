@@ -56,7 +56,8 @@ func TestFilterByLongLayover_DurationAndAirport(t *testing.T) {
 	}
 }
 
-func TestFilterByAamuyo_Default10AM(t *testing.T) {
+func TestFilterByEarlyConnection_Default10AM(t *testing.T) {
+	_ = testing.Short // anchor
 	flts := []models.FlightResult{
 		// Overnight 10h at AMS, next leg 08:00 -- too early
 		mkFlightMikko(100,
@@ -71,7 +72,7 @@ func TestFilterByAamuyo_Default10AM(t *testing.T) {
 			[4]any{"HEL", "AMS", "2026-06-01T05:00", 0},
 			[4]any{"AMS", "PRG", "2026-06-01T07:00", 120}),
 	}
-	got := FilterByAamuyo(flts, "")
+	got := FilterByEarlyConnection(flts, "")
 	if len(got) != 2 {
 		t.Fatalf("expected 2 flights, got %d", len(got))
 	}
