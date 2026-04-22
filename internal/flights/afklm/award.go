@@ -1,5 +1,24 @@
 // Package afklm provides a Flying Blue award flight scanner.
 //
+// # IMPORTANT: Unverified endpoint and response types
+//
+// The internal KLM endpoint used by this scanner
+// (https://www.klm.com/api/flights/award) and all klmAward* request/response
+// types in award_types.go were HYPOTHESIZED based on the public AFKL Offers API
+// schema and common SPA patterns. They were NOT verified against live klm.com
+// traffic in this implementation session. The endpoint URL, request shape,
+// and response JSON fields may all be wrong.
+//
+// The test fixture (testdata/award_prg_ams.json) is SYNTHETIC — fabricated to
+// match the hypothesized types. It does not represent data returned by the real
+// KLM API.
+//
+// To verify and fix: log into klm.com, open DevTools → Network, initiate a
+// "Book with miles" search, and inspect the actual XHR request/response. Update
+// klmAwardBaseURL, klmAwardSearchRequest, and klmAwardResponse (in award_types.go)
+// to match the real traffic. Replace the synthetic fixture with a real response
+// sample (stripped of PII).
+//
 // # Discovery findings (2026-04-22)
 //
 // The public AFKL Offers API (api.airfranceklm.com/opendata/offers/v3/available-offers)
@@ -16,13 +35,8 @@
 //
 // The klm.com SPA ("Book with miles") uses a different internal endpoint
 // authenticated via session cookies (Flying Blue OAuth bearer token), not the
-// public API key. The endpoint base is:
-//
-//	https://www.klm.com/api/flights/award (POST)
-//
-// To use this endpoint, valid KLM/Flying Blue session cookies must be present.
-// The AwardScanner.Search method accepts these cookies directly. Cookie extraction
-// from the local Brave browser is the intended production path.
+// public API key. The endpoint base URL below is hypothesized — see the
+// IMPORTANT disclaimer above.
 //
 // For CI / offline usage, set TRVL_TEST_AWARD_FIXTURE=1 to load responses from
 // internal/flights/afklm/testdata/award_*.json instead of making live calls.
@@ -42,8 +56,9 @@ import (
 )
 
 const (
-	// klmAwardBaseURL is the KLM internal API used by the "Book with miles" SPA.
-	// This endpoint requires Flying Blue session cookies (OAuth bearer token).
+	// klmAwardBaseURL is the hypothesized KLM internal API used by the "Book with
+	// miles" SPA. THIS URL WAS NOT VERIFIED AGAINST LIVE TRAFFIC. It requires
+	// Flying Blue session cookies (OAuth bearer token) if correct.
 	klmAwardBaseURL = "https://www.klm.com/api/flights/award"
 
 	// klmAwardUserAgent mimics the KLM SPA to avoid bot detection.

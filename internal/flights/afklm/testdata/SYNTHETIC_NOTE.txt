@@ -1,0 +1,12 @@
+award_prg_ams.json is a SYNTHETIC fixture.
+
+It was hand-crafted to match the hypothesized klmAwardResponse JSON structure
+and does NOT represent data returned by the real KLM internal award API.
+
+The real API endpoint (https://www.klm.com/api/flights/award) and its response
+schema have NOT been verified. Before relying on the award scanner for production
+use, capture a real "Book with miles" XHR from klm.com DevTools and:
+  1. Verify that the request/response JSON matches klmAwardSearchRequest /
+     klmAwardResponse in award_types.go — update types as needed.
+  2. Replace this file with a real response sample (strip personal data / PII).
+  3. Update klmAwardBaseURL in award.go if the actual endpoint URL differs.

@@ -1,5 +1,13 @@
 package afklm
 
+// NOTE: The klmAward* types below (klmAwardSearchRequest, klmAwardResponse, and
+// all nested types) are HYPOTHESIZED based on the public AFKL Offers API schema.
+// They were NOT verified against live klm.com traffic. The actual KLM internal
+// award API may use a completely different JSON structure.
+//
+// To verify: capture a real "Book with miles" XHR from klm.com DevTools and
+// compare the actual request/response JSON against these types. Update as needed.
+
 // AwardOffer represents a single award flight offer (miles + tax).
 type AwardOffer struct {
 	// Date is the departure date (ISO calendar date "2006-01-02").
@@ -41,9 +49,9 @@ func (o AwardOffer) Suitable() bool { return o.Available && o.Miles > 0 && o.Mil
 // Ideal reports whether the offer meets the ideal miles ceiling (≤10,000 mi).
 func (o AwardOffer) Ideal() bool { return o.Available && o.Miles > 0 && o.Miles <= 10_000 }
 
-// klmAwardSearchRequest is the JSON body sent to the KLM internal award API.
-// This is the shape used by klm.com's SPA when the user selects "Book with miles".
-// Endpoint: POST https://www.klm.com/api/v1/award-offers (session-cookie auth).
+// klmAwardSearchRequest is the HYPOTHESIZED JSON body for the KLM internal award
+// API. The actual request shape used by klm.com's SPA has not been verified.
+// Endpoint (unverified): POST https://www.klm.com/api/flights/award
 type klmAwardSearchRequest struct {
 	BookingFlow  string              `json:"bookingFlow"` // "REWARD"
 	Passengers   []klmAwardPassenger `json:"passengers"`
