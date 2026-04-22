@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/calendarbusy"
 	"github.com/MikkoParkkola/trvl/internal/tripsearch"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/spf13/cobra"
@@ -54,6 +55,8 @@ func findCmdWith(use string, hidden bool) *cobra.Command {
 		calendarInsert  bool
 		withinDays      int
 		relax           []string
+		returnNights    int
+		noCalendar      bool
 	)
 
 	cmd := &cobra.Command{
@@ -80,12 +83,12 @@ Example:
   trvl find home PRG 2026-04-23 --return 2026-06-03 # all three args`,
 		Args: cobra.RangeArgs(1, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			origin, dest, date := inferFindArgs(args)
+			origin, dest, date, dateSource := inferFindArgsSmart(cmd.Context(), args, noCalendar)
 			req := tripsearch.Request{
 				Origin:            origin,
 				Destination:       dest,
 				Date:              date,
-				ReturnDate:        returnDate,
+				ReturnDate:        computeReturnDate(returnDate, date, returnNights),
 				Cabin:             cabin,
 				MinLayoverMinutes: tripsearch.ParseDuration(minLayoverStr),
 				LayoverAirports:   layoverAirports,
@@ -98,7 +101,7 @@ Example:
 			if withinDays > 0 {
 				return runFindSweep(cmd.Context(), req, format, withinDays)
 			}
-			return runFind(cmd.Context(), req, format, calendarInsert, len(args))
+			return runFindWithSource(cmd.Context(), req, format, calendarInsert, len(args), dateSource)
 		},
 	}
 
@@ -116,6 +119,8 @@ Example:
 	cmd.Flags().BoolVar(&calendarInsert, "calendar", false, "Insert chosen bundle (top 1) into Google Calendar via gws CLI")
 	cmd.Flags().IntVar(&withinDays, "within", 0, "Sweep every Saturday in the next N days (starting from the default 14-day buffer) and merge bundles across all dates. 0 = single-date search using DATE only.")
 	cmd.Flags().StringSliceVar(&relax, "relax", nil, "Pre-disable one or more filters before searching. Values: lounge, no-early-connection, layover. Example: --relax lounge,no-early-connection")
+	cmd.Flags().IntVar(&returnNights, "return-nights", 0, "Auto-compute return date as DATE + N nights. 0 = one-way (or use --return for an explicit return).")
+	cmd.Flags().BoolVar(&noCalendar, "no-calendar", false, "Skip Google Calendar / icalBuddy busy-interval lookup when auto-inferring the departure date.")
 
 	return cmd
 }
@@ -378,4 +383,67 @@ func sweepSaturdays(fromISO string, windowDays, cap int) []string {
 		out = append(out, fromISO)
 	}
 	return out
+}
+
+
+// inferFindArgsSmart is the calendar-aware variant of inferFindArgs. Behaves
+// identically when calendar lookup is disabled or fails; otherwise skips
+// Saturdays that overlap busy intervals (from gws/icalBuddy) when the user
+// did not supply a date explicitly.
+//
+// The returned `source` string is one of:
+//
+//	"explicit"       — user supplied DATE positional arg
+//	"default-sat-14" — plain rule-based default (no calendar)
+//	"calendar-free"  — skipped one or more busy Saturdays
+//
+// This lets the runFind presenter explain WHY a date was picked.
+func inferFindArgsSmart(ctx context.Context, args []string, noCalendar bool) (origin, destination, date, source string) {
+	switch len(args) {
+	case 3:
+		return args[0], args[1], args[2], "explicit"
+	case 2:
+		origin, destination = args[0], args[1]
+	default:
+		origin, destination = "home", args[0]
+	}
+	if noCalendar {
+		return origin, destination, nextSaturdayISO(time.Now()), "default-sat-14"
+	}
+	// Best-effort calendar lookup — bounded 3s so a slow CLI never stalls.
+	calCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	busy, _ := calendarbusy.Query(calCtx, 90)
+	if len(busy) == 0 {
+		return origin, destination, nextSaturdayISO(time.Now()), "default-sat-14"
+	}
+	free := calendarbusy.NextFreeSaturday(time.Now(), 14, 90, busy)
+	return origin, destination, free, "calendar-free"
+}
+
+// computeReturnDate returns the return-date to send to the search provider.
+// Explicit --return wins. Otherwise, when --return-nights N is supplied and
+// the outbound date parses, returns outbound+N (ISO 8601). Empty means
+// "one-way" — preserves legacy default.
+func computeReturnDate(explicit, outbound string, nights int) string {
+	if explicit != "" {
+		return explicit
+	}
+	if nights <= 0 {
+		return ""
+	}
+	t, err := time.Parse("2006-01-02", outbound)
+	if err != nil {
+		return ""
+	}
+	return t.AddDate(0, 0, nights).Format("2006-01-02")
+}
+
+// runFindWithSource wraps runFind with a richer banner that explains the
+// date choice. Forwards everything else verbatim.
+func runFindWithSource(ctx context.Context, req tripsearch.Request, format string, calendarInsert bool, argCount int, dateSource string) error {
+	if format != "json" && dateSource == "calendar-free" {
+		fmt.Printf("(date picked by calendar-aware search: first Saturday >= 14d out with no conflicts)\n")
+	}
+	return runFind(ctx, req, format, calendarInsert, argCount)
 }
