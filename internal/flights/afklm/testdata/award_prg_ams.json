@@ -1,0 +1,182 @@
+{
+  "recommendations": [
+    {
+      "flightProducts": [
+        {
+          "id": "prod-001",
+          "milesPrice": {
+            "miles": 7500,
+            "taxAmount": 31.22,
+            "currency": "EUR"
+          },
+          "price": {
+            "displayPrice": 31.22,
+            "totalPrice": 31.22,
+            "currency": "EUR"
+          },
+          "connections": [
+            {
+              "connectionId": 1,
+              "commercialCabin": "ECONOMY",
+              "milesPrice": {
+                "miles": 7500,
+                "taxAmount": 31.22,
+                "currency": "EUR"
+              },
+              "price": {
+                "displayPrice": 31.22,
+                "totalPrice": 31.22,
+                "currency": "EUR"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "flightProducts": [
+        {
+          "id": "prod-002",
+          "milesPrice": {
+            "miles": 10000,
+            "taxAmount": 35.10,
+            "currency": "EUR"
+          },
+          "price": {
+            "displayPrice": 35.10,
+            "totalPrice": 35.10,
+            "currency": "EUR"
+          },
+          "connections": [
+            {
+              "connectionId": 2,
+              "commercialCabin": "ECONOMY",
+              "milesPrice": {
+                "miles": 10000,
+                "taxAmount": 35.10,
+                "currency": "EUR"
+              },
+              "price": {
+                "displayPrice": 35.10,
+                "totalPrice": 35.10,
+                "currency": "EUR"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "flightProducts": [
+        {
+          "id": "prod-003",
+          "milesPrice": {
+            "miles": 15000,
+            "taxAmount": 38.50,
+            "currency": "EUR"
+          },
+          "price": {
+            "displayPrice": 38.50,
+            "totalPrice": 38.50,
+            "currency": "EUR"
+          },
+          "connections": [
+            {
+              "connectionId": 3,
+              "commercialCabin": "ECONOMY",
+              "milesPrice": {
+                "miles": 15000,
+                "taxAmount": 38.50,
+                "currency": "EUR"
+              },
+              "price": {
+                "displayPrice": 38.50,
+                "totalPrice": 38.50,
+                "currency": "EUR"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "connections": [
+    [
+      {
+        "id": 1,
+        "duration": 100,
+        "segments": [
+          {
+            "origin": {
+              "code": "PRG",
+              "name": "Vaclav Havel Airport Prague",
+              "city": { "code": "PRG", "name": "Prague" }
+            },
+            "destination": {
+              "code": "AMS",
+              "name": "Amsterdam Airport Schiphol",
+              "city": { "code": "AMS", "name": "Amsterdam" }
+            },
+            "marketingFlight": {
+              "number": "1346",
+              "carrier": { "code": "KL", "name": "KLM Royal Dutch Airlines" }
+            },
+            "departureDateTime": "2026-06-15T08:40:00",
+            "arrivalDateTime": "2026-06-15T10:20:00",
+            "duration": 100
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "duration": 100,
+        "segments": [
+          {
+            "origin": {
+              "code": "PRG",
+              "name": "Vaclav Havel Airport Prague",
+              "city": { "code": "PRG", "name": "Prague" }
+            },
+            "destination": {
+              "code": "AMS",
+              "name": "Amsterdam Airport Schiphol",
+              "city": { "code": "AMS", "name": "Amsterdam" }
+            },
+            "marketingFlight": {
+              "number": "1348",
+              "carrier": { "code": "KL", "name": "KLM Royal Dutch Airlines" }
+            },
+            "departureDateTime": "2026-06-15T14:40:00",
+            "arrivalDateTime": "2026-06-15T16:20:00",
+            "duration": 100
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "duration": 100,
+        "segments": [
+          {
+            "origin": {
+              "code": "PRG",
+              "name": "Vaclav Havel Airport Prague",
+              "city": { "code": "PRG", "name": "Prague" }
+            },
+            "destination": {
+              "code": "AMS",
+              "name": "Amsterdam Airport Schiphol",
+              "city": { "code": "AMS", "name": "Amsterdam" }
+            },
+            "marketingFlight": {
+              "number": "1350",
+              "carrier": { "code": "KL", "name": "KLM Royal Dutch Airlines" }
+            },
+            "departureDateTime": "2026-06-15T18:20:00",
+            "arrivalDateTime": "2026-06-15T20:00:00",
+            "duration": 100
+          }
+        ]
+      }
+    ]
+  ]
+}

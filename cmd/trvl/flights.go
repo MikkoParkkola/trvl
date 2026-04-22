@@ -34,6 +34,8 @@ func flightsCmd() *cobra.Command {
 		targetCurrency string
 		compareCabins  bool
 		provider       string
+		award          bool
+		awardCookies   string
 	)
 
 	cmd := &cobra.Command{
@@ -65,6 +67,11 @@ Examples:
 			origins := flights.ParseFlightLocations(originArg)
 			destinations := flights.ParseFlightLocations(args[1])
 			date := args[2]
+
+			// --award: Flying Blue miles price scanner across a date or month range.
+			if award {
+				return runAwardScan(cmd.Context(), origins[0], destinations[0], date, awardCookies, format)
+			}
 
 			cabinClass, err := models.ParseCabinClass(cabin)
 			if err != nil {
@@ -187,6 +194,8 @@ Examples:
 	cmd.Flags().StringVar(&targetCurrency, "currency", "", "Convert prices to this currency (e.g. EUR, USD). Empty = show API default")
 	cmd.Flags().BoolVar(&compareCabins, "compare-cabins", false, "Compare prices across all cabin classes (economy, premium, business, first)")
 	cmd.Flags().StringVar(&provider, "provider", "", "Flight data provider (e.g. afklm). Default: Google Flights")
+	cmd.Flags().BoolVar(&award, "award", false, "Scan Flying Blue miles prices. DATE is a month (2026-06) or a day (2026-06-15). Requires KLM session cookies via AFKL_KLM_COOKIES or --award-cookies.")
+	cmd.Flags().StringVar(&awardCookies, "award-cookies", "", "Raw KLM session Cookie header for award search (alternative to AFKL_KLM_COOKIES env var)")
 
 	cmd.ValidArgsFunction = airportCompletion
 
