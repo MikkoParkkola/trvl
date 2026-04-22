@@ -16,7 +16,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/flights/afklm"
 	"github.com/MikkoParkkola/trvl/internal/hacks"
-	"github.com/MikkoParkkola/trvl/internal/hunt"
+	"github.com/MikkoParkkola/trvl/internal/find"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/points"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
@@ -79,7 +79,7 @@ Examples:
 			// single implementation of the home-airport fan-out rule.
 			if homeFan {
 				if prefs, err := preferences.Load(); err == nil {
-					if expanded, eerr := hunt.ExpandOrigins(strings.Join(origins, ","), prefs); eerr == nil {
+					if expanded, eerr := find.ExpandOrigins(strings.Join(origins, ","), prefs); eerr == nil {
 						origins = expanded
 					}
 				}
@@ -88,7 +88,7 @@ Examples:
 			// --rail-fly: delegate to internal/hunt so rail+fly origin logic
 			// (ZYR/ANR/BRU when AMS present) lives in one place.
 			if railFly {
-				origins = hunt.AddRailFlyOrigins(origins)
+				origins = find.AddRailFlyOrigins(origins)
 			}
 
 			// --award: Flying Blue miles price scanner across a date or month range.
@@ -195,13 +195,13 @@ Examples:
 					mins = int(d.Minutes())
 				}
 				prefs, _ := preferences.Load()
-				huntReq := hunt.HuntRequest{
+				req := find.Request{
 					MinLayoverMinutes: mins,
 					LayoverAirports:   layoverAirports,
 					LoungeRequired:    loungeRequired,
 					NoEarlyConnection: noEarlyConn,
 				}
-				flts, _ := hunt.ApplyFilters(result.Flights, huntReq, prefs)
+				flts, _ := find.ApplyFilters(result.Flights, req, prefs)
 				result.Flights = flts
 				result.Count = len(flts)
 			}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikkoParkkola/trvl/internal/hunt"
+	"github.com/MikkoParkkola/trvl/internal/find"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -24,7 +24,7 @@ func makeFakeFlightsByCode(codes ...string) []models.FlightResult {
 	return out
 }
 
-func TestHuntRequestFromArgs_RoundTrip(t *testing.T) {
+func TestFindRequestFromArgs_RoundTrip(t *testing.T) {
 	t.Parallel()
 	args := map[string]any{
 		"origin":              "home",
@@ -38,7 +38,7 @@ func TestHuntRequestFromArgs_RoundTrip(t *testing.T) {
 		"lounge_required":     true,
 		"top_n":               float64(3),
 	}
-	req := huntRequestFromArgs(args)
+	req := findRequestFromArgs(args)
 	if req.Origin != "home" || req.Destination != "PRG" || req.Date != "2026-04-23" {
 		t.Errorf("core fields missing: %+v", req)
 	}
@@ -58,10 +58,10 @@ func TestHuntRequestFromArgs_RoundTrip(t *testing.T) {
 
 func TestRelaxOptions_OnlyFiltersThatRanAndDropped(t *testing.T) {
 	t.Parallel()
-	log := hunt.HuntFilterLog{
-		LoungeAccess:      hunt.FilterStep{Ran: true, Dropped: 5},
-		NoEarlyConnection: hunt.FilterStep{Ran: true, Dropped: 0}, // ran but dropped nothing
-		LongLayover:       hunt.FilterStep{Ran: false},            // did not run
+	log := find.FilterLog{
+		LoungeAccess:      find.FilterStep{Ran: true, Dropped: 5},
+		NoEarlyConnection: find.FilterStep{Ran: true, Dropped: 0}, // ran but dropped nothing
+		LongLayover:       find.FilterStep{Ran: false},            // did not run
 	}
 	opts := relaxOptions(log)
 	have := map[string]bool{}
@@ -84,8 +84,8 @@ func TestRelaxOptions_OnlyFiltersThatRanAndDropped(t *testing.T) {
 
 func TestFilterImpactText_OmitsFiltersThatDidntRun(t *testing.T) {
 	t.Parallel()
-	log := hunt.HuntFilterLog{
-		LoungeAccess: hunt.FilterStep{Ran: true, Dropped: 3},
+	log := find.FilterLog{
+		LoungeAccess: find.FilterStep{Ran: true, Dropped: 3},
 	}
 	got := filterImpactText(log)
 	if !strings.Contains(got, "lounge −3") {
@@ -126,7 +126,7 @@ func TestPlanFlightBundleTool_SchemaShape(t *testing.T) {
 
 func TestReorderFlightsFirst_HoistsPicked(t *testing.T) {
 	t.Parallel()
-	result := &hunt.HuntResult{
+	result := &find.Result{
 		Flights: makeFakeFlightsByCode("AMS", "BRU", "CDG", "DUS"),
 	}
 	reorderFlightsFirst(result, 2) // move "CDG" to index 0

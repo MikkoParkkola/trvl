@@ -1,13 +1,13 @@
-// Package mcp -- tools_hunt.go
+// Package mcp -- tools_find.go
 //
-// MCP adapters for internal/hunt. Two tools:
+// MCP adapters for internal/find. Two tools:
 //
 //   - plan_flight_bundle : non-interactive parity with `trvl find` (the CLI
 //     command previously named `trvl hunt`; hunt is retained as a hidden
 //     alias for back-compat). Takes
 //     structured args, runs the full pipeline, returns ranked bundles.
 //
-//   - hunt_interactive   : MCP-native flow. Uses elicitation to ask the user
+//   - find_interactive   : MCP-native flow. Uses elicitation to ask the user
 //     which filter to relax when zero results come back, uses progress
 //     notifications during multi-origin fan-out, and uses sampling to have
 //     the client LLM break ties between close-ranked bundles. This is the
@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MikkoParkkola/trvl/internal/hunt"
+	"github.com/MikkoParkkola/trvl/internal/find"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -40,9 +40,9 @@ Returns ranked bundles + filter-impact log so the caller can explain which
 hacks saved money and which filters dropped candidates.
 
 Non-interactive. For the interactive flow that can ask the user to relax
-filters when zero results come back, use hunt_interactive instead.`,
-		InputSchema:  huntInputSchema(),
-		OutputSchema: huntOutputSchema(),
+filters when zero results come back, use find_interactive instead.`,
+		InputSchema:  findInputSchema(),
+		OutputSchema: findOutputSchema(),
 		Annotations: &ToolAnnotations{
 			Title:          "Plan Flight Bundle",
 			ReadOnlyHint:   true,
@@ -54,7 +54,7 @@ filters when zero results come back, use hunt_interactive instead.`,
 
 // handlePlanFlightBundle implements the non-interactive tool.
 func handlePlanFlightBundle(ctx context.Context, args map[string]any, _ ElicitFunc, _ SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
-	req := huntRequestFromArgs(args)
+	req := findRequestFromArgs(args)
 
 	reportProgress := func(stage string, done, total int) {
 		if progress == nil {
@@ -63,12 +63,12 @@ func handlePlanFlightBundle(ctx context.Context, args map[string]any, _ ElicitFu
 		progress(float64(done), float64(total), stage)
 	}
 
-	result, err := hunt.Hunt(ctx, req, nil, reportProgress)
+	result, err := find.Search(ctx, req, nil, reportProgress)
 	if err != nil {
 		return nil, nil, toolExecutionError("plan_flight_bundle", err)
 	}
 
-	summary := formatHuntSummary(result)
+	summary := formatFindSummary(result)
 	blocks, err := buildAnnotatedContentBlocks(summary, result)
 	if err != nil {
 		return nil, nil, err
@@ -76,13 +76,13 @@ func handlePlanFlightBundle(ctx context.Context, args map[string]any, _ ElicitFu
 	return blocks, result, nil
 }
 
-// --- hunt_interactive (elicitation + progress + sampling) ---
+// --- find_interactive (elicitation + progress + sampling) ---
 
-// huntInteractiveTool returns the tool definition for hunt_interactive.
-func huntInteractiveTool() ToolDef {
+// findInteractiveTool returns the tool definition for find_interactive.
+func findInteractiveTool() ToolDef {
 	return ToolDef{
-		Name:  "hunt_interactive",
-		Title: "Hunt Flights (Interactive)",
+		Name:  "find_interactive",
+		Title: "Find Flights (Interactive)",
 		Description: `Interactive flight hunt that can ask the user to relax filters when
 zero results come back.
 
@@ -96,10 +96,10 @@ Flow:
 
 Requires client to declare elicitation capability during initialize. Falls
 back to plan_flight_bundle behavior when elicitation is unavailable.`,
-		InputSchema:  huntInputSchema(),
-		OutputSchema: huntOutputSchema(),
+		InputSchema:  findInputSchema(),
+		OutputSchema: findOutputSchema(),
 		Annotations: &ToolAnnotations{
-			Title:          "Hunt Flights (Interactive)",
+			Title:          "Find Flights (Interactive)",
 			ReadOnlyHint:   true,
 			IdempotentHint: false,
 			OpenWorldHint:  true,
@@ -107,25 +107,25 @@ back to plan_flight_bundle behavior when elicitation is unavailable.`,
 	}
 }
 
-// handleHuntInteractive implements the MCP-native interactive flow.
-func handleHuntInteractive(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
+// handleFindInteractive implements the MCP-native interactive flow.
+func handleFindInteractive(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
 	reportProgress := func(stage string, done, total int) {
 		if progress != nil {
 			progress(float64(done), float64(total), stage)
 		}
 	}
 
-	req := huntRequestFromArgs(args)
-	result, err := hunt.Hunt(ctx, req, nil, reportProgress)
+	req := findRequestFromArgs(args)
+	result, err := find.Search(ctx, req, nil, reportProgress)
 	if err != nil {
-		return nil, nil, toolExecutionError("hunt_interactive", err)
+		return nil, nil, toolExecutionError("find_interactive", err)
 	}
 
 	// Step: if zero results and we have elicitation, offer a relax flow.
 	if result.Count == 0 && elicit != nil {
 		relaxed, relaxErr := relaxAndRetry(ctx, req, result, elicit, reportProgress)
 		if relaxErr != nil {
-			return nil, nil, toolExecutionError("hunt_interactive.relax", relaxErr)
+			return nil, nil, toolExecutionError("find_interactive.relax", relaxErr)
 		}
 		if relaxed != nil {
 			result = relaxed
@@ -140,7 +140,7 @@ func handleHuntInteractive(ctx context.Context, args map[string]any, elicit Elic
 		}
 	}
 
-	summary := formatHuntSummary(result)
+	summary := formatFindSummary(result)
 	blocks, err := buildAnnotatedContentBlocks(summary, result)
 	if err != nil {
 		return nil, nil, err
@@ -150,7 +150,7 @@ func handleHuntInteractive(ctx context.Context, args map[string]any, elicit Elic
 
 // relaxAndRetry asks the user which filter to drop, then re-runs Hunt with
 // that filter disabled. Returns the new result (or nil when user cancels).
-func relaxAndRetry(ctx context.Context, req hunt.HuntRequest, original *hunt.HuntResult, elicit ElicitFunc, progress hunt.Progress) (*hunt.HuntResult, error) {
+func relaxAndRetry(ctx context.Context, req find.Request, original *find.Result, elicit ElicitFunc, progress find.Progress) (*find.Result, error) {
 	options := relaxOptions(original.FiltersApplied)
 	if len(options) == 1 { // only "cancel" — nothing to relax
 		return nil, nil
@@ -193,12 +193,12 @@ func relaxAndRetry(ctx context.Context, req hunt.HuntRequest, original *hunt.Hun
 		return nil, fmt.Errorf("relax action %q not supported", action)
 	}
 
-	return hunt.Hunt(ctx, relaxed, nil, progress)
+	return find.Search(ctx, relaxed, nil, progress)
 }
 
 // relaxOptions returns the list of relax-actions available for the current
 // filter-log, plus the sentinel "cancel".
-func relaxOptions(log hunt.HuntFilterLog) []string {
+func relaxOptions(log find.FilterLog) []string {
 	options := []string{}
 	if log.LoungeAccess.Ran && log.LoungeAccess.Dropped > 0 {
 		options = append(options, "drop_lounge_required")
@@ -215,14 +215,14 @@ func relaxOptions(log hunt.HuntFilterLog) []string {
 
 // sampleBestPick asks the LLM which bundle best matches the user's profile.
 // Returns the index into result.Flights, or -1 when the LLM declines.
-func sampleBestPick(result *hunt.HuntResult, sampling SamplingFunc) int {
+func sampleBestPick(result *find.Result, sampling SamplingFunc) int {
 	lines := []string{
 		"Pick the single best bundle for a traveler who prefers afternoon/evening departures, direct flights when affordable, and rail+fly via Belgium when it saves more than €50. Reply with just the index number (0-indexed).",
 		"",
 	}
 	for i, f := range result.Flights {
 		lines = append(lines, fmt.Sprintf("%d. €%.0f  %s  %s",
-			i, f.Price, hunt.RouteSummary(f), hunt.Annotations(f, result.Origins)))
+			i, f.Price, find.RouteSummary(f), find.Annotations(f, result.Origins)))
 	}
 	prompt := strings.Join(lines, "\n")
 
@@ -246,7 +246,7 @@ func sampleBestPick(result *hunt.HuntResult, sampling SamplingFunc) int {
 
 // reorderFlightsFirst moves the bundle at idx to position 0, preserving the
 // relative order of the remaining bundles.
-func reorderFlightsFirst(result *hunt.HuntResult, idx int) {
+func reorderFlightsFirst(result *find.Result, idx int) {
 	if idx <= 0 || idx >= len(result.Flights) {
 		return
 	}
@@ -264,11 +264,11 @@ func reorderFlightsFirst(result *hunt.HuntResult, idx int) {
 
 // --- Shared helpers ---
 
-// huntRequestFromArgs parses the MCP arg map into a hunt.HuntRequest. Missing
+// findRequestFromArgs parses the MCP arg map into a find.Request. Missing
 // fields fall back to zero values (which hunt.Hunt interprets as "use profile
 // default").
-func huntRequestFromArgs(args map[string]any) hunt.HuntRequest {
-	return hunt.HuntRequest{
+func findRequestFromArgs(args map[string]any) find.Request {
+	return find.Request{
 		Origin:            argString(args, "origin"),
 		Destination:       argString(args, "destination"),
 		Date:              argString(args, "departure_date"),
@@ -283,9 +283,9 @@ func huntRequestFromArgs(args map[string]any) hunt.HuntRequest {
 	}
 }
 
-// formatHuntSummary renders a one-paragraph human-readable summary of the
+// formatFindSummary renders a one-paragraph human-readable summary of the
 // result. Used as the user-facing text ContentBlock.
-func formatHuntSummary(r *hunt.HuntResult) string {
+func formatFindSummary(r *find.Result) string {
 	if r == nil || r.Count == 0 {
 		pre := 0
 		if r != nil {
@@ -299,7 +299,7 @@ func formatHuntSummary(r *hunt.HuntResult) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Found %d bundle(s) across origins %v. Cheapest: €%.0f (%s).\n",
-		r.Count, r.Origins, r.Flights[0].Price, hunt.RouteSummary(r.Flights[0]))
+		r.Count, r.Origins, r.Flights[0].Price, find.RouteSummary(r.Flights[0]))
 	if r.PreFilterCount > r.Count {
 		fmt.Fprintf(&b, "Filter impact: %s\n", filterImpactText(r.FiltersApplied))
 	}
@@ -307,7 +307,7 @@ func formatHuntSummary(r *hunt.HuntResult) string {
 }
 
 // filterImpactText summarises which filters dropped how many.
-func filterImpactText(log hunt.HuntFilterLog) string {
+func filterImpactText(log find.FilterLog) string {
 	parts := []string{}
 	if log.LongLayover.Ran {
 		parts = append(parts, fmt.Sprintf("long-layover −%d", log.LongLayover.Dropped))
@@ -324,8 +324,8 @@ func filterImpactText(log hunt.HuntFilterLog) string {
 	return strings.Join(parts, ", ")
 }
 
-// huntInputSchema is shared by both the non-interactive and interactive tool.
-func huntInputSchema() InputSchema {
+// findInputSchema is shared by both the non-interactive and interactive tool.
+func findInputSchema() InputSchema {
 	return InputSchema{
 		Type: "object",
 		Properties: map[string]Property{
@@ -345,8 +345,8 @@ func huntInputSchema() InputSchema {
 	}
 }
 
-// huntOutputSchema is the structured-output JSON Schema for both tools.
-func huntOutputSchema() interface{} {
+// findOutputSchema is the structured-output JSON Schema for both tools.
+func findOutputSchema() interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{

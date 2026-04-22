@@ -6,12 +6,12 @@
 // one orchestrator guarantees CLI↔MCP feature parity structurally — adding a
 // capability here surfaces it on every adapter without extra wiring.
 //
-// Request shape: [[HuntRequest]]. Result shape: [[HuntResult]]. Top-level
-// entrypoint: [[Hunt]].
+// Request shape: [[Request]]. Result shape: [[Result]]. Top-level
+// entrypoint: [[Search]].
 //
 // Reference: ~/.claude/data/travel_search_mental_model.md — "TRVL IMPROVEMENT
 // PROPOSAL, section 7-step algorithm".
-package hunt
+package find
 
 import (
 	"context"
@@ -25,9 +25,9 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
 
-// HuntRequest captures one hunt invocation. Fields are additive — zero values
+// Request captures one hunt invocation. Fields are additive — zero values
 // mean "use profile default" so callers never need to set the full set.
-type HuntRequest struct {
+type Request struct {
 	// Origin is typically "home" (expanded from preferences.HomeAirports)
 	// or an explicit comma-separated IATA list like "HEL,AMS".
 	Origin string
@@ -82,8 +82,8 @@ type HuntRequest struct {
 	PreferencesOverride *preferences.Preferences
 }
 
-// HuntResult is the synthesised response.
-type HuntResult struct {
+// Result is the synthesised response.
+type Result struct {
 	// Flights is the ranked, top-N-sliced bundle list.
 	Flights []models.FlightResult `json:"flights"`
 
@@ -98,20 +98,20 @@ type HuntResult struct {
 	Origins []string `json:"origins"`
 
 	// FiltersApplied summarises which filters ran. Useful for UI + telemetry.
-	FiltersApplied HuntFilterLog `json:"filters_applied"`
+	FiltersApplied FilterLog `json:"filters_applied"`
 
 	// PreFilterCount is the flight count before filters. Helps detect
 	// "filters too strict" states.
 	PreFilterCount int `json:"pre_filter_count"`
 
 	// HiddenCityCandidates lists detected savings opportunities when
-	// HuntRequest.HiddenCity was set. Empty slice otherwise.
+	// Request.HiddenCity was set. Empty slice otherwise.
 	HiddenCityCandidates []flights.HiddenCityCandidate `json:"hidden_city_candidates,omitempty"`
 }
 
-// HuntFilterLog records which filters executed and how many flights each
+// FilterLog records which filters executed and how many flights each
 // removed. Useful for MCP's interactive relax flow.
-type HuntFilterLog struct {
+type FilterLog struct {
 	LongLayover       FilterStep `json:"long_layover"`
 	LoungeAccess      FilterStep `json:"lounge_access"`
 	NoEarlyConnection FilterStep `json:"no_early_connection"`
@@ -140,7 +140,7 @@ func DefaultSearch(ctx context.Context, origins, dests []string, date string, op
 	return flights.SearchFlights(ctx, origins[0], dests[0], date, opts)
 }
 
-// Hunt runs the orchestrator pipeline end-to-end.
+// Search runs the orchestrator pipeline end-to-end.
 //
 // Steps (mirrors travel_search_mental_model.md):
 //  1. Resolve profile + expand origin (home-fan)
@@ -151,7 +151,7 @@ func DefaultSearch(ctx context.Context, origins, dests []string, date string, op
 //
 // The search argument is typically DefaultSearch; tests inject fakes.
 // progress is optional (nil-safe) and is called at each stage transition.
-func Hunt(ctx context.Context, req HuntRequest, search SearchFunc, progress Progress) (*HuntResult, error) {
+func Search(ctx context.Context, req Request, search SearchFunc, progress Progress) (*Result, error) {
 	if search == nil {
 		search = DefaultSearch
 	}
@@ -229,7 +229,7 @@ func Hunt(ctx context.Context, req HuntRequest, search SearchFunc, progress Prog
 	}
 
 	progress("done", 5, 5)
-	return &HuntResult{
+	return &Result{
 		Flights:              flts,
 		Count:                len(flts),
 		TripType:             result.TripType,
@@ -307,8 +307,8 @@ func AddRailFlyOrigins(origins []string) []string {
 
 // ApplyFilters runs the Mikko filter stack in canonical order and returns
 // both the filtered list and a step-by-step log.
-func ApplyFilters(flts []models.FlightResult, req HuntRequest, prefs *preferences.Preferences) ([]models.FlightResult, HuntFilterLog) {
-	log := HuntFilterLog{}
+func ApplyFilters(flts []models.FlightResult, req Request, prefs *preferences.Preferences) ([]models.FlightResult, FilterLog) {
+	log := FilterLog{}
 
 	if req.MinLayoverMinutes > 0 || len(req.LayoverAirports) > 0 {
 		before := len(flts)

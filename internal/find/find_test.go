@@ -1,4 +1,4 @@
-package hunt
+package find
 
 import (
 	"context"
@@ -89,7 +89,7 @@ func TestApplyFilters_LoungeRequiredDropsUncovered(t *testing.T) {
 			},
 		},
 	}
-	req := HuntRequest{LoungeRequired: true}
+	req := Request{LoungeRequired: true}
 	out, log := ApplyFilters(flts, req, prefs)
 	if log.LoungeAccess.Dropped != 1 {
 		t.Errorf("expected 1 drop by lounge filter, got %+v", log.LoungeAccess)
@@ -111,7 +111,7 @@ func TestApplyFilters_NoEarlyConnectionDropsEarly(t *testing.T) {
 			},
 		},
 	}
-	req := HuntRequest{NoEarlyConnection: true}
+	req := Request{NoEarlyConnection: true}
 	out, log := ApplyFilters(flts, req, prefs)
 	if log.NoEarlyConnection.Dropped != 1 {
 		t.Errorf("expected 1 drop, got %+v", log.NoEarlyConnection)
@@ -121,7 +121,7 @@ func TestApplyFilters_NoEarlyConnectionDropsEarly(t *testing.T) {
 	}
 }
 
-func TestHunt_FullPipelineWithFakeSearch(t *testing.T) {
+func TestSearch_FullPipelineWithFakeSearch(t *testing.T) {
 	prefs := mkPrefs()
 
 	// Fake search returns two bundles at different prices; cheaper should
@@ -147,7 +147,7 @@ func TestHunt_FullPipelineWithFakeSearch(t *testing.T) {
 		progressSeen = append(progressSeen, stage)
 	}
 
-	req := HuntRequest{
+	req := Request{
 		Origin:              "home",
 		Destination:         "PRG",
 		Date:                "2026-04-23",
@@ -155,7 +155,7 @@ func TestHunt_FullPipelineWithFakeSearch(t *testing.T) {
 		TopN:                2,
 		PreferencesOverride: prefs,
 	}
-	res, err := Hunt(context.Background(), req, fakeSearch, progress)
+	res, err := Search(context.Background(), req, fakeSearch, progress)
 	if err != nil {
 		t.Fatalf("Hunt: %v", err)
 	}

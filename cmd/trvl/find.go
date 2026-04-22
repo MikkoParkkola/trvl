@@ -22,8 +22,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 
-	"github.com/MikkoParkkola/trvl/internal/hunt"
+	"github.com/MikkoParkkola/trvl/internal/find"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/spf13/cobra"
 )
@@ -31,11 +32,11 @@ import (
 // findCmd returns the primary `trvl find` command (Mikko's orchestrated
 // search). findCmdWith takes a cobra Use template so both `find` and the
 // hidden `hunt` alias can share the implementation.
-func findCmd() *cobra.Command { return findCmdWith("find ORIGIN DESTINATION DATE", false) }
+func findCmd() *cobra.Command { return findCmdWith("find [ORIGIN] DESTINATION [DATE]", false) }
 
 // huntCmd returns the hidden back-compat alias `trvl hunt`. Delegates to
 // findCmd's implementation so behavior stays identical.
-func huntCmd() *cobra.Command { return findCmdWith("hunt ORIGIN DESTINATION DATE", true) }
+func huntCmd() *cobra.Command { return findCmdWith("hunt [ORIGIN] DESTINATION [DATE]", true) }
 
 func findCmdWith(use string, hidden bool) *cobra.Command {
 	var (
@@ -65,27 +66,31 @@ func findCmdWith(use string, hidden bool) *cobra.Command {
 6. Rank: cheapest profile-compliant first
 7. Top N bundles presented
 
-ORIGIN is typically "home" (expanded from preferences.home_airports).
-DATE is ISO 8601 (2026-04-23).
+ORIGIN defaults to "home" (expanded from preferences.home_airports).
+DATE defaults to the next Saturday at least 14 days out.
+With a single argument (destination only) trvl picks both for you.
 
 Example:
-  trvl find home PRG 2026-04-23 --return 2026-06-03 --no-early-connection --lounge-required`,
-		Args: cobra.ExactArgs(3),
+  trvl find PRG                                     # origin=home, date=next Saturday 14d+
+  trvl find AMS PRG                                 # origin explicit, date inferred
+  trvl find home PRG 2026-04-23 --return 2026-06-03 # all three args`,
+		Args: cobra.RangeArgs(1, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			req := hunt.HuntRequest{
-				Origin:            args[0],
-				Destination:       args[1],
-				Date:              args[2],
+			origin, dest, date := inferFindArgs(args)
+			req := find.Request{
+				Origin:            origin,
+				Destination:       dest,
+				Date:              date,
 				ReturnDate:        returnDate,
 				Cabin:             cabin,
-				MinLayoverMinutes: hunt.ParseDuration(minLayoverStr),
+				MinLayoverMinutes: find.ParseDuration(minLayoverStr),
 				LayoverAirports:   layoverAirports,
 				NoEarlyConnection: noEarlyConn,
 				LoungeRequired:    loungeRequired,
 				HiddenCity:        hiddenCity,
 				TopN:              topN,
 			}
-			return runFind(cmd.Context(), req, format, calendarInsert)
+			return runFind(cmd.Context(), req, format, calendarInsert, len(args))
 		},
 	}
 
@@ -105,10 +110,24 @@ Example:
 	return cmd
 }
 
-// runFind orchestrates one CLI invocation — it calls internal/hunt and
-// presents the result in the requested format.
-func runFind(ctx context.Context, req hunt.HuntRequest, format string, calendarInsert bool) error {
-	result, err := hunt.Hunt(ctx, req, nil, nil)
+// runFind orchestrates one CLI invocation — calls internal/find, prints
+// the inferred-defaults banner when the caller omitted positional args,
+// and presents the result in the requested format.
+//
+// argCount is how many positional args the user actually supplied. Used
+// only to decide whether to surface the "filled in defaults" banner.
+func runFind(ctx context.Context, req find.Request, format string, calendarInsert bool, argCount int) error {
+	if format != "json" && argCount < 3 {
+		if argCount < 2 {
+			fmt.Printf("Inferred origin=%s  date=%s (override with positional args)\n\n",
+				req.Origin, req.Date)
+		} else {
+			fmt.Printf("Inferred date=%s (override with a third positional arg)\n\n",
+				req.Date)
+		}
+	}
+
+	result, err := find.Search(ctx, req, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -134,10 +153,15 @@ func runFind(ctx context.Context, req hunt.HuntRequest, format string, calendarI
 		return nil
 	}
 
-	fmt.Printf("🎯 Mikko-find: top %d bundles\n\n", len(result.Flights))
+	baseline := baselineDirectPrice(result.Flights)
+	fmt.Printf("trvl find: top %d bundles\n\n", len(result.Flights))
 	for i, f := range result.Flights {
-		hacks := hunt.Annotations(f, result.Origins)
-		fmt.Printf("%d. €%.0f  %s  %s\n", i+1, f.Price, hunt.RouteSummary(f), hacks)
+		hacks := find.Annotations(f, result.Origins)
+		savings := ""
+		if baseline > 0 && f.Price < baseline && hacks != "" {
+			savings = fmt.Sprintf("  [saves €%.0f vs direct]", baseline-f.Price)
+		}
+		fmt.Printf("%d. €%.0f  %s  %s%s\n", i+1, f.Price, find.RouteSummary(f), hacks, savings)
 	}
 
 	if calendarInsert && len(result.Flights) > 0 {
@@ -151,7 +175,7 @@ func runFind(ctx context.Context, req hunt.HuntRequest, format string, calendarI
 
 // filterSummary renders which filters dropped how many flights. Used in the
 // "no results" explainer so the user knows which knob to loosen.
-func filterSummary(log hunt.HuntFilterLog) string {
+func filterSummary(log find.FilterLog) string {
 	parts := []string{}
 	if log.LongLayover.Ran {
 		parts = append(parts, fmt.Sprintf("long-layover=-%d", log.LongLayover.Dropped))
@@ -175,7 +199,7 @@ func filterSummary(log hunt.HuntFilterLog) string {
 // insertBundleCalendar shells out to `gws calendar insert` for the flight.
 // Non-fatal on failure — printed to stderr.
 func insertBundleCalendar(f models.FlightResult) error {
-	title, start, end, desc, err := hunt.CalendarEventForBundle(f)
+	title, start, end, desc, err := find.CalendarEventForBundle(f)
 	if err != nil {
 		return err
 	}
@@ -187,4 +211,56 @@ func insertBundleCalendar(f models.FlightResult) error {
 	)
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+
+// inferFindArgs maps positional args to (origin, destination, date) using
+// profile-first defaults: origin defaults to "home", date defaults to the
+// next Saturday at least 14 days out. Destination is always required.
+//
+// Call shapes:
+//
+//	1 arg : [dest]               origin=home, date=autoDate
+//	2 args: [origin, dest]       date=autoDate
+//	3 args: [origin, dest, date] as-is (classic shape)
+func inferFindArgs(args []string) (origin, destination, date string) {
+	switch len(args) {
+	case 1:
+		return "home", args[0], nextSaturdayISO(time.Now())
+	case 2:
+		return args[0], args[1], nextSaturdayISO(time.Now())
+	default:
+		return args[0], args[1], args[2]
+	}
+}
+
+// nextSaturdayISO returns the next Saturday that is at least 14 days after
+// `from`, formatted as an ISO 8601 date. The 14-day buffer avoids last-
+// minute pricing and leaves time for rail+fly logistics.
+func nextSaturdayISO(from time.Time) string {
+	target := from.AddDate(0, 0, 14)
+	// time.Saturday == 6
+	offset := (int(time.Saturday) - int(target.Weekday()) + 7) % 7
+	target = target.AddDate(0, 0, offset)
+	return target.Format("2006-01-02")
+}
+
+// baselineDirectPrice returns the cheapest fare across bundles whose first
+// leg is NOT a rail-fly origin (ZYR/ANR/BRU). Returns 0 when no direct
+// bundles exist — callers suppress the savings callout in that case.
+func baselineDirectPrice(fls []models.FlightResult) float64 {
+	railFly := map[string]bool{"ZYR": true, "ANR": true, "BRU": true}
+	best := 0.0
+	for _, f := range fls {
+		if len(f.Legs) == 0 {
+			continue
+		}
+		if railFly[f.Legs[0].DepartureAirport.Code] {
+			continue
+		}
+		if best == 0 || f.Price < best {
+			best = f.Price
+		}
+	}
+	return best
 }

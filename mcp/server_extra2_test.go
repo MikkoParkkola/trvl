@@ -181,9 +181,9 @@ func TestToolAnnotations(t *testing.T) {
 		"add_booking":             true,
 		"watch_price":             true,
 		"check_watches":           true,
-		// hunt_interactive can trigger elicitation and sampling, whose replies
+		// find_interactive can trigger elicitation and sampling, whose replies
 		// are not reproducible across calls — flag it non-idempotent.
-		"hunt_interactive": true,
+		"find_interactive": true,
 	}
 
 	s := NewServer()
