@@ -317,7 +317,8 @@ func TestAirportAffinity_OldFileBackCompat(t *testing.T) {
 		t.Fatalf("LoadFrom legacy file: %v", err)
 	}
 	// AirportAffinity may be nil — that is acceptable; callers must handle nil.
-	if loaded.AirportAffinity != nil && len(loaded.AirportAffinity) != 0 {
+	// len() on a nil map is defined as 0, so a single length check covers both.
+	if len(loaded.AirportAffinity) != 0 {
 		t.Errorf("expected nil/empty affinity from legacy file, got %v", loaded.AirportAffinity)
 	}
 }
