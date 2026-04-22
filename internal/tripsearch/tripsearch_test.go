@@ -180,6 +180,44 @@ func TestSearch_FullPipelineWithFakeSearch(t *testing.T) {
 	}
 }
 
+func TestExpandOrigins_AffinityIncludedAtThreshold(t *testing.T) {
+	prefs := mkPrefs()
+	prefs.AirportAffinity = map[string]int{"CDG": 3, "LIS": 2}
+
+	out, err := ExpandOrigins("home", prefs)
+	if err != nil {
+		t.Fatalf("ExpandOrigins: %v", err)
+	}
+	got := map[string]bool{}
+	for _, o := range out {
+		got[o] = true
+	}
+	if !got["CDG"] {
+		t.Errorf("CDG (affinity=3) should be included in home fan-out, got %v", out)
+	}
+	if got["LIS"] {
+		t.Errorf("LIS (affinity=2) should NOT be included (below threshold), got %v", out)
+	}
+}
+
+func TestExpandOrigins_AffinityNotAppliedToExplicitOrigin(t *testing.T) {
+	prefs := mkPrefs()
+	prefs.AirportAffinity = map[string]int{"CDG": 10}
+
+	// Explicit "HEL" — affinity fan-out must NOT apply.
+	out, err := ExpandOrigins("HEL", prefs)
+	if err != nil {
+		t.Fatalf("ExpandOrigins: %v", err)
+	}
+	got := map[string]bool{}
+	for _, o := range out {
+		got[o] = true
+	}
+	if got["CDG"] {
+		t.Errorf("CDG should not appear when origin is explicit 'HEL', got %v", out)
+	}
+}
+
 func TestRouteSummary(t *testing.T) {
 	f := models.FlightResult{Legs: []models.FlightLeg{
 		{DepartureAirport: models.AirportInfo{Code: "BRU"}, ArrivalAirport: models.AirportInfo{Code: "AMS"}},

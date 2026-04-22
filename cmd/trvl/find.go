@@ -21,14 +21,15 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/calendarbusy"
-	"github.com/MikkoParkkola/trvl/internal/tripsearch"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/preferences"
+	"github.com/MikkoParkkola/trvl/internal/tripsearch"
 	"github.com/spf13/cobra"
 )
 
@@ -145,6 +146,19 @@ func runFind(ctx context.Context, req tripsearch.Request, format string, calenda
 	result, err := tripsearch.Search(ctx, req, nil, nil)
 	if err != nil {
 		return err
+	}
+
+	// When the user did not supply an explicit origin (argCount < 2) and the
+	// search returned results, record the winning bundle's departure airport so
+	// future searches progressively include high-affinity origins in home-fan
+	// expansion. Non-fatal — a write failure never blocks search output.
+	if argCount < 2 && len(result.Flights) > 0 && len(result.Flights[0].Legs) > 0 {
+		winner := result.Flights[0].Legs[0].DepartureAirport.Code
+		if winner != "" {
+			if rerr := preferences.RecordWinningOrigin(winner); rerr != nil {
+				fmt.Fprintf(os.Stderr, "affinity update skipped: %v\n", rerr)
+			}
+		}
 	}
 
 	if format == "json" {

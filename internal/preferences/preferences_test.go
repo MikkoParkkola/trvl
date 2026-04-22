@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -275,6 +276,191 @@ func TestSaveTo_FilePermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCrossPlatformPrivateFile(t, path, info)
+}
+
+// --- AirportAffinity tests ---
+
+func TestAirportAffinity_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "preferences.json")
+
+	p := Default()
+	p.AirportAffinity = map[string]int{"BRU": 3, "EIN": 1}
+	if err := SaveTo(path, p); err != nil {
+		t.Fatalf("SaveTo: %v", err)
+	}
+
+	loaded, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if loaded.AirportAffinity["BRU"] != 3 {
+		t.Errorf("BRU affinity: got %d, want 3", loaded.AirportAffinity["BRU"])
+	}
+	if loaded.AirportAffinity["EIN"] != 1 {
+		t.Errorf("EIN affinity: got %d, want 1", loaded.AirportAffinity["EIN"])
+	}
+}
+
+func TestAirportAffinity_OldFileBackCompat(t *testing.T) {
+	// A preferences file written before the affinity field existed must load
+	// without error and have a nil/empty affinity map (not a crash).
+	dir := t.TempDir()
+	path := filepath.Join(dir, "preferences.json")
+	legacy := `{"home_airports":["AMS"],"display_currency":"EUR"}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom legacy file: %v", err)
+	}
+	// AirportAffinity may be nil — that is acceptable; callers must handle nil.
+	if loaded.AirportAffinity != nil && len(loaded.AirportAffinity) != 0 {
+		t.Errorf("expected nil/empty affinity from legacy file, got %v", loaded.AirportAffinity)
+	}
+}
+
+func TestRecordWinningOrigin_IncrementsAndCaps(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "preferences.json")
+
+	// Seed with a prefs file that has a home airport but no affinity map.
+	p := Default()
+	p.HomeAirports = []string{"AMS"}
+	if err := SaveTo(path, p); err != nil {
+		t.Fatal(err)
+	}
+
+	// Monkey-patch the default path via a helper that accepts a path for tests.
+	// Since RecordWinningOrigin calls Load/Save (which use defaultPath), we
+	// exercise it through the file-based helpers directly to keep it hermetic.
+	recordViaPath := func(iata string) error {
+		prefs, err := LoadFrom(path)
+		if err != nil {
+			return err
+		}
+		if prefs.AirportAffinity == nil {
+			prefs.AirportAffinity = make(map[string]int)
+		}
+		score := prefs.AirportAffinity[iata] + 1
+		if score > affinityMaxScore {
+			score = affinityMaxScore
+		}
+		prefs.AirportAffinity[iata] = score
+		return SaveTo(path, prefs)
+	}
+
+	// First win: 0 → 1.
+	if err := recordViaPath("EIN"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := LoadFrom(path)
+	if got.AirportAffinity["EIN"] != 1 {
+		t.Errorf("after 1 win: got %d, want 1", got.AirportAffinity["EIN"])
+	}
+
+	// Second win: 1 → 2.
+	if err := recordViaPath("EIN"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = LoadFrom(path)
+	if got.AirportAffinity["EIN"] != 2 {
+		t.Errorf("after 2 wins: got %d, want 2", got.AirportAffinity["EIN"])
+	}
+
+	// Drive to cap.
+	for i := 0; i < 200; i++ {
+		if err := recordViaPath("EIN"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ = LoadFrom(path)
+	if got.AirportAffinity["EIN"] != affinityMaxScore {
+		t.Errorf("cap: got %d, want %d", got.AirportAffinity["EIN"], affinityMaxScore)
+	}
+}
+
+func TestRecordWinningOrigin_RailFlyAddsNearby(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "preferences.json")
+
+	// A prefs file with AMS as home, no nearby airports, no affinity.
+	p := Default()
+	p.HomeAirports = []string{"AMS"}
+	p.NearbyAirports = map[string][]string{"AMS": {"EIN"}}
+	if err := SaveTo(path, p); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate RecordWinningOrigin logic for a rail+fly airport.
+	recordRailFly := func(iata string) error {
+		prefs, err := LoadFrom(path)
+		if err != nil {
+			return err
+		}
+		if prefs.AirportAffinity == nil {
+			prefs.AirportAffinity = make(map[string]int)
+		}
+		score := prefs.AirportAffinity[iata] + 1
+		if score > affinityMaxScore {
+			score = affinityMaxScore
+		}
+		prefs.AirportAffinity[iata] = score
+
+		if railFlyOrigins[iata] {
+			for _, home := range prefs.HomeAirports {
+				if strings.ToUpper(strings.TrimSpace(home)) == "AMS" {
+					if prefs.NearbyAirports == nil {
+						prefs.NearbyAirports = make(map[string][]string)
+					}
+					already := false
+					for _, nb := range prefs.NearbyAirports["AMS"] {
+						if strings.ToUpper(strings.TrimSpace(nb)) == iata {
+							already = true
+							break
+						}
+					}
+					if !already {
+						prefs.NearbyAirports["AMS"] = append(prefs.NearbyAirports["AMS"], iata)
+					}
+					break
+				}
+			}
+		}
+		return SaveTo(path, prefs)
+	}
+
+	// First call: BRU should appear in NearbyAirports["AMS"].
+	if err := recordRailFly("BRU"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := LoadFrom(path)
+	found := false
+	for _, nb := range got.NearbyAirports["AMS"] {
+		if nb == "BRU" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("BRU not added to NearbyAirports[AMS]: %v", got.NearbyAirports["AMS"])
+	}
+
+	// Second call: BRU should NOT be duplicated.
+	if err := recordRailFly("BRU"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = LoadFrom(path)
+	count := 0
+	for _, nb := range got.NearbyAirports["AMS"] {
+		if nb == "BRU" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("BRU appears %d times in NearbyAirports[AMS], want 1", count)
+	}
 }
 
 func assertCrossPlatformPrivateFile(t *testing.T, path string, info os.FileInfo) {

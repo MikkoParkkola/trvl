@@ -240,9 +240,18 @@ func Search(ctx context.Context, req Request, search SearchFunc, progress Progre
 	}, nil
 }
 
+// affinityThreshold is the minimum AirportAffinity score for an airport to
+// be included in home-fan expansion. Three wins signals a reliable pattern.
+const affinityThreshold = 3
+
 // ExpandOrigins resolves "home" and applies nearby-airport fan-out from
 // preferences. When the origin is explicit (e.g. "HEL,AMS") it still fans out
 // each listed airport to its nearby siblings.
+//
+// When origin is "home", airports with AirportAffinity >= affinityThreshold
+// are also included — this implements the "tool learns my preferences" loop
+// where successful searches reinforce future fan-out. The explicit-origin path
+// is NOT affected.
 func ExpandOrigins(originArg string, prefs *preferences.Preferences) ([]string, error) {
 	fanned := map[string]bool{}
 
@@ -254,6 +263,12 @@ func ExpandOrigins(originArg string, prefs *preferences.Preferences) ([]string, 
 			fanned[h] = true
 			for _, nb := range prefs.NearbyAirportsFor(h) {
 				fanned[nb] = true
+			}
+		}
+		// Include high-affinity airports learned from past searches.
+		for iata, score := range prefs.AirportAffinity {
+			if score >= affinityThreshold {
+				fanned[strings.ToUpper(strings.TrimSpace(iata))] = true
 			}
 		}
 	} else {
