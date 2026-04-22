@@ -581,8 +581,16 @@ func TestCryptoRandom_NoArgsPanics(t *testing.T) {
 		t.Fatalf("cryptoRandom no args: %v", err)
 	}
 	v := vm.Get("__cryptoErr")
-	if v == nil || !strings.Contains(v.String(), "typed array") {
-		t.Errorf("expected typed array error, got %v", v)
+	// Accept both error strings: the custom "typed array" message (raised
+	// when our stub receives a defined argument) AND the built-in TypeError
+	// that current Sobek versions raise for missing arguments before our
+	// stub runs. Either proves the no-args path panics.
+	if v == nil {
+		t.Fatal("expected an error message from getRandomValues(), got nil")
+	}
+	msg := v.String()
+	if !strings.Contains(msg, "typed array") && !strings.Contains(msg, "TypeError") {
+		t.Errorf("expected typed-array or TypeError, got %q", msg)
 	}
 }
 
@@ -649,8 +657,14 @@ func TestFireDueTimers_IntervalRearms(t *testing.T) {
 	cb, _ := vm.RunString(`(function() {})`)
 	fn, _ := sobek.AssertFunction(cb)
 
-	// Schedule a repeating timer with 0 delay.
-	loop.scheduleTimer(fn, 0, true)
+	// Schedule a repeating timer with a tiny non-zero delay. A 0-ms interval
+	// is a busy-loop and fireDueTimers intentionally does NOT re-arm it (see
+	// eventloop.go: `top.interval > 0`), so we use 1ms to exercise the
+	// genuine re-arm path.
+	loop.scheduleTimer(fn, 1*time.Millisecond, true)
+
+	// Wait past the deadline so fireDueTimers has something to pop.
+	time.Sleep(2 * time.Millisecond)
 
 	// Fire once — the timer should re-arm.
 	loop.fireDueTimers(func(err error) {
@@ -660,7 +674,7 @@ func TestFireDueTimers_IntervalRearms(t *testing.T) {
 		t.Errorf("fired = %d, want 1", fired)
 	}
 
-	// The timer should still be in the heap (re-armed).
+	// The timer should still be in the heap (re-armed for next tick).
 	if len(loop.timers) != 1 {
 		t.Errorf("timers in heap = %d, want 1 (re-armed)", len(loop.timers))
 	}

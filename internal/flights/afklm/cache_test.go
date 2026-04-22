@@ -3,6 +3,7 @@ package afklm
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -185,13 +186,16 @@ func TestCacheAtomicWrite(t *testing.T) {
 		}
 	}
 
-	// Verify the written file has 0600 perms.
+	// Verify the written file has 0600 perms on Unix. Windows does not
+	// honour POSIX file modes — os.Chmod maps to a two-bit read-only flag,
+	// so Stat() returns 0666 regardless. Skip the permission assertion
+	// there; the atomic-write behaviour under test is unaffected.
 	path := filepath.Join(dir, "entries", key+".json")
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("expected 0600, got %o", info.Mode().Perm())
 	}
 }
