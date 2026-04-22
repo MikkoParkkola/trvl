@@ -51,11 +51,11 @@ func TestNewServer(t *testing.T) {
 	if s == nil {
 		t.Fatal("NewServer returned nil")
 	}
-	if len(s.tools) != 55 {
-		t.Errorf("expected 55 tools, got %d", len(s.tools))
+	if len(s.tools) != 57 {
+		t.Errorf("expected 57 tools, got %d", len(s.tools))
 	}
-	if len(s.handlers) != 55 {
-		t.Errorf("expected 55 handlers, got %d", len(s.handlers))
+	if len(s.handlers) != 57 {
+		t.Errorf("expected 57 handlers, got %d", len(s.handlers))
 	}
 }
 
@@ -181,6 +181,9 @@ func TestToolAnnotations(t *testing.T) {
 		"add_booking":             true,
 		"watch_price":             true,
 		"check_watches":           true,
+		// hunt_interactive can trigger elicitation and sampling, whose replies
+		// are not reproducible across calls — flag it non-idempotent.
+		"hunt_interactive": true,
 	}
 
 	s := NewServer()

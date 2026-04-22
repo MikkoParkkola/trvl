@@ -1,11 +1,12 @@
 // Package main -- hunt.go
 //
-// `trvl hunt` orchestrator command. Runs Mikko's mental-model flight search
-// algorithm end-to-end: multi-airport origin spread, rail+fly, hidden-city
-// detection, time/lounge filters, and (optional) Google Calendar insert for
-// the chosen bundle.
+// `trvl hunt` orchestrator command. Thin CLI adapter that delegates all
+// business logic to internal/hunt — the shared orchestrator used by both CLI
+// and MCP. Keeping this file "thin" is the parity guarantee: any capability
+// added to internal/hunt is automatically available on both surfaces.
 //
-// Reference: travel_search_mental_model.md section "TRVL IMPROVEMENT PROPOSAL".
+// Reference: ~/.claude/data/travel_search_mental_model.md section "TRVL
+// IMPROVEMENT PROPOSAL".
 
 package main
 
@@ -14,13 +15,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sort"
-	"strings"
-	"time"
 
-	"github.com/MikkoParkkola/trvl/internal/flights"
+	"github.com/MikkoParkkola/trvl/internal/hunt"
 	"github.com/MikkoParkkola/trvl/internal/models"
-	"github.com/MikkoParkkola/trvl/internal/preferences"
 	"github.com/spf13/cobra"
 )
 
@@ -32,7 +29,7 @@ func huntCmd() *cobra.Command {
 		format          string
 		minLayoverStr   string
 		layoverAirports []string
-		noEarlyConn        bool
+		noEarlyConn     bool
 		loungeRequired  bool
 		hiddenCity      bool
 		topN            int
@@ -59,21 +56,20 @@ Example:
   trvl hunt home PRG 2026-04-23 --return 2026-06-03 --no-early-connection --lounge-required`,
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runHunt(cmd.Context(), huntOpts{
-				origin:          args[0],
-				destination:     args[1],
-				date:            args[2],
-				returnDate:      returnDate,
-				cabin:           cabin,
-				format:          format,
-				minLayoverStr:   minLayoverStr,
-				layoverAirports: layoverAirports,
-				noEarlyConn:        noEarlyConn,
-				loungeRequired:  loungeRequired,
-				hiddenCity:      hiddenCity,
-				topN:            topN,
-				calendarInsert:  calendarInsert,
-			})
+			req := hunt.HuntRequest{
+				Origin:            args[0],
+				Destination:       args[1],
+				Date:              args[2],
+				ReturnDate:        returnDate,
+				Cabin:             cabin,
+				MinLayoverMinutes: hunt.ParseDuration(minLayoverStr),
+				LayoverAirports:   layoverAirports,
+				NoEarlyConnection: noEarlyConn,
+				LoungeRequired:    loungeRequired,
+				HiddenCity:        hiddenCity,
+				TopN:              topN,
+			}
+			return runHunt(cmd.Context(), req, format, calendarInsert)
 		},
 	}
 
@@ -93,79 +89,43 @@ Example:
 	return cmd
 }
 
-type huntOpts struct {
-	origin, destination, date, returnDate string
-	cabin, format, minLayoverStr          string
-	layoverAirports                       []string
-	noEarlyConn, loungeRequired, hiddenCity  bool
-	topN                                  int
-	calendarInsert                        bool
-}
-
-func runHunt(ctx context.Context, o huntOpts) error {
-	// Step 1+2: resolve home, expand to multi-airport origins.
-	origins, err := expandHuntOrigins(o.origin)
+// runHunt orchestrates one CLI hunt invocation — it calls internal/hunt and
+// presents the result in the requested format.
+func runHunt(ctx context.Context, req hunt.HuntRequest, format string, calendarInsert bool) error {
+	result, err := hunt.Hunt(ctx, req, nil, nil)
 	if err != nil {
 		return err
 	}
 
-	// Step 3: add rail+fly when AMS present.
-	origins = addRailFlyOrigins(origins)
-
-	destinations := flights.ParseAirports(o.destination)
-
-	cabinClass, _ := models.ParseCabinClass(o.cabin)
-	opts := flights.SearchOptions{
-		ReturnDate: o.returnDate,
-		CabinClass: cabinClass,
-		SortBy:     models.SortCheapest,
-		Adults:     1,
+	if format == "json" {
+		// Reassemble the classic FlightSearchResult shape so downstream
+		// tooling and tests consuming the old schema keep working.
+		fsr := &models.FlightSearchResult{
+			Success:  true,
+			TripType: result.TripType,
+			Flights:  result.Flights,
+			Count:    result.Count,
+		}
+		return models.FormatJSON(os.Stdout, fsr)
 	}
 
-	// Step 4: primary search (multi-airport aware).
-	var result *models.FlightSearchResult
-	if len(origins) > 1 || len(destinations) > 1 {
-		result, err = flights.SearchMultiAirport(ctx, origins, destinations, o.date, opts)
-	} else {
-		result, err = flights.SearchFlights(ctx, origins[0], destinations[0], o.date, opts)
-	}
-	if err != nil {
-		return fmt.Errorf("flight search: %w", err)
-	}
-	if result == nil || !result.Success {
-		return fmt.Errorf("flight search returned no results")
-	}
-
-	// Step 5: apply filters.
-	result.Flights = applyHuntFilters(result.Flights, o)
-	result.Count = len(result.Flights)
-
-	// Step 6: rank and slice top N.
-	sort.SliceStable(result.Flights, func(i, j int) bool {
-		return result.Flights[i].Price < result.Flights[j].Price
-	})
-	if len(result.Flights) > o.topN {
-		result.Flights = result.Flights[:o.topN]
-		result.Count = o.topN
-	}
-
-	// Step 7: present.
-	if o.format == "json" {
-		return models.FormatJSON(os.Stdout, result)
-	}
 	if len(result.Flights) == 0 {
 		fmt.Println("No profile-compliant flights found. Loosen filters or extend search window.")
+		if result.PreFilterCount > 0 {
+			fmt.Printf("(Pre-filter count: %d → 0 after %s)\n",
+				result.PreFilterCount, filterSummary(result.FiltersApplied))
+		}
 		return nil
 	}
+
 	fmt.Printf("🎯 Mikko-hunt: top %d bundles\n\n", len(result.Flights))
 	for i, f := range result.Flights {
-		hacks := huntAnnotations(f, origins)
-		fmt.Printf("%d. €%.0f  %s  %s\n", i+1, f.Price, hackRouteSummary(f), hacks)
+		hacks := hunt.Annotations(f, result.Origins)
+		fmt.Printf("%d. €%.0f  %s  %s\n", i+1, f.Price, hunt.RouteSummary(f), hacks)
 	}
 
-	// Step 8: optional calendar insert for top bundle.
-	if o.calendarInsert && len(result.Flights) > 0 {
-		if err := insertBundleCalendar(result.Flights[0], o); err != nil {
+	if calendarInsert && len(result.Flights) > 0 {
+		if err := insertBundleCalendar(result.Flights[0]); err != nil {
 			fmt.Fprintf(os.Stderr, "calendar insert failed: %v\n", err)
 		}
 	}
@@ -173,146 +133,36 @@ func runHunt(ctx context.Context, o huntOpts) error {
 	return nil
 }
 
-// expandHuntOrigins resolves "home" and applies home-fan expansion.
-func expandHuntOrigins(originArg string) ([]string, error) {
-	if strings.EqualFold(strings.TrimSpace(originArg), "home") {
-		prefs, err := preferences.Load()
-		if err != nil {
-			return nil, err
-		}
-		fanned := map[string]bool{}
-		for _, h := range prefs.HomeAirports {
-			fanned[h] = true
-			for _, nb := range prefs.NearbyAirportsFor(h) {
-				fanned[nb] = true
-			}
-		}
-		out := make([]string, 0, len(fanned))
-		for a := range fanned {
-			out = append(out, a)
-		}
-		sort.Strings(out)
-		return out, nil
+// filterSummary renders which filters dropped how many flights. Used in the
+// "no results" explainer so the user knows which knob to loosen.
+func filterSummary(log hunt.HuntFilterLog) string {
+	parts := []string{}
+	if log.LongLayover.Ran {
+		parts = append(parts, fmt.Sprintf("long-layover=-%d", log.LongLayover.Dropped))
 	}
-	origins := flights.ParseAirports(originArg)
-	// Apply nearby expansion for each origin.
-	prefs, err := preferences.Load()
-	if err == nil && prefs != nil {
-		fanned := map[string]bool{}
-		for _, o := range origins {
-			fanned[o] = true
-			for _, nb := range prefs.NearbyAirportsFor(o) {
-				fanned[nb] = true
-			}
-		}
-		origins = origins[:0]
-		for a := range fanned {
-			origins = append(origins, a)
-		}
-		sort.Strings(origins)
+	if log.LoungeAccess.Ran {
+		parts = append(parts, fmt.Sprintf("lounge=-%d", log.LoungeAccess.Dropped))
 	}
-	return origins, nil
-}
-
-// addRailFlyOrigins appends ZYR/ANR/BRU when AMS is among origins.
-func addRailFlyOrigins(origins []string) []string {
-	hasAMS := false
-	for _, o := range origins {
-		if strings.EqualFold(o, "AMS") {
-			hasAMS = true
-		}
+	if log.NoEarlyConnection.Ran {
+		parts = append(parts, fmt.Sprintf("no-early-connection=-%d", log.NoEarlyConnection.Dropped))
 	}
-	if !hasAMS {
-		return origins
+	if len(parts) == 0 {
+		return "no filters"
 	}
-	for _, rf := range []string{"ZYR", "ANR", "BRU"} {
-		already := false
-		for _, o := range origins {
-			if strings.EqualFold(o, rf) {
-				already = true
-			}
-		}
-		if !already {
-			origins = append(origins, rf)
-		}
+	out := parts[0]
+	for _, p := range parts[1:] {
+		out += ", " + p
 	}
-	return origins
-}
-
-// applyHuntFilters runs Mikko's filter stack.
-func applyHuntFilters(flts []models.FlightResult, o huntOpts) []models.FlightResult {
-	if o.minLayoverStr != "" || len(o.layoverAirports) > 0 {
-		mins := 0
-		if o.minLayoverStr != "" {
-			if d, err := time.ParseDuration(o.minLayoverStr); err == nil {
-				mins = int(d.Minutes())
-			}
-		}
-		flts = flights.FilterByLongLayover(flts, mins, o.layoverAirports)
-	}
-	if o.loungeRequired {
-		var cards []string
-		if prefs, err := preferences.Load(); err == nil {
-			cards = prefs.LoungeCards
-		}
-		flts = flights.FilterByLoungeAccess(flts, cards, nil)
-	}
-	if o.noEarlyConn {
-		floor := ""
-		if prefs, err := preferences.Load(); err == nil {
-			floor = prefs.EarlyConnectionFloor
-		}
-		flts = flights.FilterByEarlyConnection(flts, floor)
-	}
-	return flts
-}
-
-// hackRouteSummary produces a short route description.
-func hackRouteSummary(f models.FlightResult) string {
-	if len(f.Legs) == 0 {
-		return "?"
-	}
-	parts := []string{f.Legs[0].DepartureAirport.Code}
-	for _, l := range f.Legs {
-		parts = append(parts, l.ArrivalAirport.Code)
-	}
-	return strings.Join(parts, "→")
-}
-
-// huntAnnotations builds a short tag string explaining any hacks in use.
-func huntAnnotations(f models.FlightResult, origins []string) string {
-	tags := []string{}
-	if len(f.Legs) > 0 {
-		orig := f.Legs[0].DepartureAirport.Code
-		for _, rf := range []string{"ZYR", "ANR", "BRU"} {
-			if orig == rf {
-				tags = append(tags, "[rail+fly]")
-			}
-		}
-	}
-	if f.Stops > 0 {
-		tags = append(tags, fmt.Sprintf("%dstop", f.Stops))
-	}
-	return strings.Join(tags, " ")
+	return out
 }
 
 // insertBundleCalendar shells out to `gws calendar insert` for the flight.
 // Non-fatal on failure — printed to stderr.
-func insertBundleCalendar(f models.FlightResult, o huntOpts) error {
-	if len(f.Legs) == 0 {
-		return fmt.Errorf("empty itinerary")
+func insertBundleCalendar(f models.FlightResult) error {
+	title, start, end, desc, err := hunt.CalendarEventForBundle(f)
+	if err != nil {
+		return err
 	}
-	title := fmt.Sprintf("✈️ %s→%s (%s%s)",
-		f.Legs[0].DepartureAirport.Code,
-		f.Legs[len(f.Legs)-1].ArrivalAirport.Code,
-		f.Legs[0].Airline,
-		f.Legs[0].FlightNumber,
-	)
-	start := f.Legs[0].DepartureTime
-	end := f.Legs[len(f.Legs)-1].ArrivalTime
-	desc := fmt.Sprintf("Booked via trvl hunt\nPrice: %s%.0f\nRoute: %s", f.Currency, f.Price, hackRouteSummary(f))
-
-	// Use `gws calendar insert` CLI (per user's documented gws preference).
 	cmd := exec.Command("gws", "calendar", "insert",
 		"--summary", title,
 		"--start", start,

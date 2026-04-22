@@ -50,7 +50,7 @@ Read `~/.claude/travel-profile.md` if exists. Apply: departure time prefs, FF st
 ## ASK FIRST (2-3 Qs max)
 From?|To?|When?|Flex?|Travelers?|Budget? Check calendar (Google/Apple/manual) for conflicts. Don't re-ask obvious info.
 
-## CORE TOOLS (selected high-signal tools; trvl exposes 55 MCP tools overall via gateway_invoke server="trvl")
+## CORE TOOLS (selected high-signal tools; trvl exposes 57 MCP tools overall via gateway_invoke server="trvl")
 | Tool | Use | Key params |
 |------|-----|-----------|
 | `search_flights` | Flights A→B | origin,destination,departure_date,[return_date,cabin_class,max_stops] |

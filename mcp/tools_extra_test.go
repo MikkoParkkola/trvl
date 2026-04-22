@@ -311,6 +311,8 @@ func TestToolRegistration_AllTools(t *testing.T) {
 		"list_watches",
 		"check_watches",
 		"export_ics",
+		"plan_flight_bundle",
+		"hunt_interactive",
 	}
 
 	if len(s.tools) != len(expectedTools) {

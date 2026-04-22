@@ -1,7 +1,7 @@
 {
   "name": "trvl",
   "version": "1.0.0",
-  "description": "AI Travel Agent — 55 MCP tools for flights, hotels (5 providers: Google Hotels + Trivago + Airbnb + Booking.com + Hostelworld), trains, buses, ferries (20 ground providers incl. 8 ferry operators + night-train specialists European Sleeper & Snälltåget), 37 travel hack detectors, traveller profile with email history learning, deals, price alerts, and destination intel. Free, no API keys required.",
+  "description": "AI Travel Agent — 57 MCP tools for flights, hotels (5 providers: Google Hotels + Trivago + Airbnb + Booking.com + Hostelworld), trains, buses, ferries (20 ground providers incl. 8 ferry operators + night-train specialists European Sleeper & Snälltåget), 37 travel hack detectors, traveller profile with email history learning, deals, price alerts, and destination intel. Free, no API keys required.",
   "author": {
     "name": "Mikko Parkkola",
     "url": "https://github.com/MikkoParkkola"
