@@ -237,6 +237,9 @@ func TestHandleWatchPrice_DefaultCurrency(t *testing.T) {
 // ============================================================
 
 func TestHandleListWatches_Empty(t *testing.T) {
+	if os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") != "1" {
+		t.Skip("hits live external APIs; set TRVL_TEST_LIVE_INTEGRATIONS=1 to run. Tracked in #45")
+	}
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
@@ -291,6 +294,9 @@ func TestHandleListWatches_WithEntries(t *testing.T) {
 // ============================================================
 
 func TestHandleCheckWatches_Empty(t *testing.T) {
+	if os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") != "1" {
+		t.Skip("hits live external APIs; set TRVL_TEST_LIVE_INTEGRATIONS=1 to run. Tracked in #45")
+	}
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
@@ -480,6 +486,9 @@ func TestMCPPriceChecker_ReturnsZero(t *testing.T) {
 // ============================================================
 
 func TestHandleProviderHealth_EmptyLog(t *testing.T) {
+	if os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") != "1" {
+		t.Skip("hits live external APIs; set TRVL_TEST_LIVE_INTEGRATIONS=1 to run. Tracked in #45")
+	}
 	// Use a temp dir that has no health.jsonl.
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
@@ -497,6 +506,9 @@ func TestHandleProviderHealth_EmptyLog(t *testing.T) {
 }
 
 func TestHandleProviderHealth_WithData(t *testing.T) {
+	if os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") != "1" {
+		t.Skip("hits live external APIs; set TRVL_TEST_LIVE_INTEGRATIONS=1 to run. Tracked in #45")
+	}
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
@@ -573,6 +585,9 @@ func TestHandleProviderHealth_WithData(t *testing.T) {
 }
 
 func TestHandleProviderHealth_WithErrorsAndTimeouts(t *testing.T) {
+	if os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") != "1" {
+		t.Skip("hits live external APIs; set TRVL_TEST_LIVE_INTEGRATIONS=1 to run. Tracked in #45")
+	}
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 

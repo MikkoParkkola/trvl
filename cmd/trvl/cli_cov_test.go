@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -692,9 +693,11 @@ func TestSaveKeysTo_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat failed: %v", err)
 	}
-	perm := info.Mode().Perm()
-	if perm&0o077 != 0 {
-		t.Errorf("keys file should be owner-only, got permissions %o", perm)
+	if runtime.GOOS != "windows" {
+		perm := info.Mode().Perm()
+		if perm&0o077 != 0 {
+			t.Errorf("keys file should be owner-only, got permissions %o", perm)
+		}
 	}
 }
 

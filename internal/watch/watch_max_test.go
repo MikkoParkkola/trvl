@@ -582,6 +582,9 @@ func TestLoadJSON_ReadError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSaveLocked_HistorySaveError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("filesystem chmod semantics differ on Windows; tracked in #45")
+	}
 	dir := t.TempDir()
 	store := NewStore(dir)
 	store.watches = []Watch{{ID: "test1", Type: "flight"}}
@@ -603,6 +606,9 @@ func TestSaveLocked_HistorySaveError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRemove_SaveError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("filesystem chmod semantics differ on Windows; tracked in #45")
+	}
 	dir := t.TempDir()
 	store := NewStore(dir)
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartDate: "2026-07-01"}
@@ -629,6 +635,9 @@ func TestRemove_SaveError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAdd_SaveError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("filesystem chmod semantics differ on Windows; tracked in #45")
+	}
 	dir := t.TempDir()
 	store := NewStore(dir)
 
@@ -678,13 +687,16 @@ func TestSaveJSON_NormalPath(t *testing.T) {
 		t.Fatalf("saveJSON: %v", err)
 	}
 
-	// Verify file permissions.
+	// Verify file permissions (Unix only; Windows does not honor POSIX mode
+	// bits — see #45).
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
-		t.Errorf("file mode = %o, want 0600", info.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		if info.Mode().Perm() != 0o600 {
+			t.Errorf("file mode = %o, want 0600", info.Mode().Perm())
+		}
 	}
 
 	// Verify content.
@@ -728,6 +740,9 @@ func TestCheckRoom_UpdateWatchError(t *testing.T) {
 }
 
 func TestCheckRoom_RecordPriceError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("filesystem chmod semantics differ on Windows; tracked in #45")
+	}
 	dir := t.TempDir()
 	store := NewStore(dir)
 	w := Watch{
@@ -785,6 +800,9 @@ func TestCheckOne_UpdateWatchError(t *testing.T) {
 }
 
 func TestCheckOne_RecordPriceError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("filesystem chmod semantics differ on Windows; tracked in #45")
+	}
 	dir := t.TempDir()
 	store := NewStore(dir)
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartDate: "2026-07-01"}

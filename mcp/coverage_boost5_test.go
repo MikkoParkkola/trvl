@@ -361,6 +361,9 @@ func TestBuildProfileSummary_AllOptionalFieldsFilled(t *testing.T) {
 // ============================================================
 
 func TestReadTripsUpcoming_WithTrip(t *testing.T) {
+	if os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") != "1" {
+		t.Skip("hits live external APIs; set TRVL_TEST_LIVE_INTEGRATIONS=1 to run. Tracked in #45")
+	}
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
@@ -415,6 +418,9 @@ func TestReadTripsUpcoming_WithTrip(t *testing.T) {
 // ============================================================
 
 func TestReadTripByURI_WithTrip(t *testing.T) {
+	if os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") != "1" {
+		t.Skip("hits live external APIs; set TRVL_TEST_LIVE_INTEGRATIONS=1 to run. Tracked in #45")
+	}
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 

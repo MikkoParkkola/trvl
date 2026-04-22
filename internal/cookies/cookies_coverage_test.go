@@ -202,6 +202,9 @@ func TestOpenBrowserForAuth_CooldownExactBoundary(t *testing.T) {
 }
 
 func TestOpenBrowserForAuth_DomainOnlyNoSlash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("browser-opener command differs on Windows; tracked in #45")
+	}
 	origNow := browserAuthNow
 	origStart := browserAuthStart
 	now := time.Unix(1_700_000_000, 0)
