@@ -49,6 +49,7 @@ func init() {
 	}
 
 	rootCmd.AddCommand(flightsCmd())
+	rootCmd.AddCommand(huntCmd())
 	rootCmd.AddCommand(datesCmd())
 	rootCmd.AddCommand(hotelsCmd())
 	rootCmd.AddCommand(pricesCmd())
