@@ -7,6 +7,14 @@ before:
     - go mod tidy
     - go vet ./...
     - go test -short ./...
+    # Sync npm/package.json version with the release tag before archives are
+    # built. Previously lived under a top-level `after:` block which is not a
+    # valid key in goreleaser v2 and made `goreleaser check` fail. Running it
+    # in `before.hooks` is equivalent for our needs (version bump ships inside
+    # the npm package when published; the Go binary version comes from
+    # ldflags, not this file).
+    - >-
+        sh -c "cd npm && sed -i.bak 's/\"version\": \".*\"/\"version\": \"{{ .Version }}\"/' package.json && rm -f package.json.bak"
 
 builds:
   - id: trvl
@@ -23,6 +31,17 @@ builds:
       - arm64
     ldflags:
       - -s -w -X main.Version={{.Version}} -X github.com/MikkoParkkola/trvl/mcp.serverVersion={{.Version}}
+    # Re-sign darwin binaries with a proper bundle identifier. Go's default
+    # linker adhoc-sign stamps Identifier=a.out which Gatekeeper rejects with
+    # SIGKILL (exit 137) once Homebrew applies com.apple.quarantine. This
+    # replaces the identifier while keeping the adhoc (ad-hoc) signature — no
+    # Apple Developer ID or notarization required. The hook only runs on
+    # darwin artifacts because codesign is a darwin-only binary; Linux and
+    # Windows build hosts never reach this path during `goreleaser release`
+    # executed from macOS-14 runners.
+    hooks:
+      post:
+        - cmd: sh -c 'if [ "{{ .Os }}" = "darwin" ]; then codesign -s - -i com.mikkoparkkola.trvl -f -o runtime "{{ .Path }}"; fi'
 
 archives:
   - id: trvl
@@ -78,6 +97,16 @@ brews:
     license: "PolyForm-Noncommercial-1.0.0"
     install: |
       bin.install "trvl"
+      # Strip com.apple.quarantine that Homebrew applies to downloaded
+      # tarballs on macOS. Combined with the adhoc codesign identifier
+      # baked into the binary at release time (see .goreleaser.yaml
+      # builds.hooks.post), this prevents Gatekeeper from SIGKILLing
+      # trvl on first launch.
+      begin
+        system "xattr", "-dr", "com.apple.quarantine", "#{bin}/trvl"
+      rescue
+        # xattr is macOS-only; ignore on Linux brew.
+      end
     test: |
       system "#{bin}/trvl", "version"
 
@@ -108,12 +137,9 @@ dockers:
       - "--label=org.opencontainers.image.version={{ .Version }}"
       - "--label=org.opencontainers.image.licenses=MIT"
 
-after:
-  hooks:
-    - cmd: |
-        cd npm &&
-        sed -i.bak "s/\"version\": \".*\"/\"version\": \"{{ .Version }}\"/" package.json &&
-        rm -f package.json.bak
+# Note: the previous top-level `after.hooks` that bumped npm/package.json was
+# moved into `before.hooks` at the top of this file. `after:` is not a valid
+# goreleaser v2 key; retaining it made `goreleaser check` fail.
 
 docker_manifests:
   - name_template: "ghcr.io/mikkoparkkola/trvl:{{ .Version }}"
