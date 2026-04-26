@@ -1,10 +1,10 @@
 # trvl
 
-Travel MCP server + CLI. 57 MCP tools, 42 CLI commands. Go 1.26, no frameworks.
+Travel MCP server + CLI. 61 MCP tools, 50 CLI commands. Go 1.26, no frameworks.
 
 ## Product Vision
 
-trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, Windsurf, Codex, …) direct access to flights, hotels, trains, buses, ferries, price alerts, travel hacks, weather, baggage rules, airport lounges, and destination intelligence — **without requiring personal API keys**. Single Go binary, MCP 2025-11-25 compliant, 57 MCP tools, 42 CLI commands, API-first with optional browser-assisted fallbacks for a handful of protected providers.
+trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, Windsurf, Codex, …) direct access to flights, hotels, trains, buses, ferries, price alerts, travel hacks, weather, baggage rules, airport lounges, and destination intelligence — **without requiring personal API keys**. Single Go binary, MCP 2025-11-25 compliant, 61 MCP tools, 50 CLI commands, API-first with optional browser-assisted fallbacks for a handful of protected providers.
 
 ## Current Status
 
@@ -13,7 +13,7 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 - Flight providers: Google Flights (hand-rolled protobuf), Air France–KLM Offers API v3 (opt-in)
 - CI: build, vet, staticcheck, govulncheck, race tests, coverage ≥50% on ubuntu + windows
 - Latest release train: tag-triggered workflow + adhoc codesign identifier (PR #50)
-- npm wrapper, ICS calendar export, 55→57 tool bump landed in last ~90d
+- npm wrapper, ICS calendar export, 57→61 tool bump landed in last ~90d (MIK-3081/3082/3083/3084 + 6-package wiring batch in PR #57)
 
 ## Plan Forward (near-term, technical)
 

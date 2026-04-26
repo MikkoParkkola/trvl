@@ -67,7 +67,7 @@ Sleep 3s
 # ═══ CLOSING ═══
 
 Sleep 300ms
-Type "# 61 MCP tools · 44 CLI commands · 21 providers · No API keys"
+Type "# 61 MCP tools · 50 CLI commands · 21 providers · No API keys"
 Enter
 Sleep 300ms
 Type "# brew install MikkoParkkola/tap/trvl"
