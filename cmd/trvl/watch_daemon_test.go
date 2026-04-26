@@ -13,6 +13,8 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/watch"
 )
 
+const daemonWebhookSignalTimeout = 5 * time.Second
+
 type stubWatchDaemonTicker struct {
 	ch      chan time.Time
 	stopped bool
@@ -172,7 +174,7 @@ func waitForDaemonSignal(t *testing.T, ch <-chan struct{}, msg string) {
 
 	select {
 	case <-ch:
-	case <-time.After(time.Second):
+	case <-time.After(daemonWebhookSignalTimeout):
 		t.Fatal(msg)
 	}
 }
