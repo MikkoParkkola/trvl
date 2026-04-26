@@ -12,7 +12,7 @@ import (
 
 func TestRootCmd_SubcommandCount(t *testing.T) {
 	// rootCmd is the package-level var registered in root.go init().
-	const want = 49
+	const want = 50
 	got := len(rootCmd.Commands())
 	if got != want {
 		names := make([]string, 0, got)

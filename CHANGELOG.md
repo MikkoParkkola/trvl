@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `search_awards` MCP tool: cross-program award scanner with transfer-partner sweet-spot ranking (MIK-3081)
+- `trvl awards` CLI command: find cheapest redemption path across FB/Avios/Aeroplan/Virgin/Asia-Miles (MIK-3081)
 - `search_hidden_city` MCP tool: hidden-city matrix search ranks priced Origin×hub-beyond offers, computes layover risk score, and returns pre-filled booking URLs per carrier (MIK-3078)
 - `trvl hidden-city` CLI command: evaluate a hidden-city routing with customisable risk threshold and booking URL (MIK-3078)
 - **`OpportunityWatch`** — rolling-window watcher with configurable interval and favourite-destinations resolver; `internal/watch` package wires `OpportunityWatch` type with `Start`/`Stop` lifecycle and delivers scored opportunities to a channel (MIK-3065)
