@@ -3,6 +3,7 @@ package providers
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -330,6 +331,9 @@ func TestRegistry_SaveRejectsPathTraversalID(t *testing.T) {
 }
 
 func TestRegistry_SaveSecuresProviderFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not preserve POSIX permission bits in os.FileMode")
+	}
 	dir := t.TempDir()
 	reg, err := NewRegistryAt(dir)
 	if err != nil {
