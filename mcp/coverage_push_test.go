@@ -1175,7 +1175,7 @@ func TestWrapHandler_PanicRecovery(t *testing.T) {
 	panicky := func(ctx context.Context, args map[string]any, _ ElicitFunc, _ SamplingFunc, _ ProgressFunc) ([]ContentBlock, interface{}, error) {
 		panic("test panic")
 	}
-	wrapped := s.wrapHandler(panicky)
+	wrapped := s.wrapHandler("test_tool", panicky)
 	_, _, err := wrapped(context.Background(), nil, nil, nil, nil)
 	if err == nil || !contains(err.Error(), "tool panicked") {
 		t.Errorf("expected panic recovery error, got: %v", err)

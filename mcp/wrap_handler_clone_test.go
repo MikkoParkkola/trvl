@@ -30,7 +30,7 @@ func TestWrapHandler_ConcurrentCallersGetPrivateStructuredContent(t *testing.T) 
 	}
 
 	s := NewServer()
-	handler := s.wrapHandler(func(context.Context, map[string]any, ElicitFunc, SamplingFunc, ProgressFunc) ([]ContentBlock, interface{}, error) {
+	handler := s.wrapHandler("test_tool", func(context.Context, map[string]any, ElicitFunc, SamplingFunc, ProgressFunc) ([]ContentBlock, interface{}, error) {
 		return []ContentBlock{{
 			Type: "text",
 			Text: "ok",

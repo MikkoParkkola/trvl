@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"reflect"
 	"strings"
+	"time"
 )
 
 // registerTools adds all trvl tool definitions and handlers to the server.
@@ -76,74 +77,76 @@ func registerTools(s *Server) {
 		searchHiddenCityTool(),
 		searchAwardsTool(),
 	}
-	s.handlers["search_flights"] = s.wrapHandler(handleSearchFlights)
-	s.handlers["plan_flight_bundle"] = s.wrapHandler(handlePlanFlightBundle)
-	s.handlers["find_interactive"] = s.wrapHandler(handleFindInteractive)
-	s.handlers["search_dates"] = s.wrapHandler(handleSearchDates)
-	s.handlers["search_hotels"] = s.wrapHandler(handleSearchHotels)
-	s.handlers["search_hotel_by_name"] = s.wrapHandler(handleSearchHotelByName)
-	s.handlers["hotel_prices"] = s.wrapHandler(handleHotelPrices)
-	s.handlers["hotel_reviews"] = s.wrapHandler(handleHotelReviews)
-	s.handlers["destination_info"] = s.wrapHandler(handleDestinationInfo)
-	s.handlers["calculate_trip_cost"] = s.wrapHandler(handleTripCost)
-	s.handlers["weekend_getaway"] = s.wrapHandler(handleWeekendGetaway)
-	s.handlers["suggest_dates"] = s.wrapHandler(handleSuggestDates)
-	s.handlers["optimize_multi_city"] = s.wrapHandler(handleOptimizeMultiCity)
-	s.handlers["nearby_places"] = s.wrapHandler(handleNearbyPlaces)
-	s.handlers["travel_guide"] = s.wrapHandler(handleTravelGuide)
-	s.handlers["local_events"] = s.wrapHandler(handleLocalEvents)
-	s.handlers["search_ground"] = s.wrapHandler(handleSearchGround)
-	s.handlers["search_airport_transfers"] = s.wrapHandler(handleSearchAirportTransfers)
-	s.handlers["search_restaurants"] = s.wrapHandler(handleSearchRestaurants)
-	s.handlers["search_deals"] = s.wrapHandler(handleSearchDeals)
-	s.handlers["plan_trip"] = s.wrapHandler(handlePlanTrip)
-	s.handlers["search_route"] = s.wrapHandler(handleSearchRoute)
-	s.handlers["hotel_rooms"] = s.wrapHandler(handleHotelRooms)
-	s.handlers["watch_room_availability"] = s.wrapHandler(handleWatchRoomAvailability)
-	s.handlers["get_preferences"] = s.wrapHandler(handleGetPreferences)
-	s.handlers["update_preferences"] = s.wrapHandler(handleUpdatePreferences)
-	s.handlers["detect_travel_hacks"] = s.wrapHandler(handleDetectTravelHacks)
-	s.handlers["detect_accommodation_hacks"] = s.wrapHandler(handleDetectAccommodationHacks)
-	s.handlers["search_natural"] = s.wrapHandler(handleSearchNatural)
-	s.handlers["list_trips"] = s.wrapHandler(handleListTrips)
-	s.handlers["get_trip"] = s.wrapHandler(handleGetTrip)
-	s.handlers["create_trip"] = s.wrapHandler(handleCreateTrip)
-	s.handlers["add_trip_leg"] = s.wrapHandler(handleAddTripLeg)
-	s.handlers["mark_trip_booked"] = s.wrapHandler(handleMarkTripBooked)
-	s.handlers["export_ics"] = s.wrapHandler(handleExportICS)
-	s.handlers["get_weather"] = s.wrapHandler(handleGetWeather)
-	s.handlers["get_baggage_rules"] = s.wrapHandler(handleGetBaggageRules)
-	s.handlers["find_trip_window"] = s.wrapHandler(handleFindTripWindow)
-	s.handlers["search_lounges"] = s.wrapHandler(handleSearchLounges)
-	s.handlers["check_visa"] = s.wrapHandler(handleCheckVisa)
-	s.handlers["calculate_points_value"] = s.wrapHandler(handleCalculatePointsValue)
-	s.handlers["configure_provider"] = s.wrapHandler(s.wrapProviderHandler(handleConfigureProvider))
-	s.handlers["list_providers"] = s.wrapHandler(s.wrapProviderHandler(handleListProviders))
-	s.handlers["remove_provider"] = s.wrapHandler(s.wrapProviderHandler(handleRemoveProvider))
-	s.handlers["suggest_providers"] = s.wrapHandler(s.wrapProviderHandler(handleSuggestProviders))
-	s.handlers["test_provider"] = s.wrapHandler(s.wrapProviderHandler(handleTestProvider))
-	s.handlers["provider_health"] = s.wrapHandler(s.wrapProviderHandler(handleProviderHealth))
-	s.handlers["optimize_trip_dates"] = s.wrapHandler(handleOptimizeTripDates)
-	s.handlers["assess_trip"] = s.wrapHandler(handleAssessTrip)
-	s.handlers["optimize_booking"] = s.wrapHandler(handleOptimizeBooking)
-	s.handlers["build_profile"] = s.wrapHandler(handleBuildProfile)
-	s.handlers["add_booking"] = s.wrapHandler(handleAddBooking)
-	s.handlers["interview_trip"] = s.wrapHandler(handleInterviewTrip)
-	s.handlers["onboard_profile"] = s.wrapHandler(handleOnboardProfile)
-	s.handlers["watch_price"] = s.wrapHandler(handleWatchPrice)
-	s.handlers["list_watches"] = s.wrapHandler(handleListWatches)
-	s.handlers["check_watches"] = s.wrapHandler(handleCheckWatches)
-	s.handlers["watch_opportunities"] = s.wrapHandler(handleWatchOpportunities)
-	s.handlers["list_opportunity_watches"] = s.wrapHandler(handleListOpportunityWatches)
-	s.handlers["search_hidden_city"] = s.wrapHandler(handleSearchHiddenCity)
-	s.handlers["search_awards"] = s.wrapHandler(handleSearchAwards)
+	s.handlers["search_flights"] = s.wrapHandler("search_flights", handleSearchFlights)
+	s.handlers["plan_flight_bundle"] = s.wrapHandler("plan_flight_bundle", handlePlanFlightBundle)
+	s.handlers["find_interactive"] = s.wrapHandler("find_interactive", handleFindInteractive)
+	s.handlers["search_dates"] = s.wrapHandler("search_dates", handleSearchDates)
+	s.handlers["search_hotels"] = s.wrapHandler("search_hotels", handleSearchHotels)
+	s.handlers["search_hotel_by_name"] = s.wrapHandler("search_hotel_by_name", handleSearchHotelByName)
+	s.handlers["hotel_prices"] = s.wrapHandler("hotel_prices", handleHotelPrices)
+	s.handlers["hotel_reviews"] = s.wrapHandler("hotel_reviews", handleHotelReviews)
+	s.handlers["destination_info"] = s.wrapHandler("destination_info", handleDestinationInfo)
+	s.handlers["calculate_trip_cost"] = s.wrapHandler("calculate_trip_cost", handleTripCost)
+	s.handlers["weekend_getaway"] = s.wrapHandler("weekend_getaway", handleWeekendGetaway)
+	s.handlers["suggest_dates"] = s.wrapHandler("suggest_dates", handleSuggestDates)
+	s.handlers["optimize_multi_city"] = s.wrapHandler("optimize_multi_city", handleOptimizeMultiCity)
+	s.handlers["nearby_places"] = s.wrapHandler("nearby_places", handleNearbyPlaces)
+	s.handlers["travel_guide"] = s.wrapHandler("travel_guide", handleTravelGuide)
+	s.handlers["local_events"] = s.wrapHandler("local_events", handleLocalEvents)
+	s.handlers["search_ground"] = s.wrapHandler("search_ground", handleSearchGround)
+	s.handlers["search_airport_transfers"] = s.wrapHandler("search_airport_transfers", handleSearchAirportTransfers)
+	s.handlers["search_restaurants"] = s.wrapHandler("search_restaurants", handleSearchRestaurants)
+	s.handlers["search_deals"] = s.wrapHandler("search_deals", handleSearchDeals)
+	s.handlers["plan_trip"] = s.wrapHandler("plan_trip", handlePlanTrip)
+	s.handlers["search_route"] = s.wrapHandler("search_route", handleSearchRoute)
+	s.handlers["hotel_rooms"] = s.wrapHandler("hotel_rooms", handleHotelRooms)
+	s.handlers["watch_room_availability"] = s.wrapHandler("watch_room_availability", handleWatchRoomAvailability)
+	s.handlers["get_preferences"] = s.wrapHandler("get_preferences", handleGetPreferences)
+	s.handlers["update_preferences"] = s.wrapHandler("update_preferences", handleUpdatePreferences)
+	s.handlers["detect_travel_hacks"] = s.wrapHandler("detect_travel_hacks", handleDetectTravelHacks)
+	s.handlers["detect_accommodation_hacks"] = s.wrapHandler("detect_accommodation_hacks", handleDetectAccommodationHacks)
+	s.handlers["search_natural"] = s.wrapHandler("search_natural", handleSearchNatural)
+	s.handlers["list_trips"] = s.wrapHandler("list_trips", handleListTrips)
+	s.handlers["get_trip"] = s.wrapHandler("get_trip", handleGetTrip)
+	s.handlers["create_trip"] = s.wrapHandler("create_trip", handleCreateTrip)
+	s.handlers["add_trip_leg"] = s.wrapHandler("add_trip_leg", handleAddTripLeg)
+	s.handlers["mark_trip_booked"] = s.wrapHandler("mark_trip_booked", handleMarkTripBooked)
+	s.handlers["export_ics"] = s.wrapHandler("export_ics", handleExportICS)
+	s.handlers["get_weather"] = s.wrapHandler("get_weather", handleGetWeather)
+	s.handlers["get_baggage_rules"] = s.wrapHandler("get_baggage_rules", handleGetBaggageRules)
+	s.handlers["find_trip_window"] = s.wrapHandler("find_trip_window", handleFindTripWindow)
+	s.handlers["search_lounges"] = s.wrapHandler("search_lounges", handleSearchLounges)
+	s.handlers["check_visa"] = s.wrapHandler("check_visa", handleCheckVisa)
+	s.handlers["calculate_points_value"] = s.wrapHandler("calculate_points_value", handleCalculatePointsValue)
+	s.handlers["configure_provider"] = s.wrapHandler("configure_provider", s.wrapProviderHandler(handleConfigureProvider))
+	s.handlers["list_providers"] = s.wrapHandler("list_providers", s.wrapProviderHandler(handleListProviders))
+	s.handlers["remove_provider"] = s.wrapHandler("remove_provider", s.wrapProviderHandler(handleRemoveProvider))
+	s.handlers["suggest_providers"] = s.wrapHandler("suggest_providers", s.wrapProviderHandler(handleSuggestProviders))
+	s.handlers["test_provider"] = s.wrapHandler("test_provider", s.wrapProviderHandler(handleTestProvider))
+	s.handlers["provider_health"] = s.wrapHandler("provider_health", s.wrapProviderHandler(handleProviderHealth))
+	s.handlers["optimize_trip_dates"] = s.wrapHandler("optimize_trip_dates", handleOptimizeTripDates)
+	s.handlers["assess_trip"] = s.wrapHandler("assess_trip", handleAssessTrip)
+	s.handlers["optimize_booking"] = s.wrapHandler("optimize_booking", handleOptimizeBooking)
+	s.handlers["build_profile"] = s.wrapHandler("build_profile", handleBuildProfile)
+	s.handlers["add_booking"] = s.wrapHandler("add_booking", handleAddBooking)
+	s.handlers["interview_trip"] = s.wrapHandler("interview_trip", handleInterviewTrip)
+	s.handlers["onboard_profile"] = s.wrapHandler("onboard_profile", handleOnboardProfile)
+	s.handlers["watch_price"] = s.wrapHandler("watch_price", handleWatchPrice)
+	s.handlers["list_watches"] = s.wrapHandler("list_watches", handleListWatches)
+	s.handlers["check_watches"] = s.wrapHandler("check_watches", handleCheckWatches)
+	s.handlers["watch_opportunities"] = s.wrapHandler("watch_opportunities", handleWatchOpportunities)
+	s.handlers["list_opportunity_watches"] = s.wrapHandler("list_opportunity_watches", handleListOpportunityWatches)
+	s.handlers["search_hidden_city"] = s.wrapHandler("search_hidden_city", handleSearchHiddenCity)
+	s.handlers["search_awards"] = s.wrapHandler("search_awards", handleSearchAwards)
 }
 
 // wrapHandler returns a ToolHandler that delegates to the inner handler and
 // then post-processes the result to add resource_link blocks and record the
-// search in trip state.
-func (s *Server) wrapHandler(inner ToolHandler) ToolHandler {
+// search in trip state. name is used for slog metrics.
+func (s *Server) wrapHandler(name string, inner ToolHandler) ToolHandler {
 	return func(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
+		enqueueTime := time.Now()
+
 		// Enforce a per-tool timeout to prevent hung queries. MCP clients
 		// (especially AI agents) may spawn many parallel tool calls without
 		// timeouts, causing searches to hang indefinitely on slow/blocked
@@ -166,6 +169,11 @@ func (s *Server) wrapHandler(inner ToolHandler) ToolHandler {
 			return nil, nil, fmt.Errorf("tool execution queued but timed out waiting for a slot: %w", ctx.Err())
 		}
 
+		queuedMs := time.Since(enqueueTime).Milliseconds()
+		inflight := len(s.toolSem)
+		slog.Info("mcp_tool_start", "tool", name, "queued_ms", queuedMs, "inflight_count", inflight)
+		startTime := time.Now()
+
 		// Recover from panics in tool handlers. A nil-pointer dereference or
 		// index-out-of-bounds in a parse function must not crash the MCP
 		// server — convert to a tool-call error so the agent can retry.
@@ -181,6 +189,11 @@ func (s *Server) wrapHandler(inner ToolHandler) ToolHandler {
 			}()
 			content, structured, err = inner(ctx, args, elicit, sampling, progress)
 		}()
+
+		elapsedMs := time.Since(startTime).Milliseconds()
+		// inflight_count at done is before semaphore release (defer fires on return).
+		slog.Info("mcp_tool_done", "tool", name, "elapsed_ms", elapsedMs, "inflight_count", len(s.toolSem)-1)
+
 		if err != nil {
 			return content, structured, err
 		}
