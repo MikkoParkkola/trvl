@@ -21,7 +21,7 @@ import (
 // The dynamic count from rootCmd.Commands() includes all cobra-registered
 // commands, but marketing materials only count functional travel commands.
 // Current exclusions: version, providers (both are utility/meta commands).
-const cliCommandCountMarketed = 43
+const cliCommandCountMarketed = 44
 
 var readmeToolMarkers = []string{
 	"search_flights",
@@ -59,6 +59,7 @@ var readmeToolMarkers = []string{
 	"search_lounges",
 	"check_visa",
 	"calculate_points_value",
+	"search_awards",
 }
 
 func bundledSkillMarkdownCount(t *testing.T) int {

@@ -382,6 +382,12 @@ Returns: visa status (`visa-free`, `visa-required`, `visa-on-arrival`, `e-visa`,
 ```
 Returns: effective cents-per-point, floor/ceiling valuation for the program, verdict (`use points`, `pay cash`, or `borderline`), and explanation.
 
+### search_awards — Rank cross-program award sweet spots
+```json
+{"seats":[{"program":"VS","origin":"HEL","destination":"LHR","date":"2026-08-15","cabin":"business","miles_cost":50000,"cash_fees":35,"cash_equivalent":650,"bookable_segments":1}],"balances":[{"program":"MR","balance":80000},{"program":"VS","balance":20000}]}
+```
+Returns: ranked award-seat redemption paths across native balances and transfer partners, including miles spent, cash fees, cents-per-point, affordability, and transfer route. Use when award availability is already known or supplied from another source.
+
 ### optimize_booking — Unified trip optimizer
 ```json
 {"origin": "HEL", "destination": "BCN", "departure_date": "2026-07-01", "return_date": "2026-07-08"}

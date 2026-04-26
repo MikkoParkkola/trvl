@@ -23,14 +23,14 @@ func TestHandleSearchAwards_NativeRedemption(t *testing.T) {
 	args := map[string]any{
 		"seats": []interface{}{
 			map[string]interface{}{
-				"program":          "VS",
-				"origin":           "AMS",
-				"destination":      "JFK",
-				"date":             "2026-08-01",
-				"cabin":            "economy",
-				"miles_cost":       50000,
-				"cash_fees":        55.0,
-				"cash_equivalent":  600.0,
+				"program":           "VS",
+				"origin":            "AMS",
+				"destination":       "JFK",
+				"date":              "2026-08-01",
+				"cabin":             "economy",
+				"miles_cost":        50000,
+				"cash_fees":         55.0,
+				"cash_equivalent":   600.0,
 				"bookable_segments": 1,
 			},
 		},

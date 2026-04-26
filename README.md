@@ -172,6 +172,7 @@ That's it. Your AI assistant now has 61 travel tools available. Just ask natural
 | **search_lounges** | Find airport lounges, access rules, and card/status eligibility | HEL lounges with Priority Pass or Oneworld status |
 | **check_visa** | Check visa and entry requirements for a passport→destination country pair | FI passport → TH |
 | **calculate_points_value** | Compare cash price vs points required for a redemption | EUR 450 vs 20k Finnair Plus points |
+| **search_awards** | Rank award-seat sweet spots across points balances and transfer partners | VS seat + MR/UR/Bilt balances |
 | **list_trips** | List saved trips from ~/.trvl/trips.json | — |
 | **get_trip** | Get details of a saved trip | Trip ID |
 | **create_trip** | Create a new trip record | "Helsinki court + Prague + Amsterdam" |
