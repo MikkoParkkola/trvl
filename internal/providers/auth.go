@@ -94,14 +94,14 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 		if tryBrowserCookieRetry(ctx, pc, &resolvedAuth) {
 			saveCachedCookies(pc.client, resolvedURL)
 			pc.lastPreflightURL = resolvedURL
-			pc.authExpiry = time.Now().Add(authCacheDuration)
+			pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
 			return copyAuthValues(pc.authValues), nil
 		}
 		// Tier 3b: run WAF challenge.js in sobek JS engine (pure Go).
 		if tryWAFSolve(ctx, pc, &resolvedAuth, resp.StatusCode, body) {
 			saveCachedCookies(pc.client, resolvedURL)
 			pc.lastPreflightURL = resolvedURL
-			pc.authExpiry = time.Now().Add(authCacheDuration)
+			pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
 			return copyAuthValues(pc.authValues), nil
 		}
 		// Tier 4: last-resort escape hatch — open in browser.
@@ -109,7 +109,7 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 			if tryBrowserEscapeHatch(ctx, pc, &resolvedAuth) {
 				saveCachedCookies(pc.client, resolvedURL)
 				pc.lastPreflightURL = resolvedURL
-				pc.authExpiry = time.Now().Add(authCacheDuration)
+				pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
 				return copyAuthValues(pc.authValues), nil
 			}
 		}
@@ -118,7 +118,7 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 	// Tier 1 succeeded directly — persist cookies for future sessions.
 	saveCachedCookies(pc.client, resolvedURL)
 	pc.lastPreflightURL = resolvedURL
-	pc.authExpiry = time.Now().Add(authCacheDuration)
+	pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
 	return copyAuthValues(pc.authValues), nil
 }
 

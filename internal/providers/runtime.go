@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/preflightttl"
 	"github.com/MikkoParkkola/trvl/internal/waf"
 	"golang.org/x/time/rate"
 )
@@ -131,6 +132,11 @@ type providerClient struct {
 	// and the auth cache must be invalidated — WAF cookies obtained for one
 	// dest_id are rejected for a different one.
 	lastPreflightURL string
+
+	// ttlState is the AIMD adaptive TTL controller for the auth cache.
+	// Accessed under authMu (same lock that protects authExpiry).
+	ttlState preflightttl.State
+
 	// defaultRPS is the configured rate for this provider; recordRateLimitSuccess
 	// uses it to restore the limiter after the cooldown period elapses.
 	defaultRPS float64
@@ -139,6 +145,16 @@ type providerClient struct {
 	// last429 records when the most recent 429 was received.
 	last429 time.Time
 	rl429Mu sync.Mutex
+}
+
+// effectiveCacheTTL returns the adaptive TTL when the AIMD controller has
+// accumulated a positive value; otherwise falls back to authCacheDuration.
+// Must be called with pc.authMu held (read or write).
+func (pc *providerClient) effectiveCacheTTL() time.Duration {
+	if pc.ttlState.CurrentTTL > 0 {
+		return pc.ttlState.CurrentTTL
+	}
+	return authCacheDuration
 }
 
 // NewRuntime creates a Runtime backed by the given registry.
@@ -279,45 +295,85 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 		latencyMs int64
 	}
 
-	results := make(chan result, len(providers))
-	var wg sync.WaitGroup
-
-	// Semaphore bounds the number of concurrently executing provider calls.
-	sem := make(chan struct{}, providerConcurrency())
-
+	// Filter out circuit-broken providers up-front so the worker pool
+	// only enqueues work that will actually run. Skipped providers do
+	// not appear in statuses (existing behavior preserved).
+	live := make([]*ProviderConfig, 0, len(providers))
+	recovering := make(map[string]int) // provider ID → prior error count for recovery slog
+	now := time.Now()
 	for _, cfg := range providers {
 		if cfg.ErrorCount >= circuitBreakerThreshold &&
-			(cfg.LastSuccess.IsZero() || time.Since(cfg.LastSuccess) > circuitBreakerCooldown) {
-			slog.Info("circuit breaker: skipping provider",
+			(cfg.LastSuccess.IsZero() || now.Sub(cfg.LastSuccess) > circuitBreakerCooldown) {
+			args := []any{
 				"provider", cfg.ID,
-				"errors", cfg.ErrorCount,
-				"last_success", cfg.LastSuccess.Format(time.RFC3339))
+				"failure_count", cfg.ErrorCount,
+			}
+			if cfg.LastSuccess.IsZero() {
+				args = append(args, "last_success", "never")
+			} else {
+				recoveryAt := cfg.LastSuccess.Add(circuitBreakerCooldown)
+				args = append(args,
+					"last_success", cfg.LastSuccess.Format(time.RFC3339),
+					"cooldown_end", recoveryAt.Format(time.RFC3339),
+					"recovery_at", recoveryAt.Format(time.RFC3339))
+			}
+			slog.Warn("circuit breaker: provider tripped", args...)
 			continue
 		}
-		wg.Add(1)
-		go func(cfg *ProviderConfig) {
-			defer wg.Done()
-			// Acquire semaphore slot, honouring ctx cancellation.
+		if cfg.ErrorCount > 0 {
+			recovering[cfg.ID] = cfg.ErrorCount
+		}
+		live = append(live, cfg)
+	}
+
+	results := make(chan result, len(live))
+
+	// MIK-3072: worker-pool dispatch. Bounds peak goroutines to
+	// min(providerConcurrency, len(live)) instead of fanning out one
+	// goroutine per provider. Workers consume from `work` until ctx
+	// cancellation or channel close. The inflight gauge tracks how many
+	// workers are currently inside searchProvider (excludes blocked-on-
+	// channel-recv idle time).
+	workers := providerConcurrency()
+	if workers > len(live) {
+		workers = len(live)
+	}
+	work := make(chan *ProviderConfig)
+	var wg sync.WaitGroup
+
+	// Dispatcher: feeds work; respects ctx cancellation.
+	go func() {
+		defer close(work)
+		for _, cfg := range live {
 			select {
-			case sem <- struct{}{}:
+			case work <- cfg:
 			case <-ctx.Done():
-				results <- result{id: cfg.ID, name: cfg.Name, err: ctx.Err()}
 				return
 			}
-			rt.inflight.Add(1)
-			defer func() {
-				<-sem
+		}
+	}()
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for cfg := range work {
+				cur := rt.inflight.Add(1)
+				slog.Debug("provider_concurrent_inflight",
+					"count", cur,
+					"cap", workers,
+					"provider", cfg.ID)
+				// Per-provider timeout: prevent any single provider from holding
+				// up the entire search. Covers the full preflight → auth → search
+				// → parse cascade including browser cookie reads and WAF solving.
+				provCtx, provCancel := context.WithTimeout(ctx, perProviderTimeout)
+				t0 := time.Now()
+				hotels, err := rt.searchProvider(provCtx, cfg, location, lat, lon, checkin, checkout, currency, guests, filters)
+				provCancel()
 				rt.inflight.Add(-1)
-			}()
-			// Per-provider timeout: prevent any single provider from holding
-			// up the entire search. Covers the full preflight → auth → search
-			// → parse cascade including browser cookie reads and WAF solving.
-			provCtx, provCancel := context.WithTimeout(ctx, perProviderTimeout)
-			defer provCancel()
-			t0 := time.Now()
-			hotels, err := rt.searchProvider(provCtx, cfg, location, lat, lon, checkin, checkout, currency, guests, filters)
-			results <- result{hotels: hotels, err: err, id: cfg.ID, name: cfg.Name, latencyMs: time.Since(t0).Milliseconds()}
-		}(cfg)
+				results <- result{hotels: hotels, err: err, id: cfg.ID, name: cfg.Name, latencyMs: time.Since(t0).Milliseconds()}
+			}
+		}()
 	}
 
 	go func() {
@@ -332,6 +388,13 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 		if r.err != nil {
 			slog.Warn("provider error", "provider", r.id, "error", r.err.Error())
 			rt.registry.MarkError(r.id, r.err.Error())
+			rt.mu.RLock()
+			if pc := rt.clients[r.id]; pc != nil {
+				pc.authMu.Lock()
+				pc.ttlState = preflightttl.Update(pc.ttlState, preflightttl.OutcomeFailure, time.Now())
+				pc.authMu.Unlock()
+			}
+			rt.mu.RUnlock()
 			errMsg := r.err.Error()
 			status := "error"
 			if isTimeoutError(r.err) {
@@ -360,6 +423,18 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 			continue
 		}
 		rt.registry.MarkSuccess(r.id)
+		rt.mu.RLock()
+		if pc := rt.clients[r.id]; pc != nil {
+			pc.authMu.Lock()
+			pc.ttlState = preflightttl.Update(pc.ttlState, preflightttl.OutcomeSuccess, time.Now())
+			pc.authMu.Unlock()
+		}
+		rt.mu.RUnlock()
+		if prior, ok := recovering[r.id]; ok {
+			slog.Info("circuit breaker: provider recovered",
+				"provider", r.id,
+				"was_failure_count", prior)
+		}
 		LogHealth(HealthEntry{
 			Provider:  r.id,
 			Operation: "search",
