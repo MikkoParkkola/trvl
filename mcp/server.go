@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/providers"
+	"github.com/MikkoParkkola/trvl/internal/telemetry"
 	"github.com/MikkoParkkola/trvl/internal/watch"
 )
 
@@ -90,6 +92,9 @@ type Server struct {
 	// External provider support.
 	providerRegistry *providers.Registry
 	providerRuntime  *providers.Runtime
+
+	// OTel shutdown function; non-nil when tracing is active.
+	otelShutdown func(context.Context) error
 }
 
 // ToolHandler processes a tool call and returns content blocks, optional
@@ -130,6 +135,17 @@ func NewServer() *Server {
 		hotels.SetExternalProviderRuntime(s.providerRuntime)
 	} else {
 		log.Printf("warning: provider registry: %v", err)
+	}
+
+	// If TRVL_OTEL_ENDPOINT is set, initialise OTel tracing.
+	if endpoint := os.Getenv("TRVL_OTEL_ENDPOINT"); endpoint != "" {
+		shutdown, err := telemetry.Init(context.Background(), endpoint)
+		if err != nil {
+			slog.Warn("OTel init failed, tracing disabled", "endpoint", endpoint, "err", err)
+		} else {
+			s.otelShutdown = shutdown
+			slog.Info("OTel tracing enabled", "endpoint", endpoint)
+		}
 	}
 
 	registerTools(s)
@@ -713,6 +729,9 @@ func init() {
 func (s *Server) Shutdown() {
 	if s.scheduler != nil {
 		s.scheduler.Stop()
+	}
+	if s.otelShutdown != nil {
+		_ = s.otelShutdown(context.Background())
 	}
 }
 

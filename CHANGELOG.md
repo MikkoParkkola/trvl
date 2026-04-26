@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **OpenTelemetry tracing** — opt-in MCP tracing via `TRVL_OTEL_ENDPOINT`, with per-tool spans and queue/inflight attributes (MIK-3089)
 - `search_awards` MCP tool: cross-program award scanner with transfer-partner sweet-spot ranking (MIK-3081)
 - `trvl awards` CLI command: find cheapest redemption path across FB/Avios/Aeroplan/Virgin/Asia-Miles (MIK-3081)
 - **Chaos fault injector** — `internal/chaos` package: `Transport` wraps any `http.RoundTripper` and injects synthetic 429 / 503 / timeout faults per host according to a `Plan` map; `NewDeterministic` variant for deterministic unit tests. Canary tests cover all three fault types, pass-through, probability gating, and circuit-breaker threshold simulation (MIK-3089)

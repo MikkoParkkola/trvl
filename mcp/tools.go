@@ -8,6 +8,10 @@ import (
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // registerTools adds all trvl tool definitions and handlers to the server.
@@ -145,6 +149,11 @@ func registerTools(s *Server) {
 // search in trip state. name is used for slog metrics.
 func (s *Server) wrapHandler(name string, inner ToolHandler) ToolHandler {
 	return func(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
+		// Start span before semaphore so queued time is part of the span.
+		ctx, span := telemetry.Tracer().Start(ctx, "mcp.tool."+name)
+		defer span.End()
+		span.SetAttributes(attribute.String("tool.name", name))
+
 		enqueueTime := time.Now()
 
 		// Enforce a per-tool timeout to prevent hung queries. MCP clients
@@ -170,6 +179,7 @@ func (s *Server) wrapHandler(name string, inner ToolHandler) ToolHandler {
 		}
 
 		queuedMs := time.Since(enqueueTime).Milliseconds()
+		span.SetAttributes(attribute.Int64("tool.queued_ms", queuedMs))
 		inflight := len(s.toolSem)
 		slog.Info("mcp_tool_start", "tool", name, "queued_ms", queuedMs, "inflight_count", inflight)
 		startTime := time.Now()
@@ -191,10 +201,13 @@ func (s *Server) wrapHandler(name string, inner ToolHandler) ToolHandler {
 		}()
 
 		elapsedMs := time.Since(startTime).Milliseconds()
+		span.SetAttributes(attribute.Int64("tool.elapsed_ms", elapsedMs))
 		// inflight_count at done is before semaphore release (defer fires on return).
 		slog.Info("mcp_tool_done", "tool", name, "elapsed_ms", elapsedMs, "inflight_count", len(s.toolSem)-1)
 
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return content, structured, err
 		}
 
