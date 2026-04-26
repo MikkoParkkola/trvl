@@ -15,6 +15,8 @@ import (
 func registerTools(s *Server) {
 	s.tools = []ToolDef{
 		searchFlightsTool(),
+		planFlightBundleTool(),
+		findInteractiveTool(),
 		searchDatesTool(),
 		searchHotelsTool(),
 		searchHotelByNameTool(),
@@ -46,6 +48,7 @@ func registerTools(s *Server) {
 		createTripTool(),
 		addTripLegTool(),
 		markTripBookedTool(),
+		exportICSTool(),
 		getWeatherTool(),
 		getBaggageRulesTool(),
 		findTripWindowTool(),
@@ -73,6 +76,8 @@ func registerTools(s *Server) {
 		searchHiddenCityTool(),
 	}
 	s.handlers["search_flights"] = s.wrapHandler(handleSearchFlights)
+	s.handlers["plan_flight_bundle"] = s.wrapHandler(handlePlanFlightBundle)
+	s.handlers["find_interactive"] = s.wrapHandler(handleFindInteractive)
 	s.handlers["search_dates"] = s.wrapHandler(handleSearchDates)
 	s.handlers["search_hotels"] = s.wrapHandler(handleSearchHotels)
 	s.handlers["search_hotel_by_name"] = s.wrapHandler(handleSearchHotelByName)
@@ -104,6 +109,7 @@ func registerTools(s *Server) {
 	s.handlers["create_trip"] = s.wrapHandler(handleCreateTrip)
 	s.handlers["add_trip_leg"] = s.wrapHandler(handleAddTripLeg)
 	s.handlers["mark_trip_booked"] = s.wrapHandler(handleMarkTripBooked)
+	s.handlers["export_ics"] = s.wrapHandler(handleExportICS)
 	s.handlers["get_weather"] = s.wrapHandler(handleGetWeather)
 	s.handlers["get_baggage_rules"] = s.wrapHandler(handleGetBaggageRules)
 	s.handlers["find_trip_window"] = s.wrapHandler(handleFindTripWindow)

@@ -17,16 +17,21 @@ import json
 import sys
 import re
 
-try:
-    from playwright_stealth import Stealth as _Stealth
-    _STEALTH_AVAILABLE = True
-except ImportError:
-    _Stealth = None
-    _STEALTH_AVAILABLE = False
+_Stealth = None
+_STEALTH_AVAILABLE = None
 
 
 def _apply_stealth(page):
     """Apply playwright-stealth patches to a page if available."""
+    global _Stealth, _STEALTH_AVAILABLE
+    if _STEALTH_AVAILABLE is None:
+        try:
+            from playwright_stealth import Stealth as _Stealth
+            _STEALTH_AVAILABLE = True
+        except ImportError:
+            _Stealth = None
+            _STEALTH_AVAILABLE = False
+
     if _STEALTH_AVAILABLE and _Stealth is not None:
         try:
             _Stealth().apply_stealth_sync(page)
@@ -35,12 +40,6 @@ def _apply_stealth(page):
 
 
 def main():
-    try:
-        from playwright.sync_api import sync_playwright, TimeoutError as PWTimeoutError
-    except ImportError:
-        out([], "playwright not installed: pip install playwright && playwright install chromium")
-        return
-
     raw = sys.stdin.read().strip()
     if not raw:
         out([], "no input on stdin")
@@ -58,9 +57,20 @@ def main():
     date = inp.get("date", "")
     currency = inp.get("currency", "EUR").upper()
 
+    def load_playwright():
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            out([], "playwright not installed: pip install playwright && playwright install chromium")
+            return None
+        return sync_playwright
+
     # Token-capture modes: only need playwright, not from/to/date.
     # Output shape differs from route scrapers — callers handle these directly.
     if provider == "sncf_key":
+        sync_playwright = load_playwright()
+        if sync_playwright is None:
+            return
         try:
             with sync_playwright() as pw:
                 key = capture_sncf_key(pw)
@@ -70,6 +80,9 @@ def main():
         return
 
     if provider == "trainline_cookie":
+        sync_playwright = load_playwright()
+        if sync_playwright is None:
+            return
         try:
             with sync_playwright() as pw:
                 cookie = capture_trainline_cookie(pw)
@@ -92,6 +105,10 @@ def main():
     fn = scrapers.get(provider)
     if fn is None:
         out([], f"unsupported provider: {provider}")
+        return
+
+    sync_playwright = load_playwright()
+    if sync_playwright is None:
         return
 
     try:

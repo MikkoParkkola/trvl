@@ -179,7 +179,7 @@ var googleSortOrders = []string{"", "3", "8"}
 // hotelSearchKey builds a singleflight dedup key from every option that can
 // affect fetched, enriched, or post-filtered hotel results.
 func hotelSearchKey(location string, opts HotelSearchOptions) string {
-	amenities := append([]string(nil), opts.Amenities...)
+	amenities := normalizedHotelSearchAmenities(opts.Amenities)
 	sort.Strings(amenities)
 	key := struct {
 		Location         string   `json:"location"`
@@ -220,7 +220,7 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 		Guests:           opts.Guests,
 		Stars:            opts.Stars,
 		Sort:             opts.Sort,
-		Currency:         opts.Currency,
+		Currency:         strings.ToUpper(opts.Currency),
 		MinPrice:         opts.MinPrice,
 		MaxPrice:         opts.MaxPrice,
 		MinRating:        opts.MinRating,
@@ -230,10 +230,10 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 		CenterLon:        opts.CenterLon,
 		EnrichAmenities:  opts.EnrichAmenities,
 		EnrichLimit:      opts.EnrichLimit,
-		MaxPages:         opts.MaxPages,
+		MaxPages:         hotelPageLimit(opts.MaxPages),
 		FreeCancellation: opts.FreeCancellation,
 		PropertyType:     opts.PropertyType,
-		Brand:            opts.Brand,
+		Brand:            strings.ToLower(strings.TrimSpace(opts.Brand)),
 		EcoCertified:     opts.EcoCertified,
 		MinBedrooms:      opts.MinBedrooms,
 		MinBathrooms:     opts.MinBathrooms,
@@ -251,6 +251,17 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 		return fmt.Sprintf("hotel|%s|%s|%s|%d|%s", location, opts.CheckIn, opts.CheckOut, opts.Guests, opts.Currency)
 	}
 	return "hotel|" + string(data)
+}
+
+func normalizedHotelSearchAmenities(amenities []string) []string {
+	normalized := make([]string, 0, len(amenities))
+	for _, amenity := range amenities {
+		amenity = strings.ToLower(strings.TrimSpace(amenity))
+		if amenity != "" {
+			normalized = append(normalized, amenity)
+		}
+	}
+	return normalized
 }
 
 func hotelPageLimit(requested int) int {

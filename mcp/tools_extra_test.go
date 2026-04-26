@@ -268,7 +268,8 @@ func TestToolRegistration_AllTools(t *testing.T) {
 	t.Parallel()
 	s := NewServer()
 	expectedTools := []string{
-		"search_flights", "search_dates", "search_hotels", "hotel_prices",
+		"search_flights", "plan_flight_bundle", "find_interactive",
+		"search_dates", "search_hotels", "hotel_prices",
 		"hotel_reviews", "destination_info", "calculate_trip_cost",
 		"weekend_getaway", "suggest_dates", "optimize_multi_city",
 		"nearby_places", "travel_guide", "local_events",
@@ -287,6 +288,7 @@ func TestToolRegistration_AllTools(t *testing.T) {
 		"create_trip",
 		"add_trip_leg",
 		"mark_trip_booked",
+		"export_ics",
 		"get_weather",
 		"get_baggage_rules",
 		"find_trip_window",

@@ -59,7 +59,13 @@ func TestHotelSingleflight(t *testing.T) {
 // TestHotelSearchKey verifies that different parameter combinations produce
 // distinct keys, preventing incorrect deduplication.
 func TestHotelSearchKey(t *testing.T) {
-	base := HotelSearchOptions{CheckIn: "2026-06-15", CheckOut: "2026-06-18", Guests: 2, Currency: "USD"}
+	base := HotelSearchOptions{
+		CheckIn:   "2026-06-15",
+		CheckOut:  "2026-06-18",
+		Guests:    2,
+		Currency:  "USD",
+		Amenities: []string{"pool", "wifi"},
+	}
 	changedCheckIn := base
 	changedCheckIn.CheckIn = "2026-06-16"
 	changedGuests := base

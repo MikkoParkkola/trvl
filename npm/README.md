@@ -1,6 +1,6 @@
 # trvl-mcp
 
-AI travel agent MCP server. 54 tools for flights, hotels, ground transport, price alerts. No API keys required.
+AI travel agent MCP server. 60 tools for flights, hotels, ground transport, price alerts. No API keys required.
 
 ## Usage
 

@@ -1,7 +1,7 @@
 {
   "name": "trvl-mcp",
   "version": "1.0.6",
-  "description": "AI travel agent — 57 MCP tools for flights, hotels, ground transport, price alerts. No API keys required.",
+  "description": "AI travel agent — 60 MCP tools for flights, hotels, ground transport, price alerts. No API keys required.",
   "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",

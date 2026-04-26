@@ -195,7 +195,7 @@ func TestCheckAllWithRooms_NilContextFallsBackToBackgroundForPriceChecks(t *test
 	}
 
 	checker := &contextRecordingPriceChecker{}
-	results := CheckAllWithRooms(nil, store, checker, nil)
+	results := CheckAllWithRooms(context.TODO(), store, checker, nil)
 	if len(results) != 1 {
 		t.Fatalf("got %d results, want 1", len(results))
 	}
@@ -222,7 +222,7 @@ func TestCheckAllWithRooms_NilContextFallsBackToBackgroundForRoomChecks(t *testi
 	}
 
 	roomChecker := &contextRecordingRoomChecker{}
-	results := CheckAllWithRooms(nil, store, &contextRecordingPriceChecker{}, roomChecker)
+	results := CheckAllWithRooms(context.TODO(), store, &contextRecordingPriceChecker{}, roomChecker)
 	if len(results) != 1 {
 		t.Fatalf("got %d results, want 1", len(results))
 	}

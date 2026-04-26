@@ -128,12 +128,14 @@ func TestToolsList(t *testing.T) {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 
-	if len(result.Tools) != 57 {
-		t.Fatalf("expected 57 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 60 {
+		t.Fatalf("expected 60 tools, got %d", len(result.Tools))
 	}
 
 	expected := map[string]bool{
 		"search_flights":             false,
+		"plan_flight_bundle":         false,
+		"find_interactive":           false,
 		"search_dates":               false,
 		"search_hotels":              false,
 		"search_hotel_by_name":       false,
@@ -165,6 +167,7 @@ func TestToolsList(t *testing.T) {
 		"create_trip":                false,
 		"add_trip_leg":               false,
 		"mark_trip_booked":           false,
+		"export_ics":                 false,
 		"get_weather":                false,
 		"get_baggage_rules":          false,
 		"find_trip_window":           false,
@@ -177,19 +180,19 @@ func TestToolsList(t *testing.T) {
 		"suggest_providers":          false,
 		"test_provider":              false,
 		"optimize_trip_dates":        false,
-		"assess_trip":               false,
-		"optimize_booking":          false,
-		"build_profile":             false,
-		"add_booking":               false,
-		"interview_trip":            false,
-		"onboard_profile":           false,
-		"provider_health":           false,
-		"watch_price":               false,
-		"list_watches":              false,
-		"check_watches":             false,
-		"watch_opportunities":       false,
-		"list_opportunity_watches":  false,
-		"search_hidden_city":        false,
+		"assess_trip":                false,
+		"optimize_booking":           false,
+		"build_profile":              false,
+		"add_booking":                false,
+		"interview_trip":             false,
+		"onboard_profile":            false,
+		"provider_health":            false,
+		"watch_price":                false,
+		"list_watches":               false,
+		"check_watches":              false,
+		"watch_opportunities":        false,
+		"list_opportunity_watches":   false,
+		"search_hidden_city":         false,
 	}
 	for _, tool := range result.Tools {
 		if _, ok := expected[tool.Name]; !ok {

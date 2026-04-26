@@ -34,6 +34,8 @@ func flightsCmd() *cobra.Command {
 		targetCurrency string
 		compareCabins  bool
 		explain        bool
+		award          bool
+		awardCookies   string
 	)
 
 	cmd := &cobra.Command{
@@ -63,6 +65,13 @@ Examples:
 			origins := flights.ParseAirports(originArg)
 			destinations := flights.ParseAirports(args[1])
 			date := args[2]
+
+			if award {
+				if len(origins) != 1 || len(destinations) != 1 {
+					return fmt.Errorf("--award supports exactly one origin and one destination")
+				}
+				return runAwardScan(cmd.Context(), origins[0], destinations[0], date, awardCookies, format)
+			}
 
 			cabinClass, err := models.ParseCabinClass(cabin)
 			if err != nil {
@@ -154,6 +163,8 @@ Examples:
 	cmd.Flags().StringVar(&targetCurrency, "currency", "", "Convert prices to this currency (e.g. EUR, USD). Empty = show API default")
 	cmd.Flags().BoolVar(&compareCabins, "compare-cabins", false, "Compare prices across all cabin classes (economy, premium, business, first)")
 	cmd.Flags().BoolVar(&explain, "explain", false, "Show per-factor profile match breakdown for each result")
+	cmd.Flags().BoolVar(&award, "award", false, "Search Flying Blue award availability instead of cash fares")
+	cmd.Flags().StringVar(&awardCookies, "award-cookies", "", "KLM/Flying Blue Cookie header for --award (or set AFKL_KLM_COOKIES)")
 
 	cmd.ValidArgsFunction = airportCompletion
 
@@ -218,7 +229,7 @@ func printFlightsTable(ctx context.Context, origin, destination, targetCurrency 
 	allInData := make([]allInInfo, len(result.Flights))
 	showAllIn := false
 	prefs, _ := preferences.Load() //nolint:errcheck // default prefs on error
-	if prefs != nil { // all-in is self-gating: column only appears when allIn != basePrice for any flight
+	if prefs != nil {              // all-in is self-gating: column only appears when allIn != basePrice for any flight
 		needCheckedBag := !prefs.CarryOnOnly
 		needCarryOn := true
 		var ffStatuses []baggage.FFStatus

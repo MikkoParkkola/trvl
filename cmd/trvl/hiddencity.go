@@ -103,15 +103,6 @@ Examples:
 	return cmd
 }
 
-// printHiddenCityTable is a helper for testing.
-func printHiddenCityTable(out interface{ Write([]byte) (int, error) }, candidates []hacks.HiddenCityCandidate) {
-	for _, c := range candidates {
-		fmt.Fprintf(out, "%s → %s (skip to %s) %s %.2f risk:%d %s\n",
-			c.Origin, c.HubBeyond, c.Hub,
-			c.Currency, c.Price, c.LayoverRisk, c.Reason)
-	}
-}
-
 // colorizeHiddenCityRisk returns a color-coded risk label.
 func colorizeHiddenCityRisk(risk int) string {
 	switch {

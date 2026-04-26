@@ -97,16 +97,16 @@ type HotelFilterParams struct {
 	FreeCancellation bool
 
 	// Extended filters — wired to providers that support them.
-	MinBedrooms      int    // minimum bedrooms (Airbnb)
-	MinBathrooms     int    // minimum bathrooms (Airbnb)
-	MinBeds          int    // minimum beds (Airbnb)
-	RoomType         string // "entire_home", "private_room", "shared_room" (Airbnb)
-	Superhost        bool   // Superhost-only filter (Airbnb)
-	InstantBook      bool   // instant-bookable only (Airbnb)
-	MaxDistanceM     int    // max distance from center in meters (Booking)
-	Sustainable      bool   // eco/sustainable properties (Booking)
-	MealPlan         bool   // breakfast/meal included (Booking)
-	IncludeSoldOut   bool   // include sold-out properties in results (Booking)
+	MinBedrooms    int    // minimum bedrooms (Airbnb)
+	MinBathrooms   int    // minimum bathrooms (Airbnb)
+	MinBeds        int    // minimum beds (Airbnb)
+	RoomType       string // "entire_home", "private_room", "shared_room" (Airbnb)
+	Superhost      bool   // Superhost-only filter (Airbnb)
+	InstantBook    bool   // instant-bookable only (Airbnb)
+	MaxDistanceM   int    // max distance from center in meters (Booking)
+	Sustainable    bool   // eco/sustainable properties (Booking)
+	MealPlan       bool   // breakfast/meal included (Booking)
+	IncludeSoldOut bool   // include sold-out properties in results (Booking)
 }
 
 // Runtime is the generic HTTP execution engine for configured providers.
@@ -1025,7 +1025,12 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 		"path", cfg.ResponseMapping.ResultsPath,
 		"resolved_type", fmt.Sprintf("%T", resultsRaw),
 		"is_array", ok,
-		"count", func() int { if ok { return len(arr) }; return -1 }())
+		"count", func() int {
+			if ok {
+				return len(arr)
+			}
+			return -1
+		}())
 	// For Apollo-cache providers (e.g. Booking), log empty-results at debug
 	// level so operators can diagnose SSR-vs-CSR rendering issues.
 	if ok && len(arr) == 0 {
