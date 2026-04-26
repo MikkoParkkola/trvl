@@ -166,17 +166,3 @@ func parseDate(s string) (time.Time, bool) {
 	}
 	return t, true
 }
-
-// dayDelta returns the absolute number of calendar days between two
-// dates (UTC), ignoring time-of-day.
-func dayDelta(a, b time.Time) int {
-	ay, am, ad := a.Date()
-	by, bm, bd := b.Date()
-	da := time.Date(ay, am, ad, 0, 0, 0, 0, time.UTC)
-	db := time.Date(by, bm, bd, 0, 0, 0, 0, time.UTC)
-	delta := int(db.Sub(da).Hours() / 24)
-	if delta < 0 {
-		delta = -delta
-	}
-	return delta
-}
