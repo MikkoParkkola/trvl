@@ -47,3 +47,10 @@ Thumbs.db
 __pycache__/
 docs/distribution/
 docs/plans/
+
+# Scratch research artifacts (screenshots, clipped route images, aggregator dumps)
+# Tracked images live under docs/ or assets/; root-level images are scratch only.
+/*.jpg
+/*.jpeg
+/*.png
+/glama.json
