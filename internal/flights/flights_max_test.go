@@ -671,7 +671,7 @@ func TestMergeFlightResults_Dedup(t *testing.T) {
 	kiwi := []models.FlightResult{
 		{Price: 180, Duration: 130, Provider: "kiwi"},
 	}
-	got := mergeFlightResults(google, kiwi, SearchOptions{})
+	got := mergeFlightResults(google, kiwi, nil, SearchOptions{})
 	if len(got) != 2 {
 		t.Errorf("expected 2 merged flights, got %d", len(got))
 	}
@@ -686,7 +686,7 @@ func TestMergeFlightResults_WithFilters(t *testing.T) {
 		{Price: 100, Duration: 120, Legs: []models.FlightLeg{{DepartureTime: "2026-07-01T10:00"}}},
 		{Price: 600, Duration: 120, Legs: []models.FlightLeg{{DepartureTime: "2026-07-01T10:00"}}},
 	}
-	got := mergeFlightResults(all, nil, SearchOptions{MaxPrice: 500})
+	got := mergeFlightResults(all, nil, nil, SearchOptions{MaxPrice: 500})
 	if len(got) != 1 {
 		t.Errorf("expected 1 flight after merge+filter, got %d", len(got))
 	}

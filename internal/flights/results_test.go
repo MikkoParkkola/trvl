@@ -50,7 +50,7 @@ func TestMergeFlightResults_SortsCheapestAndFiltersStops(t *testing.T) {
 		},
 	}
 
-	merged := mergeFlightResults(googleFlights, kiwiFlights, SearchOptions{
+	merged := mergeFlightResults(googleFlights, kiwiFlights, nil, SearchOptions{
 		MaxStops: models.OneStop,
 		SortBy:   models.SortCheapest,
 	})

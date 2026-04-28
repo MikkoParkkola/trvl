@@ -11,10 +11,11 @@ import (
 
 const flightTimeLayout = "2006-01-02T15:04"
 
-func mergeFlightResults(googleFlights, kiwiFlights []models.FlightResult, opts SearchOptions) []models.FlightResult {
-	merged := make([]models.FlightResult, 0, len(googleFlights)+len(kiwiFlights))
+func mergeFlightResults(googleFlights, kiwiFlights, skiplaggedFlights []models.FlightResult, opts SearchOptions) []models.FlightResult {
+	merged := make([]models.FlightResult, 0, len(googleFlights)+len(kiwiFlights)+len(skiplaggedFlights))
 	merged = append(merged, googleFlights...)
 	merged = append(merged, kiwiFlights...)
+	merged = append(merged, skiplaggedFlights...)
 	merged = filterFlightResults(merged, opts)
 	sortFlightResults(merged, opts.SortBy)
 	return merged
@@ -227,6 +228,33 @@ func kiwiSearchEligible(client *batchexec.Client, opts SearchOptions) bool {
 		return false
 	}
 	return kiwiEligibleOptions(opts)
+}
+
+// skiplaggedSearchEligible mirrors kiwiSearchEligible's client guard so the
+// Skiplagged provider only fires under the production shared client.
+// Tests that inject a custom batchexec client via SearchFlightsWithClient
+// auto-skip Skiplagged, preserving deterministic offline test behaviour
+// (matches Kiwi's existing pattern; see PR #N for context).
+func skiplaggedSearchEligible(client *batchexec.Client, opts SearchOptions) bool {
+	if client == nil || client != batchexec.SharedClient() {
+		return false
+	}
+	return skiplaggedEligibleOptions(opts)
+}
+
+func skiplaggedEligibleOptions(opts SearchOptions) bool {
+	// Skiplagged supports return dates, cabin class, max stops, sort, and
+	// adults — but not airline/alliance filters or baggage requirements.
+	if len(opts.Airlines) > 0 || len(opts.Alliances) > 0 {
+		return false
+	}
+	if opts.CarryOnBags > 0 || opts.CheckedBags > 0 || opts.RequireCheckedBag {
+		return false
+	}
+	if opts.ExcludeBasic || opts.LessEmissions {
+		return false
+	}
+	return true
 }
 
 func kiwiEligibleOptions(opts SearchOptions) bool {

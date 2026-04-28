@@ -173,8 +173,22 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 		}
 	}
 
-	mergedFlights := mergeFlightResults(googleFlights, kiwiFlights, opts)
-	if googleSucceeded || kiwiSucceeded {
+	var skiplaggedFlights []models.FlightResult
+	var skiplaggedErr error
+	skiplaggedSucceeded := false
+	if skiplaggedSearchEligible(client, opts) {
+		skiplaggedResult, err := SearchSkiplagged(ctx, origin, destination, date, opts)
+		if err != nil {
+			slog.Warn("skiplagged flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
+			skiplaggedErr = err
+		} else if skiplaggedResult != nil {
+			skiplaggedFlights = skiplaggedResult.Flights
+			skiplaggedSucceeded = true
+		}
+	}
+
+	mergedFlights := mergeFlightResults(googleFlights, kiwiFlights, skiplaggedFlights, opts)
+	if googleSucceeded || kiwiSucceeded || skiplaggedSucceeded {
 		return &models.FlightSearchResult{
 			Success:  true,
 			Count:    len(mergedFlights),
@@ -183,19 +197,21 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 		}, nil
 	}
 
-	if googleErr != nil && kiwiErr != nil {
-		err := errors.Join(googleErr, kiwiErr)
+	errs := []error{}
+	if googleErr != nil {
+		errs = append(errs, googleErr)
+	}
+	if kiwiErr != nil {
+		errs = append(errs, kiwiErr)
+	}
+	if skiplaggedErr != nil {
+		errs = append(errs, skiplaggedErr)
+	}
+	if len(errs) > 0 {
+		err := errors.Join(errs...)
 		return &models.FlightSearchResult{
 			Error: err.Error(),
 		}, err
-	}
-	if googleErr != nil {
-		return googleResult, googleErr
-	}
-	if kiwiErr != nil {
-		return &models.FlightSearchResult{
-			Error: kiwiErr.Error(),
-		}, kiwiErr
 	}
 
 	return &models.FlightSearchResult{
