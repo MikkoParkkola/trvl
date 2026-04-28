@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
 // ---------------------------------------------------------------------------
@@ -264,6 +265,7 @@ func TestLoyaltyConflictNote_nilPrefsReturnsEmpty(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectThrowaway_validInputNoLiveAPI(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectThrowaway(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -277,6 +279,7 @@ func TestDetectThrowaway_validInputNoLiveAPI(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectHiddenCity_knownHubDestination(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	// AMS is in hiddenCityExtensions — hits live API (returns nil).
 	h := detectHiddenCity(context.Background(), DetectorInput{
 		Origin:      "HEL",
@@ -287,6 +290,7 @@ func TestDetectHiddenCity_knownHubDestination(t *testing.T) {
 }
 
 func TestDetectHiddenCity_anotherKnownHub(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	// FRA is also in hiddenCityExtensions.
 	h := detectHiddenCity(context.Background(), DetectorInput{
 		Origin:      "HEL",
@@ -301,6 +305,7 @@ func TestDetectHiddenCity_anotherKnownHub(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectStopover_validInputNoPanic(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectStopover(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "DOH",
@@ -415,6 +420,7 @@ func TestHubCityName_unknownReturnsCode(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectOpenJaw_unknownDestReturnsNil(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectOpenJaw(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "ZZZ", // not in openJawAlternates
@@ -427,6 +433,7 @@ func TestDetectOpenJaw_unknownDestReturnsNil(t *testing.T) {
 }
 
 func TestDetectOpenJaw_knownDestHitsAPI(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	// PRG is in openJawAlternates — will try live API.
 	h := detectOpenJaw(context.Background(), DetectorInput{
 		Origin:      "HEL",
@@ -442,6 +449,7 @@ func TestDetectOpenJaw_knownDestHitsAPI(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectPositioning_knownOriginHitsAPI(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	// HEL is in nearbyAirports.
 	h := detectPositioning(context.Background(), DetectorInput{
 		Origin:      "HEL",
@@ -452,6 +460,7 @@ func TestDetectPositioning_knownOriginHitsAPI(t *testing.T) {
 }
 
 func TestDetectPositioning_anotherKnownOrigin(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	// AMS is in nearbyAirports.
 	h := detectPositioning(context.Background(), DetectorInput{
 		Origin:      "AMS",
@@ -466,6 +475,7 @@ func TestDetectPositioning_anotherKnownOrigin(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectMultiStop_knownDestHitsAPI(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectMultiStop(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "PRG",
@@ -479,6 +489,7 @@ func TestDetectMultiStop_knownDestHitsAPI(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectNightTransport_validRoute(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectNightTransport(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "TLL",
@@ -492,6 +503,7 @@ func TestDetectNightTransport_validRoute(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectTuesdayBooking_sundayTriggersDetector(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	// 2026-04-19 is a Sunday.
 	h := detectTuesdayBooking(context.Background(), DetectorInput{
 		Origin:      "HEL",
@@ -502,6 +514,7 @@ func TestDetectTuesdayBooking_sundayTriggersDetector(t *testing.T) {
 }
 
 func TestDetectTuesdayBooking_fridayTriggersDetector(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	// 2026-04-17 is a Friday.
 	h := detectTuesdayBooking(context.Background(), DetectorInput{
 		Origin:      "HEL",
@@ -516,6 +529,7 @@ func TestDetectTuesdayBooking_fridayTriggersDetector(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectFerryPositioning_knownOriginPath(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectFerryPositioning(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -525,6 +539,7 @@ func TestDetectFerryPositioning_knownOriginPath(t *testing.T) {
 }
 
 func TestDetectFerryPositioning_tallinnOrigin(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectFerryPositioning(context.Background(), DetectorInput{
 		Origin:      "TLL",
 		Destination: "BCN",
@@ -560,6 +575,7 @@ func TestFerryPositioningRoutes_allValid(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectCurrencyArbitrage_validInputPath(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectCurrencyArbitrage(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -573,6 +589,7 @@ func TestDetectCurrencyArbitrage_validInputPath(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectDateFlex_validInputPath(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectDateFlex(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -586,6 +603,7 @@ func TestDetectDateFlex_validInputPath(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectMultiModalReturnSplit_validRoundTripInput(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectMultiModalReturnSplit(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "PRG",
@@ -600,6 +618,7 @@ func TestDetectMultiModalReturnSplit_validRoundTripInput(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectMultiModalSkipFlight_validRoute(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectMultiModalSkipFlight(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "TLL",
@@ -613,6 +632,7 @@ func TestDetectMultiModalSkipFlight_validRoute(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectMultiModalPositioning_knownOriginPath(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectMultiModalPositioning(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -626,6 +646,7 @@ func TestDetectMultiModalPositioning_knownOriginPath(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectMultiModalOpenJawGround_knownDest(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectMultiModalOpenJawGround(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "DBV",
@@ -714,6 +735,7 @@ func TestBuildRailFlyHack_LufthansaRoundTrip(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectSplit_validFullInput(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectSplit(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -836,6 +858,7 @@ func TestDetectRailFlyArbitrage_knownCDGHub(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectLowCostCarrier_validInputExercisesBody(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	// Valid input — will call flights.SearchFlights (returns nil from live API),
 	// exercising the guard branches in the function body.
 	h := detectLowCostCarrier(context.Background(), DetectorInput{
@@ -847,6 +870,7 @@ func TestDetectLowCostCarrier_validInputExercisesBody(t *testing.T) {
 }
 
 func TestDetectLowCostCarrier_withReturnDate(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectLowCostCarrier(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -861,6 +885,7 @@ func TestDetectLowCostCarrier_withReturnDate(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectMultiTripCombo_validTwoTrips(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	// Two trips — exercises the multi-trip combo loop body.
 	// Returns nil from live API, but exercises path past the len(trips) guard.
 	trips := []TripLeg{
@@ -872,6 +897,7 @@ func TestDetectMultiTripCombo_validTwoTrips(t *testing.T) {
 }
 
 func TestDetectMultiTripCombo_moreThanMax(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	// 5 trips — exercises the truncation to maxComboTrips (4).
 	trips := make([]TripLeg, 5)
 	for i := range trips {
@@ -889,6 +915,7 @@ func TestDetectMultiTripCombo_moreThanMax(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectThrowaway_withReturnDate(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	// Providing ReturnDate exercises the branch where it's not auto-calculated.
 	h := detectThrowaway(context.Background(), DetectorInput{
 		Origin:      "HEL",
@@ -904,6 +931,7 @@ func TestDetectThrowaway_withReturnDate(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectSplit_pragueDest(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	h := detectSplit(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "PRG",
