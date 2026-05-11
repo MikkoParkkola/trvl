@@ -14,9 +14,14 @@
 
 ![trvl demo](https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif?v=1.0.5)
 
-> **61 travel tools for your AI assistant — flights, hotels, trains, buses, ferries, price alerts, travel hacks, award sweet spots, weather forecasts, baggage rules, airport lounges, destination intel. Free. API-first.**
+> **The canonical travel MCP for AI assistants. 61 tools. 21 providers. Zero API keys. One binary.**
 >
-> Also works as a standalone CLI with 50 commands.
+> Makes Claude, Cursor, Windsurf, Codex, and any MCP-compatible AI a competent travel agent — flights, hotels, trains, buses, ferries, price alerts, award sweet spots, weather, baggage, lounges, destination intel. Free. API-first. Also works as a standalone CLI with 50 commands.
+
+**For**: AI-assistant users who book ≥4 trips/yr · AI-app builders integrating travel intent · devs shopping MCP registries.
+**Not for**: humans booking via a website (use Google Flights) · travel-agency SaaS shoppers (we are not a hosted product).
+
+→ Full positioning: [`docs/POSITIONING.md`](docs/POSITIONING.md) · Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · Tools: [`AGENTS.md`](AGENTS.md)
 
 ### What it looks like
 
