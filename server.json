@@ -3,7 +3,7 @@
   "name": "io.github.MikkoParkkola/trvl",
   "title": "trvl",
   "description": "AI travel agent for flights, hotels, ground transport, price alerts, and award travel.",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "repository": {
     "url": "https://github.com/MikkoParkkola/trvl",
     "source": "github"
@@ -12,8 +12,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/mikkoparkkola/trvl:1.2.2",
-      "version": "1.2.2",
+      "identifier": "ghcr.io/mikkoparkkola/trvl:1.2.3",
       "transport": {
         "type": "stdio"
       }
