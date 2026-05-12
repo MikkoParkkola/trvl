@@ -38,6 +38,32 @@ var osmRateLimiter = struct {
 	lastReq time.Time
 }{}
 
+func waitForOSMRateLimit(ctx context.Context) error {
+	osmRateLimiter.Lock()
+	wait := time.Duration(0)
+	if elapsed := time.Since(osmRateLimiter.lastReq); elapsed < time.Second {
+		wait = time.Second - elapsed
+	}
+	osmRateLimiter.Unlock()
+
+	if wait > 0 {
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+
+	osmRateLimiter.Lock()
+	osmRateLimiter.lastReq = time.Now()
+	osmRateLimiter.Unlock()
+	return nil
+}
+
 // osmTourismCategories lists valid tourism= values for the Overpass query.
 var osmTourismCategories = map[string]bool{
 	"hotel":      true,
@@ -50,26 +76,26 @@ var osmTourismCategories = map[string]bool{
 // osmAmenityCategories lists valid amenity= values to prevent Overpass QL injection.
 // Only whitelisted categories are interpolated into the query string.
 var osmAmenityCategories = map[string]bool{
-	"restaurant":   true,
-	"cafe":         true,
-	"bar":          true,
-	"pub":          true,
-	"fast_food":    true,
-	"pharmacy":     true,
-	"hospital":     true,
-	"bank":         true,
-	"atm":          true,
-	"fuel":         true,
-	"parking":      true,
-	"taxi":         true,
-	"bus_station":  true,
-	"marketplace":  true,
+	"restaurant":       true,
+	"cafe":             true,
+	"bar":              true,
+	"pub":              true,
+	"fast_food":        true,
+	"pharmacy":         true,
+	"hospital":         true,
+	"bank":             true,
+	"atm":              true,
+	"fuel":             true,
+	"parking":          true,
+	"taxi":             true,
+	"bus_station":      true,
+	"marketplace":      true,
 	"place_of_worship": true,
-	"theatre":      true,
-	"cinema":       true,
-	"library":      true,
-	"nightclub":    true,
-	"ice_cream":    true,
+	"theatre":          true,
+	"cinema":           true,
+	"library":          true,
+	"nightclub":        true,
+	"ice_cream":        true,
 }
 
 // overpassResponse is the JSON shape from the Overpass API.
@@ -111,13 +137,9 @@ func GetNearbyPOIs(ctx context.Context, lat, lon float64, radiusMeters int, cate
 
 	query := buildOverpassQuery(lat, lon, radiusMeters, category)
 
-	// Rate limit: wait until 1s since last request.
-	osmRateLimiter.Lock()
-	if elapsed := time.Since(osmRateLimiter.lastReq); elapsed < time.Second {
-		time.Sleep(time.Second - elapsed)
+	if err := waitForOSMRateLimit(ctx); err != nil {
+		return nil, err
 	}
-	osmRateLimiter.lastReq = time.Now()
-	osmRateLimiter.Unlock()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, overpassAPIURL, strings.NewReader("data="+query))
 	if err != nil {

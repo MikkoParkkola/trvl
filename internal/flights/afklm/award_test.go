@@ -243,6 +243,29 @@ func TestAwardScanner_ScanDateRange_RateLimit(t *testing.T) {
 	}
 }
 
+func TestAwardScannerRateLimitHonorsContextCancellation(t *testing.T) {
+	scanner, err := NewAwardScanner(AwardScannerOptions{
+		Cookies: "session=test",
+		BaseURL: "http://localhost",
+	})
+	if err != nil {
+		t.Fatalf("NewAwardScanner: %v", err)
+	}
+	scanner.lastCall = time.Now()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err = scanner.waitRateLimit(ctx)
+	if err == nil {
+		t.Fatal("expected context cancellation error")
+	}
+	if time.Since(start) > 200*time.Millisecond {
+		t.Fatalf("waitRateLimit ignored cancellation and slept too long")
+	}
+}
+
 // TestLoadAwardFixture verifies testdata loading.
 func TestLoadAwardFixture(t *testing.T) {
 	t.Setenv("TRVL_TEST_AWARD_FIXTURE", "1")

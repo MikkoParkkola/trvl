@@ -42,6 +42,7 @@ func TestDealsCmd_AcceptsZeroArgs(t *testing.T) {
 	cmd := dealsCmd()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
+	cmd.SetContext(cancelledTestContext(t))
 	cmd.SetArgs([]string{})
 	// Should not panic; may succeed or fail depending on network.
 	_ = cmd.Execute()

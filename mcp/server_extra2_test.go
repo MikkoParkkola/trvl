@@ -51,11 +51,14 @@ func TestNewServer(t *testing.T) {
 	if s == nil {
 		t.Fatal("NewServer returned nil")
 	}
-	if len(s.tools) != 61 {
-		t.Errorf("expected 61 tools, got %d", len(s.tools))
+	if len(s.tools) != 1 {
+		t.Errorf("expected compact advertised surface with 1 tool, got %d", len(s.tools))
 	}
-	if len(s.handlers) != 61 {
-		t.Errorf("expected 61 handlers, got %d", len(s.handlers))
+	if _, ok := s.handlers["travel"]; !ok {
+		t.Errorf("travel handler not registered")
+	}
+	if _, ok := s.handlers["search_flights"]; !ok {
+		t.Errorf("legacy search_flights handler not registered")
 	}
 }
 
@@ -168,6 +171,7 @@ func TestToolAnnotations(t *testing.T) {
 	t.Parallel()
 	// Tools that write to disk — ReadOnlyHint is intentionally false.
 	writeTools := map[string]bool{
+		"travel":                  true,
 		"update_preferences":      true,
 		"configure_provider":      true,
 		"remove_provider":         true,
@@ -184,6 +188,7 @@ func TestToolAnnotations(t *testing.T) {
 
 	// Tools that create new resources on each call — not idempotent.
 	nonIdempotentTools := map[string]bool{
+		"travel":                  true,
 		"watch_room_availability": true,
 		"add_booking":             true,
 		"watch_price":             true,

@@ -248,6 +248,7 @@ func TestTripCostCmd_ValidArgsNoNetworkV20(t *testing.T) {
 	tmp := t.TempDir()
 	setTestHome(t, tmp)
 	cmd := tripCostCmd()
+	cmd.SetContext(cancelledTestContext(t))
 	cmd.SetArgs([]string{"HEL", "BCN", "--depart", "2026-07-01", "--return", "2026-07-08"})
 
 	_ = cmd.Execute()
@@ -266,6 +267,7 @@ func TestExploreCmd_ToBeforeFromV21(t *testing.T) {
 func TestExploreCmd_OneWayTypeV21(t *testing.T) {
 
 	cmd := exploreCmd()
+	cmd.SetContext(cancelledTestContext(t))
 	cmd.SetArgs([]string{"HEL", "--from", "2026-07-01", "--to", "2026-07-21", "--type", "one-way"})
 	_ = cmd.Execute()
 }
@@ -286,6 +288,7 @@ func TestWeekendCmd_ValidIATANoNetworkV21(t *testing.T) {
 	tmp := t.TempDir()
 	setTestHome(t, tmp)
 	cmd := weekendCmd()
+	cmd.SetContext(cancelledTestContext(t))
 	cmd.SetArgs([]string{"HEL", "--month", "2026-08"})
 
 	_ = cmd.Execute()
@@ -442,12 +445,14 @@ func TestWeekendCmd_FlagsV23(t *testing.T) {
 
 func TestAirportTransferCmd_ValidArgsNoNetworkV23(t *testing.T) {
 	cmd := airportTransferCmd()
+	cmd.SetContext(cancelledTestContext(t))
 	cmd.SetArgs([]string{"CDG", "Hotel Lutetia Paris", "2026-07-01"})
 	_ = cmd.Execute()
 }
 
 func TestDealsCmd_ValidRunV23(t *testing.T) {
 	cmd := dealsCmd()
+	cmd.SetContext(cancelledTestContext(t))
 	cmd.SetArgs([]string{})
 	_ = cmd.Execute()
 }

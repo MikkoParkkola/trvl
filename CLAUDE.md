@@ -1,10 +1,10 @@
 # trvl
 
-Travel MCP server + CLI. 61 MCP tools, 50 CLI commands. Go 1.26, no frameworks.
+Travel MCP server + CLI. 1 smart MCP tool plus 62 compatibility aliases, 50 CLI commands. Go 1.26, no frameworks.
 
 ## Product Vision
 
-trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, Windsurf, Codex, …) direct access to flights, hotels, trains, buses, ferries, price alerts, travel hacks, weather, baggage rules, airport lounges, and destination intelligence — **without requiring personal API keys**. Single Go binary, MCP 2025-11-25 compliant, 61 MCP tools, 50 CLI commands, API-first with optional browser-assisted fallbacks for a handful of protected providers.
+trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, Windsurf, Codex, …) direct access to flights, hotels, trains, buses, ferries, price alerts, travel hacks, weather, baggage rules, airport lounges, and destination intelligence — **without requiring personal API keys**. Single Go binary, MCP 2025-11-25 compliant, 1 smart MCP tool plus 62 compatibility aliases, 50 CLI commands, API-first with optional browser-assisted fallbacks for a handful of protected providers.
 
 ## Current Status
 
@@ -50,7 +50,7 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 - **Tests must stay deterministic in default suite**: use fixtures for provider responses; put live-API tests behind env-guarded opt-ins
 - **Before adding a new provider**: mirror the `providers/` pattern (generic HTTP→JSON→HotelResult/FlightResult/GroundResult); don't hard-code routes in `mcp/` handlers
 - **MCP tool handlers delegate** to `internal/` packages; thin handlers, business logic in domain packages
-- **When changing tool surface**: update README tool count, `plugin.json`, `demo.tape`, `AGENTS.md` in one PR
+- **When changing tool surface**: update README tool claims, `plugin.json`, `demo.tape`, `AGENTS.md`, bundled skills, and public claim tests in one PR
 
 ## Where to Look
 

@@ -16,9 +16,9 @@
 
 Asciinema source: [`demo.cast`](demo.cast)
 
-> **The canonical travel MCP for AI assistants. 61 tools. 21 providers. Zero API keys. One binary.**
+> **The canonical travel MCP for AI assistants. 1 smart tool. 62 compatibility aliases. 21 providers. Zero API keys. One binary.**
 >
-> Gives Claude, Cursor, Windsurf, Codex, and any MCP-compatible AI 61 travel tools for your AI assistant — flights, hotels, trains, buses, ferries, price alerts, award sweet spots, weather, baggage, lounges, destination intel. Free. API-first. Also works as a standalone CLI with 50 commands.
+> Gives Claude, Cursor, Windsurf, Codex, and any MCP-compatible AI 1 smart MCP tool for your AI assistant — the `travel` router — with 62 compatibility aliases for flights, hotels, trains, buses, ferries, price alerts, award sweet spots, weather, baggage, lounges, and destination intel. Free. API-first. Also works as a standalone CLI with 50 commands.
 
 **For**: AI-assistant users who book ≥4 trips/yr · AI-app builders integrating travel intent · devs shopping MCP registries.
 **Not for**: humans booking via a website (use Google Flights) · travel-agency SaaS shoppers (we are not a hosted product).
@@ -157,7 +157,7 @@ The profile makes every subsequent search smarter — it skips questions it alre
 
 ### 5. Ask your AI to search
 
-That's it. Your AI assistant now has 61 travel tools available. Just ask naturally:
+That's it. Your AI assistant now has 1 smart travel tool available. The old 62 tool names remain callable as compatibility aliases, and `TRVL_MCP_TOOL_MODE=legacy` restores the old advertised list for clients that require it. Just ask naturally:
 
 - *"Search flights from JFK to Tokyo on July 1st, business class"*
 - *"Find hotels in Paris for July 1-5, at least 4 stars"*
@@ -172,13 +172,15 @@ That's it. Your AI assistant now has 61 travel tools available. Just ask natural
 - *"Show me travel deals from Helsinki under €400"*
 - *"Alert me when flights to Tokyo drop below €500"*
 
-## MCP Tools
+## MCP Tool + Compatibility Aliases
 
 | Tool | What it does | Example |
 |------|-------------|---------|
+| **travel** | Smart MCP router for natural or structured requests; forwards to the right compatibility alias | "find hotels in Tokyo" / `intent=search_flights` |
 | **search_flights** | Search flights on a specific date | HEL -> NRT, 2026-06-15, business class, nonstop |
 | **search_dates** | Find cheapest day to fly across a date range | HEL -> BCN, June-August 2026 |
 | **search_hotels** | Search hotels in any city | Tokyo, June 15-18, 4+ stars |
+| **search_hotels_with_details** | Search hotels and enrich top picks with rooms, rates, and amenities | Paris, Jul 1-5, top 3 detailed |
 | **hotel_prices** | Compare hotel prices from Google (aggregated from multiple providers) |
 | **hotel_reviews** | Get reviews for a specific hotel | Top reviews, sorted by rating or recency |
 | **hotel_rooms** | Fetch room-level availability, board, and cancellation details | Hotel place ID, Jul 1-5 |
@@ -266,7 +268,7 @@ That's it. Your AI assistant now has 61 travel tools available. Just ask natural
 |---------|---------|
 | **Structured content** | Typed JSON (`structuredContent`) alongside human-readable summaries |
 | **Content annotations** | `audience: ["user"]` for summaries, `audience: ["assistant"]` for data |
-| **Output schemas** | Full JSON Schema validation for all 61 tool responses |
+| **Output schemas** | Full JSON Schema validation for the `travel` smart router and all 62 compatibility tool responses |
 | **Prompts** | `plan-trip`, `find-cheapest-dates`, `compare-hotels`, `where-should-i-go` |
 | **Resources** | Airport codes (50 major hubs), flight/hotel usage guides, price-watch subscriptions |
 | **Tool description orchestration** | `find_trip_window` instructs the LLM to fetch calendar data first, then pass busy intervals in — works on every MCP client. See [docs/MCP-ORCHESTRATION.md](docs/MCP-ORCHESTRATION.md) |
@@ -378,6 +380,7 @@ For the agent-focused comparison against Google Flights, KAYAK, ChatGPT search, 
 | Bus/train/ferry search | ✅ (20 providers: FlixBus, RegioJet, Eurostar, DB, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS, Ferryhopper) | ❌ | ❌ | ❌ | ❌ |
 | Price tracking | ✅ (watches with alerts) | ❌ | ❌ | ❌ | ❌ |
 | Hotel search | ✅ (5 providers: Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld) | ❌ | ❌ | ❌ | ❌ |
+| Hotel search + top-N room/amenity detail | ✅ (`search_hotels_with_details`) | ❌ | ✅ (web UI) | ❌ | ❌ |
 | Flight providers | ✅ (Google Flights default + Kiwi virtual-interlining merge; AFKLM Flying Blue award scanner; Skiplagged hidden-city via opt-in `--provider skiplagged`) | ✅ | ✅ | ✅ | ✅ |
 | Hotel reviews | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Trip cost calculator | ✅ | ❌ | ❌ | ❌ | ❌ |
@@ -706,7 +709,7 @@ The AI uses these to give you actionable recommendations: "Book here: [link]". N
 | **Binary** | Single static ~15MB for API-first flows. Optional protected-provider fallbacks may use local browser/python tooling. |
 | **Data** | Real-time from Google Flights + 5 hotel sources (Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld) + 20 ground providers (FlixBus, RegioJet, Eurostar, DB, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS, Ferryhopper) + 5 free destination APIs |
 | **Auth** | No personal API keys required. Two providers (NS, Digitransit/VR) use public keys embedded in the binary. Optional browser/cookie fallbacks are available for protected providers when explicitly enabled. |
-| **MCP** | Full v2025-11-25 — 61 tools (incl. 4 profile tools, 3 price watch tools, provider health, award sweet-spot scanning), 7 prompts, resources, structured content, progress notifications, resource subscriptions, tool description orchestration |
+| **MCP** | Full v2025-11-25 — 1 smart MCP tool, 62 compatibility aliases (incl. 4 profile aliases, 3 price watch aliases, provider health, award sweet-spot scanning), 7 prompts, resources, structured content, progress notifications, resource subscriptions, tool description orchestration |
 | **CLI** | 50 commands (+ 7 watch subcommands) with table/JSON output, color, shell completion |
 | **Booking links** | Every flight and hotel result includes a direct Google booking link |
 | **Travel hacks** | 37 detectors (throwaway, hidden-city, positioning, ferry, multi-modal, stopover, date-flex, error fare, back-to-back, rail competition, and more) |
@@ -738,7 +741,7 @@ trvl is part of a suite of MCP tools:
 | Tool | Description |
 |------|-------------|
 | [mcp-gateway](https://github.com/MikkoParkkola/mcp-gateway) | Universal MCP gateway — compact 12-15 tool surface replaces 100+ registrations |
-| **[trvl](https://github.com/MikkoParkkola/trvl)** | **AI travel agent — 50+ MCP tools for flights, hotels, ground transport** |
+| **[trvl](https://github.com/MikkoParkkola/trvl)** | **AI travel agent — 1 smart MCP tool plus 62 compatibility aliases for flights, hotels, ground transport** |
 | [nab](https://github.com/MikkoParkkola/nab) | Web content extraction — fetch any URL with cookies + anti-bot bypass |
 | [axterminator](https://github.com/MikkoParkkola/axterminator) | macOS GUI automation — 35 MCP tools via Accessibility API |
 

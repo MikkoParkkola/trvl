@@ -63,7 +63,7 @@ trvl flights HEL LHR 2026-07-01 --format json | head -5
 # Expected: JSON with flight results
 ```
 
-Tell the user: "trvl is installed with 61 MCP tools and 2 bundled Claude skills. It includes 37 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. I can search flights, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
+Tell the user: "trvl is installed with 1 smart MCP tool, 62 compatibility aliases, and 2 bundled Claude skills. It includes 37 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_hotels`, and `watch_price` continue to work as compatibility aliases. I can search flights, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
 
 ### Step 5: Build travel profile (recommended)
 
@@ -182,7 +182,7 @@ Save with `update_preferences`.
 | Field | Behavior |
 |-------|----------|
 | `home_airports` | Default origin for flight/trip/weekend/discover searches |
-| `display_currency` | Price display across all 61 tools |
+| `display_currency` | Price display across the smart router and all 62 compatibility aliases |
 | `no_dormitories` | `FilterHotels()` drops hostels, capsules, guesthouse rooms by chain name + regex |
 | `ensuite_only` | `FilterHotels()` drops shared-bathroom properties |
 | `min_hotel_stars` | Passed to Google Hotels API as search filter |
@@ -264,7 +264,7 @@ CLI alternative: `trvl prefs init`
 
 ## How To Use (after setup)
 
-You now have 61 MCP tools available. Use them when the user asks about travel:
+You now have one `travel` MCP tool available by default, with 62 legacy tool names still callable as compatibility aliases. Use `travel` for new clients and the aliases when an older workflow names a specific tool:
 
 ### search_flights — Find flights between airports
 ```json
@@ -312,6 +312,16 @@ Optional:
 - `min_price` / `max_price`: price range per night — server-side `?min_price` / `?max_price` + client-side guard
 - `enrich_amenities`: true/false — fetch detail pages for top results (slower)
 - `eco_certified`: true/false (default false) — only show eco-certified hotels with sustainability certifications — server-side `?ecof=1`
+
+### search_hotels_with_details — Search hotels and enrich top picks
+```json
+{"location": "Tokyo", "check_in": "2026-06-15", "check_out": "2026-06-18", "max_hotels": 3}
+```
+Runs `search_hotels`, then fetches room-level availability and full amenity detail for the top hotels in one call. Optional:
+- all `search_hotels` filters
+- `max_hotels`: top hotels to enrich (default 3, max 5)
+- `include_rooms`: true/false (default true)
+- `include_amenities`: true/false (default true)
 
 ### hotel_prices — Compare prices across booking sites
 ```json

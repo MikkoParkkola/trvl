@@ -6,6 +6,7 @@ triggers:
   - monitor flights
   - hotel deal alert
 allowed-tools:
+  - mcp__trvl__travel
   - mcp__trvl__get_preferences
   - mcp__trvl__watch_price
   - mcp__trvl__watch_room_availability
@@ -23,7 +24,8 @@ room availability, or rolling trip opportunities.
 
 ## Inputs
 
-Load `get_preferences` first, then collect only the missing watch parameters:
+Load preferences first through `travel` with `intent="get_preferences"` or the
+compatibility alias, then collect only the missing watch parameters:
 
 - Watch type: flight, hotel, room availability, or opportunity window.
 - Route or property name and location.
@@ -33,12 +35,13 @@ Load `get_preferences` first, then collect only the missing watch parameters:
 
 ## Workflow
 
-1. For flight or hotel threshold alerts, call `watch_price`.
-2. For a specific property and dates, call `watch_room_availability`.
-3. For rolling windows across favourite or bucket-list destinations, call
-   `watch_opportunities`.
-4. Read back the active watch with `list_watches` or
-   `list_opportunity_watches` so the user sees the saved threshold.
+1. For flight or hotel threshold alerts, call `travel` with
+   `intent="watches"`, `action="create"`, and the old `watch_price` params.
+2. For a specific property and dates, use `intent="watch_room_availability"`.
+3. For rolling windows across favourite or bucket-list destinations, use
+   `intent="watch_opportunities"`.
+4. Read back the active watch with `action="list"` or
+   `intent="list_opportunity_watches"` so the user sees the saved threshold.
 5. Give a /loop-compatible recurrence instruction:
    "Run `check_watches` daily; if a threshold is hit, summarize the delta and
    show the booking URL."
@@ -55,5 +58,6 @@ Return:
 - Any missing data that prevents a durable watch.
 
 Do not create or update saved preferences unless the user explicitly confirms
-the profile change. If native trvl tools are unavailable, invoke the same tool
-through `mcp__gateway__gateway_invoke` with `server="trvl"`.
+the profile change. If native `mcp__trvl__travel` is unavailable, invoke
+`tool="travel"` through `mcp__gateway__gateway_invoke` with `server="trvl"`.
+Exact legacy tool names remain callable as compatibility aliases.

@@ -35,9 +35,10 @@ starting the MCP server.
 /trvl plan a weekend getaway from HEL to Prague in July for two people under 900 EUR
 ```
 
-The command routes to `trvl-trip-planner`, loads the traveller profile, calls
-`plan_trip`, expands with `search_flights` and `search_hotels` when useful,
-runs `assess_trip`, and reports the itinerary with travel hack savings.
+The command routes to `trvl-trip-planner`, loads the traveller profile through
+the `travel` smart tool, then dispatches to `plan_trip`, `search_flights`, and
+`search_hotels` compatibility aliases when useful. It runs `assess_trip` and
+reports the itinerary with travel hack savings.
 
 ### 2. Watch A Flight Or Hotel Deal
 
@@ -60,11 +61,12 @@ The command routes to `trvl-destination-research`, composing
 `destination_info`, `travel_guide`, `local_events`, `nearby_places`, and
 `check_visa` into one research packet.
 
-## Underlying Tools
+## Underlying Tool Surface
 
 The original MIK-3400 acceptance text refers to the 43 underlying tools
-available when the plugin was proposed. The current trvl MCP server exposes
-61 current MCP tools, and this plugin is wired for the full current surface.
+available when the plugin was proposed. The current trvl MCP server advertises
+1 smart MCP tool plus 62 compatibility aliases, and this plugin is wired for
+the full current surface.
 
 Flights:
 `search_flights`, `search_dates`, `suggest_dates`, `optimize_trip_dates`,
@@ -73,8 +75,9 @@ Flights:
 `optimize_booking`.
 
 Hotels:
-`search_hotels`, `search_hotel_by_name`, `hotel_prices`, `hotel_reviews`,
-`hotel_rooms`, `watch_room_availability`, `detect_accommodation_hacks`.
+`search_hotels`, `search_hotels_with_details`, `search_hotel_by_name`,
+`hotel_prices`, `hotel_reviews`, `hotel_rooms`, `watch_room_availability`,
+`detect_accommodation_hacks`.
 
 Ground and multimodal:
 `search_ground`, `search_route`, `search_airport_transfers`,

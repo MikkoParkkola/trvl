@@ -78,6 +78,20 @@ func TestBrowserReadPage_DefaultWaitSeconds(t *testing.T) {
 	}
 }
 
+func TestWaitForBrowserRenderHonorsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := waitForBrowserRender(ctx, time.Second)
+	if err == nil {
+		t.Fatal("expected context cancellation error")
+	}
+	if time.Since(start) > 200*time.Millisecond {
+		t.Fatal("waitForBrowserRender ignored cancellation and slept too long")
+	}
+}
+
 func TestURLSanitization(t *testing.T) {
 	// Verify that browserReadPageWith sanitizes quotes and backslashes.
 	// We can't call it directly without osascript, but we can verify the

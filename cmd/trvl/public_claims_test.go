@@ -24,9 +24,11 @@ import (
 const cliCommandCountMarketed = 50
 
 var readmeToolMarkers = []string{
+	"travel",
 	"search_flights",
 	"search_dates",
 	"search_hotels",
+	"search_hotels_with_details",
 	"hotel_prices",
 	"hotel_reviews",
 	"hotel_rooms",
@@ -110,10 +112,27 @@ func registeredMCPToolCount(t *testing.T) int {
 	return tools.Len()
 }
 
+func registeredMCPCompatibilityAliasCount(t *testing.T) int {
+	t.Helper()
+
+	serverValue := reflect.ValueOf(trvlmcp.NewServer())
+	if serverValue.Kind() != reflect.Pointer || serverValue.IsNil() {
+		t.Fatal("mcp.NewServer should return a non-nil server pointer")
+	}
+
+	handlers := serverValue.Elem().FieldByName("handlers")
+	if !handlers.IsValid() {
+		t.Fatal("mcp.Server should expose an internal handlers field")
+	}
+
+	return handlers.Len() - 1 // Exclude the primary travel smart router.
+}
+
 func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 	t.Parallel()
 
 	toolCount := registeredMCPToolCount(t)
+	compatAliasCount := registeredMCPCompatibilityAliasCount(t)
 	// Use marketed count (excludes version, providers, help, completion).
 	// See cliCommandCountMarketed constant for rationale.
 	cliCommandCount := cliCommandCountMarketed
@@ -132,12 +151,13 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 			path: filepath.Join("..", "..", "README.md"),
 			required: []string{
 				fmt.Sprintf("https://img.shields.io/badge/providers-%d-brightgreen", totalProviderCount),
-				fmt.Sprintf("%d travel tools for your AI assistant", toolCount),
+				fmt.Sprintf("%d smart MCP tool for your AI assistant", toolCount),
+				fmt.Sprintf("%d compatibility aliases", compatAliasCount),
 				fmt.Sprintf("standalone CLI with %d commands", cliCommandCount),
-				fmt.Sprintf("%d travel tools available", toolCount),
-				fmt.Sprintf("Full v2025-11-25 — %d tools", toolCount),
+				fmt.Sprintf("%d smart travel tool available", toolCount),
+				fmt.Sprintf("Full v2025-11-25 — %d smart MCP tool, %d compatibility aliases", toolCount, compatAliasCount),
 				fmt.Sprintf("%d commands (+ %d watch subcommands)", cliCommandCount, watchSubcommandCount),
-				fmt.Sprintf("Full JSON Schema validation for all %d tool responses", toolCount),
+				fmt.Sprintf("Full JSON Schema validation for the `travel` smart router and all %d compatibility tool responses", compatAliasCount),
 				"install the bundled skill that teaches Claude how to use trvl",
 				fmt.Sprintf("trvl searches %d ground transport providers in parallel, covering most of Europe. Airport transfers add taxi estimates on top of that, so trvl exposes %d transport providers overall:", groundProviderCount, totalProviderCount),
 				fmt.Sprintf("Searches %d providers in parallel:", groundProviderCount),
@@ -145,11 +165,15 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 			forbidden: []string{
 				"https://img.shields.io/badge/providers-16-brightgreen",
 				"31 travel tools for your AI assistant",
+				"62 travel tools for your AI assistant",
 				"standalone CLI with 31 commands",
 				"31 travel tools available",
+				"62 travel tools available",
 				"Full v2025-11-25 — 31 tools",
+				"Full v2025-11-25 — 62 tools",
 				"31 commands (+ 6 watch subcommands)",
 				"Full JSON Schema validation for all 31 tool responses",
+				"Full JSON Schema validation for all 62 tool responses",
 				"29 travel tools for your AI assistant",
 				"standalone CLI with 29 commands",
 				"29 travel tools available",
@@ -162,8 +186,8 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 		{
 			path: filepath.Join("..", "..", "AGENTS.md"),
 			required: []string{
-				fmt.Sprintf("trvl is installed with %d MCP tools and %d bundled Claude skill", toolCount, skillCount),
-				fmt.Sprintf("| `display_currency` | Price display across all %d tools |", toolCount),
+				fmt.Sprintf("trvl is installed with %d smart MCP tool, %d compatibility aliases, and %d bundled Claude skill", toolCount, compatAliasCount, skillCount),
+				fmt.Sprintf("| `display_currency` | Price display across the smart router and all %d compatibility aliases |", compatAliasCount),
 				"### search_lounges — Find airport lounges at a given airport",
 				"### check_visa — Check visa requirements for a passport→destination pair",
 				"### calculate_points_value — Compare points vs cash for a redemption",
@@ -174,35 +198,41 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 				"trvl is installed with 31 MCP tools and 5 skills",
 				"trvl is installed with 31 MCP tools and 4 skills",
 				"installed with 22 MCP tools and 5 skills",
+				"trvl is installed with 62 MCP tools",
 				"You now have 22 MCP tools available.",
+				"You now have 62 MCP tools available.",
 				"| `display_currency` | Price display across all 35 tools |",
 			},
 		},
 		{
 			path: filepath.Join("..", "..", "demo.tape"),
 			required: []string{
-				fmt.Sprintf("# %d MCP tools · %d CLI commands · %d providers · No API keys", toolCount, cliCommandCount, totalProviderCount),
+				fmt.Sprintf("# %d smart MCP tool · %d aliases · %d CLI commands · %d providers · No API keys", toolCount, compatAliasCount, cliCommandCount, totalProviderCount),
 			},
 			forbidden: []string{
 				"# 31 MCP tools · 31 CLI commands · 17 providers · No API keys",
 				"# 29 MCP tools · 29 CLI commands · 17 providers · No API keys",
+				"# 62 MCP tools",
 			},
 		},
 		{
 			path: filepath.Join("..", "..", ".claude-plugin", "plugin.json"),
 			required: []string{
-				fmt.Sprintf("%d MCP tools", toolCount),
+				fmt.Sprintf("%d smart MCP tool", toolCount),
+				fmt.Sprintf("%d compatibility aliases", compatAliasCount),
 			},
 			forbidden: []string{
 				"16 MCP tools",
 				"31 MCP tools",
+				"62 MCP tools",
 			},
 		},
 		{
 			path: filepath.Join("..", "..", ".claude", "skills", "trvl.md"),
 			required: []string{
-				fmt.Sprintf("## CORE TOOLS (selected high-signal tools; trvl exposes %d MCP tools overall via gateway_invoke server=\"trvl\")", toolCount),
+				fmt.Sprintf("## CORE TOOL ROUTING (primary `travel` tool + %d compatibility aliases)", compatAliasCount),
 				fmt.Sprintf("Bus/train/ferry (%d providers)", groundProviderCount),
+				"`travel`",
 				"`search_airport_transfers`",
 				"`plan_trip`",
 				"`search_route`",
@@ -212,6 +242,7 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 			forbidden: []string{
 				"## TOOLS (via gateway_invoke server=\"trvl\")",
 				"trvl exposes 31 MCP tools overall",
+				"trvl exposes 62 MCP tools overall",
 				"Bus/train (6 providers)",
 			},
 		},

@@ -6,6 +6,7 @@ triggers:
   - what to do in
   - things to see in
 allowed-tools:
+  - mcp__trvl__travel
   - mcp__trvl__get_preferences
   - mcp__trvl__destination_info
   - mcp__trvl__travel_guide
@@ -23,7 +24,8 @@ to do in a place, event ideas, neighborhoods, safety, visa, or local context.
 
 ## Inputs
 
-Load `get_preferences` first. Collect:
+Load preferences first through `travel` with `intent="get_preferences"` or the
+compatibility alias. Collect:
 
 - Location.
 - Travel dates or a broad month/season.
@@ -34,16 +36,17 @@ Load `get_preferences` first. Collect:
 
 ## Workflow
 
-1. Call `destination_info` for weather, safety, holidays, timezone, currency,
-   and country facts.
-2. Call `travel_guide` for Wikivoyage-style orientation and neighborhoods.
-3. Call `local_events` for concerts, sports, festivals, and exhibitions during
-   the trip dates.
-4. Call `nearby_places` when the user gives a hotel, coordinates, district, or
-   an itinerary anchor.
-5. Call `check_visa` when nationality/passport and destination country are
-   known or can be inferred safely.
-6. Optionally call `search_restaurants` for dining requests or dietary needs.
+1. Use `travel` with `intent="destination_info"` for weather, safety, holidays,
+   timezone, currency, and country facts.
+2. Use `intent="travel_guide"` for Wikivoyage-style orientation and neighborhoods.
+3. Use `intent="local_events"` for concerts, sports, festivals, and exhibitions
+   during the trip dates.
+4. Use `intent="nearby_places"` when the user gives a hotel, coordinates,
+   district, or an itinerary anchor.
+5. Use `intent="check_visa"` when nationality/passport and destination country
+   are known or can be inferred safely.
+6. Optionally use `intent="search_restaurants"` for dining requests or dietary
+   needs.
 
 ## Output
 
@@ -58,5 +61,6 @@ Return a single research packet:
 - Planning risks and follow-up searches.
 
 Do not overstate live availability; mark event, restaurant, and POI details as
-current search results. If native trvl tools are unavailable, use
-`mcp__gateway__gateway_invoke` with `server="trvl"`.
+current search results. If native `mcp__trvl__travel` is unavailable, use
+`mcp__gateway__gateway_invoke` with `server="trvl"` and `tool="travel"`.
+Exact legacy tool names remain callable as compatibility aliases.

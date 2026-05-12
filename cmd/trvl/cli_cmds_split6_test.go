@@ -443,7 +443,7 @@ func TestCalendarCmd_LastWriteToFile(t *testing.T) {
 
 func TestRunCabinComparison_JSONNoNetwork(t *testing.T) {
 
-	ctx := context.Background()
+	ctx := cancelledTestContext(t)
 
 	err := runCabinComparison(ctx, []string{"HEL"}, []string{"BCN"}, "2026-07-01", flights.SearchOptions{}, "json")
 

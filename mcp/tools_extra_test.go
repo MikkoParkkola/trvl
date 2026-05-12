@@ -265,11 +265,11 @@ func TestMultiCitySummary_Strings(t *testing.T) {
 // --- tool registration ---
 
 func TestToolRegistration_AllTools(t *testing.T) {
-	t.Parallel()
+	t.Setenv("TRVL_MCP_TOOL_MODE", "legacy")
 	s := NewServer()
 	expectedTools := []string{
 		"search_flights", "plan_flight_bundle", "find_interactive",
-		"search_dates", "search_hotels", "hotel_prices",
+		"search_dates", "search_hotels", "search_hotels_with_details", "hotel_prices",
 		"hotel_reviews", "destination_info", "calculate_trip_cost",
 		"weekend_getaway", "suggest_dates", "optimize_multi_city",
 		"nearby_places", "travel_guide", "local_events",

@@ -128,96 +128,22 @@ func TestToolsList(t *testing.T) {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 
-	if len(result.Tools) != 61 {
-		t.Fatalf("expected 61 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 1 {
+		t.Fatalf("expected compact tools/list to advertise 1 tool, got %d", len(result.Tools))
 	}
 
-	expected := map[string]bool{
-		"search_flights":             false,
-		"plan_flight_bundle":         false,
-		"find_interactive":           false,
-		"search_dates":               false,
-		"search_hotels":              false,
-		"search_hotel_by_name":       false,
-		"hotel_prices":               false,
-		"hotel_reviews":              false,
-		"destination_info":           false,
-		"calculate_trip_cost":        false,
-		"weekend_getaway":            false,
-		"suggest_dates":              false,
-		"optimize_multi_city":        false,
-		"nearby_places":              false,
-		"travel_guide":               false,
-		"local_events":               false,
-		"search_ground":              false,
-		"search_airport_transfers":   false,
-		"search_restaurants":         false,
-		"search_deals":               false,
-		"plan_trip":                  false,
-		"search_route":               false,
-		"hotel_rooms":                false,
-		"watch_room_availability":    false,
-		"get_preferences":            false,
-		"update_preferences":         false,
-		"detect_travel_hacks":        false,
-		"detect_accommodation_hacks": false,
-		"search_natural":             false,
-		"list_trips":                 false,
-		"get_trip":                   false,
-		"create_trip":                false,
-		"add_trip_leg":               false,
-		"mark_trip_booked":           false,
-		"export_ics":                 false,
-		"get_weather":                false,
-		"get_baggage_rules":          false,
-		"find_trip_window":           false,
-		"search_lounges":             false,
-		"check_visa":                 false,
-		"calculate_points_value":     false,
-		"configure_provider":         false,
-		"list_providers":             false,
-		"remove_provider":            false,
-		"suggest_providers":          false,
-		"test_provider":              false,
-		"optimize_trip_dates":        false,
-		"assess_trip":                false,
-		"optimize_booking":           false,
-		"build_profile":              false,
-		"add_booking":                false,
-		"interview_trip":             false,
-		"onboard_profile":            false,
-		"provider_health":            false,
-		"watch_price":                false,
-		"list_watches":               false,
-		"check_watches":              false,
-		"watch_opportunities":        false,
-		"list_opportunity_watches":   false,
-		"search_hidden_city":         false,
-		"search_awards":              false,
+	tool := result.Tools[0]
+	if tool.Name != "travel" {
+		t.Fatalf("expected compact tools/list to advertise travel, got %q", tool.Name)
 	}
-	for _, tool := range result.Tools {
-		if _, ok := expected[tool.Name]; !ok {
-			t.Errorf("unexpected tool: %s", tool.Name)
-		}
-		expected[tool.Name] = true
-
-		if tool.Description == "" {
-			t.Errorf("tool %s has empty description", tool.Name)
-		}
-		if tool.InputSchema.Type != "object" {
-			t.Errorf("tool %s schema type: got %q, want %q", tool.Name, tool.InputSchema.Type, "object")
-		}
-		// Tools with no input parameters (e.g. get_preferences) intentionally
-		// have zero properties and zero required fields.
-		if len(tool.InputSchema.Properties) == 0 && len(tool.InputSchema.Required) > 0 {
-			t.Errorf("tool %s has required fields but no properties", tool.Name)
-		}
+	if tool.Description == "" {
+		t.Errorf("tool %s has empty description", tool.Name)
 	}
-
-	for name, found := range expected {
-		if !found {
-			t.Errorf("missing tool: %s", name)
-		}
+	if tool.InputSchema.Type != "object" {
+		t.Errorf("tool %s schema type: got %q, want %q", tool.Name, tool.InputSchema.Type, "object")
+	}
+	if len(tool.InputSchema.Properties) == 0 {
+		t.Errorf("tool %s should describe router properties", tool.Name)
 	}
 }
 

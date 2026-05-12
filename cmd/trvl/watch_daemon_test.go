@@ -161,10 +161,9 @@ func installBlockingDaemonWebhookClient(t *testing.T) *blockingDaemonWebhookTran
 	t.Helper()
 
 	transport := newBlockingDaemonWebhookTransport()
-	oldClient := http.DefaultClient
-	http.DefaultClient = &http.Client{Transport: transport}
+	oldClient := watch.SetWebhookHTTPClientForTest(&http.Client{Transport: transport})
 	t.Cleanup(func() {
-		http.DefaultClient = oldClient
+		watch.SetWebhookHTTPClientForTest(oldClient)
 	})
 	return transport
 }

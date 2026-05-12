@@ -111,6 +111,7 @@ func TestReviewsCmd_FlagsV25(t *testing.T) {
 
 func TestWeatherCmd_DefaultDatesNoNetworkV25(t *testing.T) {
 	cmd := weatherCmd()
+	cmd.SetContext(cancelledTestContext(t))
 	cmd.SetArgs([]string{"Helsinki"})
 
 	_ = cmd.Execute()
@@ -118,6 +119,7 @@ func TestWeatherCmd_DefaultDatesNoNetworkV25(t *testing.T) {
 
 func TestLoungesCmd_ValidIATANoNetworkV25(t *testing.T) {
 	cmd := loungesCmd()
+	cmd.SetContext(cancelledTestContext(t))
 	cmd.SetArgs([]string{"HEL"})
 
 	_ = cmd.Execute()

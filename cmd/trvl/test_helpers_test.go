@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"runtime"
 	"testing"
 )
@@ -14,4 +15,12 @@ func setTestHome(t *testing.T, dir string) {
 	if runtime.GOOS == "windows" {
 		t.Setenv("USERPROFILE", dir)
 	}
+}
+
+func cancelledTestContext(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	t.Cleanup(cancel)
+	return ctx
 }

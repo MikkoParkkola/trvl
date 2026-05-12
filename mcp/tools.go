@@ -18,12 +18,13 @@ import (
 // Handlers are wrapped in closures to give them access to the server for
 // recording searches and adding resource_link content blocks.
 func registerTools(s *Server) {
-	s.tools = []ToolDef{
+	legacyTools := []ToolDef{
 		searchFlightsTool(),
 		planFlightBundleTool(),
 		findInteractiveTool(),
 		searchDatesTool(),
 		searchHotelsTool(),
+		searchHotelsWithDetailsTool(),
 		searchHotelByNameTool(),
 		hotelPricesTool(),
 		hotelReviewsTool(),
@@ -81,11 +82,14 @@ func registerTools(s *Server) {
 		searchHiddenCityTool(),
 		searchAwardsTool(),
 	}
+	s.tools = advertisedToolSurface(legacyTools)
+	s.handlers["travel"] = s.handleTravel
 	s.handlers["search_flights"] = s.wrapHandler("search_flights", handleSearchFlights)
 	s.handlers["plan_flight_bundle"] = s.wrapHandler("plan_flight_bundle", handlePlanFlightBundle)
 	s.handlers["find_interactive"] = s.wrapHandler("find_interactive", handleFindInteractive)
 	s.handlers["search_dates"] = s.wrapHandler("search_dates", handleSearchDates)
 	s.handlers["search_hotels"] = s.wrapHandler("search_hotels", handleSearchHotels)
+	s.handlers["search_hotels_with_details"] = s.wrapHandler("search_hotels_with_details", handleSearchHotelsWithDetails)
 	s.handlers["search_hotel_by_name"] = s.wrapHandler("search_hotel_by_name", handleSearchHotelByName)
 	s.handlers["hotel_prices"] = s.wrapHandler("hotel_prices", handleHotelPrices)
 	s.handlers["hotel_reviews"] = s.wrapHandler("hotel_reviews", handleHotelReviews)

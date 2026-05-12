@@ -13,6 +13,19 @@ import (
 
 var searchHotelsFunc = hotels.SearchHotels
 
+type hotelSearchRequest struct {
+	Location string
+	CheckIn  string
+	CheckOut string
+	Options  hotels.HotelSearchOptions
+	Prefs    *preferences.Preferences
+}
+
+type hotelSearchResponse struct {
+	*models.HotelSearchResult
+	Suggestions []Suggestion `json:"suggestions,omitempty"`
+}
+
 // --- Output schema builders ---
 
 // hotelSearchOutputSchema returns the JSON Schema for HotelSearchResult.
@@ -104,43 +117,47 @@ func hotelPricesOutputSchema() interface{} {
 
 // --- Tool definitions ---
 
+func hotelSearchInputProperties() map[string]Property {
+	return map[string]Property{
+		"location":          {Type: "string", Description: "Location name or address (e.g., Helsinki, Tokyo, Manhattan New York)"},
+		"check_in":          {Type: "string", Description: "Check-in date in YYYY-MM-DD format"},
+		"check_out":         {Type: "string", Description: "Check-out date in YYYY-MM-DD format"},
+		"guests":            {Type: "integer", Description: "Number of guests (default: 2)"},
+		"currency":          {Type: "string", Description: "Currency code (e.g. USD, EUR). Defaults to display_currency preference, then USD"},
+		"stars":             {Type: "integer", Description: "Minimum star rating 1-5 (default: no filter)"},
+		"sort":              {Type: "string", Description: "Sort order: price, rating, distance, or stars (default: price)"},
+		"min_price":         {Type: "number", Description: "Minimum price per night (default: no filter)"},
+		"max_price":         {Type: "number", Description: "Maximum price per night (default: no filter)"},
+		"min_rating":        {Type: "number", Description: "Minimum guest rating on 0-10 scale, e.g. 8.0 (default: no filter)"},
+		"max_distance":      {Type: "number", Description: "Maximum distance from city center in km (default: no filter)"},
+		"amenities":         {Type: "string", Description: "Filter by amenities (comma-separated, e.g. pool,wifi,breakfast)"},
+		"enrich_amenities":  {Type: "boolean", Description: "Fetch detail pages for top results to get full amenity lists (slower, default: false)"},
+		"free_cancellation": {Type: "boolean", Description: "Only show hotels with free cancellation (default: false)"},
+		"property_type":     {Type: "string", Description: "Filter by property type: hotel, apartment, hostel, resort, bnb, or villa (default: no filter)"},
+		"brand":             {Type: "string", Description: "Filter by hotel brand/chain name (case-insensitive substring match, e.g. hilton, marriott, ibis)"},
+		"eco_certified":     {Type: "boolean", Description: "Only show eco-certified hotels with sustainability certifications (default: false)"},
+		"min_bedrooms":      {Type: "integer", Description: "Minimum number of bedrooms (Airbnb, default: no filter)"},
+		"min_bathrooms":     {Type: "integer", Description: "Minimum number of bathrooms (Airbnb, default: no filter)"},
+		"min_beds":          {Type: "integer", Description: "Minimum number of beds (Airbnb, default: no filter)"},
+		"room_type":         {Type: "string", Description: "Room type filter: entire_home, private_room, shared_room, hotel_room (Airbnb, default: no filter)"},
+		"superhost":         {Type: "boolean", Description: "Only show Superhost listings (Airbnb, default: false)"},
+		"instant_book":      {Type: "boolean", Description: "Only show instant-bookable listings (Airbnb, default: false)"},
+		"max_distance_m":    {Type: "integer", Description: "Maximum distance from city center in meters (Booking, default: no filter)"},
+		"sustainable":       {Type: "boolean", Description: "Only show eco/sustainable properties (Booking, default: false)"},
+		"meal_plan":         {Type: "boolean", Description: "Only show properties with breakfast/meals included (Booking, default: false)"},
+		"include_sold_out":  {Type: "boolean", Description: "Include sold-out properties in results (Booking, default: false)"},
+	}
+}
+
 func searchHotelsTool() ToolDef {
 	return ToolDef{
 		Name:        "search_hotels",
 		Title:       "Search Hotels",
 		Description: "Search hotels via Google Hotels, Trivago, optionally Booking.com when BOOKING_API_KEY is configured, and any user-configured external providers. Returns real-time pricing, ratings, star levels, and amenities for a given location and dates. Results are merged and deduplicated across providers so the cheapest price wins. IMPORTANT: call get_preferences before your first search in a conversation. If the profile is empty, interview the user first — get_preferences returns instructions. Preferences are applied server-side (star/rating filters, hostel exclusion, neighborhood prioritization) but also check the notes field for soft preferences like 'boutique only' or 'no chains' and apply those yourself.",
 		InputSchema: InputSchema{
-			Type: "object",
-			Properties: map[string]Property{
-				"location":          {Type: "string", Description: "Location name or address (e.g., Helsinki, Tokyo, Manhattan New York)"},
-				"check_in":          {Type: "string", Description: "Check-in date in YYYY-MM-DD format"},
-				"check_out":         {Type: "string", Description: "Check-out date in YYYY-MM-DD format"},
-				"guests":            {Type: "integer", Description: "Number of guests (default: 2)"},
-				"currency":          {Type: "string", Description: "Currency code (e.g. USD, EUR). Defaults to display_currency preference, then USD"},
-				"stars":             {Type: "integer", Description: "Minimum star rating 1-5 (default: no filter)"},
-				"sort":              {Type: "string", Description: "Sort order: price, rating, distance, or stars (default: price)"},
-				"min_price":         {Type: "number", Description: "Minimum price per night (default: no filter)"},
-				"max_price":         {Type: "number", Description: "Maximum price per night (default: no filter)"},
-				"min_rating":        {Type: "number", Description: "Minimum guest rating on 0-10 scale, e.g. 8.0 (default: no filter)"},
-				"max_distance":      {Type: "number", Description: "Maximum distance from city center in km (default: no filter)"},
-				"amenities":         {Type: "string", Description: "Filter by amenities (comma-separated, e.g. pool,wifi,breakfast)"},
-				"enrich_amenities":  {Type: "boolean", Description: "Fetch detail pages for top results to get full amenity lists (slower, default: false)"},
-				"free_cancellation": {Type: "boolean", Description: "Only show hotels with free cancellation (default: false)"},
-				"property_type":     {Type: "string", Description: "Filter by property type: hotel, apartment, hostel, resort, bnb, or villa (default: no filter)"},
-				"brand":             {Type: "string", Description: "Filter by hotel brand/chain name (case-insensitive substring match, e.g. hilton, marriott, ibis)"},
-				"eco_certified":     {Type: "boolean", Description: "Only show eco-certified hotels with sustainability certifications (default: false)"},
-				"min_bedrooms":      {Type: "integer", Description: "Minimum number of bedrooms (Airbnb, default: no filter)"},
-				"min_bathrooms":     {Type: "integer", Description: "Minimum number of bathrooms (Airbnb, default: no filter)"},
-				"min_beds":          {Type: "integer", Description: "Minimum number of beds (Airbnb, default: no filter)"},
-				"room_type":         {Type: "string", Description: "Room type filter: entire_home, private_room, shared_room, hotel_room (Airbnb, default: no filter)"},
-				"superhost":         {Type: "boolean", Description: "Only show Superhost listings (Airbnb, default: false)"},
-				"instant_book":      {Type: "boolean", Description: "Only show instant-bookable listings (Airbnb, default: false)"},
-				"max_distance_m":    {Type: "integer", Description: "Maximum distance from city center in meters (Booking, default: no filter)"},
-				"sustainable":       {Type: "boolean", Description: "Only show eco/sustainable properties (Booking, default: false)"},
-				"meal_plan":         {Type: "boolean", Description: "Only show properties with breakfast/meals included (Booking, default: false)"},
-				"include_sold_out":  {Type: "boolean", Description: "Include sold-out properties in results (Booking, default: false)"},
-			},
-			Required: []string{"location", "check_in", "check_out"},
+			Type:       "object",
+			Properties: hotelSearchInputProperties(),
+			Required:   []string{"location", "check_in", "check_out"},
 		},
 		OutputSchema: hotelSearchOutputSchema(),
 		Annotations: &ToolAnnotations{
@@ -179,18 +196,18 @@ func hotelPricesTool() ToolDef {
 
 // --- Tool handlers ---
 
-func handleSearchHotels(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
+func buildHotelSearchRequest(args map[string]any) (hotelSearchRequest, error) {
 	location := models.ResolveLocationName(argString(args, "location"))
 	checkIn := argString(args, "check_in")
 	checkOut := argString(args, "check_out")
 
 	if location == "" || checkIn == "" || checkOut == "" {
-		return nil, nil, fmt.Errorf("location, check_in, and check_out are required")
+		return hotelSearchRequest{}, fmt.Errorf("location, check_in, and check_out are required")
 	}
 
 	// Validate dates.
 	if err := models.ValidateDateRange(checkIn, checkOut); err != nil {
-		return nil, nil, err
+		return hotelSearchRequest{}, err
 	}
 
 	// Parse amenities filter: comma-separated, trimmed, lowercased.
@@ -290,34 +307,54 @@ func handleSearchHotels(ctx context.Context, args map[string]any, elicit ElicitF
 		}
 	}
 
-	result, err := searchHotelsFunc(ctx, location, opts)
+	return hotelSearchRequest{
+		Location: location,
+		CheckIn:  checkIn,
+		CheckOut: checkOut,
+		Options:  opts,
+		Prefs:    prefs,
+	}, nil
+}
+
+func runHotelSearch(ctx context.Context, req hotelSearchRequest) (*models.HotelSearchResult, error) {
+	result, err := searchHotelsFunc(ctx, req.Location, req.Options)
+	if err != nil {
+		return nil, err
+	}
+
+	// Post-filter with preference-based filters (dormitories, en-suite, districts).
+	if req.Prefs != nil {
+		result.Hotels = preferences.FilterHotels(result.Hotels, req.Location, req.Prefs)
+		result.Count = len(result.Hotels)
+	}
+
+	return result, nil
+}
+
+func handleSearchHotels(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
+	req, err := buildHotelSearchRequest(args)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Post-filter with preference-based filters (dormitories, en-suite, districts).
-	if prefs != nil {
-		result.Hotels = preferences.FilterHotels(result.Hotels, location, prefs)
-		result.Count = len(result.Hotels)
+	result, err := runHotelSearch(ctx, req)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Build suggestions for progressive disclosure.
-	suggestions := hotelSuggestions(result, opts)
+	suggestions := hotelSuggestions(result, req.Options)
 
 	// The orchestrating LLM receives the full hotel list in structuredContent JSON
 	// and can select and rank picks without any server-side sampling round-trip.
 	// (curateHotelsViaSampling was removed: sampling is not wired in production.)
 
-	type hotelResponse struct {
-		*models.HotelSearchResult
-		Suggestions []Suggestion `json:"suggestions,omitempty"`
-	}
-	resp := hotelResponse{
+	resp := hotelSearchResponse{
 		HotelSearchResult: result,
 		Suggestions:       suggestions,
 	}
 
-	summary := hotelSummary(result, location)
+	summary := hotelSummary(result, req.Location)
 
 	content, err := buildAnnotatedContentBlocks(summary, resp)
 	if err != nil {

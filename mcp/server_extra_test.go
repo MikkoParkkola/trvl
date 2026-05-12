@@ -86,8 +86,11 @@ func TestHTTPHandler_POST_ToolsList(t *testing.T) {
 	var result ToolsListResult
 	json.Unmarshal(resultJSON, &result)
 
-	if len(result.Tools) != 61 {
-		t.Errorf("expected 61 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 1 {
+		t.Errorf("expected compact tools/list to advertise 1 tool, got %d", len(result.Tools))
+	}
+	if len(result.Tools) == 1 && result.Tools[0].Name != "travel" {
+		t.Errorf("expected compact tools/list to advertise travel, got %q", result.Tools[0].Name)
 	}
 }
 

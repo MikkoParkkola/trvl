@@ -12,6 +12,19 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/hotelarb"
 )
 
+var webhookHTTPClient = http.DefaultClient
+
+// SetWebhookHTTPClientForTest swaps the webhook HTTP client and returns the previous client.
+func SetWebhookHTTPClientForTest(client *http.Client) *http.Client {
+	prev := webhookHTTPClient
+	if client == nil {
+		webhookHTTPClient = http.DefaultClient
+	} else {
+		webhookHTTPClient = client
+	}
+	return prev
+}
+
 // PriceChecker retrieves the current cheapest price for a route.
 // Implementations bridge to flights.SearchFlights or hotels.SearchHotels
 // without creating an import dependency from the watch package.
@@ -338,7 +351,7 @@ func fireWebhook(ctx context.Context, r CheckResult) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := webhookHTTPClient.Do(req)
 	if err != nil {
 		slog.Warn("webhook: POST failed", "watch_id", r.Watch.ID, "url", r.Watch.WebhookURL, "err", err)
 		return

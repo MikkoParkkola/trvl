@@ -458,6 +458,7 @@ func TestMultiCityCmd_ValidArgsNoNetwork(t *testing.T) {
 	tmp := t.TempDir()
 	setTestHome(t, tmp)
 	cmd := multiCityCmd()
+	cmd.SetContext(cancelledTestContext(t))
 
 	cmd.SetArgs([]string{"HEL", "--visit", "BCN,ROM", "--dates", "2026-07-01,2026-07-21"})
 

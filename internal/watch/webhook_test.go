@@ -34,10 +34,10 @@ func installBlockingWebhookClient(t *testing.T) *blockingWebhookTransport {
 	t.Helper()
 
 	transport := newBlockingWebhookTransport()
-	oldClient := http.DefaultClient
-	http.DefaultClient = &http.Client{Transport: transport}
+	oldClient := webhookHTTPClient
+	webhookHTTPClient = &http.Client{Transport: transport}
 	t.Cleanup(func() {
-		http.DefaultClient = oldClient
+		webhookHTTPClient = oldClient
 	})
 	return transport
 }

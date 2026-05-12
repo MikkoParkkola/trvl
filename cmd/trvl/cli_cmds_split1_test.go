@@ -339,6 +339,7 @@ func TestExploreCmd_InvalidToDate(t *testing.T) {
 
 func TestDatesCmd_LegacyFlag(t *testing.T) {
 	cmd := datesCmd()
+	cmd.SetContext(cancelledTestContext(t))
 	cmd.SetArgs([]string{"HEL", "BCN", "--legacy", "--from", "2026-07-01", "--to", "2026-07-07"})
 
 	_ = cmd.Execute()
@@ -346,6 +347,7 @@ func TestDatesCmd_LegacyFlag(t *testing.T) {
 
 func TestDatesCmd_RoundTripFlag(t *testing.T) {
 	cmd := datesCmd()
+	cmd.SetContext(cancelledTestContext(t))
 	cmd.SetArgs([]string{"HEL", "BCN", "--round-trip", "--from", "2026-07-01", "--to", "2026-07-31"})
 
 	_ = cmd.Execute()
@@ -508,6 +510,7 @@ func TestWeekendCmd_NightsDefault(t *testing.T) {
 func TestWhenCmd_ValidArgsNoNetwork(t *testing.T) {
 
 	cmd := whenCmd()
+	cmd.SetContext(cancelledTestContext(t))
 	cmd.SetArgs([]string{"--origin", "HEL"})
 	err := cmd.Execute()
 

@@ -49,6 +49,7 @@ func TestMIK3400PluginBundle(t *testing.T) {
 			"plan_trip",
 			"search_flights",
 			"search_hotels",
+			"search_hotels_with_details",
 			"assess_trip",
 		},
 		filepath.Join("skills", "trvl-price-watch", "SKILL.md"): {
@@ -106,7 +107,7 @@ func TestMIK3400PluginBundle(t *testing.T) {
 		"/trvl price-watch",
 		"/trvl destination-research",
 		"43 underlying tools",
-		"61 current MCP tools",
+		"1 smart MCP tool plus 62 compatibility aliases",
 	)
 }
 

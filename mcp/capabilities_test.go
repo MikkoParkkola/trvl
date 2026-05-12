@@ -80,9 +80,10 @@ func TestProgressNotifications_NoWriterReturnsNil(t *testing.T) {
 
 // --- search_natural tests ---
 
-// TestSearchNaturalTool_Registered verifies the tool appears in tools/list.
+// TestSearchNaturalTool_Registered verifies the legacy tool still appears when
+// the compatibility surface is explicitly requested.
 func TestSearchNaturalTool_Registered(t *testing.T) {
-	t.Parallel()
+	t.Setenv("TRVL_MCP_TOOL_MODE", "legacy")
 	s := NewServer()
 	resp := sendRequest(t, s, "tools/list", 1, nil)
 	if resp == nil || resp.Error != nil {
@@ -310,7 +311,7 @@ func TestResourcesCapability_Subscribe(t *testing.T) {
 
 // TestToolsList_IncludesNewTools verifies all newly added tools appear in tools/list.
 func TestToolsList_IncludesNewTools(t *testing.T) {
-	t.Parallel()
+	t.Setenv("TRVL_MCP_TOOL_MODE", "legacy")
 	s := NewServer()
 	resp := sendRequest(t, s, "tools/list", 1, nil)
 	if resp == nil || resp.Error != nil {

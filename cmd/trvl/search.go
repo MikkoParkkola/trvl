@@ -13,7 +13,7 @@ import (
 )
 
 // searchCmd implements `trvl search "free-form query"`. It parses the query
-// with the same heuristic the MCP `search_natural` tool uses, then dispatches
+// with the same heuristic the MCP smart `travel` tool uses, then dispatches
 // to the appropriate concrete CLI command (flights / hotels / route) so the
 // CLI surface has parity with the AI surface.
 //
@@ -28,7 +28,7 @@ func searchCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "search QUERY",
-		Short: "Natural-language travel search (CLI parity with the search_natural MCP tool)",
+		Short: "Natural-language travel search (CLI parity with the travel MCP tool)",
 		Long: `Parse a free-form travel query and dispatch to the right concrete search.
 
 The parser is intentionally minimal and rules-based — it understands:
@@ -38,9 +38,9 @@ The parser is intentionally minimal and rules-based — it understands:
   • ISO dates          (2026-06-15)
   • "next weekend" / "this weekend"
 
-For free-form sentences with city names instead of IATA codes, use the
-search_natural MCP tool from an AI assistant — it can resolve cities to
-airports via sampling.
+For free-form sentences with city names instead of IATA codes, use the travel
+MCP tool from an AI assistant — it can route to the compatibility aliases that
+resolve cities to airports via sampling.
 
 Examples:
   trvl search "fly HEL NRT 2026-06-15"
@@ -175,6 +175,6 @@ func missingFieldsHint(p nlsearch.Params, intent, template string) error {
 
 	fmt.Fprintf(os.Stderr, "Missing: %s\n", strings.Join(missing, ", "))
 	fmt.Fprintf(os.Stderr, "Try: %s\n", template)
-	fmt.Fprintln(os.Stderr, "Or use the search_natural MCP tool from an AI assistant for free-form parsing.")
+	fmt.Fprintln(os.Stderr, "Or use the travel MCP tool from an AI assistant for free-form parsing.")
 	return nil
 }

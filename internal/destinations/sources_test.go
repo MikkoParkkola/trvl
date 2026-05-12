@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -668,6 +669,24 @@ func TestBuildOverpassQuery_All(t *testing.T) {
 	}
 	if !contains(q, "tourism~") {
 		t.Error("'all' query should contain tourism regex")
+	}
+}
+
+func TestWaitForOSMRateLimitHonorsContextCancellation(t *testing.T) {
+	osmRateLimiter.Lock()
+	osmRateLimiter.lastReq = time.Now()
+	osmRateLimiter.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := waitForOSMRateLimit(ctx)
+	if err == nil {
+		t.Fatal("expected context cancellation error")
+	}
+	if time.Since(start) > 200*time.Millisecond {
+		t.Fatalf("waitForOSMRateLimit ignored cancellation and slept too long")
 	}
 }
 

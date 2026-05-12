@@ -38,16 +38,11 @@ func EnrichHotelFromOSM(ctx context.Context, hotelName string, lat, lon float64)
 );
 out tags center 20;`, lat, lon, lat, lon)
 
-	// Light rate limiting (shared with osm.go).
-	osmRateLimiter.Lock()
-	if elapsed := time.Since(osmRateLimiter.lastReq); elapsed < time.Second {
-		time.Sleep(time.Second - elapsed)
-	}
-	osmRateLimiter.lastReq = time.Now()
-	osmRateLimiter.Unlock()
-
 	reqCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
+	if err := waitForOSMRateLimit(reqCtx); err != nil {
+		return nil
+	}
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, overpassAPIURL,
 		strings.NewReader("data="+query))

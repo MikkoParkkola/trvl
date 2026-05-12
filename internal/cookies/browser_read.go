@@ -88,7 +88,9 @@ end tell`, safeURL)
 	}
 
 	// Wait for page to render.
-	time.Sleep(time.Duration(waitSeconds) * time.Second)
+	if err := waitForBrowserRender(ctx, time.Duration(waitSeconds)*time.Second); err != nil {
+		return "", err
+	}
 
 	// Read the rendered page text.
 	readScript := fmt.Sprintf(`tell application "%s"
@@ -108,6 +110,20 @@ end tell`
 	}
 
 	return strings.TrimSpace(string(out)), nil
+}
+
+func waitForBrowserRender(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // BrowserReadPageCached reads a page via the browser, caching the result for the given TTL.

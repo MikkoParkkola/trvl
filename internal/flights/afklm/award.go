@@ -143,14 +143,9 @@ func (s *AwardScanner) ScanDateRange(ctx context.Context, origin, destination st
 			return result, ctx.Err()
 		}
 
-		// Rate-limit: 1 call/sec.
-		s.mu.Lock()
-		elapsed := time.Since(s.lastCall)
-		if elapsed < time.Second {
-			time.Sleep(time.Second - elapsed)
+		if err := s.waitRateLimit(ctx); err != nil {
+			return result, err
 		}
-		s.lastCall = time.Now()
-		s.mu.Unlock()
 
 		offers, err := s.Search(ctx, origin, destination, date)
 		if err != nil {
@@ -160,6 +155,32 @@ func (s *AwardScanner) ScanDateRange(ctx context.Context, origin, destination st
 		result.Offers = append(result.Offers, offers...)
 	}
 	return result, nil
+}
+
+func (s *AwardScanner) waitRateLimit(ctx context.Context) error {
+	s.mu.Lock()
+	wait := time.Duration(0)
+	if elapsed := time.Since(s.lastCall); elapsed < time.Second {
+		wait = time.Second - elapsed
+	}
+	s.mu.Unlock()
+
+	if wait > 0 {
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+
+	s.mu.Lock()
+	s.lastCall = time.Now()
+	s.mu.Unlock()
+	return nil
 }
 
 // Search fetches award flight offers for a single date.

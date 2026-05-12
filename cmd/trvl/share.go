@@ -229,10 +229,10 @@ func formatLastSearchMarkdown(ls *LastSearch) string {
 }
 
 // trvlFooter is emitted at the bottom of every shared trip card.
-// Tool count is enforced by TestPublicDocsAdvertiseCurrentCounts
-// against the live MCP server registration (see cmd/trvl/public_claims_test.go).
+// Tool-surface copy is enforced by share tests so public trip cards do not
+// drift back to stale advertised counts.
 func trvlFooter() string {
-	return "*Found by [trvl](https://github.com/MikkoParkkola/trvl) — 41 MCP tools, no API keys*\n"
+	return "*Found by [trvl](https://github.com/MikkoParkkola/trvl) — 1 smart MCP tool + 62 compatibility aliases, no API keys*\n"
 }
 
 // extractTripRoute derives origin, destination, dates, and nights from trip legs.
