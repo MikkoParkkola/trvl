@@ -16,6 +16,12 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
     -o /out/trvl ./cmd/trvl
 
 FROM alpine:3.23
+ARG VERSION=dev
+LABEL org.opencontainers.image.title="trvl" \
+      org.opencontainers.image.description="AI travel agent MCP server for flights, hotels, ground transport, price alerts, and award travel" \
+      org.opencontainers.image.source="https://github.com/MikkoParkkola/trvl" \
+      org.opencontainers.image.version="${VERSION}" \
+      io.modelcontextprotocol.server.name="io.github.mikkoparkkola/trvl"
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/trvl /usr/local/bin/trvl
 ENTRYPOINT ["trvl"]
