@@ -9,7 +9,7 @@ require (
 	github.com/browserutils/kooky v0.2.9
 	github.com/cloudflare/circl v1.6.3
 	github.com/grafana/sobek v0.0.0-20260406180825-6d789dcdd177
-	github.com/klauspost/compress v1.18.5
+	github.com/klauspost/compress v1.18.6
 	github.com/refraction-networking/utls v1.8.2
 	github.com/spf13/cobra v1.10.2
 	go.opentelemetry.io/otel v1.43.0
