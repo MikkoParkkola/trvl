@@ -21,7 +21,7 @@ LABEL org.opencontainers.image.title="trvl" \
       org.opencontainers.image.description="AI travel agent MCP server for flights, hotels, ground transport, price alerts, and award travel" \
       org.opencontainers.image.source="https://github.com/MikkoParkkola/trvl" \
       org.opencontainers.image.version="${VERSION}" \
-      io.modelcontextprotocol.server.name="io.github.mikkoparkkola/trvl"
+      io.modelcontextprotocol.server.name="io.github.MikkoParkkola/trvl"
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/trvl /usr/local/bin/trvl
 ENTRYPOINT ["trvl"]
