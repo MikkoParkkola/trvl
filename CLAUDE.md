@@ -8,7 +8,7 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 
 ## Current Status
 
-- Go 1.26.2 · MCP 2025-11-25 · single binary · 21 providers
+- Go 1.26.3 · MCP 2025-11-25 · single binary · 21 providers
 - Hotel providers working: Google Hotels, Booking.com (browser cookies), Airbnb (SSR/Niobe), Hostelworld (autocomplete), Trivago (Streamable HTTP MCP)
 - Flight providers: Google Flights (hand-rolled protobuf), Air France–KLM Offers API v3 (opt-in)
 - CI: build, vet, staticcheck, govulncheck, race tests, coverage ≥50% on ubuntu + windows
@@ -29,7 +29,7 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 |---|---|---|
 | **No frameworks** — stdlib + carefully chosen libs only | Predictable behavior, minimal deps, long-lived binary | Add web frameworks, ORMs, DI containers |
 | **No API keys required by default** | Zero-friction onboarding; "API-first" phrasing uses *provider* APIs, not user-paid ones | Introduce paid-API requirements on default code paths |
-| **`GOTOOLCHAIN=go1.26.2` pinning via Makefile** | CI reproducibility; host `go` on PATH may be older | Run raw `go build/test` without the prefix on older hosts |
+| **`GOTOOLCHAIN=go1.26.3` pinning via Makefile** | CI reproducibility; host `go` on PATH may be older | Run raw `go build/test` without the prefix on older hosts |
 | **`internal/models` is the shared type package** | Unidirectional import flow; no cycles | Import from other `internal/` packages into `models/` |
 | **Live tests are opt-in** via `TRVL_TEST_LIVE_INTEGRATIONS=1` and `TRVL_TEST_LIVE_PROBES=1` | Default suite must be deterministic and offline | Enable live probes in the default `go test ./...` suite |
 | **Protobuf-style encoding for Google Flights is hand-rolled** (no `.proto` files) | The upstream format is undocumented; hand-rolled is auditable | Add `protoc` / `.proto`-generation to the build pipeline |
@@ -121,9 +121,9 @@ go vet ./...                        # Vet (CI runs this)
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yaml`): build, vet, staticcheck, govulncheck, test with race detector, coverage threshold (50%). Runs on ubuntu + windows, Go 1.26.2.
+GitHub Actions (`.github/workflows/ci.yaml`): build, vet, staticcheck, govulncheck, test with race detector, coverage threshold (50%). Runs on ubuntu + windows, Go 1.26.3.
 
-Make targets pin `GOTOOLCHAIN=go1.26.2` so local build/test entrypoints match CI even when the host `go` on `PATH` is older. For raw `go ...` commands on such hosts, prefix `GOTOOLCHAIN=go1.26.2`.
+Make targets pin `GOTOOLCHAIN=go1.26.3` so local build/test entrypoints match CI even when the host `go` on `PATH` is older. For raw `go ...` commands on such hosts, prefix `GOTOOLCHAIN=go1.26.3`.
 
 ## Key Details
 

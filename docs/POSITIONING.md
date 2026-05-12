@@ -89,7 +89,7 @@ Tracked as children of [MIK-3438](https://linear.app/parm/issue/MIK-3438):
 
 - **MIK-3439** — vs-comparison matrix (credibility)
 - **MIK-3440** — demo refresh: asciinema + GIF + first-5-prompts starter
-- **MIK-3441** — registry submissions: smithery.ai, awesome-mcp, MCP-registry, PulseMCP
+- **MIK-3441** — registry submissions: smithery.ai, awesome-mcp, MCP-registry, PulseMCP ([status](DISTRIBUTION.md))
 - **MIK-3442** — case-study artifact: real booking, real savings, screenshots
 - **MIK-3443** — distribution telemetry to measure positioning impact
 
