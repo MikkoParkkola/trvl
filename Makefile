@@ -5,7 +5,7 @@ GO_RUN = GOTOOLCHAIN=$(GOTOOLCHAIN) $(GO)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION) -X github.com/MikkoParkkola/trvl/mcp.serverVersion=$(VERSION)"
 
-.PHONY: build test test-proof test-coverage test-live-integrations test-live-probes lint clean cross install safe-clean force-clean
+.PHONY: build test test-proof test-coverage test-live-integrations test-live-probes lint distribution-metrics clean cross install safe-clean force-clean
 
 build:
 	@mkdir -p bin
@@ -40,6 +40,9 @@ lint:
 	else \
 		echo "govulncheck not installed, skipping"; \
 	fi
+
+distribution-metrics:
+	$(GO_RUN) run ./cmd/distribution-metrics
 
 clean:
 	rm -f bin/trvl

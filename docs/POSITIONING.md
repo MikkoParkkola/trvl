@@ -97,8 +97,8 @@ Tracked as children of [MIK-3438](https://linear.app/parm/issue/MIK-3438):
 
 | Metric | Baseline | 90-day target |
 |---|---|---|
-| GitHub release downloads (28-day) | TBD (MIK-3443 captures) | +5× |
-| npm `trvl` installs (28-day) | TBD | +5× |
+| GitHub release downloads (28-day) | Tracked in [distribution metrics](internal/distribution-metrics.md) | +5× |
+| npm `trvl` installs (28-day) | Tracked in [distribution metrics](internal/distribution-metrics.md) | +5× |
 | Registry listings live | 0 | ≥3 (smithery, awesome-mcp, PulseMCP) |
 | Unsolicited third-party mentions | 0 tracked | ≥1 blog / tweet citing trvl as canonical |
 | Demo cast viewable | static GIF only | <30s asciinema cast |
