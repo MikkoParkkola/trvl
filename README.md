@@ -12,7 +12,9 @@
 
 # trvl — The Travel MCP Server
 
-![trvl demo](https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif?v=1.0.5)
+![trvl demo](https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif?v=1.2.3)
+
+Asciinema source: [`demo.cast`](demo.cast)
 
 > **The canonical travel MCP for AI assistants. 61 tools. 21 providers. Zero API keys. One binary.**
 >
@@ -43,6 +45,30 @@
 > 📊 Naive booking: €350 → Optimized: €251 → Saved: €99 (28%)
 > ```
 > Want me to check nearby restaurants or events that weekend?
+
+## First 5 prompts to try
+
+Copy these into Claude, Cursor, Windsurf, Codex, or any MCP client after `trvl mcp install`:
+
+```text
+I have a free long weekend from July 1-5, 2026. Find the cheapest realistic trip from Helsinki with nonstop flights and hotels near the center.
+```
+
+```text
+I have 80,000 Amex Membership Rewards points and 20,000 Virgin points. Compare award sweet spots from HEL to LHR in business class on August 15, 2026.
+```
+
+```text
+Check whether AMS -> HEL -> RIX on July 1, 2026 is a sensible hidden-city option if I only have carry-on luggage, and compare it against a EUR 150 direct baseline.
+```
+
+```text
+Find 3+ star hotels within 5 km of ExCeL London for July 1-4, 2026 for two guests, sorted by cheapest first.
+```
+
+```text
+Create a mistake-fare watch for HEL -> BCN, July 1-8, 2026, and alert me if it drops below EUR 90.
+```
 
 trvl is an [MCP server](https://modelcontextprotocol.io/) + CLI that gives Claude, Cursor, Windsurf, and any MCP-compatible AI assistant direct access to Google Flights, Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld, Ferryhopper, and European ground transport data. It searches, optimizes, and applies travel hacks automatically — no personal API keys required, no monthly fees, API-first by default, with optional browser-assisted fallbacks only for a few protected providers.
 
