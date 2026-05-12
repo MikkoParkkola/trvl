@@ -66,12 +66,12 @@ trvl is the first MCP server purpose-built to fix all three at once.
 
 ## 6. Versus the real alternatives
 
-> 🟡 Full head-to-head matrix landing in [MIK-3439](https://linear.app/parm/issue/MIK-3439). Summary below.
+The maintained head-to-head matrix lives in [COMPARISON.md](COMPARISON.md). It compares trvl against Google Flights, KAYAK, ChatGPT-with-search, and other travel MCPs, with every support/unsupported cell linked to source evidence.
 
 | Alternative | What it is | Where trvl wins |
 |---|---|---|
 | **Google Flights / Kayak (web)** | Consumer search UIs | Not callable by agents; no MCP; no award sweetspots; no multi-provider arbitrage in one query |
-| **ChatGPT browse + travel sites** | LLM screen-scrapes Kayak | 10–30× slower per query; brittle to captchas; can't do hidden-city or award sweetspots |
+| **ChatGPT browse + travel sites** | LLM searches and summarizes web pages | No deterministic travel schema; can't run trvl's hidden-city, award, and watch workflows as typed tool calls |
 | **Other travel MCPs (one-provider wrappers)** | Usually 1–3 providers, often Google Flights only | trvl has 21 providers in one binary |
 | **Travel-agent SaaS (Hopper, etc.)** | Paid consumer app | trvl is free, open-source, embeddable, not a product to log in to |
 

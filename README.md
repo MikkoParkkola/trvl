@@ -21,7 +21,7 @@
 **For**: AI-assistant users who book ≥4 trips/yr · AI-app builders integrating travel intent · devs shopping MCP registries.
 **Not for**: humans booking via a website (use Google Flights) · travel-agency SaaS shoppers (we are not a hosted product).
 
-→ Full positioning: [`docs/POSITIONING.md`](docs/POSITIONING.md) · Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · Tools: [`AGENTS.md`](AGENTS.md)
+→ Full positioning: [`docs/POSITIONING.md`](docs/POSITIONING.md) · Comparison: [`docs/COMPARISON.md`](docs/COMPARISON.md) · Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · Tools: [`AGENTS.md`](AGENTS.md)
 
 ### What it looks like
 
@@ -343,6 +343,8 @@ trvl searches 20 ground transport providers in parallel, covering most of Europe
 Two providers (NS, Digitransit/VR) use public API keys that are embedded in the binary — no signup or personal key is required from the user.
 
 ## How trvl Compares
+
+For the agent-focused comparison against Google Flights, KAYAK, ChatGPT search, and other travel MCPs, see [`docs/COMPARISON.md`](docs/COMPARISON.md).
 
 | Feature | trvl | fli | Google Flights | Skyscanner | Kiwi |
 |---------|------|-----|---------------|------------|------|
