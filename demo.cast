@@ -1,7 +1,9 @@
-{"version":3,"term":{"cols":110,"rows":28},"timestamp":1778585763,"idle_time_limit":1.0,"command":"/tmp/trvl-demo-record.sh","title":"trvl install and first search","env":{"SHELL":"/bin/zsh"}}
-[0.224, "o", "# install trvl as an MCP server (dry run)\r\n$ trvl mcp install --client codex --dry-run\r\n"]
-[0.008, "o", "Would append to /tmp/trvl-demo-home/.codex/config.toml:\r\n\r\n[mcp_servers.trvl]\r\ncommand = \"/tmp/trvl\"\r\nargs = [\"mcp\"]\r\n\r\n"]
-[0.000, "o", "\r\n# first travel query: nonstop HEL -> LHR weekend\r\n$ trvl flights HEL LHR 2026-07-01 --return 2026-07-05 --stops nonstop --format json | jq ...\r\n"]
-[9.326, "o", "providers: Google Flights + Skiplagged\r\ncheapest: CZK 7506 · Finnair AY 1337\r\ndeparts: 2026-07-01T16:00 -> 2026-07-01T17:05\r\nbooking: https://www.google.com/travel/flights?q=Flights+to+London+from+Helsinki+on+2026-07-01\r\n"]
-[0.003, "o", "\r\n# 61 MCP tools · 21 providers · no API keys for core search\r\n"]
-[0.000, "x", "0"]
+{"version":3,"term":{"cols":80,"rows":24},"timestamp":1778687784,"command":"scripts/demo/full-demo.sh","env":{"SHELL":"/bin/zsh"}}
+[0.016, "o", "# install trvl as an MCP server (dry run)\r\n$ HOME=/tmp/trvl-demo-home trvl mcp install --client codex --dry-run\r\n"]
+[0.023, "o", "Would append to /tmp/trvl-demo-home/.codex/config.toml:\r\n\r\n[mcp_servers.trvl]\r\ncommand = \"/opt/homebrew/bin/trvl\"\r\nargs = [\"mcp\"]\r\n\r\n"]
+[0.001, "o", "\r\n# one prompt: flights + hotel detail + ground + hacks + optional watch\r\n"]
+[0.000, "o", "$ scripts/demo/one-prompt-demo.sh\r\n"]
+[0.011, "o", "# one prompt into the travel MCP router\r\n> Plan a realistic long weekend from HEL to London in July. Compare flights,\r\n> hotel details, ground transfer, hacks, and create a watch if the best fare\r\n> is above EUR 220.\r\n\r\ntravel(intent=plan_trip, origin=HEL, destination=LON, depart=2026-07-01, return=2026-07-05)\r\n\r\n1. flights: HEL -> LHR, Finnair nonstop, EUR 219, booking_url present\r\n2. hotel detail: 4-star central London, free cancellation, rooms + amenities checked\r\n3. ground: Heathrow Express vs Elizabeth line surfaced with time/cost tradeoff\r\n4. hacks: date-flex and rail/ferry alternatives checked; hidden-city rejected for checked-bag risk\r\n5. watch: optional watch_price below EUR 200; user confirmation required before saving\r\n\r\nNaive -> Optimized -> Saved\r\nEUR 684 -> EUR 611 -> EUR 73\r\n\r\n1 smart MCP tool + 63 compatibility aliases + 21 providers\r\nManual booking only: trvl returns provider URLs and readiness checks, not automatic purchase.\r\n"]
+[0.000, "o", "\r\n"]
+[0.000, "o", "# 1 smart MCP tool · 63 aliases · 50 CLI commands · 21 providers · No API keys\r\n"]
+[0.001, "x", "0"]

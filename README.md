@@ -14,7 +14,7 @@
 
 ![trvl demo](https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif?v=1.2.3)
 
-Asciinema source: [`demo.cast`](demo.cast)
+Asciinema source: [`demo.cast`](demo.cast) · Demo script and claims: [`docs/DEMO.md`](docs/DEMO.md)
 
 > **The canonical travel MCP for AI assistants. 1 smart tool. 63 compatibility aliases. 21 providers. Zero API keys. One binary.**
 >

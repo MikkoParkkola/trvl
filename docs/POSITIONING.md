@@ -2,7 +2,7 @@
 
 > **The canonical travel MCP server. 1 smart tool, 63 compatibility aliases, 21 providers, zero API keys, one binary.**
 
-Last updated: 2026-05-08 · Parent epic: [MIK-3438](https://linear.app/parm/issue/MIK-3438)
+Last updated: 2026-05-13 · Parent epic: [MIK-3438](https://linear.app/parm/issue/MIK-3438)
 
 ---
 
@@ -70,6 +70,9 @@ The maintained head-to-head matrix lives in [COMPARISON.md](COMPARISON.md). It c
 
 | Alternative | What it is | Where trvl wins |
 |---|---|---|
+| **fli** | Python library and CLI for Google Flights data | trvl keeps the Google Flights-style workflow but adds local MCP install, hotels, ground, watches, awards, hacks, and assistant skills |
+| **Skiplagged MCP** | Official remote MCP for Skiplagged flights, hotels, and rental cars | trvl is local-first and broader across Google Flights, Kiwi, hotels, ground, awards, profile, and watch workflows; rental cars remain tracked in [#88](https://github.com/MikkoParkkola/trvl/issues/88) |
+| **1Stay/stays** | Transaction-complete hotel booking MCP | trvl is broader and safer for local assistants; it deliberately stops at provider URLs and booking-readiness checks rather than taking payment/cancellation liability |
 | **Google Flights / Kayak (web)** | Consumer search UIs | Not callable by agents; no MCP; no award sweetspots; no multi-provider arbitrage in one query |
 | **ChatGPT browse + travel sites** | LLM searches and summarizes web pages | No deterministic travel schema; can't run trvl's hidden-city, award, and watch workflows as typed tool calls |
 | **Other travel MCPs (one-provider wrappers)** | Usually 1–3 providers, often Google Flights only | trvl has 21 providers in one binary |

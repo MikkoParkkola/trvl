@@ -1,8 +1,8 @@
 # trvl Comparison Matrix
 
-Last updated: 2026-05-12 · Owner: [MIK-3439](https://linear.app/parm/issue/MIK-3439)
+Last updated: 2026-05-13 · Owner: [MIK-3439](https://linear.app/parm/issue/MIK-3439)
 
-This page compares trvl with the alternatives an AI-power-user is likely to consider: Google Flights, KAYAK, ChatGPT with web search, and other travel MCP servers.
+This page compares trvl with the alternatives an AI-power-user is likely to consider: fli, Skiplagged MCP, 1Stay/stays, Google Travel, KAYAK, ChatGPT with web search, and other travel MCP servers.
 
 ## When not to use trvl
 
@@ -15,6 +15,16 @@ trvl is for agent workflows: repeated tool calls, structured inputs and outputs,
 - ✅ Verified support with linked evidence.
 - ❌ No public evidence of that capability in the linked product surface, or the linked source describes a different human-facing surface.
 - 🟡 Conservative inference from current public docs or directory listings; not a benchmark.
+
+## Named Competitors
+
+| Alternative | Source | What it is good at | Where trvl is stronger | trvl gap or limitation |
+|---|---|---|---|---|
+| fli | [punitarani/fli](https://github.com/punitarani/fli) | Google Flights reverse-engineered API, Python library, and CLI. | trvl adds MCP installation, hotels, ground transport, watches, profile-aware workflows, award and hack tools, and bundled assistant skills. | fli is a focused flight library; trvl should not imply it replaces fli for Python-first Google Flights experiments. |
+| Skiplagged MCP | [Skiplagged MCP docs](https://skiplagged.github.io/mcp/) | Official remote MCP for Skiplagged flights, hidden-city/flexible calendars, hotels, and rental cars with no auth. | trvl runs locally, keeps profile/watch data in `~/.trvl`, and combines Google Flights, Kiwi, hotels, ground transport, awards, and cross-provider hacks in one router. | Rental cars are a current trvl gap; tracked by [#88](https://github.com/MikkoParkkola/trvl/issues/88). |
+| 1Stay/stays | [1Stay MCP listing](https://mcpservers.org/servers/stayker-com/1stay-mcp) | Transaction-complete hotel MCP: search, details, booking, lookup, resend, and cancellation with secure checkout. | trvl is broader and local-first: flights, hotels, ground, alerts, traveller workspace, and manual booking readiness without taking payment liability. | Transaction-complete hotel booking is intentionally out of scope for now; trvl returns provider URLs/readiness checks and labels this as manual booking only. |
+| Google Travel / Flights | [Travel Help](https://support.google.com/travel/?hl=en), [Flight Deals AI](https://support.google.com/travel/answer/16497283?hl=en-EN), [price tracking](https://support.google.com/travel/answer/6235879) | Polished consumer UI, live Google travel data, price tracking, and AI Flight Deals for flexible travellers. | trvl is agent-native and scriptable, with typed MCP outputs, local preferences, watches, hack detectors, and repeatable cross-provider workflows. | Google has the better human UI; trvl should not claim otherwise. |
+| KAYAK | [Search help](https://www.kayak.com/c/help/search/), [pricing and alerts](https://www.kayak.com/c/help/pricing/) | Mature metasearch UI, hundreds of travel sites, price alerts, price calendar, price forecast, cars, and packages. | trvl is installable inside agents and returns structured data for automation instead of a human website flow. | KAYAK has broader consumer inventory and polished browsing; trvl's edge is MCP workflow automation, not replacing the UI. |
 
 ## Matrix
 
