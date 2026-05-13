@@ -718,7 +718,7 @@ The AI uses these to give you actionable recommendations: "Book here: [link]". N
 | **Personal profile** | Learns from your booking history (email parsing + LLM). Remembers FF status, luggage needs, favourite properties, departure preferences, travel hacks used, accommodation preferences, family composition. Pre-search interviews skip questions the profile already answers. |
 | **Output** | Pretty tables with color (default) or JSON (`--format json`) |
 | **Platforms** | Linux, macOS (amd64, arm64). Windows CI in progress. |
-| **Code** | 622 Go files, 203K LOC, 32 packages, 6400+ tests, 82% coverage |
+| **Code** | Go codebase with CI race/coverage gates and a documented local test matrix in [docs/TESTING.md](docs/TESTING.md) |
 | **License** | PolyForm Noncommercial 1.0 |
 
 ## Attribution
