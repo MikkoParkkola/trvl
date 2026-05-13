@@ -79,6 +79,7 @@ The maintained head-to-head matrix lives in [COMPARISON.md](COMPARISON.md). It c
 
 - 1 smart MCP tool plus 63 compatibility aliases live on `main` ([tool list](../AGENTS.md))
 - Traveller Workspace v2 adds confirmation import, booking-candidate readiness, itinerary route-time warnings, and conservative fare intelligence without automatic purchase claims ([workspace docs](traveller-workspace.md)).
+- Hotel detail enrichment surfaces best-effort room cancellation/refundability, board/breakfast, nightly-vs-total pricing, and tax/fee metadata when providers expose it through structured detail pages.
 - 21 providers wired (`google-flights`, `airbnb`, `booking.com`, `trivago`, `hostelworld`, `ferryhopper`, `kelkoo`, `kiwi`, `flixbus`, `rome2rio`, `omio`, `trainline`, `afklm`, `lufthansa`, `aircanada`, `delta`, `iata`, `openweathermap`, `noaa`, `weather.gov`, `wikivoyage`)
 - Real protobuf reverse-engineering for Google Flights (not HTML scrape — see `internal/providers/googleflights/`)
 - Single-binary distribution: macOS / Linux / Windows / Docker

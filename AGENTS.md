@@ -317,7 +317,7 @@ Optional:
 ```json
 {"location": "Tokyo", "check_in": "2026-06-15", "check_out": "2026-06-18", "max_hotels": 3}
 ```
-Runs `search_hotels`, then fetches room-level availability and full amenity detail for the top hotels in one call. Optional:
+Runs `search_hotels`, then fetches room-level availability and full amenity detail for the top hotels in one call. Room results include best-effort normalized `cancellation_policy`, `refundable`, `free_cancellation`, `board`, `breakfast_included`, `nightly_price`, `total_price`, `taxes_and_fees`, and `taxes_fees_included` fields when providers expose them. Partial detail failures stay localized to typed `detail_errors` objects instead of failing the whole hotel search. Optional:
 - all `search_hotels` filters
 - `max_hotels`: top hotels to enrich (default 3, max 5)
 - `include_rooms`: true/false (default true)

@@ -567,8 +567,8 @@ func hotelRoomsTool() ToolDef {
 		Description: "Search room types and per-night pricing for a specific hotel by name. " +
 			"Resolves the hotel via Google Hotels entity search, then fetches room-level availability. " +
 			"When booking_url is provided (from search_hotels results), also fetches rich room data " +
-			"from the Booking.com detail page: room descriptions, bed types, sizes, and amenities " +
-			"like balcony, sea view, minibar — enabling searches for specific room features.",
+			"from the Booking.com detail page: room descriptions, bed types, sizes, amenities, " +
+			"cancellation/refundability, board, and nightly-vs-total price metadata.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
@@ -576,7 +576,7 @@ func hotelRoomsTool() ToolDef {
 				"check_in":    {Type: "string", Description: "Check-in date in YYYY-MM-DD format"},
 				"check_out":   {Type: "string", Description: "Check-out date in YYYY-MM-DD format"},
 				"currency":    {Type: "string", Description: "Currency code (e.g. USD, EUR). Default: USD"},
-				"booking_url": {Type: "string", Description: "Booking.com hotel URL from search_hotels results (enables rich room data: descriptions, bed types, sizes, amenities like balcony/sea view)"},
+				"booking_url": {Type: "string", Description: "Booking.com hotel URL from search_hotels results (enables rich room data: descriptions, bed types, sizes, amenities, cancellation, board, and price metadata)"},
 			},
 			Required: []string{"hotel_name", "check_in", "check_out"},
 		},
@@ -599,22 +599,8 @@ func hotelRoomsOutputSchema() interface{} {
 			"name":      schemaString(),
 			"check_in":  schemaString(),
 			"check_out": schemaString(),
-			"rooms": schemaArray(map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"name":        schemaString(),
-					"price":       schemaNum(),
-					"currency":    schemaString(),
-					"provider":    schemaString(),
-					"max_guests":  schemaInt(),
-					"bed_type":    schemaString(),
-					"size_m2":     schemaNum(),
-					"description": schemaString(),
-					"amenities":   schemaStringArray(),
-				},
-				"required": []string{"name", "price", "currency"},
-			}),
-			"error": schemaString(),
+			"rooms":     schemaArray(hotelRoomTypeSchema()),
+			"error":     schemaString(),
 		},
 		"required": []string{"success"},
 	}

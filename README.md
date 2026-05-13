@@ -181,7 +181,7 @@ That's it. Your AI assistant now has 1 smart travel tool available. The old 63 t
 | **search_flights** | Search flights on a specific date | HEL -> NRT, 2026-06-15, business class, nonstop |
 | **search_dates** | Find cheapest day to fly across a date range | HEL -> BCN, June-August 2026 |
 | **search_hotels** | Search hotels in any city | Tokyo, June 15-18, 4+ stars |
-| **search_hotels_with_details** | Search hotels and enrich top picks with rooms, rates, and amenities | Paris, Jul 1-5, top 3 detailed |
+| **search_hotels_with_details** | Search hotels and enrich top picks with rooms, rates, cancellation, board, fees, and amenities | Paris, Jul 1-5, top 3 detailed |
 | **hotel_prices** | Compare hotel prices from Google (aggregated from multiple providers) |
 | **hotel_reviews** | Get reviews for a specific hotel | Top reviews, sorted by rating or recency |
 | **hotel_rooms** | Fetch room-level availability, board, and cancellation details | Hotel place ID, Jul 1-5 |
@@ -382,7 +382,7 @@ For the agent-focused comparison against Google Flights, KAYAK, ChatGPT search, 
 | Bus/train/ferry search | ✅ (20 providers: FlixBus, RegioJet, Eurostar, DB, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS, Ferryhopper) | ❌ | ❌ | ❌ | ❌ |
 | Price tracking | ✅ (watches with alerts) | ❌ | ❌ | ❌ | ❌ |
 | Hotel search | ✅ (5 providers: Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld) | ❌ | ❌ | ❌ | ❌ |
-| Hotel search + top-N room/amenity detail | ✅ (`search_hotels_with_details`) | ❌ | ✅ (web UI) | ❌ | ❌ |
+| Hotel search + top-N room/amenity detail | ✅ (`search_hotels_with_details`, including best-effort cancellation, board, and fee metadata) | ❌ | ✅ (web UI) | ❌ | ❌ |
 | Flight providers | ✅ (Google Flights default + Kiwi virtual-interlining merge; AFKLM Flying Blue award scanner; Skiplagged hidden-city via opt-in `--provider skiplagged`) | ✅ | ✅ | ✅ | ✅ |
 | Hotel reviews | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Trip cost calculator | ✅ | ❌ | ❌ | ❌ | ❌ |

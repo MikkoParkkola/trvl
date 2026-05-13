@@ -91,7 +91,7 @@ The full compatibility surface is below.
 | `search_flights` | Flights via Google Flights + Kiwi + Skiplagged merge |
 | `search_dates` | Cheapest-by-date across a range |
 | `search_hotels` | Multi-provider hotel search |
-| `search_hotels_with_details` | Search + top-N room and amenity enrichment |
+| `search_hotels_with_details` | Search + top-N room, cancellation, board, fee, and amenity enrichment |
 | `search_route` | Multi-modal: flights + Bus/train/ferry (20 providers) |
 | `search_ground` | Bus/train/ferry (20 providers) |
 | `plan_trip` | Flights + hotels in one parallel search |
@@ -125,11 +125,11 @@ The full compatibility surface is below.
 | Tool | Use | Headline params |
 |---|---|---|
 | `search_hotels` | Multi-provider hotel search (Google Hotels + Trivago + Booking.com cookie auth + configured providers) | `location`, `check_in`, `check_out`, `guests`, `currency`, `min_stars`, `min_rating`, `max_price`, `min_price`, `max_distance_km`, `amenities`, `property_type`, `brand`, `eco_certified`, `free_cancellation`, plus Airbnb (`min_bedrooms`, `room_type`, `superhost_only`, `instant_bookable`) and Booking (`max_distance_meters`, `breakfast_included`) filters |
-| `search_hotels_with_details` | Multi-provider hotel search plus top-N room-level rates and full amenities in one call | `location`, `check_in`, `check_out`, `guests`, `currency`, `max_hotels`, `include_rooms`, `include_amenities`, all `search_hotels` filters |
+| `search_hotels_with_details` | Multi-provider hotel search plus top-N room-level rates, cancellation/refundability, board/breakfast, taxes/fees, and full amenities in one call | `location`, `check_in`, `check_out`, `guests`, `currency`, `max_hotels`, `include_rooms`, `include_amenities`, all `search_hotels` filters |
 | `search_hotel_by_name` | Cross-provider lookup of a specific property (fuzzy match) | `name`, `check_in`, `check_out`, `location` |
 | `hotel_prices` | Provider price comparison for a property | `hotel_id`, `check_in`, `check_out`, `currency` |
 | `hotel_reviews` | Reviews + aggregate stats | `hotel_id`, `limit`, `sort` |
-| `hotel_rooms` | Room types + per-night pricing | `hotel_name`, `check_in`, `check_out`, `currency` |
+| `hotel_rooms` | Room types + per-night/total pricing, cancellation/refundability, board/breakfast, and fee metadata when exposed | `hotel_name`, `check_in`, `check_out`, `currency`, `booking_url` |
 | `watch_room_availability` | Monitor specific property availability over time | `hotel_name`, `check_in`, `check_out` |
 | `detect_accommodation_hacks` | Split a long stay across 2-3 properties (€15/move, ≥€50 + 15% saved threshold) | `city`, `check_in`, `check_out`, `max_split`, `guests`, `currency` |
 

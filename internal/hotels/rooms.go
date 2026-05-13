@@ -11,15 +11,24 @@ import (
 
 // RoomType represents a specific room category at a hotel.
 type RoomType struct {
-	Name        string   `json:"name"`
-	Price       float64  `json:"price"`
-	Currency    string   `json:"currency"`
-	Provider    string   `json:"provider,omitempty"`
-	MaxGuests   int      `json:"max_guests,omitempty"`
-	BedType     string   `json:"bed_type,omitempty"`
-	SizeM2      float64  `json:"size_m2,omitempty"`
-	Description string   `json:"description,omitempty"`
-	Amenities   []string `json:"amenities,omitempty"`
+	Name               string   `json:"name"`
+	Price              float64  `json:"price"`
+	NightlyPrice       float64  `json:"nightly_price,omitempty"`
+	TotalPrice         float64  `json:"total_price,omitempty"`
+	TaxesAndFees       float64  `json:"taxes_and_fees,omitempty"`
+	TaxesFeesIncluded  *bool    `json:"taxes_fees_included,omitempty"`
+	Currency           string   `json:"currency"`
+	Provider           string   `json:"provider,omitempty"`
+	MaxGuests          int      `json:"max_guests,omitempty"`
+	BedType            string   `json:"bed_type,omitempty"`
+	SizeM2             float64  `json:"size_m2,omitempty"`
+	Description        string   `json:"description,omitempty"`
+	Amenities          []string `json:"amenities,omitempty"`
+	CancellationPolicy string   `json:"cancellation_policy,omitempty"`
+	Refundable         *bool    `json:"refundable,omitempty"`
+	FreeCancellation   *bool    `json:"free_cancellation,omitempty"`
+	Board              string   `json:"board,omitempty"`
+	BreakfastIncluded  *bool    `json:"breakfast_included,omitempty"`
 }
 
 // RoomAvailability is the response for a room-type search.
@@ -354,6 +363,33 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 			}
 			if len(br.Amenities) > 0 {
 				enriched.Amenities = mergeStringSlices(enriched.Amenities, br.Amenities)
+			}
+			if br.NightlyPrice > 0 && enriched.NightlyPrice == 0 {
+				enriched.NightlyPrice = br.NightlyPrice
+			}
+			if br.TotalPrice > 0 && enriched.TotalPrice == 0 {
+				enriched.TotalPrice = br.TotalPrice
+			}
+			if br.TaxesAndFees > 0 && enriched.TaxesAndFees == 0 {
+				enriched.TaxesAndFees = br.TaxesAndFees
+			}
+			if br.TaxesFeesIncluded != nil && enriched.TaxesFeesIncluded == nil {
+				enriched.TaxesFeesIncluded = br.TaxesFeesIncluded
+			}
+			if br.CancellationPolicy != "" && enriched.CancellationPolicy == "" {
+				enriched.CancellationPolicy = br.CancellationPolicy
+			}
+			if br.Refundable != nil && enriched.Refundable == nil {
+				enriched.Refundable = br.Refundable
+			}
+			if br.FreeCancellation != nil && enriched.FreeCancellation == nil {
+				enriched.FreeCancellation = br.FreeCancellation
+			}
+			if br.Board != "" && enriched.Board == "" {
+				enriched.Board = br.Board
+			}
+			if br.BreakfastIncluded != nil && enriched.BreakfastIncluded == nil {
+				enriched.BreakfastIncluded = br.BreakfastIncluded
 			}
 			// Keep Google price if available; add Booking as secondary.
 			if enriched.Price == 0 && br.Price > 0 {

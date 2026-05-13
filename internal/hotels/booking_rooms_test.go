@@ -92,6 +92,85 @@ func TestParseBookingJSONLD(t *testing.T) {
 	}
 }
 
+func TestParseBookingJSONLD_RoomDecisionMetadata(t *testing.T) {
+	page := `<html><head>
+<script type="application/ld+json">
+{
+  "@type": "Hotel",
+  "name": "Metadata Hotel",
+  "makesOffer": [
+    {
+      "@type": "Offer",
+      "name": "Flexible Queen Room",
+      "description": "28 m² queen room sleeps 2 adults. Free cancellation until June 20. Breakfast included. Taxes and fees included.",
+      "priceSpecification": {
+        "price": "140",
+        "nightlyPrice": "140",
+        "totalPrice": "420",
+        "taxesAndFees": "35",
+        "priceCurrency": "EUR",
+        "taxesFeesIncluded": true
+      }
+    },
+    {
+      "@type": "Offer",
+      "name": "Advance Purchase Room Only",
+      "description": "Non-refundable room only rate. Taxes and fees not included.",
+      "priceSpecification": {
+        "price": "300",
+        "nightlyPrice": "150",
+        "totalPrice": "300",
+        "priceCurrency": "EUR",
+        "taxesFeesIncluded": false
+      }
+    }
+  ]
+}
+</script>
+</head></html>`
+
+	offers, err := parseBookingJSONLD(page)
+	if err != nil {
+		t.Fatalf("parseBookingJSONLD() error: %v", err)
+	}
+	if len(offers) != 2 {
+		t.Fatalf("expected 2 offers, got %d", len(offers))
+	}
+
+	flex := offers[0]
+	if flex.NightlyPrice != 140 {
+		t.Errorf("NightlyPrice = %v, want 140", flex.NightlyPrice)
+	}
+	if flex.TotalPrice != 420 {
+		t.Errorf("TotalPrice = %v, want 420", flex.TotalPrice)
+	}
+	if flex.TaxesAndFees != 35 {
+		t.Errorf("TaxesAndFees = %v, want 35", flex.TaxesAndFees)
+	}
+	assertBoolPtr(t, "TaxesFeesIncluded", flex.TaxesFeesIncluded, true)
+	if flex.CancellationPolicy != "free_cancellation" {
+		t.Errorf("CancellationPolicy = %q, want free_cancellation", flex.CancellationPolicy)
+	}
+	assertBoolPtr(t, "Refundable", flex.Refundable, true)
+	assertBoolPtr(t, "FreeCancellation", flex.FreeCancellation, true)
+	if flex.Board != "breakfast_included" {
+		t.Errorf("Board = %q, want breakfast_included", flex.Board)
+	}
+	assertBoolPtr(t, "BreakfastIncluded", flex.BreakfastIncluded, true)
+
+	advance := offers[1]
+	assertBoolPtr(t, "advance.Refundable", advance.Refundable, false)
+	assertBoolPtr(t, "advance.FreeCancellation", advance.FreeCancellation, false)
+	assertBoolPtr(t, "advance.TaxesFeesIncluded", advance.TaxesFeesIncluded, false)
+	if advance.CancellationPolicy != "non_refundable" {
+		t.Errorf("advance.CancellationPolicy = %q, want non_refundable", advance.CancellationPolicy)
+	}
+	if advance.Board != "room_only" {
+		t.Errorf("advance.Board = %q, want room_only", advance.Board)
+	}
+	assertBoolPtr(t, "advance.BreakfastIncluded", advance.BreakfastIncluded, false)
+}
+
 func TestParseBookingJSONLD_GraphArray(t *testing.T) {
 	page := `<html>
 <script type="application/ld+json">
@@ -166,6 +245,16 @@ func TestParseBookingJSONLD_Deduplication(t *testing.T) {
 	// The version with description should win.
 	if offers[0].Description == "" {
 		t.Error("expected description from second JSON-LD block to be preserved")
+	}
+}
+
+func assertBoolPtr(t *testing.T, name string, got *bool, want bool) {
+	t.Helper()
+	if got == nil {
+		t.Fatalf("%s = nil, want %v", name, want)
+	}
+	if *got != want {
+		t.Fatalf("%s = %v, want %v", name, *got, want)
 	}
 }
 
@@ -300,6 +389,9 @@ func TestMergeRoomTypes(t *testing.T) {
 			Description: "Cozy room with city view.",
 			BedType:     "1 double bed",
 			Amenities:   []string{"City View", "Air Conditioning"},
+			TotalPrice:  250,
+			Board:       "breakfast_included",
+			Refundable:  boolValue(true),
 		},
 		{
 			Name:        "Two-Bedroom Apartment",
@@ -330,6 +422,13 @@ func TestMergeRoomTypes(t *testing.T) {
 	if merged[0].BedType != "1 double bed" {
 		t.Errorf("merged[0].BedType = %q, want 1 double bed", merged[0].BedType)
 	}
+	if merged[0].TotalPrice != 250 {
+		t.Errorf("merged[0].TotalPrice = %v, want enriched total price", merged[0].TotalPrice)
+	}
+	if merged[0].Board != "breakfast_included" {
+		t.Errorf("merged[0].Board = %q, want breakfast_included", merged[0].Board)
+	}
+	assertBoolPtr(t, "merged[0].Refundable", merged[0].Refundable, true)
 
 	// Second room: unchanged Google room.
 	if merged[1].Name != "Superior Suite" {
