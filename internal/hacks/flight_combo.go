@@ -30,21 +30,21 @@ type TripLeg struct {
 // FlightComboResult is the optimizer output.
 type FlightComboResult struct {
 	Strategy     string         `json:"strategy"`      // "round_trip", "split_airlines", "nested_returns"
-	Tickets      []TicketOption `json:"tickets"`        // tickets to purchase
-	TotalCost    float64        `json:"total_cost"`     // optimized total
-	BaselineCost float64        `json:"baseline_cost"`  // naive approach cost
-	Savings      float64        `json:"savings"`        // baseline - total
-	Currency     string         `json:"currency"`       // currency code
+	Tickets      []TicketOption `json:"tickets"`       // tickets to purchase
+	TotalCost    float64        `json:"total_cost"`    // optimized total
+	BaselineCost float64        `json:"baseline_cost"` // naive approach cost
+	Savings      float64        `json:"savings"`       // baseline - total
+	Currency     string         `json:"currency"`      // currency code
 }
 
 // TicketOption describes one ticket to purchase.
 type TicketOption struct {
-	Type     string  `json:"type"`               // "round_trip", "one_way"
-	Outbound string  `json:"outbound"`           // "HEL->BCN May 1"
-	Return   string  `json:"return,omitempty"`    // "BCN->HEL May 8" (for RT)
-	Airline  string  `json:"airline,omitempty"`   // airline name if known
-	Price    float64 `json:"price"`               // price
-	Currency string  `json:"currency"`            // currency code
+	Type     string  `json:"type"`              // "round_trip", "one_way"
+	Outbound string  `json:"outbound"`          // "HEL->BCN May 1"
+	Return   string  `json:"return,omitempty"`  // "BCN->HEL May 8" (for RT)
+	Airline  string  `json:"airline,omitempty"` // airline name if known
+	Price    float64 `json:"price"`             // price
+	Currency string  `json:"currency"`          // currency code
 }
 
 // maxComboTrips caps the number of trips to avoid combinatorial explosion.
@@ -370,7 +370,7 @@ func buildNestedHack(origin, dest string, trips []TripLeg, perm []int, currency 
 			"If any trip dates change, the nested pairing may no longer work",
 			"Some airlines void tickets when legs are skipped",
 		},
-		Steps:    steps,
+		Steps:     steps,
 		Citations: citations,
 	}
 }

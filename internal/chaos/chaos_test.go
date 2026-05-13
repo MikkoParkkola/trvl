@@ -49,7 +49,7 @@ func TestChaos_Fault429_StatusCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("status = %d, want 429", resp.StatusCode)
@@ -67,7 +67,7 @@ func TestChaos_Fault429_RetryAfterHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	ra := resp.Header.Get("Retry-After")
 	if ra == "" {
@@ -93,7 +93,7 @@ func TestChaos_Fault429_BodyIsReadable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	// Must not panic or error — http.NoBody returns EOF immediately.
 	if _, err := io.ReadAll(resp.Body); err != nil {
 		t.Errorf("ReadAll: %v", err)
@@ -115,7 +115,7 @@ func TestChaos_Fault503_StatusCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", resp.StatusCode)
@@ -133,7 +133,7 @@ func TestChaos_Fault503_BodyIsReadable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if _, err := io.ReadAll(resp.Body); err != nil {
 		t.Errorf("ReadAll: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestChaos_FaultNone_PassesThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -196,7 +196,7 @@ func TestChaos_UnknownHost_PassesThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200 (should passthrough for unknown host)", resp.StatusCode)
@@ -222,7 +222,7 @@ func TestChaos_Probability_DeterministicAlwaysFires(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503 (deterministic always fires)", resp.StatusCode)
 	}
@@ -252,7 +252,7 @@ func TestChaos_Canary_FiveConsecutive503s(t *testing.T) {
 		if err != nil {
 			t.Fatalf("request %d: unexpected transport error: %v", i+1, err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusServiceUnavailable {
 			errors503++
 		}
@@ -275,7 +275,7 @@ func TestChaos_Canary_FiveConsecutive429s(t *testing.T) {
 		if err != nil {
 			t.Fatalf("request %d: unexpected error: %v", i+1, err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusTooManyRequests {
 			errors429++
 		}

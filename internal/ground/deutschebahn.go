@@ -338,7 +338,7 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 			slog.Debug("db tagesbestpreis request failed", "err", err)
 			continue
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			io.ReadAll(io.LimitReader(resp.Body, 256)) //nolint:errcheck
@@ -427,7 +427,7 @@ func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([
 	if err != nil {
 		return nil, fmt.Errorf("db search: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))

@@ -83,7 +83,7 @@ Examples:
 // If targetCurrency is set and differs from cell currency, converts prices.
 func printGridTable(ctx context.Context, targetCurrency string, result *models.PriceGrid, origin, destination string) error {
 	if !result.Success {
-		fmt.Fprintf(os.Stderr, "Grid search failed: %s\n", result.Error)
+		_, _ = fmt.Fprintf(os.Stderr, "Grid search failed: %s\n", result.Error)
 		return nil
 	}
 

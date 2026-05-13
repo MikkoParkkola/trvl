@@ -14,7 +14,7 @@ type DestinationInfo struct {
 // CountryInfo holds basic facts about a country.
 type CountryInfo struct {
 	Name       string   `json:"name"`
-	Code       string   `json:"code"`       // ISO 3166-1 alpha-2
+	Code       string   `json:"code"` // ISO 3166-1 alpha-2
 	Capital    string   `json:"capital"`
 	Languages  []string `json:"languages"`
 	Currencies []string `json:"currencies"` // currency codes
@@ -45,8 +45,8 @@ type Holiday struct {
 
 // SafetyInfo holds travel advisory information.
 type SafetyInfo struct {
-	Level       float64 `json:"level"`        // 1-5 scale
-	Advisory    string  `json:"advisory"`     // e.g. "exercise normal caution"
+	Level       float64 `json:"level"`    // 1-5 scale
+	Advisory    string  `json:"advisory"` // e.g. "exercise normal caution"
 	Source      string  `json:"source"`
 	LastUpdated string  `json:"last_updated"`
 }

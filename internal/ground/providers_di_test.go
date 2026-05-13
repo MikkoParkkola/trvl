@@ -44,7 +44,7 @@ func TestSearchFlixBus_DI_HappyPath(t *testing.T) {
 		if strings.Contains(r.URL.Path, "/search/autocomplete") {
 			// Autocomplete: return city info for the queried ID.
 			q := r.URL.Query().Get("q")
-			json.NewEncoder(w).Encode([]flixbusAutocompleteItem{
+			_ = json.NewEncoder(w).Encode([]flixbusAutocompleteItem{
 				{
 					ID: q, Name: "Berlin", Country: "DE",
 					Score: 1.0, IsFlixbusCity: true,
@@ -58,7 +58,7 @@ func TestSearchFlixBus_DI_HappyPath(t *testing.T) {
 		}
 
 		if strings.Contains(r.URL.Path, "/search/service") {
-			json.NewEncoder(w).Encode(flixbusSearchResponse{
+			_ = json.NewEncoder(w).Encode(flixbusSearchResponse{
 				Trips: []flixbusTrip{
 					{
 						DepartureCityID: "city-berlin",
@@ -200,11 +200,11 @@ func TestSearchFlixBus_DI_UnavailableFiltered(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 
 		if strings.Contains(r.URL.Path, "/search/autocomplete") {
-			json.NewEncoder(w).Encode([]flixbusAutocompleteItem{})
+			_ = json.NewEncoder(w).Encode([]flixbusAutocompleteItem{})
 			return
 		}
 
-		json.NewEncoder(w).Encode(flixbusSearchResponse{
+		_ = json.NewEncoder(w).Encode(flixbusSearchResponse{
 			Trips: []flixbusTrip{
 				{
 					Results: map[string]flixbusResult{
@@ -253,7 +253,7 @@ func TestFlixBusAutoComplete_DI(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]flixbusAutocompleteItem{
+		_ = json.NewEncoder(w).Encode([]flixbusAutocompleteItem{
 			{ID: "city-1", Name: "Berlin", Country: "DE", Score: 1.0, IsFlixbusCity: true},
 			{ID: "city-2", Name: "Bernau", Country: "DE", Score: 0.5, IsFlixbusCity: true},
 			{ID: "station-x", Name: "Berlin HBF", Country: "DE", Score: 0.8, IsFlixbusCity: false}, // filtered
@@ -309,7 +309,7 @@ func TestSearchRegioJet_DI_HappyPath(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 
 		if strings.Contains(r.URL.Path, "/consts/locations") {
-			json.NewEncoder(w).Encode([]regiojetCountry{
+			_ = json.NewEncoder(w).Encode([]regiojetCountry{
 				{
 					Country: "Czech Republic",
 					Code:    "CZ",
@@ -330,7 +330,7 @@ func TestSearchRegioJet_DI_HappyPath(t *testing.T) {
 		}
 
 		if strings.Contains(r.URL.Path, "/routes/search") {
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"routes": []regiojetSearchResult{
 					{
 						DepartureTime:  "2026-07-01T08:00:00.000+02:00",
@@ -438,7 +438,7 @@ func TestSearchRegioJet_DI_DateFilter(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 
 		if strings.Contains(r.URL.Path, "/consts/locations") {
-			json.NewEncoder(w).Encode([]regiojetCountry{
+			_ = json.NewEncoder(w).Encode([]regiojetCountry{
 				{Country: "CZ", Code: "CZ", Cities: []regiojetCityRaw{{ID: 10, Name: "Prague"}}},
 				{Country: "AT", Code: "AT", Cities: []regiojetCityRaw{{ID: 20, Name: "Vienna"}}},
 			})
@@ -446,7 +446,7 @@ func TestSearchRegioJet_DI_DateFilter(t *testing.T) {
 		}
 
 		// Return results spanning two days.
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"routes": []regiojetSearchResult{
 				{
 					DepartureTime:  "2026-07-01T22:00:00.000+02:00",
@@ -507,7 +507,7 @@ func TestSearchSNCF_DI_CalendarHappyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		price := 4500 // 45.00 EUR in cents
-		json.NewEncoder(w).Encode([]map[string]any{
+		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"date": "2026-08-15", "price": price},
 		})
 	}))

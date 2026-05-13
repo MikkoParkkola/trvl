@@ -138,8 +138,9 @@ type InputSchema struct {
 
 // Property describes a single input parameter.
 type Property struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Type        string    `json:"type"`
+	Description string    `json:"description,omitempty"`
+	Items       *Property `json:"items,omitempty"`
 }
 
 // ToolCallParams is the params object for tools/call.

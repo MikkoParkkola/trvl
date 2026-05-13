@@ -17,7 +17,7 @@ import (
 func TestTestProvider_WrongResultsPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"items": []any{
 					map[string]any{"name": "Hotel A"},
@@ -53,12 +53,12 @@ func TestTestProvider_WithPreflight(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/auth") {
 			preflightCalls++
-			fmt.Fprint(w, `<html>csrf_token=abc123</html>`)
+			_, _ = fmt.Fprint(w, `<html>csrf_token=abc123</html>`)
 			return
 		}
 		searchCalls++
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{
 				map[string]any{"name": "Preflight Hotel", "price": 150.0},
 			},
@@ -111,7 +111,7 @@ func TestTestProvider_PostWithBody(t *testing.T) {
 		b, _ := io.ReadAll(r.Body)
 		receivedBody = string(b)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"hotels": []any{
 					map[string]any{"name": "POST Hotel"},
@@ -159,7 +159,7 @@ func TestTestProvider_WithHeaderOrder(t *testing.T) {
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"results":[{"name":"Ordered Hotel"}]}`)
+		_, _ = fmt.Fprint(w, `{"results":[{"name":"Ordered Hotel"}]}`)
 	}))
 	defer srv.Close()
 
@@ -198,7 +198,7 @@ func TestTestProvider_BodyExtractPattern(t *testing.T) {
 	</body></html>`
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, html)
+		_, _ = fmt.Fprint(w, html)
 	}))
 	defer srv.Close()
 
@@ -226,7 +226,7 @@ func TestTestProvider_BodyExtractPattern(t *testing.T) {
 func TestTestProvider_GraphQLError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"errors": []any{
 				map[string]any{
 					"message": "PersistedQueryNotFound",
@@ -273,7 +273,7 @@ func TestReloadIfChanged_ModifiedFile(t *testing.T) {
 	}
 	data, _ := json.Marshal(cfg)
 	path := filepath.Join(dir, "reload-test.json")
-	os.WriteFile(path, data, 0o600)
+	_ = os.WriteFile(path, data, 0o600)
 
 	reg, err := NewRegistryAt(dir)
 	if err != nil {
@@ -289,11 +289,11 @@ func TestReloadIfChanged_ModifiedFile(t *testing.T) {
 	// Modify the file with a future mtime.
 	cfg.Name = "Updated Name"
 	data2, _ := json.Marshal(cfg)
-	os.WriteFile(path, data2, 0o600)
+	_ = os.WriteFile(path, data2, 0o600)
 
 	// Touch the file to ensure the mtime is newer.
 	futureTime := time.Now().Add(10 * time.Second)
-	os.Chtimes(path, futureTime, futureTime)
+	_ = os.Chtimes(path, futureTime, futureTime)
 
 	// Second call should reload.
 	got2 := reg.ReloadIfChanged("reload-test")
@@ -381,11 +381,11 @@ func TestTestProvider_PreflightFails403(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/auth") {
 			w.WriteHeader(403)
-			fmt.Fprint(w, `<html>Access Denied</html>`)
+			_, _ = fmt.Fprint(w, `<html>Access Denied</html>`)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"results":[]}`)
+		_, _ = fmt.Fprint(w, `{"results":[]}`)
 	}))
 	defer srv.Close()
 
@@ -425,11 +425,11 @@ func TestTestProvider_PreflightExtractionNoMatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/auth") {
 			// Returns 200 but body doesn't match the extraction pattern.
-			fmt.Fprint(w, `<html>no token here</html>`)
+			_, _ = fmt.Fprint(w, `<html>no token here</html>`)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"results":[]}`)
+		_, _ = fmt.Fprint(w, `{"results":[]}`)
 	}))
 	defer srv.Close()
 
@@ -462,14 +462,14 @@ func TestTestProvider_PreflightExtractionNoMatch(t *testing.T) {
 		t.Error("expected failure when extraction doesn't match")
 	}
 	if result.AuthTier != "" {
-		// No tier succeeded.
+		t.Errorf("expected no successful auth tier, got %q", result.AuthTier)
 	}
 }
 
 func TestTestProvider_ZeroResults(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{},
 		})
 	}))
@@ -501,7 +501,7 @@ func TestTestProvider_ZeroResults(t *testing.T) {
 func TestTestProvider_WithCityLookup(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"results":[{"name":"City Hotel"}]}`)
+		_, _ = fmt.Fprint(w, `{"results":[{"name":"City Hotel"}]}`)
 	}))
 	defer srv.Close()
 
@@ -531,7 +531,7 @@ func TestTestProvider_WithCityLookup(t *testing.T) {
 func TestTestProvider_AkamaiChallenge(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(202)
-		fmt.Fprint(w, `<html><script src="https://1234.awswaf.com/challenge.js"></script></html>`)
+		_, _ = fmt.Fprint(w, `<html><script src="https://1234.awswaf.com/challenge.js"></script></html>`)
 	}))
 	defer srv.Close()
 
@@ -563,7 +563,7 @@ func TestTestProvider_WithQueryParams(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.RawQuery
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"results":[{"name":"QP Hotel"}]}`)
+		_, _ = fmt.Fprint(w, `{"results":[{"name":"QP Hotel"}]}`)
 	}))
 	defer srv.Close()
 
@@ -598,7 +598,7 @@ func TestTestProvider_WithQueryParams(t *testing.T) {
 func TestTestProvider_RatingScaleNormalization(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{
 				map[string]any{"name": "Scaled Hotel", "rating": 4.5},
 			},
@@ -651,7 +651,7 @@ func TestTestProvider_WithApolloCache(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(apolloData)
+		_ = json.NewEncoder(w).Encode(apolloData)
 	}))
 	defer srv.Close()
 
@@ -706,7 +706,7 @@ func TestTestProvider_WithNiobeSSR(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(niobeData)
+		_ = json.NewEncoder(w).Encode(niobeData)
 	}))
 	defer srv.Close()
 
@@ -739,7 +739,7 @@ func TestTestProvider_WithNiobeSSR(t *testing.T) {
 func TestTestProvider_WithCityResolver(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/autocomplete") {
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"results": []any{
 					map[string]any{
 						"dest_id":   "-999",
@@ -750,7 +750,7 @@ func TestTestProvider_WithCityResolver(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"results":[{"name":"Resolved Hotel"}]}`)
+		_, _ = fmt.Fprint(w, `{"results":[{"name":"Resolved Hotel"}]}`)
 	}))
 	defer srv.Close()
 

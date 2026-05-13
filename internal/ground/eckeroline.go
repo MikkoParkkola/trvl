@@ -144,7 +144,7 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 		slog.Debug("eckeroline homepage fetch failed", "err", err)
 		return nil, nil
 	}
-	defer homeResp.Body.Close()
+	defer func() { _ = homeResp.Body.Close() }()
 
 	if homeResp.StatusCode != http.StatusOK {
 		slog.Debug("eckeroline homepage non-200", "status", homeResp.StatusCode)
@@ -204,7 +204,7 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 		slog.Debug("eckeroline getdepartures failed", "err", err)
 		return nil, nil
 	}
-	defer depResp.Body.Close()
+	defer func() { _ = depResp.Body.Close() }()
 
 	if depResp.StatusCode != http.StatusOK {
 		slog.Debug("eckeroline getdepartures non-200", "status", depResp.StatusCode)

@@ -34,7 +34,7 @@ func main() {
 	pub := flag.String("pub", "", "path to write pubkey hex (0644)")
 	flag.Parse()
 	if *priv == "" || *pub == "" {
-		fmt.Fprintln(os.Stderr, "usage: keygen-mldsa --priv <path> --pub <path>")
+		_, _ = fmt.Fprintln(os.Stderr, "usage: keygen-mldsa --priv <path> --pub <path>")
 		os.Exit(2)
 	}
 
@@ -77,10 +77,10 @@ func main() {
 		die("write pub: %v", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "ML-DSA-65 keypair written.\n")
-	fmt.Fprintf(os.Stderr, "  pubkey:  %s (%d bytes binary, %d hex chars)\n", *pub, len(pkb), len(pkb)*2)
-	fmt.Fprintf(os.Stderr, "  privkey: %s (mode 0600, %d bytes binary, %d hex chars)\n", *priv, len(skb), len(skb)*2)
-	fmt.Fprintf(os.Stderr, "  roundtrip: sign + verify OK\n")
+	_, _ = fmt.Fprintf(os.Stderr, "ML-DSA-65 keypair written.\n")
+	_, _ = fmt.Fprintf(os.Stderr, "  pubkey:  %s (%d bytes binary, %d hex chars)\n", *pub, len(pkb), len(pkb)*2)
+	_, _ = fmt.Fprintf(os.Stderr, "  privkey: %s (mode 0600, %d bytes binary, %d hex chars)\n", *priv, len(skb), len(skb)*2)
+	_, _ = fmt.Fprintf(os.Stderr, "  roundtrip: sign + verify OK\n")
 }
 
 func writeFileExclusive(path string, data []byte, mode os.FileMode) error {
@@ -90,12 +90,12 @@ func writeFileExclusive(path string, data []byte, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = f.Write(data)
 	return err
 }
 
 func die(format string, a ...any) {
-	fmt.Fprintf(os.Stderr, "keygen-mldsa: "+format+"\n", a...)
+	_, _ = fmt.Fprintf(os.Stderr, "keygen-mldsa: "+format+"\n", a...)
 	os.Exit(1)
 }

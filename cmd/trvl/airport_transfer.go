@@ -87,9 +87,9 @@ Examples:
 func printAirportTransferTable(ctx context.Context, targetCurrency string, result *trip.AirportTransferResult) error {
 	if !result.Success {
 		if result.Error != "" {
-			fmt.Fprintf(os.Stderr, "No airport transfer routes found: %s\n", result.Error)
+			_, _ = fmt.Fprintf(os.Stderr, "No airport transfer routes found: %s\n", result.Error)
 		} else {
-			fmt.Fprintln(os.Stderr, "No airport transfer routes found.")
+			_, _ = fmt.Fprintln(os.Stderr, "No airport transfer routes found.")
 		}
 		return nil
 	}
@@ -111,11 +111,11 @@ func printAirportTransferTable(ctx context.Context, targetCurrency string, resul
 	models.FormatTable(os.Stdout, headers, rows)
 	if result.CityMatches > 0 {
 		fmt.Println()
-		fmt.Fprintln(os.Stdout, "Note: exact airport-to-destination matches are listed first; broader airport-city options follow.")
+		_, _ = fmt.Fprintln(os.Stdout, "Note: exact airport-to-destination matches are listed first; broader airport-city options follow.")
 	}
 	if hasAirportTransferProvider(result.Routes, "taxi") {
 		fmt.Println()
-		fmt.Fprintln(os.Stdout, "Taxi fares are estimates based on route distance and typical local tariffs.")
+		_, _ = fmt.Fprintln(os.Stdout, "Taxi fares are estimates based on route distance and typical local tariffs.")
 	}
 	return nil
 }

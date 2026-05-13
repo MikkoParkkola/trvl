@@ -105,7 +105,7 @@ func SearchTransitous(ctx context.Context, fromLat, fromLon, toLat, toLon float6
 	if err != nil {
 		return nil, fmt.Errorf("transitous search: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))

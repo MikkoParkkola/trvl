@@ -125,20 +125,20 @@ func samplesToFloat64(samples []dealquality.Sample) []float64 {
 }
 
 func renderForecastTable(out *os.File, route, kind, season string, price float64, f forecast.Forecast, c forecast.Curve) {
-	fmt.Fprintf(out, "Forecast for %s [%s, %s] @ %.2f\n", route, kind, season, price)
+	_, _ = fmt.Fprintf(out, "Forecast for %s [%s, %s] @ %.2f\n", route, kind, season, price)
 	if f.InsufficientData {
-		fmt.Fprintf(out, "  ⚠ %s — recommendation suppressed.\n", f.Reason)
+		_, _ = fmt.Fprintf(out, "  ⚠ %s — recommendation suppressed.\n", f.Reason)
 		return
 	}
-	fmt.Fprintf(out, "  Commit-now confidence: %d/100\n", f.CommitNowConfidence)
-	fmt.Fprintf(out, "  P(lower price in %dd):  %.0f%% (instantaneous %.0f%%)\n",
+	_, _ = fmt.Fprintf(out, "  Commit-now confidence: %d/100\n", f.CommitNowConfidence)
+	_, _ = fmt.Fprintf(out, "  P(lower price in %dd):  %.0f%% (instantaneous %.0f%%)\n",
 		f.HorizonDays, f.HorizonProbability*100, f.DropProbability*100)
-	fmt.Fprintf(out, "  Expected savings:       %.2f (same currency as quote)\n", f.ExpectedSavingsIfWait)
-	fmt.Fprintf(out, "  Samples backing model:  %d (90-day rolling window)\n", f.Samples)
-	fmt.Fprintf(out, "  Verdict:                %s\n", f.Reason)
+	_, _ = fmt.Fprintf(out, "  Expected savings:       %.2f (same currency as quote)\n", f.ExpectedSavingsIfWait)
+	_, _ = fmt.Fprintf(out, "  Samples backing model:  %d (90-day rolling window)\n", f.Samples)
+	_, _ = fmt.Fprintf(out, "  Verdict:                %s\n", f.Reason)
 	if len(c.Buckets) > 0 {
-		fmt.Fprintf(out, "\n  Price distribution (▏ = current quote):\n  %s\n", renderSparkline(c))
-		fmt.Fprintf(out, "  range %.0f .. %.0f\n", c.Min, c.Max)
+		_, _ = fmt.Fprintf(out, "\n  Price distribution (▏ = current quote):\n  %s\n", renderSparkline(c))
+		_, _ = fmt.Fprintf(out, "  range %.0f .. %.0f\n", c.Min, c.Max)
 	}
 }
 

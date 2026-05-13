@@ -104,7 +104,7 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to read body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var req Request
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -114,7 +114,7 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 			JSONRPC: "2.0",
 			Error:   &Error{Code: -32700, Message: fmt.Sprintf("parse error: %v", err)},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 		return
 	}
 
@@ -126,7 +126,7 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *HTTPServer) authorize(r *http.Request) bool {
@@ -143,7 +143,7 @@ func (h *HTTPServer) authorize(r *http.Request) bool {
 
 func (h *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "ok",
 		"server":  serverName,
 		"version": serverVersion,

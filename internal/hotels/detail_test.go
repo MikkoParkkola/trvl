@@ -396,9 +396,9 @@ func TestEnrichHotelAmenities_RespectsLimit(t *testing.T) {
 
 func TestEnrichHotelAmenities_SkipsNoHotelID(t *testing.T) {
 	hotels := []models.HotelResult{
-		{Name: "Hotel A", HotelID: ""},        // no ID
-		{Name: "Hotel B", HotelID: "id_b"},    // has ID
-		{Name: "Hotel C", HotelID: ""},        // no ID
+		{Name: "Hotel A", HotelID: ""},     // no ID
+		{Name: "Hotel B", HotelID: "id_b"}, // has ID
+		{Name: "Hotel C", HotelID: ""},     // no ID
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -509,7 +509,7 @@ func buildFakeDetailPage(data any) string {
 
 	// Simple JSON serialization for test data.
 	jsonBytes := marshalTestJSON(data)
-	sb.Write(jsonBytes)
+	_, _ = sb.Write(jsonBytes)
 
 	sb.WriteString("});")
 	sb.WriteString("</script></body></html>")
@@ -576,4 +576,3 @@ func toSet(ss []string) map[string]bool {
 	}
 	return m
 }
-

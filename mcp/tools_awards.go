@@ -19,14 +19,17 @@ func searchAwardsTool() ToolDef {
 			Properties: map[string]Property{
 				"seats": {
 					Type:        "array",
+					Items:       &Property{Type: "object"},
 					Description: "Pre-fetched award seat fixtures. Each seat is a JSON object with: program (IATA airline code e.g. VS, AY, AC, BA, FB), origin (IATA), destination (IATA), date (YYYY-MM-DD), cabin (economy/premium_economy/business/first), miles_cost (int), cash_fees (number), cash_equivalent (number), bookable_segments (int).",
 				},
 				"balances": {
 					Type:        "array",
+					Items:       &Property{Type: "object"},
 					Description: "User's loyalty point balances. Each entry: program (e.g. VS, AY, MR, UR, Bilt), balance (int).",
 				},
 				"transfer_ratios": {
 					Type:        "array",
+					Items:       &Property{Type: "object"},
 					Description: "Custom transfer ratio overrides. Each entry: source, target, numerator (float), denominator (float). Omit to use defaults.",
 				},
 				"min_cpp": {
@@ -239,17 +242,17 @@ func buildAwardsSummary(spots []awards.SweetSpot) string {
 		return "No award sweet spots found matching the criteria."
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d award sweet spot(s):\n\n", len(spots)))
+	_, _ = fmt.Fprintf(&sb, "Found %d award sweet spot(s):\n\n", len(spots))
 	for i, s := range spots {
 		affordable := "no"
 		if s.Affordable {
 			affordable = "yes"
 		}
-		sb.WriteString(fmt.Sprintf("%d. %s->%s %s %s - %s\n",
-			i+1, s.Seat.Origin, s.Seat.Destination, s.Seat.Date, s.Seat.Cabin, s.TransferRoute))
-		sb.WriteString(fmt.Sprintf("   %d pts (%d native) | %.2f cpp | fees %.2f | %s affordable\n",
-			s.MilesSpentSource, s.MilesSpentNative, s.CentsPerPoint, s.CashFees, affordable))
-		sb.WriteString(fmt.Sprintf("   %s\n\n", s.Reason))
+		_, _ = fmt.Fprintf(&sb, "%d. %s->%s %s %s - %s\n",
+			i+1, s.Seat.Origin, s.Seat.Destination, s.Seat.Date, s.Seat.Cabin, s.TransferRoute)
+		_, _ = fmt.Fprintf(&sb, "   %d pts (%d native) | %.2f cpp | fees %.2f | %s affordable\n",
+			s.MilesSpentSource, s.MilesSpentNative, s.CentsPerPoint, s.CashFees, affordable)
+		_, _ = fmt.Fprintf(&sb, "   %s\n\n", s.Reason)
 	}
 	return sb.String()
 }

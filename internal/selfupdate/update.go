@@ -128,7 +128,7 @@ func (u *Updater) PerformUpdate(ctx context.Context, latestVer string, exePath s
 		return "", fmt.Errorf("self-update: mktemp: %w", err)
 	}
 	// Best-effort cleanup once the function returns.
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	tarballPath := filepath.Join(tmpDir, tarballName)
 	if err := u.downloadTo(ctx, tarballURL, tarballPath); err != nil {
@@ -184,7 +184,7 @@ func (u *Updater) downloadTo(ctx context.Context, url, path string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("status %d for %s", resp.StatusCode, url)
 	}
@@ -192,7 +192,7 @@ func (u *Updater) downloadTo(ctx context.Context, url, path string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := io.Copy(f, resp.Body); err != nil {
 		return err
 	}
@@ -260,7 +260,7 @@ func sha256File(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
@@ -280,7 +280,7 @@ func verifyMLDSAFile(tarballPath, sigPath string) error {
 	if err != nil {
 		return fmt.Errorf("open tarball: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return VerifyMLDSA65(f, sig)
 }
 
@@ -298,12 +298,12 @@ func extractBinaryFromTarGz(tarballPath, binName, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return fmt.Errorf("gunzip: %w", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
@@ -329,7 +329,7 @@ func extractBinaryFromTarGz(tarballPath, binName, dest string) error {
 			return err
 		}
 		if _, err := io.Copy(out, tr); err != nil {
-			out.Close()
+			_ = out.Close()
 			return err
 		}
 		return out.Close()
@@ -384,13 +384,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
 	if err != nil {
 		return err
 	}
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
+		_ = out.Close()
 		return err
 	}
 	return out.Close()

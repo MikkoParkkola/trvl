@@ -14,9 +14,11 @@ claude plugin marketplace add /Users/mikko/github/trvl/plugin --scope user
 claude plugin install trvl --scope user
 ```
 
-The plugin MCP config launches `trvl mcp`. If `trvl` is missing and Homebrew is
-available, the launcher runs `brew install MikkoParkkola/tap/trvl` before
-starting the MCP server.
+The plugin MCP config launches `trvl mcp`, so install the `trvl` binary first:
+
+```bash
+brew install MikkoParkkola/tap/trvl
+```
 
 ## Components
 
@@ -65,7 +67,7 @@ The command routes to `trvl-destination-research`, composing
 
 The original MIK-3400 acceptance text refers to the 43 underlying tools
 available when the plugin was proposed. The current trvl MCP server advertises
-1 smart MCP tool plus 62 compatibility aliases, and this plugin is wired for
+1 smart MCP tool plus 63 compatibility aliases, and this plugin is wired for
 the full current surface.
 
 Flights:
@@ -99,7 +101,7 @@ Profile and preferences:
 
 Trips and calendar:
 `create_trip`, `add_trip_leg`, `mark_trip_booked`, `get_trip`, `list_trips`,
-`export_ics`.
+`export_ics`, `trip_workspace`.
 
 Watches and opportunities:
 `watch_price`, `list_watches`, `check_watches`, `watch_opportunities`,

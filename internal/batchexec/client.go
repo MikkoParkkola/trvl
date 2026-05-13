@@ -73,11 +73,11 @@ type Client struct {
 // burst of 1, and automatic retry with exponential backoff for 429/5xx errors.
 func NewClient() *Client {
 	transport := &http.Transport{
-		DialTLSContext:        dialTLSChromeHTTP1,
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   10,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
+		DialTLSContext:      dialTLSChromeHTTP1,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
 		// Force HTTP/1.1 — we handle TLS ourselves and net/http can't do HTTP/2
 		// on externally-provided TLS connections without extra wiring.
 		ForceAttemptHTTP2: false,
@@ -192,12 +192,12 @@ func dialTLSChromeHTTP1WithConfig(ctx context.Context, network, addr string, tls
 	uConn := utls.UClient(rawConn, tlsConfig, utls.HelloCustom)
 
 	if err := uConn.ApplyPreset(&spec); err != nil {
-		uConn.Close()
+		_ = uConn.Close()
 		return nil, fmt.Errorf("apply preset: %w", err)
 	}
 
 	if err := uConn.HandshakeContext(ctx); err != nil {
-		uConn.Close()
+		_ = uConn.Close()
 		return nil, fmt.Errorf("utls handshake: %w", err)
 	}
 
@@ -292,7 +292,7 @@ func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request
 		}
 
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024)) // 10MB limit
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		elapsed := time.Since(start)
 
 		if readErr != nil {
@@ -562,12 +562,12 @@ func dialTLSChromeH2(ctx context.Context, network, addr string) (net.Conn, error
 	spec := Chrome146Spec()
 	uConn := utls.UClient(rawConn, &utls.Config{ServerName: host}, utls.HelloCustom)
 	if err := uConn.ApplyPreset(&spec); err != nil {
-		uConn.Close()
+		_ = uConn.Close()
 		return nil, fmt.Errorf("apply chrome146 preset: %w", err)
 	}
 
 	if err := uConn.HandshakeContext(ctx); err != nil {
-		uConn.Close()
+		_ = uConn.Close()
 		return nil, fmt.Errorf("utls handshake: %w", err)
 	}
 

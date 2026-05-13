@@ -354,7 +354,7 @@ func TestBuildFilters_AllSortOrders(t *testing.T) {
 
 		data, _ := json.Marshal(filters)
 		var arr []any
-		json.Unmarshal(data, &arr)
+		_ = json.Unmarshal(data, &arr)
 
 		sortBy := int(arr[2].(float64))
 		if sortBy != tt.expected {
@@ -372,7 +372,7 @@ func TestBuildFilters_WithAirlines(t *testing.T) {
 
 	data, _ := json.Marshal(filters)
 	var arr []any
-	json.Unmarshal(data, &arr)
+	_ = json.Unmarshal(data, &arr)
 
 	settings := arr[1].([]any)
 	segments := settings[13].([]any)
@@ -405,7 +405,7 @@ func TestBuildFilters_WithMaxStops(t *testing.T) {
 
 		data, _ := json.Marshal(filters)
 		var arr []any
-		json.Unmarshal(data, &arr)
+		_ = json.Unmarshal(data, &arr)
 
 		settings := arr[1].([]any)
 		segments := settings[13].([]any)
@@ -435,7 +435,7 @@ func TestBuildFilters_CabinClasses(t *testing.T) {
 
 		data, _ := json.Marshal(filters)
 		var arr []any
-		json.Unmarshal(data, &arr)
+		_ = json.Unmarshal(data, &arr)
 
 		settings := arr[1].([]any)
 		cabin := int(settings[5].(float64))
@@ -607,7 +607,7 @@ func TestBuildFlightBookingURL_Format(t *testing.T) {
 
 func TestBuildFlightBookingURL_DifferentRoutes(t *testing.T) {
 	tests := []struct {
-		origin, dest, date string
+		origin, dest, date   string
 		originCity, destCity string
 	}{
 		{"CDG", "SIN", "2026-12-25", "Paris", "Singapore"},
@@ -668,7 +668,7 @@ func TestBuildFilters_MultipleAdults(t *testing.T) {
 
 	data, _ := json.Marshal(filters)
 	var arr []any
-	json.Unmarshal(data, &arr)
+	_ = json.Unmarshal(data, &arr)
 
 	settings := arr[1].([]any)
 	passengers := settings[6].([]any)

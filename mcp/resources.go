@@ -242,7 +242,7 @@ func (s *Server) readTripSummary() (*ResourcesReadResult, error) {
 	if n := counts["destination"]; n > 0 {
 		parts = append(parts, fmt.Sprintf("%d destination(s)", n))
 	}
-	b.WriteString(fmt.Sprintf("Searched: %s\n\n", strings.Join(parts, ", ")))
+	_, _ = fmt.Fprintf(&b, "Searched: %s\n\n", strings.Join(parts, ", "))
 
 	// Individual searches.
 	var totalCost float64
@@ -258,18 +258,18 @@ func (s *Server) readTripSummary() (*ResourcesReadResult, error) {
 			icon = "** "
 		}
 		if sr.BestPrice > 0 {
-			b.WriteString(fmt.Sprintf("%s%s: cheapest %s %.0f\n", icon, sr.Query, sr.Currency, sr.BestPrice))
+			_, _ = fmt.Fprintf(&b, "%s%s: cheapest %s %.0f\n", icon, sr.Query, sr.Currency, sr.BestPrice)
 			totalCost += sr.BestPrice
 			if currency == "" {
 				currency = sr.Currency
 			}
 		} else {
-			b.WriteString(fmt.Sprintf("%s%s\n", icon, sr.Query))
+			_, _ = fmt.Fprintf(&b, "%s%s\n", icon, sr.Query)
 		}
 	}
 
 	if totalCost > 0 {
-		b.WriteString(fmt.Sprintf("\nEstimated total: %s %.0f", currency, totalCost))
+		_, _ = fmt.Fprintf(&b, "\nEstimated total: %s %.0f", currency, totalCost)
 	}
 
 	return &ResourcesReadResult{
@@ -307,27 +307,27 @@ func (s *Server) readWatchesList() (*ResourcesReadResult, error) {
 	var b strings.Builder
 	b.WriteString("Price Watches\n")
 	b.WriteString(strings.Repeat("=", 40))
-	b.WriteString(fmt.Sprintf("\n%d active watch(es)\n\n", len(watches)))
+	_, _ = fmt.Fprintf(&b, "\n%d active watch(es)\n\n", len(watches))
 
 	for _, w := range watches {
 		route := fmt.Sprintf("%s -> %s", w.Origin, w.Destination)
-		b.WriteString(fmt.Sprintf("[%s] %s  %s  %s", w.ID, w.Type, route, w.DepartDate))
+		_, _ = fmt.Fprintf(&b, "[%s] %s  %s  %s", w.ID, w.Type, route, w.DepartDate)
 		if w.ReturnDate != "" {
-			b.WriteString(fmt.Sprintf(" (return %s)", w.ReturnDate))
+			_, _ = fmt.Fprintf(&b, " (return %s)", w.ReturnDate)
 		}
 		b.WriteString("\n")
 		if w.LastPrice > 0 {
-			b.WriteString(fmt.Sprintf("  Current: %.0f %s", w.LastPrice, w.Currency))
+			_, _ = fmt.Fprintf(&b, "  Current: %.0f %s", w.LastPrice, w.Currency)
 			if w.LowestPrice > 0 && w.LowestPrice < w.LastPrice {
-				b.WriteString(fmt.Sprintf("  Lowest: %.0f", w.LowestPrice))
+				_, _ = fmt.Fprintf(&b, "  Lowest: %.0f", w.LowestPrice)
 			}
 			b.WriteString("\n")
 		}
 		if w.BelowPrice > 0 {
-			b.WriteString(fmt.Sprintf("  Goal: below %.0f %s\n", w.BelowPrice, w.Currency))
+			_, _ = fmt.Fprintf(&b, "  Goal: below %.0f %s\n", w.BelowPrice, w.Currency)
 		}
 		if !w.LastCheck.IsZero() {
-			b.WriteString(fmt.Sprintf("  Last checked: %s\n", w.LastCheck.Format("2006-01-02 15:04")))
+			_, _ = fmt.Fprintf(&b, "  Last checked: %s\n", w.LastCheck.Format("2006-01-02 15:04"))
 		}
 		b.WriteString("\n")
 	}
@@ -356,39 +356,39 @@ func (s *Server) readWatchByID(id string) (*ResourcesReadResult, error) {
 	route := fmt.Sprintf("%s -> %s", w.Origin, w.Destination)
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Watch: %s %s\n", w.Type, route))
+	_, _ = fmt.Fprintf(&b, "Watch: %s %s\n", w.Type, route)
 	b.WriteString(strings.Repeat("=", 40))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("ID:        %s\n", w.ID))
-	b.WriteString(fmt.Sprintf("Type:      %s\n", w.Type))
-	b.WriteString(fmt.Sprintf("Route:     %s\n", route))
-	b.WriteString(fmt.Sprintf("Date:      %s\n", w.DepartDate))
+	_, _ = fmt.Fprintf(&b, "ID:        %s\n", w.ID)
+	_, _ = fmt.Fprintf(&b, "Type:      %s\n", w.Type)
+	_, _ = fmt.Fprintf(&b, "Route:     %s\n", route)
+	_, _ = fmt.Fprintf(&b, "Date:      %s\n", w.DepartDate)
 	if w.ReturnDate != "" {
-		b.WriteString(fmt.Sprintf("Return:    %s\n", w.ReturnDate))
+		_, _ = fmt.Fprintf(&b, "Return:    %s\n", w.ReturnDate)
 	}
 	if w.BelowPrice > 0 {
-		b.WriteString(fmt.Sprintf("Goal:      below %.0f %s\n", w.BelowPrice, w.Currency))
+		_, _ = fmt.Fprintf(&b, "Goal:      below %.0f %s\n", w.BelowPrice, w.Currency)
 	}
 	if w.LastPrice > 0 {
-		b.WriteString(fmt.Sprintf("Current:   %.0f %s\n", w.LastPrice, w.Currency))
+		_, _ = fmt.Fprintf(&b, "Current:   %.0f %s\n", w.LastPrice, w.Currency)
 	}
 	if w.LowestPrice > 0 {
-		b.WriteString(fmt.Sprintf("Lowest:    %.0f %s\n", w.LowestPrice, w.Currency))
+		_, _ = fmt.Fprintf(&b, "Lowest:    %.0f %s\n", w.LowestPrice, w.Currency)
 	}
 	if !w.LastCheck.IsZero() {
-		b.WriteString(fmt.Sprintf("Checked:   %s\n", w.LastCheck.Format("2006-01-02 15:04")))
+		_, _ = fmt.Fprintf(&b, "Checked:   %s\n", w.LastCheck.Format("2006-01-02 15:04"))
 	}
-	b.WriteString(fmt.Sprintf("Created:   %s\n", w.CreatedAt.Format("2006-01-02 15:04")))
+	_, _ = fmt.Fprintf(&b, "Created:   %s\n", w.CreatedAt.Format("2006-01-02 15:04"))
 
 	// Price history.
 	history := s.watchStore.History(w.ID)
 	if len(history) > 0 {
-		b.WriteString(fmt.Sprintf("\nPrice History (%d points)\n", len(history)))
+		_, _ = fmt.Fprintf(&b, "\nPrice History (%d points)\n", len(history))
 		b.WriteString(strings.Repeat("-", 30))
 		b.WriteString("\n")
 		for _, p := range history {
-			b.WriteString(fmt.Sprintf("  %s  %.0f %s\n",
-				p.Timestamp.Format("2006-01-02 15:04"), p.Price, p.Currency))
+			_, _ = fmt.Fprintf(&b, "  %s  %.0f %s\n",
+				p.Timestamp.Format("2006-01-02 15:04"), p.Price, p.Currency)
 		}
 	}
 

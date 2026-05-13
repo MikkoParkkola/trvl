@@ -358,7 +358,7 @@ func TestDetectHacks_ProgressEmitted(t *testing.T) {
 	// but progress should still fire at the pre-call checkpoints.
 	testutil.RequireLiveIntegration(t)
 
-	handleDetectTravelHacks(context.Background(), map[string]any{
+	_, _, _ = handleDetectTravelHacks(context.Background(), map[string]any{
 		"origin":      "HEL",
 		"destination": "PRG",
 		"date":        "2026-07-15",
@@ -388,7 +388,7 @@ func TestSearchRoute_ProgressEmitted(t *testing.T) {
 
 	testutil.RequireLiveIntegration(t)
 
-	handleSearchRoute(context.Background(), map[string]any{
+	_, _, _ = handleSearchRoute(context.Background(), map[string]any{
 		"origin":      "HEL",
 		"destination": "PRG",
 		"date":        "2026-07-15",
@@ -418,7 +418,7 @@ func TestDetectHacks_ProgressCalls_Unit(t *testing.T) {
 
 	// Missing origin/dest/date — function will still call sendProgress before ctx cancel.
 	// The detectors will run but return no hacks.
-	handleDetectTravelHacks(context.Background(), map[string]any{
+	_, _, _ = handleDetectTravelHacks(context.Background(), map[string]any{
 		"origin":      "",
 		"destination": "",
 		"date":        "",

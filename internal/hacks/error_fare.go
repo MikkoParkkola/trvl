@@ -19,8 +19,8 @@ type expectedPriceRange struct {
 // Based on European market data (EUR, economy, round-trip).
 var routePriceRanges = []struct {
 	maxDistKm int
-	oneway     expectedPriceRange
-	roundtrip  expectedPriceRange
+	oneway    expectedPriceRange
+	roundtrip expectedPriceRange
 }{
 	{maxDistKm: 1000, // short-haul (HEL→ARN, AMS→LHR)
 		oneway:    expectedPriceRange{floorEUR: 15, typicalEUR: 60, label: "short-haul"},

@@ -75,7 +75,7 @@ func TestTrimToHHMM(t *testing.T) {
 	}{
 		{"2026-04-13T21:55", "21:55"},
 		{"2026-04-14T06:30", "06:30"},
-		{"21:55", "21:55"},           // already short
+		{"21:55", "21:55"},               // already short
 		{"2026-04-13T21:55:00", "21:55"}, // longer ISO also trimmed
 	}
 	for _, tc := range tests {
@@ -295,7 +295,7 @@ func TestDetectMultiModalReturnSplit_savingsFormula(t *testing.T) {
 	owOutPrice := 145.0
 	groundReturnPrice := 60.0
 	totalMixed := owOutPrice + groundReturnPrice // 205
-	savings := rtPrice - totalMixed             // 64
+	savings := rtPrice - totalMixed              // 64
 	if savings != 64 {
 		t.Errorf("expected savings=64, got %v", savings)
 	}
@@ -333,10 +333,10 @@ func TestDetectMultiModalReturnSplit_overnightSavings(t *testing.T) {
 // (non-empty). We cannot force live API hacks in unit tests.
 func TestDetectAll_includesMultiModalTypes(t *testing.T) {
 	validTypes := map[string]bool{
-		"multimodal_skip_flight":    true,
-		"multimodal_positioning":    true,
+		"multimodal_skip_flight":     true,
+		"multimodal_positioning":     true,
 		"multimodal_open_jaw_ground": true,
-		"multimodal_return_split":   true,
+		"multimodal_return_split":    true,
 	}
 	// Verify the type string literals match what we declare in each file.
 	for typ := range validTypes {

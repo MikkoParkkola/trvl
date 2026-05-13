@@ -356,5 +356,5 @@ func fireWebhook(ctx context.Context, r CheckResult) {
 		slog.Warn("webhook: POST failed", "watch_id", r.Watch.ID, "url", r.Watch.WebhookURL, "err", err)
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }

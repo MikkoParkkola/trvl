@@ -21,7 +21,7 @@ func TestResolveCredential_EnvFirst(t *testing.T) {
 
 func TestResolveCredential_MissingAll(t *testing.T) {
 	// Clear env to ensure env path is not taken.
-	os.Unsetenv("AFKLM_KEY")
+	_ = os.Unsetenv("AFKLM_KEY")
 
 	// We cannot uninstall the keychain or op in tests; instead we test that
 	// when the env is absent and the other sources fail (they will in CI),
@@ -57,7 +57,7 @@ func TestResolveCredential_OpSkippedWhenAbsent(t *testing.T) {
 	if _, err := exec.LookPath("op"); err == nil {
 		t.Skip("op binary is present on this host; skip absence test")
 	}
-	os.Unsetenv("AFKLM_KEY")
+	_ = os.Unsetenv("AFKLM_KEY")
 
 	// On Darwin the keychain may succeed, so only assert ErrNoCredential
 	// when we are not on Darwin and op is absent.

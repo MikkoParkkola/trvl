@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	pathAvailableOffers         = "/opendata/offers/v3/available-offers"
+	pathAvailableOffers          = "/opendata/offers/v3/available-offers"
 	pathLowestFaresByDestination = "/opendata/offers/v3/lowest-fares-by-destination"
 )
 
@@ -65,7 +65,7 @@ func daysFromISO(dateStr string, now time.Time) int {
 			return 0
 		}
 	}
-	days := int(dep.UTC().Truncate(24 * time.Hour).Sub(now.UTC().Truncate(24 * time.Hour)).Hours() / 24)
+	days := int(dep.UTC().Truncate(24*time.Hour).Sub(now.UTC().Truncate(24*time.Hour)).Hours() / 24)
 	if days < 0 {
 		return 0
 	}

@@ -153,7 +153,7 @@ func searchPriorityPass(ctx context.Context, airport string) (*SearchResult, err
 	if err != nil {
 		return nil, fmt.Errorf("priority pass request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("priority pass: unexpected status %d", resp.StatusCode)
@@ -236,13 +236,11 @@ func merge(lists ...[]string) []string {
 	return out
 }
 
-
-
 // isAlpha returns true if all runes in s are ASCII letters.
 func isAlpha(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+		if (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') {
 			return false
 		}
 	}

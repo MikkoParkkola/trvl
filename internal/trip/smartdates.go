@@ -257,9 +257,9 @@ func buildInsights(dates []models.DatePriceResult, target time.Time, avgPrice fl
 	cheapVsAvg := strings.Builder{}
 	pctSaving := ((avgPrice - cheapest.Price) / avgPrice) * 100
 	if pctSaving > 5 {
-		cheapVsAvg.WriteString(fmt.Sprintf("Average price is %.0f; cheapest is %.0f%% below average", avgPrice, pctSaving))
+		_, _ = fmt.Fprintf(&cheapVsAvg, "Average price is %.0f; cheapest is %.0f%% below average", avgPrice, pctSaving)
 	} else {
-		cheapVsAvg.WriteString(fmt.Sprintf("Average price is %.0f; prices are fairly consistent", avgPrice))
+		_, _ = fmt.Fprintf(&cheapVsAvg, "Average price is %.0f; prices are fairly consistent", avgPrice)
 	}
 	insights = append(insights, DateInsight{
 		Type:        "average",

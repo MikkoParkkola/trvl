@@ -197,10 +197,10 @@ func TestHandleConfigureProvider_ValidationError(t *testing.T) {
 	t.Parallel()
 	reg := testRegistry(t)
 	args := map[string]any{
-		"id":       "bad-provider",
-		"name":     "Bad",
-		"category": "invalid_category",
-		"endpoint": "https://api.example.com",
+		"id":           "bad-provider",
+		"name":         "Bad",
+		"category":     "invalid_category",
+		"endpoint":     "https://api.example.com",
 		"results_path": "$.results",
 		"field_mapping": map[string]any{
 			"name": "$.name",
@@ -651,7 +651,7 @@ func TestParseProviderConfig_BodyTemplateStringPassthrough(t *testing.T) {
 		"endpoint":      "https://api.example.com/search",
 		"body_template": `{"query":"search"}`,
 		"results_path":  "$.results",
-		"field_mapping":  map[string]any{"name": "$.n"},
+		"field_mapping": map[string]any{"name": "$.n"},
 	}
 
 	config, err := parseProviderConfig(args)

@@ -375,7 +375,7 @@ func TestTrivagoMCPCallMockServer(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Mcp-Session-Id", "test-session-123")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"test","version":"0.1.0"}}}`)
+			_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"test","version":"0.1.0"}}}`)
 			return
 		}
 
@@ -392,7 +392,7 @@ func TestTrivagoMCPCallMockServer(t *testing.T) {
 		payload := `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}],"structuredContent":{"accommodations":[{"accommodation_id":"mock1","accommodation_name":"Mock Hotel","hotel_rating":4,"review_rating":"9.0","review_count":200,"currency":"EUR","price_per_night":"€120","price_per_stay":"€480","accommodation_url":"https://example.com","latitude":48.0,"longitude":2.0,"address":"1 Rue Test","postal_code":"75001","country_city":"Paris, France","advertisers":"booking.com","distance":"0.5 miles","distance_to_city_center":{"value":1.0,"unit":"MILES"},"top_amenities":"WiFi, Pool"}]}}}`
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, payload)
+		_, _ = fmt.Fprint(w, payload)
 	}))
 	defer srv.Close()
 
@@ -462,7 +462,7 @@ func TestTrivagoInitSessionMock(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Mcp-Session-Id", "test-session-abc")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"Trivago","version":"0.2.0"}}}`)
+		_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"Trivago","version":"0.2.0"}}}`)
 	}))
 	defer srv.Close()
 

@@ -27,7 +27,7 @@ Ask questions conversationally — follow up on interesting answers and save res
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"phase": {Type: "integer", Description: "Onboarding phase: 1 (Basics), 2 (Travel Style), 3 (Deep Patterns), 4 (Specifics)."},
+				"phase":   {Type: "integer", Description: "Onboarding phase: 1 (Basics), 2 (Travel Style), 3 (Deep Patterns), 4 (Specifics)."},
 				"answers": {Type: "string", Description: "JSON object of answers collected so far, keyed by question key. Pass empty string or omit for first call."},
 			},
 			Required: []string{"phase"},
@@ -180,13 +180,13 @@ The profile is stored at ~/.trvl/profile.json and rebuilt every time bookings ar
 						"mode": schemaString(), "count": schemaInt(),
 					},
 				}),
-				"avg_trip_length_days":      schemaNum(),
-				"preferred_departure_days":  schemaStringArray(),
-				"seasonal_pattern":          schemaObject(),
-				"avg_trip_cost":             schemaNum(),
-				"budget_tier":               schemaString(),
-				"generated_at":              schemaString(),
-				"sources":                   schemaStringArray(),
+				"avg_trip_length_days":     schemaNum(),
+				"preferred_departure_days": schemaStringArray(),
+				"seasonal_pattern":         schemaObject(),
+				"avg_trip_cost":            schemaNum(),
+				"budget_tier":              schemaString(),
+				"generated_at":             schemaString(),
+				"sources":                  schemaStringArray(),
 			},
 		},
 		Annotations: &ToolAnnotations{
@@ -438,9 +438,9 @@ func handleInterviewTrip(_ context.Context, args map[string]any, _ ElicitFunc, _
 // handleInterviewTripWithPath is the testable core.
 func handleInterviewTripWithPath(args map[string]any, profilePath, prefsPath string, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
 	var (
-		prof *profile.TravelProfile
+		prof  *profile.TravelProfile
 		prefs *preferences.Preferences
-		err  error
+		err   error
 	)
 
 	if profilePath != "" {

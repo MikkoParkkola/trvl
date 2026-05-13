@@ -669,7 +669,7 @@ func geocodeCity(ctx context.Context, city string) (geoCoord, error) {
 	if err != nil {
 		return geoCoord{}, fmt.Errorf("nominatim: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return geoCoord{}, fmt.Errorf("nominatim: HTTP %d", resp.StatusCode)

@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MikkoParkkola/trvl/internal/tripsearch"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/tripsearch"
 )
 
 // --- plan_flight_bundle (non-interactive parity) ---
@@ -298,10 +298,10 @@ func formatFindSummary(r *tripsearch.Result) string {
 		return fmt.Sprintf("Found 0 bundles (pre-filter: %d). Filters: %s", pre, impact)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Found %d bundle(s) across origins %v. Cheapest: €%.0f (%s).\n",
+	_, _ = fmt.Fprintf(&b, "Found %d bundle(s) across origins %v. Cheapest: €%.0f (%s).\n",
 		r.Count, r.Origins, r.Flights[0].Price, tripsearch.RouteSummary(r.Flights[0]))
 	if r.PreFilterCount > r.Count {
-		fmt.Fprintf(&b, "Filter impact: %s\n", filterImpactText(r.FiltersApplied))
+		_, _ = fmt.Fprintf(&b, "Filter impact: %s\n", filterImpactText(r.FiltersApplied))
 	}
 	return b.String()
 }
@@ -335,7 +335,7 @@ func findInputSchema() InputSchema {
 			"return_date":         {Type: "string", Description: "ISO 8601 calendar date for return (empty = one-way)"},
 			"cabin":               {Type: "string", Description: "Cabin class: economy, premium_economy, business, first"},
 			"min_layover_minutes": {Type: "integer", Description: "Only keep flights with a layover of at least N minutes (0 = no duration constraint)"},
-			"layover_at":          {Type: "array", Description: "Restrict qualifying layovers to these IATA codes (empty = any airport)"},
+			"layover_at":          {Type: "array", Items: &Property{Type: "string"}, Description: "Restrict qualifying layovers to these IATA codes (empty = any airport)"},
 			"no_early_connection": {Type: "boolean", Description: "Drop flights whose post-overnight leg departs before preferences.early_connection_floor (default 10:00)"},
 			"lounge_required":     {Type: "boolean", Description: "Drop flights where a layover airport lacks lounge coverage from user's cards"},
 			"hidden_city":         {Type: "boolean", Description: "Also consider hidden-city candidates"},

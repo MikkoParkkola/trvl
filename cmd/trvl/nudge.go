@@ -132,8 +132,8 @@ func maybeShowStarNudge(commandName string, formatFlag string) {
 	s.SearchCount++
 
 	if s.SearchCount >= nudgeThreshold {
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "  \U0001f4a1 trvl saved you a search? Star us: github.com/MikkoParkkola/trvl")
+		_, _ = fmt.Fprintln(os.Stderr, "")
+		_, _ = fmt.Fprintln(os.Stderr, "  \U0001f4a1 trvl saved you a search? Star us: github.com/MikkoParkkola/trvl")
 		s.Shown = true
 		s.ShownAt = time.Now()
 	}

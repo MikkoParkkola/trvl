@@ -42,7 +42,7 @@ func TestRunPreflight_SnapshotIsCityBound(t *testing.T) {
 		case strings.Contains(r.URL.Path, "/par"):
 			city = "PAR"
 		}
-		fmt.Fprintf(w, `<html>csrf_token=%s_TOK</html>`, city)
+		_, _ = fmt.Fprintf(w, `<html>csrf_token=%s_TOK</html>`, city)
 	}))
 	defer srv.Close()
 

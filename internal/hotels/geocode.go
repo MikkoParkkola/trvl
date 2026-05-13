@@ -85,7 +85,7 @@ func nominatimLookup(ctx context.Context, query string) (float64, float64, error
 	if err != nil {
 		return 0, 0, fmt.Errorf("nominatim request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {

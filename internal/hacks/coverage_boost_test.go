@@ -119,7 +119,7 @@ func TestRoundSavings_NearHalf(t *testing.T) {
 		in   float64
 		want float64
 	}{
-		{0.5, 1},  // rounds to nearest even? No, Go math.Round rounds to nearest, .5 away from zero.
+		{0.5, 1}, // rounds to nearest even? No, Go math.Round rounds to nearest, .5 away from zero.
 		{1.5, 2},
 		{-0.5, -1},
 		{99.4, 99},

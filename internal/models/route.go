@@ -2,18 +2,18 @@ package models
 
 // RouteLeg is one segment of a multi-modal itinerary.
 type RouteLeg struct {
-	Mode       string  `json:"mode"`        // "flight", "train", "bus", "ferry"
-	Provider   string  `json:"provider"`    // "google_flights", "flixbus", "db", "tallink", etc.
-	From       string  `json:"from"`        // City name
-	To         string  `json:"to"`          // City name
-	FromCode   string  `json:"from_code"`   // IATA code for flights, station code for others
-	ToCode     string  `json:"to_code"`     // IATA code for flights, station code for others
-	Departure  string  `json:"departure"`   // ISO 8601 datetime
-	Arrival    string  `json:"arrival"`     // ISO 8601 datetime
-	Duration   int     `json:"duration"`    // minutes
+	Mode       string  `json:"mode"`      // "flight", "train", "bus", "ferry"
+	Provider   string  `json:"provider"`  // "google_flights", "flixbus", "db", "tallink", etc.
+	From       string  `json:"from"`      // City name
+	To         string  `json:"to"`        // City name
+	FromCode   string  `json:"from_code"` // IATA code for flights, station code for others
+	ToCode     string  `json:"to_code"`   // IATA code for flights, station code for others
+	Departure  string  `json:"departure"` // ISO 8601 datetime
+	Arrival    string  `json:"arrival"`   // ISO 8601 datetime
+	Duration   int     `json:"duration"`  // minutes
 	Price      float64 `json:"price"`
 	Currency   string  `json:"currency"`
-	Transfers  int     `json:"transfers"`   // internal transfers within this leg
+	Transfers  int     `json:"transfers"` // internal transfers within this leg
 	BookingURL string  `json:"booking_url,omitempty"`
 }
 
@@ -30,11 +30,11 @@ type RouteItinerary struct {
 
 // RouteSearchResult is the top-level response from a multi-modal route search.
 type RouteSearchResult struct {
-	Success     bool              `json:"success"`
-	Origin      string            `json:"origin"`
-	Destination string            `json:"destination"`
-	Date        string            `json:"date"`
-	Count       int               `json:"count"`
-	Itineraries []RouteItinerary  `json:"itineraries"`
-	Error       string            `json:"error,omitempty"`
+	Success     bool             `json:"success"`
+	Origin      string           `json:"origin"`
+	Destination string           `json:"destination"`
+	Date        string           `json:"date"`
+	Count       int              `json:"count"`
+	Itineraries []RouteItinerary `json:"itineraries"`
+	Error       string           `json:"error,omitempty"`
 }

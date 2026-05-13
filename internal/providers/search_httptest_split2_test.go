@@ -13,7 +13,7 @@ import (
 func TestSearchProvider_GraphQLPartialSuccess(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"results": []any{
 					map[string]any{"name": "Partial Hotel", "id": "ph1"},
@@ -69,7 +69,7 @@ func TestSearchProvider_GraphQLPartialSuccess(t *testing.T) {
 func TestSearchProvider_RatingScale(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{
 				map[string]any{
 					"name":   "Scaled Hotel",
@@ -133,7 +133,7 @@ func TestSearchProvider_FilterComposite(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -215,7 +215,7 @@ func TestSearchProvider_CityIDSubstitution(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -278,7 +278,7 @@ func TestSearchProvider_HeaderOrder(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -337,7 +337,7 @@ func TestSearchProvider_NumNightsComputation(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -386,7 +386,7 @@ func TestSearchProvider_NumNightsComputation(t *testing.T) {
 func TestSearchProvider_PreflightExtractionDefault(t *testing.T) {
 	preflightSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Return a response that does NOT match the extraction pattern.
-		fmt.Fprint(w, `<html><body>No token here</body></html>`)
+		_, _ = fmt.Fprint(w, `<html><body>No token here</body></html>`)
 	}))
 	defer preflightSrv.Close()
 
@@ -401,7 +401,7 @@ func TestSearchProvider_PreflightExtractionDefault(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer searchSrv.Close()
 
@@ -468,7 +468,7 @@ func TestSearchProvider_UnresolvedPlaceholderStripping(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 

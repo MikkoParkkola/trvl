@@ -123,7 +123,7 @@ func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("booking detail page returned status %d", resp.StatusCode)

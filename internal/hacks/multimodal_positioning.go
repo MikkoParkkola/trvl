@@ -131,9 +131,9 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 	currency := flightCurrency(directResult, in.currency())
 
 	type candidate struct {
-		hub        multiModalHub
-		groundEUR  float64
-		flightEUR  float64
+		hub       multiModalHub
+		groundEUR float64
+		flightEUR float64
 	}
 
 	ch := make(chan candidate, len(hubs))

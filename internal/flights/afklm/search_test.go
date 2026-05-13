@@ -18,7 +18,7 @@ func TestAvailableOffersHappyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/hal+json")
 		w.WriteHeader(200)
-		w.Write(fixture)
+		_, _ = w.Write(fixture)
 	}))
 	defer srv.Close()
 
@@ -26,8 +26,8 @@ func TestAvailableOffersHappyPath(t *testing.T) {
 	client := newTestClient(t, srv, func() time.Time { return now })
 
 	req := AvailableOffersRequest{
-		BookingFlow:  "LEISURE",
-		Passengers:   []Passenger{{ID: 1, Type: "ADT"}},
+		BookingFlow: "LEISURE",
+		Passengers:  []Passenger{{ID: 1, Type: "ADT"}},
 		RequestedConnections: []RequestedConnection{{
 			DepartureDate: "2026-05-15",
 			Origin:        Place{Type: "AIRPORT", Code: "AMS"},
@@ -60,7 +60,7 @@ func TestAvailableOffersServedFromCache(t *testing.T) {
 		serverCalls++
 		w.Header().Set("Content-Type", "application/hal+json")
 		w.WriteHeader(200)
-		w.Write(fixture)
+		_, _ = w.Write(fixture)
 	}))
 	defer srv.Close()
 
@@ -68,8 +68,8 @@ func TestAvailableOffersServedFromCache(t *testing.T) {
 	client := newTestClient(t, srv, func() time.Time { return now })
 
 	req := AvailableOffersRequest{
-		BookingFlow:  "LEISURE",
-		Passengers:   []Passenger{{ID: 1, Type: "ADT"}},
+		BookingFlow: "LEISURE",
+		Passengers:  []Passenger{{ID: 1, Type: "ADT"}},
 		RequestedConnections: []RequestedConnection{{
 			DepartureDate: "2026-05-15",
 			Origin:        Place{Type: "AIRPORT", Code: "AMS"},
@@ -77,8 +77,12 @@ func TestAvailableOffersServedFromCache(t *testing.T) {
 		}},
 	}
 
-	client.AvailableOffers(context.Background(), req)
-	client.AvailableOffers(context.Background(), req) // should hit cache
+	if _, _, err := client.AvailableOffers(context.Background(), req); err != nil {
+		t.Fatalf("AvailableOffers first call: %v", err)
+	}
+	if _, _, err := client.AvailableOffers(context.Background(), req); err != nil {
+		t.Fatalf("AvailableOffers cached call: %v", err)
+	}
 
 	if serverCalls != 1 {
 		t.Errorf("expected 1 server call (2nd should be cached), got %d", serverCalls)
@@ -96,7 +100,7 @@ func TestMapRecommendationsFixture(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/hal+json")
 		w.WriteHeader(200)
-		w.Write(fixture)
+		_, _ = w.Write(fixture)
 	}))
 	defer srv.Close()
 
@@ -104,8 +108,8 @@ func TestMapRecommendationsFixture(t *testing.T) {
 	client := newTestClient(t, srv, func() time.Time { return now })
 
 	req := AvailableOffersRequest{
-		BookingFlow:  "LEISURE",
-		Passengers:   []Passenger{{ID: 1, Type: "ADT"}},
+		BookingFlow: "LEISURE",
+		Passengers:  []Passenger{{ID: 1, Type: "ADT"}},
 		RequestedConnections: []RequestedConnection{{
 			DepartureDate: "2026-05-15",
 			Origin:        Place{Type: "AIRPORT", Code: "AMS"},

@@ -311,7 +311,7 @@ func TestFetchDFDSAvailability_MockServer_Active(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(mockDFDSAvailabilityActive)) //nolint:errcheck
+		_, _ = w.Write([]byte(mockDFDSAvailabilityActive)) //nolint:errcheck
 	}))
 	defer srv.Close()
 
@@ -427,7 +427,7 @@ func TestSearchDFDS_WithMockAvailability_Available(t *testing.T) {
 		// Return a response where 2026-05-10 is available (not disabled).
 		resp := `{"dates":{"fromDate":"2026-04-07","toDate":"2026-12-30"},"defaultDate":"2026-04-07","disabledDates":[],"offerDates":[]}`
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(resp)) //nolint:errcheck
+		_, _ = w.Write([]byte(resp)) //nolint:errcheck
 	}))
 	defer srv.Close()
 

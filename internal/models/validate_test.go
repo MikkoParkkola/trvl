@@ -117,12 +117,12 @@ func TestValidateDate_PastDate(t *testing.T) {
 
 func TestValidateDate_InvalidFormat(t *testing.T) {
 	tests := []string{
-		"15-06-2026",   // DD-MM-YYYY
-		"06/15/2026",   // MM/DD/YYYY
-		"2026/06/15",   // wrong separator
-		"20260615",     // no separators
-		"2026-6-15",    // single-digit month (still valid Go format but test)
-		"not-a-date",   // gibberish
+		"15-06-2026", // DD-MM-YYYY
+		"06/15/2026", // MM/DD/YYYY
+		"2026/06/15", // wrong separator
+		"20260615",   // no separators
+		"2026-6-15",  // single-digit month (still valid Go format but test)
+		"not-a-date", // gibberish
 	}
 	for _, d := range tests {
 		err := ValidateDate(d)

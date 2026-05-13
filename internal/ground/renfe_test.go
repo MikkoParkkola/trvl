@@ -51,14 +51,14 @@ func TestHasRenfeRoute(t *testing.T) {
 		from, to string
 		want     bool
 	}{
-		{"Madrid", "Barcelona", true},   // both Spanish
-		{"Madrid", "Paris", true},       // one Spanish, one French
-		{"Paris", "Madrid", true},       // reversed
-		{"Paris", "Lyon", false},        // both French, no Spanish station
-		{"London", "Paris", false},      // London not in Renfe
-		{"unknown", "Madrid", false},    // unknown origin
-		{"Madrid", "unknown", false},    // unknown destination
-		{"unknown", "unknown2", false},  // both unknown
+		{"Madrid", "Barcelona", true},  // both Spanish
+		{"Madrid", "Paris", true},      // one Spanish, one French
+		{"Paris", "Madrid", true},      // reversed
+		{"Paris", "Lyon", false},       // both French, no Spanish station
+		{"London", "Paris", false},     // London not in Renfe
+		{"unknown", "Madrid", false},   // unknown origin
+		{"Madrid", "unknown", false},   // unknown destination
+		{"unknown", "unknown2", false}, // both unknown
 	}
 
 	for _, tt := range tests {

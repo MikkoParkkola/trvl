@@ -260,8 +260,8 @@ func ParseGroundConfirmation(subject, body string) *Booking {
 
 // Pre-compiled regexps used in date extraction.
 var (
-	isoDateRe  = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-	ddmmyyyyRe = regexp.MustCompile(`^\d{2}/\d{2}/\d{4}$`)
+	isoDateRe    = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	ddmmyyyyRe   = regexp.MustCompile(`^\d{2}/\d{2}/\d{4}$`)
 	dayMonYearRe = regexp.MustCompile(`(\d{1,2})\s+(\w+)\s+(\d{4})`)
 
 	// airbnbCityRe matches "You're going to [City]!" in booking confirmation emails.
@@ -346,36 +346,36 @@ func containsAny(text string, substrings []string) bool {
 
 var airlinePatterns = map[string]string{
 	"finnair":           "Finnair",
-	"klm":              "KLM",
-	"ryanair":          "Ryanair",
-	"easyjet":          "easyJet",
-	"norwegian":        "Norwegian",
-	"sas scandinavian": "SAS",
-	"sas ":             "SAS",
-	"lufthansa":        "Lufthansa",
-	"british airways":  "British Airways",
-	"air france":       "Air France",
-	"iberia":           "Iberia",
-	"vueling":          "Vueling",
-	"wizz air":         "Wizz Air",
-	"wizzair":          "Wizz Air",
-	"transavia":        "Transavia",
-	"eurowings":        "Eurowings",
-	"tap portugal":     "TAP Portugal",
-	"tap air":          "TAP Portugal",
-	"aegean":           "Aegean",
-	"turkish airlines": "Turkish Airlines",
-	"swiss ":           "SWISS",
-	"austrian":         "Austrian",
+	"klm":               "KLM",
+	"ryanair":           "Ryanair",
+	"easyjet":           "easyJet",
+	"norwegian":         "Norwegian",
+	"sas scandinavian":  "SAS",
+	"sas ":              "SAS",
+	"lufthansa":         "Lufthansa",
+	"british airways":   "British Airways",
+	"air france":        "Air France",
+	"iberia":            "Iberia",
+	"vueling":           "Vueling",
+	"wizz air":          "Wizz Air",
+	"wizzair":           "Wizz Air",
+	"transavia":         "Transavia",
+	"eurowings":         "Eurowings",
+	"tap portugal":      "TAP Portugal",
+	"tap air":           "TAP Portugal",
+	"aegean":            "Aegean",
+	"turkish airlines":  "Turkish Airlines",
+	"swiss ":            "SWISS",
+	"austrian":          "Austrian",
 	"brussels airlines": "Brussels Airlines",
-	"lot polish":       "LOT",
-	"aer lingus":       "Aer Lingus",
-	"emirates":         "Emirates",
-	"qatar airways":    "Qatar Airways",
-	"delta":            "Delta",
-	"united airlines":  "United",
+	"lot polish":        "LOT",
+	"aer lingus":        "Aer Lingus",
+	"emirates":          "Emirates",
+	"qatar airways":     "Qatar Airways",
+	"delta":             "Delta",
+	"united airlines":   "United",
 	"american airlines": "American Airlines",
-	"jetblue":          "JetBlue",
+	"jetblue":           "JetBlue",
 }
 
 // extractAirline tries to identify the airline from subject/body.
@@ -523,7 +523,7 @@ func parseNumber(s string) float64 {
 	}
 
 	var result float64
-	fmt.Sscanf(s, "%f", &result)
+	_, _ = fmt.Sscanf(s, "%f", &result)
 	return result
 }
 
@@ -656,7 +656,7 @@ func extractStars(body string) int {
 	m := extractStarsRe.FindStringSubmatch(body)
 	if len(m) >= 2 {
 		var stars int
-		fmt.Sscanf(m[1], "%d", &stars)
+		_, _ = fmt.Sscanf(m[1], "%d", &stars)
 		if stars >= 1 && stars <= 5 {
 			return stars
 		}

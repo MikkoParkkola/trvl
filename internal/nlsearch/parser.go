@@ -172,7 +172,7 @@ func extractNaturalDate(query string) string {
 		year := m[3]
 		if month > 0 {
 			d := 0
-			fmt.Sscanf(day, "%d", &d)
+			_, _ = fmt.Sscanf(day, "%d", &d)
 			if d >= 1 && d <= 31 {
 				return fmt.Sprintf("%s-%02d-%02d", year, month, d)
 			}
@@ -184,7 +184,7 @@ func extractNaturalDate(query string) string {
 		year := m[3]
 		if month > 0 {
 			d := 0
-			fmt.Sscanf(day, "%d", &d)
+			_, _ = fmt.Sscanf(day, "%d", &d)
 			if d >= 1 && d <= 31 {
 				return fmt.Sprintf("%s-%02d-%02d", year, month, d)
 			}

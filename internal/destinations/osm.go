@@ -152,7 +152,7 @@ func GetNearbyPOIs(ctx context.Context, lat, lon float64, radiusMeters int, cate
 	if err != nil {
 		return nil, fmt.Errorf("overpass request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {

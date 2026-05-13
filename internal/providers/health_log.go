@@ -12,7 +12,7 @@ import (
 
 const (
 	healthLogMaxBytes = 1 * 1024 * 1024 // 1 MB rotate threshold
-	healthLogBufSize  = 256              // channel buffer
+	healthLogBufSize  = 256             // channel buffer
 )
 
 // HealthEntry records a single external provider API call outcome.
@@ -100,7 +100,7 @@ func appendHealthEntry(entry HealthEntry) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	line, err := json.Marshal(entry)
 	if err != nil {
@@ -137,7 +137,7 @@ func ReadHealthLog(dir string, last int) ([]HealthEntry, error) {
 		}
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var entries []HealthEntry
 	scanner := bufio.NewScanner(f)

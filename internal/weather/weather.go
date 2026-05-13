@@ -75,7 +75,7 @@ func geocodeCity(ctx context.Context, city string) (geoCoord, error) {
 	if err != nil {
 		return geoCoord{}, fmt.Errorf("nominatim: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return geoCoord{}, fmt.Errorf("nominatim: HTTP %d", resp.StatusCode)
@@ -117,11 +117,11 @@ func geocodeCity(ctx context.Context, city string) (geoCoord, error) {
 // openMeteoResponse is the raw API response from Open-Meteo.
 type openMeteoResponse struct {
 	Daily struct {
-		Time              []string  `json:"time"`
-		TemperatureMax    []float64 `json:"temperature_2m_max"`
-		TemperatureMin    []float64 `json:"temperature_2m_min"`
-		PrecipitationSum  []float64 `json:"precipitation_sum"`
-		WeatherCode       []int     `json:"weathercode"`
+		Time             []string  `json:"time"`
+		TemperatureMax   []float64 `json:"temperature_2m_max"`
+		TemperatureMin   []float64 `json:"temperature_2m_min"`
+		PrecipitationSum []float64 `json:"precipitation_sum"`
+		WeatherCode      []int     `json:"weathercode"`
 	} `json:"daily"`
 }
 
@@ -139,10 +139,10 @@ func GetForecast(ctx context.Context, city string, fromDate, toDate string) (*We
 	}
 
 	params := url.Values{
-		"latitude":  {strconv.FormatFloat(coord.lat, 'f', 6, 64)},
-		"longitude": {strconv.FormatFloat(coord.lon, 'f', 6, 64)},
-		"daily":     {"temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode"},
-		"timezone":  {"auto"},
+		"latitude":   {strconv.FormatFloat(coord.lat, 'f', 6, 64)},
+		"longitude":  {strconv.FormatFloat(coord.lon, 'f', 6, 64)},
+		"daily":      {"temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode"},
+		"timezone":   {"auto"},
 		"start_date": {fromDate},
 		"end_date":   {toDate},
 	}
@@ -161,7 +161,7 @@ func GetForecast(ctx context.Context, city string, fromDate, toDate string) (*We
 			Error:   fmt.Sprintf("open-meteo: %v", err),
 		}, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return &WeatherResult{

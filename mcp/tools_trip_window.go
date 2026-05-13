@@ -58,10 +58,12 @@ date flexibility but real scheduling constraints.`,
 				},
 				"busy_intervals": {
 					Type:        "array",
+					Items:       &Property{Type: "object"},
 					Description: "User's busy periods to avoid. FETCH FROM USER'S CALENDAR TOOL before calling this. Each item: {\"start\": \"YYYY-MM-DD\", \"end\": \"YYYY-MM-DD\", \"reason\": \"optional label\"}.",
 				},
 				"preferred_intervals": {
 					Type:        "array",
+					Items:       &Property{Type: "object"},
 					Description: "User's preferred travel windows (e.g. school holidays, long weekends). Same format as busy_intervals. Windows overlapping these are boosted in ranking.",
 				},
 				"min_nights": {

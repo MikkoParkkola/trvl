@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/browserutils/kooky"
+	_ "github.com/browserutils/kooky/browser/all" // register all browser cookie finders
 	"github.com/browserutils/kooky/browser/brave"
 	"github.com/browserutils/kooky/browser/chrome"
-	_ "github.com/browserutils/kooky/browser/all" // register all browser cookie finders
 )
 
 // providerInteractiveKey is the context key that marks a call as interactive —
@@ -315,10 +315,10 @@ func readBrowserCookiesDirect(targetURL, browserHint string) []*http.Cookie {
 			result := make([]*http.Cookie, 0, len(kookyCookies))
 			seen := make(map[string]struct{}, len(kookyCookies))
 			for _, c := range kookyCookies {
-				if c == nil || !cookieDomainMatchesHost(c.Cookie.Domain, host) {
+				if c == nil || !cookieDomainMatchesHost(c.Domain, host) {
 					continue
 				}
-				key := c.Cookie.Name + "\x00" + c.Cookie.Domain + "\x00" + c.Cookie.Path
+				key := c.Name + "\x00" + c.Domain + "\x00" + c.Path
 				if _, dup := seen[key]; dup {
 					continue
 				}
@@ -343,12 +343,12 @@ func readBrowserCookiesDirect(targetURL, browserHint string) []*http.Cookie {
 	}
 	seen := make(map[string]*dedupEntry, len(cookies))
 	for _, c := range cookies {
-		if c == nil || !cookieDomainMatchesHost(c.Cookie.Domain, host) {
+		if c == nil || !cookieDomainMatchesHost(c.Domain, host) {
 			continue
 		}
-		key := c.Cookie.Name + "\x00" + c.Cookie.Domain + "\x00" + c.Cookie.Path
+		key := c.Name + "\x00" + c.Domain + "\x00" + c.Path
 		if prev, dup := seen[key]; dup {
-			if len(c.Cookie.Value) > len(prev.cookie.Value) {
+			if len(c.Value) > len(prev.cookie.Value) {
 				prev.cookie = c.Cookie
 				if prev.idx >= 0 {
 					result[prev.idx] = &prev.cookie
@@ -427,13 +427,13 @@ func browserCookiesForURL(targetURL string) []*http.Cookie {
 		if c == nil {
 			continue
 		}
-		if !cookieDomainMatchesHost(c.Cookie.Domain, host) {
+		if !cookieDomainMatchesHost(c.Domain, host) {
 			continue
 		}
-		key := c.Cookie.Name + "\x00" + c.Cookie.Domain + "\x00" + c.Cookie.Path
+		key := c.Name + "\x00" + c.Domain + "\x00" + c.Path
 		if prev, dup := seen[key]; dup {
 			// Replace if this cookie has a longer (fresher) value.
-			if len(c.Cookie.Value) > len(prev.cookie.Value) {
+			if len(c.Value) > len(prev.cookie.Value) {
 				prev.cookie = c.Cookie
 				if prev.idx >= 0 {
 					result[prev.idx] = &prev.cookie
@@ -509,10 +509,10 @@ func browserCookiesForURLWithHint(targetURL, browserHint string) []*http.Cookie 
 		if c == nil {
 			continue
 		}
-		if !cookieDomainMatchesHost(c.Cookie.Domain, host) {
+		if !cookieDomainMatchesHost(c.Domain, host) {
 			continue
 		}
-		key := c.Cookie.Name + "\x00" + c.Cookie.Domain + "\x00" + c.Cookie.Path
+		key := c.Name + "\x00" + c.Domain + "\x00" + c.Path
 		if _, dup := seen[key]; dup {
 			continue
 		}

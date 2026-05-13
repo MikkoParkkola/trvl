@@ -94,7 +94,7 @@ func handleSearchDeals(ctx context.Context, args map[string]any, elicit ElicitFu
 
 	// Build summary.
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Found %d travel deals for %s:\n\n", result.Count, originsRaw)
+	_, _ = fmt.Fprintf(&sb, "Found %d travel deals for %s:\n\n", result.Count, originsRaw)
 
 	limit := result.Count
 	if limit > 10 {
@@ -109,17 +109,17 @@ func handleSearchDeals(ctx context.Context, args map[string]any, elicit ElicitFu
 		if d.Origin != "" && d.Destination != "" {
 			route = fmt.Sprintf("%s->%s", d.Origin, d.Destination)
 		}
-		fmt.Fprintf(&sb, "%d. **%s** %s | %s | %s", i+1, price, route, d.Type, d.Source)
+		_, _ = fmt.Fprintf(&sb, "%d. **%s** %s | %s | %s", i+1, price, route, d.Type, d.Source)
 		if d.Airline != "" {
-			fmt.Fprintf(&sb, " | %s", d.Airline)
+			_, _ = fmt.Fprintf(&sb, " | %s", d.Airline)
 		}
 		sb.WriteString("\n")
 		if d.Title != "" {
-			fmt.Fprintf(&sb, "   %s\n", d.Title)
+			_, _ = fmt.Fprintf(&sb, "   %s\n", d.Title)
 		}
 	}
 	if result.Count > 10 {
-		fmt.Fprintf(&sb, "\n... and %d more deals", result.Count-10)
+		_, _ = fmt.Fprintf(&sb, "\n... and %d more deals", result.Count-10)
 	}
 
 	content := []ContentBlock{

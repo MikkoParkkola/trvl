@@ -142,12 +142,12 @@ func TestWriteICS_FoldLongLines(t *testing.T) {
 
 func TestEscapeText(t *testing.T) {
 	cases := map[string]string{
-		"hello, world":          `hello\, world`,
-		"line1\nline2":          `line1\nline2`,
-		`back\slash`:            `back\\slash`,
-		"semi;colon":            `semi\;colon`,
-		"clean":                 "clean",
-		"all,;\nthings":         `all\,\;\nthings`,
+		"hello, world":  `hello\, world`,
+		"line1\nline2":  `line1\nline2`,
+		`back\slash`:    `back\\slash`,
+		"semi;colon":    `semi\;colon`,
+		"clean":         "clean",
+		"all,;\nthings": `all\,\;\nthings`,
 	}
 	for in, want := range cases {
 		got := escapeText(in)

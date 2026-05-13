@@ -70,7 +70,7 @@ func TestDetect_SortsByUpsellPercentAscending(t *testing.T) {
 	got := Detect([]CabinFare{
 		{Cabin: CabinEconomy, Price: 500},
 		{Cabin: CabinPremiumEconomy, Price: 570}, // 14%
-		{Cabin: CabinBusiness, Price: 580},        // 1.75% over premium
+		{Cabin: CabinBusiness, Price: 580},       // 1.75% over premium
 	})
 	if len(got) < 2 {
 		t.Fatalf("got %d, want >= 2", len(got))

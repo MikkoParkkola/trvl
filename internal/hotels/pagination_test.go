@@ -162,7 +162,7 @@ func TestFetchHotelPage_OffsetZeroNoStartParam(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedURL = r.URL.String()
 		w.WriteHeader(200)
-		w.Write(fakeHotelPage("Hotel A"))
+		_, _ = w.Write(fakeHotelPage("Hotel A"))
 	}))
 	defer ts.Close()
 
@@ -179,7 +179,7 @@ func TestFetchHotelPage_OffsetAddsStartParam(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedURL = r.URL.String()
 		w.WriteHeader(200)
-		w.Write(fakeHotelPage("Hotel B"))
+		_, _ = w.Write(fakeHotelPage("Hotel B"))
 	}))
 	defer ts.Close()
 
@@ -196,7 +196,7 @@ func TestFetchHotelPage_Offset40(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedURL = r.URL.String()
 		w.WriteHeader(200)
-		w.Write(fakeHotelPage("Hotel C"))
+		_, _ = w.Write(fakeHotelPage("Hotel C"))
 	}))
 	defer ts.Close()
 
@@ -213,7 +213,7 @@ func TestFetchHotelPage_SortParamAddedWhenSet(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedURL = r.URL.String()
 		w.WriteHeader(200)
-		w.Write(fakeHotelPage("Hotel D"))
+		_, _ = w.Write(fakeHotelPage("Hotel D"))
 	}))
 	defer ts.Close()
 
@@ -233,7 +233,7 @@ func TestFetchHotelPage_SortAndOffsetCombined(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedURL = r.URL.String()
 		w.WriteHeader(200)
-		w.Write(fakeHotelPage("Hotel E"))
+		_, _ = w.Write(fakeHotelPage("Hotel E"))
 	}))
 	defer ts.Close()
 
@@ -253,7 +253,7 @@ func TestFetchHotelPage_EmptySortNoParam(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedURL = r.URL.String()
 		w.WriteHeader(200)
-		w.Write(fakeHotelPage("Hotel F"))
+		_, _ = w.Write(fakeHotelPage("Hotel F"))
 	}))
 	defer ts.Close()
 
@@ -302,7 +302,7 @@ func TestFetchHotelPage_NonOKStatusReturnsError(t *testing.T) {
 func TestFetchHotelPage_EmptyResponseReturnsError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte("short"))
+		_, _ = w.Write([]byte("short"))
 	}))
 	defer ts.Close()
 
@@ -325,14 +325,14 @@ func TestSearchHotelsWithClient_PaginatesMultiplePages(t *testing.T) {
 		// (which stops pagination within each sort order) or dupes.
 		switch page {
 		case 1:
-			w.Write(fakeHotelPageMulti("Hotel A", "Hotel B", "Hotel C"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel A", "Hotel B", "Hotel C"))
 		case 2:
-			w.Write(fakeHotelPageMulti("Hotel D", "Hotel E"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel D", "Hotel E"))
 		case 3:
-			w.Write(fakeHotelPageMulti("Hotel F"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel F"))
 		default:
 			// Subsequent sort orders see only dupes -> stop early.
-			w.Write(fakeHotelPageMulti("Hotel A", "Hotel B"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel A", "Hotel B"))
 		}
 	}))
 	defer ts.Close()
@@ -360,7 +360,7 @@ func TestSearchHotelsWithClient_StopsWhenNoNewHotels(t *testing.T) {
 		reqCount.Add(1)
 		w.WriteHeader(200)
 		// All pages return the same hotels (duplicates).
-		w.Write(fakeHotelPageMulti("Hotel A", "Hotel B"))
+		_, _ = w.Write(fakeHotelPageMulti("Hotel A", "Hotel B"))
 	}))
 	defer ts.Close()
 

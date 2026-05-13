@@ -33,7 +33,7 @@ func TestProximityMatch(t *testing.T) {
 	// Distance ~16 km.
 
 	tests := []struct {
-		name      string
+		name       string
 		lat1, lon1 float64
 		lat2, lon2 float64
 		threshold  int

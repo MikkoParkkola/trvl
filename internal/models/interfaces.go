@@ -16,19 +16,19 @@ type FlightSearchOptions struct {
 
 // HotelSearchOptions mirrors hotels.HotelSearchOptions for the provider interface.
 type HotelSearchOptions struct {
-	CheckIn       string   // YYYY-MM-DD
-	CheckOut      string   // YYYY-MM-DD
-	Guests        int
-	Stars         int     // 0 = any, 2-5 filter
-	Sort          string  // "cheapest", "rating", "distance", "stars"
-	Currency      string  // default "USD"
-	MinPrice      float64 // minimum price per night (0 = no filter)
-	MaxPrice      float64 // maximum price per night (0 = no filter)
-	MinRating     float64 // minimum guest rating (0 = no filter)
-	MaxDistanceKm float64 // max km from city center (0 = no filter)
-	Amenities     []string
-	CenterLat     float64
-	CenterLon     float64
+	CheckIn         string // YYYY-MM-DD
+	CheckOut        string // YYYY-MM-DD
+	Guests          int
+	Stars           int     // 0 = any, 2-5 filter
+	Sort            string  // "cheapest", "rating", "distance", "stars"
+	Currency        string  // default "USD"
+	MinPrice        float64 // minimum price per night (0 = no filter)
+	MaxPrice        float64 // maximum price per night (0 = no filter)
+	MinRating       float64 // minimum guest rating (0 = no filter)
+	MaxDistanceKm   float64 // max km from city center (0 = no filter)
+	Amenities       []string
+	CenterLat       float64
+	CenterLon       float64
 	EnrichAmenities bool
 	EnrichLimit     int
 }

@@ -28,13 +28,13 @@ func TestSearchOebb_MockHappyPath(t *testing.T) {
 
 		switch {
 		case strings.Contains(r.URL.Path, "anonymousToken"):
-			json.NewEncoder(w).Encode(oebbShopAnonymousTokenResponse{
+			_ = json.NewEncoder(w).Encode(oebbShopAnonymousTokenResponse{
 				AccessToken: "test-token-123",
 			})
 		case strings.Contains(r.URL.Path, "initUserData"):
 			w.WriteHeader(http.StatusNoContent)
 		case strings.Contains(r.URL.Path, "timetable"):
-			json.NewEncoder(w).Encode(oebbShopTimetableResponse{
+			_ = json.NewEncoder(w).Encode(oebbShopTimetableResponse{
 				Connections: []oebbShopConnection{
 					{
 						ID: "conn-1",
@@ -49,7 +49,7 @@ func TestSearchOebb_MockHappyPath(t *testing.T) {
 				},
 			})
 		case strings.Contains(r.URL.Path, "prices"):
-			json.NewEncoder(w).Encode(oebbShopPricesResponse{
+			_ = json.NewEncoder(w).Encode(oebbShopPricesResponse{
 				Offers: []oebbShopOffer{
 					{ConnectionID: "conn-1", Price: 29.90, FirstClass: false},
 					{ConnectionID: "conn-1", Price: 49.90, FirstClass: true},
@@ -128,11 +128,11 @@ func TestSearchOebb_MockDefaultCurrency(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.Contains(r.URL.Path, "anonymousToken"):
-			json.NewEncoder(w).Encode(oebbShopAnonymousTokenResponse{AccessToken: "tok"})
+			_ = json.NewEncoder(w).Encode(oebbShopAnonymousTokenResponse{AccessToken: "tok"})
 		case strings.Contains(r.URL.Path, "initUserData"):
 			w.WriteHeader(http.StatusNoContent)
 		case strings.Contains(r.URL.Path, "timetable"):
-			json.NewEncoder(w).Encode(oebbShopTimetableResponse{})
+			_ = json.NewEncoder(w).Encode(oebbShopTimetableResponse{})
 		default:
 			w.WriteHeader(http.StatusOK)
 		}
@@ -192,7 +192,7 @@ func TestSearchRenfe_MockHappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(renfePriceCalendarResponse{
+		_ = json.NewEncoder(w).Encode(renfePriceCalendarResponse{
 			Origin:      renfeStationInfo{Name: "Madrid", ExtID: "60000"},
 			Destination: renfeStationInfo{Name: "Barcelona", ExtID: "71801"},
 			Journeys: []renfeJourneyEntry{
@@ -267,7 +267,7 @@ func TestSearchRenfe_MockHTTPError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("server error"))
+		_, _ = w.Write([]byte("server error"))
 	}))
 	defer srv.Close()
 
@@ -293,7 +293,7 @@ func TestSearchRenfe_MockNoPricesForDate(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(renfePriceCalendarResponse{
+		_ = json.NewEncoder(w).Encode(renfePriceCalendarResponse{
 			Journeys: []renfeJourneyEntry{
 				{Date: "2026-07-01", MinPriceAvailable: false, MinPrice: 0},
 			},
@@ -330,7 +330,7 @@ func TestSearchSnalltaget_MockHappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(snalltagetTripsResponse{
+		_ = json.NewEncoder(w).Encode(snalltagetTripsResponse{
 			Trips: []snalltagetTrip{
 				{
 					DepartureTime: "2026-07-01T18:00:00",
@@ -410,7 +410,7 @@ func TestSearchSnalltaget_MockDefaultCurrency(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(snalltagetTripsResponse{})
+		_ = json.NewEncoder(w).Encode(snalltagetTripsResponse{})
 	}))
 	defer srv.Close()
 
@@ -468,7 +468,7 @@ func TestSearchSnalltaget_MockDataKey(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// Use "data" key instead of "trips".
-		json.NewEncoder(w).Encode(snalltagetTripsResponse{
+		_ = json.NewEncoder(w).Encode(snalltagetTripsResponse{
 			Data: []snalltagetTrip{
 				{
 					DepartureTime: "2026-07-01T18:00:00",
@@ -515,7 +515,7 @@ func TestSearchNS_MockHappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(nsTripsResponse{
+		_ = json.NewEncoder(w).Encode(nsTripsResponse{
 			Trips: []nsTrip{
 				{
 					Legs: []nsTripLeg{
@@ -581,7 +581,7 @@ func TestSearchNS_MockDefaultCurrency(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(nsTripsResponse{})
+		_ = json.NewEncoder(w).Encode(nsTripsResponse{})
 	}))
 	defer srv.Close()
 
@@ -608,7 +608,7 @@ func TestSearchNS_MockHTTPError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("server error"))
+		_, _ = w.Write([]byte("server error"))
 	}))
 	defer srv.Close()
 
@@ -639,7 +639,7 @@ func TestSearchFinnlines_MockHappyPath(t *testing.T) {
 	charge := 4500
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(finnlinesGraphQLResponse{
+		_ = json.NewEncoder(w).Encode(finnlinesGraphQLResponse{
 			Data: struct {
 				ListTimeTableAvailability []finnlinesTimetableEntry `json:"listTimeTableAvailability"`
 			}{

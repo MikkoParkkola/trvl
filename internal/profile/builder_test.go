@@ -345,8 +345,8 @@ func TestClassifyBudget(t *testing.T) {
 		{500, 100, "mid-range"},
 		{2000, 250, "premium"},
 		{0, 0, ""},
-		{100, 0, "budget"},     // fallback to trip cost
-		{1500, 0, "premium"},   // fallback to trip cost
+		{100, 0, "budget"},   // fallback to trip cost
+		{1500, 0, "premium"}, // fallback to trip cost
 	}
 
 	for _, tt := range tests {

@@ -35,9 +35,9 @@ type travelAdvisoryResponse struct {
 		} `json:"request"`
 	} `json:"api_status"`
 	Data map[string]struct {
-		Name          string `json:"name"`
-		Continent     string `json:"continent"`
-		Advisory      struct {
+		Name      string `json:"name"`
+		Continent string `json:"continent"`
+		Advisory  struct {
 			Score   float64 `json:"score"`
 			Message string  `json:"message"`
 			Updated string  `json:"updated"`
@@ -71,7 +71,7 @@ func FetchSafety(ctx context.Context, countryCode string) (models.SafetyInfo, er
 	if err != nil {
 		return models.SafetyInfo{}, fmt.Errorf("safety request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {

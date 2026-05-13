@@ -70,8 +70,8 @@ func TestScore_ReasonBands(t *testing.T) {
 
 func TestFilterAndRank_DropsBelowMinScore(t *testing.T) {
 	in := []Candidate{
-		{Destination: "A", Signals: Signals{ProfileMatch: 90, RequestMatch: 80, DealQuality: 90}},  // overall 88
-		{Destination: "B", Signals: Signals{ProfileMatch: 50, RequestMatch: 50, DealQuality: 50}},  // overall 50
+		{Destination: "A", Signals: Signals{ProfileMatch: 90, RequestMatch: 80, DealQuality: 90}},    // overall 88
+		{Destination: "B", Signals: Signals{ProfileMatch: 50, RequestMatch: 50, DealQuality: 50}},    // overall 50
 		{Destination: "C", Signals: Signals{ProfileMatch: 100, RequestMatch: 100, DealQuality: 100}}, // overall 100
 	}
 	got := FilterAndRank(in, Weights{}, 85)
@@ -111,7 +111,7 @@ func TestFilterAndRank_MinScoreZeroKeepsAll(t *testing.T) {
 
 func TestFavouritesFromPreferences_UnionAndIntersection(t *testing.T) {
 	got := FavouritesFromPreferences(
-		[]string{"PRG", "KRK"}, // bucket list always
+		[]string{"PRG", "KRK"},        // bucket list always
 		[]string{"VIE", "BCN", "ZRH"}, // previous trips, only those with affinity >= 3
 		map[string]int{"VIE": 5, "BCN": 2, "ZRH": 4},
 		3,
@@ -129,10 +129,10 @@ func TestFavouritesFromPreferences_UnionAndIntersection(t *testing.T) {
 
 func TestFavouritesFromPreferences_DefaultsAndCaseFolding(t *testing.T) {
 	got := FavouritesFromPreferences(
-		[]string{"prg", "  prg  "},  // dedup + case fold + trim
+		[]string{"prg", "  prg  "}, // dedup + case fold + trim
 		[]string{"vie"},
 		map[string]int{"vie": 5}, // case-insensitive lookup
-		0, // 0 falls back to default 3
+		0,                        // 0 falls back to default 3
 	)
 	if len(got) != 2 || got[0] != "PRG" || got[1] != "VIE" {
 		t.Errorf("got %v, want [PRG VIE]", got)

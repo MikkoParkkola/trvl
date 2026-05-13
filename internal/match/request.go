@@ -11,13 +11,13 @@ const dateLayout = "2006-01-02"
 
 // Request describes what was asked for (the user's literal request).
 type Request struct {
-	OriginIATA       string   // e.g. "HEL"
-	DestIATA         string   // empty = any
-	DepartDateCenter string   // YYYY-MM-DD, desired depart date
-	FlexDays         int      // allowed drift either side (0 = exact)
-	DateWindowDays   int      // total search window in days (≥ 0); informational, used by discover
-	Nights           int      // desired trip length; 0 = any
-	MaxNightsDrift   int      // allowed drift from Nights; 0 means exact
+	OriginIATA       string // e.g. "HEL"
+	DestIATA         string // empty = any
+	DepartDateCenter string // YYYY-MM-DD, desired depart date
+	FlexDays         int    // allowed drift either side (0 = exact)
+	DateWindowDays   int    // total search window in days (≥ 0); informational, used by discover
+	Nights           int    // desired trip length; 0 = any
+	MaxNightsDrift   int    // allowed drift from Nights; 0 means exact
 	PreferDirect     bool
 	AcceptedAirports []string // non-empty = alternatives accepted with reduced penalty
 	Currency         string

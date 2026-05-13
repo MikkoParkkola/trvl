@@ -23,7 +23,7 @@ import (
 
 func TestResolveCityExtraFields_BadJSONBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `not json`)
+		_, _ = fmt.Fprint(w, `not json`)
 	}))
 	defer srv.Close()
 
@@ -45,7 +45,7 @@ func TestResolveCityExtraFields_BadJSONBody(t *testing.T) {
 
 func TestResolveCityExtraFields_EmptyResults(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]any{})
+		_ = json.NewEncoder(w).Encode([]any{})
 	}))
 	defer srv.Close()
 
@@ -75,7 +75,7 @@ func TestResolveCityExtraFields_EmptyResults(t *testing.T) {
 func TestFXCache_FetchBase_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(frankfurterResponse{
+		_ = json.NewEncoder(w).Encode(frankfurterResponse{
 			Base:  "EUR",
 			Rates: map[string]float64{"USD": 1.09, "GBP": 0.86},
 		})
@@ -102,7 +102,7 @@ func TestFXCache_FetchBase_Success(t *testing.T) {
 func TestFXCache_FetchBase_HTTP500(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, "error")
+		_, _ = fmt.Fprint(w, "error")
 	}))
 	defer srv.Close()
 
@@ -122,7 +122,7 @@ func TestFXCache_FetchBase_HTTP500(t *testing.T) {
 
 func TestFXCache_FetchBase_BadJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{bad json`)
+		_, _ = fmt.Fprint(w, `{bad json`)
 	}))
 	defer srv.Close()
 
@@ -199,11 +199,11 @@ func TestFXCache_Refresh_AllThreeBases(t *testing.T) {
 		base := r.URL.Query().Get("from")
 		switch base {
 		case "EUR":
-			json.NewEncoder(w).Encode(frankfurterResponse{Base: "EUR", Rates: map[string]float64{"USD": 1.09, "GBP": 0.86}})
+			_ = json.NewEncoder(w).Encode(frankfurterResponse{Base: "EUR", Rates: map[string]float64{"USD": 1.09, "GBP": 0.86}})
 		case "USD":
-			json.NewEncoder(w).Encode(frankfurterResponse{Base: "USD", Rates: map[string]float64{"EUR": 0.92, "GBP": 0.79}})
+			_ = json.NewEncoder(w).Encode(frankfurterResponse{Base: "USD", Rates: map[string]float64{"EUR": 0.92, "GBP": 0.79}})
 		case "GBP":
-			json.NewEncoder(w).Encode(frankfurterResponse{Base: "GBP", Rates: map[string]float64{"EUR": 1.16, "USD": 1.27}})
+			_ = json.NewEncoder(w).Encode(frankfurterResponse{Base: "GBP", Rates: map[string]float64{"EUR": 1.16, "USD": 1.27}})
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 		}
@@ -233,7 +233,7 @@ func TestFXCache_Refresh_AllThreeBases(t *testing.T) {
 
 func TestFXCache_Refresh_DoubleCheckLock(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(frankfurterResponse{Base: r.URL.Query().Get("from"), Rates: map[string]float64{"USD": 1.0}})
+		_ = json.NewEncoder(w).Encode(frankfurterResponse{Base: r.URL.Query().Get("from"), Rates: map[string]float64{"USD": 1.0}})
 	}))
 	defer srv.Close()
 
@@ -432,7 +432,7 @@ func TestSaveCachedCookies_FullRoundTripBoost(t *testing.T) {
 				safe += "_"
 			}
 		}
-		os.Remove(dir + "/" + safe + ".json")
+		_ = os.Remove(dir + "/" + safe + ".json")
 	}
 }
 
@@ -446,7 +446,7 @@ func TestSaveCachedCookies_FullRoundTripBoost(t *testing.T) {
 func TestApplyURLExtractions_ChainSubstitution(t *testing.T) {
 	// Server provides bundle path
 	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `bundle_path = "/assets/main.abc123.js"`)
+		_, _ = fmt.Fprint(w, `bundle_path = "/assets/main.abc123.js"`)
 	}))
 	defer srv1.Close()
 
@@ -454,7 +454,7 @@ func TestApplyURLExtractions_ChainSubstitution(t *testing.T) {
 	var srv2Path string
 	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		srv2Path = r.URL.Path
-		fmt.Fprint(w, `persistedQueryHash = "deadbeef01"`)
+		_, _ = fmt.Fprint(w, `persistedQueryHash = "deadbeef01"`)
 	}))
 	defer srv2.Close()
 

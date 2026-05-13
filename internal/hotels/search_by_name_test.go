@@ -111,11 +111,11 @@ func TestBuildNameQuery(t *testing.T) {
 		location string
 		want     string
 	}{
-		{"CORU House Prague", "Prague", "CORU House Prague"},           // location already in name
-		{"CORU House", "Prague", "CORU House, Prague"},                 // location appended
-		{"Hotel Kamp", "Helsinki", "Hotel Kamp, Helsinki"},             // location appended
-		{"Hotel Kamp", "", "Hotel Kamp"},                               // no location
-		{"Grand Hotel", "grand", "Grand Hotel"},                        // location substring of name
+		{"CORU House Prague", "Prague", "CORU House Prague"}, // location already in name
+		{"CORU House", "Prague", "CORU House, Prague"},       // location appended
+		{"Hotel Kamp", "Helsinki", "Hotel Kamp, Helsinki"},   // location appended
+		{"Hotel Kamp", "", "Hotel Kamp"},                     // no location
+		{"Grand Hotel", "grand", "Grand Hotel"},              // location substring of name
 	}
 
 	for _, tt := range tests {

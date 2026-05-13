@@ -18,15 +18,15 @@ func TestSearchHotelsWithClient_DeduplicatesAcrossPages(t *testing.T) {
 		w.WriteHeader(200)
 		switch page {
 		case 1:
-			w.Write(fakeHotelPageMulti("Hotel A", "Hotel B"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel A", "Hotel B"))
 		case 2:
 			// Page 2 has one overlap (Hotel B) and one new (Hotel C).
-			w.Write(fakeHotelPageMulti("Hotel B", "Hotel C"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel B", "Hotel C"))
 		case 3:
-			w.Write(fakeHotelPageMulti("Hotel D"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel D"))
 		default:
 			// Subsequent sort orders return dupes -> stop early.
-			w.Write(fakeHotelPageMulti("Hotel A", "Hotel B"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel A", "Hotel B"))
 		}
 	}))
 	defer ts.Close()
@@ -65,7 +65,7 @@ func TestSearchHotelsWithClient_ContinuesOnSecondPageError(t *testing.T) {
 		switch page {
 		case 1:
 			w.WriteHeader(200)
-			w.Write(fakeHotelPageMulti("Hotel A", "Hotel B"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel A", "Hotel B"))
 		default:
 			// Subsequent pages fail with 403 (non-retryable, fast).
 			w.WriteHeader(403)
@@ -107,7 +107,7 @@ func TestSearchHotelsWithClient_CaseInsensitiveDedup(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		// Always return these 3 entries. Dedup should collapse them to 2.
-		w.Write(fakeHotelPageMulti("Hotel Alpha", "HOTEL ALPHA", "Hotel Beta"))
+		_, _ = w.Write(fakeHotelPageMulti("Hotel Alpha", "HOTEL ALPHA", "Hotel Beta"))
 	}))
 	defer ts.Close()
 
@@ -138,15 +138,15 @@ func TestSearchHotelsWithClient_SortDiversityAddsUniqueHotels(t *testing.T) {
 		switch sortParam {
 		case "":
 			// Default sort: Hotels A, B
-			w.Write(fakeHotelPageMulti("Hotel A", "Hotel B"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel A", "Hotel B"))
 		case "3":
 			// Highest rated sort: Hotels B, C (B overlaps, C is new)
-			w.Write(fakeHotelPageMulti("Hotel B", "Hotel C"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel B", "Hotel C"))
 		case "8":
 			// Price sort: Hotels D (all new)
-			w.Write(fakeHotelPageMulti("Hotel D"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel D"))
 		default:
-			w.Write(fakeHotelPageMulti("Hotel A"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel A"))
 		}
 	}))
 	defer ts.Close()
@@ -173,7 +173,7 @@ func TestSearchHotelsWithClient_MaxPages1SkipsSortDiversity(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqCount.Add(1)
 		w.WriteHeader(200)
-		w.Write(fakeHotelPageMulti("Hotel A"))
+		_, _ = w.Write(fakeHotelPageMulti("Hotel A"))
 	}))
 	defer ts.Close()
 
@@ -221,16 +221,16 @@ func TestSearchHotelsWithClient_FiltersApplyAfterPagination(t *testing.T) {
 		// Build hotels with prices: page1 has cheap+expensive, page2 has mid.
 		switch page {
 		case 1:
-			w.Write(fakeHotelPageWithPrices(
+			_, _ = w.Write(fakeHotelPageWithPrices(
 				hotelWithPrice{"Cheap Hotel", 50},
 				hotelWithPrice{"Expensive Hotel", 500},
 			))
 		case 2:
-			w.Write(fakeHotelPageWithPrices(
+			_, _ = w.Write(fakeHotelPageWithPrices(
 				hotelWithPrice{"Mid Hotel", 150},
 			))
 		default:
-			w.Write(fakeHotelPageMulti())
+			_, _ = w.Write(fakeHotelPageMulti())
 		}
 	}))
 	defer ts.Close()
@@ -263,7 +263,7 @@ func TestSearchHotelsWithClient_FiltersApplyAfterPagination(t *testing.T) {
 func TestSearchHotelsWithClient_SourcesTaggedGoogleHotels(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write(fakeHotelPageWithPrices(
+		_, _ = w.Write(fakeHotelPageWithPrices(
 			hotelWithPrice{"Grand Hotel", 150},
 			hotelWithPrice{"Sea View", 200},
 		))
@@ -316,16 +316,16 @@ func TestSearchHotelsWithClient_MergePreservesLowestPrice(t *testing.T) {
 		// "Overlap Hotel" appears on both page 1 and page 2 with different prices.
 		switch page {
 		case 1:
-			w.Write(fakeHotelPageWithPrices(
+			_, _ = w.Write(fakeHotelPageWithPrices(
 				hotelWithPrice{"Overlap Hotel", 300},
 				hotelWithPrice{"Unique A", 100},
 			))
 		case 2:
-			w.Write(fakeHotelPageWithPrices(
+			_, _ = w.Write(fakeHotelPageWithPrices(
 				hotelWithPrice{"Overlap Hotel", 250}, // cheaper
 			))
 		default:
-			w.Write(fakeHotelPageMulti()) // empty — stop pagination
+			_, _ = w.Write(fakeHotelPageMulti()) // empty — stop pagination
 		}
 	}))
 	defer ts.Close()
@@ -409,11 +409,11 @@ func TestSearchHotelsWithClient_BookingURLsOnAllPages(t *testing.T) {
 		w.WriteHeader(200)
 		switch page {
 		case 1:
-			w.Write(fakeHotelPageMulti("Hotel P1"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel P1"))
 		case 2:
-			w.Write(fakeHotelPageMulti("Hotel P2"))
+			_, _ = w.Write(fakeHotelPageMulti("Hotel P2"))
 		default:
-			w.Write(fakeHotelPageMulti())
+			_, _ = w.Write(fakeHotelPageMulti())
 		}
 	}))
 	defer ts.Close()

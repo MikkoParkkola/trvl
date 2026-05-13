@@ -258,7 +258,9 @@ func TestLoadJSON_EmptyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create empty file: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("close empty file: %v", err)
+	}
 
 	var dst []Trip
 	err = loadJSON(path, &dst)

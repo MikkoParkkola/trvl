@@ -54,8 +54,8 @@ func TestLoadCachedCookies_RoundTrip(t *testing.T) {
 		}
 	}
 	data, _ := json.Marshal(cached)
-	os.MkdirAll(dir, 0o700)
-	os.WriteFile(cachePath, data, 0o600)
+	_ = os.MkdirAll(dir, 0o700)
+	_ = os.WriteFile(cachePath, data, 0o600)
 
 	// Create a fresh client to load cookies into.
 	jar2, _ := cookiejar.New(nil)

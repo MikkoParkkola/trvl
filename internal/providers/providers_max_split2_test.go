@@ -39,7 +39,7 @@ func TestEnrichAirbnbDescriptions_MaxThreeEnrichments(t *testing.T) {
 	html := fmt.Sprintf(`<html><script data-deferred-state-0>%s</script></html>`, niobeJSON)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, html)
+		_, _ = fmt.Fprint(w, html)
 	}))
 	defer srv.Close()
 
@@ -71,7 +71,7 @@ func TestEnrichAirbnbDescriptions_MaxThreeEnrichments(t *testing.T) {
 
 func TestFetchAirbnbDescription_NoNiobeScript(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html><body>No deferred state</body></html>`)
+		_, _ = fmt.Fprint(w, `<html><body>No deferred state</body></html>`)
 	}))
 	defer srv.Close()
 
@@ -126,7 +126,7 @@ func TestFetchAirbnbDescription_SubtitleFallback(t *testing.T) {
 	html := fmt.Sprintf(`<html><script data-deferred-state-0>%s</script></html>`, niobeJSON)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, html)
+		_, _ = fmt.Fprint(w, html)
 	}))
 	defer srv.Close()
 
@@ -172,7 +172,7 @@ func TestFetchAirbnbDescription_TitleFallback(t *testing.T) {
 	html := fmt.Sprintf(`<html><script data-deferred-state-0>%s</script></html>`, niobeJSON)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, html)
+		_, _ = fmt.Fprint(w, html)
 	}))
 	defer srv.Close()
 
@@ -238,7 +238,7 @@ func TestDefaultOpenURL_UnsupportedOS(t *testing.T) {
 func TestResolveCityExtraFields_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{
 				map[string]any{
 					"dest_id":   "-2140479",
@@ -327,7 +327,7 @@ func TestResolveCityExtraFields_HTTP500(t *testing.T) {
 func TestResolveCityIDDynamic_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{
 				map[string]any{
 					"dest_id":   float64(12345),
@@ -383,7 +383,7 @@ func TestResolveCityIDDynamic_EmptyURL(t *testing.T) {
 
 func TestResolveCityIDDynamic_EmptyResults(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{},
 		})
 	}))
@@ -440,7 +440,7 @@ func TestIsTestBinary_ReturnsTrue(t *testing.T) {
 
 func TestApplyURLExtractions_InvalidRegex(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `some content`)
+		_, _ = fmt.Fprint(w, `some content`)
 	}))
 	defer srv.Close()
 
@@ -465,7 +465,7 @@ func TestApplyURLExtractions_InvalidRegex(t *testing.T) {
 
 func TestApplyURLExtractions_NoMatchNoDefault(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `content without the pattern`)
+		_, _ = fmt.Fprint(w, `content without the pattern`)
 	}))
 	defer srv.Close()
 

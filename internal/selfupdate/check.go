@@ -198,7 +198,7 @@ func (c *Checker) fetchLatest(ctx context.Context) (UpdateInfo, error) {
 	if err != nil {
 		return UpdateInfo{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return UpdateInfo{}, fmt.Errorf("selfupdate: github api status %d", resp.StatusCode)
 	}

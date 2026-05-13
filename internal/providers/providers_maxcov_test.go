@@ -57,8 +57,8 @@ func TestBookingBedType(t *testing.T) {
 		{5, "sofa bed"},
 		{6, "king bed"},
 		{7, "queen bed"},
-		{0, "bed"},   // default
-		{99, "bed"},  // unknown
+		{0, "bed"},  // default
+		{99, "bed"}, // unknown
 	}
 	for _, tt := range tests {
 		got := bookingBedType(tt.code)

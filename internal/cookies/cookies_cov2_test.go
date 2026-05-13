@@ -360,7 +360,7 @@ func TestBrowserCookies_SpecialCharDomain(t *testing.T) {
 	// Domain with special characters — should not panic.
 	got := BrowserCookies("not-a-real-domain-!@#$.invalid")
 	if got != "" {
-		// nab will fail to find cookies — empty is expected.
+		t.Errorf("expected empty cookies for invalid domain, got %q", got)
 	}
 }
 

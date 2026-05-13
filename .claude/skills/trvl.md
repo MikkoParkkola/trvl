@@ -1,6 +1,6 @@
 ---
 name: trvl
-description: "AI Travel Agent — flights, hotels, buses, trains, ferries, night trains, restaurants, price tracking, destinations, hacks, visas, points/award redemptions, airport lounges, traveller profile. Searches Google Flights/Hotels, Skiplagged, Kiwi, AFKLM Offers v3, Trivago, Airbnb, Booking.com, Hostelworld, Ferryhopper, FlixBus, RegioJet, Eurostar/Snap, Deutsche Bahn, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS in real-time. 1 smart MCP tool, 62 compatibility aliases, 37 hack detectors. No API keys required by default."
+description: "AI Travel Agent — flights, hotels, buses, trains, ferries, night trains, restaurants, price tracking, destinations, hacks, visas, points/award redemptions, airport lounges, traveller profile. Searches Google Flights/Hotels, Skiplagged, Kiwi, AFKLM Offers v3, Trivago, Airbnb, Booking.com, Hostelworld, Ferryhopper, FlixBus, RegioJet, Eurostar/Snap, Deutsche Bahn, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS in real-time. 1 smart MCP tool, 63 compatibility aliases, 37 hack detectors. No API keys required by default."
 triggers:
   - flight
   - flights
@@ -56,7 +56,7 @@ allowed-tools:
 
 # trvl — AI Travel Agent
 
-> **1 smart MCP tool, 62 compatibility aliases, 50 CLI commands, 37 hack detectors, 21 providers.** Single-binary travel agent for any AI assistant. No API keys required by default.
+> **1 smart MCP tool, 63 compatibility aliases, 50 CLI commands, 37 hack detectors, 21 providers.** Single-binary travel agent for any AI assistant. No API keys required by default.
 
 ## LOAD PROFILE — ALWAYS FIRST
 
@@ -79,7 +79,7 @@ From? · To? · When (date/window)? · Flex? · Travelers? · Budget? · Carry-o
 
 ---
 
-## CORE TOOL ROUTING (primary `travel` tool + 62 compatibility aliases)
+## CORE TOOL ROUTING (primary `travel` tool + 63 compatibility aliases)
 
 Use `travel` for new calls. Put the target family or exact alias in `intent`,
 state-changing verbs in `action`, and the old tool arguments in `params`.
@@ -98,10 +98,11 @@ The full compatibility surface is below.
 | `optimize_booking` | Unified optimizer with 9 expansion strategies |
 | `get_preferences` / `update_preferences` | User profile + travel hints |
 | `create_trip` / `add_trip_leg` | Persistent trip state with full leg detail |
+| `trip_workspace` | Reservation import, workspace export, candidate readiness, itinerary sanity checks, fare intelligence |
 
 ---
 
-## COMPATIBILITY SURFACE — ALL 62 ALIASES
+## COMPATIBILITY SURFACE — ALL 63 ALIASES
 
 ### Flights (12)
 
@@ -117,7 +118,6 @@ The full compatibility surface is below.
 | `search_natural` | Free-form NL travel query → dispatches to specific tools | `query` |
 | `search_hidden_city` | Skiplagged-style ranked Origin×hub-beyond offers with risk score + booking URLs. Carry-on only. **Gated on `risk_posture.hidden_city.acceptable`**. | `offers`, `allow_hidden_city`, `direct_baseline`, `max_layover_risk`, `top_k`, `depart_date` |
 | `search_awards` | Cross-program award sweet-spot scanner (FB / Avios / Aeroplan / VS / AS) including MR / UR / Bilt transfers. Returns ranked redemptions with cents-per-point. | `seats` (pre-fetched fixtures), `balances`, `transfer_ratios`, `min_cpp`, `origin`, `destination`, `cabin` |
-| `plan_trip` | Flights + hotels in one parallel search | `origin`, `destination`, `depart_date`, `return_date`, `budget` |
 | `optimize_booking` | **Unified optimizer** — 9 expansion strategies (alt origins/dests, rail+fly, date flex, hidden city, departure tax, rail competition, ferry cabin) ranked by all-in cost | `origin`, `destination`, `departure_date`, `return_date`, `flex_days`, `carry_on_only`, `need_checked_bag`, `currency`, `guests`, `max_results` |
 
 ### Hotels (8)
@@ -182,7 +182,7 @@ The full compatibility surface is below.
 | `build_profile` | Build profile from booking history (email/CSV) |
 | `add_booking` | Add a known booking to history (flights / hotels / Airbnb / ground / rides) |
 
-### Trips & calendar (6)
+### Trips & calendar (7)
 
 | Tool | Use |
 |---|---|
@@ -191,6 +191,7 @@ The full compatibility surface is below.
 | `mark_trip_booked` | Mark trip booked |
 | `get_trip` / `list_trips` | Read trip state |
 | `export_ics` | Export trip as ICS calendar feed |
+| `trip_workspace` | Import confirmations, export Trip Workspace JSON/Markdown, save candidates, run itinerary and booking-readiness checks |
 
 ### Watches & opportunities (5)
 
@@ -247,6 +248,18 @@ The full compatibility surface is below.
 - Ground / multimodal → `search_route` first, then `search_ground`
 - Hacks → `detect_travel_hacks` + `detect_accommodation_hacks`
 - Award alternative → `search_awards` if loyalty balances justify it
+
+## TRIP WORKSPACE WORKFLOW
+
+Use `trip_workspace` through `travel` when the user asks to reduce tabs, import confirmations, validate an itinerary, or decide whether a candidate is booking-ready:
+
+1. `action=import_reservation` with `trip_id`, `subject`, `body`, `source` after the user grants access to the text.
+2. `action=save_candidate` for any flight, hotel, or ground option the user may book manually. Include `checked_at`, `price`, `currency`, and `url`.
+3. `action=optimize_itinerary` after places are in the workspace; warnings mean route time or day density needs review.
+4. `action=fare_intelligence` with current price and watch history for a conservative buy/watch/wait verdict.
+5. `action=booking_ready` before telling the user to book; stale or URL-less candidates must be rechecked first.
+
+Never claim trvl booked, cancelled, guaranteed, or confirmed anything unless the user supplied a real confirmation reference and `mark_trip_booked` recorded it.
 
 ---
 

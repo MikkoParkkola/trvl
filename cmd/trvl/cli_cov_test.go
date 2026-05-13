@@ -266,13 +266,13 @@ func TestPrintTripCostTable_SuccessWithWarning(t *testing.T) {
 		Nights:    7,
 	}
 	err := printTripCostTable(result, "HEL", "BCN", 1, false)
-	w.Close()
+	_ = w.Close()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 
 	if !strings.Contains(output, "HEL") || !strings.Contains(output, "BCN") {
@@ -295,10 +295,10 @@ func TestPrintOptimizeResults_Empty(t *testing.T) {
 		Options: nil,
 	}
 	printOptimizeResults(result, "", nil, false)
-	w.Close()
+	_ = w.Close()
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "Optimize") {
 		t.Errorf("expected banner in output, got: %s", buf.String())
 	}
@@ -335,10 +335,10 @@ func TestPrintOptimizeResults_WithOptions(t *testing.T) {
 		},
 	}
 	printOptimizeResults(result, "", nil, false)
-	w.Close()
+	_ = w.Close()
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 	if !strings.Contains(output, "Direct") {
 		t.Errorf("expected strategy in output, got: %s", output)
@@ -359,10 +359,10 @@ func TestPrintOptimizeResults_BaselineCheapest(t *testing.T) {
 		Baseline: &optimizer.BookingOption{AllInCost: 200, Currency: "EUR"},
 	}
 	printOptimizeResults(result, "", nil, false)
-	w.Close()
+	_ = w.Close()
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "cheapest") {
 		t.Errorf("expected cheapest message when no savings")
 	}
@@ -380,10 +380,10 @@ func TestPrintMilesEarning_NoFFPrograms(t *testing.T) {
 
 	prefs := &preferences.Preferences{}
 	printMilesEarning(prefs, "HEL", "BCN", models.FlightResult{})
-	w.Close()
+	_ = w.Close()
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if buf.Len() != 0 {
 		t.Errorf("expected no output for empty FF programs, got: %s", buf.String())
 	}
@@ -403,10 +403,10 @@ func TestPrintMilesEarning_NoAirlineCode(t *testing.T) {
 	printMilesEarning(prefs, "HEL", "BCN", models.FlightResult{
 		Legs: nil,
 	})
-	w.Close()
+	_ = w.Close()
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if buf.Len() != 0 {
 		t.Errorf("expected no output for empty airline code, got: %s", buf.String())
 	}
@@ -431,10 +431,10 @@ func TestPrintMilesEarning_WithData(t *testing.T) {
 		},
 	}
 	printMilesEarning(prefs, "HEL", "BCN", flight)
-	w.Close()
+	_ = w.Close()
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	// Output depends on points.EstimateMilesEarned returning > 0.
 	// Even if 0, the function ran without error -- we exercised the code path.
 	_ = buf

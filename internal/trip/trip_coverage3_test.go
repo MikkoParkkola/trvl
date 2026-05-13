@@ -117,10 +117,10 @@ func TestFindBreakfastNearHotel_InvalidCoords(t *testing.T) {
 
 func TestBuildViabilityChecks_BothFlightsZeroWarning(t *testing.T) {
 	cost := &TripCostResult{
-		Success: true,
-		Flights: FlightCost{Outbound: 0, Return: 0, Currency: "EUR"},
-		Hotels:  HotelCost{PerNight: 80, Total: 560, Currency: "EUR", Name: "TestHotel"},
-		Total:   560,
+		Success:  true,
+		Flights:  FlightCost{Outbound: 0, Return: 0, Currency: "EUR"},
+		Hotels:   HotelCost{PerNight: 80, Total: 560, Currency: "EUR", Name: "TestHotel"},
+		Total:    560,
 		Currency: "EUR",
 	}
 	checks, _, hasWarning := buildViabilityChecks(cost, nil, visa.Result{}, "", nil, nil)
@@ -286,12 +286,12 @@ func TestSuggestDates_ValidInputNetworkFail(t *testing.T) {
 
 func TestBuildViabilityChecks_WeatherError(t *testing.T) {
 	cost := &TripCostResult{
-		Success: true,
-		Flights: FlightCost{Outbound: 150, Return: 180, Currency: "EUR"},
-		Hotels:  HotelCost{PerNight: 80, Total: 560, Currency: "EUR", Name: "H"},
-		Total:   890,
+		Success:  true,
+		Flights:  FlightCost{Outbound: 150, Return: 180, Currency: "EUR"},
+		Hotels:   HotelCost{PerNight: 80, Total: 560, Currency: "EUR", Name: "H"},
+		Total:    890,
 		Currency: "EUR",
-		Nights:  7,
+		Nights:   7,
 	}
 	// weatherErr != nil → weather check skipped
 	checks, _, _ := buildViabilityChecks(cost, nil, visa.Result{}, "", nil, context.DeadlineExceeded)
@@ -304,12 +304,12 @@ func TestBuildViabilityChecks_WeatherError(t *testing.T) {
 
 func TestBuildViabilityChecks_WeatherNotSuccess(t *testing.T) {
 	cost := &TripCostResult{
-		Success: true,
-		Flights: FlightCost{Outbound: 150, Return: 180, Currency: "EUR"},
-		Hotels:  HotelCost{PerNight: 80, Total: 560, Currency: "EUR", Name: "H"},
-		Total:   890,
+		Success:  true,
+		Flights:  FlightCost{Outbound: 150, Return: 180, Currency: "EUR"},
+		Hotels:   HotelCost{PerNight: 80, Total: 560, Currency: "EUR", Name: "H"},
+		Total:    890,
 		Currency: "EUR",
-		Nights:  7,
+		Nights:   7,
 	}
 	// weatherResult.Success = false → weather check skipped
 	wr := &weather.WeatherResult{Success: false}
@@ -323,12 +323,12 @@ func TestBuildViabilityChecks_WeatherNotSuccess(t *testing.T) {
 
 func TestBuildViabilityChecks_WeatherEmptyForecasts(t *testing.T) {
 	cost := &TripCostResult{
-		Success: true,
-		Flights: FlightCost{Outbound: 150, Return: 180, Currency: "EUR"},
-		Hotels:  HotelCost{PerNight: 80, Total: 560, Currency: "EUR", Name: "H"},
-		Total:   890,
+		Success:  true,
+		Flights:  FlightCost{Outbound: 150, Return: 180, Currency: "EUR"},
+		Hotels:   HotelCost{PerNight: 80, Total: 560, Currency: "EUR", Name: "H"},
+		Total:    890,
 		Currency: "EUR",
-		Nights:  7,
+		Nights:   7,
 	}
 	// empty forecasts → weather check skipped
 	wr := &weather.WeatherResult{Success: true, Forecasts: nil}

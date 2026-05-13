@@ -13,7 +13,7 @@ func TestSearchProvider_PreflightAndSearch(t *testing.T) {
 	// Preflight server: returns HTML containing a hidden token.
 	preflightSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<html><head><meta name="csrf" content="tok-42xyz"></head><body>OK</body></html>`)
+		_, _ = fmt.Fprint(w, `<html><head><meta name="csrf" content="tok-42xyz"></head><body>OK</body></html>`)
 	}))
 	defer preflightSrv.Close()
 
@@ -47,7 +47,7 @@ func TestSearchProvider_PreflightAndSearch(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer searchSrv.Close()
 
@@ -144,7 +144,7 @@ func TestSearchProvider_PreflightAndSearch(t *testing.T) {
 func TestSearchProvider_HTTP500(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `{"error":"server crash"}`)
+		_, _ = fmt.Fprint(w, `{"error":"server crash"}`)
 	}))
 	defer srv.Close()
 
@@ -184,7 +184,7 @@ func TestSearchProvider_HTTP500(t *testing.T) {
 func TestSearchProvider_MalformedJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"results": [{"name": "broken`)
+		_, _ = fmt.Fprint(w, `{"results": [{"name": "broken`)
 	}))
 	defer srv.Close()
 
@@ -224,7 +224,7 @@ func TestSearchProvider_MalformedJSON(t *testing.T) {
 func TestSearchProvider_EmptyResults(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{},
 		})
 	}))
@@ -273,7 +273,7 @@ func TestSearchProvider_EmptyResults(t *testing.T) {
 func TestSearchProvider_WrongResultsPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"items": []any{map[string]any{"name": "Hotel"}},
 			},
@@ -319,7 +319,7 @@ func TestSearchProvider_BodyExtractPattern(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		// Simulate SSR-rendered page with JSON embedded in a script tag.
-		fmt.Fprint(w, `<html><body>
+		_, _ = fmt.Fprint(w, `<html><body>
 			<script type="application/json" id="data">{"results":[{"name":"SSR Hotel","id":"ssr1","price":99}]}</script>
 		</body></html>`)
 	}))
@@ -383,7 +383,7 @@ func TestSearchProvider_QueryParamSubstitution(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -455,7 +455,7 @@ func TestSearchProvider_FilterParams(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -531,7 +531,7 @@ func TestSearchProvider_FilterParams(t *testing.T) {
 func TestSearchProvider_GraphQLError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"errors": []any{
 				map[string]any{
 					"message": "PersistedQueryNotFound",

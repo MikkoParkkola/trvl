@@ -106,7 +106,7 @@ func TestResourcesRead_FlightGuide(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result ResourcesReadResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	if len(result.Contents) == 0 {
 		t.Fatal("expected contents")
@@ -133,7 +133,7 @@ func TestResourcesRead_HotelGuide(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result ResourcesReadResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	if len(result.Contents) == 0 {
 		t.Fatal("expected contents")
@@ -235,7 +235,7 @@ func TestResourceLinkInHotelResults(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result ToolCallResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	if len(result.Content) == 0 {
 		t.Skip("skipping: live API returned no content (network issue on CI)")
@@ -357,7 +357,7 @@ func TestTripSummaryEmpty(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result ResourcesReadResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	if len(result.Contents) == 0 {
 		t.Fatal("expected contents")

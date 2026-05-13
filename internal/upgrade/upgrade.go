@@ -45,7 +45,6 @@ func trvlDir() (string, error) {
 	return filepath.Join(home, ".trvl"), nil
 }
 
-
 // stampPathIn returns the stamp path inside a given directory.
 func stampPathIn(dir string) string {
 	return filepath.Join(dir, "version.stamp")
@@ -289,13 +288,13 @@ func WhatsNew(r *Result) string {
 
 	items := whatsNewSince(r.OldVersion, r.NewVersion)
 	if len(items) > 0 {
-		fmt.Fprintf(&b, "What's new since v%s:\n", r.OldVersion)
+		_, _ = fmt.Fprintf(&b, "What's new since v%s:\n", r.OldVersion)
 		for _, item := range items {
-			fmt.Fprintf(&b, "  - %s\n", item)
+			_, _ = fmt.Fprintf(&b, "  - %s\n", item)
 		}
 	}
 
-	fmt.Fprintf(&b, "trvl upgraded v%s → v%s", r.OldVersion, r.NewVersion)
+	_, _ = fmt.Fprintf(&b, "trvl upgraded v%s → v%s", r.OldVersion, r.NewVersion)
 	return b.String()
 }
 

@@ -100,12 +100,12 @@ func TestIsIATACode(t *testing.T) {
 		{"HEL", true},
 		{"JFK", true},
 		{"CDG", true},
-		{"hel", false},       // lowercase
-		{"PARIS", false},     // too long
-		{"PA", false},        // too short
-		{"Paris", false},     // mixed case
-		{"123", false},       // digits
-		{"", false},          // empty
+		{"hel", false},   // lowercase
+		{"PARIS", false}, // too long
+		{"PA", false},    // too short
+		{"Paris", false}, // mixed case
+		{"123", false},   // digits
+		{"", false},      // empty
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {

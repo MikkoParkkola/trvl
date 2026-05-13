@@ -61,8 +61,8 @@ func TestExpandMatrix_RiskGateDropsHighRiskOffers(t *testing.T) {
 func TestExpandMatrix_DegenerateOffersRejected(t *testing.T) {
 	got := ExpandMatrix([]HiddenCityOffer{
 		{Origin: "AMS", Hub: "HEL", HubBeyond: "HEL", Carrier: "AY", Price: 100, CarryOnOnly: true, LayoverMinutes: 120}, // Hub = HubBeyond
-		{Origin: "", Hub: "HEL", HubBeyond: "RIX", Carrier: "AY", Price: 100, CarryOnOnly: true, LayoverMinutes: 120},   // empty origin
-		{Origin: "AMS", Hub: "HEL", HubBeyond: "RIX", Carrier: "AY", Price: 0, CarryOnOnly: true, LayoverMinutes: 120},  // zero price
+		{Origin: "", Hub: "HEL", HubBeyond: "RIX", Carrier: "AY", Price: 100, CarryOnOnly: true, LayoverMinutes: 120},    // empty origin
+		{Origin: "AMS", Hub: "HEL", HubBeyond: "RIX", Carrier: "AY", Price: 0, CarryOnOnly: true, LayoverMinutes: 120},   // zero price
 		{Origin: "AMS", Hub: "AMS", HubBeyond: "RIX", Carrier: "AY", Price: 100, CarryOnOnly: true, LayoverMinutes: 120}, // origin = hub
 	}, MatrixOptions{AllowHiddenCity: true, MaxLayoverRisk: 100})
 	if got != nil {

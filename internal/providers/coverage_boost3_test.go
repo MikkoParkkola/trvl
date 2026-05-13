@@ -31,7 +31,7 @@ func TestFetchJSONLDRating_Success(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, page)
+		_, _ = fmt.Fprint(w, page)
 	}))
 	defer srv.Close()
 
@@ -54,7 +54,7 @@ func TestFetchJSONLDRating_GraphArray_B3(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, page)
+		_, _ = fmt.Fprint(w, page)
 	}))
 	defer srv.Close()
 
@@ -72,7 +72,7 @@ func TestFetchJSONLDRating_GraphArray_B3(t *testing.T) {
 
 func TestFetchJSONLDRating_NoRating(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html><head><script type="application/ld+json">{"@type":"Hotel"}</script></head></html>`)
+		_, _ = fmt.Fprint(w, `<html><head><script type="application/ld+json">{"@type":"Hotel"}</script></head></html>`)
 	}))
 	defer srv.Close()
 
@@ -96,7 +96,7 @@ func TestFetchJSONLDRating_HTTP404_B3(t *testing.T) {
 
 func TestFetchJSONLDRating_NoScriptBlock(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html><body>no json-ld here</body></html>`)
+		_, _ = fmt.Fprint(w, `<html><body>no json-ld here</body></html>`)
 	}))
 	defer srv.Close()
 
@@ -131,7 +131,7 @@ func TestFetchAirbnbDescription_SharingConfig(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, page)
+		_, _ = fmt.Fprint(w, page)
 	}))
 	defer srv.Close()
 
@@ -158,7 +158,7 @@ func TestFetchAirbnbDescription_HTTP500_B3(t *testing.T) {
 
 func TestFetchAirbnbDescription_NoDeferredState(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html><body>no deferred state</body></html>`)
+		_, _ = fmt.Fprint(w, `<html><body>no deferred state</body></html>`)
 	}))
 	defer srv.Close()
 
@@ -170,7 +170,7 @@ func TestFetchAirbnbDescription_NoDeferredState(t *testing.T) {
 
 func TestFetchAirbnbDescription_BadJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html><head><script data-deferred-state-0="">not json at all</script></head></html>`)
+		_, _ = fmt.Fprint(w, `<html><head><script data-deferred-state-0="">not json at all</script></head></html>`)
 	}))
 	defer srv.Close()
 
@@ -184,7 +184,7 @@ func TestFetchAirbnbDescription_NoDescription(t *testing.T) {
 	data, _ := json.Marshal(map[string]any{"other": "data"})
 	page := fmt.Sprintf(`<html><head><script data-deferred-state-0="">%s</script></head></html>`, data)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, page)
+		_, _ = fmt.Fprint(w, page)
 	}))
 	defer srv.Close()
 
@@ -218,7 +218,7 @@ func TestEnrichAirbnbDescriptions_FillsMissing(t *testing.T) {
 	page := fmt.Sprintf(`<html><head><script data-deferred-state-0="">%s</script></head></html>`, niobeJSON)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, page)
+		_, _ = fmt.Fprint(w, page)
 	}))
 	defer srv.Close()
 
@@ -546,8 +546,8 @@ func TestApplyExtractions_HeaderSource(t *testing.T) {
 	}
 	extractions := map[string]Extraction{
 		"token": {
-			Header:  "X-Auth-Token",
-			Pattern: `token-([a-z0-9-]+)`,
+			Header:   "X-Auth-Token",
+			Pattern:  `token-([a-z0-9-]+)`,
 			Variable: "auth_token",
 		},
 	}
@@ -607,7 +607,7 @@ func TestRunPreflight_CacheHit(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		fmt.Fprint(w, `token=cached123`)
+		_, _ = fmt.Fprint(w, `token=cached123`)
 	}))
 	defer srv.Close()
 
@@ -653,7 +653,7 @@ func TestRunPreflight_CacheHit(t *testing.T) {
 func TestDoSearchRequest_NoBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{}`)
+		_, _ = fmt.Fprint(w, `{}`)
 	}))
 	defer srv.Close()
 

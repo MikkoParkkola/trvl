@@ -14,23 +14,23 @@ func TestIsAllianceMember(t *testing.T) {
 		want     bool
 	}{
 		{"KL", "skyteam", true},
-		{"KL", "SkyTeam", true},  // case-insensitive alliance
-		{"kl", "skyteam", true},  // case-insensitive airline
+		{"KL", "SkyTeam", true}, // case-insensitive alliance
+		{"kl", "skyteam", true}, // case-insensitive airline
 		{"KL", "oneworld", false},
 		{"KL", "star_alliance", false},
 		{"BA", "oneworld", true},
 		{"BA", "skyteam", false},
 		{"LH", "star_alliance", true},
 		{"LH", "oneworld", false},
-		{"FR", "skyteam", false},   // LCC, not in any alliance
+		{"FR", "skyteam", false}, // LCC, not in any alliance
 		{"FR", "oneworld", false},
 		{"FR", "star_alliance", false},
-		{"W6", "skyteam", false},   // LCC
-		{"", "", false},            // empty inputs
-		{"KL", "", false},          // empty alliance
-		{"", "skyteam", false},     // empty airline
-		{"XX", "skyteam", false},   // unknown airline
-		{"KL", "unknown", false},   // unknown alliance
+		{"W6", "skyteam", false}, // LCC
+		{"", "", false},          // empty inputs
+		{"KL", "", false},        // empty alliance
+		{"", "skyteam", false},   // empty airline
+		{"XX", "skyteam", false}, // unknown airline
+		{"KL", "unknown", false}, // unknown alliance
 	}
 	for _, tt := range tests {
 		t.Run(tt.airline+"_"+tt.alliance, func(t *testing.T) {
@@ -58,12 +58,12 @@ func TestAllianceForAirline(t *testing.T) {
 		{"LH", "star_alliance"},
 		{"UA", "star_alliance"},
 		{"SQ", "star_alliance"},
-		{"FR", ""},  // LCC
-		{"W6", ""},  // LCC
-		{"U2", ""},  // LCC
-		{"EK", ""},  // Emirates not in any alliance
-		{"", ""},    // empty
-		{"XX", ""},  // unknown
+		{"FR", ""},        // LCC
+		{"W6", ""},        // LCC
+		{"U2", ""},        // LCC
+		{"EK", ""},        // Emirates not in any alliance
+		{"", ""},          // empty
+		{"XX", ""},        // unknown
 		{"kl", "skyteam"}, // case-insensitive
 	}
 	for _, tt := range tests {

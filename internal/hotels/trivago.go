@@ -122,24 +122,24 @@ type trivagoAccomResult struct {
 }
 
 type trivagoAccommodation struct {
-	AccommodationID   string                  `json:"accommodation_id"`
-	AccommodationName string                  `json:"accommodation_name"`
-	Address           string                  `json:"address"`
-	PostalCode        string                  `json:"postal_code"`
-	CountryCity       string                  `json:"country_city"`
-	HotelRating       int                     `json:"hotel_rating"`
-	ReviewRating      string                  `json:"review_rating"`
-	ReviewCount       int                     `json:"review_count"`
-	Currency          string                  `json:"currency"`
-	PricePerNight     string                  `json:"price_per_night"`
-	PricePerStay      string                  `json:"price_per_stay"`
-	Advertisers       string                  `json:"advertisers"`
-	Lat               float64                 `json:"latitude"`
-	Lon               float64                 `json:"longitude"`
-	AccommodationURL  string                  `json:"accommodation_url"`
-	BookingURL        string                  `json:"booking_url"`
-	TopAmenities      string                  `json:"top_amenities"`
-	Distance          string                  `json:"distance"`
+	AccommodationID   string                   `json:"accommodation_id"`
+	AccommodationName string                   `json:"accommodation_name"`
+	Address           string                   `json:"address"`
+	PostalCode        string                   `json:"postal_code"`
+	CountryCity       string                   `json:"country_city"`
+	HotelRating       int                      `json:"hotel_rating"`
+	ReviewRating      string                   `json:"review_rating"`
+	ReviewCount       int                      `json:"review_count"`
+	Currency          string                   `json:"currency"`
+	PricePerNight     string                   `json:"price_per_night"`
+	PricePerStay      string                   `json:"price_per_stay"`
+	Advertisers       string                   `json:"advertisers"`
+	Lat               float64                  `json:"latitude"`
+	Lon               float64                  `json:"longitude"`
+	AccommodationURL  string                   `json:"accommodation_url"`
+	BookingURL        string                   `json:"booking_url"`
+	TopAmenities      string                   `json:"top_amenities"`
+	Distance          string                   `json:"distance"`
 	DistToCenter      *trivagoDistanceToCenter `json:"distance_to_city_center,omitempty"`
 
 	// Legacy fields — kept for backward compatibility with older API responses
@@ -208,7 +208,7 @@ func trivagoInitSession(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("trivago: init HTTP request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("trivago: init HTTP %d", resp.StatusCode)
@@ -264,7 +264,7 @@ func trivagoMCPCall(ctx context.Context, sessionID string, toolName string, args
 	if err != nil {
 		return nil, fmt.Errorf("trivago: HTTP request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return nil, fmt.Errorf("trivago: rate limited (HTTP 429)")

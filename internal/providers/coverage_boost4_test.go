@@ -34,7 +34,7 @@ func TestDecompressBody_Brotli_B4(t *testing.T) {
 	if _, err := bw.Write([]byte("hello brotli world")); err != nil {
 		t.Fatalf("brotli write: %v", err)
 	}
-	bw.Close()
+	_ = bw.Close()
 
 	resp := &http.Response{
 		StatusCode: 200,
@@ -110,7 +110,7 @@ func TestDecompressBody_GzipValid(t *testing.T) {
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	_, _ = gw.Write([]byte("compressed content"))
-	gw.Close()
+	_ = gw.Close()
 
 	resp := &http.Response{
 		StatusCode: 200,
@@ -161,7 +161,7 @@ func TestResolveCityExtraFields_HTTP400(t *testing.T) {
 
 func TestResolveCityExtraFields_BadJSON_B4(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "not json")
+		_, _ = fmt.Fprint(w, "not json")
 	}))
 	defer srv.Close()
 
@@ -182,7 +182,7 @@ func TestResolveCityExtraFields_BadJSON_B4(t *testing.T) {
 
 func TestResolveCityExtraFields_ResultPathNil(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"other": "data"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"other": "data"})
 	}))
 	defer srv.Close()
 
@@ -206,7 +206,7 @@ func TestResolveCityExtraFields_ResultPathNil(t *testing.T) {
 
 func TestResolveCityExtraFields_EmptyArray(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"results": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"results": []any{}})
 	}))
 	defer srv.Close()
 
@@ -231,7 +231,7 @@ func TestResolveCityExtraFields_EmptyArray(t *testing.T) {
 func TestResolveCityExtraFields_NonMapResult(t *testing.T) {
 	// Result path resolves to a string, not a map
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"city_id": "12345"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"city_id": "12345"})
 	}))
 	defer srv.Close()
 
@@ -256,7 +256,7 @@ func TestResolveCityExtraFields_NonMapResult(t *testing.T) {
 
 func TestResolveCityExtraFields_ArrayResult_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{
 				map[string]any{
 					"latitude":  48.85,
@@ -357,7 +357,7 @@ func TestApplyURLExtractions_BadURL(t *testing.T) {
 func TestSaveCachedCookies_WithCookies(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: "session", Value: "abc123", Domain: "127.0.0.1"})
-		fmt.Fprint(w, "ok")
+		_, _ = fmt.Fprint(w, "ok")
 	}))
 	defer srv.Close()
 
@@ -369,7 +369,7 @@ func TestSaveCachedCookies_WithCookies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// saveCachedCookies should not panic and should write to ~/.trvl/cookies
 	saveCachedCookies(client, srv.URL)
@@ -411,7 +411,7 @@ func TestResolveCityIDDynamic_NoResolver(t *testing.T) {
 func TestResolveCityIDDynamic_CachesResult(t *testing.T) {
 	// After a successful dynamic resolve, the result is cached in CityLookup.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{
 				map[string]any{"dest_id": "CACHED_ID", "name": "Rome"},
 			},
@@ -462,7 +462,7 @@ func TestResolveCityIDDynamic_HTTP404_B4(t *testing.T) {
 func TestResolveCityIDDynamic_ResultString(t *testing.T) {
 	// When the result is a plain string at the result path, an error is returned
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"id": "CITY123"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "CITY123"})
 	}))
 	defer srv.Close()
 
@@ -481,7 +481,7 @@ func TestResolveCityIDDynamic_ResultString(t *testing.T) {
 
 func TestResolveCityIDDynamic_ResultArray(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{
 				map[string]any{"dest_id": "DEST456", "name": "Paris"},
 			},

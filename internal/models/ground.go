@@ -10,19 +10,19 @@ type GroundSearchResult struct {
 
 // GroundRoute represents a single bus or train connection.
 type GroundRoute struct {
-	Provider   string       `json:"provider"`         // "flixbus", "regiojet"
-	Type       string       `json:"type"`             // "bus", "train", "mixed"
-	Price      float64      `json:"price"`
-	PriceMax   float64      `json:"price_max,omitempty"` // RegioJet gives price ranges
-	Currency   string       `json:"currency"`
-	Duration   int          `json:"duration_minutes"`
-	Departure  GroundStop   `json:"departure"`
-	Arrival    GroundStop   `json:"arrival"`
-	Transfers  int          `json:"transfers"`
-	Legs       []GroundLeg  `json:"legs"`
-	Amenities  []string     `json:"amenities,omitempty"`
-	SeatsLeft  *int         `json:"seats_left,omitempty"`
-	BookingURL string       `json:"booking_url"`
+	Provider   string      `json:"provider"` // "flixbus", "regiojet"
+	Type       string      `json:"type"`     // "bus", "train", "mixed"
+	Price      float64     `json:"price"`
+	PriceMax   float64     `json:"price_max,omitempty"` // RegioJet gives price ranges
+	Currency   string      `json:"currency"`
+	Duration   int         `json:"duration_minutes"`
+	Departure  GroundStop  `json:"departure"`
+	Arrival    GroundStop  `json:"arrival"`
+	Transfers  int         `json:"transfers"`
+	Legs       []GroundLeg `json:"legs"`
+	Amenities  []string    `json:"amenities,omitempty"`
+	SeatsLeft  *int        `json:"seats_left,omitempty"`
+	BookingURL string      `json:"booking_url"`
 }
 
 // GroundStop represents a departure or arrival point.
@@ -34,7 +34,7 @@ type GroundStop struct {
 
 // GroundLeg represents one segment of a multi-leg ground journey.
 type GroundLeg struct {
-	Type      string     `json:"type"`    // "bus", "train"
+	Type      string     `json:"type"` // "bus", "train"
 	Provider  string     `json:"provider"`
 	Departure GroundStop `json:"departure"`
 	Arrival   GroundStop `json:"arrival"`

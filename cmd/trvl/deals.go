@@ -71,9 +71,9 @@ Examples:
 func printDealsTable(ctx context.Context, targetCurrency string, result *deals.DealsResult) error {
 	if !result.Success {
 		if result.Error != "" {
-			fmt.Fprintf(os.Stderr, "No deals found: %s\n", result.Error)
+			_, _ = fmt.Fprintf(os.Stderr, "No deals found: %s\n", result.Error)
 		} else {
-			fmt.Fprintln(os.Stderr, "No deals found.")
+			_, _ = fmt.Fprintln(os.Stderr, "No deals found.")
 		}
 		return nil
 	}
@@ -135,9 +135,10 @@ func printDealsTable(ctx context.Context, targetCurrency string, result *deals.D
 		}
 
 		typeColor := d.Type
-		if d.Type == "error_fare" {
+		switch d.Type {
+		case "error_fare":
 			typeColor = models.Red(d.Type)
-		} else if d.Type == "flash_sale" {
+		case "flash_sale":
 			typeColor = models.Yellow(d.Type)
 		}
 

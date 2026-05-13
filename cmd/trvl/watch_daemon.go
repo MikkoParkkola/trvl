@@ -108,16 +108,16 @@ func runWatchDaemon(
 		newTicker = newRealWatchDaemonTicker
 	}
 
-	fmt.Fprintf(out, "Starting watch daemon (every %s). Press Ctrl-C to stop.\n", interval)
+	_, _ = fmt.Fprintf(out, "Starting watch daemon (every %s). Press Ctrl-C to stop.\n", interval)
 
 	executeCycle := func(prefix string) {
 		count, err := runCycle(ctx)
 		if err != nil {
-			fmt.Fprintf(out, "%s watch check failed: %v\n", prefix, err)
+			_, _ = fmt.Fprintf(out, "%s watch check failed: %v\n", prefix, err)
 			return
 		}
 		if count == 0 {
-			fmt.Fprintf(out, "%s no active watches. Waiting for the next interval.\n", prefix)
+			_, _ = fmt.Fprintf(out, "%s no active watches. Waiting for the next interval.\n", prefix)
 		}
 	}
 
@@ -131,7 +131,7 @@ func runWatchDaemon(
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Fprintln(out, "Watch daemon stopped.")
+			_, _ = fmt.Fprintln(out, "Watch daemon stopped.")
 			return nil
 		case <-ticker.Chan():
 			executeCycle("Scheduled:")

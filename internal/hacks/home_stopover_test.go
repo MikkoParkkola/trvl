@@ -95,7 +95,7 @@ func TestDetectHomeStopover_NegativeAvgHotelClampsToZero(t *testing.T) {
 
 func TestNightsCovered(t *testing.T) {
 	cases := map[float64]int{
-		11.5: 0,  // below the 12h threshold
+		11.5: 0, // below the 12h threshold
 		12:   1,
 		18:   1,
 		28:   2,

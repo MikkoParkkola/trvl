@@ -47,7 +47,7 @@ Examples:
 
 			// Parse seat fixtures.
 			if len(seatFlags) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No seat fixtures provided. Use --seat PROGRAM:MILES:CASH_FEES:CASH_EQUIV:DATE:CABIN")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No seat fixtures provided. Use --seat PROGRAM:MILES:CASH_FEES:CASH_EQUIV:DATE:CABIN")
 				return nil
 			}
 
@@ -86,15 +86,15 @@ Examples:
 			}
 
 			if len(filtered) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No affordable sweet spots found.")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No affordable sweet spots found.")
 				return nil
 			}
 
 			// Print table.
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "%-6s  %-12s  %-12s  %-8s  %-7s  %-8s  %-10s  %-11s  %-5s  %-10s  %s\n",
+			_, _ = fmt.Fprintf(out, "%-6s  %-12s  %-12s  %-8s  %-7s  %-8s  %-10s  %-11s  %-5s  %-10s  %s\n",
 				"SEAT", "ORIGIN-DEST", "DATE", "CABIN", "SOURCE", "MILES", "CASH_FEES", "CASH_EQUIV", "CPP", "AFFORDABLE", "ROUTE")
-			fmt.Fprintf(out, "%s\n", strings.Repeat("-", 110))
+			_, _ = fmt.Fprintf(out, "%s\n", strings.Repeat("-", 110))
 
 			for _, s := range filtered {
 				route := fmt.Sprintf("%s-%s", s.Seat.Origin, s.Seat.Destination)
@@ -102,7 +102,7 @@ Examples:
 				if s.Affordable {
 					affordable = "yes"
 				}
-				fmt.Fprintf(out, "%-6s  %-12s  %-12s  %-8s  %-7s  %-8d  %-10.2f  %-11.2f  %-5.2f  %-10s  %s\n",
+				_, _ = fmt.Fprintf(out, "%-6s  %-12s  %-12s  %-8s  %-7s  %-8d  %-10.2f  %-11.2f  %-5.2f  %-10s  %s\n",
 					s.Seat.Program,
 					route,
 					s.Seat.Date,

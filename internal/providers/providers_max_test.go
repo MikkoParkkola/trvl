@@ -29,7 +29,7 @@ func TestDecompressBody_BrotliMax(t *testing.T) {
 	var buf bytes.Buffer
 	bw := brotli.NewWriter(&buf)
 	_, _ = bw.Write([]byte(original))
-	bw.Close()
+	_ = bw.Close()
 
 	resp := &http.Response{
 		Header: http.Header{"Content-Encoding": {"br"}},
@@ -58,7 +58,7 @@ func TestDecompressBody_ZstdEncoding(t *testing.T) {
 		t.Fatalf("zstd.NewWriter: %v", err)
 	}
 	_, _ = zw.Write([]byte(original))
-	zw.Close()
+	_ = zw.Close()
 
 	resp := &http.Response{
 		Header: http.Header{
@@ -140,7 +140,7 @@ func TestSaveThenLoadCachedCookies_RoundTrip(t *testing.T) {
 	t.Cleanup(func() {
 		// Clean up the cache file.
 		path, _ := cookieCachePath("roundtrip-test.example.com")
-		os.Remove(path)
+		_ = os.Remove(path)
 	})
 
 	// Create a fresh client and load the cached cookies.
@@ -195,7 +195,7 @@ func TestSaveCachedCookies_WritesAndLoads(t *testing.T) {
 	saveCachedCookies(client, targetURL)
 	t.Cleanup(func() {
 		path, _ := cookieCachePath("save-writes-test.example.com")
-		os.Remove(path)
+		_ = os.Remove(path)
 	})
 
 	// Verify the file exists.
@@ -264,9 +264,9 @@ func TestLoadCachedCookies_Expired(t *testing.T) {
 		},
 	}
 	data, _ := json.Marshal(expired)
-	os.MkdirAll(filepath.Dir(path), 0o700)
-	os.WriteFile(path, data, 0o600)
-	t.Cleanup(func() { os.Remove(path) })
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	_ = os.WriteFile(path, data, 0o600)
+	t.Cleanup(func() { _ = os.Remove(path) })
 
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
@@ -281,9 +281,9 @@ func TestLoadCachedCookies_InvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(filepath.Dir(path), 0o700)
-	os.WriteFile(path, []byte(`{not valid json}`), 0o600)
-	t.Cleanup(func() { os.Remove(path) })
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	_ = os.WriteFile(path, []byte(`{not valid json}`), 0o600)
+	t.Cleanup(func() { _ = os.Remove(path) })
 
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
@@ -298,9 +298,9 @@ func TestLoadCachedCookies_EmptyArray(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(filepath.Dir(path), 0o700)
-	os.WriteFile(path, []byte(`[]`), 0o600)
-	t.Cleanup(func() { os.Remove(path) })
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	_ = os.WriteFile(path, []byte(`[]`), 0o600)
+	t.Cleanup(func() { _ = os.Remove(path) })
 
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
@@ -327,9 +327,9 @@ func TestLoadCachedCookies_NilJarClient(t *testing.T) {
 		},
 	}
 	data, _ := json.Marshal(valid)
-	os.MkdirAll(filepath.Dir(path), 0o700)
-	os.WriteFile(path, data, 0o600)
-	t.Cleanup(func() { os.Remove(path) })
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	_ = os.WriteFile(path, data, 0o600)
+	t.Cleanup(func() { _ = os.Remove(path) })
 
 	// Client with no jar -> can't set cookies.
 	client := &http.Client{}
@@ -373,7 +373,7 @@ func TestEnrichRatings_FromJSONLD(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, html)
+		_, _ = fmt.Fprint(w, html)
 	}))
 	defer srv.Close()
 
@@ -399,7 +399,7 @@ func TestEnrichRatings_FromJSONLD(t *testing.T) {
 
 func TestEnrichRatings_MaxEnrichments(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html><script type="application/ld+json">{"aggregateRating":{"ratingValue":7.0}}</script></html>`)
+		_, _ = fmt.Fprint(w, `<html><script type="application/ld+json">{"aggregateRating":{"ratingValue":7.0}}</script></html>`)
 	}))
 	defer srv.Close()
 
@@ -450,7 +450,7 @@ func TestEnrichRatings_HTTP404(t *testing.T) {
 
 func TestFetchJSONLDRating_NoStructuredData(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html><body>No structured data</body></html>`)
+		_, _ = fmt.Fprint(w, `<html><body>No structured data</body></html>`)
 	}))
 	defer srv.Close()
 
@@ -470,7 +470,7 @@ func TestFetchJSONLDRating_GraphArrayNested(t *testing.T) {
 	html := fmt.Sprintf(`<html><script type="application/ld+json">%s</script></html>`, jsonLD)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, html)
+		_, _ = fmt.Fprint(w, html)
 	}))
 	defer srv.Close()
 
@@ -489,7 +489,7 @@ func TestFetchJSONLDRating_GraphArrayNested(t *testing.T) {
 func TestFetchJSONLDRating_MalformedJSON(t *testing.T) {
 	html := `<html><script type="application/ld+json">not valid json</script></html>`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, html)
+		_, _ = fmt.Fprint(w, html)
 	}))
 	defer srv.Close()
 
@@ -530,7 +530,7 @@ func TestEnrichAirbnbDescriptions_FromNiobe(t *testing.T) {
 	html := fmt.Sprintf(`<html><script data-deferred-state-0>%s</script></html>`, niobeJSON)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, html)
+		_, _ = fmt.Fprint(w, html)
 	}))
 	defer srv.Close()
 
@@ -591,7 +591,7 @@ func TestEnrichAirbnbDescriptions_FallbackToSection(t *testing.T) {
 	html := fmt.Sprintf(`<html><script data-deferred-state-0>%s</script></html>`, niobeJSON)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, html)
+		_, _ = fmt.Fprint(w, html)
 	}))
 	defer srv.Close()
 

@@ -372,9 +372,9 @@ func TestExtractPrice(t *testing.T) {
 
 func TestExtractRoute(t *testing.T) {
 	tests := []struct {
-		body       string
-		wantFrom   string
-		wantTo     string
+		body     string
+		wantFrom string
+		wantTo   string
 	}{
 		{"HEL → BCN", "HEL", "BCN"},
 		{"Flight: HEL -> AMS", "HEL", "AMS"},

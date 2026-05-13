@@ -167,7 +167,7 @@ func searchFlightsTool() ToolDef {
 				// Mental-model filter args — parity with plan_flight_bundle/hunt_interactive
 				// so agents using the lower-level search_flights still get Mikko's filter stack.
 				"min_layover_minutes": {Type: "integer", Description: "Only keep flights with a layover of at least N minutes (0 = no duration constraint). Post-fetch filter."},
-				"layover_at":          {Type: "array", Description: "Restrict qualifying layovers to these IATA codes (empty = any airport). Post-fetch filter."},
+				"layover_at":          {Type: "array", Items: &Property{Type: "string"}, Description: "Restrict qualifying layovers to these IATA codes (empty = any airport). Post-fetch filter."},
 				"no_early_connection": {Type: "boolean", Description: "Drop flights whose post-overnight leg departs before preferences.early_connection_floor (default 10:00)."},
 				"lounge_required":     {Type: "boolean", Description: "Drop flights where a layover airport lacks lounge coverage from user's cards."},
 				"first_result":        {Type: "boolean", Description: "Return only the first result with a valid price after sorting. Combine with sort_by to get e.g. the shortest priced flight (duration) or cheapest. Default: false."},

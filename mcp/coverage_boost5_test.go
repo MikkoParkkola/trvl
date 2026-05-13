@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"fmt"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 	"github.com/MikkoParkkola/trvl/internal/trips"
 	"os"
-	"fmt"
 	"time"
 )
 
@@ -323,9 +323,9 @@ func TestServeStdio_BatchRequest(t *testing.T) {
 	var in bytes.Buffer
 	r1, _ := json.Marshal(Request{JSONRPC: "2.0", ID: float64(1), Method: "ping"})
 	r2, _ := json.Marshal(Request{JSONRPC: "2.0", ID: float64(2), Method: "tools/list"})
-	in.Write(r1)
+	_, _ = in.Write(r1)
 	in.WriteString("\n")
-	in.Write(r2)
+	_, _ = in.Write(r2)
 	in.WriteString("\n")
 	var out bytes.Buffer
 	if err := s.ServeStdio(&in, &out); err != nil {
@@ -345,7 +345,7 @@ func TestBuildProfileSummary_AllOptionalFieldsFilled(t *testing.T) {
 			{Alliance: "oneworld", Tier: "sapphire", AirlineCode: "AY"},
 		},
 		LoyaltyAirlines: []string{"AY"}, LoungeCards: []string{"Priority Pass"},
-		LoyaltyHotels: []string{"Marriott Bonvoy"},
+		LoyaltyHotels:     []string{"Marriott Bonvoy"},
 		BudgetPerNightMin: 80, BudgetPerNightMax: 200, BudgetFlightMax: 500,
 	}
 	s := buildProfileSummary(p)
@@ -370,9 +370,11 @@ func TestReadTripsUpcoming_WithTrip(t *testing.T) {
 
 	// Create a trips directory and add a trip with legs.
 	tripsDir := filepath.Join(tmp, ".trvl")
-	os.MkdirAll(tripsDir, 0o755)
+	_ = os.MkdirAll(tripsDir, 0o755)
 	store := trips.NewStore(tripsDir)
-	store.Load()
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load store: %v", err)
+	}
 
 	futureDate := time.Now().Add(7 * 24 * time.Hour)
 	_, err := store.Add(trips.Trip{
@@ -427,9 +429,11 @@ func TestReadTripByURI_WithTrip(t *testing.T) {
 	t.Setenv("USERPROFILE", tmp)
 
 	tripsDir := filepath.Join(tmp, ".trvl")
-	os.MkdirAll(tripsDir, 0o755)
+	_ = os.MkdirAll(tripsDir, 0o755)
 	store := trips.NewStore(tripsDir)
-	store.Load()
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load store: %v", err)
+	}
 
 	id, err := store.Add(trips.Trip{
 		Name:   "Tokyo Trip",
@@ -459,7 +463,7 @@ func TestReadTripByURI_NotFound(t *testing.T) {
 	t.Setenv("USERPROFILE", tmp)
 
 	tripsDir := filepath.Join(tmp, ".trvl")
-	os.MkdirAll(tripsDir, 0o755)
+	_ = os.MkdirAll(tripsDir, 0o755)
 
 	s := NewServer()
 	_, err := s.readTripByURI("trvl://trips/nonexistent-id")
@@ -492,7 +496,7 @@ func TestHandleToolsCall_HandlerError(t *testing.T) {
 	// The handler should return an error result (missing destination/date).
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result ToolCallResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 	if !result.IsError {
 		t.Error("expected IsError=true for missing required params")
 	}

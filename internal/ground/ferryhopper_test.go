@@ -202,8 +202,8 @@ func TestFerryhopperTripResultParsing(t *testing.T) {
 
 func TestFerryhopperCheapestPrice(t *testing.T) {
 	tests := []struct {
-		name   string
-		accs   []ferryhopperAccommodation
+		name    string
+		accs    []ferryhopperAccommodation
 		wantEUR float64
 	}{
 		{
@@ -216,9 +216,9 @@ func TestFerryhopperCheapestPrice(t *testing.T) {
 		{
 			name: "multiple accommodations returns cheapest",
 			accs: []ferryhopperAccommodation{
-				{Name: "VIP Seat",    PriceCents: 8900},
-				{Name: "Deck Seat",  PriceCents: 4500},
-				{Name: "Airline",    PriceCents: 5200},
+				{Name: "VIP Seat", PriceCents: 8900},
+				{Name: "Deck Seat", PriceCents: 4500},
+				{Name: "Airline", PriceCents: 5200},
 			},
 			wantEUR: 45.0,
 		},
@@ -287,7 +287,7 @@ func TestSearchFerryhopper_MockServer_Success(t *testing.T) {
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, mockFerryhopperSSEResponse(mockFerryhopperTripJSON)) //nolint:errcheck
+		_, _ = fmt.Fprint(w, mockFerryhopperSSEResponse(mockFerryhopperTripJSON)) //nolint:errcheck
 	}))
 	defer srv.Close()
 
@@ -431,7 +431,7 @@ func TestFerryhopperRateLimiterConfiguration(t *testing.T) {
 func TestSearchFerryhopper_MockServer_HTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
-		fmt.Fprint(w, "rate limited") //nolint:errcheck
+		_, _ = fmt.Fprint(w, "rate limited") //nolint:errcheck
 	}))
 	defer srv.Close()
 
@@ -446,7 +446,7 @@ func TestSearchFerryhopper_MockServer_HTTPError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("status = %d, want 429", resp.StatusCode)

@@ -41,7 +41,7 @@ Examples:
 			msg := upgrade.WhatsNew(r)
 			if msg != "" {
 				if dryRun {
-					fmt.Fprintln(os.Stderr, "[dry-run]")
+					_, _ = fmt.Fprintln(os.Stderr, "[dry-run]")
 				}
 				fmt.Println(msg)
 			} else if r.FreshInstall {
@@ -51,7 +51,7 @@ Examples:
 			}
 
 			if r.MigrationsApplied > 0 && dryRun {
-				fmt.Fprintf(os.Stderr, "%d migration(s) would be applied.\n", r.MigrationsApplied)
+				_, _ = fmt.Fprintf(os.Stderr, "%d migration(s) would be applied.\n", r.MigrationsApplied)
 			}
 
 			return nil

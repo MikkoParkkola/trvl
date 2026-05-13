@@ -103,7 +103,7 @@ func TestRemove_SaveError(t *testing.T) {
 
 	// Block the watches file so save fails on Remove.
 	watchesPath := store.watchesPath()
-	os.Remove(watchesPath)
+	_ = os.Remove(watchesPath)
 	if err := os.MkdirAll(watchesPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestAdd_SaveError(t *testing.T) {
 
 	// Block the watches file.
 	watchesPath := store.watchesPath()
-	os.Remove(watchesPath)
+	_ = os.Remove(watchesPath)
 	if err := os.MkdirAll(watchesPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestCheckRoom_RecordPriceError(t *testing.T) {
 
 	// Block the history file so RecordPrice fails.
 	historyPath := store.historyPath()
-	os.Remove(historyPath)
+	_ = os.Remove(historyPath)
 	if err := os.MkdirAll(historyPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func TestCheckOne_RecordPriceError(t *testing.T) {
 
 	// Block the history file.
 	historyPath := store.historyPath()
-	os.Remove(historyPath)
+	_ = os.Remove(historyPath)
 	if err := os.MkdirAll(historyPath, 0o700); err != nil {
 		t.Fatal(err)
 	}

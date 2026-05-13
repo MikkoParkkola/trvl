@@ -29,12 +29,12 @@ func TestPromptsList(t *testing.T) {
 
 	expected := map[string]bool{
 		"plan-trip":           false,
-		"where-should-i-go":  false,
+		"where-should-i-go":   false,
 		"find-cheapest-dates": false,
-		"compare-hotels":     false,
-		"packing-list":       false,
-		"setup_profile":      false,
-		"setup_providers":    false,
+		"compare-hotels":      false,
+		"packing-list":        false,
+		"setup_profile":       false,
+		"setup_providers":     false,
 	}
 	for _, p := range result.Prompts {
 		if _, ok := expected[p.Name]; !ok {
@@ -131,7 +131,7 @@ func TestPromptsGet_FindCheapestDates(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result PromptsGetResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	if len(result.Messages) == 0 {
 		t.Fatal("expected messages")
@@ -163,7 +163,7 @@ func TestPromptsGet_CompareHotels(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result PromptsGetResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	if len(result.Messages) == 0 {
 		t.Fatal("expected messages")
@@ -207,7 +207,7 @@ func TestPromptsGet_WhereShouldIGo_Basic(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result PromptsGetResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	if len(result.Messages) == 0 {
 		t.Fatal("expected messages")
@@ -241,7 +241,7 @@ func TestPromptsGet_WhereShouldIGo_WithMonth(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result PromptsGetResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	text := result.Messages[0].Content.Text
 	if !strings.Contains(text, "july-2026") {
@@ -272,7 +272,7 @@ func TestPromptsGet_WhereShouldIGo_WithBudget(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result PromptsGetResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	text := result.Messages[0].Content.Text
 	if !strings.Contains(text, "500") {
@@ -317,7 +317,7 @@ func TestPromptsGet_WhereShouldIGo_AllArgs(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result PromptsGetResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	if result.Description == "" {
 		t.Error("description should not be empty")
@@ -354,7 +354,7 @@ func TestPromptsGet_PlanTrip_NoBudget(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result PromptsGetResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	if len(result.Messages) == 0 {
 		t.Fatal("expected messages")
@@ -408,7 +408,7 @@ func TestPromptsGet_CompareHotels_DefaultPriorities(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result PromptsGetResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	text := result.Messages[0].Content.Text
 	if !strings.Contains(text, "price,rating") {
@@ -450,7 +450,7 @@ func TestPromptsGet_PackingList_Basic(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result PromptsGetResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	if len(result.Messages) == 0 {
 		t.Fatal("expected messages")
@@ -492,7 +492,7 @@ func TestPromptsGet_PackingList_AllArgs(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result PromptsGetResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	text := result.Messages[0].Content.Text
 	if !strings.Contains(text, "adventure") {

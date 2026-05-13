@@ -17,14 +17,14 @@ func detectTravelHacksTool() ToolDef {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"origin":       {Type: "string", Description: "Origin IATA airport code (e.g. HEL)"},
-				"destination":  {Type: "string", Description: "Destination IATA airport code (e.g. PRG)"},
-				"date":         {Type: "string", Description: "Departure date (YYYY-MM-DD)"},
-				"return_date":  {Type: "string", Description: "Return date for round-trip analysis (YYYY-MM-DD); enables split and throwaway checks"},
-				"currency":     {Type: "string", Description: "Display currency (default: EUR)"},
-				"carry_on":     {Type: "boolean", Description: "Carry-on only trip — enables hidden city suggestions"},
-				"naive_price":  {Type: "number", Description: "Known baseline one-way price for comparison (optional)"},
-				"passengers":   {Type: "integer", Description: "Number of passengers (group split hack fires at 3+)"},
+				"origin":      {Type: "string", Description: "Origin IATA airport code (e.g. HEL)"},
+				"destination": {Type: "string", Description: "Destination IATA airport code (e.g. PRG)"},
+				"date":        {Type: "string", Description: "Departure date (YYYY-MM-DD)"},
+				"return_date": {Type: "string", Description: "Return date for round-trip analysis (YYYY-MM-DD); enables split and throwaway checks"},
+				"currency":    {Type: "string", Description: "Display currency (default: EUR)"},
+				"carry_on":    {Type: "boolean", Description: "Carry-on only trip — enables hidden city suggestions"},
+				"naive_price": {Type: "number", Description: "Known baseline one-way price for comparison (optional)"},
+				"passengers":  {Type: "integer", Description: "Number of passengers (group split hack fires at 3+)"},
 			},
 			Required: []string{"origin", "destination", "date"},
 		},
@@ -148,9 +148,9 @@ func buildHacksSummary(origin, destination, date string, detected []hacks.Hack) 
 	var sb strings.Builder
 	sb.WriteString("Travel hacks for " + origin + "→" + destination + " on " + date + ":\n\n")
 	for i, h := range detected {
-		sb.WriteString(fmt.Sprintf("%d. %s", i+1, h.Title))
+		_, _ = fmt.Fprintf(&sb, "%d. %s", i+1, h.Title)
 		if h.Savings > 0 {
-			sb.WriteString(fmt.Sprintf(" — saves %s %.0f", h.Currency, h.Savings))
+			_, _ = fmt.Fprintf(&sb, " — saves %s %.0f", h.Currency, h.Savings)
 		}
 		sb.WriteString("\n")
 		sb.WriteString("   " + h.Description + "\n\n")
@@ -267,15 +267,14 @@ func buildAccomHacksSummary(city, checkin, checkout string, detected []hacks.Hac
 		return fmt.Sprintf("No accommodation split opportunities found for %s (%s to %s).", city, checkin, checkout)
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Accommodation hacks for %s (%s to %s):\n\n", city, checkin, checkout))
+	_, _ = fmt.Fprintf(&sb, "Accommodation hacks for %s (%s to %s):\n\n", city, checkin, checkout)
 	for i, h := range detected {
-		sb.WriteString(fmt.Sprintf("%d. %s", i+1, h.Title))
+		_, _ = fmt.Fprintf(&sb, "%d. %s", i+1, h.Title)
 		if h.Savings > 0 {
-			sb.WriteString(fmt.Sprintf(" — saves %s %.0f", h.Currency, h.Savings))
+			_, _ = fmt.Fprintf(&sb, " — saves %s %.0f", h.Currency, h.Savings)
 		}
 		sb.WriteString("\n")
 		sb.WriteString("   " + h.Description + "\n\n")
 	}
 	return sb.String()
 }
-

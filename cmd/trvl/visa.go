@@ -61,7 +61,7 @@ Examples:
 			}
 
 			if !result.Success {
-				fmt.Fprintf(os.Stderr, "Error: %s\n", result.Error)
+				_, _ = fmt.Fprintf(os.Stderr, "Error: %s\n", result.Error)
 				return nil
 			}
 

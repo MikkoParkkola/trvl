@@ -22,9 +22,9 @@ func TestLooksLikeRoomName(t *testing.T) {
 		{"Ocean View Villa", true},
 		{"Superior Room", true},
 		{"Premium King Bed", true},
-		{"ab", false},                  // too short
-		{"", false},                    // empty
-		{"https://example.com", false}, // URL
+		{"ab", false},                     // too short
+		{"", false},                       // empty
+		{"https://example.com", false},    // URL
 		{"<script>alert</script>", false}, // HTML
 		{"Just A Regular String Here", false},
 		{string(make([]byte, 101)), false}, // too long
@@ -52,9 +52,9 @@ func TestLooksLikeProvider(t *testing.T) {
 		{"Official Site", true},
 		{"Marriott", true},
 		{"Hilton Hotels", true},
-		{"ab", false},  // too short
+		{"ab", false}, // too short
 		{"", false},
-		{"https://booking.com", false}, // starts with http
+		{"https://booking.com", false},    // starts with http
 		{string(make([]byte, 61)), false}, // too long
 		{"Some Provider Name", true},      // generic multi-word
 		{"Provider{bad}", false},          // special chars
@@ -127,12 +127,12 @@ func TestLooksLikeHotelName(t *testing.T) {
 	}{
 		{"Hotel Ritz Paris", true},
 		{"The Grand Budapest Hotel", true},
-		{"abc", false},  // too short (< 4)
+		{"abc", false}, // too short (< 4)
 		{"", false},
-		{"https://hotel.com", false},     // URL
-		{"<div>Hotel</div>", false},      // HTML
-		{"{json: true}", false},          // JSON
-		{"12345", false},                 // no letters
+		{"https://hotel.com", false}, // URL
+		{"<div>Hotel</div>", false},  // HTML
+		{"{json: true}", false},      // JSON
+		{"12345", false},             // no letters
 		{"A Nice Place To Stay", true},
 	}
 	for _, tt := range tests {

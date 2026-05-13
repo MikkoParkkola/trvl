@@ -245,27 +245,27 @@ func Render(s Settlement) string {
 	if cur == "" {
 		cur = "EUR"
 	}
-	fmt.Fprintf(&b, "Trip total: %.2f %s across %d travellers\n", s.Total, cur, len(s.PerTraveller))
-	fmt.Fprintln(&b, "Per traveller:")
+	_, _ = fmt.Fprintf(&b, "Trip total: %.2f %s across %d travellers\n", s.Total, cur, len(s.PerTraveller))
+	_, _ = fmt.Fprintln(&b, "Per traveller:")
 	for _, t := range s.PerTraveller {
-		fmt.Fprintf(&b, "  %s — paid %.2f, owes %.2f, net %+.2f\n", t.Traveller, t.Paid, t.Owed, t.Net)
+		_, _ = fmt.Fprintf(&b, "  %s — paid %.2f, owes %.2f, net %+.2f\n", t.Traveller, t.Paid, t.Owed, t.Net)
 	}
 	if len(s.Transfers) == 0 {
-		fmt.Fprintln(&b, "Already balanced; no transfers needed.")
+		_, _ = fmt.Fprintln(&b, "Already balanced; no transfers needed.")
 	} else {
-		fmt.Fprintln(&b, "Settlement:")
+		_, _ = fmt.Fprintln(&b, "Settlement:")
 		for _, t := range s.Transfers {
-			fmt.Fprintf(&b, "  %s -> %s: %.2f %s\n", t.From, t.To, t.Amount, cur)
+			_, _ = fmt.Fprintf(&b, "  %s -> %s: %.2f %s\n", t.From, t.To, t.Amount, cur)
 		}
 	}
 	if len(s.ByCategory) > 0 {
-		fmt.Fprintln(&b, "By category:")
+		_, _ = fmt.Fprintln(&b, "By category:")
 		for _, c := range s.ByCategory {
 			cat := c.Category
 			if cat == "" {
 				cat = "uncategorised"
 			}
-			fmt.Fprintf(&b, "  %s: %.2f\n", cat, c.Total)
+			_, _ = fmt.Fprintf(&b, "  %s: %.2f\n", cat, c.Total)
 		}
 	}
 	return b.String()

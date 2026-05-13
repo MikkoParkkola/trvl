@@ -132,12 +132,12 @@ func TestIsGoBinPath_GOPATH(t *testing.T) {
 func TestIsNpmPath(t *testing.T) {
 	t.Parallel()
 	cases := map[string]bool{
-		"/Users/me/.npm/lib/node_modules/trvl-mcp/bin/trvl":     true,
-		"/usr/local/lib/node_modules/trvl-mcp/bin/trvl":         true,
-		"/proj/node_modules/trvl-mcp/bin/trvl":                  true,
-		"/proj/node_modules/something-else/bin/trvl":            false,
-		"/usr/local/bin/trvl":                                   false,
-		"/opt/homebrew/Cellar/trvl/1.1.4/bin/trvl":              false,
+		"/Users/me/.npm/lib/node_modules/trvl-mcp/bin/trvl": true,
+		"/usr/local/lib/node_modules/trvl-mcp/bin/trvl":     true,
+		"/proj/node_modules/trvl-mcp/bin/trvl":              true,
+		"/proj/node_modules/something-else/bin/trvl":        false,
+		"/usr/local/bin/trvl":                               false,
+		"/opt/homebrew/Cellar/trvl/1.1.4/bin/trvl":          false,
 	}
 	for p, want := range cases {
 		if got := isNpmPath(p); got != want {

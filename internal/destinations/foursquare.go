@@ -113,7 +113,7 @@ func GetRatedPlaces(ctx context.Context, lat, lon float64, category string, limi
 	if err != nil {
 		return nil, fmt.Errorf("foursquare request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {

@@ -83,11 +83,11 @@ Examples:
 
 func printTripPlan(ctx context.Context, targetCurrency string, result *trip.PlanResult) error {
 	if !result.Success && len(result.OutboundFlights) == 0 && len(result.ReturnFlights) == 0 && len(result.Hotels) == 0 {
-		fmt.Fprintf(os.Stderr, "Trip planning failed: %s\n", result.Error)
+		_, _ = fmt.Fprintf(os.Stderr, "Trip planning failed: %s\n", result.Error)
 		return nil
 	}
 	if !result.Success && result.Error != "" {
-		fmt.Fprintf(os.Stderr, "Partial trip plan: %s\n\n", result.Error)
+		_, _ = fmt.Fprintf(os.Stderr, "Partial trip plan: %s\n\n", result.Error)
 	}
 
 	originName := models.LookupAirportName(result.Origin)

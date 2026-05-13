@@ -60,14 +60,14 @@ type TransferRatio struct {
 
 // SweetSpot is one ranked alternative for booking the same AwardSeat.
 type SweetSpot struct {
-	Seat            AwardSeat
-	BookingProgram  string  // program the user redeems out of
-	SourceProgram   string  // currency the user spends FROM
-	TransferRoute   string  // human-readable: "Amex MR -> Virgin VS @ 1:1"
-	MilesSpentNative int    // miles spent in BookingProgram
-	MilesSpentSource int    // points spent in SourceProgram (after transfer math)
-	CashFees        float64 // copied from Seat for ranking
-	CashEquivalent  float64 // copied from Seat
+	Seat             AwardSeat
+	BookingProgram   string  // program the user redeems out of
+	SourceProgram    string  // currency the user spends FROM
+	TransferRoute    string  // human-readable: "Amex MR -> Virgin VS @ 1:1"
+	MilesSpentNative int     // miles spent in BookingProgram
+	MilesSpentSource int     // points spent in SourceProgram (after transfer math)
+	CashFees         float64 // copied from Seat for ranking
+	CashEquivalent   float64 // copied from Seat
 	// CentsPerPoint is the value-per-point yardstick: cents the user
 	// effectively earned per point redeemed. Higher = better redemption.
 	// Calculated as (CashEquivalent - CashFees) / MilesSpentSource * 100.

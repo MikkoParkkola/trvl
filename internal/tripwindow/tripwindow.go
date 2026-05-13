@@ -62,12 +62,12 @@ func (in *Input) applyDefaults() {
 
 // Candidate is one feasible trip window with an estimated cheapest cost.
 type Candidate struct {
-	Start             string  `json:"start"`              // departure date YYYY-MM-DD
-	End               string  `json:"end"`                // return date YYYY-MM-DD
-	Nights            int     `json:"nights"`             // trip length
-	EstimatedCost     float64 `json:"estimated_cost"`     // flight + hotel total; 0 if search failed
-	FlightCost        float64 `json:"flight_cost"`        // cheapest round-trip flight
-	HotelCost         float64 `json:"hotel_cost"`         // hotel total for nights
+	Start             string  `json:"start"`          // departure date YYYY-MM-DD
+	End               string  `json:"end"`            // return date YYYY-MM-DD
+	Nights            int     `json:"nights"`         // trip length
+	EstimatedCost     float64 `json:"estimated_cost"` // flight + hotel total; 0 if search failed
+	FlightCost        float64 `json:"flight_cost"`    // cheapest round-trip flight
+	HotelCost         float64 `json:"hotel_cost"`     // hotel total for nights
 	HotelName         string  `json:"hotel_name,omitempty"`
 	Currency          string  `json:"currency"`           // currency of estimated_cost
 	OverlapsPreferred bool    `json:"overlaps_preferred"` // true if inside a preferred interval

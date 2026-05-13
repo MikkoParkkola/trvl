@@ -49,11 +49,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Fprintf(os.Stdout, "week=%s\n", report.WeekKey)
-	fmt.Fprintf(os.Stdout, "github_snapshot=%s total_downloads=%d\n", report.GitHubPath, report.GitHubTotal)
-	fmt.Fprintf(os.Stdout, "npm_snapshot=%s total_downloads=%d\n", report.NPMPath, report.NPMTotal)
+	_, _ = fmt.Fprintf(os.Stdout, "week=%s\n", report.WeekKey)
+	_, _ = fmt.Fprintf(os.Stdout, "github_snapshot=%s total_downloads=%d\n", report.GitHubPath, report.GitHubTotal)
+	_, _ = fmt.Fprintf(os.Stdout, "npm_snapshot=%s total_downloads=%d\n", report.NPMPath, report.NPMTotal)
 	if report.NPMError != "" {
-		fmt.Fprintf(os.Stdout, "npm_note=%s\n", report.NPMError)
+		_, _ = fmt.Fprintf(os.Stdout, "npm_note=%s\n", report.NPMError)
 	}
-	fmt.Fprintf(os.Stdout, "dashboard=%s\n", report.DashboardPath)
+	_, _ = fmt.Fprintf(os.Stdout, "dashboard=%s\n", report.DashboardPath)
 }

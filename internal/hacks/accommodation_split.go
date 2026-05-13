@@ -91,11 +91,11 @@ func DetectAccommodationSplit(ctx context.Context, in AccommodationSplitInput) [
 
 // splitSegment describes one segment of a split stay.
 type splitSegment struct {
-	Hotel      *models.HotelResult
-	CheckIn    string
-	CheckOut   string
-	Nights     int
-	TotalCost  float64
+	Hotel     *models.HotelResult
+	CheckIn   string
+	CheckOut  string
+	Nights    int
+	TotalCost float64
 }
 
 // findBestSplit tries all 2-way and (if allowed) 3-way splits, returning the

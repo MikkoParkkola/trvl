@@ -625,7 +625,7 @@ func TestParseOneProvider_SkipsURLs(t *testing.T) {
 func TestResolveLocation_MockServer(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`[{"lat":"60.1695","lon":"24.9354","display_name":"Helsinki"}]`))
+		_, _ = w.Write([]byte(`[{"lat":"60.1695","lon":"24.9354","display_name":"Helsinki"}]`))
 	}))
 	defer ts.Close()
 
@@ -649,4 +649,3 @@ func TestResolveLocation_MockServer(t *testing.T) {
 }
 
 // --- SearchHotels validation ---
-

@@ -25,11 +25,11 @@ import (
 // non-refundable longer-stay flip is not actionable for a user who
 // might shorten the trip.
 type LOSQuote struct {
-	Nights       int
+	Nights        int
 	PricePerNight float64
-	TotalPrice   float64
-	Currency     string
-	Refundable   bool
+	TotalPrice    float64
+	Currency      string
+	Refundable    bool
 }
 
 // FlipKind labels how the scanner classified the crossover.
@@ -50,15 +50,15 @@ const (
 
 // Flip is one detected rate-flip alternative.
 type Flip struct {
-	Kind             FlipKind
-	BaselineNights   int
-	BaselineTotal    float64
+	Kind              FlipKind
+	BaselineNights    int
+	BaselineTotal     float64
 	AlternativeNights int
-	AlternativeTotal float64
-	NightlyDelta     float64 // per-night price difference (alt - baseline). Negative = better rate.
-	TotalDelta       float64 // total price difference (alt - baseline). Negative = absolute savings.
-	Reason           string
-	Refundable       bool
+	AlternativeTotal  float64
+	NightlyDelta      float64 // per-night price difference (alt - baseline). Negative = better rate.
+	TotalDelta        float64 // total price difference (alt - baseline). Negative = absolute savings.
+	Reason            string
+	Refundable        bool
 }
 
 // ScanLengthOfStay takes the user's baseline Nights and a slice of

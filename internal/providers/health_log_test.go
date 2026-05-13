@@ -39,9 +39,9 @@ func TestReadHealthLog_Basic(t *testing.T) {
 	}
 	for _, e := range want {
 		b, _ := json.Marshal(e)
-		f.Write(append(b, '\n'))
+		_, _ = f.Write(append(b, '\n'))
 	}
-	f.Close()
+	_ = f.Close()
 
 	got, err := ReadHealthLog(dir, 0)
 	if err != nil {
@@ -66,9 +66,9 @@ func TestReadHealthLog_Last(t *testing.T) {
 	for i := range 10 {
 		e := HealthEntry{Provider: "p", Status: "ok", LatencyMs: int64(i)}
 		b, _ := json.Marshal(e)
-		f.Write(append(b, '\n'))
+		_, _ = f.Write(append(b, '\n'))
 	}
-	f.Close()
+	_ = f.Close()
 
 	got, err := ReadHealthLog(dir, 3)
 	if err != nil {
@@ -98,9 +98,9 @@ func TestHealthSummary_Aggregation(t *testing.T) {
 	f, _ := os.Create(path)
 	for _, e := range entries {
 		b, _ := json.Marshal(e)
-		f.Write(append(b, '\n'))
+		_, _ = f.Write(append(b, '\n'))
 	}
-	f.Close()
+	_ = f.Close()
 
 	summary := HealthSummary(dir)
 	if len(summary) != 2 {
@@ -222,7 +222,7 @@ func appendHealthEntryTo(path string, entry HealthEntry) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	b, err := json.Marshal(entry)
 	if err != nil {
 		return err

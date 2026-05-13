@@ -22,7 +22,7 @@ func watchOpportunitiesTool() ToolDef {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"favourites":  {Type: "array", Description: "List of destination IATA codes (optional; defaults to profile)"},
+				"favourites":  {Type: "array", Items: &Property{Type: "string"}, Description: "List of destination IATA codes (optional; defaults to profile)"},
 				"window_from": {Type: "string", Description: "Window start: YYYY-MM-DD or next_Nd (e.g. \"next_30d\"). Default: next_30d"},
 				"window_to":   {Type: "string", Description: "Window end: YYYY-MM-DD or next_Nd (e.g. \"next_90d\"). Default: next_90d"},
 				"min_score":   {Type: "integer", Description: "Minimum composite score to alert (0-100). Default: 85"},
@@ -96,15 +96,15 @@ func handleWatchOpportunities(_ context.Context, args map[string]any, _ ElicitFu
 	}
 
 	type oppResponse struct {
-		Success    bool   `json:"success"`
-		WatchID    string `json:"watch_id"`
-		CreatedAt  string `json:"created_at"`
+		Success    bool     `json:"success"`
+		WatchID    string   `json:"watch_id"`
+		CreatedAt  string   `json:"created_at"`
 		Favourites []string `json:"favourites,omitempty"`
-		WindowFrom string `json:"window_from"`
-		WindowTo   string `json:"window_to"`
-		MinScore   int    `json:"min_score"`
-		MinNights  int    `json:"min_nights"`
-		MaxNights  int    `json:"max_nights"`
+		WindowFrom string   `json:"window_from"`
+		WindowTo   string   `json:"window_to"`
+		MinScore   int      `json:"min_score"`
+		MinNights  int      `json:"min_nights"`
+		MaxNights  int      `json:"max_nights"`
 	}
 
 	resp := oppResponse{
@@ -155,14 +155,14 @@ func listOpportunityWatchesTool() ToolDef {
 				"watches": schemaArray(map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"id":           schemaString(),
-						"favourites":   schemaArray(map[string]interface{}{"type": "string"}),
-						"window_from":  schemaString(),
-						"window_to":    schemaString(),
-						"min_score":    schemaInt(),
-						"min_nights":   schemaInt(),
-						"max_nights":   schemaInt(),
-						"created_at":   schemaString(),
+						"id":          schemaString(),
+						"favourites":  schemaArray(map[string]interface{}{"type": "string"}),
+						"window_from": schemaString(),
+						"window_to":   schemaString(),
+						"min_score":   schemaInt(),
+						"min_nights":  schemaInt(),
+						"max_nights":  schemaInt(),
+						"created_at":  schemaString(),
 					},
 				}),
 				"count": schemaInt(),

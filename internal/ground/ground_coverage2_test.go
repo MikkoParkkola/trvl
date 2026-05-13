@@ -23,7 +23,7 @@ func TestFetchDBBestPrice_MockHappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(dbBestPriceResponse{
+		_ = json.NewEncoder(w).Encode(dbBestPriceResponse{
 			TagesbestPreisIntervalle: []dbBestPriceInterval{
 				{AngebotsPreis: &dbPreis{Betrag: 29.90, Waehrung: "eur"}},
 				{AngebotsPreis: &dbPreis{Betrag: 39.90, Waehrung: "eur"}},
@@ -57,7 +57,7 @@ func TestFetchDBBestPrice_MockNoPrices(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(dbBestPriceResponse{
+		_ = json.NewEncoder(w).Encode(dbBestPriceResponse{
 			TagesbestPreisIntervalle: []dbBestPriceInterval{
 				{AngebotsPreis: nil},
 			},
@@ -119,7 +119,7 @@ func TestSearchDeutscheBahn_MockHappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(dbJourneysResponse{
+		_ = json.NewEncoder(w).Encode(dbJourneysResponse{
 			Verbindungen: []dbVerbindung{
 				{
 					VerbindungsAbschnitte: []dbAbschnitt{
@@ -186,7 +186,7 @@ func TestSearchDeutscheBahn_MockAPIError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(dbJourneysResponse{
+		_ = json.NewEncoder(w).Encode(dbJourneysResponse{
 			FehlerNachricht: &dbError{
 				Code:         "SERVICE_UNAVAILABLE",
 				Ueberschrift: "Service temporarily unavailable",
@@ -220,7 +220,7 @@ func TestSearchDeutscheBahn_MockDefaultCurrency(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(dbJourneysResponse{
+		_ = json.NewEncoder(w).Encode(dbJourneysResponse{
 			Verbindungen: []dbVerbindung{},
 		})
 	}))
@@ -250,7 +250,7 @@ func TestSearchDeutscheBahn_MockHTTP500(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("server error"))
+		_, _ = w.Write([]byte("server error"))
 	}))
 	defer srv.Close()
 
@@ -280,7 +280,7 @@ func TestFetchDFDSAvailability_MockDateDisabled(t *testing.T) {
 		}
 		resp.Dates.FromDate = "2026-06-01"
 		resp.Dates.ToDate = "2026-09-30"
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -311,7 +311,7 @@ func TestFetchDFDSAvailability_MockDateBeforeRange(t *testing.T) {
 		resp := dfdsAvailabilityResponse{}
 		resp.Dates.FromDate = "2026-06-01"
 		resp.Dates.ToDate = "2026-09-30"
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -339,7 +339,7 @@ func TestFetchDFDSAvailability_MockDateAfterRange(t *testing.T) {
 		resp := dfdsAvailabilityResponse{}
 		resp.Dates.FromDate = "2026-06-01"
 		resp.Dates.ToDate = "2026-09-30"
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -366,7 +366,7 @@ func TestFetchDFDSAvailability_MockInactive(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		resp := dfdsAvailabilityResponse{}
 		resp.Dates.FromDate = ""
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -391,7 +391,7 @@ func TestFetchDFDSAvailability_MockDecodeError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("not json"))
+		_, _ = w.Write([]byte("not json"))
 	}))
 	defer srv.Close()
 
@@ -427,7 +427,7 @@ func TestFetchFinnlinesTimetables_MockHappyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		charge := 8500
-		json.NewEncoder(w).Encode(finnlinesGraphQLResponse{
+		_ = json.NewEncoder(w).Encode(finnlinesGraphQLResponse{
 			Data: struct {
 				ListTimeTableAvailability []finnlinesTimetableEntry `json:"listTimeTableAvailability"`
 			}{
@@ -479,7 +479,7 @@ func TestFetchFinnlinesTimetables_MockGraphQLError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"errors": []map[string]string{
 				{"message": "Validation error"},
 			},

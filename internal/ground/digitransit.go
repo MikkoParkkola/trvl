@@ -192,7 +192,7 @@ func SearchDigitransit(ctx context.Context, from, to, date, currency string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("digitransit search: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512))

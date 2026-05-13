@@ -25,7 +25,7 @@ func (n *Notifier) Notify(r CheckResult) {
 	}
 
 	if r.Error != nil {
-		fmt.Fprintf(n.Out, "%s  %s -> %s  %s\n",
+		_, _ = fmt.Fprintf(n.Out, "%s  %s -> %s  %s\n",
 			n.red("ERR"),
 			r.Watch.Origin, r.Watch.Destination,
 			r.Error,
@@ -34,7 +34,7 @@ func (n *Notifier) Notify(r CheckResult) {
 	}
 
 	if r.NewPrice == 0 {
-		fmt.Fprintf(n.Out, "%s  %s -> %s  no price data\n",
+		_, _ = fmt.Fprintf(n.Out, "%s  %s -> %s  no price data\n",
 			n.yellow("---"),
 			r.Watch.Origin, r.Watch.Destination,
 		)
@@ -47,9 +47,9 @@ func (n *Notifier) Notify(r CheckResult) {
 	if r.LastMinuteDeal {
 		line := fmt.Sprintf("LAST-MINUTE  %s  %s (%.1f%% below last seen)",
 			route, priceStr, r.LastMinuteDiscountPercent)
-		fmt.Fprintln(n.Out, n.green(line))
+		_, _ = fmt.Fprintln(n.Out, n.green(line))
 		if url := buildBookingURL(r.Watch); url != "" {
-			fmt.Fprintf(n.Out, "      Book: %s\n", url)
+			_, _ = fmt.Fprintf(n.Out, "      Book: %s\n", url)
 		}
 		if n.Desktop {
 			n.desktopNotify(
@@ -64,11 +64,11 @@ func (n *Notifier) Notify(r CheckResult) {
 	if r.BelowGoal {
 		line := fmt.Sprintf("DEAL  %s  %s (below %.0f %s goal!)",
 			route, priceStr, r.Watch.BelowPrice, r.Currency)
-		fmt.Fprintln(n.Out, n.green(line))
+		_, _ = fmt.Fprintln(n.Out, n.green(line))
 
 		if r.Watch.DepartDate != "" {
 			url := buildBookingURL(r.Watch)
-			fmt.Fprintf(n.Out, "      Book: %s\n", url)
+			_, _ = fmt.Fprintf(n.Out, "      Book: %s\n", url)
 		}
 
 		if n.Desktop {
@@ -114,7 +114,7 @@ func (n *Notifier) Notify(r CheckResult) {
 		}
 	}
 
-	fmt.Fprintf(n.Out, " %s  %s  %s%s%s%s\n",
+	_, _ = fmt.Fprintf(n.Out, " %s  %s  %s%s%s%s\n",
 		strings.ToUpper(r.Watch.Type[:1])+r.Watch.Type[1:],
 		route, priceStr, changeStr, lowest, advice,
 	)
@@ -136,13 +136,13 @@ func (n *Notifier) notifyRoom(r CheckResult) {
 	keywords := strings.Join(r.Watch.RoomKeywords, ", ")
 
 	if r.Error != nil {
-		fmt.Fprintf(n.Out, "%s  Room watch %s [%s]  %s\n",
+		_, _ = fmt.Fprintf(n.Out, "%s  Room watch %s [%s]  %s\n",
 			n.red("ERR"), hotel, keywords, r.Error)
 		return
 	}
 
 	if !r.RoomFound {
-		fmt.Fprintf(n.Out, "%s  Room watch %s [%s]  no matching rooms available\n",
+		_, _ = fmt.Fprintf(n.Out, "%s  Room watch %s [%s]  no matching rooms available\n",
 			n.yellow("---"), hotel, keywords)
 		return
 	}
@@ -160,7 +160,7 @@ func (n *Notifier) notifyRoom(r CheckResult) {
 
 		line := fmt.Sprintf("ROOM AVAILABLE  %s: %s%s%s",
 			hotel, m.Name, priceStr, provider)
-		fmt.Fprintln(n.Out, n.green(line))
+		_, _ = fmt.Fprintln(n.Out, n.green(line))
 	}
 
 	if n.Desktop {

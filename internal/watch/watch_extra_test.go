@@ -201,7 +201,7 @@ func TestWatchLoadJSON_EmptyFile(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/empty.json"
 	f, _ := os.Create(path)
-	f.Close()
+	_ = f.Close()
 
 	var dst []Watch
 	err := loadJSON(path, &dst)

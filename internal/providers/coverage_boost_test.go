@@ -20,7 +20,7 @@ import (
 
 func TestRunPreflight_SuccessWithExtraction(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html>csrf_token=abc123XYZ</html>`)
+		_, _ = fmt.Fprint(w, `<html>csrf_token=abc123XYZ</html>`)
 	}))
 	defer srv.Close()
 
@@ -170,7 +170,7 @@ func TestTryBrowserCookieRetry_PreflightFails(t *testing.T) {
 func TestTryBrowserCookieRetry_AkamaiChallengeOnRetry(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
-		fmt.Fprint(w, `<html><script src="challenge.js"></script></html>`)
+		_, _ = fmt.Fprint(w, `<html><script src="challenge.js"></script></html>`)
 	}))
 	defer srv.Close()
 
@@ -207,7 +207,7 @@ func TestTryBrowserCookieRetry_AkamaiChallengeOnRetry(t *testing.T) {
 
 func TestTryBrowserCookieRetry_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"ok":true}`)
+		_, _ = fmt.Fprint(w, `{"ok":true}`)
 	}))
 	defer srv.Close()
 
@@ -357,7 +357,7 @@ func TestApplyBrowserCookies_BadURLPath(t *testing.T) {
 
 func TestDoSearchRequest_GetBodyReturnsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{}`)
+		_, _ = fmt.Fprint(w, `{}`)
 	}))
 	defer srv.Close()
 
@@ -383,7 +383,7 @@ func TestDoSearchRequest_GetBodyReturnsError(t *testing.T) {
 
 func TestResolveCityIDDynamic_WithResultPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"results": []any{
 					map[string]any{"id": "99", "city_name": "Lisbon"},
@@ -416,7 +416,7 @@ func TestResolveCityIDDynamic_WithHeaders(t *testing.T) {
 	var gotUA string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUA = r.Header.Get("User-Agent")
-		json.NewEncoder(w).Encode([]any{
+		_ = json.NewEncoder(w).Encode([]any{
 			map[string]any{"id": "7"},
 		})
 	}))
@@ -443,7 +443,7 @@ func TestResolveCityIDDynamic_WithHeaders(t *testing.T) {
 
 func TestResolveCityIDDynamic_WithNameField(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]any{
+		_ = json.NewEncoder(w).Encode([]any{
 			map[string]any{"id": "55", "display_name": "Bratislava"},
 		})
 	}))
@@ -475,7 +475,7 @@ func TestResolveCityIDDynamic_WithNameField(t *testing.T) {
 
 func TestResolveCityIDDynamic_WithRegistry(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]any{
+		_ = json.NewEncoder(w).Encode([]any{
 			map[string]any{"id": "33"},
 		})
 	}))
@@ -509,7 +509,7 @@ func TestResolveCityIDDynamic_WithRegistry(t *testing.T) {
 func TestResolveCityIDDynamic_ResultNotObject(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Returns array of primitives, not objects
-		json.NewEncoder(w).Encode([]any{"Prague", "Brno"})
+		_ = json.NewEncoder(w).Encode([]any{"Prague", "Brno"})
 	}))
 	defer srv.Close()
 
@@ -551,7 +551,7 @@ func TestResolveCityIDDynamic_HTTP404(t *testing.T) {
 
 func TestResolveCityIDDynamic_BadJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{bad json`)
+		_, _ = fmt.Fprint(w, `{bad json`)
 	}))
 	defer srv.Close()
 
@@ -572,7 +572,7 @@ func TestResolveCityIDDynamic_BadJSON(t *testing.T) {
 
 func TestResolveCityIDDynamic_NoIDField(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"name": "Rome"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": "Rome"})
 	}))
 	defer srv.Close()
 

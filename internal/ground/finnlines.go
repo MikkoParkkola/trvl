@@ -147,7 +147,7 @@ func fetchFinnlinesProducts(ctx context.Context, fromCode, toCode, date, depTime
 	if err != nil {
 		return nil, fmt.Errorf("finnlines products: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	if err != nil {
@@ -244,7 +244,7 @@ func fetchFinnlinesTimetablesWithCabin(ctx context.Context, fromCode, toCode, da
 	if err != nil {
 		return nil, fmt.Errorf("finnlines: cabin request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	if err != nil {
@@ -362,7 +362,7 @@ func fetchFinnlinesTimetables(ctx context.Context, fromCode, toCode, date string
 	if err != nil {
 		return nil, fmt.Errorf("finnlines: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	if err != nil {
@@ -400,8 +400,8 @@ func parseFinnlinesCrossingMinutes(s string) int {
 		return 0
 	}
 	var h, m int
-	fmt.Sscanf(parts[0], "%d", &h)
-	fmt.Sscanf(parts[1], "%d", &m)
+	_, _ = fmt.Sscanf(parts[0], "%d", &h)
+	_, _ = fmt.Sscanf(parts[1], "%d", &m)
 	return h*60 + m
 }
 

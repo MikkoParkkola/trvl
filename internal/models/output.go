@@ -92,7 +92,7 @@ func Banner(w io.Writer, icon, title string, subtitles ...string) {
 	if topPad < 1 {
 		topPad = 1
 	}
-	fmt.Fprintf(w, "╭─%s%s╮\n", titleContent, strings.Repeat("─", topPad))
+	_, _ = fmt.Fprintf(w, "╭─%s%s╮\n", titleContent, strings.Repeat("─", topPad))
 
 	// Subtitle lines: │  subtitle<pad> │
 	for _, sub := range subtitles {
@@ -103,11 +103,11 @@ func Banner(w io.Writer, icon, title string, subtitles ...string) {
 		if subPad < 0 {
 			subPad = 0
 		}
-		fmt.Fprintf(w, "│  %s%s │\n", sub, strings.Repeat(" ", subPad))
+		_, _ = fmt.Fprintf(w, "│  %s%s │\n", sub, strings.Repeat(" ", subPad))
 	}
 
 	// Bottom line: ╰─────────╯
-	fmt.Fprintf(w, "╰%s╯\n", strings.Repeat("─", innerNeeded))
+	_, _ = fmt.Fprintf(w, "╰%s╯\n", strings.Repeat("─", innerNeeded))
 }
 
 // displayWidth estimates the terminal display width of a string.
@@ -153,12 +153,12 @@ func displayWidth(s string) int {
 
 // Summary prints a dimmed summary line after a table.
 func Summary(w io.Writer, text string) {
-	fmt.Fprintf(w, "\n  %s\n", Dim(text))
+	_, _ = fmt.Fprintf(w, "\n  %s\n", Dim(text))
 }
 
 // BookingHint prints a hint about getting booking URLs.
 func BookingHint(w io.Writer) {
-	fmt.Fprintf(w, "  %s\n", Dim("Tip: --format json | jq '.flights[0].booking_url' for direct booking links"))
+	_, _ = fmt.Fprintf(w, "  %s\n", Dim("Tip: --format json | jq '.flights[0].booking_url' for direct booking links"))
 }
 
 // FormatJSON writes v as pretty-printed JSON to w.
@@ -200,7 +200,7 @@ func FormatTable(w io.Writer, headers []string, rows [][]string) {
 	for i, width := range widths {
 		parts[i] = strings.Repeat("-", width+2) // +2 for padding
 	}
-	fmt.Fprintf(w, "+%s+\n", strings.Join(parts, "+"))
+	_, _ = fmt.Fprintf(w, "+%s+\n", strings.Join(parts, "+"))
 
 	// Print data rows.
 	for _, row := range rows {
@@ -225,7 +225,7 @@ func printRow(w io.Writer, cells []string, widths []int) {
 		}
 		parts[i] = " " + cell + strings.Repeat(" ", pad) + " "
 	}
-	fmt.Fprintf(w, "|%s|\n", strings.Join(parts, "|"))
+	_, _ = fmt.Fprintf(w, "|%s|\n", strings.Join(parts, "|"))
 }
 
 // cellDisplayWidth computes the display width of a table cell string,
@@ -242,7 +242,7 @@ func stripANSI(s string) string {
 		if s[i] == '\033' && i+1 < len(s) && s[i+1] == '[' {
 			// Skip to the end of the ANSI sequence (terminates at a letter).
 			j := i + 2
-			for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
+			for j < len(s) && ((s[j] < 'A' || s[j] > 'Z') && (s[j] < 'a' || s[j] > 'z')) {
 				j++
 			}
 			if j < len(s) {

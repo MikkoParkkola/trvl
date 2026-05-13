@@ -194,7 +194,7 @@ func TestPointsAtSource_RoundsUp(t *testing.T) {
 	}{
 		{50000, 1.0, 50000},
 		{50000, 1.0 / 1.3, 38462}, // 38461.5 -> 38462
-		{1, 1.0 / 3.0, 1},          // 0.333 -> 1 (cannot transfer fractional point)
+		{1, 1.0 / 3.0, 1},         // 0.333 -> 1 (cannot transfer fractional point)
 	}
 	for _, tc := range cases {
 		got := pointsAtSource(tc.miles, tc.ratio)

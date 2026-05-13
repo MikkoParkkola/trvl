@@ -137,7 +137,7 @@ func (fc *fxCache) fetchBase(base string) (map[string]float64, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("frankfurter: %s", resp.Status)

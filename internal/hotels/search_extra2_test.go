@@ -591,7 +591,7 @@ func TestBuildTravelURL_ServerSideFilters(t *testing.T) {
 		"min_price": "50",
 		"max_price": "200",
 		"class":     "4",
-		"rating":    "8",  // 8.0 on 0-10 scale, passed directly
+		"rating":    "8",    // 8.0 on 0-10 scale, passed directly
 		"lrad":      "5000", // 5 km * 1000
 	}
 	for param, want := range checks {

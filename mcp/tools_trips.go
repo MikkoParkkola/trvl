@@ -15,11 +15,12 @@ func tripOutputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"id":         schemaString(),
-			"name":       schemaString(),
-			"status":     schemaString(),
-			"created_at": schemaString(),
-			"updated_at": schemaString(),
+			"id":             schemaString(),
+			"schema_version": schemaInt(),
+			"name":           schemaString(),
+			"status":         schemaString(),
+			"created_at":     schemaString(),
+			"updated_at":     schemaString(),
 			"legs": schemaArray(map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -38,14 +39,18 @@ func tripOutputSchema() map[string]interface{} {
 			"bookings": schemaArray(map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"type":      schemaString(),
-					"provider":  schemaString(),
-					"reference": schemaString(),
-					"url":       schemaString(),
+					"type":         schemaString(),
+					"provider":     schemaString(),
+					"reference":    schemaString(),
+					"url":          schemaString(),
+					"candidate_id": schemaString(),
+					"price":        schemaNum(),
+					"currency":     schemaString(),
 				},
 			}),
-			"tags":  schemaStringArray(),
-			"notes": schemaString(),
+			"workspace": schemaObject(),
+			"tags":      schemaStringArray(),
+			"notes":     schemaString(),
 		},
 	}
 }
@@ -173,12 +178,15 @@ func markTripBookedTool() ToolDef {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"trip_id":   {Type: "string", Description: "Trip ID"},
-				"provider":  {Type: "string", Description: "Carrier or hotel name, e.g. KLM"},
-				"reference": {Type: "string", Description: "Booking reference / PNR, e.g. ABC123"},
-				"type":      {Type: "string", Description: "Booking type: flight, hotel, other"},
-				"url":       {Type: "string", Description: "Confirmation URL"},
-				"notes":     {Type: "string", Description: "Notes"},
+				"trip_id":      {Type: "string", Description: "Trip ID"},
+				"provider":     {Type: "string", Description: "Carrier or hotel name, e.g. KLM"},
+				"reference":    {Type: "string", Description: "Booking reference / PNR, e.g. ABC123"},
+				"type":         {Type: "string", Description: "Booking type: flight, hotel, other"},
+				"url":          {Type: "string", Description: "Confirmation URL"},
+				"candidate_id": {Type: "string", Description: "Optional saved trip_workspace booking candidate ID"},
+				"price":        {Type: "number", Description: "Confirmed booking price"},
+				"currency":     {Type: "string", Description: "Confirmed booking currency"},
+				"notes":        {Type: "string", Description: "Notes"},
 			},
 			Required: []string{"trip_id", "provider", "reference"},
 		},
@@ -363,18 +371,45 @@ func handleMarkTripBooked(_ context.Context, args map[string]any, _ ElicitFunc, 
 	}
 
 	booking := trips.Booking{
-		Type:      argString(args, "type"),
-		Provider:  provider,
-		Reference: reference,
-		URL:       argString(args, "url"),
-		Notes:     argString(args, "notes"),
+		Type:        argString(args, "type"),
+		Provider:    provider,
+		Reference:   reference,
+		URL:         argString(args, "url"),
+		CandidateID: argString(args, "candidate_id"),
+		Price:       argFloat(args, "price", 0),
+		Currency:    strings.ToUpper(argString(args, "currency")),
+		ConfirmedAt: time.Now(),
+		Notes:       argString(args, "notes"),
 	}
 	if booking.Type == "" {
 		booking.Type = "flight"
 	}
 
 	var finalStatus string
+	var staleWarning string
 	if err := store.Update(tripID, func(t *trips.Trip) error {
+		if booking.CandidateID != "" {
+			for i := range t.Workspace.Candidates {
+				cand := &t.Workspace.Candidates[i]
+				if cand.ID != booking.CandidateID {
+					continue
+				}
+				if booking.URL == "" {
+					booking.URL = cand.URL
+				}
+				if booking.Price == 0 {
+					booking.Price = cand.Price
+				}
+				if booking.Currency == "" {
+					booking.Currency = cand.Currency
+				}
+				if cand.IsStale(time.Now(), 24*time.Hour) {
+					staleWarning = "candidate price or availability was stale when marked booked; keep the manual confirmation as the source of truth"
+				}
+				cand.Status = "booked"
+				break
+			}
+		}
 		t.Bookings = append(t.Bookings, booking)
 		if t.Status == "planning" {
 			t.Status = "booked"
@@ -385,7 +420,7 @@ func handleMarkTripBooked(_ context.Context, args map[string]any, _ ElicitFunc, 
 		return nil, nil, err
 	}
 
-	result := map[string]string{"trip_id": tripID, "reference": reference, "status": finalStatus}
+	result := map[string]string{"trip_id": tripID, "reference": reference, "status": finalStatus, "stale_warning": staleWarning}
 	summary := fmt.Sprintf("Booking %s/%s added to trip %s (status: %s)", provider, reference, tripID, finalStatus)
 	content, err := buildAnnotatedContentBlocks(summary, result)
 	if err != nil {

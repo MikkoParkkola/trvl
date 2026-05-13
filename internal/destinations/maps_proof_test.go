@@ -68,7 +68,7 @@ func TestMapsPageScrape(t *testing.T) {
 		"rating",
 		"reviews",
 		"stars",
-		"4.",  // partial rating like 4.5
+		"4.", // partial rating like 4.5
 		"price_level",
 		"opening_hours",
 		"formatted_address",
@@ -224,7 +224,7 @@ func TestMapsLocalSearchBatchExecute(t *testing.T) {
 	}{
 		{"place_search_v1", "qGo8Yb", `["restaurants","Barcelona",null,[41.39,2.17],null,null,20]`},
 		{"place_search_v2", "qGo8Yb", `[null,"restaurants near Barcelona"]`},
-		{"place_details_v1", "Xq7wdb", `["ChIJ5TCOcRaYpBIRCmZHTz37sEQ"]`},  // Sagrada Familia place ID
+		{"place_details_v1", "Xq7wdb", `["ChIJ5TCOcRaYpBIRCmZHTz37sEQ"]`}, // Sagrada Familia place ID
 		{"place_details_v2", "Xq7wdb", `[null,"ChIJ5TCOcRaYpBIRCmZHTz37sEQ",null,null,null,null,null,null,null,null,null,null]`},
 	}
 

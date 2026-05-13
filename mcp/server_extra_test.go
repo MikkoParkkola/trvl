@@ -77,14 +77,14 @@ func TestHTTPHandler_POST_ToolsList(t *testing.T) {
 	hs.handleMCP(rr, httpReq)
 
 	var resp Response
-	json.Unmarshal(rr.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 	if resp.Error != nil {
 		t.Fatalf("error: %+v", resp.Error)
 	}
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result ToolsListResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	if len(result.Tools) != 1 {
 		t.Errorf("expected compact tools/list to advertise 1 tool, got %d", len(result.Tools))
@@ -120,7 +120,7 @@ func TestHTTPHandler_POST_ToolsCall(t *testing.T) {
 	hs.handleMCP(rr, httpReq)
 
 	var resp Response
-	json.Unmarshal(rr.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 	if resp.Error != nil {
 		t.Fatalf("error: %+v", resp.Error)
 	}
@@ -315,7 +315,7 @@ func TestHTTPHandler_SequentialRequests(t *testing.T) {
 		hs.handleMCP(rr, httpReq)
 
 		var resp Response
-		json.Unmarshal(rr.Body.Bytes(), &resp)
+		_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 		if resp.Error != nil {
 			t.Fatalf("request %d (%s) error: %+v", i+1, method, resp.Error)
 		}

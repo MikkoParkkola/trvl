@@ -52,10 +52,6 @@ func TestFind_SingleNightWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Should have candidates for 1-night trips starting May 1 and May 2.
-	if len(candidates) == 0 {
-		// This is OK if search failed, but should not error.
-	}
 	for _, c := range candidates {
 		if c.Nights != 1 {
 			t.Errorf("expected 1-night trip, got %d", c.Nights)

@@ -112,10 +112,8 @@ func TestIsCaptchaResponse_MalformedURL(t *testing.T) {
 	if !isCaptcha {
 		t.Error("should detect captcha-delivery.com")
 	}
-	// The URL extractor should fail gracefully.
-	if url == "" {
-		// The marker was found but no closing quote after the URL.
-		// This is acceptable behavior.
+	if url != "" {
+		t.Errorf("malformed captcha URL should be empty, got %q", url)
 	}
 }
 

@@ -1,7 +1,5 @@
 package lounges
 
-
-
 // staticData holds curated lounge data for the top-30 hub airports.
 // Cards use the same name conventions as preferences.LoungeCards so
 // AnnotateAccess can match them without fuzzy logic.

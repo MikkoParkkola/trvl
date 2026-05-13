@@ -61,7 +61,7 @@ func resolveCityIDDynamic(ctx context.Context, cfg *ProviderConfig, client *http
 	if err != nil {
 		return "", fmt.Errorf("city_resolver: http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("city_resolver: http %d for %q", resp.StatusCode, location)
@@ -173,7 +173,7 @@ func resolveCityExtraFields(ctx context.Context, cfg *ProviderConfig, client *ht
 	if err != nil {
 		return nil, fmt.Errorf("city_resolver extra: http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("city_resolver extra: http %d", resp.StatusCode)

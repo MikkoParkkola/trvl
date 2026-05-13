@@ -76,7 +76,9 @@ func TestCacheMissAfterStaleWindow(t *testing.T) {
 
 	key := "test-key-expired"
 	ttl := 2 * time.Hour
-	c.Put(key, []byte(`{}`), ttl)
+	if err := c.Put(key, []byte(`{}`), ttl); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
 
 	// Advance beyond stale window (TTL*2).
 	cur = now.Add(ttl*2 + 1*time.Second)
@@ -132,7 +134,9 @@ func TestCachePurgeOldQuotaFiles(t *testing.T) {
 	// Write quota files for 40 days ago, 10 days ago, and today.
 	for _, daysAgo := range []int{40, 10, 0} {
 		day := now.AddDate(0, 0, -daysAgo)
-		c.IncQuota(day)
+		if err := c.IncQuota(day); err != nil {
+			t.Fatalf("IncQuota: %v", err)
+		}
 	}
 
 	// Purge files older than 30 days.

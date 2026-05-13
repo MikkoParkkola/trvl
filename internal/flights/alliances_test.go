@@ -114,7 +114,9 @@ func TestBuildFilters_NoAlliances(t *testing.T) {
 
 	data, _ := json.Marshal(filters)
 	var arr []any
-	json.Unmarshal(data, &arr)
+	if err := json.Unmarshal(data, &arr); err != nil {
+		t.Fatalf("Unmarshal filters: %v", err)
+	}
 
 	settings := arr[1].([]any)
 	// With no alliances, segment[5] should be nil.
@@ -136,7 +138,9 @@ func TestBuildFilters_AlliancesDoNotAffectSegment(t *testing.T) {
 
 	data, _ := json.Marshal(filters)
 	var arr []any
-	json.Unmarshal(data, &arr)
+	if err := json.Unmarshal(data, &arr); err != nil {
+		t.Fatalf("Unmarshal filters: %v", err)
+	}
 
 	settings := arr[1].([]any)
 	segments := settings[13].([]any)

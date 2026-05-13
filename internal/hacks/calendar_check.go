@@ -8,14 +8,14 @@ import (
 
 // holidayPeriod describes a European peak-travel period that drives prices up.
 type holidayPeriod struct {
-	Name        string
+	Name string
 	// Start and End are month-day strings "MM-DD". For Easter (which varies
 	// yearly) we compute dynamically. YearOffset allows marking "end of June"
 	// through "end of August" with a single entry spanning multiple months.
-	MonthStart  int
-	DayStart    int
-	MonthEnd    int
-	DayEnd      int
+	MonthStart int
+	DayStart   int
+	MonthEnd   int
+	DayEnd     int
 }
 
 // staticHolidayPeriods lists recurring fixed-date European holiday windows.

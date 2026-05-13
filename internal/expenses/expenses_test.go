@@ -189,9 +189,9 @@ func TestRender_EmptySettlement(t *testing.T) {
 
 func TestReconcile_PicksFirstNonEmptyCurrency(t *testing.T) {
 	got := Reconcile([]Booking{
-		{Amount: 100, Payer: "alice", Split: []ShareEntry{{Traveller: "alice"}}},                         // empty currency
-		{Currency: "USD", Amount: 100, Payer: "alice", Split: []ShareEntry{{Traveller: "alice"}}},          // first non-empty
-		{Currency: "EUR", Amount: 100, Payer: "alice", Split: []ShareEntry{{Traveller: "alice"}}},          // ignored
+		{Amount: 100, Payer: "alice", Split: []ShareEntry{{Traveller: "alice"}}},                  // empty currency
+		{Currency: "USD", Amount: 100, Payer: "alice", Split: []ShareEntry{{Traveller: "alice"}}}, // first non-empty
+		{Currency: "EUR", Amount: 100, Payer: "alice", Split: []ShareEntry{{Traveller: "alice"}}}, // ignored
 	})
 	if got.Currency != "USD" {
 		t.Errorf("Currency=%q, want USD", got.Currency)

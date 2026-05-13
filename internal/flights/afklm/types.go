@@ -107,7 +107,7 @@ type SegmentCity struct {
 
 // MarketingFlight holds the flight number and marketing carrier.
 type MarketingFlight struct {
-	Number  string          `json:"number"`
+	Number  string           `json:"number"`
 	Carrier MarketingCarrier `json:"carrier"`
 }
 
@@ -141,7 +141,7 @@ type LowestFaresResponse struct {
 
 // DestinationFare is the cheapest fare found for a single destination.
 type DestinationFare struct {
-	Destination Place   `json:"destination"`
-	Price       Price   `json:"price"`
-	DepartDate  string  `json:"departDate,omitempty"`
+	Destination Place  `json:"destination"`
+	Price       Price  `json:"price"`
+	DepartDate  string `json:"departDate,omitempty"`
 }

@@ -89,7 +89,9 @@ func TestCheckUpgrade_FreshInstall(t *testing.T) {
 
 func TestCheckUpgrade_SameVersion(t *testing.T) {
 	dir := t.TempDir()
-	WriteStamp(stampPathIn(dir), "0.6.0")
+	if err := WriteStamp(stampPathIn(dir), "0.6.0"); err != nil {
+		t.Fatalf("WriteStamp: %v", err)
+	}
 
 	r, err := CheckUpgrade("0.6.0", dir)
 	if err != nil {
@@ -102,7 +104,9 @@ func TestCheckUpgrade_SameVersion(t *testing.T) {
 
 func TestCheckUpgrade_Upgrade(t *testing.T) {
 	dir := t.TempDir()
-	WriteStamp(stampPathIn(dir), "0.5.0")
+	if err := WriteStamp(stampPathIn(dir), "0.5.0"); err != nil {
+		t.Fatalf("WriteStamp: %v", err)
+	}
 
 	r, err := CheckUpgrade("0.6.0", dir)
 	if err != nil {
@@ -124,7 +128,9 @@ func TestCheckUpgrade_Upgrade(t *testing.T) {
 
 func TestCheckUpgrade_Downgrade(t *testing.T) {
 	dir := t.TempDir()
-	WriteStamp(stampPathIn(dir), "0.7.0")
+	if err := WriteStamp(stampPathIn(dir), "0.7.0"); err != nil {
+		t.Fatalf("WriteStamp: %v", err)
+	}
 
 	r, err := CheckUpgrade("0.6.0", dir)
 	if err != nil {
@@ -157,7 +163,9 @@ func TestCheckUpgrade_DevVersion(t *testing.T) {
 
 func TestRunUpgrade_DryRun(t *testing.T) {
 	dir := t.TempDir()
-	WriteStamp(stampPathIn(dir), "0.5.0")
+	if err := WriteStamp(stampPathIn(dir), "0.5.0"); err != nil {
+		t.Fatalf("WriteStamp: %v", err)
+	}
 
 	r, err := RunUpgrade("0.6.0", dir, true)
 	if err != nil {
@@ -224,7 +232,9 @@ func TestMigrationRegistry(t *testing.T) {
 	})
 
 	dir := t.TempDir()
-	WriteStamp(stampPathIn(dir), "0.4.0")
+	if err := WriteStamp(stampPathIn(dir), "0.4.0"); err != nil {
+		t.Fatalf("WriteStamp: %v", err)
+	}
 
 	r, err := CheckUpgrade("0.6.0", dir)
 	if err != nil {
@@ -250,7 +260,9 @@ func TestMigrationRegistry_NotApplicable(t *testing.T) {
 	})
 
 	dir := t.TempDir()
-	WriteStamp(stampPathIn(dir), "0.5.0")
+	if err := WriteStamp(stampPathIn(dir), "0.5.0"); err != nil {
+		t.Fatalf("WriteStamp: %v", err)
+	}
 
 	r, err := CheckUpgrade("0.6.0", dir)
 	if err != nil {
@@ -273,7 +285,7 @@ func TestMigrationRegistry_DryRunDoesNotApply(t *testing.T) {
 	})
 
 	dir := t.TempDir()
-	WriteStamp(stampPathIn(dir), "0.4.0")
+	_ = WriteStamp(stampPathIn(dir), "0.4.0")
 
 	r, err := RunUpgrade("0.6.0", dir, true)
 	if err != nil {

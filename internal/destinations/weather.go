@@ -72,7 +72,7 @@ func FetchWeather(ctx context.Context, lat, lon float64) (models.WeatherInfo, st
 	if err != nil {
 		return models.WeatherInfo{}, "", fmt.Errorf("weather request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {

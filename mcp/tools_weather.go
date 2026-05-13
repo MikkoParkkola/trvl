@@ -97,19 +97,18 @@ func buildWeatherSummary(result *weather.WeatherResult) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Weather forecast for %s:\n\n", result.City))
+	_, _ = fmt.Fprintf(&sb, "Weather forecast for %s:\n\n", result.City)
 	for _, f := range result.Forecasts {
 		emoji := weather.WeatherEmoji(f.Description)
-		sb.WriteString(fmt.Sprintf("  %s %s (%s)  %d°/%d°C",
+		_, _ = fmt.Fprintf(&sb, "  %s %s (%s)  %d°/%d°C",
 			weather.FormatDateShort(f.Date),
 			weather.DayOfWeek(f.Date),
 			emoji,
-			int(f.TempMin), int(f.TempMax),
-		))
+			int(f.TempMin), int(f.TempMax))
 		if f.Precipitation > 0 {
-			sb.WriteString(fmt.Sprintf("  %.0fmm rain", f.Precipitation))
+			_, _ = fmt.Fprintf(&sb, "  %.0fmm rain", f.Precipitation)
 		}
-		sb.WriteString(fmt.Sprintf("  %s\n", f.Description))
+		_, _ = fmt.Fprintf(&sb, "  %s\n", f.Description)
 	}
 	return sb.String()
 }

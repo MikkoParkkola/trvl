@@ -23,7 +23,7 @@ func TestSearchFinnlines_MockHTTPError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("server error"))
+		_, _ = w.Write([]byte("server error"))
 	}))
 	defer srv.Close()
 
@@ -124,7 +124,7 @@ func TestOebbShopGetToken_MockHappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(oebbShopAnonymousTokenResponse{AccessToken: "test-token"})
+		_ = json.NewEncoder(w).Encode(oebbShopAnonymousTokenResponse{AccessToken: "test-token"})
 	}))
 	defer srv.Close()
 
@@ -148,7 +148,7 @@ func TestOebbShopGetToken_MockEmptyToken(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(oebbShopAnonymousTokenResponse{AccessToken: ""})
+		_ = json.NewEncoder(w).Encode(oebbShopAnonymousTokenResponse{AccessToken: ""})
 	}))
 	defer srv.Close()
 
@@ -217,7 +217,7 @@ func TestOebbShopSearchTimetable_MockHappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(oebbShopTimetableResponse{
+		_ = json.NewEncoder(w).Encode(oebbShopTimetableResponse{
 			Connections: []oebbShopConnection{
 				{
 					ID: "c1",
@@ -260,7 +260,7 @@ func TestOebbShopSearchTimetable_MockHTTPError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("bad request"))
+		_, _ = w.Write([]byte("bad request"))
 	}))
 	defer srv.Close()
 
@@ -288,7 +288,7 @@ func TestOebbShopGetPrices_MockHappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(oebbShopPricesResponse{
+		_ = json.NewEncoder(w).Encode(oebbShopPricesResponse{
 			Offers: []oebbShopOffer{
 				{ConnectionID: "c1", Price: 29.90, FirstClass: false},
 				{ConnectionID: "c1", Price: 49.90, FirstClass: true},
@@ -327,7 +327,7 @@ func TestOebbShopGetPrices_MockHTTPError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("forbidden"))
+		_, _ = w.Write([]byte("forbidden"))
 	}))
 	defer srv.Close()
 
@@ -353,7 +353,7 @@ func TestFetchFinnlinesTimetablesWithCabin_MockHappyPath(t *testing.T) {
 	charge := 8900
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(finnlinesGraphQLResponse{
+		_ = json.NewEncoder(w).Encode(finnlinesGraphQLResponse{
 			Data: struct {
 				ListTimeTableAvailability []finnlinesTimetableEntry `json:"listTimeTableAvailability"`
 			}{
@@ -396,7 +396,7 @@ func TestFetchFinnlinesTimetablesWithCabin_MockGraphQLError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"errors":[{"message":"cabin not found"}]}`))
+		_, _ = w.Write([]byte(`{"errors":[{"message":"cabin not found"}]}`))
 	}))
 	defer srv.Close()
 
@@ -417,7 +417,7 @@ func TestFetchFinnlinesTimetablesWithCabin_MockHTTPError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("unavailable"))
+		_, _ = w.Write([]byte("unavailable"))
 	}))
 	defer srv.Close()
 

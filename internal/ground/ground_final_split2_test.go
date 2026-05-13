@@ -456,7 +456,7 @@ func TestSearchDFDS_HappyPath(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, availResp)
+		_, _ = fmt.Fprint(w, availResp)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()

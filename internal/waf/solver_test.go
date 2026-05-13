@@ -179,7 +179,9 @@ func TestFetchBridge_Success(t *testing.T) {
 	defer srv.Close()
 
 	vm, loop, _ := newTestHost(t, srv.Client())
-	vm.Set("__TARGET", srv.URL)
+	if err := vm.Set("__TARGET", srv.URL); err != nil {
+		t.Fatalf("Set target: %v", err)
+	}
 
 	_, err := vm.RunString(`
 		globalThis.__result = null;
@@ -225,7 +227,9 @@ func TestCryptoDigest_SHA256(t *testing.T) {
 	want := sha256.Sum256(payload)
 	wantHex := hex.EncodeToString(want[:])
 
-	vm.Set("__payload", payload)
+	if err := vm.Set("__payload", payload); err != nil {
+		t.Fatalf("Set payload: %v", err)
+	}
 	_, err := vm.RunString(`
 		globalThis.__hash = null;
 		var data = new Uint8Array(__payload.length);

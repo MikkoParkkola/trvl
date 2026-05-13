@@ -99,7 +99,7 @@ func main() {
 	if err := writeFileExcl(outPath, sig, 0o644); err != nil {
 		die("write sig %s: %v", outPath, err)
 	}
-	fmt.Fprintf(os.Stderr, "sign-mldsa: %s -> %s (sha256=%x, sig=%d bytes)\n",
+	_, _ = fmt.Fprintf(os.Stderr, "sign-mldsa: %s -> %s (sha256=%x, sig=%d bytes)\n",
 		*in, outPath, digest[:8], len(sig))
 }
 
@@ -108,7 +108,7 @@ func sha256File(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return nil, err
@@ -122,12 +122,12 @@ func writeFileExcl(path string, data []byte, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = f.Write(data)
 	return err
 }
 
 func die(format string, a ...any) {
-	fmt.Fprintf(os.Stderr, "sign-mldsa: "+format+"\n", a...)
+	_, _ = fmt.Fprintf(os.Stderr, "sign-mldsa: "+format+"\n", a...)
 	os.Exit(1)
 }

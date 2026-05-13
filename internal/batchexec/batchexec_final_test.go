@@ -22,7 +22,7 @@ func TestGetWithCookie_HappyPath(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotCookie = r.Header.Get("Cookie")
 		w.WriteHeader(200)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer ts.Close()
 
@@ -80,7 +80,7 @@ func TestGetWithCookie_Retry(t *testing.T) {
 			return
 		}
 		w.WriteHeader(200)
-		w.Write([]byte("recovered"))
+		_, _ = w.Write([]byte("recovered"))
 	}))
 	defer ts.Close()
 
@@ -111,7 +111,7 @@ func TestBatchExecute_HappyPath(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		gotBody = string(body)
 		w.WriteHeader(200)
-		w.Write([]byte(`)]}'\n[["wrb.fr","AtySUc","hotel data"]]`))
+		_, _ = w.Write([]byte(`)]}'\n[["wrb.fr","AtySUc","hotel data"]]`))
 	}))
 	defer ts.Close()
 
@@ -136,15 +136,15 @@ func TestBatchExecute_NoCacheBypass(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		w.WriteHeader(200)
-		w.Write([]byte("result"))
+		_, _ = w.Write([]byte("result"))
 	}))
 	defer ts.Close()
 
 	c := NewTestClient(ts.URL)
 	c.SetNoCache(true)
 
-	c.BatchExecute(context.Background(), "nocache_payload")
-	c.BatchExecute(context.Background(), "nocache_payload")
+	_, _, _ = c.BatchExecute(context.Background(), "nocache_payload")
+	_, _, _ = c.BatchExecute(context.Background(), "nocache_payload")
 
 	if callCount != 2 {
 		t.Errorf("server called %d times, want 2 (no cache)", callCount)
@@ -158,7 +158,7 @@ func TestBatchExecute_NoCacheBypass(t *testing.T) {
 func TestPostExplore_HappyPath(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte("explore data"))
+		_, _ = w.Write([]byte("explore data"))
 	}))
 	defer ts.Close()
 
@@ -182,7 +182,7 @@ func TestPostExplore_HappyPath(t *testing.T) {
 func TestPostCalendarGraph_HappyPath(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte("calendar graph data"))
+		_, _ = w.Write([]byte("calendar graph data"))
 	}))
 	defer ts.Close()
 
@@ -206,7 +206,7 @@ func TestPostCalendarGraph_HappyPath(t *testing.T) {
 func TestPostCalendarGrid_HappyPath(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte("calendar grid data"))
+		_, _ = w.Write([]byte("calendar grid data"))
 	}))
 	defer ts.Close()
 
@@ -259,7 +259,7 @@ func TestResolveCityCode_HappyPath_MockServer(t *testing.T) {
 [["wrb.fr","H028ib","[[[[3,\"Helsinki\",\"Helsinki\",\"Finland\",\"/m/01lbs\",1,0,null,null,null,null,null,[\"HEL\"]]],null]]",null,null,null,"generic"]]
 `
 		w.WriteHeader(200)
-		w.Write([]byte(resp))
+		_, _ = w.Write([]byte(resp))
 	}))
 	defer ts.Close()
 
@@ -325,7 +325,7 @@ func TestResolveCityCode_ParseError(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte("not a valid response"))
+		_, _ = w.Write([]byte("not a valid response"))
 	}))
 	defer ts.Close()
 
@@ -389,7 +389,7 @@ func TestNewTestClient_URLRewrite(t *testing.T) {
 	defer ts.Close()
 
 	c := NewTestClient(ts.URL)
-	c.Get(context.Background(), "https://www.google.com/some/path?q=test")
+	_, _, _ = c.Get(context.Background(), "https://www.google.com/some/path?q=test")
 	if gotPath != "/some/path" {
 		t.Errorf("path = %q, want /some/path", gotPath)
 	}

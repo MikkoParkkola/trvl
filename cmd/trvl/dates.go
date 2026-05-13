@@ -107,7 +107,7 @@ Examples:
 // If targetCurrency is set and differs from API currency, converts prices.
 func printDatesTable(ctx context.Context, targetCurrency string, result *models.DateSearchResult) error {
 	if !result.Success {
-		fmt.Fprintf(os.Stderr, "Search failed: %s\n", result.Error)
+		_, _ = fmt.Fprintf(os.Stderr, "Search failed: %s\n", result.Error)
 		return nil
 	}
 

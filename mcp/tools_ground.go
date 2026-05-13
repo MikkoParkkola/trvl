@@ -259,19 +259,19 @@ func buildGroundRouteSummary(header string, routes []models.GroundRoute) string 
 		depTime := safeTimeSlice(r.Departure.Time)
 		arrTime := safeTimeSlice(r.Arrival.Time)
 
-		fmt.Fprintf(&sb, "%d. **%s** %s | %s | %s | %s %s→%s",
+		_, _ = fmt.Fprintf(&sb, "%d. **%s** %s | %s | %s | %s %s→%s",
 			i+1, price, r.Type, dur, transfers, r.Provider, depTime, arrTime)
 
 		if r.SeatsLeft != nil && *r.SeatsLeft <= 10 {
-			fmt.Fprintf(&sb, " | %d seats left", *r.SeatsLeft)
+			_, _ = fmt.Fprintf(&sb, " | %d seats left", *r.SeatsLeft)
 		}
 		if len(r.Amenities) > 0 {
-			fmt.Fprintf(&sb, " | %s", strings.Join(r.Amenities, ", "))
+			_, _ = fmt.Fprintf(&sb, " | %s", strings.Join(r.Amenities, ", "))
 		}
 		sb.WriteString("\n")
 	}
 	if len(routes) > 10 {
-		fmt.Fprintf(&sb, "\n... and %d more routes", len(routes)-10)
+		_, _ = fmt.Fprintf(&sb, "\n... and %d more routes", len(routes)-10)
 	}
 	return sb.String()
 }

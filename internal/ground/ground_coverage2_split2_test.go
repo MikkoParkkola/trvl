@@ -24,7 +24,7 @@ func TestFetchFinnlinesTimetables_MockHTTP500(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("error"))
+		_, _ = w.Write([]byte("error"))
 	}))
 	defer srv.Close()
 
@@ -54,7 +54,7 @@ func TestFetchFinnlinesProducts_MockHappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(finnlinesProductResponse{
+		_ = json.NewEncoder(w).Encode(finnlinesProductResponse{
 			Data: struct {
 				ListProductsAvailability []finnlinesProduct `json:"listProductsAvailability"`
 			}{
@@ -92,7 +92,7 @@ func TestFetchFinnlinesProducts_MockHTTP500(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("error"))
+		_, _ = w.Write([]byte("error"))
 	}))
 	defer srv.Close()
 
@@ -118,7 +118,7 @@ func TestFetchFinnlinesProducts_MockGraphQLError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"errors": []map[string]string{{"message": "product error"}},
 		})
 	}))
@@ -150,7 +150,7 @@ func TestSearchEuropeanSleeper_MockHappyPath2(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(europeanSleeperTripsResponse{
+		_ = json.NewEncoder(w).Encode(europeanSleeperTripsResponse{
 			Trips: []europeanSleeperTrip{
 				{
 					DepartureTime: "2026-07-01T19:22:00",
@@ -246,7 +246,7 @@ func TestSearchEuropeanSleeper_MockDefaultCurrency(t *testing.T) {
 			t.Errorf("expected currency=EUR in query, got: %s", r.URL.RawQuery)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(europeanSleeperTripsResponse{Trips: nil})
+		_ = json.NewEncoder(w).Encode(europeanSleeperTripsResponse{Trips: nil})
 	}))
 	defer srv.Close()
 
@@ -272,7 +272,7 @@ func TestSearchEuropeanSleeper_MockEmptyTrips(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(europeanSleeperTripsResponse{Trips: nil})
+		_ = json.NewEncoder(w).Encode(europeanSleeperTripsResponse{Trips: nil})
 	}))
 	defer srv.Close()
 
@@ -305,7 +305,7 @@ func TestSearchDigitransit_MockHappyPath2(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"plan": map[string]any{
 					"itineraries": []any{

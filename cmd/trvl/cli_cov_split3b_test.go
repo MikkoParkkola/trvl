@@ -17,13 +17,13 @@ func TestTrips_AddLegAndBook(t *testing.T) {
 	createCmd := tripsCreateCmd()
 	createCmd.SetArgs([]string{"BCN Trip"})
 	err := createCmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("create failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	tripID := strings.TrimSpace(strings.TrimPrefix(buf.String(), "Created trip: "))
 
 	// Add leg
@@ -33,7 +33,7 @@ func TestTrips_AddLegAndBook(t *testing.T) {
 	addLeg := tripsAddLegCmd()
 	addLeg.SetArgs([]string{tripID, "flight", "--from", "HEL", "--to", "BCN", "--provider", "AY", "--price", "150", "--currency", "EUR", "--confirmed"})
 	err = addLeg.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("add-leg failed: %v", err)
@@ -46,7 +46,7 @@ func TestTrips_AddLegAndBook(t *testing.T) {
 	bookCmd := tripsBookCmd()
 	bookCmd.SetArgs([]string{tripID, "--provider", "AY", "--ref", "ABC123"})
 	err = bookCmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("book failed: %v", err)
@@ -61,13 +61,13 @@ func TestTrips_StatusEmpty(t *testing.T) {
 	os.Stdout = w
 	statusCmd := tripsStatusCmd()
 	err := statusCmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("status failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "No upcoming trips") {
 		t.Errorf("expected no upcoming message, got: %s", buf.String())
 	}
@@ -81,13 +81,13 @@ func TestTrips_AlertsEmpty(t *testing.T) {
 	os.Stdout = w
 	alertsCmd := tripsAlertsCmd()
 	err := alertsCmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("alerts failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	// Just verify it ran without error
 	_ = buf
 }
@@ -103,13 +103,13 @@ func TestPrefs_ShowDefault(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 	err := runPrefsShow(nil, nil)
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("prefs show failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	// Should output valid JSON
 	if !strings.Contains(buf.String(), "{") {
 		t.Errorf("expected JSON output, got: %s", buf.String())
@@ -123,7 +123,7 @@ func TestPrefs_Set(t *testing.T) {
 	_, w, _ := os.Pipe()
 	os.Stdout = w
 	err := runPrefsSet(nil, []string{"display_currency", "EUR"})
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("prefs set failed: %v", err)
@@ -137,7 +137,7 @@ func TestPrefs_SetHomeAirports(t *testing.T) {
 	_, w, _ := os.Pipe()
 	os.Stdout = w
 	err := runPrefsSet(nil, []string{"home_airports", "HEL,AMS"})
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("prefs set failed: %v", err)
@@ -151,7 +151,7 @@ func TestPrefs_SetBool(t *testing.T) {
 	_, w, _ := os.Pipe()
 	os.Stdout = w
 	err := runPrefsSet(nil, []string{"carry_on_only", "true"})
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("prefs set bool failed: %v", err)
@@ -171,13 +171,13 @@ func TestProviders_ListEmpty(t *testing.T) {
 
 	cmd := providersListCmd()
 	err := cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("providers list failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "No providers") {
 		t.Errorf("expected 'No providers' message, got: %s", buf.String())
 	}
@@ -213,7 +213,7 @@ func TestPrintProgramList_Table(t *testing.T) {
 	os.Stdout = w
 
 	err := printProgramList("table")
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
@@ -221,7 +221,7 @@ func TestPrintProgramList_Table(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if buf.Len() == 0 {
 		t.Error("expected non-empty program list")
 	}
@@ -233,7 +233,7 @@ func TestPrintProgramList_JSON(t *testing.T) {
 	os.Stdout = w
 
 	err := printProgramList("json")
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
@@ -241,7 +241,7 @@ func TestPrintProgramList_JSON(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "[") {
 		t.Error("expected JSON array output")
 	}
@@ -260,14 +260,14 @@ func TestWatch_ListEmpty(t *testing.T) {
 
 	cmd := watchListCmd()
 	err := cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
 		t.Fatalf("watch list failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "No active watches") {
 		t.Errorf("expected 'No active watches' message, got: %s", buf.String())
 	}
@@ -305,7 +305,7 @@ func TestWatch_AddListRemoveFlow(t *testing.T) {
 	addCmd := watchAddCmd()
 	addCmd.SetArgs([]string{"HEL", "BCN", "--depart", "2026-06-15", "--return", "2026-06-22", "--below", "200"})
 	err := addCmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
@@ -313,7 +313,7 @@ func TestWatch_AddListRemoveFlow(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 
 	// List should now show the watch
 	old = os.Stdout
@@ -321,7 +321,7 @@ func TestWatch_AddListRemoveFlow(t *testing.T) {
 	os.Stdout = w
 	listCmd := watchListCmd()
 	err = listCmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
@@ -329,7 +329,7 @@ func TestWatch_AddListRemoveFlow(t *testing.T) {
 	}
 
 	buf.Reset()
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 	if strings.Contains(output, "No active watches") {
 		t.Error("expected watches after adding one")

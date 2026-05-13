@@ -203,7 +203,7 @@ func capitalizeFirst(s string) string {
 // is reproducible across runs (calendars use UID for deduplication).
 func makeUID(t *trips.Trip, idx int, leg trips.TripLeg) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s|%d|%s|%s|%s|%s|%s",
+	_, _ = fmt.Fprintf(h, "%s|%d|%s|%s|%s|%s|%s",
 		t.ID, idx, leg.Type, leg.From, leg.To, leg.StartTime, leg.EndTime)
 	return fmt.Sprintf("trvl-%s-%d-%s@trvl.local",
 		t.ID, idx, hex.EncodeToString(h.Sum(nil))[:8])

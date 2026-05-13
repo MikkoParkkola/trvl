@@ -103,7 +103,7 @@ Examples:
 
 func printWeekendTable(ctx context.Context, targetCurrency string, result *trip.WeekendResult) error {
 	if !result.Success {
-		fmt.Fprintf(os.Stderr, "Weekend search failed: %s\n", result.Error)
+		_, _ = fmt.Fprintf(os.Stderr, "Weekend search failed: %s\n", result.Error)
 		return nil
 	}
 

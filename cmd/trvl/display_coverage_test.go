@@ -23,10 +23,10 @@ func captureStdout(t *testing.T, fn func()) string {
 	defer func() { os.Stdout = orig }()
 
 	fn()
-	w.Close()
+	_ = w.Close()
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	return buf.String()
 }
 

@@ -23,13 +23,13 @@ import (
 // pays the reservation fee on top of pass activation, so it must be
 // carried into the pass cost too.
 type PointToPointSegment struct {
-	Operator        string
-	Origin          string
-	Destination     string
-	Date            string  // ISO 8601
-	Price           float64 // walk-up / flexible / refundable price in user currency
-	ReservationFee  float64 // mandatory supplement when travelling on a rail pass
-	YouthEligible   bool    // operator honours the youth-pass age band on this leg
+	Operator       string
+	Origin         string
+	Destination    string
+	Date           string  // ISO 8601
+	Price          float64 // walk-up / flexible / refundable price in user currency
+	ReservationFee float64 // mandatory supplement when travelling on a rail pass
+	YouthEligible  bool    // operator honours the youth-pass age band on this leg
 }
 
 // PassOption describes one rail pass the user is evaluating. Cost is
@@ -40,22 +40,22 @@ type PointToPointSegment struct {
 // dates to those activation days; this package assumes every supplied
 // segment is in scope.
 type PassOption struct {
-	Name            string  // e.g. "Interrail Global 7-in-1month"
-	Cost            float64 // pass activation price
-	Days            int     // number of travel days the pass covers
-	ReservationsIncluded bool // when true, segment reservation fees are included in Cost
+	Name                 string  // e.g. "Interrail Global 7-in-1month"
+	Cost                 float64 // pass activation price
+	Days                 int     // number of travel days the pass covers
+	ReservationsIncluded bool    // when true, segment reservation fees are included in Cost
 }
 
 // Recommendation is the verdict for one user-supplied scenario.
 type Recommendation struct {
-	PassName              string
-	PointToPointTotal     float64
-	PassTotalEffective    float64 // pass cost + sum of mandatory reservation fees (if not included)
-	Savings               float64 // p2p_total - pass_effective; negative when pass is more expensive
-	BreakEvenSegments     int     // segments needed before the pass starts paying off, given current avg price
-	SegmentsScored        int
-	Verdict               Verdict
-	Reason                string
+	PassName           string
+	PointToPointTotal  float64
+	PassTotalEffective float64 // pass cost + sum of mandatory reservation fees (if not included)
+	Savings            float64 // p2p_total - pass_effective; negative when pass is more expensive
+	BreakEvenSegments  int     // segments needed before the pass starts paying off, given current avg price
+	SegmentsScored     int
+	Verdict            Verdict
+	Reason             string
 }
 
 // Verdict labels the high-level recommendation so callers can render

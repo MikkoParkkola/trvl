@@ -82,12 +82,12 @@ type TravelMode struct {
 // CityIntelligence captures per-city knowledge depth and preferences.
 type CityIntelligence struct {
 	City           string   `json:"city"`
-	KnowledgeLevel string   `json:"knowledge_level"`          // "local", "regular", "occasional", "aspirational"
+	KnowledgeLevel string   `json:"knowledge_level"` // "local", "regular", "occasional", "aspirational"
 	YearsLived     int      `json:"years_lived,omitempty"`
 	Neighbourhoods []string `json:"neighbourhoods,omitempty"` // preferred areas
 	Restaurants    []string `json:"restaurants,omitempty"`
-	WhyVisit       string   `json:"why_visit"`               // "friends", "family", "partner", "work", "events", "tourism"
-	TypicalStay    int      `json:"typical_stay"`            // days
+	WhyVisit       string   `json:"why_visit"`    // "friends", "family", "partner", "work", "events", "tourism"
+	TypicalStay    int      `json:"typical_stay"` // days
 	Notes          string   `json:"notes,omitempty"`
 }
 
@@ -109,10 +109,10 @@ type PreferenceElasticity struct {
 // DestinationRelationship captures WHY a destination matters.
 type DestinationRelationship struct {
 	City      string `json:"city"`
-	Reason    string `json:"reason"`              // "home", "family", "friends", "partner", "history", "events", "aspirational", "transit_hub"
-	Person    string `json:"person,omitempty"`    // who connects them to this city
-	Frequency string `json:"frequency"`           // "weekly", "monthly", "quarterly", "yearly", "once", "never_been"
-	Sentiment string `json:"sentiment"`           // "love", "practical", "nostalgic", "curious", "avoid"
+	Reason    string `json:"reason"`           // "home", "family", "friends", "partner", "history", "events", "aspirational", "transit_hub"
+	Person    string `json:"person,omitempty"` // who connects them to this city
+	Frequency string `json:"frequency"`        // "weekly", "monthly", "quarterly", "yearly", "once", "never_been"
+	Sentiment string `json:"sentiment"`        // "love", "practical", "nostalgic", "curious", "avoid"
 }
 
 // AirlineStats tracks usage frequency for a single airline.

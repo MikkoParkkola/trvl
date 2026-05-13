@@ -25,14 +25,14 @@ func BuildProfile(bookings []Booking) *TravelProfile {
 	// Counters for aggregation.
 	airlineFlights := make(map[string]int)   // code -> count
 	airlineNames := make(map[string]string)  // code -> name
-	routeCounts := make(map[string]int)       // "FROM-TO" -> count
-	routePrices := make(map[string]float64)   // "FROM-TO" -> total price
-	destCounts := make(map[string]int)        // destination -> count
-	originCounts := make(map[string]int)      // origin -> count
-	hotelChainNights := make(map[string]int)  // chain -> total nights
-	modeCounts := make(map[string]int)        // mode -> count
-	typeCounts := make(map[string]int)        // booking type -> count
-	dayCounts := make(map[string]int)         // weekday -> count
+	routeCounts := make(map[string]int)      // "FROM-TO" -> count
+	routePrices := make(map[string]float64)  // "FROM-TO" -> total price
+	destCounts := make(map[string]int)       // destination -> count
+	originCounts := make(map[string]int)     // origin -> count
+	hotelChainNights := make(map[string]int) // chain -> total nights
+	modeCounts := make(map[string]int)       // mode -> count
+	typeCounts := make(map[string]int)       // booking type -> count
+	dayCounts := make(map[string]int)        // weekday -> count
 
 	var totalFlightPrice float64
 	var flightCount int
@@ -231,43 +231,43 @@ func parseAirline(provider string) (code, name string) {
 
 	// Known airline names to codes.
 	knownAirlines := map[string]string{
-		"finnair":          "AY",
-		"klm":             "KL",
-		"ryanair":         "FR",
-		"easyjet":         "U2",
-		"norwegian":       "DY",
-		"sas":             "SK",
-		"lufthansa":       "LH",
-		"british airways":  "BA",
-		"air france":       "AF",
-		"iberia":          "IB",
-		"vueling":         "VY",
-		"wizzair":         "W6",
-		"wizz air":        "W6",
-		"transavia":       "HV",
-		"eurowings":       "EW",
-		"tap":             "TP",
-		"tap portugal":    "TP",
-		"aegean":          "A3",
-		"turkish airlines": "TK",
-		"swiss":           "LX",
-		"austrian":        "OS",
-		"brussels airlines": "SN",
-		"lot":             "LO",
-		"lot polish":      "LO",
-		"aer lingus":      "EI",
-		"jetblue":         "B6",
-		"delta":           "DL",
-		"united":          "UA",
-		"american":        "AA",
-		"southwest":       "WN",
-		"emirates":        "EK",
-		"qatar":           "QR",
-		"qatar airways":   "QR",
+		"finnair":            "AY",
+		"klm":                "KL",
+		"ryanair":            "FR",
+		"easyjet":            "U2",
+		"norwegian":          "DY",
+		"sas":                "SK",
+		"lufthansa":          "LH",
+		"british airways":    "BA",
+		"air france":         "AF",
+		"iberia":             "IB",
+		"vueling":            "VY",
+		"wizzair":            "W6",
+		"wizz air":           "W6",
+		"transavia":          "HV",
+		"eurowings":          "EW",
+		"tap":                "TP",
+		"tap portugal":       "TP",
+		"aegean":             "A3",
+		"turkish airlines":   "TK",
+		"swiss":              "LX",
+		"austrian":           "OS",
+		"brussels airlines":  "SN",
+		"lot":                "LO",
+		"lot polish":         "LO",
+		"aer lingus":         "EI",
+		"jetblue":            "B6",
+		"delta":              "DL",
+		"united":             "UA",
+		"american":           "AA",
+		"southwest":          "WN",
+		"emirates":           "EK",
+		"qatar":              "QR",
+		"qatar airways":      "QR",
 		"singapore airlines": "SQ",
-		"cathay pacific":  "CX",
-		"japan airlines":  "JL",
-		"ana":             "NH",
+		"cathay pacific":     "CX",
+		"japan airlines":     "JL",
+		"ana":                "NH",
 	}
 
 	lower := strings.ToLower(provider)
@@ -308,21 +308,21 @@ func normalizeChain(provider string) string {
 	}
 
 	knownChains := map[string]string{
-		"marriott":      "Marriott",
-		"hilton":        "Hilton",
-		"ihg":           "IHG",
-		"hyatt":         "Hyatt",
-		"accor":         "Accor",
-		"wyndham":       "Wyndham",
-		"best western":  "Best Western",
-		"radisson":      "Radisson",
-		"choice":        "Choice Hotels",
-		"melia":         "Melia",
-		"nh hotels":     "NH Hotels",
-		"nh":            "NH Hotels",
-		"airbnb":        "Airbnb",
-		"booking.com":   "Booking.com",
-		"hostelworld":   "Hostelworld",
+		"marriott":     "Marriott",
+		"hilton":       "Hilton",
+		"ihg":          "IHG",
+		"hyatt":        "Hyatt",
+		"accor":        "Accor",
+		"wyndham":      "Wyndham",
+		"best western": "Best Western",
+		"radisson":     "Radisson",
+		"choice":       "Choice Hotels",
+		"melia":        "Melia",
+		"nh hotels":    "NH Hotels",
+		"nh":           "NH Hotels",
+		"airbnb":       "Airbnb",
+		"booking.com":  "Booking.com",
+		"hostelworld":  "Hostelworld",
 	}
 
 	lower := strings.ToLower(provider)
@@ -337,41 +337,41 @@ func normalizeChain(provider string) string {
 // normalizeGroundMode maps provider names to transport modes.
 func normalizeGroundMode(provider string) string {
 	modeMap := map[string]string{
-		"flixbus":  "bus",
-		"flix":     "bus",
-		"eurolines": "bus",
-		"megabus":  "bus",
-		"regiojet": "bus",
-		"blablabus": "bus",
-		"greyhound": "bus",
-		"eurostar": "train",
-		"thalys":   "train",
-		"sncf":     "train",
-		"trenitalia": "train",
-		"renfe":    "train",
-		"db":       "train",
+		"flixbus":       "bus",
+		"flix":          "bus",
+		"eurolines":     "bus",
+		"megabus":       "bus",
+		"regiojet":      "bus",
+		"blablabus":     "bus",
+		"greyhound":     "bus",
+		"eurostar":      "train",
+		"thalys":        "train",
+		"sncf":          "train",
+		"trenitalia":    "train",
+		"renfe":         "train",
+		"db":            "train",
 		"deutsche bahn": "train",
-		"ns":       "train",
-		"sj":       "train",
-		"vr":       "train",
-		"amtrak":   "train",
-		"avanti":   "train",
-		"lner":     "train",
-		"ouigo":    "train",
-		"italo":    "train",
-		"stena line": "ferry",
-		"viking line": "ferry",
-		"tallink":  "ferry",
-		"dfds":     "ferry",
+		"ns":            "train",
+		"sj":            "train",
+		"vr":            "train",
+		"amtrak":        "train",
+		"avanti":        "train",
+		"lner":          "train",
+		"ouigo":         "train",
+		"italo":         "train",
+		"stena line":    "ferry",
+		"viking line":   "ferry",
+		"tallink":       "ferry",
+		"dfds":          "ferry",
 		"irish ferries": "ferry",
-		"p&o":      "ferry",
-		"brittany": "ferry",
-		"color line": "ferry",
-		"fjord line": "ferry",
-		"uber":     "rideshare",
-		"bolt":     "rideshare",
-		"lyft":     "rideshare",
-		"grab":     "rideshare",
+		"p&o":           "ferry",
+		"brittany":      "ferry",
+		"color line":    "ferry",
+		"fjord line":    "ferry",
+		"uber":          "rideshare",
+		"bolt":          "rideshare",
+		"lyft":          "rideshare",
+		"grab":          "rideshare",
 	}
 
 	for key, mode := range modeMap {

@@ -61,9 +61,9 @@ func TestHandleProviderHealth_WithData(t *testing.T) {
 	}
 	for _, e := range entries {
 		line, _ := json.Marshal(e)
-		f.Write(append(line, '\n'))
+		_, _ = f.Write(append(line, '\n'))
 	}
-	f.Close()
+	_ = f.Close()
 
 	content, structured, err := handleProviderHealth(context.Background(), nil, nil, nil, nil, nil, nil)
 	if err != nil {
@@ -116,7 +116,7 @@ func TestHandleProviderHealth_WithErrorsAndTimeouts(t *testing.T) {
 		Error:     "timeout",
 	}
 	line, _ := json.Marshal(entry)
-	os.WriteFile(healthPath, append(line, '\n'), 0o600)
+	_ = os.WriteFile(healthPath, append(line, '\n'), 0o600)
 
 	content, _, err := handleProviderHealth(context.Background(), nil, nil, nil, nil, nil, nil)
 	if err != nil {
@@ -160,8 +160,8 @@ func TestReadTripsUpcoming_Empty(t *testing.T) {
 func TestReadTripsList_Empty(t *testing.T) {
 	tmp := t.TempDir()
 	orig := os.Getenv("HOME")
-	os.Setenv("HOME", tmp)
-	defer os.Setenv("HOME", orig)
+	_ = os.Setenv("HOME", tmp)
+	defer func() { _ = os.Setenv("HOME", orig) }()
 
 	s := NewServer()
 	result, err := s.readTripsList()
@@ -179,8 +179,8 @@ func TestReadTripsList_Empty(t *testing.T) {
 func TestReadTripsAlerts_Empty(t *testing.T) {
 	tmp := t.TempDir()
 	orig := os.Getenv("HOME")
-	os.Setenv("HOME", tmp)
-	defer os.Setenv("HOME", orig)
+	_ = os.Setenv("HOME", tmp)
+	defer func() { _ = os.Setenv("HOME", orig) }()
 
 	s := NewServer()
 	result, err := s.readTripsAlerts()

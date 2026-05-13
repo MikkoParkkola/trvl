@@ -55,7 +55,7 @@ func hotelSrv(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"hotels": []any{
 				map[string]any{"id": "h1", "name": "Test Hotel", "price": 100.0, "currency": "EUR"},
 			},
@@ -153,7 +153,7 @@ func TestSearchProvider_RoomTypeVariants(t *testing.T) {
 			var gotQuery string
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				gotQuery = r.URL.RawQuery
-				json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
+				_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
 			}))
 			defer srv.Close()
 
@@ -197,7 +197,7 @@ func TestSearchProvider_FilterCompositeScaleAndMultiValue(t *testing.T) {
 	var receivedQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.RawQuery
-		json.NewEncoder(w).Encode(map[string]any{"hotels": []any{
+		_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{
 			map[string]any{"id": "h1", "name": "Test", "price": 100.0, "currency": "EUR"},
 		}})
 	}))
@@ -260,7 +260,7 @@ func TestSearchProvider_ArrayQueryParams(t *testing.T) {
 	var receivedQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.RawQuery
-		json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
 	}))
 	defer srv.Close()
 
@@ -304,7 +304,7 @@ func TestSearchProvider_SkipsEmptyPurePlaceholderQueryParam(t *testing.T) {
 	var receivedQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.RawQuery
-		json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
 	}))
 	defer srv.Close()
 
@@ -347,7 +347,7 @@ func TestSearchProvider_SortLookupNoMapping(t *testing.T) {
 	var receivedQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.RawQuery
-		json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
 	}))
 	defer srv.Close()
 
@@ -390,7 +390,7 @@ func TestSearchProvider_SortLookupRawValue(t *testing.T) {
 	var receivedQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.RawQuery
-		json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
 	}))
 	defer srv.Close()
 
@@ -430,7 +430,7 @@ func TestSearchProvider_PriceRangeComposite(t *testing.T) {
 	var receivedQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.RawQuery
-		json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
 	}))
 	defer srv.Close()
 
@@ -470,7 +470,7 @@ func TestSearchProvider_FreeCancellationFilter(t *testing.T) {
 	var receivedQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.RawQuery
-		json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
 	}))
 	defer srv.Close()
 
@@ -516,7 +516,7 @@ func TestSearchProvider_CircuitBreakerSkips(t *testing.T) {
 	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
-		json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
 	}))
 	defer srv.Close()
 
@@ -532,8 +532,8 @@ func TestSearchProvider_CircuitBreakerSkips(t *testing.T) {
 			ResultsPath: "hotels",
 			Fields:      map[string]string{"name": "name"},
 		},
-		RateLimit:   RateLimitConfig{RequestsPerSecond: 100, Burst: 100},
-		ErrorCount:  circuitBreakerThreshold, // at threshold
+		RateLimit:  RateLimitConfig{RequestsPerSecond: 100, Burst: 100},
+		ErrorCount: circuitBreakerThreshold, // at threshold
 		// Failure happened inside the cooldown window — provider must be
 		// skipped. We set LastErrorAt to "now" so the cooldown is
 		// definitively still active.
@@ -567,7 +567,7 @@ func TestSearchProvider_CircuitBreakerHalfOpenProbe(t *testing.T) {
 	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
-		json.NewEncoder(w).Encode(map[string]any{"hotels": []any{
+		_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{
 			map[string]any{"id": "h1", "name": "Recovered Hotel", "price": 100.0, "currency": "EUR"},
 		}})
 	}))
@@ -615,7 +615,7 @@ func TestSearchProvider_CircuitBreakerHalfOpenProbe(t *testing.T) {
 
 func TestSearchProvider_BrowserCookiesSource(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"hotels": []any{
+		_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{
 			map[string]any{"id": "b1", "name": "Browser Hotel", "price": 200.0, "currency": "EUR"},
 		}})
 	}))
@@ -662,7 +662,7 @@ func TestSearchProvider_NumNightsFromDatesBoost(t *testing.T) {
 	var receivedQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.URL.RawQuery
-		json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{}})
 	}))
 	defer srv.Close()
 
@@ -702,7 +702,7 @@ func TestSearchProvider_NumNightsFromDatesBoost(t *testing.T) {
 
 func TestRunTestPreflight_PreflightSuccess(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `access_token=abc123`)
+		_, _ = fmt.Fprint(w, `access_token=abc123`)
 	}))
 	defer srv.Close()
 

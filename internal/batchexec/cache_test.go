@@ -249,7 +249,7 @@ func TestPostCalendarGrid_CacheHit(t *testing.T) {
 func TestSearchFlights_PopulatesCache(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte("flight_data"))
+		_, _ = w.Write([]byte("flight_data"))
 	}))
 	defer ts.Close()
 

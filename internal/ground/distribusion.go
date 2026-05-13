@@ -303,7 +303,7 @@ func SearchDistribusion(ctx context.Context, from, to, date, currency string) ([
 	if err != nil {
 		return nil, fmt.Errorf("distribusion: HTTP request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		return nil, fmt.Errorf("distribusion: invalid API key (HTTP 401)")

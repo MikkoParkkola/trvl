@@ -15,12 +15,12 @@ const cacheVersion = 1
 
 // cacheEntry is the on-disk representation of a cached API response.
 type cacheEntry struct {
-	Version   int       `json:"version"`
-	CachedAt  time.Time `json:"cached_at"`
-	ExpiresAt time.Time `json:"expires_at"`
+	Version    int       `json:"version"`
+	CachedAt   time.Time `json:"cached_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
 	StaleUntil time.Time `json:"stale_until"`
-	Status    int       `json:"status"`
-	Body      []byte    `json:"body"`
+	Status     int       `json:"status"`
+	Body       []byte    `json:"body"`
 }
 
 // quotaEntry is the on-disk representation of the daily quota counter.
@@ -81,9 +81,9 @@ func CacheKey(endpoint string, body []byte) string {
 		}
 	}
 	h := sha256.New()
-	h.Write([]byte(endpoint))
-	h.Write([]byte{0x00})
-	h.Write(body)
+	_, _ = h.Write([]byte(endpoint))
+	_, _ = h.Write([]byte{0x00})
+	_, _ = h.Write(body)
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
@@ -247,20 +247,20 @@ func (c *Cache) atomicWrite(path string, data []byte) error {
 	}
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("afklm cache write: write: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("afklm cache write: close: %w", err)
 	}
 	if err := os.Chmod(tmpName, 0o600); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("afklm cache write: chmod: %w", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("afklm cache write: rename: %w", err)
 	}
 	return nil

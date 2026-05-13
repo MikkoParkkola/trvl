@@ -176,7 +176,7 @@ func TestStackedPenalties(t *testing.T) {
 		Currency:         "EUR",
 	}
 	off := Offered{
-		DestIATA:   "GRO", // not in AcceptedAirports → 20pts
+		DestIATA:   "GRO",        // not in AcceptedAirports → 20pts
 		DepartDate: "2026-07-05", // 4 days drift → 20pts
 		ReturnDate: "2026-07-16", // 11 nights vs 7 → 4 drift → 20pts
 		Stops:      1,            // +10pts

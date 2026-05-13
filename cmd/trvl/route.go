@@ -113,9 +113,9 @@ Examples:
 func printRouteTable(_ context.Context, targetCurrency string, result *models.RouteSearchResult) error {
 	if !result.Success {
 		if result.Error != "" {
-			fmt.Fprintf(os.Stderr, "No routes found: %s\n", result.Error)
+			_, _ = fmt.Fprintf(os.Stderr, "No routes found: %s\n", result.Error)
 		} else {
-			fmt.Fprintln(os.Stderr, "No routes found.")
+			_, _ = fmt.Fprintln(os.Stderr, "No routes found.")
 		}
 		return nil
 	}

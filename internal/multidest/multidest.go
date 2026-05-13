@@ -32,10 +32,10 @@ type Leg struct {
 // City matches the Destination of the inbound Leg whose stay it
 // represents; the ranker matches by case-insensitive City equality.
 type HotelCost struct {
-	City      string
-	CheckIn   string
-	CheckOut  string
-	Provider  string
+	City       string
+	CheckIn    string
+	CheckOut   string
+	Provider   string
 	TotalPrice float64
 }
 
@@ -43,7 +43,7 @@ type HotelCost struct {
 // the hotel costs at each non-final city. The flight-only screen
 // uses the sum of leg prices; the drill-down adds the hotel total.
 type Ordering struct {
-	Cities []string    // human-readable ordered list, e.g. ["AMS", "ROM", "BCN"]
+	Cities []string // human-readable ordered list, e.g. ["AMS", "ROM", "BCN"]
 	Legs   []Leg
 	Hotels []HotelCost
 }

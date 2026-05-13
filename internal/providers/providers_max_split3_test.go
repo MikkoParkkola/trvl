@@ -324,7 +324,7 @@ func TestRunPreflight_EmptyPreflightURL(t *testing.T) {
 
 func TestRunPreflight_SuccessfulExtraction(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html><meta name="csrf" content="tok-999"></html>`)
+		_, _ = fmt.Fprint(w, `<html><meta name="csrf" content="tok-999"></html>`)
 	}))
 	defer srv.Close()
 
@@ -358,7 +358,7 @@ func TestRunPreflight_SuccessfulExtraction(t *testing.T) {
 
 func TestRunPreflight_CacheValid(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html>token=first</html>`)
+		_, _ = fmt.Fprint(w, `<html>token=first</html>`)
 	}))
 	defer srv.Close()
 
@@ -392,7 +392,7 @@ func TestRunPreflight_CacheValid(t *testing.T) {
 
 func TestDoSearchRequest_NilGetBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"ok":true}`)
+		_, _ = fmt.Fprint(w, `{"ok":true}`)
 	}))
 	defer srv.Close()
 
@@ -428,7 +428,7 @@ func TestTestProvider_FullFlow(t *testing.T) {
 	// Serve a provider that returns valid JSON with results.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{
 				map[string]any{
 					"name":  "Test Hotel",
@@ -471,7 +471,7 @@ func TestTestProvider_FullFlow(t *testing.T) {
 func TestTestProvider_HTTP500(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
-		fmt.Fprint(w, "Internal Server Error")
+		_, _ = fmt.Fprint(w, "Internal Server Error")
 	}))
 	defer srv.Close()
 
@@ -500,7 +500,7 @@ func TestTestProvider_HTTP500(t *testing.T) {
 
 func TestTestProvider_MalformedJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `not json`)
+		_, _ = fmt.Fprint(w, `not json`)
 	}))
 	defer srv.Close()
 

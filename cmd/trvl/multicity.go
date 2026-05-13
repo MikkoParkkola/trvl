@@ -121,7 +121,7 @@ Examples:
 
 func printMultiCityTable(ctx context.Context, targetCurrency string, result *trip.MultiCityResult) error {
 	if !result.Success {
-		fmt.Fprintf(os.Stderr, "Multi-city optimization failed: %s\n", result.Error)
+		_, _ = fmt.Fprintf(os.Stderr, "Multi-city optimization failed: %s\n", result.Error)
 		return nil
 	}
 

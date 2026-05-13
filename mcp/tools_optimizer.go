@@ -21,17 +21,17 @@ func optimizeBookingTool() ToolDef {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"origin":          {Type: "string", Description: "Origin IATA airport code (e.g. HEL)"},
-				"destination":     {Type: "string", Description: "Destination IATA airport code or city (e.g. BCN)"},
-				"departure_date":  {Type: "string", Description: "Departure date (YYYY-MM-DD)"},
-				"return_date":     {Type: "string", Description: "Return date (YYYY-MM-DD); omit for one-way"},
-				"flex_days":       {Type: "integer", Description: "Date flexibility +/-N days (default 3)"},
-				"guests":          {Type: "integer", Description: "Number of passengers (default 1)"},
-				"currency":        {Type: "string", Description: "Display currency (default: EUR)"},
-				"max_results":     {Type: "integer", Description: "Top N results to return (default 5)"},
-				"max_api_calls":   {Type: "integer", Description: "API call budget (default 15)"},
+				"origin":           {Type: "string", Description: "Origin IATA airport code (e.g. HEL)"},
+				"destination":      {Type: "string", Description: "Destination IATA airport code or city (e.g. BCN)"},
+				"departure_date":   {Type: "string", Description: "Departure date (YYYY-MM-DD)"},
+				"return_date":      {Type: "string", Description: "Return date (YYYY-MM-DD); omit for one-way"},
+				"flex_days":        {Type: "integer", Description: "Date flexibility +/-N days (default 3)"},
+				"guests":           {Type: "integer", Description: "Number of passengers (default 1)"},
+				"currency":         {Type: "string", Description: "Display currency (default: EUR)"},
+				"max_results":      {Type: "integer", Description: "Top N results to return (default 5)"},
+				"max_api_calls":    {Type: "integer", Description: "API call budget (default 15)"},
 				"need_checked_bag": {Type: "boolean", Description: "Whether a checked bag is needed"},
-				"carry_on_only":   {Type: "boolean", Description: "Carry-on only trip"},
+				"carry_on_only":    {Type: "boolean", Description: "Carry-on only trip"},
 			},
 			Required: []string{"origin", "destination", "departure_date"},
 		},
@@ -277,8 +277,8 @@ func multiCityOutputSchema() interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"success":      schemaBool(),
-			"home_airport": schemaString(),
+			"success":       schemaBool(),
+			"home_airport":  schemaString(),
 			"optimal_order": schemaStringArray(),
 			"segments": schemaArray(map[string]interface{}{
 				"type": "object",

@@ -176,13 +176,13 @@ func TestBuildViabilityChecks_CostError(t *testing.T) {
 
 func TestBuildViabilityChecks_WithWeatherAndTotalCost(t *testing.T) {
 	cost := &TripCostResult{
-		Success: true,
-		Flights: FlightCost{Outbound: 200, Return: 200, Currency: "EUR"},
-		Hotels:  HotelCost{PerNight: 80, Total: 560, Currency: "EUR", Name: "Test"},
-		Total:   960,
-		Currency: "EUR",
+		Success:   true,
+		Flights:   FlightCost{Outbound: 200, Return: 200, Currency: "EUR"},
+		Hotels:    HotelCost{PerNight: 80, Total: 560, Currency: "EUR", Name: "Test"},
+		Total:     960,
+		Currency:  "EUR",
 		PerPerson: 480,
-		PerDay: 137,
+		PerDay:    137,
 	}
 	weatherRes := &weather.WeatherResult{
 		Success: true,

@@ -15,11 +15,11 @@ import (
 
 var (
 	// enrichment regexps compiled once at package init.
-	jsonLDScriptRe    = regexp.MustCompile(`<script[^>]*type="application/ld\+json"[^>]*>([\s\S]*?)</script>`)
-	niobeScriptRe     = regexp.MustCompile(`<script[^>]*data-deferred-state-0[^>]*>([\s\S]*?)</script>`)
-	htmlBRRe          = regexp.MustCompile(`(?i)<br\s*/?>`)
-	htmlTagRe         = regexp.MustCompile(`<[^>]+>`)
-	htmlWhitespaceRe  = regexp.MustCompile(`\s{2,}`)
+	jsonLDScriptRe   = regexp.MustCompile(`<script[^>]*type="application/ld\+json"[^>]*>([\s\S]*?)</script>`)
+	niobeScriptRe    = regexp.MustCompile(`<script[^>]*data-deferred-state-0[^>]*>([\s\S]*?)</script>`)
+	htmlBRRe         = regexp.MustCompile(`(?i)<br\s*/?>`)
+	htmlTagRe        = regexp.MustCompile(`<[^>]+>`)
+	htmlWhitespaceRe = regexp.MustCompile(`\s{2,}`)
 )
 
 // enrichRatings fetches hotel detail pages for results with rating=0 and a
@@ -76,7 +76,7 @@ func fetchJSONLDRating(ctx context.Context, client *http.Client, hotelURL string
 	if err != nil {
 		return 0, 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return 0, 0, fmt.Errorf("http %d", resp.StatusCode)
@@ -197,7 +197,7 @@ func fetchAirbnbDescription(ctx context.Context, client *http.Client, listingURL
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("http %d", resp.StatusCode)
@@ -258,4 +258,3 @@ func stripHTMLTags(s string) string {
 	s = htmlWhitespaceRe.ReplaceAllString(s, " ")
 	return strings.TrimSpace(s)
 }
-

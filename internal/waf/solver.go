@@ -134,9 +134,9 @@ func SolveAWSWAF(ctx context.Context, client *http.Client, pageURL, pageBody str
 
 // challengeInfo collects the details we pluck from the interstitial HTML.
 type challengeInfo struct {
-	origin     string
-	scriptURL  string
-	gokuProps  string
+	origin    string
+	scriptURL string
+	gokuProps string
 }
 
 var (
@@ -179,7 +179,7 @@ func fetchChallengeScript(ctx context.Context, client *http.Client, scriptURL, o
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("challenge.js returned %s", resp.Status)
 	}

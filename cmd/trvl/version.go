@@ -53,7 +53,7 @@ channel-correct upgrade hint, ML-DSA-65 trust-anchor fingerprint, and
 the most recent version observed by the daily background update check.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if !versionJSON {
-			fmt.Fprintf(cmd.OutOrStdout(), "trvl %s\n", Version)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "trvl %s\n", Version)
 			return
 		}
 		report := buildVersionReport(Version)

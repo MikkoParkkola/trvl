@@ -436,7 +436,9 @@ func TestJsFetch_ByteSliceBody(t *testing.T) {
 	defer srv.Close()
 
 	vm, loop, _ := newTestHost(t, srv.Client())
-	vm.Set("__TARGET", srv.URL)
+	if err := vm.Set("__TARGET", srv.URL); err != nil {
+		t.Fatalf("Set target: %v", err)
+	}
 
 	_, err := vm.RunString(`
 		globalThis.__fetchDone = false;

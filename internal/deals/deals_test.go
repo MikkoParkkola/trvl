@@ -381,4 +381,3 @@ func TestExtractRoute_FromToPattern(t *testing.T) {
 		t.Errorf("destination = %q, want Barcelona", d.Destination)
 	}
 }
-

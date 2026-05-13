@@ -19,12 +19,12 @@ import (
 
 func TestEstimateTaxiRoadDistanceKm_AllBranches(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    float64
-		wantMin  float64
-		wantMax  float64
+		name    string
+		input   float64
+		wantMin float64
+		wantMax float64
 	}{
-		{"very short (<1km)", 0.5, 2, 2},       // returns fixed 2
+		{"very short (<1km)", 0.5, 2, 2}, // returns fixed 2
 		{"short (<8km)", 5, 5 * 1.45, 5*1.45 + 0.01},
 		{"medium (<25km)", 15, 15 * 1.30, 15*1.30 + 0.01},
 		{"long (>=25km)", 50, 50 * 1.18, 50*1.18 + 0.01},
@@ -69,7 +69,7 @@ func TestEstimateTaxiDurationMinutes_AllBranches(t *testing.T) {
 	d15 := estimateTaxiDurationMinutes(15)
 	d40 := estimateTaxiDurationMinutes(40)
 	d80 := estimateTaxiDurationMinutes(80)
-	if !(d5 < d15 && d15 < d40 && d40 < d80) {
+	if d5 >= d15 || d15 >= d40 || d40 >= d80 {
 		t.Errorf("duration should be monotonic: %d, %d, %d, %d", d5, d15, d40, d80)
 	}
 }
@@ -180,7 +180,7 @@ func TestSearchTransitous_MockHappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(transitousResponse{
+		_ = json.NewEncoder(w).Encode(transitousResponse{
 			From: transitousPlace{Name: "Helsinki"},
 			To:   transitousPlace{Name: "Tampere"},
 			Itineraries: []transitousItinerary{
@@ -290,7 +290,7 @@ func TestSearchTransitous_MockHTTPError(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("overloaded"))
+		_, _ = w.Write([]byte("overloaded"))
 	}))
 	defer srv.Close()
 
@@ -316,7 +316,7 @@ func TestSearchTransitous_MockEmptyItineraries(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(transitousResponse{
+		_ = json.NewEncoder(w).Encode(transitousResponse{
 			From:        transitousPlace{Name: "A"},
 			To:          transitousPlace{Name: "B"},
 			Itineraries: nil,
@@ -354,7 +354,7 @@ func TestGeocodeCity_MockHappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]map[string]string{
+		_ = json.NewEncoder(w).Encode([]map[string]string{
 			{"lat": "52.5200", "lon": "13.4050"},
 		})
 	}))
@@ -397,7 +397,7 @@ func TestGeocodeCity_MockNoResults(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("[]"))
+		_, _ = w.Write([]byte("[]"))
 	}))
 	defer srv.Close()
 
@@ -450,7 +450,7 @@ func TestNormaliseFinCity_AllBranches(t *testing.T) {
 		{"seinajoki", "seinäjoki"},
 		{"hameenlinna", "hämeenlinna"},
 		{"helsinki", "helsinki"}, // passthrough
-		{"tampere", "tampere"}, // passthrough
+		{"tampere", "tampere"},   // passthrough
 	}
 	for _, tt := range tests {
 		got := normaliseFinCity(tt.input)
@@ -692,7 +692,7 @@ func TestSearchTransitousByName_MockGeocodeSuccess(t *testing.T) {
 	// Mock geocoding endpoint.
 	geoSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]map[string]string{
+		_ = json.NewEncoder(w).Encode([]map[string]string{
 			{"lat": "60.1699", "lon": "24.9384"},
 		})
 	}))
@@ -706,7 +706,7 @@ func TestSearchTransitousByName_MockGeocodeSuccess(t *testing.T) {
 	// Mock transitous endpoint.
 	transSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(transitousResponse{
+		_ = json.NewEncoder(w).Encode(transitousResponse{
 			From:        transitousPlace{Name: "From City"},
 			To:          transitousPlace{Name: "To City"},
 			Itineraries: []transitousItinerary{},

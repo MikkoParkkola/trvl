@@ -91,7 +91,7 @@ func runOptimize(cmd *cobra.Command, args []string) error {
 	}
 
 	if !result.Success {
-		fmt.Fprintf(os.Stderr, "Optimization failed: %s\n", result.Error)
+		_, _ = fmt.Fprintf(os.Stderr, "Optimization failed: %s\n", result.Error)
 		return nil
 	}
 

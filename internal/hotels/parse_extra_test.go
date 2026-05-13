@@ -504,4 +504,3 @@ func TestParsePricesFromRaw_NoPrices(t *testing.T) {
 }
 
 // --- parseHotelsFromPayload ---
-

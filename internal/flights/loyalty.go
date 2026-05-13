@@ -85,9 +85,9 @@ var allianceMembership = map[string]string{
 // this as effective CheckedBagsIncluded >= 1.
 var allianceBagBenefits = map[string]map[string]int{
 	"oneworld": {
-		"ruby":    0,
+		"ruby":     0,
 		"sapphire": 1,
-		"emerald": 1,
+		"emerald":  1,
 	},
 	"skyteam": {
 		"elite":      1,

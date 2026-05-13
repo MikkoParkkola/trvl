@@ -54,9 +54,9 @@ Examples:
 
 			if !result.Success {
 				if result.Error != "" {
-					fmt.Fprintf(os.Stderr, "Error: %s\n", result.Error)
+					_, _ = fmt.Fprintf(os.Stderr, "Error: %s\n", result.Error)
 				} else {
-					fmt.Fprintf(os.Stderr, "No lounge information available for %s.\n", airport)
+					_, _ = fmt.Fprintf(os.Stderr, "No lounge information available for %s.\n", airport)
 				}
 				return nil
 			}

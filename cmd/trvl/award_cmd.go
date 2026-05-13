@@ -20,16 +20,16 @@ func runAwardScan(ctx context.Context, origin, destination, date, cookies, forma
 		Cookies: cookies,
 	})
 	if err == afklm.ErrNoAwardCookies {
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Award search requires Flying Blue session cookies.")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "To get your cookies:")
-		fmt.Fprintln(os.Stderr, "  1. Log in to klm.com in Brave/Chrome")
-		fmt.Fprintln(os.Stderr, "  2. Open DevTools → Network → search for a flight with miles")
-		fmt.Fprintln(os.Stderr, "  3. Copy the Cookie header from any klm.com request")
-		fmt.Fprintln(os.Stderr, "  4. Export: export AFKL_KLM_COOKIES='<paste cookies here>'")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Then re-run: trvl flights "+origin+" "+destination+" "+date+" --award")
+		_, _ = fmt.Fprintln(os.Stderr, "")
+		_, _ = fmt.Fprintln(os.Stderr, "Award search requires Flying Blue session cookies.")
+		_, _ = fmt.Fprintln(os.Stderr, "")
+		_, _ = fmt.Fprintln(os.Stderr, "To get your cookies:")
+		_, _ = fmt.Fprintln(os.Stderr, "  1. Log in to klm.com in Brave/Chrome")
+		_, _ = fmt.Fprintln(os.Stderr, "  2. Open DevTools → Network → search for a flight with miles")
+		_, _ = fmt.Fprintln(os.Stderr, "  3. Copy the Cookie header from any klm.com request")
+		_, _ = fmt.Fprintln(os.Stderr, "  4. Export: export AFKL_KLM_COOKIES='<paste cookies here>'")
+		_, _ = fmt.Fprintln(os.Stderr, "")
+		_, _ = fmt.Fprintln(os.Stderr, "Then re-run: trvl flights "+origin+" "+destination+" "+date+" --award")
 		return nil
 	}
 	if err != nil {
@@ -50,7 +50,7 @@ func runAwardScan(ctx context.Context, origin, destination, date, cookies, forma
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Scanning %d dates for %s→%s award availability (1 req/sec)...\n",
+	_, _ = fmt.Fprintf(os.Stderr, "Scanning %d dates for %s→%s award availability (1 req/sec)...\n",
 		len(dates), strings.ToUpper(origin), strings.ToUpper(destination))
 
 	result, err := scanner.ScanDateRange(ctx, origin, destination, dates)
@@ -60,7 +60,7 @@ func runAwardScan(ctx context.Context, origin, destination, date, cookies, forma
 
 	// Report per-date errors (non-fatal).
 	if len(result.Errors) > 0 {
-		fmt.Fprintf(os.Stderr, "Warning: %d date(s) had errors (shown below).\n", len(result.Errors))
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: %d date(s) had errors (shown below).\n", len(result.Errors))
 	}
 
 	if format == "json" {

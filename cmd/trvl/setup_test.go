@@ -68,8 +68,8 @@ func tempPrefsPath(t *testing.T) string {
 func TestSetupCmd_NonInteractive_Defaults(t *testing.T) {
 	stdin := makeFakeStdin(t, "") // no input needed
 	stdout := makeFakeStdout(t)
-	defer stdin.Close()
-	defer stdout.Close()
+	defer func() { _ = stdin.Close() }()
+	defer func() { _ = stdout.Close() }()
 
 	cfg := setupConfig{
 		nonInteractive: true,
@@ -91,8 +91,8 @@ func TestSetupCmd_NonInteractive_Defaults(t *testing.T) {
 func TestSetupCmd_NonInteractive_WithFlags(t *testing.T) {
 	stdin := makeFakeStdin(t, "")
 	stdout := makeFakeStdout(t)
-	defer stdin.Close()
-	defer stdout.Close()
+	defer func() { _ = stdin.Close() }()
+	defer func() { _ = stdout.Close() }()
 
 	cfg := setupConfig{
 		nonInteractive: true,
@@ -206,8 +206,8 @@ func TestSetupPromptIATA_ValidCode(t *testing.T) {
 	// Feed a valid IATA code followed by newline.
 	stdin := makeFakeStdin(t, "AMS\n")
 	stdout := makeFakeStdout(t)
-	defer stdin.Close()
-	defer stdout.Close()
+	defer func() { _ = stdin.Close() }()
+	defer func() { _ = stdout.Close() }()
 
 	sc := makeTestScanner(t, stdin)
 	got := setupPromptIATA(sc, stdout, "Home airport", "HEL")
@@ -220,8 +220,8 @@ func TestSetupPromptIATA_InvalidThenValid(t *testing.T) {
 	// First input invalid, second valid.
 	stdin := makeFakeStdin(t, "12\nHEL\n")
 	stdout := makeFakeStdout(t)
-	defer stdin.Close()
-	defer stdout.Close()
+	defer func() { _ = stdin.Close() }()
+	defer func() { _ = stdout.Close() }()
 
 	sc := makeTestScanner(t, stdin)
 	got := setupPromptIATA(sc, stdout, "Home airport", "JFK")
@@ -238,8 +238,8 @@ func TestSetupPromptIATA_InvalidThenValid(t *testing.T) {
 func TestSetupPromptIATA_EmptyKeepsCurrent(t *testing.T) {
 	stdin := makeFakeStdin(t, "\n") // just Enter
 	stdout := makeFakeStdout(t)
-	defer stdin.Close()
-	defer stdout.Close()
+	defer func() { _ = stdin.Close() }()
+	defer func() { _ = stdout.Close() }()
 
 	sc := makeTestScanner(t, stdin)
 	got := setupPromptIATA(sc, stdout, "Home airport", "NRT")
@@ -251,8 +251,8 @@ func TestSetupPromptIATA_EmptyKeepsCurrent(t *testing.T) {
 func TestSetupPromptIATA_UpercasesInput(t *testing.T) {
 	stdin := makeFakeStdin(t, "hel\n")
 	stdout := makeFakeStdout(t)
-	defer stdin.Close()
-	defer stdout.Close()
+	defer func() { _ = stdin.Close() }()
+	defer func() { _ = stdout.Close() }()
 
 	sc := makeTestScanner(t, stdin)
 	got := setupPromptIATA(sc, stdout, "Home airport", "")

@@ -131,7 +131,7 @@ func TestScanLengthOfStay_FallsBackToPerNightWhenTotalMissing(t *testing.T) {
 func TestScanLengthOfStay_SkipsZeroPricedQuotes(t *testing.T) {
 	got := ScanLengthOfStay(7, []LOSQuote{
 		{Nights: 7, TotalPrice: 700},
-		{Nights: 8, TotalPrice: 0},  // ignored
+		{Nights: 8, TotalPrice: 0},    // ignored
 		{Nights: 9, PricePerNight: 0}, // ignored
 	})
 	for _, f := range got {

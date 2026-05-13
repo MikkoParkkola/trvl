@@ -19,7 +19,7 @@ func mockAPIs(t *testing.T) func() {
 
 	// --- Nominatim mock ---
 	nominatim := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]nominatimResult{{
+		_ = json.NewEncoder(w).Encode([]nominatimResult{{
 			Lat:         "35.6762",
 			Lon:         "139.6503",
 			DisplayName: "Tokyo, Japan",
@@ -35,12 +35,12 @@ func mockAPIs(t *testing.T) func() {
 		resp.Daily.TemperatureMin = []float64{20.1, 21.3}
 		resp.Daily.PrecipitationSum = []float64{0.0, 5.2}
 		resp.Daily.WeatherCode = []int{0, 61}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 
 	// --- REST Countries mock ---
 	countries := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]restCountryResponse{{
+		_ = json.NewEncoder(w).Encode([]restCountryResponse{{
 			Name: struct {
 				Common string `json:"common"`
 			}{Common: "Japan"},
@@ -58,7 +58,7 @@ func mockAPIs(t *testing.T) func() {
 
 	// --- Nager.Date mock ---
 	nager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]nagerHoliday{
+		_ = json.NewEncoder(w).Encode([]nagerHoliday{
 			{Date: "2026-06-15", Name: "Test Holiday", Types: []string{"Public"}},
 			{Date: "2026-06-20", Name: "Outside Range", Types: []string{"Public"}},
 		})
@@ -83,12 +83,12 @@ func mockAPIs(t *testing.T) func() {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 
 	// --- ExchangeRate mock ---
 	exchange := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(exchangeRateResponse{
+		_ = json.NewEncoder(w).Encode(exchangeRateResponse{
 			Base: "EUR",
 			Rates: map[string]float64{
 				"JPY": 162.5,
@@ -191,7 +191,7 @@ func TestGetDestinationInfo(t *testing.T) {
 func TestGetDestinationInfo_GracefulDegradation(t *testing.T) {
 	// Set up mocks but make the weather API return 500.
 	nominatim := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]nominatimResult{{
+		_ = json.NewEncoder(w).Encode([]nominatimResult{{
 			Lat:         "48.8566",
 			Lon:         "2.3522",
 			DisplayName: "Paris, France",
@@ -202,12 +202,12 @@ func TestGetDestinationInfo_GracefulDegradation(t *testing.T) {
 
 	meteo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("internal error"))
+		_, _ = w.Write([]byte("internal error"))
 	}))
 	defer meteo.Close()
 
 	countries := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]restCountryResponse{{
+		_ = json.NewEncoder(w).Encode([]restCountryResponse{{
 			Name: struct {
 				Common string `json:"common"`
 			}{Common: "France"},
@@ -224,7 +224,7 @@ func TestGetDestinationInfo_GracefulDegradation(t *testing.T) {
 	defer countries.Close()
 
 	nager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]nagerHoliday{})
+		_ = json.NewEncoder(w).Encode([]nagerHoliday{})
 	}))
 	defer nager.Close()
 
@@ -239,12 +239,12 @@ func TestGetDestinationInfo_GracefulDegradation(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer advisory.Close()
 
 	exchange := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(exchangeRateResponse{
+		_ = json.NewEncoder(w).Encode(exchangeRateResponse{
 			Base:  "EUR",
 			Rates: map[string]float64{"EUR": 1.0},
 		})

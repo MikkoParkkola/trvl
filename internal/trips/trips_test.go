@@ -220,11 +220,17 @@ func TestDeleteNotFound(t *testing.T) {
 
 func TestActive(t *testing.T) {
 	s := NewStore(t.TempDir())
-	s.Add(Trip{Name: "Planning", Status: "planning"})
-	s.Add(Trip{Name: "Booked", Status: "booked"})
-	s.Add(Trip{Name: "InProg", Status: "in_progress"})
-	s.Add(Trip{Name: "Done", Status: "completed"})
-	s.Add(Trip{Name: "Gone", Status: "cancelled"})
+	for _, trip := range []Trip{
+		{Name: "Planning", Status: "planning"},
+		{Name: "Booked", Status: "booked"},
+		{Name: "InProg", Status: "in_progress"},
+		{Name: "Done", Status: "completed"},
+		{Name: "Gone", Status: "cancelled"},
+	} {
+		if _, err := s.Add(trip); err != nil {
+			t.Fatalf("Add(%s): %v", trip.Name, err)
+		}
+	}
 
 	active := s.Active()
 	if len(active) != 3 {
@@ -245,26 +251,32 @@ func TestUpcoming(t *testing.T) {
 
 	// Leg starting in 6 hours — should appear in Upcoming(24h).
 	soon := now.Add(6 * time.Hour)
-	s.Add(Trip{
+	if _, err := s.Add(Trip{
 		Name:   "Soon",
 		Status: "booked",
 		Legs:   []TripLeg{{Type: "flight", From: "HEL", To: "AMS", StartTime: soon.Format("2006-01-02T15:04")}},
-	})
+	}); err != nil {
+		t.Fatalf("Add Soon: %v", err)
+	}
 
 	// Leg starting in 5 days — outside 24h window.
 	far := now.Add(5 * 24 * time.Hour)
-	s.Add(Trip{
+	if _, err := s.Add(Trip{
 		Name:   "Far",
 		Status: "booked",
 		Legs:   []TripLeg{{Type: "flight", From: "AMS", To: "PRG", StartTime: far.Format("2006-01-02T15:04")}},
-	})
+	}); err != nil {
+		t.Fatalf("Add Far: %v", err)
+	}
 
 	// Completed trip should be excluded even with a near leg.
-	s.Add(Trip{
+	if _, err := s.Add(Trip{
 		Name:   "Done",
 		Status: "completed",
 		Legs:   []TripLeg{{Type: "flight", From: "X", To: "Y", StartTime: soon.Format("2006-01-02T15:04")}},
-	})
+	}); err != nil {
+		t.Fatalf("Add Done: %v", err)
+	}
 
 	upcoming := s.Upcoming(24 * time.Hour)
 	if len(upcoming) != 1 {
@@ -277,7 +289,9 @@ func TestUpcoming(t *testing.T) {
 
 func TestUpcomingEmpty(t *testing.T) {
 	s := NewStore(t.TempDir())
-	s.Add(Trip{Name: "NoLegs", Status: "planning"})
+	if _, err := s.Add(Trip{Name: "NoLegs", Status: "planning"}); err != nil {
+		t.Fatalf("Add NoLegs: %v", err)
+	}
 
 	if got := s.Upcoming(24 * time.Hour); len(got) != 0 {
 		t.Errorf("expected 0 upcoming, got %d", len(got))
@@ -287,11 +301,13 @@ func TestUpcomingEmpty(t *testing.T) {
 func TestUpcomingPastLeg(t *testing.T) {
 	s := NewStore(t.TempDir())
 	past := time.Now().Add(-1 * time.Hour)
-	s.Add(Trip{
+	if _, err := s.Add(Trip{
 		Name:   "Past",
 		Status: "booked",
 		Legs:   []TripLeg{{Type: "flight", From: "A", To: "B", StartTime: past.Format("2006-01-02T15:04")}},
-	})
+	}); err != nil {
+		t.Fatalf("Add Past: %v", err)
+	}
 
 	if got := s.Upcoming(48 * time.Hour); len(got) != 0 {
 		t.Errorf("past leg should not appear in Upcoming: %d", len(got))

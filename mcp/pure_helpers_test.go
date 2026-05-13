@@ -47,7 +47,7 @@ func TestGroundRoutesHaveProvider(t *testing.T) {
 		want     bool
 	}{
 		{"flixbus", true},
-		{"FlixBus", true},    // case insensitive
+		{"FlixBus", true}, // case insensitive
 		{"regiojet", true},
 		{"TRENITALIA", true},
 		{"eurostar", false},

@@ -29,11 +29,11 @@ func TestFetchTallinkCabinClasses_HappyPath(t *testing.T) {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"status":"OK"}`)
+		_, _ = fmt.Fprint(w, `{"status":"OK"}`)
 	})
 	mux.HandleFunc("/api/travelclasses", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `[{"code":"A2","name":"A2 cabin","description":"Inside","price":89.0,"capacity":2},{"code":"B4","name":"B4 cabin","description":"Budget","price":55.0,"capacity":4}]`)
+		_, _ = fmt.Fprint(w, `[{"code":"A2","name":"A2 cabin","description":"Inside","price":89.0,"capacity":2},{"code":"B4","name":"B4 cabin","description":"Budget","price":55.0,"capacity":4}]`)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -94,7 +94,7 @@ func TestTallinkGetSession_MockServer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: "JSESSIONID", Value: "test-session-id"})
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `<html><script>window.Env = { sessionGuid: 'ABCD-1234-EFGH', locale: 'en' };</script></html>`)
+		_, _ = fmt.Fprint(w, `<html><script>window.Env = { sessionGuid: 'ABCD-1234-EFGH', locale: 'en' };</script></html>`)
 	}))
 	defer srv.Close()
 
@@ -117,7 +117,7 @@ func TestTallinkGetSession_NoCookies(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// No cookies set.
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `<html></html>`)
+		_, _ = fmt.Fprint(w, `<html></html>`)
 	}))
 	defer srv.Close()
 
@@ -154,13 +154,13 @@ func TestSearchTallink_FullMockFlow_Day1Results(t *testing.T) {
 		callCount++
 		http.SetCookie(w, &http.Cookie{Name: "JSESSIONID", Value: "sess-abc"})
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `<html><script>window.Env = { sessionGuid: 'GUID-MOCK-TEST' };</script></html>`)
+		_, _ = fmt.Fprint(w, `<html><script>window.Env = { sessionGuid: 'GUID-MOCK-TEST' };</script></html>`)
 	})
 	// Step 2: timetables API
 	mux.HandleFunc("/api/timetables", func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, timetableJSON)
+		_, _ = fmt.Fprint(w, timetableJSON)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -195,7 +195,7 @@ func TestSearchTallink_FullMockFlow_Day1Results(t *testing.T) {
 			duration = computed
 		}
 		var price float64
-		fmt.Sscanf(s.PersonPrice, "%f", &price)
+		_, _ = fmt.Sscanf(s.PersonPrice, "%f", &price)
 		var amenities []string
 		if price > 0 && price < tallinkDealThreshold {
 			amenities = append(amenities, "Deal")
@@ -306,7 +306,7 @@ func TestSearchDFDS_AvailableRoute_HappyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// Return availability with fromDate/toDate encompassing our date.
-		fmt.Fprint(w, `{"route":"DOVC","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":[]}`)
+		_, _ = fmt.Fprint(w, `{"route":"DOVC","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":[]}`)
 	}))
 	defer srv.Close()
 
@@ -382,7 +382,7 @@ func TestFetchDFDSAvailability_OfferDate(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"route":"DOVC","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":["2026-08-15"]}`)
+		_, _ = fmt.Fprint(w, `{"route":"DOVC","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":["2026-08-15"]}`)
 	}))
 	defer srv.Close()
 	dfdsClient = srv.Client()
@@ -407,7 +407,7 @@ func TestSearchEurostarTimetable_HappyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, timetableResp)
+		_, _ = fmt.Fprint(w, timetableResp)
 	}))
 	defer srv.Close()
 
@@ -521,7 +521,7 @@ func TestSearchEurostar_NonOKStatus_v2(t *testing.T) {
 	eurostarDo = func(req *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
 		rec.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(rec, `server error`)
+		_, _ = fmt.Fprint(rec, `server error`)
 		return rec.Result(), nil
 	}
 
@@ -546,7 +546,7 @@ func TestSearchEurostar_DefaultCurrency_v2(t *testing.T) {
 	eurostarDo = func(req *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
 		rec.WriteHeader(http.StatusOK)
-		fmt.Fprint(rec, `{"data":{"cheapestFaresSearch":[{"cheapestFares":[]}]},"errors":[]}`)
+		_, _ = fmt.Fprint(rec, `{"data":{"cheapestFaresSearch":[{"cheapestFares":[]}]},"errors":[]}`)
 		return rec.Result(), nil
 	}
 

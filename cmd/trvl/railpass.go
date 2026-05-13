@@ -94,12 +94,12 @@ func parseRailSegments(args []string) ([]railpass.PointToPointSegment, error) {
 }
 
 func renderRailPassTable(out *os.File, rec railpass.Recommendation) {
-	fmt.Fprintf(out, "Rail pass evaluation: %s\n", rec.PassName)
-	fmt.Fprintf(out, "  Point-to-point total:  %.2f\n", rec.PointToPointTotal)
-	fmt.Fprintf(out, "  Pass effective cost:   %.2f\n", rec.PassTotalEffective)
-	fmt.Fprintf(out, "  Savings (p2p - pass):  %+.2f\n", rec.Savings)
-	fmt.Fprintf(out, "  Break-even segments:   %d\n", rec.BreakEvenSegments)
-	fmt.Fprintf(out, "  Segments scored:       %d\n", rec.SegmentsScored)
-	fmt.Fprintf(out, "  Verdict:               %s\n", rec.Verdict)
-	fmt.Fprintf(out, "  Reason:                %s\n", rec.Reason)
+	_, _ = fmt.Fprintf(out, "Rail pass evaluation: %s\n", rec.PassName)
+	_, _ = fmt.Fprintf(out, "  Point-to-point total:  %.2f\n", rec.PointToPointTotal)
+	_, _ = fmt.Fprintf(out, "  Pass effective cost:   %.2f\n", rec.PassTotalEffective)
+	_, _ = fmt.Fprintf(out, "  Savings (p2p - pass):  %+.2f\n", rec.Savings)
+	_, _ = fmt.Fprintf(out, "  Break-even segments:   %d\n", rec.BreakEvenSegments)
+	_, _ = fmt.Fprintf(out, "  Segments scored:       %d\n", rec.SegmentsScored)
+	_, _ = fmt.Fprintf(out, "  Verdict:               %s\n", rec.Verdict)
+	_, _ = fmt.Fprintf(out, "  Reason:                %s\n", rec.Reason)
 }

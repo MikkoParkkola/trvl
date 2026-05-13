@@ -19,7 +19,7 @@ import (
 func TestRunTestPreflight_HTTP403(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, `<html>Access denied</html>`)
+		_, _ = fmt.Fprint(w, `<html>Access denied</html>`)
 	}))
 	defer srv.Close()
 
@@ -60,7 +60,7 @@ func TestRunTestPreflight_HTTP403(t *testing.T) {
 
 func TestRunTestPreflight_ExtractionNoMatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html>no token here</html>`)
+		_, _ = fmt.Fprint(w, `<html>no token here</html>`)
 	}))
 	defer srv.Close()
 
@@ -102,7 +102,7 @@ func TestRunTestPreflight_ExtractionNoMatch(t *testing.T) {
 
 func TestRunTestPreflight_InvalidRegex(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `token=abc`)
+		_, _ = fmt.Fprint(w, `token=abc`)
 	}))
 	defer srv.Close()
 
@@ -153,11 +153,11 @@ func TestNormalizePrice_FXConversion(t *testing.T) {
 		base := r.URL.Query().Get("from")
 		switch base {
 		case "EUR":
-			json.NewEncoder(w).Encode(frankfurterResponse{Base: "EUR", Rates: map[string]float64{"USD": 1.10, "GBP": 0.87}})
+			_ = json.NewEncoder(w).Encode(frankfurterResponse{Base: "EUR", Rates: map[string]float64{"USD": 1.10, "GBP": 0.87}})
 		case "USD":
-			json.NewEncoder(w).Encode(frankfurterResponse{Base: "USD", Rates: map[string]float64{"EUR": 0.91, "GBP": 0.79}})
+			_ = json.NewEncoder(w).Encode(frankfurterResponse{Base: "USD", Rates: map[string]float64{"EUR": 0.91, "GBP": 0.79}})
 		case "GBP":
-			json.NewEncoder(w).Encode(frankfurterResponse{Base: "GBP", Rates: map[string]float64{"EUR": 1.15, "USD": 1.27}})
+			_ = json.NewEncoder(w).Encode(frankfurterResponse{Base: "GBP", Rates: map[string]float64{"EUR": 1.15, "USD": 1.27}})
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 		}
@@ -236,7 +236,7 @@ func TestRegistry_SaveLocked_WriteError(t *testing.T) {
 	if err := chmodDir(dir, 0o444); err != nil {
 		t.Skipf("cannot chmod dir read-only: %v", err)
 	}
-	t.Cleanup(func() { chmodDir(dir, 0o755) })
+	t.Cleanup(func() { _ = chmodDir(dir, 0o755) })
 
 	cfg := &ProviderConfig{
 		ID:              "write-err",
@@ -262,7 +262,7 @@ func TestNewRegistryAt_UnreadableDir(t *testing.T) {
 	if err := os.Chmod(dir, 0o000); err != nil {
 		t.Skipf("cannot chmod dir: %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 
 	_, err := NewRegistryAt(dir)
 	// On non-root: expect error. On root: may succeed (root ignores perms).

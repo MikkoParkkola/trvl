@@ -202,8 +202,8 @@ func fetchTallinkCabinClasses(ctx context.Context, cookies []*http.Cookie, sessi
 	if err != nil {
 		return nil, fmt.Errorf("cabin classes: summary request: %w", err)
 	}
-	defer summaryResp.Body.Close()
-	io.Copy(io.Discard, summaryResp.Body) //nolint:errcheck
+	defer func() { _ = summaryResp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, summaryResp.Body) //nolint:errcheck
 
 	if summaryResp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("cabin classes: summary HTTP %d", summaryResp.StatusCode)
@@ -229,7 +229,7 @@ func fetchTallinkCabinClasses(ctx context.Context, cookies []*http.Cookie, sessi
 	if err != nil {
 		return nil, fmt.Errorf("cabin classes: travelclasses request: %w", err)
 	}
-	defer classesResp.Body.Close()
+	defer func() { _ = classesResp.Body.Close() }()
 
 	if classesResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(classesResp.Body, 512))
@@ -316,7 +316,7 @@ func tallinkGetSession(ctx context.Context, fromCode, toCode, date string) (*tal
 	if err != nil {
 		return nil, fmt.Errorf("tallink session: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read body to extract sessionGuid (limited to 256KB).
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
@@ -411,7 +411,7 @@ func fetchTallinkTimetables(ctx context.Context, fromCode, toCode, date string) 
 	if err != nil {
 		return nil, fmt.Errorf("tallink timetables: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
@@ -454,10 +454,6 @@ func SearchTallink(ctx context.Context, from, to, date, currency string) ([]mode
 	toPort, ok := LookupTallinkPort(to)
 	if !ok {
 		return nil, fmt.Errorf("tallink: no port for %q", to)
-	}
-
-	if currency == "" {
-		currency = "EUR"
 	}
 
 	if _, err := models.ParseDate(date); err != nil {
@@ -524,7 +520,7 @@ func SearchTallink(ctx context.Context, from, to, date, currency string) ([]mode
 		// Parse price from string ("38.90").
 		var price float64
 		if s.PersonPrice != "" {
-			fmt.Sscanf(s.PersonPrice, "%f", &price)
+			_, _ = fmt.Sscanf(s.PersonPrice, "%f", &price)
 		}
 
 		var amenities []string

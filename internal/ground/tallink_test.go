@@ -3,7 +3,6 @@ package ground
 import (
 	"strings"
 	"testing"
-
 )
 
 func TestLookupTallinkPort(t *testing.T) {
@@ -389,4 +388,3 @@ func TestTallinkFormatCabinClasses(t *testing.T) {
 		})
 	}
 }
-

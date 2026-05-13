@@ -70,18 +70,18 @@ Examples:
 			})
 
 			if len(candidates) == 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "No viable hidden-city candidates (risk score above threshold).\n")
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No viable hidden-city candidates (risk score above threshold).\n")
 				return nil
 			}
 
 			for _, c := range candidates {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s → %s (skip last leg to %s)\n", c.Origin, c.HubBeyond, c.Hub)
-				fmt.Fprintf(cmd.OutOrStdout(), "  Carrier: %s  Price: %s %.2f", c.Carrier, c.Currency, c.Price)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s → %s (skip last leg to %s)\n", c.Origin, c.HubBeyond, c.Hub)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  Carrier: %s  Price: %s %.2f", c.Carrier, c.Currency, c.Price)
 				if c.SavingsPct > 0 {
-					fmt.Fprintf(cmd.OutOrStdout(), "  Saves: %.0f%% (%.2f %s)", c.SavingsPct, c.SavingsEUR, c.Currency)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  Saves: %.0f%% (%.2f %s)", c.SavingsPct, c.SavingsEUR, c.Currency)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "\n  Risk: %s — %s\n", colorizeHiddenCityRisk(c.LayoverRisk), c.Reason)
-				fmt.Fprintf(cmd.OutOrStdout(), "  Booking: %s\n\n", c.BookingURL)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n  Risk: %s — %s\n", colorizeHiddenCityRisk(c.LayoverRisk), c.Reason)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  Booking: %s\n\n", c.BookingURL)
 			}
 
 			return nil

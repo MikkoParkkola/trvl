@@ -42,7 +42,7 @@ func TestResolveCityIDDynamic(t *testing.T) {
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -149,7 +149,7 @@ func TestResolveCityIDDynamic(t *testing.T) {
 			},
 		}
 		data, _ := json.MarshalIndent(persistCfg, "", "  ")
-		os.WriteFile(filepath.Join(tmpDir, "persist-test.json"), data, 0o644)
+		_ = os.WriteFile(filepath.Join(tmpDir, "persist-test.json"), data, 0o644)
 
 		reg, err := NewRegistryAt(tmpDir)
 		if err != nil {
@@ -176,7 +176,7 @@ func TestResolveCityIDDynamic(t *testing.T) {
 			t.Fatalf("read persisted file: %v", err)
 		}
 		var diskCfg ProviderConfig
-		json.Unmarshal(diskData, &diskCfg)
+		_ = json.Unmarshal(diskData, &diskCfg)
 		if diskCfg.CityLookup["osaka"] != "-999" {
 			t.Errorf("disk cache: got %q, want %q", diskCfg.CityLookup["osaka"], "-999")
 		}
@@ -196,7 +196,7 @@ func TestResolveCityExtraFields(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -262,7 +262,7 @@ func TestResolveCityIDDynamic_HostelworldStyle(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -319,7 +319,7 @@ func TestSearchProviderWithCityResolver(t *testing.T) {
 	providerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedURL = r.URL.String()
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{
 				map[string]any{
 					"name":  "Test Hotel",
@@ -332,7 +332,7 @@ func TestSearchProviderWithCityResolver(t *testing.T) {
 
 	resolverSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{
 				map[string]any{
 					"dest_id":   "-999888",
@@ -363,7 +363,7 @@ func TestSearchProviderWithCityResolver(t *testing.T) {
 	}
 
 	data, _ := json.MarshalIndent(cfg, "", "  ")
-	os.WriteFile(filepath.Join(tmpDir, "resolver-e2e.json"), data, 0o644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "resolver-e2e.json"), data, 0o644)
 
 	reg, err := NewRegistryAt(tmpDir)
 	if err != nil {

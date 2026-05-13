@@ -151,10 +151,10 @@ func TestExtractAmenityCodes_NoPairsFound(t *testing.T) {
 func TestExtractAmenityCodes_MalformedPairs(t *testing.T) {
 	raw := []any{
 		[]any{
-			[]any{float64(1)},                    // too short
+			[]any{float64(1)},                      // too short
 			[]any{float64(1), float64(2), "extra"}, // too long (len != 2)
-			[]any{"x", float64(2)},               // non-numeric availability
-			[]any{float64(1), "y"},               // non-numeric code
+			[]any{"x", float64(2)},                 // non-numeric availability
+			[]any{float64(1), "y"},                 // non-numeric code
 		},
 	}
 

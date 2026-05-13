@@ -421,8 +421,8 @@ func TestNormalizeHotelCity(t *testing.T) {
 	}{
 		// Cities that need mapping (English → local)
 		{"Prague", "Praha"},
-		{"prague", "Praha"},         // case-insensitive
-		{"  Prague  ", "Praha"},     // trimmed
+		{"prague", "Praha"},     // case-insensitive
+		{"  Prague  ", "Praha"}, // trimmed
 		{"Munich", "München"},
 		{"Vienna", "Wien"},
 		{"Cologne", "Köln"},

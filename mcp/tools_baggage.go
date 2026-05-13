@@ -35,23 +35,23 @@ func baggageOutputSchema() interface{} {
 	airlineSchema := map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"code":               schemaString(),
-			"name":               schemaString(),
-			"carry_on_max_kg":    schemaNum(),
+			"code":                schemaString(),
+			"name":                schemaString(),
+			"carry_on_max_kg":     schemaNum(),
 			"carry_on_dimensions": schemaString(),
-			"personal_item":      schemaBool(),
-			"checked_included":   schemaInt(),
-			"checked_fee_eur":    schemaNum(),
-			"overhead_only":      schemaBool(),
-			"notes":              schemaString(),
+			"personal_item":       schemaBool(),
+			"checked_included":    schemaInt(),
+			"checked_fee_eur":     schemaNum(),
+			"overhead_only":       schemaBool(),
+			"notes":               schemaString(),
 		},
 	}
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"airline": airlineSchema,
+			"airline":  airlineSchema,
 			"airlines": schemaArray(airlineSchema),
-			"found": schemaBool(),
+			"found":    schemaBool(),
 		},
 	}
 }
@@ -97,7 +97,7 @@ func handleGetBaggageRules(_ context.Context, args map[string]any, _ ElicitFunc,
 
 func buildBaggageSummaryOne(ab baggage.AirlineBaggage) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Baggage rules for %s (%s):\n\n", ab.Name, ab.Code))
+	_, _ = fmt.Fprintf(&sb, "Baggage rules for %s (%s):\n\n", ab.Name, ab.Code)
 
 	carryOn := "no weight limit"
 	if ab.CarryOnMaxKg > 0 {
@@ -106,7 +106,7 @@ func buildBaggageSummaryOne(ab baggage.AirlineBaggage) string {
 	if ab.CarryOnDimensions != "" {
 		carryOn += ", " + ab.CarryOnDimensions
 	}
-	sb.WriteString(fmt.Sprintf("  Carry-on: %s\n", carryOn))
+	_, _ = fmt.Fprintf(&sb, "  Carry-on: %s\n", carryOn)
 
 	if ab.PersonalItem {
 		sb.WriteString("  Personal item: yes (handbag/laptop bag)\n")
@@ -115,9 +115,9 @@ func buildBaggageSummaryOne(ab baggage.AirlineBaggage) string {
 	}
 
 	if ab.CheckedIncluded > 0 {
-		sb.WriteString(fmt.Sprintf("  Checked bags: %d included (23 kg)\n", ab.CheckedIncluded))
+		_, _ = fmt.Fprintf(&sb, "  Checked bags: %d included (23 kg)\n", ab.CheckedIncluded)
 	} else if ab.CheckedFee > 0 {
-		sb.WriteString(fmt.Sprintf("  Checked bags: not included, from EUR %.0f\n", ab.CheckedFee))
+		_, _ = fmt.Fprintf(&sb, "  Checked bags: not included, from EUR %.0f\n", ab.CheckedFee)
 	} else {
 		sb.WriteString("  Checked bags: not included\n")
 	}
@@ -127,14 +127,14 @@ func buildBaggageSummaryOne(ab baggage.AirlineBaggage) string {
 	}
 
 	if ab.Notes != "" {
-		sb.WriteString(fmt.Sprintf("\n  Notes: %s\n", ab.Notes))
+		_, _ = fmt.Fprintf(&sb, "\n  Notes: %s\n", ab.Notes)
 	}
 	return sb.String()
 }
 
 func buildBaggageSummaryAll(airlines []baggage.AirlineBaggage) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Baggage rules for %d airlines:\n\n", len(airlines)))
+	_, _ = fmt.Fprintf(&sb, "Baggage rules for %d airlines:\n\n", len(airlines))
 	for _, ab := range airlines {
 		carryOn := "no limit"
 		if ab.CarryOnMaxKg > 0 {
@@ -150,8 +150,8 @@ func buildBaggageSummaryAll(airlines []baggage.AirlineBaggage) string {
 		if ab.OverheadOnly {
 			lccMark = " [LCC: overhead fee]"
 		}
-		sb.WriteString(fmt.Sprintf("  %s %-22s carry-on: %-6s  checked: %s%s\n",
-			ab.Code, ab.Name, carryOn, checked, lccMark))
+		_, _ = fmt.Fprintf(&sb, "  %s %-22s carry-on: %-6s  checked: %s%s\n",
+			ab.Code, ab.Name, carryOn, checked, lccMark)
 	}
 	return sb.String()
 }

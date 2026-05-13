@@ -131,8 +131,8 @@ func ScoreOpportunity(
 
 	// 2. RequestMatch — score how well the offer fits a generic "any dest" request.
 	rmScore := match.Compute(match.Request{
-		DestIATA:     dest,
-		Nights:       nights,
+		DestIATA:       dest,
+		Nights:         nights,
 		MaxNightsDrift: 2,
 	}, match.Offered{
 		DestIATA:   dest,

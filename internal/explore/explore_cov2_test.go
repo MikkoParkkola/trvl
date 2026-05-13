@@ -50,7 +50,7 @@ func TestDoExploreRequest_Status500(t *testing.T) {
 func TestDoExploreRequest_InvalidBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte("not valid batch or flight response"))
+		_, _ = w.Write([]byte("not valid batch or flight response"))
 	}))
 	defer srv.Close()
 
@@ -71,7 +71,7 @@ func TestDoExploreRequest_ValidDestinations(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte(batchResp))
+		_, _ = w.Write([]byte(batchResp))
 	}))
 	defer srv.Close()
 
@@ -106,7 +106,7 @@ func TestSearchExplore_SuccessWithDestinations(t *testing.T) {
 		if r.Method == "GET" {
 			return // warmup request
 		}
-		w.Write([]byte(batchResp))
+		_, _ = w.Write([]byte(batchResp))
 	}))
 	defer srv.Close()
 
@@ -149,10 +149,10 @@ func TestSearchExplore_EmptyRetry(t *testing.T) {
 		}
 		if callCount <= 2 {
 			w.WriteHeader(200)
-			w.Write([]byte(emptyResp))
+			_, _ = w.Write([]byte(emptyResp))
 		} else {
 			w.WriteHeader(200)
-			w.Write([]byte(batchResp))
+			_, _ = w.Write([]byte(batchResp))
 		}
 	}))
 	defer srv.Close()

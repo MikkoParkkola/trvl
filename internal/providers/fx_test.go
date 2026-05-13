@@ -42,7 +42,7 @@ func TestFXCacheLiveRates(t *testing.T) {
 			resp["rates"] = map[string]float64{}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -85,7 +85,7 @@ func TestFXCacheTriangulation(t *testing.T) {
 			resp["rates"] = map[string]float64{}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -118,7 +118,7 @@ func TestFXCacheTTL(t *testing.T) {
 			"rates": map[string]float64{"USD": 1.10, "EUR": 0.91, "GBP": 0.85},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -162,7 +162,7 @@ func TestNormalizePriceUsesCache(t *testing.T) {
 			resp["rates"] = map[string]float64{}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()

@@ -348,7 +348,7 @@ func TestContentAnnotations(t *testing.T) {
 
 	resultJSON, _ := json.Marshal(resp.Result)
 	var result ToolCallResult
-	json.Unmarshal(resultJSON, &result)
+	_ = json.Unmarshal(resultJSON, &result)
 
 	if len(result.Content) < 2 {
 		t.Fatal("expected at least 2 content blocks")

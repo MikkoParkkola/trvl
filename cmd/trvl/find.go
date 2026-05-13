@@ -156,7 +156,7 @@ func runFind(ctx context.Context, req tripsearch.Request, format string, calenda
 		winner := result.Flights[0].Legs[0].DepartureAirport.Code
 		if winner != "" {
 			if rerr := preferences.RecordWinningOrigin(winner); rerr != nil {
-				fmt.Fprintf(os.Stderr, "affinity update skipped: %v\n", rerr)
+				_, _ = fmt.Fprintf(os.Stderr, "affinity update skipped: %v\n", rerr)
 			}
 		}
 	}
@@ -195,7 +195,7 @@ func runFind(ctx context.Context, req tripsearch.Request, format string, calenda
 
 	if calendarInsert && len(result.Flights) > 0 {
 		if err := insertBundleCalendar(result.Flights[0]); err != nil {
-			fmt.Fprintf(os.Stderr, "calendar insert failed: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "calendar insert failed: %v\n", err)
 		}
 	}
 
@@ -241,7 +241,6 @@ func insertBundleCalendar(f models.FlightResult) error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
-
 
 // inferFindArgs maps positional args to (origin, destination, date) using
 // profile-first defaults: origin defaults to "home", date defaults to the
@@ -293,7 +292,6 @@ func baselineDirectPrice(fls []models.FlightResult) float64 {
 	}
 	return best
 }
-
 
 // applyRelax pre-disables filters listed in the --relax flag. Filter names
 // that are not recognised are silently skipped so a typo never blocks a
@@ -398,7 +396,6 @@ func sweepSaturdays(fromISO string, windowDays, cap int) []string {
 	}
 	return out
 }
-
 
 // inferFindArgsSmart is the calendar-aware variant of inferFindArgs. Behaves
 // identically when calendar lookup is disabled or fails; otherwise skips

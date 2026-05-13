@@ -56,7 +56,7 @@ func TestEckerolineDayMatch(t *testing.T) {
 		want bool
 	}{
 		{"2026-06-01", "daily", true},
-		{"2026-06-01", "mon-sat", true},      // Monday
+		{"2026-06-01", "mon-sat", true},       // Monday
 		{"2026-06-06", "mon-sat", true},       // Saturday
 		{"2026-06-07", "mon-sat", false},      // Sunday
 		{"2026-06-07", "sun-fri", true},       // Sunday

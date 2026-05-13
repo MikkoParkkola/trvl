@@ -41,7 +41,7 @@ func TestProviderRoundTrip(t *testing.T) {
 		requestBodies = append(requestBodies, body[:n])
 		w.Header().Set("Content-Type", "application/hal+json")
 		w.WriteHeader(200)
-		w.Write(fixture)
+		_, _ = w.Write(fixture)
 	}))
 	defer srv.Close()
 
@@ -80,7 +80,7 @@ func TestProviderQuotaExhausted(t *testing.T) {
 		// Should never be called — quota is exhausted before any HTTP call.
 		t.Error("server should not be called when quota is exhausted")
 		w.WriteHeader(200)
-		w.Write([]byte(`{"recommendations":[]}`))
+		_, _ = w.Write([]byte(`{"recommendations":[]}`))
 	}))
 	defer srv.Close()
 
@@ -93,7 +93,9 @@ func TestProviderQuotaExhausted(t *testing.T) {
 
 	// Pre-fill quota to the limit.
 	for i := 0; i < quotaHardLimit; i++ {
-		c.IncQuota(now)
+		if err := c.IncQuota(now); err != nil {
+			t.Fatalf("IncQuota: %v", err)
+		}
 	}
 
 	client := &Client{

@@ -118,7 +118,7 @@ Without flags, runs an interactive prompt.`,
 				Currency:   currency,
 				Nights:     nights,
 				Stars:      stars,
-				Source:      source,
+				Source:     source,
 				Reference:  reference,
 				Notes:      notes,
 			}
@@ -180,10 +180,10 @@ func runProfileAddInteractive() error {
 	case "hotel", "airbnb", "hostel":
 		b.To = promptString(scanner, "City", "")
 		nightsStr := promptString(scanner, "Nights", "1")
-		fmt.Sscanf(nightsStr, "%d", &b.Nights)
+		_, _ = fmt.Sscanf(nightsStr, "%d", &b.Nights)
 		if bookingType == "hotel" {
 			starsStr := promptString(scanner, "Stars (1-5, or 0 for unknown)", "0")
-			fmt.Sscanf(starsStr, "%d", &b.Stars)
+			_, _ = fmt.Sscanf(starsStr, "%d", &b.Stars)
 		}
 	case "ground":
 		b.From = promptString(scanner, "From (city)", "")
@@ -193,7 +193,7 @@ func runProfileAddInteractive() error {
 	b.TravelDate = promptString(scanner, "Travel date (YYYY-MM-DD)", "")
 
 	priceStr := promptString(scanner, "Price", "0")
-	fmt.Sscanf(priceStr, "%f", &b.Price)
+	_, _ = fmt.Sscanf(priceStr, "%f", &b.Price)
 	b.Currency = promptString(scanner, "Currency", "EUR")
 
 	b.Reference = promptString(scanner, "Reference (optional)", "")

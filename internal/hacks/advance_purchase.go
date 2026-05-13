@@ -12,28 +12,28 @@ import (
 type routeType int
 
 const (
-	routeEuropeanShort routeType = iota // <3h / <2500km
-	routeEuropeanLong                   // transatlantic / >5h / >2500km
-	routeBudgetCarrier                  // Ryanair, Wizz, easyJet served
-	routeHolidaySeasonal                // Greek islands, Canaries, ski resorts Dec-Mar
-	routeWeekendCityBreak               // Fri-Sun trip
+	routeEuropeanShort    routeType = iota // <3h / <2500km
+	routeEuropeanLong                      // transatlantic / >5h / >2500km
+	routeBudgetCarrier                     // Ryanair, Wizz, easyJet served
+	routeHolidaySeasonal                   // Greek islands, Canaries, ski resorts Dec-Mar
+	routeWeekendCityBreak                  // Fri-Sun trip
 )
 
 // purchaseWindow defines the optimal advance-purchase range (in days) for
 // a route type.
 type purchaseWindow struct {
-	optimalMin int // earliest recommended booking (days ahead)
-	optimalMax int // latest recommended booking (days ahead)
+	optimalMin  int // earliest recommended booking (days ahead)
+	optimalMax  int // latest recommended booking (days ahead)
 	spikeInside int // prices spike when fewer than this many days ahead
 	label       string
 }
 
 // optimalWindows maps route types to their optimal advance-purchase windows.
 var optimalWindows = map[routeType]purchaseWindow{
-	routeEuropeanShort:  {optimalMin: 21, optimalMax: 56, spikeInside: 14, label: "European short-haul"},
-	routeEuropeanLong:   {optimalMin: 42, optimalMax: 112, spikeInside: 28, label: "European long-haul / transatlantic"},
-	routeBudgetCarrier:  {optimalMin: 28, optimalMax: 70, spikeInside: 14, label: "budget carrier route"},
-	routeHolidaySeasonal: {optimalMin: 56, optimalMax: 112, spikeInside: 28, label: "holiday/seasonal destination"},
+	routeEuropeanShort:    {optimalMin: 21, optimalMax: 56, spikeInside: 14, label: "European short-haul"},
+	routeEuropeanLong:     {optimalMin: 42, optimalMax: 112, spikeInside: 28, label: "European long-haul / transatlantic"},
+	routeBudgetCarrier:    {optimalMin: 28, optimalMax: 70, spikeInside: 14, label: "budget carrier route"},
+	routeHolidaySeasonal:  {optimalMin: 56, optimalMax: 112, spikeInside: 28, label: "holiday/seasonal destination"},
 	routeWeekendCityBreak: {optimalMin: 21, optimalMax: 42, spikeInside: 14, label: "weekend city break"},
 }
 

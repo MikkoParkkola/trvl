@@ -7,7 +7,7 @@ import (
 
 func TestNew(t *testing.T) {
 	c := New()
-	defer c.Close()
+	defer func() { c.Close() }()
 
 	if c.Len() != 0 {
 		t.Errorf("new cache Len() = %d, want 0", c.Len())
@@ -16,7 +16,7 @@ func TestNew(t *testing.T) {
 
 func TestSetAndGet(t *testing.T) {
 	c := New()
-	defer c.Close()
+	defer func() { c.Close() }()
 
 	c.Set("key1", []byte("value1"), 5*time.Minute)
 
@@ -31,7 +31,7 @@ func TestSetAndGet(t *testing.T) {
 
 func TestGet_Miss(t *testing.T) {
 	c := New()
-	defer c.Close()
+	defer func() { c.Close() }()
 
 	_, ok := c.Get("nonexistent")
 	if ok {
@@ -41,7 +41,7 @@ func TestGet_Miss(t *testing.T) {
 
 func TestGet_Expired(t *testing.T) {
 	c := New()
-	defer c.Close()
+	defer func() { c.Close() }()
 
 	c.Set("key1", []byte("value1"), 1*time.Millisecond)
 	time.Sleep(5 * time.Millisecond)
@@ -54,7 +54,7 @@ func TestGet_Expired(t *testing.T) {
 
 func TestSet_Overwrite(t *testing.T) {
 	c := New()
-	defer c.Close()
+	defer func() { c.Close() }()
 
 	c.Set("key1", []byte("value1"), 5*time.Minute)
 	c.Set("key1", []byte("value2"), 5*time.Minute)
@@ -70,7 +70,7 @@ func TestSet_Overwrite(t *testing.T) {
 
 func TestLen(t *testing.T) {
 	c := New()
-	defer c.Close()
+	defer func() { c.Close() }()
 
 	c.Set("a", []byte("1"), 5*time.Minute)
 	c.Set("b", []byte("2"), 5*time.Minute)
@@ -83,7 +83,7 @@ func TestLen(t *testing.T) {
 
 func TestCleanup(t *testing.T) {
 	c := New()
-	defer c.Close()
+	defer func() { c.Close() }()
 
 	c.Set("a", []byte("1"), 1*time.Millisecond)
 	c.Set("b", []byte("2"), 5*time.Minute)
@@ -114,7 +114,7 @@ func TestKey(t *testing.T) {
 
 func TestEviction_MaxEntries(t *testing.T) {
 	c := NewWithMax(3)
-	defer c.Close()
+	defer func() { c.Close() }()
 
 	// Use explicit sleep between inserts to ensure distinct insertedAt
 	// timestamps on Windows (time.Now() has ~15ms granularity).
@@ -148,7 +148,7 @@ func TestEviction_MaxEntries(t *testing.T) {
 
 func TestNewWithMax_DefaultsOnZero(t *testing.T) {
 	c := NewWithMax(0)
-	defer c.Close()
+	defer func() { c.Close() }()
 
 	if c.maxEntries != defaultMaxEntries {
 		t.Errorf("maxEntries = %d, want %d", c.maxEntries, defaultMaxEntries)
@@ -157,7 +157,7 @@ func TestNewWithMax_DefaultsOnZero(t *testing.T) {
 
 func TestConcurrentAccess(t *testing.T) {
 	c := New()
-	defer c.Close()
+	defer func() { c.Close() }()
 
 	done := make(chan bool, 10)
 	for i := range 10 {

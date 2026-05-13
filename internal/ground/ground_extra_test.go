@@ -39,7 +39,7 @@ func TestGenerateCorrelationID_Hex(t *testing.T) {
 	clean := strings.ReplaceAll(id, "-", "")
 	clean = strings.ReplaceAll(clean, "_", "")
 	for _, c := range clean {
-		if !('0' <= c && c <= '9') && !('a' <= c && c <= 'f') {
+		if ('0' > c || c > '9') && ('a' > c || c > 'f') {
 			t.Errorf("non-hex character %q in ID %q", c, id)
 		}
 	}

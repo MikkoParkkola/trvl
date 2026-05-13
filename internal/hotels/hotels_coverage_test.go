@@ -13,7 +13,7 @@ import (
 func TestFetchBookingPage_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "<html>mock booking page</html>")
+		_, _ = fmt.Fprint(w, "<html>mock booking page</html>")
 	}))
 	defer srv.Close()
 
@@ -92,7 +92,7 @@ func TestFetchBookingRooms_WithJSONLD(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, page)
+		_, _ = fmt.Fprint(w, page)
 	}))
 	defer srv.Close()
 
@@ -131,7 +131,7 @@ func TestFetchBookingRooms_FallsBackToSSR(t *testing.T) {
 		"</body></html>"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, page)
+		_, _ = fmt.Fprint(w, page)
 	}))
 	defer srv.Close()
 
@@ -150,7 +150,7 @@ func TestFetchBookingRooms_FallsBackToSSR(t *testing.T) {
 func TestFetchBookingRooms_NoOffers(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "<html><body>empty page</body></html>")
+		_, _ = fmt.Fprint(w, "<html><body>empty page</body></html>")
 	}))
 	defer srv.Close()
 	_, err := FetchBookingRooms(context.Background(), srv.URL, "2026-07-01", "2026-07-05", "USD")
@@ -180,7 +180,7 @@ func TestFetchBookingRooms_CurrencyFallback(t *testing.T) {
 		`<script type="application/ld+json">%s</script>`+
 		"\n</head></html>", string(jsonLD))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, page)
+		_, _ = fmt.Fprint(w, page)
 	}))
 	defer srv.Close()
 

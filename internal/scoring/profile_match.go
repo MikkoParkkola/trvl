@@ -19,18 +19,18 @@ import (
 
 // Factor name constants for breakdown keys and weight maps.
 const (
-	FactorBudgetFit                = "budget_fit"
-	FactorLoyaltyEarn              = "loyalty_earn"
-	FactorTimeWindowFit            = "time_window_fit"
-	FactorDirectness               = "directness"
-	FactorDistrictMatch            = "district_match"
-	FactorAirportAffinity          = "airport_affinity"
+	FactorBudgetFit                 = "budget_fit"
+	FactorLoyaltyEarn               = "loyalty_earn"
+	FactorTimeWindowFit             = "time_window_fit"
+	FactorDirectness                = "directness"
+	FactorDistrictMatch             = "district_match"
+	FactorAirportAffinity           = "airport_affinity"
 	FactorEarlyConnectionCompliance = "early_connection_compliance"
-	FactorStatusRetention          = "status_retention"
-	FactorLoungeAtTransit          = "lounge_at_transit"
-	FactorBucketListBoost          = "bucket_list_boost"
-	FactorWarsawFilter             = "warsaw_filter"
-	FactorFamilyModeCompatibility  = "family_mode_compatibility"
+	FactorStatusRetention           = "status_retention"
+	FactorLoungeAtTransit           = "lounge_at_transit"
+	FactorBucketListBoost           = "bucket_list_boost"
+	FactorWarsawFilter              = "warsaw_filter"
+	FactorFamilyModeCompatibility   = "family_mode_compatibility"
 )
 
 // DefaultWeights returns sensible default match weights.
@@ -74,8 +74,8 @@ type DiscoverInput struct {
 	HotelName   string
 
 	// Optional flight detail (populated when calling from flights/hotels views).
-	Stops       int    // number of stops (0 = direct)
-	DepartTime  string // "HH:MM" 24h format; "" if unknown
+	Stops        int      // number of stops (0 = direct)
+	DepartTime   string   // "HH:MM" 24h format; "" if unknown
 	AirlineCodes []string // IATA airline codes for all legs; nil if unknown
 }
 

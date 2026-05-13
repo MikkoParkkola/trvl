@@ -28,11 +28,11 @@ var ErrDailyQuotaExhausted = errors.New("afklm: daily quota exhausted (>=95/100 
 
 // ClientOptions configures the AF-KLM HTTP client.
 type ClientOptions struct {
-	BaseURL    string       // default "https://api.airfranceklm.com"
-	Host       string       // "KL" (default) or "AF"
-	Credential string       // if empty, resolved via auth.ResolveCredential
-	CacheDir   string       // default ~/.trvl/cache/afklm
-	HTTPClient *http.Client // default: stdlib default
+	BaseURL    string           // default "https://api.airfranceklm.com"
+	Host       string           // "KL" (default) or "AF"
+	Credential string           // if empty, resolved via auth.ResolveCredential
+	CacheDir   string           // default ~/.trvl/cache/afklm
+	HTTPClient *http.Client     // default: stdlib default
 	Now        func() time.Time // injectable for tests
 }
 
@@ -235,7 +235,7 @@ func (c *Client) httpPost(ctx context.Context, path string, body []byte) ([]byte
 	if err != nil {
 		return nil, fmt.Errorf("afklm: http: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20)) // 4 MiB max
 	if err != nil {

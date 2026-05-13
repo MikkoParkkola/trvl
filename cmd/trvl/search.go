@@ -100,7 +100,7 @@ func printSearchInterpretation(query string, p nlsearch.Params) {
 	if p.ReturnDate != "" {
 		parts = append(parts, fmt.Sprintf("return=%s", p.ReturnDate))
 	}
-	fmt.Fprintf(os.Stderr, "🔎 %s → %s\n", query, strings.Join(parts, " "))
+	_, _ = fmt.Fprintf(os.Stderr, "🔎 %s → %s\n", query, strings.Join(parts, " "))
 }
 
 // dispatchSearch routes to the right concrete command. It builds a fresh
@@ -173,8 +173,8 @@ func missingFieldsHint(p nlsearch.Params, intent, template string) error {
 		missing = append(missing, "date")
 	}
 
-	fmt.Fprintf(os.Stderr, "Missing: %s\n", strings.Join(missing, ", "))
-	fmt.Fprintf(os.Stderr, "Try: %s\n", template)
-	fmt.Fprintln(os.Stderr, "Or use the travel MCP tool from an AI assistant for free-form parsing.")
+	_, _ = fmt.Fprintf(os.Stderr, "Missing: %s\n", strings.Join(missing, ", "))
+	_, _ = fmt.Fprintf(os.Stderr, "Try: %s\n", template)
+	_, _ = fmt.Fprintln(os.Stderr, "Or use the travel MCP tool from an AI assistant for free-form parsing.")
 	return nil
 }

@@ -347,7 +347,7 @@ func TestSearchHotelsFullFlow(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -466,7 +466,7 @@ func TestPreflightAuthExtraction(t *testing.T) {
 	// Mock preflight server returning a page with an API key.
 	preflightSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Session-Token", "sess-abc123")
-		fmt.Fprintf(w, `<html><script>var apiKey = "key-xyz789";</script></html>`)
+		_, _ = fmt.Fprintf(w, `<html><script>var apiKey = "key-xyz789";</script></html>`)
 	}))
 	defer preflightSrv.Close()
 
@@ -490,7 +490,7 @@ func TestPreflightAuthExtraction(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer searchSrv.Close()
 

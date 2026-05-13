@@ -247,7 +247,7 @@ func trainlineViaCurl(ctx context.Context, fromID, toID, date, currency string) 
 	// Step 1: Seed the cookie jar by visiting the homepage so Datadome sets its
 	// cookie bound to this exact curl TLS session.
 	cookieJarFile := fmt.Sprintf("/tmp/trainline-cookies-%d.txt", time.Now().UnixNano())
-	defer os.Remove(cookieJarFile)
+	defer func() { _ = os.Remove(cookieJarFile) }()
 	seedArgs := append([]string{
 		"-s", "--http2",
 		"-L",                // follow redirects
@@ -378,11 +378,11 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 	if err != nil {
 		return nil, fmt.Errorf("trainline search: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusForbidden {
 		firstBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if !allowBrowserFallbacks {
 			return nil, fmt.Errorf("trainline: HTTP 403: %s", firstBody)
 		}
@@ -400,7 +400,7 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 			if err2 != nil {
 				return nil, fmt.Errorf("trainline retry: %w", err2)
 			}
-			defer resp2.Body.Close()
+			defer func() { _ = resp2.Body.Close() }()
 			if resp2.StatusCode == http.StatusOK {
 				return readAndParseTrainlineResponse(resp2.Body, from, to, date, currency)
 			}
@@ -421,7 +421,7 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 			if err3 != nil {
 				return nil, fmt.Errorf("trainline retry: %w", err3)
 			}
-			defer resp3.Body.Close()
+			defer func() { _ = resp3.Body.Close() }()
 			if resp3.StatusCode == http.StatusOK {
 				return readAndParseTrainlineResponse(resp3.Body, from, to, date, currency)
 			}
@@ -443,7 +443,7 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 		isCaptcha, captchaURL := cookies.IsCaptchaResponse(http.StatusForbidden, firstBody)
 		if isCaptcha {
 			slog.Warn("trainline requires browser verification — opening browser", "captcha_url", captchaURL)
-			fmt.Fprintf(os.Stderr, "⚠️  Trainline requires verification. Opening browser — please solve the challenge, then retry.\n")
+			_, _ = fmt.Fprintf(os.Stderr, "⚠️  Trainline requires verification. Opening browser — please solve the challenge, then retry.\n")
 			_ = cookies.OpenBrowserForAuth("https://www.thetrainline.com/")
 		}
 

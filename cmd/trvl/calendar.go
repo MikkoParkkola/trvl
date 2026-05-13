@@ -18,15 +18,16 @@ import (
 // events. Confirmed legs get STATUS:CONFIRMED, planned legs get TENTATIVE.
 //
 // Examples:
-//   trvl calendar trip_abc123                    # print to stdout
-//   trvl calendar trip_abc123 --output trip.ics  # write to file
-//   trvl calendar --last                         # use the most recent search
-//   trvl calendar --last --output last.ics
+//
+//	trvl calendar trip_abc123                    # print to stdout
+//	trvl calendar trip_abc123 --output trip.ics  # write to file
+//	trvl calendar --last                         # use the most recent search
+//	trvl calendar --last --output last.ics
 func calendarCmd() *cobra.Command {
 	var (
-		output string
-		last   bool
-		tripID string
+		output  string
+		last    bool
+		tripID  string
 		icsFlag bool
 	)
 
@@ -102,7 +103,7 @@ Examples:
 			if err := os.WriteFile(output, []byte(icsContent), 0o644); err != nil {
 				return fmt.Errorf("write %s: %w", output, err)
 			}
-			fmt.Fprintf(os.Stderr, "Wrote %d events to %s\n", len(trip.Legs), output)
+			_, _ = fmt.Fprintf(os.Stderr, "Wrote %d events to %s\n", len(trip.Legs), output)
 			return nil
 		},
 	}

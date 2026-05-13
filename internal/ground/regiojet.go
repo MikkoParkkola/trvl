@@ -156,7 +156,7 @@ func fetchRegioJetLocations(ctx context.Context) ([]regiojetCountry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("regiojet locations: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
@@ -234,7 +234,7 @@ func SearchRegioJet(ctx context.Context, fromCityID, toCityID int, date string, 
 	if err != nil {
 		return nil, fmt.Errorf("regiojet search: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))

@@ -23,19 +23,19 @@ func TestSearchTallink_MockServer_HappyPath(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: "JSESSIONID", Value: "mock-session"})
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `<html><script>window.Env = { sessionGuid: 'MOCK-GUID-1234', locale: 'en' };</script></html>`)
+		_, _ = fmt.Fprint(w, `<html><script>window.Env = { sessionGuid: 'MOCK-GUID-1234', locale: 'en' };</script></html>`)
 	})
 	mux.HandleFunc("/api/timetables", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, mockTallinkTimetableResponse)
+		_, _ = fmt.Fprint(w, mockTallinkTimetableResponse)
 	})
 	mux.HandleFunc("/api/reservation/cruiseSummary", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"status":"OK"}`)
+		_, _ = fmt.Fprint(w, `{"status":"OK"}`)
 	})
 	mux.HandleFunc("/api/travelclasses", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `[{"code":"A2","name":"A-class","description":"Cabin","price":89,"capacity":2}]`)
+		_, _ = fmt.Fprint(w, `[{"code":"A2","name":"A-class","description":"Cabin","price":89,"capacity":2}]`)
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -145,7 +145,7 @@ func TestSearchTallink_DisabledSailSkipped(t *testing.T) {
 			continue
 		}
 		var price float64
-		fmt.Sscanf(s.PersonPrice, "%f", &price)
+		_, _ = fmt.Sscanf(s.PersonPrice, "%f", &price)
 		routes = append(routes, models.GroundRoute{
 			Provider: "tallink",
 			Price:    price,
@@ -162,7 +162,7 @@ func TestSearchTallink_DisabledSailSkipped(t *testing.T) {
 func TestSearchTallink_EmptyPriceHandled(t *testing.T) {
 	// Sail with empty personPrice should yield price 0.
 	var price float64
-	fmt.Sscanf("", "%f", &price)
+	_, _ = fmt.Sscanf("", "%f", &price)
 	if price != 0 {
 		t.Errorf("empty price should parse as 0, got %f", price)
 	}

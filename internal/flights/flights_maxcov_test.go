@@ -40,8 +40,8 @@ func TestKiwiCabinClass(t *testing.T) {
 		{models.PremiumEconomy, "W"},
 		{models.Business, "C"},
 		{models.First, "F"},
-		{0, "M"},           // zero value
-		{99, "M"},          // unknown
+		{0, "M"},  // zero value
+		{99, "M"}, // unknown
 	}
 	for _, tt := range tests {
 		got := kiwiCabinClass(tt.cabin)
@@ -75,7 +75,7 @@ func TestFilterFlightsByAlliance(t *testing.T) {
 			{Legs: []models.FlightLeg{{AirlineCode: "LH"}}}, // star_alliance
 			{Legs: []models.FlightLeg{{AirlineCode: "AF"}}}, // skyteam
 			{Legs: []models.FlightLeg{{AirlineCode: "XX"}}}, // unknown
-			{Legs: nil},                                       // no legs
+			{Legs: nil}, // no legs
 		}
 	}
 
@@ -129,12 +129,12 @@ func TestParseHour_EdgeCases(t *testing.T) {
 		{"00:00", 0},
 		{"09:30", 9},
 		{"23:59", 23},
-		{"24:00", -1},  // out of range hour
-		{"0:00", -1},   // too short
-		{"12:3", -1},   // too short
-		{"1230", -1},   // missing colon
-		{"ab:cd", -1},  // non-digit chars
-		{"", -1},       // empty
+		{"24:00", -1}, // out of range hour
+		{"0:00", -1},  // too short
+		{"12:3", -1},  // too short
+		{"1230", -1},  // missing colon
+		{"ab:cd", -1}, // non-digit chars
+		{"", -1},      // empty
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {

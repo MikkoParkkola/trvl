@@ -11,12 +11,12 @@ import (
 
 // ferryRoute describes a known ferry connection useful for positioning.
 type ferryRoute struct {
-	FerryFrom  string  // city name (for ground search)
-	FerryTo    string  // city name (for ground search)
-	AirportTo  string  // IATA code of the arrival-side airport to fly from
-	FerryEUR   float64 // approximate minimum ferry fare (EUR)
-	Overnight  bool    // true if this is typically an overnight ferry
-	Notes      string  // e.g. provider name, duration
+	FerryFrom string  // city name (for ground search)
+	FerryTo   string  // city name (for ground search)
+	AirportTo string  // IATA code of the arrival-side airport to fly from
+	FerryEUR  float64 // approximate minimum ferry fare (EUR)
+	Overnight bool    // true if this is typically an overnight ferry
+	Notes     string  // e.g. provider name, duration
 }
 
 // ferryPositioningRoutes maps an IATA origin airport code to viable ferry

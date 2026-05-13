@@ -80,17 +80,17 @@ func parseCabinFares(args []string) ([]cabinarb.CabinFare, error) {
 
 func renderCabinArbTable(out *os.File, recs []cabinarb.UpgradeRecommendation, threshold float64) {
 	if len(recs) == 0 {
-		fmt.Fprintf(out, "No upgrades within %.0f%% threshold.\n", threshold)
+		_, _ = fmt.Fprintf(out, "No upgrades within %.0f%% threshold.\n", threshold)
 		return
 	}
-	fmt.Fprintf(out, "Upgrade recommendations (threshold %.0f%%):\n", threshold)
-	fmt.Fprintf(out, "  %-16s %-16s %8s %8s %8s  %s\n", "Baseline", "Target", "Base", "Target", "Upsell%", "Reason")
-	fmt.Fprintf(out, "  %s\n", strings.Repeat("-", 80))
+	_, _ = fmt.Fprintf(out, "Upgrade recommendations (threshold %.0f%%):\n", threshold)
+	_, _ = fmt.Fprintf(out, "  %-16s %-16s %8s %8s %8s  %s\n", "Baseline", "Target", "Base", "Target", "Upsell%", "Reason")
+	_, _ = fmt.Fprintf(out, "  %s\n", strings.Repeat("-", 80))
 	for _, r := range recs {
 		upsellStr := fmt.Sprintf("%.1f%%", r.UpsellPercent)
 		if r.UpsellPercent == 0 {
 			upsellStr = "0.0% (free!)"
 		}
-		fmt.Fprintf(out, "  %-16s %-16s %8.2f %8.2f %11s  %s\n", r.Baseline, r.Target, r.BaselinePrice, r.TargetPrice, upsellStr, r.Reason)
+		_, _ = fmt.Fprintf(out, "  %-16s %-16s %8.2f %8.2f %11s  %s\n", r.Baseline, r.Target, r.BaselinePrice, r.TargetPrice, upsellStr, r.Reason)
 	}
 }

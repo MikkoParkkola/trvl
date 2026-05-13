@@ -490,7 +490,7 @@ func TestFindReviewEntries_DirectReviewList(t *testing.T) {
 	// JSON round-trip to simulate what extractBatchPayload does.
 	data, _ := json.Marshal(payload)
 	var parsed any
-	json.Unmarshal(data, &parsed)
+	_ = json.Unmarshal(data, &parsed)
 
 	reviews := findReviewEntries(parsed, 0)
 	t.Logf("findReviewEntries returned %d reviews", len(reviews))

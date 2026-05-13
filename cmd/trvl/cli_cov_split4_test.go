@@ -63,14 +63,14 @@ func TestProviders_StatusEmpty(t *testing.T) {
 
 	cmd := providersStatusCmd()
 	err := cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
 		t.Fatalf("providers status failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	_ = buf
 }
 
@@ -88,11 +88,11 @@ func TestTrips_StatusWithTrip(t *testing.T) {
 	createCmd := tripsCreateCmd()
 	createCmd.SetArgs([]string{"Upcoming"})
 	_ = createCmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	tripID := strings.TrimSpace(strings.TrimPrefix(buf.String(), "Created trip: "))
 
 	// Add a leg with future date
@@ -103,7 +103,7 @@ func TestTrips_StatusWithTrip(t *testing.T) {
 	addLeg := tripsAddLegCmd()
 	addLeg.SetArgs([]string{tripID, "flight", "--from", "HEL", "--to", "BCN", "--start", futureDate})
 	_ = addLeg.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	// Now status should show it
@@ -112,11 +112,11 @@ func TestTrips_StatusWithTrip(t *testing.T) {
 	os.Stdout = w
 	statusCmd := tripsStatusCmd()
 	_ = statusCmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	buf.Reset()
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	// Should show the upcoming trip
 	if !strings.Contains(buf.String(), "Upcoming") {
 		t.Errorf("expected trip name in status, got: %s", buf.String())
@@ -171,11 +171,11 @@ func TestShareTrip_Success(t *testing.T) {
 	createCmd := tripsCreateCmd()
 	createCmd.SetArgs([]string{"Share Test"})
 	_ = createCmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	tripID := strings.TrimSpace(strings.TrimPrefix(buf.String(), "Created trip: "))
 
 	// Add a leg
@@ -185,7 +185,7 @@ func TestShareTrip_Success(t *testing.T) {
 	addLeg := tripsAddLegCmd()
 	addLeg.SetArgs([]string{tripID, "flight", "--from", "HEL", "--to", "BCN"})
 	_ = addLeg.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	// Share
@@ -193,7 +193,7 @@ func TestShareTrip_Success(t *testing.T) {
 	r, w, _ = os.Pipe()
 	os.Stdout = w
 	err := shareTrip(tripID, "markdown")
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
@@ -201,7 +201,7 @@ func TestShareTrip_Success(t *testing.T) {
 	}
 
 	buf.Reset()
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "HEL") || !strings.Contains(buf.String(), "BCN") {
 		t.Errorf("expected route in share output, got: %s", buf.String())
 	}
@@ -226,7 +226,7 @@ func TestShareLastSearch_Success(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 	err := shareLastSearch("markdown")
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
@@ -234,7 +234,7 @@ func TestShareLastSearch_Success(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "HEL") {
 		t.Errorf("expected origin in share output, got: %s", buf.String())
 	}
@@ -262,14 +262,14 @@ func TestRunProvidersList_EmptyWithTempHome(t *testing.T) {
 
 	cmd := providersListCmd()
 	err := cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
 		t.Fatalf("providers list failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "No providers") {
 		t.Errorf("expected 'No providers' message, got: %s", buf.String())
 	}
@@ -288,14 +288,14 @@ func TestRunProvidersStatus_Empty(t *testing.T) {
 
 	cmd := providersStatusCmd()
 	err := cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
 		t.Fatalf("providers status failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	_ = buf
 }
 
@@ -312,14 +312,14 @@ func TestWatch_CheckEmpty(t *testing.T) {
 
 	cmd := watchCheckCmd()
 	err := cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
 		t.Fatalf("watch check failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "No active watches") {
 		t.Errorf("expected no-watches message, got: %s", buf.String())
 	}
@@ -345,14 +345,14 @@ func TestWatch_AddRoomWatch(t *testing.T) {
 	outCh := make(chan string, 1)
 	go func() {
 		var buf bytes.Buffer
-		buf.ReadFrom(r)
+		_, _ = buf.ReadFrom(r)
 		outCh <- buf.String()
 	}()
 
 	cmd := watchRoomsCmd()
 	cmd.SetArgs([]string{"Hotel Lutetia", "--checkin", "2026-06-15", "--checkout", "2026-06-18", "--keywords", "suite"})
 	execErr := cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if execErr != nil {
@@ -413,14 +413,14 @@ func TestVisaCmd_ListAll(t *testing.T) {
 	cmd := visaCmd()
 	cmd.SetArgs([]string{"--list"})
 	err := cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
 		t.Fatalf("visa --list failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if buf.Len() < 100 {
 		t.Errorf("expected country list, got too short output: %d bytes", buf.Len())
 	}
@@ -434,14 +434,14 @@ func TestVisaCmd_Lookup(t *testing.T) {
 	cmd := visaCmd()
 	cmd.SetArgs([]string{"--passport", "FI", "--destination", "JP"})
 	err := cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
 		t.Fatalf("visa lookup failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "Visa") {
 		t.Errorf("expected visa info in output, got: %s", buf.String())
 	}
@@ -463,13 +463,13 @@ func TestBaggageCmd_AllFlag(t *testing.T) {
 	cmd := baggageCmd()
 	cmd.SetArgs([]string{"--all"})
 	err := cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("baggage --all failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if buf.Len() == 0 {
 		t.Error("expected non-empty baggage list")
 	}
@@ -482,13 +482,13 @@ func TestBaggageCmd_SingleAirline(t *testing.T) {
 	cmd := baggageCmd()
 	cmd.SetArgs([]string{"KL"})
 	err := cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	if err != nil {
 		t.Fatalf("baggage KL failed: %v", err)
 	}
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if buf.Len() == 0 {
 		t.Error("expected non-empty baggage detail")
 	}
@@ -550,7 +550,7 @@ func TestUpgradeCmd_Runs(t *testing.T) {
 	cmd := upgradeCmd()
 	cmd.SetArgs([]string{"--dry-run"})
 	_ = cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 }
 
@@ -562,7 +562,7 @@ func TestUpgradeCmd_Quiet(t *testing.T) {
 	cmd := upgradeCmd()
 	cmd.SetArgs([]string{"--quiet"})
 	_ = cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 }
 

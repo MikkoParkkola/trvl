@@ -208,7 +208,7 @@ Examples:
 // If targetCurrency is set and differs from API currency, converts prices.
 func printFlightsTable(ctx context.Context, origin, destination, targetCurrency string, result *models.FlightSearchResult, explain bool) error {
 	if !result.Success {
-		fmt.Fprintf(os.Stderr, "Search failed: %s\n", result.Error)
+		_, _ = fmt.Fprintf(os.Stderr, "Search failed: %s\n", result.Error)
 		return nil
 	}
 

@@ -17,7 +17,7 @@ func dfdsTestMux(t *testing.T, availJSON string) (*httptest.Server, func()) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, availJSON)
+		_, _ = fmt.Fprint(w, availJSON)
 	}))
 	origClient := dfdsClient
 	origLimiter := dfdsLimiter
@@ -50,18 +50,18 @@ func (m *tallinkTransportMock) RoundTrip(r *http.Request) (*http.Response, error
 	case strings.Contains(path, "/api/timetables"):
 		rec.Header().Set("Content-Type", "application/json")
 		rec.WriteHeader(http.StatusOK)
-		fmt.Fprint(rec, m.timetableJSON)
+		_, _ = fmt.Fprint(rec, m.timetableJSON)
 	case strings.Contains(path, "/api/reservation/cruiseSummary"):
 		rec.WriteHeader(m.summaryStatus)
-		fmt.Fprint(rec, `{"status":"OK"}`)
+		_, _ = fmt.Fprint(rec, `{"status":"OK"}`)
 	case strings.Contains(path, "/api/travelclasses"):
 		rec.WriteHeader(http.StatusOK)
-		fmt.Fprint(rec, m.travelClasses)
+		_, _ = fmt.Fprint(rec, m.travelClasses)
 	default:
 		// Booking page
 		rec.Header().Set("Set-Cookie", "JSESSIONID=mock-sess; Path=/")
 		rec.WriteHeader(http.StatusOK)
-		fmt.Fprint(rec, m.bookingPageBody)
+		_, _ = fmt.Fprint(rec, m.bookingPageBody)
 	}
 	return rec.Result(), nil
 }
@@ -100,7 +100,7 @@ func TestFetchDFDSAvailability_ViaTransport_Available(t *testing.T) {
 	dfdsClient = &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
-			fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":[]}`)
+			_, _ = fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":[]}`)
 			return rec.Result(), nil
 		}),
 	}
@@ -130,7 +130,7 @@ func TestFetchDFDSAvailability_ViaTransport_OfferDate(t *testing.T) {
 	dfdsClient = &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
-			fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":["2026-08-15"]}`)
+			_, _ = fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":["2026-08-15"]}`)
 			return rec.Result(), nil
 		}),
 	}
@@ -160,7 +160,7 @@ func TestFetchDFDSAvailability_ViaTransport_DisabledDate(t *testing.T) {
 	dfdsClient = &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
-			fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":["2026-08-15"],"offerDates":[]}`)
+			_, _ = fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":["2026-08-15"],"offerDates":[]}`)
 			return rec.Result(), nil
 		}),
 	}
@@ -188,7 +188,7 @@ func TestFetchDFDSAvailability_ViaTransport_DateBeforeRange(t *testing.T) {
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			// fromDate is 2026-09-01, our date is 2026-08-15 — before range
-			fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-09-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":[]}`)
+			_, _ = fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-09-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":[]}`)
 			return rec.Result(), nil
 		}),
 	}
@@ -216,7 +216,7 @@ func TestFetchDFDSAvailability_ViaTransport_DateAfterRange(t *testing.T) {
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			// toDate is 2026-07-01, our date is 2026-08-15 — after range
-			fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2026-07-01"},"disabledDates":[],"offerDates":[]}`)
+			_, _ = fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2026-07-01"},"disabledDates":[],"offerDates":[]}`)
 			return rec.Result(), nil
 		}),
 	}
@@ -244,7 +244,7 @@ func TestFetchDFDSAvailability_ViaTransport_InactiveRoute(t *testing.T) {
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			// Empty fromDate → inactive route
-			fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"","toDate":""},"disabledDates":[],"offerDates":[]}`)
+			_, _ = fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"","toDate":""},"disabledDates":[],"offerDates":[]}`)
 			return rec.Result(), nil
 		}),
 	}
@@ -272,7 +272,7 @@ func TestFetchDFDSAvailability_ViaTransport_NonOK(t *testing.T) {
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			rec.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprint(rec, `service unavailable`)
+			_, _ = fmt.Fprint(rec, `service unavailable`)
 			return rec.Result(), nil
 		}),
 	}
@@ -305,7 +305,7 @@ func TestSearchDFDS_FullPath_WithOffer(t *testing.T) {
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			// Return availability with our date as offer date
-			fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":["2026-08-15"]}`)
+			_, _ = fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":["2026-08-15"]}`)
 			return rec.Result(), nil
 		}),
 	}
@@ -350,7 +350,7 @@ func TestSearchDFDS_FullPath_Unavailable(t *testing.T) {
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			// Disabled date → unavailable
-			fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":["2026-08-15"],"offerDates":[]}`)
+			_, _ = fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":["2026-08-15"],"offerDates":[]}`)
 			return rec.Result(), nil
 		}),
 	}
@@ -378,7 +378,7 @@ func TestSearchDFDS_DefaultCurrency(t *testing.T) {
 	dfdsClient = &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
-			fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":[]}`)
+			_, _ = fmt.Fprint(rec, `{"route":"NOOSL-DKCPH","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":[]}`)
 			return rec.Result(), nil
 		}),
 	}
@@ -415,7 +415,7 @@ func TestSearchSNCF_WithRoutes(t *testing.T) {
 			Date:  "2026-08-15",
 			Price: &price,
 		}}
-		json.NewEncoder(rec).Encode(resp)
+		_ = json.NewEncoder(rec).Encode(resp)
 		return rec.Result(), nil
 	}
 
@@ -441,7 +441,7 @@ func TestSearchSNCF_403_NoBrowserFallback_v2(t *testing.T) {
 	sncfDo = func(req *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
 		rec.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(rec, `forbidden`)
+		_, _ = fmt.Fprint(rec, `forbidden`)
 		return rec.Result(), nil
 	}
 
@@ -473,7 +473,7 @@ func TestSearchTrainline_403_WithBrowserFallbackAllowed(t *testing.T) {
 		rec := httptest.NewRecorder()
 		rec.WriteHeader(http.StatusForbidden)
 		// No datadome cookie to try the seed retry
-		fmt.Fprint(rec, `forbidden`)
+		_, _ = fmt.Fprint(rec, `forbidden`)
 		return rec.Result(), nil
 	}
 

@@ -87,7 +87,7 @@ func TestDialTLSChromeHTTP1WithConfig_UsesHTTP1ALPN(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dialTLSChromeHTTP1WithConfig: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	uConn, ok := conn.(*utls.UConn)
 	if !ok {
@@ -116,7 +116,7 @@ func TestRateLimiterEnforcement(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount.Add(1)
 		w.WriteHeader(200)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer ts.Close()
 
@@ -154,7 +154,9 @@ func TestRateLimiterCancelledContext(t *testing.T) {
 
 	// Exhaust the burst.
 	ctx := context.Background()
-	c.limiter.Wait(ctx)
+	if err := c.limiter.Wait(ctx); err != nil {
+		t.Fatalf("limiter wait: %v", err)
+	}
 
 	// Now cancel context before next request can proceed.
 	cancelCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -172,11 +174,11 @@ func TestRetryOn429(t *testing.T) {
 		n := attempt.Add(1)
 		if n <= 2 {
 			w.WriteHeader(429)
-			w.Write([]byte("rate limited"))
+			_, _ = w.Write([]byte("rate limited"))
 			return
 		}
 		w.WriteHeader(200)
-		w.Write([]byte("success"))
+		_, _ = w.Write([]byte("success"))
 	}))
 	defer ts.Close()
 
@@ -203,11 +205,11 @@ func TestRetryOn5xx(t *testing.T) {
 		n := attempt.Add(1)
 		if n == 1 {
 			w.WriteHeader(503)
-			w.Write([]byte("service unavailable"))
+			_, _ = w.Write([]byte("service unavailable"))
 			return
 		}
 		w.WriteHeader(200)
-		w.Write([]byte("recovered"))
+		_, _ = w.Write([]byte("recovered"))
 	}))
 	defer ts.Close()
 
@@ -245,7 +247,7 @@ func TestNoRetryOn4xx(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				attempt.Add(1)
 				w.WriteHeader(tt.status)
-				w.Write([]byte("client error"))
+				_, _ = w.Write([]byte("client error"))
 			}))
 			defer ts.Close()
 
@@ -271,7 +273,7 @@ func TestRetryExhausted(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempt.Add(1)
 		w.WriteHeader(500)
-		w.Write([]byte("always failing"))
+		_, _ = w.Write([]byte("always failing"))
 	}))
 	defer ts.Close()
 
@@ -310,7 +312,7 @@ func TestPostFormWithRetry(t *testing.T) {
 			return
 		}
 		w.WriteHeader(200)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer ts.Close()
 
@@ -376,7 +378,7 @@ func TestPostFormHeaders(t *testing.T) {
 func TestSearchFlights_Delegates(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte("flight data"))
+		_, _ = w.Write([]byte("flight data"))
 	}))
 	defer ts.Close()
 

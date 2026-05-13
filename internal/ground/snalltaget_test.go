@@ -87,9 +87,9 @@ func TestHasSnalltagetRoute(t *testing.T) {
 		{"Stockholm", "Malmö", true},
 		{"Stockholm", "Åre", true},
 		{"Stockholm", "Berlin", true},
-		{"Stockholm", "SomeCity", true},  // one end matches
-		{"SomeCity", "Malmö", true},      // one end matches
-		{"Atlantis", "Mordor", false},    // neither matches
+		{"Stockholm", "SomeCity", true}, // one end matches
+		{"SomeCity", "Malmö", true},     // one end matches
+		{"Atlantis", "Mordor", false},   // neither matches
 		{"", "Stockholm", true},
 		{"Stockholm", "", true},
 		{"", "", false},
@@ -185,7 +185,7 @@ func TestSnalltagetSearch_MockServer(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(fixture)
+		_ = json.NewEncoder(w).Encode(fixture)
 	}))
 	defer server.Close()
 
@@ -207,7 +207,7 @@ func TestSnalltagetSearch_MockServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mock request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var tripsResp snalltagetTripsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tripsResp); err != nil {

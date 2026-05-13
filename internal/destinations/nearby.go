@@ -128,4 +128,3 @@ func ProximityMatch(lat1, lon1, lat2, lon2 float64, thresholdMeters int) bool {
 	dist := haversineMeters(lat1, lon1, lat2, lon2)
 	return dist <= thresholdMeters
 }
-

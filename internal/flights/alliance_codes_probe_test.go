@@ -167,18 +167,20 @@ func TestAllianceCodes(t *testing.T) {
 		mixed := findResult(results, "Star_Alliance_mixed")
 		if upper != nil && upper.status == 200 && upper.count < baseline {
 			if lower != nil && lower.status == 200 {
-				if lower.count == upper.count {
+				switch lower.count {
+				case upper.count:
 					t.Logf("CASE INSENSITIVE: lowercase returns same count (%d)", lower.count)
-				} else if lower.count == baseline {
+				case baseline:
 					t.Logf("CASE SENSITIVE: lowercase ignored (returns baseline %d vs upper %d)", lower.count, upper.count)
-				} else {
+				default:
 					t.Logf("AMBIGUOUS: upper=%d, lower=%d, baseline=%d", upper.count, lower.count, baseline)
 				}
 			}
 			if mixed != nil && mixed.status == 200 {
-				if mixed.count == upper.count {
+				switch mixed.count {
+				case upper.count:
 					t.Logf("MIXED CASE: same as upper (%d) -- case insensitive", mixed.count)
-				} else if mixed.count == baseline {
+				case baseline:
 					t.Logf("MIXED CASE: ignored (returns baseline %d) -- case sensitive", mixed.count)
 				}
 			}

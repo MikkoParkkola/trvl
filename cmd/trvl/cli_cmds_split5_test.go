@@ -279,10 +279,6 @@ func TestLooksLikeGoogleHotelID_Empty(t *testing.T) {
 }
 
 func TestLooksLikeGoogleHotelID_WithSpaces(t *testing.T) {
-	if looksLikeGoogleHotelID("   /g/abc   ") {
-
-	}
-
 	if !looksLikeGoogleHotelID("   /g/abc   ") {
 		t.Error("expected true after trimming spaces for /g/ prefix")
 	}

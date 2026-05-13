@@ -24,12 +24,12 @@ const (
 
 // FlixBusCity represents a city from the FlixBus autocomplete API.
 type FlixBusCity struct {
-	ID       string  `json:"id"`
-	Name     string  `json:"name"`
-	Country  string  `json:"country"`
-	Score    float64 `json:"score"`
-	Lat      float64 `json:"-"`
-	Lon      float64 `json:"-"`
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	Country string  `json:"country"`
+	Score   float64 `json:"score"`
+	Lat     float64 `json:"-"`
+	Lon     float64 `json:"-"`
 }
 
 // flixbusAutocompleteResponse is the raw autocomplete item.
@@ -51,23 +51,23 @@ type flixbusSearchResponse struct {
 }
 
 type flixbusTrip struct {
-	DepartureCityID string                    `json:"departure_city_id"`
-	ArrivalCityID   string                    `json:"arrival_city_id"`
-	Results         map[string]flixbusResult  `json:"results"`
+	DepartureCityID string                   `json:"departure_city_id"`
+	ArrivalCityID   string                   `json:"arrival_city_id"`
+	Results         map[string]flixbusResult `json:"results"`
 }
 
 type flixbusResult struct {
-	UID          string            `json:"uid"`
-	Status       string            `json:"status"`
-	TransferType string            `json:"transfer_type"`
-	Provider     string            `json:"provider"`
-	Departure    flixbusStop       `json:"departure"`
-	Arrival      flixbusStop       `json:"arrival"`
-	Duration     flixbusDuration   `json:"duration"`
-	Price        flixbusPrice      `json:"price"`
-	Remaining    flixbusRemaining  `json:"remaining"`
-	Available    flixbusAvailable  `json:"available"`
-	Legs         []flixbusLeg      `json:"legs"`
+	UID          string           `json:"uid"`
+	Status       string           `json:"status"`
+	TransferType string           `json:"transfer_type"`
+	Provider     string           `json:"provider"`
+	Departure    flixbusStop      `json:"departure"`
+	Arrival      flixbusStop      `json:"arrival"`
+	Duration     flixbusDuration  `json:"duration"`
+	Price        flixbusPrice     `json:"price"`
+	Remaining    flixbusRemaining `json:"remaining"`
+	Available    flixbusAvailable `json:"available"`
+	Legs         []flixbusLeg     `json:"legs"`
 }
 
 type flixbusStop struct {
@@ -118,7 +118,7 @@ func FlixBusAutoComplete(ctx context.Context, query string) ([]FlixBusCity, erro
 	if err != nil {
 		return nil, fmt.Errorf("flixbus autocomplete: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
@@ -188,7 +188,7 @@ func SearchFlixBus(ctx context.Context, fromCity, toCity, date string, opts Sear
 	if err != nil {
 		return nil, fmt.Errorf("flixbus search: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))

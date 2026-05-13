@@ -36,15 +36,23 @@ type response struct {
 
 func main() {
 	cmd := exec.Command("trvl", "mcp")
-	stdin, _ := cmd.StdinPipe()
-	stdout, _ := cmd.StdoutPipe()
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "stdin pipe: %v\n", err)
+		os.Exit(1)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "stdout pipe: %v\n", err)
+		os.Exit(1)
+	}
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "start trvl mcp: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "start trvl mcp: %v\n", err)
 		os.Exit(1)
 	}
-	defer cmd.Process.Kill()
+	defer func() { _ = cmd.Process.Kill() }()
 
 	reader := bufio.NewReader(stdout)
 
@@ -82,19 +90,19 @@ func main() {
 		fmt.Printf("Result: %s\n", resp.Result)
 	}
 
-	stdin.Close()
-	cmd.Wait()
+	_ = stdin.Close()
+	_ = cmd.Wait()
 }
 
 func send(w io.Writer, req request) {
 	data, _ := json.Marshal(req)
 	data = append(data, '\n')
-	w.Write(data)
+	_, _ = w.Write(data)
 }
 
 func recv(r *bufio.Reader) response {
 	line, _ := r.ReadBytes('\n')
 	var resp response
-	json.Unmarshal(line, &resp)
+	_ = json.Unmarshal(line, &resp)
 	return resp
 }

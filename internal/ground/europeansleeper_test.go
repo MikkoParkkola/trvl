@@ -78,9 +78,9 @@ func TestHasEuropeanSleeperRoute(t *testing.T) {
 	}{
 		{"Brussels", "Prague", true},
 		{"Amsterdam", "Berlin", true},
-		{"Brussels", "SomeCity", true},  // one end matches
-		{"SomeCity", "Prague", true},    // one end matches
-		{"Atlantis", "Mordor", false},   // neither end matches
+		{"Brussels", "SomeCity", true}, // one end matches
+		{"SomeCity", "Prague", true},   // one end matches
+		{"Atlantis", "Mordor", false},  // neither end matches
 		{"", "Brussels", true},
 		{"Brussels", "", true},
 		{"", "", false},
@@ -177,7 +177,7 @@ func TestEuropeanSleeperSearch_MockServer(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(fixture)
+		_ = json.NewEncoder(w).Encode(fixture)
 	}))
 	defer server.Close()
 
@@ -208,7 +208,7 @@ func TestEuropeanSleeperSearch_MockServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mock request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var tripsResp europeanSleeperTripsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tripsResp); err != nil {

@@ -118,12 +118,12 @@ func dialTLSChrome146(ctx context.Context, network, addr string) (net.Conn, erro
 	spec := batchexec.Chrome146Spec()
 	uConn := utls.UClient(rawConn, &utls.Config{ServerName: host}, utls.HelloCustom)
 	if err := uConn.ApplyPreset(&spec); err != nil {
-		uConn.Close()
+		_ = uConn.Close()
 		return nil, fmt.Errorf("apply chrome146 preset: %w", err)
 	}
 
 	if err := uConn.HandshakeContext(ctx); err != nil {
-		uConn.Close()
+		_ = uConn.Close()
 		return nil, fmt.Errorf("utls handshake: %w", err)
 	}
 

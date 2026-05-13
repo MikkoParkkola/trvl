@@ -281,7 +281,7 @@ func runInstallCodexTOML(cfgPath, binary string, force, dryRun bool) error {
 	if err != nil {
 		return fmt.Errorf("open config %s: %w", cfgPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := f.WriteString(entry); err != nil {
 		return fmt.Errorf("write config %s: %w", cfgPath, err)

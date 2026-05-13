@@ -187,7 +187,7 @@ func TestSearchTrivago_FullRoundTrip(t *testing.T) {
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "mock-session-xyz")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{}}}`)
+			_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{}}}`)
 
 		case "tools/call":
 			// First tools/call is suggestions, second is accommodation search.
@@ -195,12 +195,12 @@ func TestSearchTrivago_FullRoundTrip(t *testing.T) {
 				// Suggestions response.
 				payload := `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}],"structuredContent":{"suggestions":[{"ns":200,"id":22235,"location":"Paris"}]}}}`
 				w.WriteHeader(http.StatusOK)
-				fmt.Fprint(w, payload)
+				_, _ = fmt.Fprint(w, payload)
 			} else {
 				// Accommodation search response.
 				payload := `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}],"structuredContent":{"accommodations":[{"accommodation_name":"Mock Paris Hotel","currency":"EUR","price_per_night":"€150","hotel_rating":4,"review_rating":"8.8","review_count":300,"latitude":48.8566,"longitude":2.3522,"accommodation_url":"https://trivago.com/book/mock1"}]}}}`
 				w.WriteHeader(http.StatusOK)
-				fmt.Fprint(w, payload)
+				_, _ = fmt.Fprint(w, payload)
 			}
 
 		default:
@@ -328,7 +328,7 @@ func TestSearchTrivago_SuggestionsFail(t *testing.T) {
 		if req.Method == "initialize" {
 			w.Header().Set("Mcp-Session-Id", "mock-session")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+			_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
 			return
 		}
 		// Return 429 for the tool call to simulate suggestions failure.
@@ -371,12 +371,12 @@ func TestSearchTrivago_AccomSearchFails(t *testing.T) {
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "mock-session")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+			_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
 		case "tools/call":
 			if callCount == 2 {
 				// Suggestions succeed.
 				w.WriteHeader(http.StatusOK)
-				fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}],"structuredContent":{"suggestions":[{"ns":200,"id":22235,"location":"Paris"}]}}}`)
+				_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}],"structuredContent":{"suggestions":[{"ns":200,"id":22235,"location":"Paris"}]}}}`)
 			} else {
 				// Accommodation search returns 500.
 				w.WriteHeader(http.StatusInternalServerError)
@@ -595,7 +595,7 @@ func TestTrivagoInitSession_MissingSessionHeader(t *testing.T) {
 		// 200 OK but no Mcp-Session-Id header.
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+		_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
 	}))
 	defer srv.Close()
 
@@ -640,7 +640,7 @@ func TestTrivagoMCPCall_RPCError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"invalid request"}}`)
+		_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"invalid request"}}`)
 	}))
 	defer srv.Close()
 

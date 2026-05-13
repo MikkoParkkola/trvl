@@ -44,8 +44,8 @@ func TestLegacyToolModeStillAdvertisesLegacySurface(t *testing.T) {
 
 	s := NewServer()
 
-	if len(s.tools) != 62 {
-		t.Fatalf("legacy tool mode should advertise 62 legacy tools, got %d", len(s.tools))
+	if len(s.tools) != 63 {
+		t.Fatalf("legacy tool mode should advertise 63 legacy tools, got %d", len(s.tools))
 	}
 	if !toolRegistered(s.tools, "search_flights") {
 		t.Fatalf("legacy mode should advertise search_flights")
@@ -113,6 +113,16 @@ func TestTravelSmartToolRoutesCoreFamilies(t *testing.T) {
 			name:   "optimize trip dates",
 			args:   map[string]any{"query": "optimize trip dates for HEL to BCN", "params": map[string]any{"sentinel": "ok"}},
 			target: "optimize_trip_dates",
+		},
+		{
+			name:   "fare intelligence workspace",
+			args:   map[string]any{"query": "fare intelligence for this hotel candidate", "params": map[string]any{"sentinel": "ok"}},
+			target: "trip_workspace",
+		},
+		{
+			name:   "workspace action forwarded",
+			args:   map[string]any{"intent": "workspace", "action": "booking_ready", "params": map[string]any{"sentinel": "ok"}},
+			target: "trip_workspace",
 		},
 	}
 

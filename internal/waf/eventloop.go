@@ -26,7 +26,13 @@ func (h timerHeap) Len() int            { return len(h) }
 func (h timerHeap) Less(i, j int) bool  { return h[i].when.Before(h[j].when) }
 func (h timerHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
 func (h *timerHeap) Push(x interface{}) { *h = append(*h, x.(*job)) }
-func (h *timerHeap) Pop() interface{}   { old := *h; n := len(old); x := old[n-1]; *h = old[:n-1]; return x }
+func (h *timerHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[:n-1]
+	return x
+}
 
 // eventLoop is a minimal microtask + timer scheduler for sobek. It is NOT
 // goroutine-safe for concurrent VM access: every job must run on the single
@@ -38,11 +44,11 @@ type eventLoop struct {
 	microtasks []func() error
 	timers     timerHeap
 	nextID     int64
-	pending    int  // in-flight host-side async operations (e.g. fetch)
+	pending    int // in-flight host-side async operations (e.g. fetch)
 	stopped    bool
 
-	mu   sync.Mutex
-	in   chan func() error // inbound jobs from Go goroutines
+	mu sync.Mutex
+	in chan func() error // inbound jobs from Go goroutines
 }
 
 func newEventLoop(vm *sobek.Runtime) *eventLoop {
@@ -160,7 +166,7 @@ func (l *eventLoop) run(ctx context.Context, done func() bool) error {
 			return firstErr
 		}
 
-		var wait time.Duration = 50 * time.Millisecond
+		var wait = 50 * time.Millisecond
 		if len(l.timers) > 0 {
 			d := time.Until(l.timers[0].when)
 			if d < wait {

@@ -3,9 +3,10 @@
 // produced by the real release pipeline.
 //
 // It reads:
-//   /tmp/trvl-e2e/tarball.tar.gz
-//   /tmp/trvl-e2e/tarball.tar.gz.mldsa65.sig
-//   /tmp/trvl-e2e/checksums.txt
+//
+//	/tmp/trvl-e2e/tarball.tar.gz
+//	/tmp/trvl-e2e/tarball.tar.gz.mldsa65.sig
+//	/tmp/trvl-e2e/checksums.txt
 //
 // Computes SHA-256 of the tarball, asserts it appears in checksums.txt
 // (production goreleaser format), then runs VerifyMLDSA65 with the
@@ -35,12 +36,12 @@ func main() {
 	// 1. SHA-256 verify against checksums.txt.
 	got, err := sha256OfFile(tarballPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "FAIL: sha256 read: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "FAIL: sha256 read: %v\n", err)
 		os.Exit(1)
 	}
 	checksumsBytes, err := os.ReadFile(checksumPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "FAIL: read checksums: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "FAIL: read checksums: %v\n", err)
 		os.Exit(1)
 	}
 	expected := ""
@@ -52,11 +53,11 @@ func main() {
 		}
 	}
 	if expected == "" {
-		fmt.Fprintf(os.Stderr, "FAIL: %s not found in checksums.txt\n", tarballName)
+		_, _ = fmt.Fprintf(os.Stderr, "FAIL: %s not found in checksums.txt\n", tarballName)
 		os.Exit(1)
 	}
 	if !strings.EqualFold(got, expected) {
-		fmt.Fprintf(os.Stderr, "FAIL: sha256 mismatch: got %s, want %s\n", got, expected)
+		_, _ = fmt.Fprintf(os.Stderr, "FAIL: sha256 mismatch: got %s, want %s\n", got, expected)
 		os.Exit(1)
 	}
 	fmt.Printf("OK   sha256: %s matches checksums.txt entry for %s\n", got, tarballName)
@@ -64,17 +65,17 @@ func main() {
 	// 2. ML-DSA-65 verify against embedded trust anchor.
 	sig, err := os.ReadFile(sigPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "FAIL: read sig: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "FAIL: read sig: %v\n", err)
 		os.Exit(1)
 	}
 	tarball, err := os.Open(tarballPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "FAIL: open tarball: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "FAIL: open tarball: %v\n", err)
 		os.Exit(1)
 	}
-	defer tarball.Close()
+	defer func() { _ = tarball.Close() }()
 	if err := selfupdate.VerifyMLDSA65(tarball, sig); err != nil {
-		fmt.Fprintf(os.Stderr, "FAIL: ml-dsa: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "FAIL: ml-dsa: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("OK   ml-dsa-65: signature verified against trust anchor %s\n",
@@ -88,7 +89,7 @@ func sha256OfFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err

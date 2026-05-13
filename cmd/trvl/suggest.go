@@ -90,7 +90,7 @@ Examples:
 
 func printSuggestTable(ctx context.Context, targetCurrency string, result *trip.SmartDateResult) error {
 	if !result.Success {
-		fmt.Fprintf(os.Stderr, "Date suggestion failed: %s\n", result.Error)
+		_, _ = fmt.Fprintf(os.Stderr, "Date suggestion failed: %s\n", result.Error)
 		return nil
 	}
 

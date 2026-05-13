@@ -423,7 +423,9 @@ func TestBuildFilters_RoundTripSegments(t *testing.T) {
 
 	data, _ := json.Marshal(filters)
 	var arr []any
-	json.Unmarshal(data, &arr)
+	if err := json.Unmarshal(data, &arr); err != nil {
+		t.Fatalf("Unmarshal filters: %v", err)
+	}
 
 	settings := arr[1].([]any)
 	// Trip type should be 1 (round-trip)
@@ -447,7 +449,9 @@ func TestBuildFilters_MaxPrice(t *testing.T) {
 
 	data, _ := json.Marshal(filters)
 	var arr []any
-	json.Unmarshal(data, &arr)
+	if err := json.Unmarshal(data, &arr); err != nil {
+		t.Fatalf("Unmarshal filters: %v", err)
+	}
 
 	settings := arr[1].([]any)
 	maxPrice := settings[7].(float64)
@@ -464,7 +468,9 @@ func TestBuildFilters_WithBags(t *testing.T) {
 
 	data, _ := json.Marshal(filters)
 	var arr []any
-	json.Unmarshal(data, &arr)
+	if err := json.Unmarshal(data, &arr); err != nil {
+		t.Fatalf("Unmarshal filters: %v", err)
+	}
 
 	settings := arr[1].([]any)
 	bags := settings[10].([]any)
@@ -481,7 +487,7 @@ func TestBuildFilters_ExcludeBasic(t *testing.T) {
 
 	data, _ := json.Marshal(filters)
 	var arr []any
-	json.Unmarshal(data, &arr)
+	_ = json.Unmarshal(data, &arr)
 
 	settings := arr[1].([]any)
 	exclude := int(settings[28].(float64))
@@ -498,7 +504,7 @@ func TestBuildFilters_WithAlliancesInSegment(t *testing.T) {
 
 	data, _ := json.Marshal(filters)
 	var arr []any
-	json.Unmarshal(data, &arr)
+	_ = json.Unmarshal(data, &arr)
 
 	settings := arr[1].([]any)
 	segments := settings[13].([]any)
@@ -517,7 +523,7 @@ func TestBuildFilters_WithDepartTime(t *testing.T) {
 
 	data, _ := json.Marshal(filters)
 	var arr []any
-	json.Unmarshal(data, &arr)
+	_ = json.Unmarshal(data, &arr)
 
 	settings := arr[1].([]any)
 	segments := settings[13].([]any)
@@ -536,7 +542,7 @@ func TestBuildFilters_LessEmissions(t *testing.T) {
 
 	data, _ := json.Marshal(filters)
 	var arr []any
-	json.Unmarshal(data, &arr)
+	_ = json.Unmarshal(data, &arr)
 
 	settings := arr[1].([]any)
 	segments := settings[13].([]any)
@@ -555,7 +561,7 @@ func TestBuildFilters_DurationLimit(t *testing.T) {
 
 	data, _ := json.Marshal(filters)
 	var arr []any
-	json.Unmarshal(data, &arr)
+	_ = json.Unmarshal(data, &arr)
 
 	settings := arr[1].([]any)
 	segments := settings[13].([]any)

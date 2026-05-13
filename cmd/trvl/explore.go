@@ -128,7 +128,7 @@ Examples:
 // We detect the actual currency via a quick flight search, then convert if needed.
 func printExploreTable(ctx context.Context, targetCurrency string, result *models.ExploreResult, origin string) error {
 	if !result.Success {
-		fmt.Fprintf(os.Stderr, "Explore failed: %s\n", result.Error)
+		_, _ = fmt.Fprintf(os.Stderr, "Explore failed: %s\n", result.Error)
 		return nil
 	}
 

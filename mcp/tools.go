@@ -55,6 +55,7 @@ func registerTools(s *Server) {
 		addTripLegTool(),
 		markTripBookedTool(),
 		exportICSTool(),
+		tripWorkspaceTool(),
 		getWeatherTool(),
 		getBaggageRulesTool(),
 		findTripWindowTool(),
@@ -120,6 +121,7 @@ func registerTools(s *Server) {
 	s.handlers["add_trip_leg"] = s.wrapHandler("add_trip_leg", handleAddTripLeg)
 	s.handlers["mark_trip_booked"] = s.wrapHandler("mark_trip_booked", handleMarkTripBooked)
 	s.handlers["export_ics"] = s.wrapHandler("export_ics", handleExportICS)
+	s.handlers["trip_workspace"] = s.wrapHandler("trip_workspace", handleTripWorkspace)
 	s.handlers["get_weather"] = s.wrapHandler("get_weather", handleGetWeather)
 	s.handlers["get_baggage_rules"] = s.wrapHandler("get_baggage_rules", handleGetBaggageRules)
 	s.handlers["find_trip_window"] = s.wrapHandler("find_trip_window", handleFindTripWindow)

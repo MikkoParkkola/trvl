@@ -286,7 +286,7 @@ func oebbShopGetToken(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("oebb shop token: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
@@ -323,8 +323,8 @@ func oebbShopInitUserData(ctx context.Context, token string) error {
 	if err != nil {
 		return fmt.Errorf("oebb shop initUserData: %w", err)
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	// 200 or 204 are both acceptable.
 	if resp.StatusCode >= 300 {
@@ -380,7 +380,7 @@ func oebbShopSearchTimetable(ctx context.Context, token string, fromStation, toS
 	if err != nil {
 		return nil, fmt.Errorf("oebb shop timetable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
@@ -423,7 +423,7 @@ func oebbShopGetPrices(ctx context.Context, token string, connectionIDs []string
 	if err != nil {
 		return nil, fmt.Errorf("oebb shop prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))

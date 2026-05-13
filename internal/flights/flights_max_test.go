@@ -15,7 +15,7 @@ func flightsTestServer(t *testing.T, statusCode int, body []byte) *httptest.Serv
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(statusCode)
-		w.Write(body)
+		_, _ = w.Write(body)
 	}))
 }
 

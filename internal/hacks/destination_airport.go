@@ -9,12 +9,12 @@ import (
 // alternativeAirport describes a cheaper alternative airport near a major
 // destination, together with ground-transit details.
 type alternativeAirport struct {
-	IATA           string
-	City           string
-	TransportCost  float64 // EUR one-way
-	TransportMin   int     // minutes to city centre
-	TransportMode  string  // "bus", "train", etc.
-	Notes          string  // human-readable transit description
+	IATA          string
+	City          string
+	TransportCost float64 // EUR one-way
+	TransportMin  int     // minutes to city centre
+	TransportMode string  // "bus", "train", etc.
+	Notes         string  // human-readable transit description
 }
 
 // destinationAlternatives maps a primary destination airport to nearby
@@ -137,7 +137,7 @@ func destinationAlternativesForDisplay() string {
 	var sb strings.Builder
 	for dest, alts := range destinationAlternatives {
 		for _, alt := range alts {
-			fmt.Fprintf(&sb, "%s → %s (%s): %s, ~%d min, ~%.0f EUR\n",
+			_, _ = fmt.Fprintf(&sb, "%s → %s (%s): %s, ~%d min, ~%.0f EUR\n",
 				dest, alt.IATA, alt.City, alt.TransportMode, alt.TransportMin, alt.TransportCost)
 		}
 	}

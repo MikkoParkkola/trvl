@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikkoParkkola/trvl/internal/tripsearch"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/tripsearch"
 )
 
 // makeFakeFlightsByCode builds minimal FlightResults whose first-leg departure
@@ -53,6 +53,21 @@ func TestFindRequestFromArgs_RoundTrip(t *testing.T) {
 	}
 	if req.TopN != 3 {
 		t.Errorf("top_n = %d, want 3", req.TopN)
+	}
+}
+
+func TestFindInputSchemaArrayFieldsDeclareItems(t *testing.T) {
+	t.Parallel()
+	schema := findInputSchema()
+	prop, ok := schema.Properties["layover_at"]
+	if !ok {
+		t.Fatalf("layover_at schema missing")
+	}
+	if prop.Type != "array" {
+		t.Fatalf("layover_at type = %q, want array", prop.Type)
+	}
+	if prop.Items == nil || prop.Items.Type != "string" {
+		t.Fatalf("layover_at items = %#v, want string items", prop.Items)
 	}
 }
 

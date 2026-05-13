@@ -162,15 +162,15 @@ func buildProfileSummary(p *preferences.Preferences) string {
 	b.WriteString("TRVL PROFILE — COMPLETE\n")
 	b.WriteString(strings.Repeat("=", 40))
 	b.WriteString("\n\n")
-	b.WriteString(fmt.Sprintf("Home airports: %s\n", strings.Join(p.HomeAirports, ", ")))
+	_, _ = fmt.Fprintf(&b, "Home airports: %s\n", strings.Join(p.HomeAirports, ", "))
 	if len(p.HomeCities) > 0 {
-		b.WriteString(fmt.Sprintf("Home cities:   %s\n", strings.Join(p.HomeCities, ", ")))
+		_, _ = fmt.Fprintf(&b, "Home cities:   %s\n", strings.Join(p.HomeCities, ", "))
 	}
 	if p.DisplayCurrency != "" {
-		b.WriteString(fmt.Sprintf("Currency:      %s\n", p.DisplayCurrency))
+		_, _ = fmt.Fprintf(&b, "Currency:      %s\n", p.DisplayCurrency)
 	}
 	if p.Nationality != "" {
-		b.WriteString(fmt.Sprintf("Nationality:   %s\n", p.Nationality))
+		_, _ = fmt.Fprintf(&b, "Nationality:   %s\n", p.Nationality)
 	}
 	if len(p.FrequentFlyerPrograms) > 0 {
 		b.WriteString("FFP status:    ")
@@ -178,27 +178,27 @@ func buildProfileSummary(p *preferences.Preferences) string {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(fmt.Sprintf("%s %s", ff.Alliance, ff.Tier))
+			_, _ = fmt.Fprintf(&b, "%s %s", ff.Alliance, ff.Tier)
 			if ff.AirlineCode != "" {
-				b.WriteString(fmt.Sprintf(" (%s)", ff.AirlineCode))
+				_, _ = fmt.Fprintf(&b, " (%s)", ff.AirlineCode)
 			}
 		}
 		b.WriteString("\n")
 	}
 	if len(p.LoyaltyAirlines) > 0 {
-		b.WriteString(fmt.Sprintf("Loyalty air:   %s\n", strings.Join(p.LoyaltyAirlines, ", ")))
+		_, _ = fmt.Fprintf(&b, "Loyalty air:   %s\n", strings.Join(p.LoyaltyAirlines, ", "))
 	}
 	if len(p.LoungeCards) > 0 {
-		b.WriteString(fmt.Sprintf("Lounge cards:  %s\n", strings.Join(p.LoungeCards, ", ")))
+		_, _ = fmt.Fprintf(&b, "Lounge cards:  %s\n", strings.Join(p.LoungeCards, ", "))
 	}
 	if len(p.LoyaltyHotels) > 0 {
-		b.WriteString(fmt.Sprintf("Loyalty hotel: %s\n", strings.Join(p.LoyaltyHotels, ", ")))
+		_, _ = fmt.Fprintf(&b, "Loyalty hotel: %s\n", strings.Join(p.LoyaltyHotels, ", "))
 	}
 	if p.BudgetPerNightMax > 0 {
-		b.WriteString(fmt.Sprintf("Hotel budget:  %.0f-%.0f/night\n", p.BudgetPerNightMin, p.BudgetPerNightMax))
+		_, _ = fmt.Fprintf(&b, "Hotel budget:  %.0f-%.0f/night\n", p.BudgetPerNightMin, p.BudgetPerNightMax)
 	}
 	if p.BudgetFlightMax > 0 {
-		b.WriteString(fmt.Sprintf("Max flight:    %.0f\n", p.BudgetFlightMax))
+		_, _ = fmt.Fprintf(&b, "Max flight:    %.0f\n", p.BudgetFlightMax)
 	}
 	b.WriteString("\nProfile is ready. Use get_preferences for full detail.")
 	return b.String()

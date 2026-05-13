@@ -11,9 +11,9 @@ import (
 // shouldShowNudge
 // ---------------------------------------------------------------------------
 
-func envNone(string) string   { return "" }
-func termYes(int) bool        { return true }
-func termNo(int) bool         { return false }
+func envNone(string) string { return "" }
+func termYes(int) bool      { return true }
+func termNo(int) bool       { return false }
 
 func TestShouldShowNudge_SearchCommand(t *testing.T) {
 	if !shouldShowNudge("flights", "table", envNone, 1, termYes) {
@@ -89,7 +89,7 @@ func TestNudgeState_MissingFile(t *testing.T) {
 func TestNudgeState_CorruptFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nudge.json")
-	os.WriteFile(path, []byte("not json"), 0o644)
+	_ = os.WriteFile(path, []byte("not json"), 0o644)
 
 	got := loadNudgeState(path)
 	if got.SearchCount != 0 {

@@ -341,7 +341,7 @@ func TestSearchSNCF_CalendarEmptyNoFallback(t *testing.T) {
 	sncfDo = func(req *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
 		rec.WriteHeader(http.StatusOK)
-		fmt.Fprint(rec, `{"journeys":[]}`)
+		_, _ = fmt.Fprint(rec, `{"journeys":[]}`)
 		return rec.Result(), nil
 	}
 
@@ -367,7 +367,7 @@ func TestSearchSNCF_NonOKNoBrowserFallback(t *testing.T) {
 	sncfDo = func(req *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
 		rec.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(rec, `internal error`)
+		_, _ = fmt.Fprint(rec, `internal error`)
 		return rec.Result(), nil
 	}
 
@@ -398,7 +398,7 @@ func TestSearchTrainline_HappyPath_200(t *testing.T) {
 		resp := trainlineJourneySearchResponse{
 			Journeys: []trainlineJourney{},
 		}
-		json.NewEncoder(rec).Encode(resp)
+		_ = json.NewEncoder(rec).Encode(resp)
 		return rec.Result(), nil
 	}
 
@@ -423,7 +423,7 @@ func TestSearchTrainline_500Error(t *testing.T) {
 	trainlineDo = func(req *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
 		rec.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(rec, `server error`)
+		_, _ = fmt.Fprint(rec, `server error`)
 		return rec.Result(), nil
 	}
 
@@ -446,7 +446,7 @@ func TestSearchTrainline_403_NoBrowserFallback(t *testing.T) {
 	trainlineDo = func(req *http.Request) (*http.Response, error) {
 		rec := httptest.NewRecorder()
 		rec.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(rec, `forbidden`)
+		_, _ = fmt.Fprint(rec, `forbidden`)
 		return rec.Result(), nil
 	}
 

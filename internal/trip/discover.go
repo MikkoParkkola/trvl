@@ -25,35 +25,35 @@ import (
 
 // DiscoverOptions configures an inverted-search discovery.
 type DiscoverOptions struct {
-	Origin     string  // IATA (default: first home_airport from prefs)
-	From       string  // earliest depart date YYYY-MM-DD (required)
-	Until      string  // latest return date YYYY-MM-DD (required)
-	Budget     float64 // max total EUR (required)
-	MinNights  int     // default 2
-	MaxNights  int     // default 4
-	Top        int     // results to return (default 5)
-	FlexDays   int     // how many start-of-trip candidates to enumerate (default: all Fridays in window)
+	Origin    string  // IATA (default: first home_airport from prefs)
+	From      string  // earliest depart date YYYY-MM-DD (required)
+	Until     string  // latest return date YYYY-MM-DD (required)
+	Budget    float64 // max total EUR (required)
+	MinNights int     // default 2
+	MaxNights int     // default 4
+	Top       int     // results to return (default 5)
+	FlexDays  int     // how many start-of-trip candidates to enumerate (default: all Fridays in window)
 }
 
 // DiscoverResult is a single ranked trip option.
 type DiscoverResult struct {
-	Destination    string             `json:"destination"`
-	AirportCode    string             `json:"airport_code"`
-	DepartDate     string             `json:"depart_date"`
-	ReturnDate     string             `json:"return_date"`
-	Nights         int                `json:"nights"`
-	FlightPrice    float64            `json:"flight_price"`
-	HotelPrice     float64            `json:"hotel_price"`
-	HotelName      string             `json:"hotel_name"`
-	HotelRating    float64            `json:"hotel_rating"`
-	Total          float64            `json:"total"`
-	Currency       string             `json:"currency"`
-	ProfileMatch   int                `json:"profile_match"`                     // 0–100; replaces ValueScore
-	MatchBreakdown map[string]float64 `json:"match_breakdown,omitempty"`          // per-factor scores in [0,1]
-	RequestMatch   int                `json:"request_match,omitempty"`            // 0–100; literal-request match
-	RequestMatchReason string         `json:"request_match_reason,omitempty"`     // dominant penalty axis
-	BudgetSlack    float64            `json:"budget_slack"`                       // currency units remaining
-	Reasoning      string             `json:"reasoning,omitempty"`
+	Destination        string             `json:"destination"`
+	AirportCode        string             `json:"airport_code"`
+	DepartDate         string             `json:"depart_date"`
+	ReturnDate         string             `json:"return_date"`
+	Nights             int                `json:"nights"`
+	FlightPrice        float64            `json:"flight_price"`
+	HotelPrice         float64            `json:"hotel_price"`
+	HotelName          string             `json:"hotel_name"`
+	HotelRating        float64            `json:"hotel_rating"`
+	Total              float64            `json:"total"`
+	Currency           string             `json:"currency"`
+	ProfileMatch       int                `json:"profile_match"`                  // 0–100; replaces ValueScore
+	MatchBreakdown     map[string]float64 `json:"match_breakdown,omitempty"`      // per-factor scores in [0,1]
+	RequestMatch       int                `json:"request_match,omitempty"`        // 0–100; literal-request match
+	RequestMatchReason string             `json:"request_match_reason,omitempty"` // dominant penalty axis
+	BudgetSlack        float64            `json:"budget_slack"`                   // currency units remaining
+	Reasoning          string             `json:"reasoning,omitempty"`
 }
 
 // DiscoverOutput is the top-level response.

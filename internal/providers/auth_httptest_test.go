@@ -191,7 +191,7 @@ func TestApplyExtractions_VariableFallbackToName(t *testing.T) {
 // and extract a value from its body.
 func TestApplyURLExtractions_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `var hash = "abc123def456";`)
+		_, _ = fmt.Fprint(w, `var hash = "abc123def456";`)
 	}))
 	defer srv.Close()
 
@@ -219,7 +219,7 @@ func TestApplyURLExtractions_WithVarSubstitution(t *testing.T) {
 	var receivedPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedPath = r.URL.Path
-		fmt.Fprint(w, `sha256Hash":"deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567"`)
+		_, _ = fmt.Fprint(w, `sha256Hash":"deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567"`)
 	}))
 	defer srv.Close()
 
@@ -304,7 +304,7 @@ func TestApplyURLExtractions_NilClient(t *testing.T) {
 // doesn't match, the default value is used.
 func TestApplyURLExtractions_DefaultValue(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `no matching content here`)
+		_, _ = fmt.Fprint(w, `no matching content here`)
 	}))
 	defer srv.Close()
 
@@ -355,7 +355,9 @@ func TestDecompressBody_Gzip(t *testing.T) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	_, _ = gz.Write([]byte(original))
-	gz.Close()
+	if err := gz.Close(); err != nil {
+		t.Fatalf("close gzip writer: %v", err)
+	}
 
 	resp := &http.Response{
 		Header: http.Header{
@@ -425,7 +427,7 @@ func TestDoPreflightRequest_GET(t *testing.T) {
 		if r.Method != "GET" {
 			t.Errorf("method = %q, want GET", r.Method)
 		}
-		fmt.Fprint(w, `<html>token=xyz</html>`)
+		_, _ = fmt.Fprint(w, `<html>token=xyz</html>`)
 	}))
 	defer srv.Close()
 
@@ -456,7 +458,7 @@ func TestDoPreflightRequest_POST(t *testing.T) {
 		receivedContentType = r.Header.Get("Content-Type")
 		b, _ := io.ReadAll(r.Body)
 		receivedBody = string(b)
-		fmt.Fprint(w, `{"token":"abc"}`)
+		_, _ = fmt.Fprint(w, `{"token":"abc"}`)
 	}))
 	defer srv.Close()
 
@@ -498,7 +500,7 @@ func TestDoSearchRequest_Retry(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"results": []any{
 				map[string]any{"name": "Retried Hotel"},
 			},
@@ -529,7 +531,7 @@ func TestDoSearchRequest_POST(t *testing.T) {
 		b, _ := io.ReadAll(r.Body)
 		receivedBody = string(b)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"results":[]}`)
+		_, _ = fmt.Fprint(w, `{"results":[]}`)
 	}))
 	defer srv.Close()
 

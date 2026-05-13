@@ -1,9 +1,9 @@
 {
   "mcpServers": {
     "trvl": {
-      "command": "sh",
+      "command": "trvl",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/scripts/trvl-mcp.sh"
+        "mcp"
       ]
     }
   }

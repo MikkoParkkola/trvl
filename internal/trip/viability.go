@@ -200,9 +200,10 @@ func buildViabilityChecks(
 	// Visa check.
 	if passport != "" {
 		visaCheck := buildVisaCheck(visaResult)
-		if visaCheck.Status == "blocker" {
+		switch visaCheck.Status {
+		case "blocker":
 			hasBlocker = true
-		} else if visaCheck.Status == "warning" {
+		case "warning":
 			hasWarning = true
 		}
 		checks = append(checks, visaCheck)

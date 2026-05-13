@@ -72,17 +72,17 @@ func parseLOSQuotes(args []string) ([]los.LOSQuote, error) {
 
 func renderLosTable(out *os.File, baseline int, flips []los.Flip) {
 	if len(flips) == 0 {
-		fmt.Fprintf(out, "No rate flips detected for %d-night baseline.\n", baseline)
+		_, _ = fmt.Fprintf(out, "No rate flips detected for %d-night baseline.\n", baseline)
 		return
 	}
-	fmt.Fprintf(out, "Length-of-stay alternatives (baseline %d nights):\n", baseline)
-	fmt.Fprintf(out, "  %-20s %7s %7s %10s %10s %10s  %s\n", "Kind", "Base N", "Alt N", "Base Total", "Alt Total", "Delta", "Reason")
-	fmt.Fprintf(out, "  %s\n", strings.Repeat("-", 90))
+	_, _ = fmt.Fprintf(out, "Length-of-stay alternatives (baseline %d nights):\n", baseline)
+	_, _ = fmt.Fprintf(out, "  %-20s %7s %7s %10s %10s %10s  %s\n", "Kind", "Base N", "Alt N", "Base Total", "Alt Total", "Delta", "Reason")
+	_, _ = fmt.Fprintf(out, "  %s\n", strings.Repeat("-", 90))
 	for _, f := range flips {
 		refStr := ""
 		if f.Refundable {
 			refStr = " (refundable)"
 		}
-		fmt.Fprintf(out, "  %-20s %7d %7d %10.2f %10.2f %+10.2f  %s%s\n", f.Kind, f.BaselineNights, f.AlternativeNights, f.BaselineTotal, f.AlternativeTotal, f.TotalDelta, f.Reason, refStr)
+		_, _ = fmt.Fprintf(out, "  %-20s %7d %7d %10.2f %10.2f %+10.2f  %s%s\n", f.Kind, f.BaselineNights, f.AlternativeNights, f.BaselineTotal, f.AlternativeTotal, f.TotalDelta, f.Reason, refStr)
 	}
 }

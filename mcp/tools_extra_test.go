@@ -289,6 +289,7 @@ func TestToolRegistration_AllTools(t *testing.T) {
 		"add_trip_leg",
 		"mark_trip_booked",
 		"export_ics",
+		"trip_workspace",
 		"get_weather",
 		"get_baggage_rules",
 		"find_trip_window",

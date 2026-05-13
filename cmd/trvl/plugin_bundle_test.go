@@ -95,19 +95,16 @@ func TestMIK3400PluginBundle(t *testing.T) {
 	assertFileContainsAll(t, root, ".mcp.json",
 		"mcpServers",
 		"trvl",
-		"trvl-mcp.sh",
-	)
-	assertFileContainsAll(t, root, filepath.Join("scripts", "trvl-mcp.sh"),
-		"brew install MikkoParkkola/tap/trvl",
-		"exec trvl mcp",
+		"mcp",
 	)
 	assertFileContainsAll(t, root, "README.md",
 		"claude plugin install",
+		"brew install MikkoParkkola/tap/trvl",
 		"/trvl plan",
 		"/trvl price-watch",
 		"/trvl destination-research",
 		"43 underlying tools",
-		"1 smart MCP tool plus 62 compatibility aliases",
+		"1 smart MCP tool plus 63 compatibility aliases",
 	)
 }
 

@@ -32,8 +32,8 @@ func makeSamples(n int, minPrice, maxPrice float64) []Sample {
 
 func TestSeasonOf(t *testing.T) {
 	tests := []struct {
-		date   string
-		want   string
+		date string
+		want string
 	}{
 		{"2026-01-15", "Q1"},
 		{"2026-03-31", "Q1"},
@@ -137,7 +137,7 @@ func TestAboveMedian(t *testing.T) {
 
 func TestOutlierAbove2xP50(t *testing.T) {
 	samples := makeSamples(20, 100, 200) // p50 ≈ 150
-	s := ScoreAgainst(400, samples)       // well above 2×150=300
+	s := ScoreAgainst(400, samples)      // well above 2×150=300
 	if s.Total != 0 {
 		t.Errorf("outlier above 2×p50: expected 0, got %d", s.Total)
 	}

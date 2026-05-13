@@ -31,8 +31,8 @@ func TestSplitPoints_rejectsShortSegment(t *testing.T) {
 	_, ok := evaluateSplit(
 		context.Background(),
 		"TestCity", "2026-04-12", checkIn,
-		[]int{1},  // split at day 1
-		3,         // 3 nights total
+		[]int{1}, // split at day 1
+		3,        // 3 nights total
 		2, "EUR",
 		nil,
 	)
@@ -47,17 +47,17 @@ func TestSplitPoints_rejectsShortSegment(t *testing.T) {
 func TestBuildAccommodationHack_twoSegments(t *testing.T) {
 	segments := []splitSegment{
 		{
-			Hotel:    makeHotel("Hotel Alpha", 45),
-			CheckIn:  "2026-04-12",
-			CheckOut: "2026-04-15",
-			Nights:   3,
+			Hotel:     makeHotel("Hotel Alpha", 45),
+			CheckIn:   "2026-04-12",
+			CheckOut:  "2026-04-15",
+			Nights:    3,
 			TotalCost: 135,
 		},
 		{
-			Hotel:    makeHotel("Hotel Beta", 38),
-			CheckIn:  "2026-04-15",
-			CheckOut: "2026-04-19",
-			Nights:   4,
+			Hotel:     makeHotel("Hotel Beta", 38),
+			CheckIn:   "2026-04-15",
+			CheckOut:  "2026-04-19",
+			Nights:    4,
 			TotalCost: 152,
 		},
 	}
@@ -192,9 +192,9 @@ func TestFormatDate(t *testing.T) {
 func TestSplitInputNormalisation(t *testing.T) {
 	// MaxSplits defaults to 3 when 0 or < 2.
 	in := AccommodationSplitInput{
-		City:     "Prague",
-		CheckIn:  "2026-04-12",
-		CheckOut: "2026-04-13", // too short, will return nil immediately after normalisation
+		City:      "Prague",
+		CheckIn:   "2026-04-12",
+		CheckOut:  "2026-04-13", // too short, will return nil immediately after normalisation
 		MaxSplits: 0,
 	}
 	// DetectAccommodationSplit returns nil because totalNights < 4, but normalisation

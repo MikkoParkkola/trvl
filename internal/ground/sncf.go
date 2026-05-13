@@ -496,7 +496,7 @@ func SearchSNCF(ctx context.Context, from, to, date, currency string, allowBrows
 		slog.Debug("sncf curl fallback failed", "err", cErr)
 	}
 
-	fmt.Fprintf(os.Stderr, "⚠️  SNCF browser fallbacks enabled. Opening browser — complete verification, then retry.\n")
+	_, _ = fmt.Fprintf(os.Stderr, "⚠️  SNCF browser fallbacks enabled. Opening browser — complete verification, then retry.\n")
 	_ = cookies.OpenBrowserForAuth("https://www.sncf-connect.com/en-en")
 
 	if bRoutes, bErr := BrowserScrapeRoutes(ctx, "sncf", from, to, date, currency); bErr == nil && len(bRoutes) > 0 {
@@ -542,11 +542,11 @@ func searchSNCFCalendar(ctx context.Context, fromStation, toStation SNCFStation,
 	if err != nil {
 		return nil, fmt.Errorf("sncf calendar api: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound {
 		firstBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if allowBrowserCookies {
 			cookieHeader := sncfBrowserCookies("sncf-connect.com")
@@ -555,7 +555,7 @@ func searchSNCFCalendar(ctx context.Context, fromStation, toStation SNCFStation,
 				req2, err2 := newSNCFRequest(cookieHeader)
 				if err2 == nil {
 					if resp2, err2 := sncfDo(req2); err2 == nil {
-						defer resp2.Body.Close()
+						defer func() { _ = resp2.Body.Close() }()
 						if resp2.StatusCode == http.StatusOK {
 							return parseSNCFResponse(resp2.Body, fromStation, toStation, date, currency)
 						}

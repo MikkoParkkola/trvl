@@ -381,7 +381,7 @@ func TestFind_AllBusyMalformed(t *testing.T) {
 		MinNights:   3,
 		MaxNights:   3,
 		BusyIntervals: []Interval{
-			{Start: "bad-date", End: "2026-05-31"}, // malformed — skipped
+			{Start: "bad-date", End: "2026-05-31"},   // malformed — skipped
 			{Start: "2026-05-01", End: "2026-05-31"}, // valid — covers whole window
 		},
 	})

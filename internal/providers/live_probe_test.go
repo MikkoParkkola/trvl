@@ -72,7 +72,7 @@ func TestLiveProbe_Hostelworld(t *testing.T) {
 			"paris": "14",
 		},
 		RateLimit: RateLimitConfig{RequestsPerSecond: 1},
-		TLS:      TLSConfig{Fingerprint: "standard"},
+		TLS:       TLSConfig{Fingerprint: "standard"},
 	}
 
 	checkin := time.Now().AddDate(0, 0, 14).Format("2006-01-02")
@@ -113,14 +113,14 @@ func TestLiveProbe_Airbnb(t *testing.T) {
 		Headers: map[string]string{
 			"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
 			"Accept-Language":           "en-US,en;q=0.9",
-			"User-Agent":               "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-			"Sec-Ch-Ua":                `"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"`,
-			"Sec-Ch-Ua-Mobile":         "?0",
-			"Sec-Ch-Ua-Platform":       `"macOS"`,
-			"Sec-Fetch-Dest":           "document",
-			"Sec-Fetch-Mode":           "navigate",
-			"Sec-Fetch-Site":           "none",
-			"Sec-Fetch-User":           "?1",
+			"User-Agent":                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+			"Sec-Ch-Ua":                 `"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"`,
+			"Sec-Ch-Ua-Mobile":          "?0",
+			"Sec-Ch-Ua-Platform":        `"macOS"`,
+			"Sec-Fetch-Dest":            "document",
+			"Sec-Fetch-Mode":            "navigate",
+			"Sec-Fetch-Site":            "none",
+			"Sec-Fetch-User":            "?1",
 			"Upgrade-Insecure-Requests": "1",
 		},
 		// No BodyTemplate needed: SSR GET replaces old POST GraphQL body.
@@ -225,8 +225,8 @@ func TestLiveProbe_Airbnb(t *testing.T) {
 			BodyExtractPattern: `<script[^>]*data-deferred-state-0[^>]*>[\s\S]*?(\{"data":\{"presentation":.+\})\]\]\}</script>`,
 		},
 		RateLimit: RateLimitConfig{RequestsPerSecond: 0.5},
-		TLS:      TLSConfig{Fingerprint: "chrome"},
-		Cookies:  CookieConfig{Source: "preflight"},
+		TLS:       TLSConfig{Fingerprint: "chrome"},
+		Cookies:   CookieConfig{Source: "preflight"},
 	}
 
 	checkin := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
@@ -283,7 +283,7 @@ func TestLiveProbe_Booking(t *testing.T) {
 			"x-booking-context-aid":         "304142",
 			"x-booking-topic":               "capla/v1",
 		},
-		BodyTemplate:    `{"operationName":"searchQueries","variables":{"input":{"dates":{"checkin":"${checkin}","checkout":"${checkout}"},"location":{"destId":${city_id},"destType":"CITY"},"nbAdults":${guests},"nbRooms":1,"pagination":{"offset":0,"rowsPerPage":25}}},"query":"query searchQueries($input: SearchQueryInput!) { searchQueries { search(input: $input) { ... on SearchQueryOutput { results { ... on SearchResultProperty { displayName { text } basicPropertyData { id starRating { value } location { address latitude longitude } reviews { totalScore reviewsCount } photos { main { highResUrl { absoluteUrl } } } } priceDisplayInfoIrene { displayPrice { amountPerStay { amountUnformatted currency } } } } } pagination { nbResultsTotal } } } } }"}`,
+		BodyTemplate: `{"operationName":"searchQueries","variables":{"input":{"dates":{"checkin":"${checkin}","checkout":"${checkout}"},"location":{"destId":${city_id},"destType":"CITY"},"nbAdults":${guests},"nbRooms":1,"pagination":{"offset":0,"rowsPerPage":25}}},"query":"query searchQueries($input: SearchQueryInput!) { searchQueries { search(input: $input) { ... on SearchQueryOutput { results { ... on SearchResultProperty { displayName { text } basicPropertyData { id starRating { value } location { address latitude longitude } reviews { totalScore reviewsCount } photos { main { highResUrl { absoluteUrl } } } } priceDisplayInfoIrene { displayPrice { amountPerStay { amountUnformatted currency } } } } } pagination { nbResultsTotal } } } } }"}`,
 		ResponseMapping: ResponseMapping{
 			ResultsPath: "data.searchQueries.search.results",
 			Fields: map[string]string{
@@ -303,8 +303,8 @@ func TestLiveProbe_Booking(t *testing.T) {
 			"paris": "-1456928",
 		},
 		RateLimit: RateLimitConfig{RequestsPerSecond: 0.5},
-		TLS:      TLSConfig{Fingerprint: "chrome"},
-		Cookies:  CookieConfig{Source: "browser"},
+		TLS:       TLSConfig{Fingerprint: "chrome"},
+		Cookies:   CookieConfig{Source: "browser"},
 	}
 
 	checkin := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
@@ -343,5 +343,5 @@ func logResult(t *testing.T, name string, r *TestResult) {
 		sample, _ := json.MarshalIndent(r.SampleResult, "", "  ")
 		t.Logf("%s sample:\n%s", name, string(sample))
 	}
-	fmt.Fprintf(os.Stderr, "[PROBE] %s: success=%v step=%s results=%d\n", name, r.Success, r.Step, r.ResultsCount)
+	_, _ = fmt.Fprintf(os.Stderr, "[PROBE] %s: success=%v step=%s results=%d\n", name, r.Success, r.Step, r.ResultsCount)
 }

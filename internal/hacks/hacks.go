@@ -182,14 +182,14 @@ import (
 
 // Hack represents a detected travel optimization opportunity.
 type Hack struct {
-	Type        string   `json:"type"`                  // "throwaway", "hidden_city", "positioning", "split", "night_transport", "stopover", "date_flex", "open_jaw", "ferry_positioning", "multi_stop", "currency_arbitrage", "calendar_conflict", "tuesday_booking", "low_cost_carrier", "multimodal_skip_flight", "multimodal_positioning", "multimodal_open_jaw_ground", "multimodal_return_split", "advance_purchase", "group_split", "fare_breakpoint", "destination_airport", "fuel_surcharge", "self_transfer", "regional_pass", "departure_tax", "rail_competition", "back_to_back", "mileage_run", "day_use_hotel"
-	Title       string   `json:"title"`                 // human-readable hack name
-	Description string   `json:"description"`           // explanation for the traveller
-	Savings     float64  `json:"savings"`               // EUR saved vs naive booking
-	Currency    string   `json:"currency"`              // currency for Savings
-	Risks       []string `json:"risks,omitempty"`       // airline ToS, operational risks
-	Steps       []string `json:"steps"`                 // how to execute
-	Citations   []string `json:"citations,omitempty"`   // booking URLs / provider names
+	Type        string   `json:"type"`                // "throwaway", "hidden_city", "positioning", "split", "night_transport", "stopover", "date_flex", "open_jaw", "ferry_positioning", "multi_stop", "currency_arbitrage", "calendar_conflict", "tuesday_booking", "low_cost_carrier", "multimodal_skip_flight", "multimodal_positioning", "multimodal_open_jaw_ground", "multimodal_return_split", "advance_purchase", "group_split", "fare_breakpoint", "destination_airport", "fuel_surcharge", "self_transfer", "regional_pass", "departure_tax", "rail_competition", "back_to_back", "mileage_run", "day_use_hotel"
+	Title       string   `json:"title"`               // human-readable hack name
+	Description string   `json:"description"`         // explanation for the traveller
+	Savings     float64  `json:"savings"`             // EUR saved vs naive booking
+	Currency    string   `json:"currency"`            // currency for Savings
+	Risks       []string `json:"risks,omitempty"`     // airline ToS, operational risks
+	Steps       []string `json:"steps"`               // how to execute
+	Citations   []string `json:"citations,omitempty"` // booking URLs / provider names
 }
 
 // DetectorInput carries all parameters shared across detectors.

@@ -60,8 +60,8 @@ type PlanHotel struct {
 // PlanBreakfast is a breakfast spot within walking distance of the chosen hotel.
 type PlanBreakfast struct {
 	Name      string `json:"name"`
-	Type      string `json:"type"`               // cafe, restaurant
-	Distance  int    `json:"distance_m"`         // meters from hotel
+	Type      string `json:"type"`       // cafe, restaurant
+	Distance  int    `json:"distance_m"` // meters from hotel
 	Cuisine   string `json:"cuisine,omitempty"`
 	Hours     string `json:"opening_hours,omitempty"`
 	Website   string `json:"website,omitempty"`

@@ -160,7 +160,7 @@ func TestFormatDestinationCard_Empty_V28(t *testing.T) {
 	defer func() { os.Stdout = old }()
 
 	err := formatDestinationCard(&models.DestinationInfo{Location: "Tokyo"})
-	w.Close()
+	_ = w.Close()
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
 
@@ -210,7 +210,7 @@ func TestFormatDestinationCard_FullInfo_V28(t *testing.T) {
 		},
 	}
 	err := formatDestinationCard(info)
-	w.Close()
+	_ = w.Close()
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
 
@@ -246,7 +246,7 @@ func TestFormatGuideCard_Basic_V28(t *testing.T) {
 		},
 	}
 	err := formatGuideCard(guide)
-	w.Close()
+	_ = w.Close()
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
 
@@ -279,7 +279,7 @@ func TestFormatGuideCard_EmptySections_V28(t *testing.T) {
 		},
 	}
 	_ = formatGuideCard(guide)
-	w.Close()
+	_ = w.Close()
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
 
@@ -295,7 +295,7 @@ func TestFormatNearbyCard_Empty_V28(t *testing.T) {
 	defer func() { os.Stdout = old }()
 
 	_ = formatNearbyCard(&destinations.NearbyResult{})
-	w.Close()
+	_ = w.Close()
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
 
@@ -322,7 +322,7 @@ func TestFormatNearbyCard_WithPOIs_V28(t *testing.T) {
 		},
 	}
 	_ = formatNearbyCard(result)
-	w.Close()
+	_ = w.Close()
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
 

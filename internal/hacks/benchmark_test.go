@@ -53,34 +53,34 @@ func noMatchInput() DetectorInput {
 //
 // Performance findings:
 //
-// 1. TIMEOUT APPROPRIATENESS: The 20s per-detector timeout is appropriate for
-//    production use. Detectors that make multiple chained API calls (e.g.,
-//    detectDateFlex searches +-3 days = 7 parallel flight searches) need time
-//    for all sub-calls. However, for the MCP server response path, the caller
-//    should impose its own context deadline (e.g., 30s) to cap total latency.
-//    The child context.WithTimeout correctly inherits the parent's earlier
-//    deadline, as verified by TestDetectAll_DeadlineExceeded.
+//  1. TIMEOUT APPROPRIATENESS: The 20s per-detector timeout is appropriate for
+//     production use. Detectors that make multiple chained API calls (e.g.,
+//     detectDateFlex searches +-3 days = 7 parallel flight searches) need time
+//     for all sub-calls. However, for the MCP server response path, the caller
+//     should impose its own context deadline (e.g., 30s) to cap total latency.
+//     The child context.WithTimeout correctly inherits the parent's earlier
+//     deadline, as verified by TestDetectAll_DeadlineExceeded.
 //
-// 2. ALLOCATION ANALYSIS: ~1.67M allocs/op is high but is dominated by
-//    network I/O (HTTP response parsing, JSON decoding, TLS handshakes).
-//    The pure goroutine overhead is minimal: 35 goroutines x (context +
-//    timer + channel send) is ~35 x ~3 allocs = ~105 allocs. Compare with
-//    BenchmarkDetectAll_NoMatch (~5K-11K allocs) which still hits some
-//    network providers (Kiwi, ferryhopper). The computational detectors
-//    themselves are allocation-efficient.
+//  2. ALLOCATION ANALYSIS: ~1.67M allocs/op is high but is dominated by
+//     network I/O (HTTP response parsing, JSON decoding, TLS handshakes).
+//     The pure goroutine overhead is minimal: 35 goroutines x (context +
+//     timer + channel send) is ~35 x ~3 allocs = ~105 allocs. Compare with
+//     BenchmarkDetectAll_NoMatch (~5K-11K allocs) which still hits some
+//     network providers (Kiwi, ferryhopper). The computational detectors
+//     themselves are allocation-efficient.
 //
-// 3. UNNECESSARY WORK: Some detectors do heavy string formatting (fmt.Sprintf
-//    for descriptions, steps, citations) before checking whether the hack
-//    should fire. For example, detectFareBreakpoint builds full Hack structs
-//    with formatted strings for every candidate hub, even hubs that will be
-//    discarded by the distance check. This is a minor concern — the string
-//    formatting cost (~100ns per Sprintf) is dwarfed by network latency.
-//    Not worth optimizing unless DetectAll is ever called in a tight loop.
+//  3. UNNECESSARY WORK: Some detectors do heavy string formatting (fmt.Sprintf
+//     for descriptions, steps, citations) before checking whether the hack
+//     should fire. For example, detectFareBreakpoint builds full Hack structs
+//     with formatted strings for every candidate hub, even hubs that will be
+//     discarded by the distance check. This is a minor concern — the string
+//     formatting cost (~100ns per Sprintf) is dwarfed by network latency.
+//     Not worth optimizing unless DetectAll is ever called in a tight loop.
 //
-// 4. GOROUTINE PRESSURE: 35 goroutines per DetectAll call is reasonable.
-//    The Go runtime handles thousands of goroutines efficiently. The
-//    buffered channel (cap = len(detectors)) prevents goroutine leaks.
-//    No shared mutable state between detectors — each is fully independent.
+//  4. GOROUTINE PRESSURE: 35 goroutines per DetectAll call is reasonable.
+//     The Go runtime handles thousands of goroutines efficiently. The
+//     buffered channel (cap = len(detectors)) prevents goroutine leaks.
+//     No shared mutable state between detectors — each is fully independent.
 func BenchmarkDetectAll(b *testing.B) {
 	in := realisticInput()
 	ctx := context.Background()

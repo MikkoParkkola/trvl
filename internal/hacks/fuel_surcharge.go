@@ -160,10 +160,10 @@ func buildFuelSurchargeHack(origin, destination string, hq surchargeLevel, alter
 	steps = append(steps, "Compare total ticket prices — surcharges are included in the displayed fare")
 
 	return Hack{
-		Type:     "fuel_surcharge",
-		Title:    fmt.Sprintf("High fuel surcharge on %s — save up to EUR %.0f RT", hq.AirlineName, rtSavings),
-		Currency: "EUR",
-		Savings:  roundSavings(rtSavings),
+		Type:        "fuel_surcharge",
+		Title:       fmt.Sprintf("High fuel surcharge on %s — save up to EUR %.0f RT", hq.AirlineName, rtSavings),
+		Currency:    "EUR",
+		Savings:     roundSavings(rtSavings),
 		Description: desc,
 		Risks: []string{
 			"Surcharge amounts are approximate and vary by route and fare class",

@@ -18,7 +18,7 @@ func TestGeocodeCity_EmptyResults(t *testing.T) {
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			rec.WriteHeader(http.StatusOK)
-			fmt.Fprint(rec, `[]`) // empty results
+			_, _ = fmt.Fprint(rec, `[]`) // empty results
 			return rec.Result(), nil
 		}),
 	}
@@ -37,7 +37,7 @@ func TestGeocodeCity_InvalidLatLon(t *testing.T) {
 			rec := httptest.NewRecorder()
 			rec.WriteHeader(http.StatusOK)
 			// Invalid lat/lon values that can't be parsed as floats
-			fmt.Fprint(rec, `[{"lat":"not-a-number","lon":"also-not-a-number"}]`)
+			_, _ = fmt.Fprint(rec, `[{"lat":"not-a-number","lon":"also-not-a-number"}]`)
 			return rec.Result(), nil
 		}),
 	}
@@ -61,7 +61,7 @@ func TestSearchEurostarTimetable_ViaTransport_HappyPath(t *testing.T) {
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			rec.WriteHeader(http.StatusOK)
-			fmt.Fprint(rec, timetableResp)
+			_, _ = fmt.Fprint(rec, timetableResp)
 			return rec.Result(), nil
 		}),
 	}
@@ -90,7 +90,7 @@ func TestSearchEurostarTimetable_ViaTransport_NonOK(t *testing.T) {
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			rec.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprint(rec, `service error`)
+			_, _ = fmt.Fprint(rec, `service error`)
 			return rec.Result(), nil
 		}),
 	}
@@ -114,7 +114,7 @@ func TestSearchEurostarTimetable_ViaTransport_InvalidJSON(t *testing.T) {
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			rec.WriteHeader(http.StatusOK)
-			fmt.Fprint(rec, `{not valid json}`)
+			_, _ = fmt.Fprint(rec, `{not valid json}`)
 			return rec.Result(), nil
 		}),
 	}
@@ -136,7 +136,7 @@ func TestSearchEurostarTimetable_ViaTransport_GraphQLError(t *testing.T) {
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			rec.WriteHeader(http.StatusOK)
-			fmt.Fprint(rec, `{"errors":[{"message":"route not found"}],"data":null}`)
+			_, _ = fmt.Fprint(rec, `{"errors":[{"message":"route not found"}],"data":null}`)
 			return rec.Result(), nil
 		}),
 	}
@@ -161,7 +161,7 @@ func TestSearchEurostarTimetable_ViaTransport_OriginDepFallback(t *testing.T) {
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			rec := httptest.NewRecorder()
 			rec.WriteHeader(http.StatusOK)
-			fmt.Fprint(rec, `{"data":{"timetableServices":[{"model":{"trainNumber":"9005","scheduledDepartureDateTime":""},"origin":{"model":{"scheduledDepartureDateTime":"2026-08-15T09:00:00"}},"destination":{"model":{"scheduledArrivalDateTime":"2026-08-15T12:17:00"}}}]},"errors":[]}`)
+			_, _ = fmt.Fprint(rec, `{"data":{"timetableServices":[{"model":{"trainNumber":"9005","scheduledDepartureDateTime":""},"origin":{"model":{"scheduledDepartureDateTime":"2026-08-15T09:00:00"}},"destination":{"model":{"scheduledArrivalDateTime":"2026-08-15T12:17:00"}}}]},"errors":[]}`)
 			return rec.Result(), nil
 		}),
 	}
@@ -214,7 +214,7 @@ func TestTallinkGetSession_ViaTransport_HappyPath(t *testing.T) {
 			rec := httptest.NewRecorder()
 			rec.Header().Set("Set-Cookie", "JSESSIONID=test-session; Path=/")
 			rec.WriteHeader(http.StatusOK)
-			fmt.Fprint(rec, `<html><script>window.Env = { sessionGuid: 'GUID-TEST-123' };</script></html>`)
+			_, _ = fmt.Fprint(rec, `<html><script>window.Env = { sessionGuid: 'GUID-TEST-123' };</script></html>`)
 			// httptest.ResponseRecorder doesn't support Set-Cookie headers
 			// in the same way as real servers — use http.Response directly
 			return rec.Result(), nil
@@ -345,7 +345,7 @@ func TestSearchTallink_ViaTransport_TimetableError(t *testing.T) {
 			rec := httptest.NewRecorder()
 			// No Set-Cookie header → tallinkGetSession returns error
 			rec.WriteHeader(http.StatusOK)
-			fmt.Fprint(rec, `<html>no cookies</html>`)
+			_, _ = fmt.Fprint(rec, `<html>no cookies</html>`)
 			return rec.Result(), nil
 		}),
 	}
@@ -405,12 +405,12 @@ func TestSearchTallink_ViaTransport_TimetableNonOK(t *testing.T) {
 			if strings.Contains(r.URL.Path, "/api/timetables") {
 				// Return non-200 for timetables
 				rec.WriteHeader(http.StatusServiceUnavailable)
-				fmt.Fprint(rec, `service unavailable`)
+				_, _ = fmt.Fprint(rec, `service unavailable`)
 			} else {
 				// Booking page: return session cookie
 				rec.Header().Set("Set-Cookie", "JSESSIONID=sess; Path=/")
 				rec.WriteHeader(http.StatusOK)
-				fmt.Fprint(rec, `<html><script>window.Env = { sessionGuid: 'G' };</script></html>`)
+				_, _ = fmt.Fprint(rec, `<html><script>window.Env = { sessionGuid: 'G' };</script></html>`)
 			}
 			return rec.Result(), nil
 		}),

@@ -53,9 +53,9 @@ func detectMileageRun(_ context.Context, in DetectorInput) []Hack {
 
 	// Find runs reachable from the user's origin (either end of the route).
 	type match struct {
-		route     mileageRunRoute
-		fromUser  string // which end the user would depart from
-		toUser    string // which end the user would fly to
+		route    mileageRunRoute
+		fromUser string // which end the user would depart from
+		toUser   string // which end the user would fly to
 	}
 
 	var matches []match

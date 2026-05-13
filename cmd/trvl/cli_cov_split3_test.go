@@ -87,13 +87,13 @@ func TestPrintWhenTable_WithNotesAndHotel(t *testing.T) {
 		},
 	}
 	err := printWhenTable(candidates, "HEL", "BCN")
-	w.Close()
+	_ = w.Close()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 	if !strings.Contains(output, "preferred") {
 		t.Errorf("expected preferred note, got: %s", output)
@@ -133,13 +133,13 @@ func TestPrintWeekendTable_SuccessTable(t *testing.T) {
 		},
 	}
 	err := printWeekendTable(context.Background(), "", result)
-	w.Close()
+	_ = w.Close()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "Tallinn") {
 		t.Errorf("expected destination in output")
 	}
@@ -169,13 +169,13 @@ func TestPrintSuggestTable_WithInsights(t *testing.T) {
 		},
 	}
 	err := printSuggestTable(context.Background(), "", result)
-	w.Close()
+	_ = w.Close()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "Midweek") {
 		t.Errorf("expected insight in output")
 	}
@@ -206,13 +206,13 @@ func TestPrintExploreTable_SuccessMinimal(t *testing.T) {
 		},
 	}
 	err := printExploreTable(context.Background(), "", result, "HEL")
-	w.Close()
+	_ = w.Close()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "Tallinn") {
 		t.Errorf("expected Tallinn in output")
 	}
@@ -232,13 +232,13 @@ func TestPrintExploreTable_NoCityName(t *testing.T) {
 		},
 	}
 	err := printExploreTable(context.Background(), "", result, "HEL")
-	w.Close()
+	_ = w.Close()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "TLL") {
 		t.Errorf("expected airport code fallback in output")
 	}
@@ -269,13 +269,13 @@ func TestPrintMultiCityTable_WithSavings(t *testing.T) {
 		},
 	}
 	err := printMultiCityTable(context.Background(), "", result)
-	w.Close()
+	_ = w.Close()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "Savings") {
 		t.Errorf("expected savings row")
 	}
@@ -301,13 +301,13 @@ func TestPrintDatesTable_WithReturnColumn(t *testing.T) {
 		},
 	}
 	err := printDatesTable(context.Background(), "", result)
-	w.Close()
+	_ = w.Close()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "Return") {
 		t.Errorf("expected Return column header for round_trip")
 	}
@@ -427,7 +427,7 @@ func TestTrips_CreateListShowDeleteFlow(t *testing.T) {
 	cmd := tripsCreateCmd()
 	cmd.SetArgs([]string{"Summer 2026", "--tags", "vacation"})
 	err := cmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
@@ -435,7 +435,7 @@ func TestTrips_CreateListShowDeleteFlow(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 	if !strings.Contains(output, "Created trip:") {
 		t.Fatalf("expected 'Created trip:' in output, got: %s", output)
@@ -448,7 +448,7 @@ func TestTrips_CreateListShowDeleteFlow(t *testing.T) {
 	r, w, _ = os.Pipe()
 	os.Stdout = w
 	err = runTripsList(false)
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
@@ -456,7 +456,7 @@ func TestTrips_CreateListShowDeleteFlow(t *testing.T) {
 	}
 
 	buf.Reset()
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "Summer 2026") {
 		t.Errorf("expected trip name in list, got: %s", buf.String())
 	}
@@ -466,7 +466,7 @@ func TestTrips_CreateListShowDeleteFlow(t *testing.T) {
 	r, w, _ = os.Pipe()
 	os.Stdout = w
 	err = runTripsList(true)
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
@@ -474,7 +474,7 @@ func TestTrips_CreateListShowDeleteFlow(t *testing.T) {
 	}
 
 	buf.Reset()
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "Summer 2026") {
 		t.Errorf("expected trip name in list --all, got: %s", buf.String())
 	}
@@ -486,7 +486,7 @@ func TestTrips_CreateListShowDeleteFlow(t *testing.T) {
 	showCmd := tripsShowCmd()
 	showCmd.SetArgs([]string{tripID})
 	err = showCmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
@@ -500,7 +500,7 @@ func TestTrips_CreateListShowDeleteFlow(t *testing.T) {
 	delCmd := tripsDeleteCmd()
 	delCmd.SetArgs([]string{tripID})
 	err = delCmd.Execute()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
@@ -512,14 +512,14 @@ func TestTrips_CreateListShowDeleteFlow(t *testing.T) {
 	r, w, _ = os.Pipe()
 	os.Stdout = w
 	err = runTripsList(false)
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
 		t.Fatalf("list after delete failed: %v", err)
 	}
 	buf.Reset()
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "No active trips") {
 		t.Errorf("expected empty list after delete, got: %s", buf.String())
 	}

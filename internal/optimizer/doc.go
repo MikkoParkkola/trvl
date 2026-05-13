@@ -38,21 +38,21 @@
 //
 // Each primitive is a function that transforms search parameters:
 //
-//   Return discount:     search RT instead of 2x one-way
-//   Connecting discount: search via hubs (AMS, FRA, IST)
-//   Market pricing:      search from cheaper origin country
-//   Fare zone arbitrage: search from rail stations (ZWE, QKL)
-//   Date flexibility:    search ±N days around target
-//   Alternative origin:  search from nearby airports/ports
-//   Alternative dest:    search to nearby airports + ground
-//   Split airlines:      search one-way per direction independently
-//   Hidden city:         search to beyond-destination via hub
-//   Transport mode:      search train/bus/ferry as flight replacement
-//   Night transport:     search overnight options that save hotel
-//   Advance purchase:    advisory on booking timing
-//   Group split:         search as 1 pax when group ≥3
-//   Throwaway segment:   search longer route if cheaper
-//   Nested returns:      for multi-trip, swap return legs
+//	Return discount:     search RT instead of 2x one-way
+//	Connecting discount: search via hubs (AMS, FRA, IST)
+//	Market pricing:      search from cheaper origin country
+//	Fare zone arbitrage: search from rail stations (ZWE, QKL)
+//	Date flexibility:    search ±N days around target
+//	Alternative origin:  search from nearby airports/ports
+//	Alternative dest:    search to nearby airports + ground
+//	Split airlines:      search one-way per direction independently
+//	Hidden city:         search to beyond-destination via hub
+//	Transport mode:      search train/bus/ferry as flight replacement
+//	Night transport:     search overnight options that save hotel
+//	Advance purchase:    advisory on booking timing
+//	Group split:         search as 1 pax when group ≥3
+//	Throwaway segment:   search longer route if cheaper
+//	Nested returns:      for multi-trip, swap return legs
 //
 // # Constraints
 //
@@ -64,17 +64,17 @@
 //
 // # User-Confirmed Composite Patterns
 //
-//   KLM Antwerp: book via ZWE for Belgian fare zone, skip train both ways
-//   Finnair hidden city: AMS→RIX via HEL, exit at Helsinki (hub discount)
-//   PRG/KRK→AMS: book to HEL via AMS, exit at Amsterdam (market pricing + hidden city)
-//   Nested returns: 2 trips same route, swap return legs for RT discount
-//   Ferry+flight: TLL as HEL alternative (ferry 2h, €30, flexible schedule)
+//	KLM Antwerp: book via ZWE for Belgian fare zone, skip train both ways
+//	Finnair hidden city: AMS→RIX via HEL, exit at Helsinki (hub discount)
+//	PRG/KRK→AMS: book to HEL via AMS, exit at Amsterdam (market pricing + hidden city)
+//	Nested returns: 2 trips same route, swap return legs for RT discount
+//	Ferry+flight: TLL as HEL alternative (ferry 2h, €30, flexible schedule)
 //
 // # Implementation Plan
 //
-//   Phase 1: OptimizeTrip function — expand origins/destinations/dates, search
-//            in parallel, apply all-in pricing, rank results
-//   Phase 2: MCP tool optimize_booking — expose to AI agents
-//   Phase 3: CLI command trvl optimize — user-facing with interactive output
-//   Phase 4: Constraint solver — handle complex multi-city itineraries
+//	Phase 1: OptimizeTrip function — expand origins/destinations/dates, search
+//	         in parallel, apply all-in pricing, rank results
+//	Phase 2: MCP tool optimize_booking — expose to AI agents
+//	Phase 3: CLI command trvl optimize — user-facing with interactive output
+//	Phase 4: Constraint solver — handle complex multi-city itineraries
 package optimizer

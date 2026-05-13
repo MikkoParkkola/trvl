@@ -290,9 +290,9 @@ func TestBuildProfileSummary_WithAllFields(t *testing.T) {
 		FrequentFlyerPrograms: []preferences.FrequentFlyerStatus{
 			{Alliance: "oneworld", Tier: "sapphire", AirlineCode: "AY"},
 		},
-		LoyaltyAirlines:  []string{"AY", "KL"},
-		LoungeCards:      []string{"Priority Pass"},
-		LoyaltyHotels:    []string{"Marriott Bonvoy"},
+		LoyaltyAirlines:   []string{"AY", "KL"},
+		LoungeCards:       []string{"Priority Pass"},
+		LoyaltyHotels:     []string{"Marriott Bonvoy"},
 		BudgetPerNightMin: 80,
 		BudgetPerNightMax: 150,
 		BudgetFlightMax:   400,

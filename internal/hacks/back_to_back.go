@@ -75,11 +75,11 @@ func backToBackLivePrices(ctx context.Context, in DetectorInput) ([]Hack, bool) 
 	client := batchexec.NewClient()
 
 	var (
-		owOutResult, owRetResult       *models.FlightSearchResult
-		rtOriginResult, rtDestResult   *models.FlightSearchResult
-		owOutErr, owRetErr             error
-		rtOriginErr, rtDestErr         error
-		wg                             sync.WaitGroup
+		owOutResult, owRetResult     *models.FlightSearchResult
+		rtOriginResult, rtDestResult *models.FlightSearchResult
+		owOutErr, owRetErr           error
+		rtOriginErr, rtDestErr       error
+		wg                           sync.WaitGroup
 	)
 
 	wg.Add(4)
@@ -181,7 +181,7 @@ func backToBackLivePrices(ctx context.Context, in DetectorInput) ([]Hack, bool) 
 // backToBackAdvisory returns the original advisory-only hack with no prices.
 func backToBackAdvisory(in DetectorInput) []Hack {
 	return []Hack{{
-		Type: "back_to_back",
+		Type:  "back_to_back",
 		Title: "Frequent route? Back-to-back round-trips beat one-ways",
 		Description: fmt.Sprintf(
 			"If you travel %s↔%s regularly, buying two overlapping round-trips "+

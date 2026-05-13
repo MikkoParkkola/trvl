@@ -214,7 +214,7 @@ func searchEurostarTimetable(ctx context.Context, fromStation, toStation Eurosta
 	if err != nil {
 		return nil, fmt.Errorf("eurostar timetable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
@@ -357,7 +357,7 @@ func SearchEurostar(ctx context.Context, from, to, startDate, endDate, currency 
 	if err != nil {
 		return nil, fmt.Errorf("eurostar search: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusForbidden {
 		firstBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
@@ -375,7 +375,7 @@ func SearchEurostar(ctx context.Context, from, to, startDate, endDate, currency 
 			if err2 != nil {
 				return nil, fmt.Errorf("eurostar retry: %w", err2)
 			}
-			defer resp2.Body.Close()
+			defer func() { _ = resp2.Body.Close() }()
 			if resp2.StatusCode == http.StatusOK {
 				body2, err3 := io.ReadAll(io.LimitReader(resp2.Body, 1024*1024))
 				if err3 != nil {

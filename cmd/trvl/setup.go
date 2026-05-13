@@ -91,12 +91,12 @@ func runSetup(cfg setupConfig) error {
 	w := cfg.stdout
 	scanner := bufio.NewScanner(cfg.stdin)
 
-	fmt.Fprintln(w, "Welcome to trvl setup!")
-	fmt.Fprintln(w, "This wizard configures your preferences and optionally installs trvl as an MCP server.")
+	_, _ = fmt.Fprintln(w, "Welcome to trvl setup!")
+	_, _ = fmt.Fprintln(w, "This wizard configures your preferences and optionally installs trvl as an MCP server.")
 	if !cfg.nonInteractive {
-		fmt.Fprintln(w, "Press Enter to keep the value shown in [brackets].")
+		_, _ = fmt.Fprintln(w, "Press Enter to keep the value shown in [brackets].")
 	}
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 
 	p, err := preferences.Load()
 	if err != nil {
@@ -158,15 +158,15 @@ func runSetup(cfg setupConfig) error {
 	if err := preferences.Save(p); err != nil {
 		return fmt.Errorf("save preferences: %w", err)
 	}
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Preferences saved.")
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "Preferences saved.")
 
 	// --- API keys (interactive only) ---
 	if !cfg.nonInteractive {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "Optional: API keys for premium providers.")
-		fmt.Fprintln(w, "These extend trvl with award space (Seats.aero), budget flights (Kiwi.com), and bus/coach (Distribusion).")
-		fmt.Fprintln(w, "Leave blank to skip any key.")
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w, "Optional: API keys for premium providers.")
+		_, _ = fmt.Fprintln(w, "These extend trvl with award space (Seats.aero), budget flights (Kiwi.com), and bus/coach (Distribusion).")
+		_, _ = fmt.Fprintln(w, "Leave blank to skip any key.")
 
 		keys := loadExistingKeys()
 
@@ -179,9 +179,9 @@ func runSetup(cfg setupConfig) error {
 			keys.Kiwi = coalesce(kiwi, keys.Kiwi)
 			keys.Distribusion = coalesce(distribusion, keys.Distribusion)
 			if err := saveKeys(keys); err != nil {
-				fmt.Fprintf(w, "Warning: could not save API keys: %v\n", err)
+				_, _ = fmt.Fprintf(w, "Warning: could not save API keys: %v\n", err)
 			} else {
-				fmt.Fprintln(w, "API keys saved to ~/.trvl/keys.json (mode 0600).")
+				_, _ = fmt.Fprintln(w, "API keys saved to ~/.trvl/keys.json (mode 0600).")
 			}
 		}
 	}
@@ -189,28 +189,28 @@ func runSetup(cfg setupConfig) error {
 	// --- MCP install ---
 	doInstall := false
 	if !cfg.nonInteractive {
-		fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w)
 		answer := setupPromptString(scanner, w, "Run 'trvl mcp install' now to register trvl as an MCP server? (yes/no)", "yes")
 		b, _ := parseBool(answer)
 		doInstall = b
 	}
 
 	if doInstall {
-		fmt.Fprintln(w)
-		fmt.Fprintf(w, "Running: trvl mcp install --client %s\n", cfg.mcpClient)
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintf(w, "Running: trvl mcp install --client %s\n", cfg.mcpClient)
 		if err := runInstall(cfg.mcpClient, false, false); err != nil {
-			fmt.Fprintf(w, "Warning: mcp install failed: %v\n", err)
-			fmt.Fprintln(w, "You can run it manually: trvl mcp install")
+			_, _ = fmt.Fprintf(w, "Warning: mcp install failed: %v\n", err)
+			_, _ = fmt.Fprintln(w, "You can run it manually: trvl mcp install")
 		}
 	} else {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "Skipping MCP install. Run 'trvl mcp install' at any time.")
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w, "Skipping MCP install. Run 'trvl mcp install' at any time.")
 	}
 
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Setup complete. Run 'trvl prefs' to review all preferences.")
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "Setup complete. Run 'trvl prefs' to review all preferences.")
 	if home != "" {
-		fmt.Fprintf(w, "Try: trvl explore %s\n", home)
+		_, _ = fmt.Fprintf(w, "Try: trvl explore %s\n", home)
 	}
 	return nil
 }
@@ -220,7 +220,7 @@ func runSetup(cfg setupConfig) error {
 // setupPromptIATA prompts for a 3-letter IATA code, re-prompting on invalid input.
 func setupPromptIATA(scanner *bufio.Scanner, w *os.File, label, current string) string {
 	for {
-		fmt.Fprintf(w, "  %s [%s]: ", label, current)
+		_, _ = fmt.Fprintf(w, "  %s [%s]: ", label, current)
 		if !scanner.Scan() {
 			return current
 		}
@@ -230,7 +230,7 @@ func setupPromptIATA(scanner *bufio.Scanner, w *os.File, label, current string) 
 		}
 		upper := strings.ToUpper(raw)
 		if err := models.ValidateIATA(upper); err != nil {
-			fmt.Fprintf(w, "  Invalid IATA code %q — must be exactly 3 uppercase letters (e.g. HEL, NRT). Try again.\n", raw)
+			_, _ = fmt.Fprintf(w, "  Invalid IATA code %q — must be exactly 3 uppercase letters (e.g. HEL, NRT). Try again.\n", raw)
 			continue
 		}
 		return upper
@@ -240,9 +240,9 @@ func setupPromptIATA(scanner *bufio.Scanner, w *os.File, label, current string) 
 // setupPromptString prompts for a free-text value; empty input keeps current.
 func setupPromptString(scanner *bufio.Scanner, w *os.File, label, current string) string {
 	if current != "" {
-		fmt.Fprintf(w, "  %s [%s]: ", label, current)
+		_, _ = fmt.Fprintf(w, "  %s [%s]: ", label, current)
 	} else {
-		fmt.Fprintf(w, "  %s: ", label)
+		_, _ = fmt.Fprintf(w, "  %s: ", label)
 	}
 	if !scanner.Scan() {
 		return current
@@ -256,7 +256,7 @@ func setupPromptString(scanner *bufio.Scanner, w *os.File, label, current string
 // setupPromptChoice prompts for a value from a fixed set; invalid input is re-prompted.
 func setupPromptChoice(scanner *bufio.Scanner, w *os.File, label, current string, valid map[string]bool) string {
 	for {
-		fmt.Fprintf(w, "  %s [%s]: ", label, current)
+		_, _ = fmt.Fprintf(w, "  %s [%s]: ", label, current)
 		if !scanner.Scan() {
 			return current
 		}
@@ -272,16 +272,16 @@ func setupPromptChoice(scanner *bufio.Scanner, w *os.File, label, current string
 		for k := range valid {
 			keys = append(keys, k)
 		}
-		fmt.Fprintf(w, "  Invalid choice %q — must be one of: %s. Try again.\n", raw, strings.Join(keys, ", "))
+		_, _ = fmt.Fprintf(w, "  Invalid choice %q — must be one of: %s. Try again.\n", raw, strings.Join(keys, ", "))
 	}
 }
 
 // setupPromptOptional prompts for an optional free-text value; empty input keeps current.
 func setupPromptOptional(scanner *bufio.Scanner, w *os.File, label, current string) string {
 	if current != "" {
-		fmt.Fprintf(w, "  %s [%s]: ", label, current)
+		_, _ = fmt.Fprintf(w, "  %s [%s]: ", label, current)
 	} else {
-		fmt.Fprintf(w, "  %s: ", label)
+		_, _ = fmt.Fprintf(w, "  %s: ", label)
 	}
 	if !scanner.Scan() {
 		return current
@@ -296,9 +296,9 @@ func setupPromptOptional(scanner *bufio.Scanner, w *os.File, label, current stri
 // setupPromptSecret prompts for an API key; shows masked existing value if present.
 func setupPromptSecret(scanner *bufio.Scanner, w *os.File, label, current string) string {
 	if current != "" {
-		fmt.Fprintf(w, "  %s [****]: ", label)
+		_, _ = fmt.Fprintf(w, "  %s [****]: ", label)
 	} else {
-		fmt.Fprintf(w, "  %s: ", label)
+		_, _ = fmt.Fprintf(w, "  %s: ", label)
 	}
 	if !scanner.Scan() {
 		return ""

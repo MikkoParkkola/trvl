@@ -43,7 +43,7 @@ Barcelona has a vibrant nightlife scene.
 Watch for pickpockets on La Rambla.`,
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -94,7 +94,7 @@ func TestGetWikivoyageGuide_NotFound(t *testing.T) {
 		}{
 			"-1": {PageID: -1, Title: "Xyzzyplugh"},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -121,7 +121,7 @@ func TestGetWikivoyageGuide_Caching(t *testing.T) {
 		}{
 			"1": {PageID: 1, Title: "Tokyo", Extract: "Tokyo is the capital of Japan."},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -186,7 +186,7 @@ func TestGetNearbyPOIs(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -216,7 +216,7 @@ func TestGetNearbyPOIs(t *testing.T) {
 
 func TestGetNearbyPOIs_EmptyResult(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(overpassResponse{Elements: nil})
+		_ = json.NewEncoder(w).Encode(overpassResponse{Elements: nil})
 	}))
 	defer server.Close()
 
@@ -240,10 +240,10 @@ func TestGetNearbyPOIs_EmptyResult(t *testing.T) {
 func TestGetEvents_NoKey(t *testing.T) {
 	// Ensure env var is not set.
 	orig := os.Getenv("TICKETMASTER_API_KEY")
-	os.Unsetenv("TICKETMASTER_API_KEY")
+	_ = os.Unsetenv("TICKETMASTER_API_KEY")
 	defer func() {
 		if orig != "" {
-			os.Setenv("TICKETMASTER_API_KEY", orig)
+			_ = os.Setenv("TICKETMASTER_API_KEY", orig)
 		}
 	}()
 
@@ -299,7 +299,7 @@ func TestGetEvents_WithKey(t *testing.T) {
 				}{{Min: 25, Max: 80, Currency: "EUR"}},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -309,12 +309,12 @@ func TestGetEvents_WithKey(t *testing.T) {
 
 	// Set the API key for the test.
 	origKey := os.Getenv("TICKETMASTER_API_KEY")
-	os.Setenv("TICKETMASTER_API_KEY", "test-key")
+	_ = os.Setenv("TICKETMASTER_API_KEY", "test-key")
 	defer func() {
 		if origKey == "" {
-			os.Unsetenv("TICKETMASTER_API_KEY")
+			_ = os.Unsetenv("TICKETMASTER_API_KEY")
 		} else {
-			os.Setenv("TICKETMASTER_API_KEY", origKey)
+			_ = os.Setenv("TICKETMASTER_API_KEY", origKey)
 		}
 	}()
 
@@ -347,10 +347,10 @@ func TestGetEvents_WithKey(t *testing.T) {
 
 func TestGetRatedPlaces_NoKey(t *testing.T) {
 	orig := os.Getenv("FOURSQUARE_API_KEY")
-	os.Unsetenv("FOURSQUARE_API_KEY")
+	_ = os.Unsetenv("FOURSQUARE_API_KEY")
 	defer func() {
 		if orig != "" {
-			os.Setenv("FOURSQUARE_API_KEY", orig)
+			_ = os.Setenv("FOURSQUARE_API_KEY", orig)
 		}
 	}()
 
@@ -391,7 +391,7 @@ func TestGetRatedPlaces_WithKey(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -400,12 +400,12 @@ func TestGetRatedPlaces_WithKey(t *testing.T) {
 	defer setTestFoursquareURL(origURL)
 
 	origKey := os.Getenv("FOURSQUARE_API_KEY")
-	os.Setenv("FOURSQUARE_API_KEY", "test-fs-key")
+	_ = os.Setenv("FOURSQUARE_API_KEY", "test-fs-key")
 	defer func() {
 		if origKey == "" {
-			os.Unsetenv("FOURSQUARE_API_KEY")
+			_ = os.Unsetenv("FOURSQUARE_API_KEY")
 		} else {
-			os.Setenv("FOURSQUARE_API_KEY", origKey)
+			_ = os.Setenv("FOURSQUARE_API_KEY", origKey)
 		}
 	}()
 
@@ -438,10 +438,10 @@ func TestGetRatedPlaces_WithKey(t *testing.T) {
 
 func TestGetWalkablePOIs_NoKey(t *testing.T) {
 	orig := os.Getenv("GEOAPIFY_API_KEY")
-	os.Unsetenv("GEOAPIFY_API_KEY")
+	_ = os.Unsetenv("GEOAPIFY_API_KEY")
 	defer func() {
 		if orig != "" {
-			os.Setenv("GEOAPIFY_API_KEY", orig)
+			_ = os.Setenv("GEOAPIFY_API_KEY", orig)
 		}
 	}()
 
@@ -488,7 +488,7 @@ func TestGetWalkablePOIs_WithKey(t *testing.T) {
 				}},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -497,12 +497,12 @@ func TestGetWalkablePOIs_WithKey(t *testing.T) {
 	defer setTestGeoapifyPlacesURL(origURL)
 
 	origKey := os.Getenv("GEOAPIFY_API_KEY")
-	os.Setenv("GEOAPIFY_API_KEY", "test-geo-key")
+	_ = os.Setenv("GEOAPIFY_API_KEY", "test-geo-key")
 	defer func() {
 		if origKey == "" {
-			os.Unsetenv("GEOAPIFY_API_KEY")
+			_ = os.Unsetenv("GEOAPIFY_API_KEY")
 		} else {
-			os.Setenv("GEOAPIFY_API_KEY", origKey)
+			_ = os.Setenv("GEOAPIFY_API_KEY", origKey)
 		}
 	}()
 
@@ -528,10 +528,10 @@ func TestGetWalkablePOIs_WithKey(t *testing.T) {
 
 func TestGetAttractions_NoKey(t *testing.T) {
 	orig := os.Getenv("OPENTRIPMAP_API_KEY")
-	os.Unsetenv("OPENTRIPMAP_API_KEY")
+	_ = os.Unsetenv("OPENTRIPMAP_API_KEY")
 	defer func() {
 		if orig != "" {
-			os.Setenv("OPENTRIPMAP_API_KEY", orig)
+			_ = os.Setenv("OPENTRIPMAP_API_KEY", orig)
 		}
 	}()
 
@@ -568,7 +568,7 @@ func TestGetAttractions_WithKey(t *testing.T) {
 				Dist:  100,
 			},
 		}
-		json.NewEncoder(w).Encode(places)
+		_ = json.NewEncoder(w).Encode(places)
 	}))
 	defer server.Close()
 
@@ -577,12 +577,12 @@ func TestGetAttractions_WithKey(t *testing.T) {
 	defer setTestOpenTripMapURL(origURL)
 
 	origKey := os.Getenv("OPENTRIPMAP_API_KEY")
-	os.Setenv("OPENTRIPMAP_API_KEY", "test-otm-key")
+	_ = os.Setenv("OPENTRIPMAP_API_KEY", "test-otm-key")
 	defer func() {
 		if origKey == "" {
-			os.Unsetenv("OPENTRIPMAP_API_KEY")
+			_ = os.Unsetenv("OPENTRIPMAP_API_KEY")
 		} else {
-			os.Setenv("OPENTRIPMAP_API_KEY", origKey)
+			_ = os.Setenv("OPENTRIPMAP_API_KEY", origKey)
 		}
 	}()
 

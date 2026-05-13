@@ -24,7 +24,6 @@ func clearGeoCache() {
 	geocache.Unlock()
 }
 
-
 // ------------------------------------------------------------------ geocodeCity
 
 func TestGeocodeCity_Success(t *testing.T) {
@@ -120,7 +119,7 @@ func TestGeocodeCity_CacheKeyIsLowercaseTrimmed(t *testing.T) {
 func TestGeocodeCity_EmptyResults(t *testing.T) {
 	clearGeoCache()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("[]"))
+		_, _ = w.Write([]byte("[]"))
 	}))
 	defer srv.Close()
 
@@ -156,7 +155,7 @@ func TestGeocodeCity_HTTPError(t *testing.T) {
 func TestGeocodeCity_InvalidJSON(t *testing.T) {
 	clearGeoCache()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("not json"))
+		_, _ = w.Write([]byte("not json"))
 	}))
 	defer srv.Close()
 
@@ -303,7 +302,7 @@ func TestGetForecast_GeocodeFailure(t *testing.T) {
 
 	// Nominatim returns empty results.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("[]"))
+		_, _ = w.Write([]byte("[]"))
 	}))
 	defer srv.Close()
 
@@ -363,7 +362,7 @@ func TestGetForecast_OpenMeteoInvalidJSON(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("not valid json"))
+		_, _ = w.Write([]byte("not valid json"))
 	}))
 	defer srv.Close()
 

@@ -82,12 +82,12 @@ Examples:
 
 func printTripCostTable(result *trip.TripCostResult, origin, dest string, guests int, explain bool) error {
 	if !result.Success {
-		fmt.Fprintf(os.Stderr, "Trip cost estimation failed: %s\n", result.Error)
+		_, _ = fmt.Fprintf(os.Stderr, "Trip cost estimation failed: %s\n", result.Error)
 		return nil
 	}
 
 	if result.Error != "" {
-		fmt.Fprintf(os.Stderr, "Warning: %s\n\n", result.Error)
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: %s\n\n", result.Error)
 	}
 
 	cur := result.Currency

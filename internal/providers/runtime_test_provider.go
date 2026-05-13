@@ -246,7 +246,7 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 		result.Error = fmt.Sprintf("request: http: %v", err)
 		return result
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	result.HTTPStatus = resp.StatusCode
 

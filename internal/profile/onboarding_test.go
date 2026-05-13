@@ -186,13 +186,13 @@ func TestPhase4ReturnsMotivationQuestion(t *testing.T) {
 
 func TestFullProfileReturnsFewerQuestions(t *testing.T) {
 	full := &TravelProfile{
-		HomeDetected:    []string{"HEL"},
-		TopDestinations: []string{"Prague", "Amsterdam", "Barcelona"},
-		PreferredType:   "hotel",
-		AvgNightlyRate:  120,
-		TopGroundModes:  []ModeStats{{Mode: "train", Count: 5}},
-		PreferredDays:   []string{"Friday", "Monday"},
-		TopHotelChains:  []HotelChainStats{{Name: "Marriott", Nights: 10}},
+		HomeDetected:      []string{"HEL"},
+		TopDestinations:   []string{"Prague", "Amsterdam", "Barcelona"},
+		PreferredType:     "hotel",
+		AvgNightlyRate:    120,
+		TopGroundModes:    []ModeStats{{Mode: "train", Count: 5}},
+		PreferredDays:     []string{"Friday", "Monday"},
+		TopHotelChains:    []HotelChainStats{{Name: "Marriott", Nights: 10}},
 		PreferredAlliance: "Star Alliance",
 	}
 

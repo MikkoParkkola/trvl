@@ -80,11 +80,11 @@ const (
 // (caller responsible for normalisation); SavingsEUR is the absolute
 // gap vs the naive baseline so callers can render "you save €X".
 type PairingResult struct {
-	Kind        PairingKind
-	Cost        float64
-	SavingsEUR  float64
-	SavingsPct  float64
-	Reason      string
+	Kind         PairingKind
+	Cost         float64
+	SavingsEUR   float64
+	SavingsPct   float64
+	Reason       string
 	LegBreakdown map[string]float64
 }
 
@@ -158,8 +158,8 @@ func naivePairing(w1, w2 VisitWindow) PairingResult {
 	a := preferRoundTrip(w1.RoundTripFromA, w1.LegFromAToB+w1.LegFromBToA)
 	b := preferRoundTrip(w2.RoundTripFromA, w2.LegFromAToB+w2.LegFromBToA)
 	return PairingResult{
-		Kind: PairingNaive,
-		Cost: a + b,
+		Kind:   PairingNaive,
+		Cost:   a + b,
 		Reason: "two independent round-trips rooted on the home side; the do-nothing baseline",
 		LegBreakdown: map[string]float64{
 			"trip1_rt_from_a": a,
@@ -171,8 +171,8 @@ func naivePairing(w1, w2 VisitWindow) PairingResult {
 func twoOneWaysPairing(w1, w2 VisitWindow) PairingResult {
 	cost := w1.LegFromAToB + w1.LegFromBToA + w2.LegFromAToB + w2.LegFromBToA
 	return PairingResult{
-		Kind: PairingTwoOneWays,
-		Cost: cost,
+		Kind:   PairingTwoOneWays,
+		Cost:   cost,
 		Reason: "four explicit one-ways; useful when the carrier does not discount round-trips",
 		LegBreakdown: map[string]float64{
 			"w1_a_to_b": w1.LegFromAToB,
@@ -190,8 +190,8 @@ func twoOneWaysPairing(w1, w2 VisitWindow) PairingResult {
 func nestedFromAPairing(w1, w2 VisitWindow) PairingResult {
 	cost := w1.RoundTripFromA + w2.RoundTripFromA
 	return PairingResult{
-		Kind: PairingNestedFromA,
-		Cost: cost,
+		Kind:   PairingNestedFromA,
+		Cost:   cost,
 		Reason: "two A-rooted round-trips, dates shuffled; same cost as naive but kept for transparency",
 		LegBreakdown: map[string]float64{
 			"long_rt_from_a":  w1.RoundTripFromA,
@@ -207,8 +207,8 @@ func nestedFromAPairing(w1, w2 VisitWindow) PairingResult {
 func nestedFromBPairing(w1, w2 VisitWindow) PairingResult {
 	cost := w1.RoundTripFromA + w2.RoundTripFromB
 	return PairingResult{
-		Kind: PairingNestedFromB,
-		Cost: cost,
+		Kind:   PairingNestedFromB,
+		Cost:   cost,
 		Reason: "outer A->B->A wraps an inner B->A->B; classic overlapping round-trip",
 		LegBreakdown: map[string]float64{
 			"outer_rt_from_a": w1.RoundTripFromA,

@@ -66,7 +66,7 @@ func loadCandidatesFromFile(path string) ([]opportunity.Candidate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var c []opportunity.Candidate
 	if err := json.NewDecoder(f).Decode(&c); err != nil {
 		return nil, fmt.Errorf("invalid JSON: %w", err)
@@ -100,12 +100,12 @@ func parseCandidateArgs(args []string) ([]opportunity.Candidate, error) {
 
 func renderOpportunityTable(out *os.File, candidates []opportunity.Candidate) {
 	if len(candidates) == 0 {
-		fmt.Fprintln(out, "No candidates above minimum score threshold.")
+		_, _ = fmt.Fprintln(out, "No candidates above minimum score threshold.")
 		return
 	}
-	fmt.Fprintf(out, "%-4s  %-8s  %-12s  %-12s  %7s  %7s  %7s  %7s  %s\n", "Rank", "Dest", "Depart", "Return", "Profile", "Request", "Deal", "Overall", "Verdict")
-	fmt.Fprintf(out, "%s\n", strings.Repeat("-", 88))
+	_, _ = fmt.Fprintf(out, "%-4s  %-8s  %-12s  %-12s  %7s  %7s  %7s  %7s  %s\n", "Rank", "Dest", "Depart", "Return", "Profile", "Request", "Deal", "Overall", "Verdict")
+	_, _ = fmt.Fprintf(out, "%s\n", strings.Repeat("-", 88))
 	for i, c := range candidates {
-		fmt.Fprintf(out, "#%-3d  %-8s  %-12s  %-12s  %7.1f  %7.1f  %7.1f  %7.1f  %s\n", i+1, c.Destination, c.DepartDate, c.ReturnDate, c.Signals.ProfileMatch, c.Signals.RequestMatch, c.Signals.DealQuality, c.Overall, c.Reason)
+		_, _ = fmt.Fprintf(out, "#%-3d  %-8s  %-12s  %-12s  %7.1f  %7.1f  %7.1f  %7.1f  %s\n", i+1, c.Destination, c.DepartDate, c.ReturnDate, c.Signals.ProfileMatch, c.Signals.RequestMatch, c.Signals.DealQuality, c.Overall, c.Reason)
 	}
 }

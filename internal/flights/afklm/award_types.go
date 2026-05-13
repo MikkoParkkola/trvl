@@ -61,9 +61,9 @@ type klmAwardSearchRequest struct {
 }
 
 type klmAwardPassenger struct {
-	ID           int                `json:"id"`
-	Type         string             `json:"type"` // "ADT"
-	LoyaltyCards []klmLoyaltyCard   `json:"loyaltyCards,omitempty"`
+	ID           int              `json:"id"`
+	Type         string           `json:"type"` // "ADT"
+	LoyaltyCards []klmLoyaltyCard `json:"loyaltyCards,omitempty"`
 }
 
 type klmLoyaltyCard struct {
@@ -115,9 +115,9 @@ type klmMilesPrice struct {
 }
 
 type klmAwardBoundConn struct {
-	ID       int            `json:"id"`
-	Duration int            `json:"duration"` // minutes
-	Segments []klmAwardSeg  `json:"segments"`
+	ID       int           `json:"id"`
+	Duration int           `json:"duration"` // minutes
+	Segments []klmAwardSeg `json:"segments"`
 }
 
 type klmAwardSeg struct {

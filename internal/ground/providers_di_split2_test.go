@@ -43,7 +43,7 @@ func TestSearchTrainline_DI_HappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(trainlineJourneySearchResponse{
+		_ = json.NewEncoder(w).Encode(trainlineJourneySearchResponse{
 			Journeys: []trainlineJourney{
 				{
 					ID:            "j-1",
@@ -167,7 +167,7 @@ func TestSearchTrainline_DI_HTTP403_NoFallback(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`{"error":"blocked"}`))
+		_, _ = w.Write([]byte(`{"error":"blocked"}`))
 	}))
 	defer srv.Close()
 
@@ -220,7 +220,7 @@ func TestSearchEckeroLine_DI_LiveAPI(t *testing.T) {
 				Value: "test-session-123",
 			})
 			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte(`<html><input name="form_key" type="hidden" value="testkey123"/></html>`))
+			_, _ = w.Write([]byte(`<html><input name="form_key" type="hidden" value="testkey123"/></html>`))
 			return
 		}
 
@@ -232,7 +232,7 @@ func TestSearchEckeroLine_DI_LiveAPI(t *testing.T) {
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]eckerolineDeparture{
+			_ = json.NewEncoder(w).Encode([]eckerolineDeparture{
 				{Time: "09:00", Price: 22.50, Ship: "M/S Finlandia"},
 				{Time: "15:15", Price: 29.00, Ship: "M/S Finlandia"},
 			})

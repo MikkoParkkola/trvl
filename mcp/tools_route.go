@@ -62,7 +62,7 @@ func routeItinerariesOutputSchema() interface{} {
 	return schemaArray(map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"legs":           map[string]interface{}{"type": "array"},
+			"legs":           schemaArray(map[string]interface{}{"type": "object"}),
 			"total_price":    schemaNum(),
 			"currency":       schemaString(),
 			"total_duration": schemaInt(),
@@ -134,12 +134,12 @@ func sendProgress(progress ProgressFunc, current, total float64, message string)
 
 func buildRouteSummary(result *models.RouteSearchResult) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d multi-modal routes from %s to %s on %s\n\n",
-		result.Count, result.Origin, result.Destination, result.Date))
+	_, _ = fmt.Fprintf(&sb, "Found %d multi-modal routes from %s to %s on %s\n\n",
+		result.Count, result.Origin, result.Destination, result.Date)
 
 	for i, it := range result.Itineraries {
 		if i >= 10 {
-			sb.WriteString(fmt.Sprintf("... and %d more\n", result.Count-10))
+			_, _ = fmt.Fprintf(&sb, "... and %d more\n", result.Count-10)
 			break
 		}
 
@@ -148,18 +148,18 @@ func buildRouteSummary(result *models.RouteSearchResult) string {
 			transferStr = fmt.Sprintf("%d transfers", it.Transfers)
 		}
 
-		sb.WriteString(fmt.Sprintf("Option %d: %s %.0f · %dh%02dm · %s\n",
+		_, _ = fmt.Fprintf(&sb, "Option %d: %s %.0f · %dh%02dm · %s\n",
 			i+1, it.Currency, it.TotalPrice,
 			it.TotalDuration/60, it.TotalDuration%60,
-			transferStr))
+			transferStr)
 
 		for _, leg := range it.Legs {
 			price := "-"
 			if leg.Price > 0 {
 				price = fmt.Sprintf("%s %.0f", leg.Currency, leg.Price)
 			}
-			sb.WriteString(fmt.Sprintf("  %s %s → %s (%s) %s\n",
-				leg.Mode, leg.From, leg.To, leg.Provider, price))
+			_, _ = fmt.Fprintf(&sb, "  %s %s → %s (%s) %s\n",
+				leg.Mode, leg.From, leg.To, leg.Provider, price)
 		}
 		sb.WriteByte('\n')
 	}

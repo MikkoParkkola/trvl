@@ -50,7 +50,7 @@ func TestFetchDeals_MockHTTP(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hitCount.Add(1)
 		w.Header().Set("Content-Type", "application/xml")
-		fmt.Fprint(w, sampleRSS)
+		_, _ = fmt.Fprint(w, sampleRSS)
 	}))
 	defer srv.Close()
 
@@ -119,7 +119,7 @@ func TestFetchDeals_UnknownSource(t *testing.T) {
 func TestFetchDeals_EmptySourcesDefaultsToAll(t *testing.T) {
 	// Create a mock server that returns empty feed.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>`)
+		_, _ = fmt.Fprint(w, `<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>`)
 	}))
 	defer srv.Close()
 

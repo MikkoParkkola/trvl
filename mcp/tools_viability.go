@@ -72,9 +72,10 @@ func handleAssessTrip(ctx context.Context, args map[string]any, _ ElicitFunc, _ 
 	}
 
 	emoji := "\u2705"
-	if result.Verdict == "WAIT" {
+	switch result.Verdict {
+	case "WAIT":
 		emoji = "\u26a0\ufe0f"
-	} else if result.Verdict == "NO_GO" {
+	case "NO_GO":
 		emoji = "\u274c"
 	}
 	summary := fmt.Sprintf("%s %s \u2014 %s", emoji, result.Verdict, result.Reason)

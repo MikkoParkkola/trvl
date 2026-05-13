@@ -107,10 +107,10 @@ func TestPrintSearchInterpretation_Full(t *testing.T) {
 		ReturnDate:  "2026-06-22",
 	}
 	printSearchInterpretation("fly HEL BCN 2026-06-15", params)
-	w.Close()
+	_ = w.Close()
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	output := buf.String()
 	if !strings.Contains(output, "intent=flight") {
 		t.Errorf("expected intent in output, got: %s", output)
@@ -131,10 +131,10 @@ func TestPrintSearchInterpretation_Minimal(t *testing.T) {
 
 	params := nlsearch.Params{Intent: "deals"}
 	printSearchInterpretation("deals", params)
-	w.Close()
+	_ = w.Close()
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "intent=deals") {
 		t.Errorf("expected intent in output, got: %s", buf.String())
 	}
@@ -151,7 +151,7 @@ func TestMissingFieldsHint_FlightAllMissing(t *testing.T) {
 	defer func() { os.Stderr = oldStderr }()
 
 	err := missingFieldsHint(nlsearch.Params{}, "flight", "trvl flights ...")
-	w.Close()
+	_ = w.Close()
 
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
@@ -165,7 +165,7 @@ func TestMissingFieldsHint_HotelMissingDates(t *testing.T) {
 	defer func() { os.Stderr = oldStderr }()
 
 	err := missingFieldsHint(nlsearch.Params{}, "hotel", "trvl hotels ...")
-	w.Close()
+	_ = w.Close()
 
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
@@ -179,7 +179,7 @@ func TestMissingFieldsHint_DealsNoMissing(t *testing.T) {
 	defer func() { os.Stderr = oldStderr }()
 
 	err := missingFieldsHint(nlsearch.Params{}, "deals", "trvl deals")
-	w.Close()
+	_ = w.Close()
 
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
@@ -246,14 +246,14 @@ func TestRunInstallCodexTOML_DryRun(t *testing.T) {
 	cfgPath := filepath.Join(dir, "codex.toml")
 
 	err := runInstallCodexTOML(cfgPath, "/usr/local/bin/trvl", false, true)
-	w.Close()
+	_ = w.Close()
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "Would append") {
 		t.Errorf("expected dry-run output, got: %s", buf.String())
 	}
@@ -269,7 +269,7 @@ func TestRunInstallCodexTOML_CreateNew(t *testing.T) {
 	cfgPath := filepath.Join(dir, "codex.toml")
 
 	err := runInstallCodexTOML(cfgPath, "/usr/local/bin/trvl", false, false)
-	w.Close()
+	_ = w.Close()
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -295,14 +295,14 @@ func TestRunInstallCodexTOML_AlreadyInstalled(t *testing.T) {
 	_ = os.WriteFile(cfgPath, []byte("[mcp_servers.trvl]\ncommand = \"old\""), 0o644)
 
 	err := runInstallCodexTOML(cfgPath, "/usr/local/bin/trvl", false, false)
-	w.Close()
+	_ = w.Close()
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	if !strings.Contains(buf.String(), "already installed") {
 		t.Errorf("expected already-installed message, got: %s", buf.String())
 	}
@@ -319,7 +319,7 @@ func TestRunInstallCodexTOML_ForceOverwrite(t *testing.T) {
 	_ = os.WriteFile(cfgPath, []byte("[mcp_servers.trvl]\ncommand = \"old\""), 0o644)
 
 	err := runInstallCodexTOML(cfgPath, "/usr/local/bin/trvl", true, false)
-	w.Close()
+	_ = w.Close()
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

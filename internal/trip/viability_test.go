@@ -355,12 +355,12 @@ func TestBuildViabilityChecks_CostFailure(t *testing.T) {
 
 func TestBuildViabilityChecks_WithVisaBlocker(t *testing.T) {
 	costResult := &TripCostResult{
-		Success: true,
-		Flights: FlightCost{Outbound: 100, Return: 100, Currency: "EUR"},
-		Hotels:  HotelCost{PerNight: 50, Total: 350, Currency: "EUR", Name: "H"},
-		Total:   550,
+		Success:  true,
+		Flights:  FlightCost{Outbound: 100, Return: 100, Currency: "EUR"},
+		Hotels:   HotelCost{PerNight: 50, Total: 350, Currency: "EUR", Name: "H"},
+		Total:    550,
 		Currency: "EUR",
-		Nights:  7,
+		Nights:   7,
 	}
 	visaResult := visa.Result{
 		Success: true,
@@ -392,12 +392,12 @@ func TestBuildViabilityChecks_WithVisaBlocker(t *testing.T) {
 
 func TestBuildViabilityChecks_NoPassportSkipsVisa(t *testing.T) {
 	costResult := &TripCostResult{
-		Success: true,
-		Flights: FlightCost{Outbound: 100, Return: 100, Currency: "EUR"},
-		Hotels:  HotelCost{PerNight: 50, Total: 350, Currency: "EUR", Name: "H"},
-		Total:   550,
+		Success:  true,
+		Flights:  FlightCost{Outbound: 100, Return: 100, Currency: "EUR"},
+		Hotels:   HotelCost{PerNight: 50, Total: 350, Currency: "EUR", Name: "H"},
+		Total:    550,
 		Currency: "EUR",
-		Nights:  7,
+		Nights:   7,
 	}
 
 	checks, _, _ := buildViabilityChecks(costResult, nil, visa.Result{}, "", nil, nil)
@@ -416,10 +416,10 @@ func TestBuildViabilityChecks_OutboundOnlyWarning(t *testing.T) {
 			Return:   0,
 			Currency: "EUR",
 		},
-		Hotels: HotelCost{PerNight: 80, Total: 560, Currency: "EUR", Name: "H"},
-		Total:  710,
+		Hotels:   HotelCost{PerNight: 80, Total: 560, Currency: "EUR", Name: "H"},
+		Total:    710,
 		Currency: "EUR",
-		Nights: 7,
+		Nights:   7,
 	}
 
 	checks, _, hasWarning := buildViabilityChecks(costResult, nil, visa.Result{}, "", nil, nil)
@@ -449,12 +449,12 @@ func TestBuildViabilityChecks_NoFlightPrices(t *testing.T) {
 
 func TestBuildViabilityChecks_NoHotelPrices(t *testing.T) {
 	costResult := &TripCostResult{
-		Success: true,
-		Flights: FlightCost{Outbound: 150, Return: 180, Currency: "EUR"},
-		Hotels:  HotelCost{PerNight: 0},
-		Total:   330,
+		Success:  true,
+		Flights:  FlightCost{Outbound: 150, Return: 180, Currency: "EUR"},
+		Hotels:   HotelCost{PerNight: 0},
+		Total:    330,
 		Currency: "EUR",
-		Nights:  7,
+		Nights:   7,
 	}
 
 	checks, _, hasWarning := buildViabilityChecks(costResult, nil, visa.Result{}, "", nil, nil)

@@ -58,7 +58,7 @@ func runExpenses(cmd *cobra.Command, args []string) error {
 	if format == "json" {
 		return json.NewEncoder(os.Stdout).Encode(settlement)
 	}
-	fmt.Fprint(os.Stdout, expenses.Render(settlement))
+	_, _ = fmt.Fprint(os.Stdout, expenses.Render(settlement))
 	return nil
 }
 
@@ -67,7 +67,7 @@ func loadBookingsFromFile(path string) ([]expenses.Booking, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var b []expenses.Booking
 	if err := json.NewDecoder(f).Decode(&b); err != nil {
 		return nil, fmt.Errorf("invalid JSON: %w", err)

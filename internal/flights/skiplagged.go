@@ -208,7 +208,7 @@ func skiplaggedInitSession(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("skiplagged: init HTTP: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("skiplagged: init HTTP %d", resp.StatusCode)
@@ -291,7 +291,7 @@ func skiplaggedMCPCallOnce(ctx context.Context, sessionID, toolName string, args
 	if err != nil {
 		return nil, fmt.Errorf("skiplagged: HTTP: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return nil, fmt.Errorf("skiplagged: rate limited (HTTP 429)")

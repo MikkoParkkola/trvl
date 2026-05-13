@@ -38,7 +38,7 @@ func TestTestProvider_Success(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -85,7 +85,7 @@ func TestTestProvider_Success(t *testing.T) {
 func TestTestProvider_PreflightFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, "server error")
+		_, _ = fmt.Fprint(w, "server error")
 	}))
 	defer srv.Close()
 
@@ -130,7 +130,7 @@ func TestTestProvider_PreflightFailure(t *testing.T) {
 func TestTestProvider_BadResponseParse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, "<html><body>Not JSON</body></html>")
+		_, _ = fmt.Fprint(w, "<html><body>Not JSON</body></html>")
 	}))
 	defer srv.Close()
 
@@ -167,7 +167,7 @@ func TestTestProvider_EmptyResults(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -206,7 +206,7 @@ func TestSubstituteEnvVars_InPreflight(t *testing.T) {
 		receivedBody = string(body[:n])
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"token":"tok-abc"}`)
+		_, _ = fmt.Fprint(w, `{"token":"tok-abc"}`)
 	}))
 	defer preflightSrv.Close()
 
@@ -217,7 +217,7 @@ func TestSubstituteEnvVars_InPreflight(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer searchSrv.Close()
 
@@ -455,8 +455,8 @@ func TestDiscoverFieldMappings_FindsCommonFields(t *testing.T) {
 		"displayName": map[string]any{
 			"text": "Grand Hotel",
 		},
-		"id":       "12345",
-		"rating":   4.5,
+		"id":     "12345",
+		"rating": 4.5,
 		"location": map[string]any{
 			"latitude":  48.856,
 			"longitude": 2.352,

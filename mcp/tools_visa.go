@@ -82,15 +82,15 @@ func buildVisaSummary(result visa.Result) string {
 	emoji := visa.StatusEmoji(req.Status)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Visa requirements: %s (%s) → %s (%s)\n\n", from, req.Passport, to, req.Destination))
-	sb.WriteString(fmt.Sprintf("  %s Status: %s\n", emoji, req.Status))
+	_, _ = fmt.Fprintf(&sb, "Visa requirements: %s (%s) → %s (%s)\n\n", from, req.Passport, to, req.Destination)
+	_, _ = fmt.Fprintf(&sb, "  %s Status: %s\n", emoji, req.Status)
 
 	if req.MaxStay != "" {
-		sb.WriteString(fmt.Sprintf("  Max stay: %s\n", req.MaxStay))
+		_, _ = fmt.Fprintf(&sb, "  Max stay: %s\n", req.MaxStay)
 	}
 
 	if req.Notes != "" {
-		sb.WriteString(fmt.Sprintf("\n  %s\n", req.Notes))
+		_, _ = fmt.Fprintf(&sb, "\n  %s\n", req.Notes)
 	}
 
 	sb.WriteString("\n  Note: Data is advisory only. Always verify with the destination embassy before travel.")

@@ -22,7 +22,7 @@ func TestDoWithRetry_NetworkError(t *testing.T) {
 			t.Fatal("not a hijacker")
 		}
 		conn, _, _ := hj.Hijack()
-		conn.Close()
+		_ = conn.Close()
 	}))
 	defer ts.Close()
 
@@ -65,7 +65,7 @@ func TestDoWithRetry_ContextCancelledDuringBackoff(t *testing.T) {
 func TestDoWithRetry_Success200(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	}))
 	defer ts.Close()
 
@@ -91,7 +91,7 @@ func TestDoWithRetry_ReadBodyError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", "100")
 		w.WriteHeader(200)
-		w.Write([]byte("partial"))
+		_, _ = w.Write([]byte("partial"))
 		// Don't send the remaining bytes — triggers read error.
 		if flusher, ok := w.(http.Flusher); ok {
 			flusher.Flush()
@@ -127,11 +127,11 @@ func TestRetryOn500Then200(t *testing.T) {
 		n := attempt.Add(1)
 		if n == 1 {
 			w.WriteHeader(500)
-			w.Write([]byte("error"))
+			_, _ = w.Write([]byte("error"))
 			return
 		}
 		w.WriteHeader(200)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer ts.Close()
 
@@ -161,7 +161,7 @@ func TestRetryOn502(t *testing.T) {
 			return
 		}
 		w.WriteHeader(200)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer ts.Close()
 
@@ -262,7 +262,7 @@ func TestSearchFlightsGL_EmptyGL_UsesBaseURL(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotURL = r.URL.String()
 		w.WriteHeader(200)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer ts.Close()
 
@@ -285,7 +285,7 @@ func TestSearchFlightsGL_WithGL_AppendsParam(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotURL = r.URL.String()
 		w.WriteHeader(200)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer ts.Close()
 
@@ -309,7 +309,7 @@ func TestSearchFlightsGL_DelegatesFromSearchFlights(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotURL = r.URL.String()
 		w.WriteHeader(200)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer ts.Close()
 

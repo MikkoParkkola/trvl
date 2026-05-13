@@ -49,15 +49,17 @@ func TestClientHeaders(t *testing.T) {
 		gotContentType = r.Header.Get("Content-Type")
 		w.Header().Set("Content-Type", "application/hal+json")
 		w.WriteHeader(200)
-		w.Write([]byte(`{"recommendations":[]}`))
+		_, _ = w.Write([]byte(`{"recommendations":[]}`))
 	}))
 	defer srv.Close()
 
 	now := time.Now()
 	client := newTestClient(t, srv, func() time.Time { return now })
 
-	os.Setenv("AFKLM_KEY", "test-key-headers")
-	defer os.Unsetenv("AFKLM_KEY")
+	if err := os.Setenv("AFKLM_KEY", "test-key-headers"); err != nil {
+		t.Fatalf("Setenv: %v", err)
+	}
+	defer func() { _ = os.Unsetenv("AFKLM_KEY") }()
 
 	req := AvailableOffersRequest{
 		BookingFlow:          "LEISURE",
@@ -86,7 +88,7 @@ func TestClientHeaders(t *testing.T) {
 func TestClientCredentialNotInError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
-		w.Write([]byte(`{"error":"bad request"}`))
+		_, _ = w.Write([]byte(`{"error":"bad request"}`))
 	}))
 	defer srv.Close()
 
@@ -125,12 +127,12 @@ func TestClient429RetryOnce(t *testing.T) {
 		n := atomic.AddInt32(&calls, 1)
 		if n == 1 {
 			w.WriteHeader(429)
-			w.Write([]byte(`{"error":"over qps"}`))
+			_, _ = w.Write([]byte(`{"error":"over qps"}`))
 			return
 		}
 		w.Header().Set("Content-Type", "application/hal+json")
 		w.WriteHeader(200)
-		w.Write([]byte(`{"recommendations":[]}`))
+		_, _ = w.Write([]byte(`{"recommendations":[]}`))
 	}))
 	defer srv.Close()
 
@@ -177,7 +179,7 @@ func TestClientQPSSpacing(t *testing.T) {
 		callTimes = append(callTimes, time.Now())
 		w.Header().Set("Content-Type", "application/hal+json")
 		w.WriteHeader(200)
-		w.Write([]byte(`{"recommendations":[]}`))
+		_, _ = w.Write([]byte(`{"recommendations":[]}`))
 	}))
 	defer srv.Close()
 

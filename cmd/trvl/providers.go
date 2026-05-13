@@ -164,15 +164,15 @@ func runProvidersEnable(id string, acceptTOS bool) error {
 		} else {
 			// No existing config; prompt for basic info.
 			scanner := bufio.NewScanner(os.Stdin)
-			fmt.Fprintf(os.Stderr, "  Name: ")
+			_, _ = fmt.Fprintf(os.Stderr, "  Name: ")
 			if scanner.Scan() {
 				cfg.Name = strings.TrimSpace(scanner.Text())
 			}
-			fmt.Fprintf(os.Stderr, "  Endpoint URL: ")
+			_, _ = fmt.Fprintf(os.Stderr, "  Endpoint URL: ")
 			if scanner.Scan() {
 				cfg.Endpoint = strings.TrimSpace(scanner.Text())
 			}
-			fmt.Fprintf(os.Stderr, "  Category (flights/hotels/ground): ")
+			_, _ = fmt.Fprintf(os.Stderr, "  Category (flights/hotels/ground): ")
 			if scanner.Scan() {
 				cfg.Category = strings.TrimSpace(scanner.Text())
 			}
@@ -194,11 +194,11 @@ func runProvidersEnable(id string, acceptTOS bool) error {
 			domain = "(unknown)"
 		}
 
-		fmt.Fprintf(os.Stderr, "\nProvider: %s\n", cfg.Name)
-		fmt.Fprintf(os.Stderr, "Accesses: %s\n", domain)
-		fmt.Fprintf(os.Stderr, "\nThis service may restrict automated access.\n")
-		fmt.Fprintf(os.Stderr, "By enabling, you accept responsibility for ToS compliance.\n\n")
-		fmt.Fprintf(os.Stderr, "Enable? [y/N]: ")
+		_, _ = fmt.Fprintf(os.Stderr, "\nProvider: %s\n", cfg.Name)
+		_, _ = fmt.Fprintf(os.Stderr, "Accesses: %s\n", domain)
+		_, _ = fmt.Fprintf(os.Stderr, "\nThis service may restrict automated access.\n")
+		_, _ = fmt.Fprintf(os.Stderr, "By enabling, you accept responsibility for ToS compliance.\n\n")
+		_, _ = fmt.Fprintf(os.Stderr, "Enable? [y/N]: ")
 
 		scanner := bufio.NewScanner(os.Stdin)
 		if !scanner.Scan() {
@@ -255,7 +255,7 @@ func runProvidersDisable(id string) error {
 
 	// Confirm removal interactively.
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprintf(os.Stderr, "Remove provider %q? [y/N]: ", cfg.Name)
+		_, _ = fmt.Fprintf(os.Stderr, "Remove provider %q? [y/N]: ", cfg.Name)
 		scanner := bufio.NewScanner(os.Stdin)
 		if !scanner.Scan() {
 			return fmt.Errorf("disable cancelled")
@@ -365,14 +365,14 @@ func runProvidersStatus(cmd *cobra.Command, _ []string, probe bool) error {
 	}
 	if len(errorNames) > 0 {
 		fmt.Println()
-		fmt.Fprintf(os.Stderr, "  %s Errors: %s\n",
+		_, _ = fmt.Fprintf(os.Stderr, "  %s Errors: %s\n",
 			models.Red("!"), strings.Join(errorNames, ", "))
 	}
 	if len(staleNames) > 0 {
 		if len(errorNames) == 0 {
 			fmt.Println()
 		}
-		fmt.Fprintf(os.Stderr, "  %s Stale: %s (no success in 24h)\n",
+		_, _ = fmt.Fprintf(os.Stderr, "  %s Stale: %s (no success in 24h)\n",
 			models.Yellow("!"), strings.Join(staleNames, ", "))
 	}
 

@@ -29,7 +29,7 @@ func TestSearchGoogleMapsPlaces_FetchMapsPlaces_PbURL(t *testing.T) {
      null, "Fetched Place", null, null, "Cafe", null, null, null, "Street 1"]
   ]
 ]`
-		w.Write([]byte(resp))
+		_, _ = w.Write([]byte(resp))
 	}))
 	defer pbServer.Close()
 
@@ -40,7 +40,7 @@ func TestSearchGoogleMapsPlaces_FetchMapsPlaces_PbURL(t *testing.T) {
 		html := `<html><head>
 <link rel="preload" href="/search?tbm=map&amp;pb=fakepb" as="fetch">
 </head><body></body></html>`
-		w.Write([]byte(html))
+		_, _ = w.Write([]byte(html))
 	}))
 	defer mapsServer.Close()
 
@@ -81,7 +81,7 @@ func TestSearchGoogleMapsPlaces_FallbackDirect(t *testing.T) {
      null, "Direct Place", null, null, "Bar", null, null, null, "Direct St 5"]
   ]
 ]`
-		w.Write([]byte(resp))
+		_, _ = w.Write([]byte(resp))
 	}))
 	defer directServer.Close()
 
@@ -162,18 +162,18 @@ func TestEnrichHotelFromOSM_Match(t *testing.T) {
 					Lat:  41.385,
 					Lon:  2.173,
 					Tags: map[string]string{
-						"name":            "Grand Hotel Barcelona",
-						"tourism":         "hotel",
-						"stars":           "4",
-						"website":         "https://grandhotel.example.com",
-						"wheelchair":      "yes",
-						"phone":           "+34 555 1234",
-						"operator":        "Grand Hotels Inc",
+						"name":       "Grand Hotel Barcelona",
+						"tourism":    "hotel",
+						"stars":      "4",
+						"website":    "https://grandhotel.example.com",
+						"wheelchair": "yes",
+						"phone":      "+34 555 1234",
+						"operator":   "Grand Hotels Inc",
 					},
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -221,7 +221,7 @@ func TestEnrichHotelFromOSM_ContactFallback(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -272,7 +272,7 @@ func TestEnrichHotelFromOSM_NoMatch(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -289,7 +289,7 @@ func TestEnrichHotelFromOSM_NoMatch(t *testing.T) {
 
 func TestEnrichHotelFromOSM_NoElements(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(overpassResponse{})
+		_ = json.NewEncoder(w).Encode(overpassResponse{})
 	}))
 	defer server.Close()
 
@@ -338,7 +338,7 @@ func TestEnrichHotelFromOSM_StarsVariants(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -367,13 +367,13 @@ func TestGetNearbyPlaces_DefaultRadius(t *testing.T) {
 					Tags: map[string]string{"name": "Test POI", "amenity": "cafe"}},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer osmServer.Close()
 
 	// Google Maps server (fallback for rated places since no FOURSQUARE_API_KEY).
 	mapsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`)]}'
+		_, _ = w.Write([]byte(`)]}'
 ["search",null,[]]`))
 	}))
 	defer mapsServer.Close()

@@ -16,7 +16,7 @@ func searchHiddenCityTool() ToolDef {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"offers":            {Type: "array", Description: "Priced candidates from the Origin\u00d7hub-beyond grid. Each offer is a JSON object with fields: origin (IATA), hub (IATA), hub_beyond (IATA), carrier (IATA airline code), price (number), currency (string), carry_on_only (bool), separate_tickets (bool), layover_minutes (int)."},
+				"offers":            {Type: "array", Items: &Property{Type: "object"}, Description: "Priced candidates from the Origin\u00d7hub-beyond grid. Each offer is a JSON object with fields: origin (IATA), hub (IATA), hub_beyond (IATA), carrier (IATA airline code), price (number), currency (string), carry_on_only (bool), separate_tickets (bool), layover_minutes (int)."},
 				"allow_hidden_city": {Type: "boolean", Description: "Must reflect user's risk_posture.hidden_city.acceptable flag. Defaults to false \u2014 return empty when false."},
 				"direct_baseline":   {Type: "number", Description: "Cheapest known direct Origin\u2192Hub price for savings calculation. Omit when unknown."},
 				"depart_date":       {Type: "string", Description: "Departure date (YYYY-MM-DD) for booking URL generation."},
@@ -164,13 +164,13 @@ func buildHiddenCitySummary(candidates []hacks.HiddenCityCandidate, allowed bool
 		return "No hidden-city candidates found within the risk threshold."
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d hidden-city candidate(s):\n\n", len(candidates)))
+	_, _ = fmt.Fprintf(&sb, "Found %d hidden-city candidate(s):\n\n", len(candidates))
 	for i, c := range candidates {
-		sb.WriteString(fmt.Sprintf("%d. %s\u2192%s (skip to %s) \u2014 %s %.2f", i+1, c.Origin, c.HubBeyond, c.Hub, c.Currency, c.Price))
+		_, _ = fmt.Fprintf(&sb, "%d. %s\u2192%s (skip to %s) \u2014 %s %.2f", i+1, c.Origin, c.HubBeyond, c.Hub, c.Currency, c.Price)
 		if c.SavingsPct > 0 {
-			sb.WriteString(fmt.Sprintf(" (saves %.0f%%)", c.SavingsPct))
+			_, _ = fmt.Fprintf(&sb, " (saves %.0f%%)", c.SavingsPct)
 		}
-		sb.WriteString(fmt.Sprintf(", risk %d/100\n   %s\n   Booking: %s\n\n", c.LayoverRisk, c.Reason, c.BookingURL))
+		_, _ = fmt.Fprintf(&sb, ", risk %d/100\n   %s\n   Booking: %s\n\n", c.LayoverRisk, c.Reason, c.BookingURL)
 	}
 	return strings.TrimRight(sb.String(), "\n")
 }

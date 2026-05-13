@@ -101,7 +101,7 @@ func TestFormatTripMarkdown_Basic(t *testing.T) {
 	if !strings.Contains(md, "trvl") {
 		t.Errorf("missing trvl footer in:\n%s", md)
 	}
-	if !strings.Contains(md, "1 smart MCP tool + 62 compatibility aliases") {
+	if !strings.Contains(md, "1 smart MCP tool + 63 compatibility aliases") {
 		t.Errorf("missing tool count in footer:\n%s", md)
 	}
 }
@@ -335,7 +335,7 @@ func TestTrvlFooter(t *testing.T) {
 	if !strings.Contains(f, "trvl") {
 		t.Error("footer missing 'trvl'")
 	}
-	if !strings.Contains(f, "1 smart MCP tool + 62 compatibility aliases") {
+	if !strings.Contains(f, "1 smart MCP tool + 63 compatibility aliases") {
 		t.Error("footer missing tool count")
 	}
 	if !strings.Contains(f, "no API keys") {

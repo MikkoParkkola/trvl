@@ -90,6 +90,7 @@ func Migrate(cfg *ProviderConfig) error {
 // promotes legacy configs (no schema_version set) to v1.0 by ensuring:
 //   - Version (the per-config edit counter) is at least 1
 //   - Method defaults to "GET" when empty
+//
 // Both fixes are conservative: they only touch obvious gaps that the
 // pre-MIK-3075 code paths used to mask via zero-value defaults.
 func migrateLegacyToV1_0(cfg *ProviderConfig) error {

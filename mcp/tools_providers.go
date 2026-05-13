@@ -75,7 +75,7 @@ func configureProviderTool() ToolDef {
 				"method":          schemaString(),
 				"results_path":    schemaString(),
 				"field_mapping":   schemaObject(),
-				"rate_limit_rps": schemaNum(),
+				"rate_limit_rps":  schemaNum(),
 				"tls_fingerprint": schemaString(),
 				"consent": map[string]interface{}{
 					"type": "object",
@@ -794,14 +794,14 @@ func providerHealthTool() ToolDef {
 				"providers": schemaArray(map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"provider":      schemaString(),
-						"total_calls":   schemaInt(),
-						"success_count": schemaInt(),
-						"error_count":   schemaInt(),
-						"timeout_count": schemaInt(),
-						"success_rate":  schemaNum(),
+						"provider":       schemaString(),
+						"total_calls":    schemaInt(),
+						"success_count":  schemaInt(),
+						"error_count":    schemaInt(),
+						"timeout_count":  schemaInt(),
+						"success_rate":   schemaNum(),
 						"avg_latency_ms": schemaInt(),
-						"last_error":    schemaString(),
+						"last_error":     schemaString(),
 					},
 				}),
 				"trvl_update_available": map[string]interface{}{

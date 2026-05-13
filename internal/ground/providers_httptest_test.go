@@ -42,7 +42,7 @@ func TestSearchSNCFCalendar_HappyPath(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		price := 2900 // 29.00 EUR in cents
-		json.NewEncoder(w).Encode([]map[string]any{
+		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"date": "2026-06-01", "price": price},
 			{"date": "2026-06-02", "price": 3500},
 		})
@@ -114,7 +114,7 @@ func TestSearchSNCFCalendar_HTTP403_FallsToNab(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("Cloudflare blocked"))
+		_, _ = w.Write([]byte("Cloudflare blocked"))
 	}))
 	defer srv.Close()
 
@@ -175,7 +175,7 @@ func TestSearchSNCFCalendar_NoPriceForDate(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// Return prices for other dates but not the requested one.
-		json.NewEncoder(w).Encode([]map[string]any{
+		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"date": "2026-06-02", "price": 3500},
 			{"date": "2026-06-03", "price": 4200},
 		})
@@ -372,7 +372,7 @@ func TestSearchTrainline_MockHappyPath(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"journeySearch": map[string]any{
 					"journeys": []any{
@@ -443,7 +443,7 @@ func TestSearchTrainline_MockHappyPath(t *testing.T) {
 func TestFetchRegioJetLocations_Mock(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]regiojetCountry{
+		_ = json.NewEncoder(w).Encode([]regiojetCountry{
 			{
 				Country: "Czech Republic",
 				Code:    "CZ",
@@ -653,4 +653,3 @@ func TestFirstString(t *testing.T) {
 		t.Errorf("firstString = %q, want non-empty value", got)
 	}
 }
-

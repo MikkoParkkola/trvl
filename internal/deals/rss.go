@@ -127,7 +127,7 @@ func fetchFeed(ctx context.Context, source, url string) ([]Deal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: fetch: %w", source, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%s: HTTP %d", source, resp.StatusCode)
@@ -338,12 +338,12 @@ func extractFromCategories(d *Deal, categories []string) {
 
 		// Deal type metadata from categories.
 		lower := strings.ToLower(cat)
-		switch {
-		case lower == "error fare" || lower == "mistake fare":
+		switch lower {
+		case "error fare", "mistake fare":
 			if d.Type == "" {
 				d.Type = "error_fare"
 			}
-		case lower == "deal" || lower == "flight deal":
+		case "deal", "flight deal":
 			// don't override a more specific type
 		}
 	}
@@ -449,7 +449,7 @@ func isLikelyCity(s string) bool {
 
 func parseFloat(s string) float64 {
 	var f float64
-	fmt.Sscanf(s, "%f", &f)
+	_, _ = fmt.Sscanf(s, "%f", &f)
 	return math.Round(f*100) / 100
 }
 

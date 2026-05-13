@@ -329,7 +329,7 @@ func doSearchRequest(ctx context.Context, client *http.Client, orig *http.Reques
 	if err != nil {
 		return nil, nil, fmt.Errorf("search retry: http: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := decompressBody(resp, maxResponseBytes)
 	if err != nil {
@@ -366,7 +366,7 @@ func doPreflightRequest(ctx context.Context, client *http.Client, auth *AuthConf
 	if err != nil {
 		return nil, nil, fmt.Errorf("preflight http: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := decompressBody(resp, maxResponseBytes)
 	if err != nil {
@@ -454,7 +454,7 @@ func applyURLExtractions(ctx context.Context, client *http.Client, extractions m
 			continue
 		}
 		body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			slog.Warn("stage-2 extraction: read failed",
 				"name", name, "url", resolvedURL, "error", err.Error())
@@ -596,7 +596,7 @@ func decompressBody(resp *http.Response, limit int64) ([]byte, error) {
 				"error", err.Error(), "body_len", len(raw))
 			return raw, nil
 		}
-		defer gr.Close()
+		defer func() { _ = gr.Close() }()
 		decoded, err := io.ReadAll(gr)
 		if err != nil {
 			// Gzip header valid but decompression failed mid-stream.

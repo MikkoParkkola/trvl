@@ -14,7 +14,7 @@ func TestSearchHotelsProviderError(t *testing.T) {
 	// Mock server returning 500.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, "internal error")
+		_, _ = fmt.Fprint(w, "internal error")
 	}))
 	defer srv.Close()
 
@@ -180,7 +180,7 @@ func TestSearchHotelsPostMethod(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -291,7 +291,7 @@ func TestSearchHotels_AkamaiChallenge202(t *testing.T) {
 		if reqCount == 1 {
 			// First request: return an Akamai challenge page.
 			w.WriteHeader(http.StatusAccepted)
-			fmt.Fprint(w, `<html><script src="https://1234.awswaf.com/challenge.js"></script></html>`)
+			_, _ = fmt.Fprint(w, `<html><script src="https://1234.awswaf.com/challenge.js"></script></html>`)
 			return
 		}
 		// Subsequent requests: return real results (browser cookies worked).
@@ -301,7 +301,7 @@ func TestSearchHotels_AkamaiChallenge202(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -388,7 +388,7 @@ func TestSearchHotels_202NonChallenge(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -455,7 +455,7 @@ func TestRunPreflight_POST(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"access_token":"test-token-123","expires_in":"3600"}`)
+		_, _ = fmt.Fprint(w, `{"access_token":"test-token-123","expires_in":"3600"}`)
 	}))
 	defer srv.Close()
 
@@ -471,7 +471,7 @@ func TestRunPreflight_POST(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer searchSrv.Close()
 

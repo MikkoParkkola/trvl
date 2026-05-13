@@ -299,7 +299,7 @@ func fetchDFDSAvailability(ctx context.Context, routeInfo dfdsRouteInfo, date st
 		slog.Debug("dfds availability: network error", "route", routeInfo.RouteCode, "err", err)
 		return true, false, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))

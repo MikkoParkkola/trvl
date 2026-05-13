@@ -16,17 +16,21 @@ import (
 
 // Trip represents a planned or booked travel itinerary.
 type Trip struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Status    string    `json:"status"` // "planning", "booked", "in_progress", "completed", "cancelled"
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	SchemaVersion int       `json:"schema_version,omitempty"`
+	Name          string    `json:"name"`
+	Status        string    `json:"status"` // "planning", "booked", "in_progress", "completed", "cancelled"
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 
 	// Legs in chronological order.
 	Legs []TripLeg `json:"legs"`
 
 	// Booking refs (after booking).
 	Bookings []Booking `json:"bookings,omitempty"`
+
+	// Workspace holds richer local-first planning state.
+	Workspace *Workspace `json:"workspace,omitempty"`
 
 	// Tags / context.
 	Tags  []string `json:"tags,omitempty"`
@@ -35,33 +39,37 @@ type Trip struct {
 
 // TripLeg is a single segment of a trip (flight, train, hotel stay, etc.).
 type TripLeg struct {
-	Type       string  `json:"type"`                  // "flight", "train", "bus", "ferry", "hotel", "activity"
-	From       string  `json:"from"`                  // city or "Helsinki home"
-	To         string  `json:"to"`                    // city
-	Provider   string  `json:"provider,omitempty"`    // "KLM", "Tallink", "Czech Inn"
-	StartTime  string  `json:"start_time"`            // ISO datetime
-	EndTime    string  `json:"end_time"`              // ISO datetime
+	Type       string  `json:"type"`               // "flight", "train", "bus", "ferry", "hotel", "activity"
+	From       string  `json:"from"`               // city or "Helsinki home"
+	To         string  `json:"to"`                 // city
+	Provider   string  `json:"provider,omitempty"` // "KLM", "Tallink", "Czech Inn"
+	StartTime  string  `json:"start_time"`         // ISO datetime
+	EndTime    string  `json:"end_time"`           // ISO datetime
 	Price      float64 `json:"price,omitempty"`
 	Currency   string  `json:"currency,omitempty"`
 	BookingURL string  `json:"booking_url,omitempty"`
-	Confirmed  bool    `json:"confirmed"`             // false = planned, true = booked
-	Reference  string  `json:"reference,omitempty"`   // PNR / booking code
+	Confirmed  bool    `json:"confirmed"`           // false = planned, true = booked
+	Reference  string  `json:"reference,omitempty"` // PNR / booking code
 }
 
 // Booking is a top-level booking record for a trip.
 type Booking struct {
-	Type      string `json:"type"`           // "flight", "hotel"
-	Provider  string `json:"provider"`       // "KLM"
-	Reference string `json:"reference"`      // "ABC123"
-	URL       string `json:"url,omitempty"`  // confirmation URL
-	Notes     string `json:"notes,omitempty"`
+	Type        string    `json:"type"`          // "flight", "hotel"
+	Provider    string    `json:"provider"`      // "KLM"
+	Reference   string    `json:"reference"`     // "ABC123"
+	URL         string    `json:"url,omitempty"` // confirmation URL
+	CandidateID string    `json:"candidate_id,omitempty"`
+	Price       float64   `json:"price,omitempty"`
+	Currency    string    `json:"currency,omitempty"`
+	ConfirmedAt time.Time `json:"confirmed_at,omitempty"`
+	Notes       string    `json:"notes,omitempty"`
 }
 
 // Alert is a monitoring notification for a trip.
 type Alert struct {
 	TripID    string    `json:"trip_id"`
 	TripName  string    `json:"trip_name"`
-	Type      string    `json:"type"`    // "price_drop", "reminder", "weather", "advisory"
+	Type      string    `json:"type"` // "price_drop", "reminder", "weather", "advisory"
 	Message   string    `json:"message"`
 	CreatedAt time.Time `json:"created_at"`
 	Read      bool      `json:"read"`
@@ -133,6 +141,9 @@ func (s *Store) Load() error {
 	if err := loadJSON(s.alertsPath(), &s.alerts); err != nil {
 		return fmt.Errorf("load alerts: %w", err)
 	}
+	for i := range s.trips {
+		s.trips[i] = NormalizeWorkspace(s.trips[i])
+	}
 	return nil
 }
 
@@ -175,6 +186,7 @@ func (s *Store) Add(t Trip) (string, error) {
 	t.ID = generateID()
 	t.CreatedAt = now
 	t.UpdatedAt = now
+	t = NormalizeWorkspace(t)
 	s.trips = append(s.trips, t)
 
 	if err := s.saveLocked(); err != nil {
@@ -205,11 +217,12 @@ func (s *Store) Update(id string, fn func(*Trip) error) error {
 
 	for i, t := range s.trips {
 		if t.ID == id {
-			cp := t
+			cp := NormalizeWorkspace(t)
 			if err := fn(&cp); err != nil {
 				return err
 			}
 			cp.UpdatedAt = time.Now()
+			cp = NormalizeWorkspace(cp)
 			s.trips[i] = cp
 			return s.saveLocked()
 		}

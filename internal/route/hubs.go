@@ -28,12 +28,12 @@ var hubs = []Hub{
 	{City: "Brussels", Airports: []string{"BRU"}, Lat: 50.8503, Lon: 4.3517},
 	{City: "Paris", Airports: []string{"CDG", "ORY"}, Lat: 48.8566, Lon: 2.3522},
 	{City: "Zurich", Airports: []string{"ZRH"}, Lat: 47.3769, Lon: 8.5417},
-	{City: "Copenhagen", Airports: []string{"CPH"}, Lat: 55.6761, Lon: 12.5683, HasFerry: true},  // DFDS
+	{City: "Copenhagen", Airports: []string{"CPH"}, Lat: 55.6761, Lon: 12.5683, HasFerry: true}, // DFDS
 	{City: "Warsaw", Airports: []string{"WAW"}, Lat: 52.2297, Lon: 21.0122},
 	{City: "Zagreb", Airports: []string{"ZAG"}, Lat: 45.8150, Lon: 15.9819},
 	{City: "Helsinki", Airports: []string{"HEL"}, Lat: 60.1699, Lon: 24.9384, HasFerry: true},   // Tallink, Viking, Eckerö
 	{City: "Tallinn", Airports: []string{"TLL"}, Lat: 59.4370, Lon: 24.7536, HasFerry: true},    // Tallink, Viking, Eckerö
-	{City: "Stockholm", Airports: []string{"ARN"}, Lat: 59.3293, Lon: 18.0686, HasFerry: true},   // Tallink, Viking, Stena
+	{City: "Stockholm", Airports: []string{"ARN"}, Lat: 59.3293, Lon: 18.0686, HasFerry: true},  // Tallink, Viking, Stena
 	{City: "Gothenburg", Airports: []string{"GOT"}, Lat: 57.7089, Lon: 11.9746, HasFerry: true}, // Stena
 	{City: "Riga", Airports: []string{"RIX"}, Lat: 56.9496, Lon: 24.1052, HasFerry: true},       // Tallink
 	{City: "Milan", Airports: []string{"MXP", "LIN"}, Lat: 45.4642, Lon: 9.1900},

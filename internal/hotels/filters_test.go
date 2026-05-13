@@ -13,7 +13,7 @@ func TestPropertyTypeCode_KnownTypes(t *testing.T) {
 		want  string
 	}{
 		{"hotel", "2"},
-		{"Hotel", "2"},    // case-insensitive
+		{"Hotel", "2"}, // case-insensitive
 		{"HOTEL", "2"},
 		{"apartment", "3"},
 		{"hostel", "4"},

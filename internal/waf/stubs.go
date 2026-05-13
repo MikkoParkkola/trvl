@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/sha512"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	_ "embed"
 
 	"github.com/grafana/sobek"
 )
@@ -34,15 +34,15 @@ type cookieEntry struct {
 // sink. All host bridges live as methods on vmHost so tests can construct a
 // naked host independently of the full SolveAWSWAF flow.
 type vmHost struct {
-	vm         *sobek.Runtime
-	loop       *eventLoop
-	client     *http.Client
-	origin     string
-	userAgent  string
-	fetchCap   int // max outstanding fetches; keeps challenge scripts from DoSing us
-	maxBody    int64
-	cookies    []cookieEntry
-	logger     func(msg string, args ...any)
+	vm        *sobek.Runtime
+	loop      *eventLoop
+	client    *http.Client
+	origin    string
+	userAgent string
+	fetchCap  int // max outstanding fetches; keeps challenge scripts from DoSing us
+	maxBody   int64
+	cookies   []cookieEntry
+	logger    func(msg string, args ...any)
 }
 
 const (
@@ -281,7 +281,7 @@ func (h *vmHost) jsFetch(call sobek.FunctionCall) sobek.Value {
 			respURL    = req.URL.String()
 		)
 		if doErr == nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			status = resp.StatusCode
 			statusText = resp.Status
 			bodyBytes, doErr = io.ReadAll(io.LimitReader(resp.Body, h.maxBody))

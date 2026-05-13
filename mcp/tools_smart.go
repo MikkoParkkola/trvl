@@ -99,6 +99,11 @@ func (s *Server) handleTravel(ctx context.Context, args map[string]any, elicit E
 	if target == "travel" {
 		return nil, nil, fmt.Errorf("travel cannot dispatch to itself")
 	}
+	if target == "trip_workspace" && action != "" {
+		if _, ok := params["action"]; !ok {
+			params["action"] = action
+		}
+	}
 
 	handler, ok := s.handlers[target]
 	if !ok {
@@ -198,39 +203,46 @@ func resolveSmartIntentAlias(intent string) (string, bool) {
 }
 
 var smartIntentAliases = map[string]string{
-	"flight":           "search_flights",
-	"flights":          "search_flights",
-	"flight_search":    "search_flights",
-	"hotel":            "search_hotels",
-	"hotels":           "search_hotels",
-	"hotel_search":     "search_hotels",
-	"accommodation":    "search_hotels",
-	"ground":           "search_ground",
-	"ground_transport": "search_ground",
-	"train":            "search_ground",
-	"trains":           "search_ground",
-	"bus":              "search_ground",
-	"buses":            "search_ground",
-	"ferry":            "search_ground",
-	"ferries":          "search_ground",
-	"route":            "search_route",
-	"routes":           "search_route",
-	"trip":             "plan_trip",
-	"trip_planning":    "plan_trip",
-	"plan":             "plan_trip",
-	"planner":          "plan_trip",
-	"watch":            "list_watches",
-	"watches":          "list_watches",
-	"price_watch":      "watch_price",
-	"price_watches":    "list_watches",
-	"alert":            "watch_price",
-	"alerts":           "list_watches",
-	"preference":       "get_preferences",
-	"preferences":      "get_preferences",
-	"prefs":            "get_preferences",
-	"profile":          "get_preferences",
-	"providers":        "provider_health",
-	"provider":         "provider_health",
+	"flight":             "search_flights",
+	"flights":            "search_flights",
+	"flight_search":      "search_flights",
+	"hotel":              "search_hotels",
+	"hotels":             "search_hotels",
+	"hotel_search":       "search_hotels",
+	"accommodation":      "search_hotels",
+	"ground":             "search_ground",
+	"ground_transport":   "search_ground",
+	"train":              "search_ground",
+	"trains":             "search_ground",
+	"bus":                "search_ground",
+	"buses":              "search_ground",
+	"ferry":              "search_ground",
+	"ferries":            "search_ground",
+	"route":              "search_route",
+	"routes":             "search_route",
+	"trip":               "plan_trip",
+	"trip_workspace":     "trip_workspace",
+	"workspace":          "trip_workspace",
+	"import_trip":        "trip_workspace",
+	"import_reservation": "trip_workspace",
+	"optimize_itinerary": "trip_workspace",
+	"fare_intelligence":  "trip_workspace",
+	"booking_ready":      "trip_workspace",
+	"trip_planning":      "plan_trip",
+	"plan":               "plan_trip",
+	"planner":            "plan_trip",
+	"watch":              "list_watches",
+	"watches":            "list_watches",
+	"price_watch":        "watch_price",
+	"price_watches":      "list_watches",
+	"alert":              "watch_price",
+	"alerts":             "list_watches",
+	"preference":         "get_preferences",
+	"preferences":        "get_preferences",
+	"prefs":              "get_preferences",
+	"profile":            "get_preferences",
+	"providers":          "provider_health",
+	"provider":           "provider_health",
 }
 
 func inferTravelTarget(text, action string) string {
@@ -247,6 +259,8 @@ func inferTravelTarget(text, action string) string {
 		return watchActionTarget(token, actionToken)
 	case containsAny(token, "preference", "preferences", "prefs", "profile", "onboard", "interview", "booking_history"):
 		return profileActionTarget(token, actionToken)
+	case containsAny(token, "workspace", "import_reservation", "optimize_itinerary", "fare_intelligence", "booking_ready"):
+		return "trip_workspace"
 	case containsAny(token, "hotel", "hotels", "accommodation", "lodging", "stay", "stays", "room", "rooms", "property"):
 		return hotelTarget(token)
 	case containsAny(token, "ground", "train", "trains", "bus", "buses", "ferry", "ferries", "night_train", "transfer", "transfers"):
@@ -386,6 +400,10 @@ func flightTarget(token string) string {
 
 func tripTarget(token string) string {
 	switch {
+	case containsAny(token, "workspace", "import_reservation", "import_trip", "fare_intelligence", "booking_ready", "save_candidate"):
+		return "trip_workspace"
+	case containsAny(token, "optimize_itinerary", "map_check"):
+		return "trip_workspace"
 	case containsAny(token, "optimize_trip_dates", "trip_dates", "optimize_dates"):
 		return "optimize_trip_dates"
 	case containsAny(token, "optimize_booking", "booking_optimizer"):

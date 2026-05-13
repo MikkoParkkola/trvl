@@ -36,9 +36,9 @@ import (
 )
 
 var (
-	selfUpdateCheckOnly        bool
-	selfUpdateTargetVersion    string
-	selfUpdateForceStandalone  bool
+	selfUpdateCheckOnly       bool
+	selfUpdateTargetVersion   string
+	selfUpdateForceStandalone bool
 )
 
 var selfUpdateCmd = &cobra.Command{
@@ -74,32 +74,32 @@ func init() {
 
 func runSelfUpdate(cmd *cobra.Command, args []string) error {
 	method := selfupdate.DetectInstallMethod(Version)
-	fmt.Fprintf(cmd.OutOrStdout(), "Install method: %s\n", method)
-	fmt.Fprintf(cmd.OutOrStdout(), "Current version: %s\n", Version)
-	fmt.Fprintf(cmd.OutOrStdout(), "Trust anchor (ML-DSA-65 fingerprint): %s\n",
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Install method: %s\n", method)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Current version: %s\n", Version)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Trust anchor (ML-DSA-65 fingerprint): %s\n",
 		selfupdate.MLDSA65PubkeyFingerprint())
 
 	// Channel-specific short-circuits: never overwrite a binary tracked
 	// by an external package manager.
 	switch method {
 	case selfupdate.InstallMethodDev:
-		fmt.Fprintln(cmd.OutOrStdout(),
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(),
 			"This is a dev build — no self-update available. Rebuild from source with your local toolchain.")
 		return nil
 	case selfupdate.InstallMethodBrew, selfupdate.InstallMethodGo, selfupdate.InstallMethodNpm:
 		hint := method.UpgradeHint()
-		fmt.Fprintf(cmd.OutOrStdout(),
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 			"trvl was installed via %s. The %s package manager owns this binary; run:\n\n  %s\n\n",
 			method, method, hint)
 		return nil
 	case selfupdate.InstallMethodUnclassified:
 		if !selfUpdateForceStandalone {
-			fmt.Fprintln(cmd.ErrOrStderr(),
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(),
 				"Could not classify your install method. Refusing to auto-replace the binary.\n"+
 					"If you know your binary is a hand-extracted tarball, re-run with --force-standalone.")
 			return fmt.Errorf("self-update refused: install method unclassified")
 		}
-		fmt.Fprintln(cmd.OutOrStdout(),
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(),
 			"Proceeding under --force-standalone (caller asserts a hand-extracted tarball install).")
 	}
 
@@ -126,18 +126,18 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 		target = info.LatestVersion
 		releaseURL = info.ReleaseURL
 		if !info.UpdateAvailable {
-			fmt.Fprintf(cmd.OutOrStdout(),
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 				"You're already running the latest version (v%s).\n", Version)
 			return nil
 		}
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Target version: v%s\n", target)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Target version: v%s\n", target)
 	if releaseURL != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "Release notes: %s\n", releaseURL)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Release notes: %s\n", releaseURL)
 	}
 
 	if selfUpdateCheckOnly {
-		fmt.Fprintf(cmd.OutOrStdout(),
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 			"--check: an update to v%s is available. Re-run without --check to apply it.\n", target)
 		return nil
 	}
@@ -152,13 +152,13 @@ func runSelfUpdate(cmd *cobra.Command, args []string) error {
 		exePath = resolved
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Replacing %s ...\n", exePath)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Replacing %s ...\n", exePath)
 	updater := selfupdate.NewUpdater()
 	dst, err := updater.PerformUpdate(ctx, target, exePath)
 	if err != nil {
 		return fmt.Errorf("self-update failed: %w", err)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(),
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 		"Updated %s to v%s. Run `trvl version` to confirm.\n", dst, target)
 	return nil
 }

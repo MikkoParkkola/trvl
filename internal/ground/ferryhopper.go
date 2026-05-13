@@ -145,7 +145,7 @@ func ferryhopperCallSearchTrips(ctx context.Context, from, to, date string) (*fe
 	if err != nil {
 		return nil, fmt.Errorf("ferryhopper: request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
@@ -218,10 +218,6 @@ func ferryhopperCheapestPrice(accommodations []ferryhopperAccommodation) float64
 // locations on a given date. It accepts free-form location names (e.g.
 // "Athens", "Santorini", "Piraeus") which are passed directly to the API.
 func SearchFerryhopper(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
-	if currency == "" {
-		currency = "EUR"
-	}
-
 	if _, err := models.ParseDate(date); err != nil {
 		return nil, fmt.Errorf("ferryhopper: invalid date %q: %w", date, err)
 	}

@@ -121,16 +121,16 @@ func formatTripMarkdown(t *trips.Trip) string {
 
 	// Header line.
 	if origin != "" && dest != "" {
-		b.WriteString(fmt.Sprintf("**%s -> %s**", origin, dest))
+		_, _ = fmt.Fprintf(&b, "**%s -> %s**", origin, dest)
 		if depart != "" && ret != "" {
-			b.WriteString(fmt.Sprintf(" | %s-%s", formatDateCompact(depart), formatDateCompact(ret)))
+			_, _ = fmt.Fprintf(&b, " | %s-%s", formatDateCompact(depart), formatDateCompact(ret))
 		}
 		if nights > 0 {
-			b.WriteString(fmt.Sprintf(" | %d nights", nights))
+			_, _ = fmt.Fprintf(&b, " | %d nights", nights)
 		}
 		b.WriteString("\n\n")
 	} else {
-		b.WriteString(fmt.Sprintf("**%s**\n\n", t.Name))
+		_, _ = fmt.Fprintf(&b, "**%s**\n\n", t.Name)
 	}
 
 	// Price table.
@@ -156,14 +156,14 @@ func formatTripMarkdown(t *trips.Trip) string {
 			if leg.Provider != "" {
 				detail += fmt.Sprintf(" (%s)", leg.Provider)
 			}
-			b.WriteString(fmt.Sprintf("| %s | %s |\n", label, detail))
+			_, _ = fmt.Fprintf(&b, "| %s | %s |\n", label, detail)
 			total += leg.Price
 			if currency == "" {
 				currency = leg.Currency
 			}
 		}
 		if currency != "" {
-			b.WriteString(fmt.Sprintf("| **Total** | **%s %.0f** |\n", currency, total))
+			_, _ = fmt.Fprintf(&b, "| **Total** | **%s %.0f** |\n", currency, total)
 		}
 		b.WriteString("\n")
 	}
@@ -181,16 +181,16 @@ func formatLastSearchMarkdown(ls *LastSearch) string {
 	destName := ls.Destination
 
 	if originName != "" && destName != "" {
-		b.WriteString(fmt.Sprintf("**%s -> %s**", originName, destName))
+		_, _ = fmt.Fprintf(&b, "**%s -> %s**", originName, destName)
 		if ls.DepartDate != "" && ls.ReturnDate != "" {
-			b.WriteString(fmt.Sprintf(" | %s-%s", formatDateCompact(ls.DepartDate), formatDateCompact(ls.ReturnDate)))
+			_, _ = fmt.Fprintf(&b, " | %s-%s", formatDateCompact(ls.DepartDate), formatDateCompact(ls.ReturnDate))
 		}
 		if ls.Nights > 0 {
-			b.WriteString(fmt.Sprintf(" | %d nights", ls.Nights))
+			_, _ = fmt.Fprintf(&b, " | %d nights", ls.Nights)
 		}
 		b.WriteString("\n\n")
 	} else {
-		b.WriteString(fmt.Sprintf("**%s search**\n\n", ls.Command))
+		_, _ = fmt.Fprintf(&b, "**%s search**\n\n", ls.Command)
 	}
 
 	// Price table.
@@ -209,17 +209,17 @@ func formatLastSearchMarkdown(ls *LastSearch) string {
 				}
 				detail += fmt.Sprintf(" (%s, %s)", ls.FlightAirline, stops)
 			}
-			b.WriteString(fmt.Sprintf("| Flight | %s |\n", detail))
+			_, _ = fmt.Fprintf(&b, "| Flight | %s |\n", detail)
 		}
 		if ls.HotelPrice > 0 {
 			detail := fmt.Sprintf("%s %.0f", ls.HotelCurrency, ls.HotelPrice)
 			if ls.HotelName != "" {
 				detail += fmt.Sprintf(" (%s)", ls.HotelName)
 			}
-			b.WriteString(fmt.Sprintf("| Hotel | %s |\n", detail))
+			_, _ = fmt.Fprintf(&b, "| Hotel | %s |\n", detail)
 		}
 		if ls.TotalPrice > 0 {
-			b.WriteString(fmt.Sprintf("| **Total** | **%s %.0f** |\n", ls.TotalCurrency, ls.TotalPrice))
+			_, _ = fmt.Fprintf(&b, "| **Total** | **%s %.0f** |\n", ls.TotalCurrency, ls.TotalPrice)
 		}
 		b.WriteString("\n")
 	}
@@ -232,7 +232,7 @@ func formatLastSearchMarkdown(ls *LastSearch) string {
 // Tool-surface copy is enforced by share tests so public trip cards do not
 // drift back to stale advertised counts.
 func trvlFooter() string {
-	return "*Found by [trvl](https://github.com/MikkoParkkola/trvl) — 1 smart MCP tool + 62 compatibility aliases, no API keys*\n"
+	return "*Found by [trvl](https://github.com/MikkoParkkola/trvl) — 1 smart MCP tool + 63 compatibility aliases, no API keys*\n"
 }
 
 // extractTripRoute derives origin, destination, dates, and nights from trip legs.
@@ -308,7 +308,7 @@ func copyToClipboard(text string) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("copy to clipboard: %w", err)
 	}
-	fmt.Fprintln(os.Stderr, "Copied to clipboard.")
+	_, _ = fmt.Fprintln(os.Stderr, "Copied to clipboard.")
 	return nil
 }
 
@@ -317,7 +317,7 @@ func copyToClipboard(text string) error {
 func createGist(md string) error {
 	if _, err := exec.LookPath("gh"); err != nil {
 		// Fallback: just print markdown.
-		fmt.Fprintln(os.Stderr, "gh CLI not found — printing markdown instead. Install gh for gist support.")
+		_, _ = fmt.Fprintln(os.Stderr, "gh CLI not found — printing markdown instead. Install gh for gist support.")
 		fmt.Print(md)
 		return nil
 	}

@@ -236,7 +236,7 @@ func TestTallinkTimetable_MockServer(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(mockTallinkTimetableResponse)) //nolint:errcheck
+		_, _ = w.Write([]byte(mockTallinkTimetableResponse)) //nolint:errcheck
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -307,7 +307,7 @@ func TestTallinkOvernightMockServer_CabinClasses(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"OK"}`)) //nolint:errcheck
+		_, _ = w.Write([]byte(`{"status":"OK"}`)) //nolint:errcheck
 	})
 	mux.HandleFunc("/api/travelclasses", func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("JSESSIONID")
@@ -318,7 +318,7 @@ func TestTallinkOvernightMockServer_CabinClasses(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(mockCabinClasses)) //nolint:errcheck
+		_, _ = w.Write([]byte(mockCabinClasses)) //nolint:errcheck
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -356,7 +356,7 @@ func TestTallinkDealFlag(t *testing.T) {
 
 	// Second sail has price 12.50 (below tallinkDealThreshold=20) → "Deal" amenity.
 	var price float64
-	fmt.Sscanf(sails[1].PersonPrice, "%f", &price)
+	_, _ = fmt.Sscanf(sails[1].PersonPrice, "%f", &price)
 	if price >= tallinkDealThreshold {
 		t.Skipf("test assumption violated: price %.2f >= threshold %.2f", price, tallinkDealThreshold)
 	}
@@ -371,7 +371,7 @@ func TestTallinkDealFlag(t *testing.T) {
 
 	// First sail (38.90) should not be flagged.
 	var price2 float64
-	fmt.Sscanf(sails[0].PersonPrice, "%f", &price2)
+	_, _ = fmt.Sscanf(sails[0].PersonPrice, "%f", &price2)
 	var amenities2 []string
 	if price2 > 0 && price2 < tallinkDealThreshold {
 		amenities2 = append(amenities2, "Deal")

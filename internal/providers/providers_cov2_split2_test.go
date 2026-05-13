@@ -126,7 +126,7 @@ func TestIsUpperAlpha(t *testing.T) {
 
 func TestEnrichRatings_ViaHTTPTest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html>
+		_, _ = fmt.Fprint(w, `<html>
 			<script type="application/ld+json">
 			{
 				"@type": "Hotel",
@@ -175,7 +175,7 @@ func TestEnrichRatings_MaxFiveEnrichments(t *testing.T) {
 	enrichCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		enrichCount++
-		fmt.Fprint(w, `<html>
+		_, _ = fmt.Fprint(w, `<html>
 			<script type="application/ld+json">{"aggregateRating":{"ratingValue":7.5,"reviewCount":100}}</script>
 		</html>`)
 	}))
@@ -212,7 +212,7 @@ func TestFetchJSONLDRating_HTTP404(t *testing.T) {
 
 func TestFetchJSONLDRating_NoJSONLD(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html><body>No JSON-LD here</body></html>`)
+		_, _ = fmt.Fprint(w, `<html><body>No JSON-LD here</body></html>`)
 	}))
 	defer srv.Close()
 
@@ -224,7 +224,7 @@ func TestFetchJSONLDRating_NoJSONLD(t *testing.T) {
 
 func TestFetchJSONLDRating_GraphArray(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<html>
+		_, _ = fmt.Fprint(w, `<html>
 			<script type="application/ld+json">
 			{
 				"@graph": [
@@ -321,8 +321,8 @@ func TestDecompressBody_Brotli(t *testing.T) {
 	original := `{"results": [{"name": "Brotli Hotel"}]}`
 	var buf strings.Builder
 	bw := brotli.NewWriter(&buf)
-	bw.Write([]byte(original))
-	bw.Close()
+	_, _ = bw.Write([]byte(original))
+	_ = bw.Close()
 
 	resp := &http.Response{
 		Header: http.Header{"Content-Encoding": {"br"}},
@@ -430,7 +430,7 @@ func TestLoadSaveCachedCookies_FullRoundTrip(t *testing.T) {
 	// Override HOME to use temp dir for cookie cache.
 	dir := t.TempDir()
 	cookieDir := filepath.Join(dir, ".trvl", "cookies")
-	os.MkdirAll(cookieDir, 0o700)
+	_ = os.MkdirAll(cookieDir, 0o700)
 
 	targetURL := "https://www.roundtrip-test.com/page"
 	u, _ := url.Parse(targetURL)
@@ -455,7 +455,7 @@ func TestLoadSaveCachedCookies_FullRoundTrip(t *testing.T) {
 	}
 	data, _ := json.Marshal(cached)
 	cachePath := filepath.Join(cookieDir, "www.roundtrip-test.com.json")
-	os.WriteFile(cachePath, data, 0o600)
+	_ = os.WriteFile(cachePath, data, 0o600)
 
 	// Create fresh client and load cookies from disk.
 	jar2, _ := cookiejar.New(nil)
@@ -490,7 +490,7 @@ func TestLoadSaveCachedCookies_FullRoundTrip(t *testing.T) {
 func TestLoadCachedCookies_ExpiredTTL(t *testing.T) {
 	dir := t.TempDir()
 	cookieDir := filepath.Join(dir, ".trvl", "cookies")
-	os.MkdirAll(cookieDir, 0o700)
+	_ = os.MkdirAll(cookieDir, 0o700)
 
 	// Write expired cookies.
 	expired := []cachedCookie{
@@ -498,11 +498,11 @@ func TestLoadCachedCookies_ExpiredTTL(t *testing.T) {
 	}
 	data, _ := json.Marshal(expired)
 	cachePath := filepath.Join(cookieDir, "expired.example.com.json")
-	os.WriteFile(cachePath, data, 0o600)
+	_ = os.WriteFile(cachePath, data, 0o600)
 
 	// Verify the TTL check works.
 	var loaded []cachedCookie
-	json.Unmarshal(data, &loaded)
+	_ = json.Unmarshal(data, &loaded)
 	if len(loaded) == 0 {
 		t.Fatal("expected cached cookies")
 	}
@@ -514,11 +514,11 @@ func TestLoadCachedCookies_ExpiredTTL(t *testing.T) {
 func TestLoadCachedCookies_BadJSON(t *testing.T) {
 	dir := t.TempDir()
 	cookieDir := filepath.Join(dir, ".trvl", "cookies")
-	os.MkdirAll(cookieDir, 0o700)
+	_ = os.MkdirAll(cookieDir, 0o700)
 
 	// Write invalid JSON.
 	cachePath := filepath.Join(cookieDir, "bad.example.com.json")
-	os.WriteFile(cachePath, []byte("{invalid json}"), 0o600)
+	_ = os.WriteFile(cachePath, []byte("{invalid json}"), 0o600)
 
 	// Parse should fail gracefully.
 	data, _ := os.ReadFile(cachePath)

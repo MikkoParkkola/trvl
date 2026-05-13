@@ -63,7 +63,7 @@ trvl flights HEL LHR 2026-07-01 --format json | head -5
 # Expected: JSON with flight results
 ```
 
-Tell the user: "trvl is installed with 1 smart MCP tool, 62 compatibility aliases, and 2 bundled Claude skills. It includes 37 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_hotels`, and `watch_price` continue to work as compatibility aliases. I can search flights, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
+Tell the user: "trvl is installed with 1 smart MCP tool, 63 compatibility aliases, and 2 bundled Claude skills. It includes 37 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_hotels`, and `watch_price` continue to work as compatibility aliases. I can search flights, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
 
 ### Step 5: Build travel profile (recommended)
 
@@ -182,7 +182,7 @@ Save with `update_preferences`.
 | Field | Behavior |
 |-------|----------|
 | `home_airports` | Default origin for flight/trip/weekend/discover searches |
-| `display_currency` | Price display across the smart router and all 62 compatibility aliases |
+| `display_currency` | Price display across the smart router and all 63 compatibility aliases |
 | `no_dormitories` | `FilterHotels()` drops hostels, capsules, guesthouse rooms by chain name + regex |
 | `ensuite_only` | `FilterHotels()` drops shared-bathroom properties |
 | `min_hotel_stars` | Passed to Google Hotels API as search filter |
@@ -264,7 +264,7 @@ CLI alternative: `trvl prefs init`
 
 ## How To Use (after setup)
 
-You now have one `travel` MCP tool available by default, with 62 legacy tool names still callable as compatibility aliases. Use `travel` for new clients and the aliases when an older workflow names a specific tool:
+You now have one `travel` MCP tool available by default, with 63 legacy tool names still callable as compatibility aliases. Use `travel` for new clients and the aliases when an older workflow names a specific tool:
 
 ### search_flights — Find flights between airports
 ```json
@@ -425,6 +425,25 @@ Optional:
 - `carry_on_only`: carry-on only trip
 
 Returns: ranked booking strategies with all-in cost (baggage + FF status), savings vs naive direct booking. Searches alternative origins, destinations, rail+fly stations, hidden-city candidates, and date flexibility in a single call.
+
+### trip_workspace — Verified traveller workspace
+Use for the user painpoints that span multiple tabs: importing confirmations, saving booking candidates, exporting a trip, sanity-checking itinerary route time, and getting conservative fare intelligence.
+
+```json
+{"action":"import_reservation","trip_id":"trip_abc123","subject":"Booking confirmation - KLM","body":"Flight HEL -> AMS... Booking reference ABC123","source":"email"}
+```
+
+Actions:
+- `get`: return the full schema-versioned workspace.
+- `export_json` / `export_markdown`: export the workspace for sharing or backup.
+- `import_json`: merge a Trip Workspace JSON export into an existing trip, or create a new trip if `trip_id` is omitted.
+- `import_reservation`: parse user-approved booking text into confirmed legs and imported records.
+- `save_candidate`: save a manually bookable option with `type`, `title`, `provider`, `price`, `currency`, `url`, `checked_at`, and optional `expires_at`.
+- `optimize_itinerary`: estimate route time from workspace place coordinates and warn on overpacked days.
+- `fare_intelligence`: compare `price` against `history` points and return buy/watch/wait without claiming live availability.
+- `booking_ready`: check whether a saved candidate has price, URL, and fresh enough evidence before the user books manually.
+
+Important: this tool never purchases, cancels, or guarantees availability. Stale or missing evidence means re-check before the user acts.
 
 ### optimize_trip_dates — Find cheapest dates across a range
 ```json
