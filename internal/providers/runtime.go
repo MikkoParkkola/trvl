@@ -347,6 +347,14 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 					Error:   fmt.Sprintf("circuit breaker tripped after %d consecutive failures (never succeeded; awaiting cooldown)", cfg.ErrorCount),
 					FixHint: "fix the upstream credential / cookie / endpoint, then run `trvl provider reset <id>` to clear the breaker",
 				})
+				LogHealth(HealthEntry{
+					Provider:   cfg.ID,
+					Operation:  "search",
+					Status:     "circuit_broken",
+					Error:      fmt.Sprintf("circuit breaker tripped after %d consecutive failures (never succeeded; awaiting cooldown)", cfg.ErrorCount),
+					ErrorClass: "CIRCUIT_BROKEN",
+					HintCode:   "CIRCUIT_BROKEN",
+				})
 				continue
 			}
 			if now.Sub(tripAt) < circuitBreakerCooldown {
@@ -367,6 +375,14 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 						cfg.LastError,
 						recoveryAt.Format(time.RFC3339)),
 					FixHint: "wait for cooldown to elapse, or run `trvl provider reset <id>` to retry immediately",
+				})
+				LogHealth(HealthEntry{
+					Provider:   cfg.ID,
+					Operation:  "search",
+					Status:     "circuit_broken",
+					Error:      fmt.Sprintf("circuit breaker tripped after %d consecutive failures; last error: %s; recovery probe at %s", cfg.ErrorCount, cfg.LastError, recoveryAt.Format(time.RFC3339)),
+					ErrorClass: "CIRCUIT_BROKEN",
+					HintCode:   "CIRCUIT_BROKEN",
 				})
 				continue
 			}

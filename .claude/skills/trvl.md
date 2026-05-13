@@ -208,7 +208,7 @@ The full compatibility surface is below.
 | Tool | Use |
 |---|---|
 | `list_providers` | List all configured providers + status |
-| `provider_health` | Per-provider success rate, latency, last error/hint code |
+| `provider_health` | Per-provider success rate, latency, freshness, result counts, last error class, circuit state, next retry, and fix hint |
 | `suggest_providers` | Catalogue of optional providers to enable (with auth pattern, OSS reference) |
 | `configure_provider` | Enable a provider (requires user consent) |
 | `test_provider` | Validate a provider's config |
@@ -565,7 +565,7 @@ Offer 2-3 refinements: "Other dates?" · "Nearby airports?" · "Different hotel?
 - **"What €X gets you"** → budget→destination mapping via `search_dates` fan-out.
 - **"Calendar hole"** → `find_trip_window` with calendar busy-intervals → flight savings for free weeks.
 - **"Award sweet spot"** → `search_awards` with the user's MR / UR / Bilt / FB / VS / AS balances.
-- **"Provider audit"** → `provider_health` + `list_providers` to diagnose flaky upstream sources.
+- **"Provider audit"** → `provider_health` + `list_providers` to diagnose stale, sparse, circuit-broken, or flaky upstream sources.
 
 ---
 

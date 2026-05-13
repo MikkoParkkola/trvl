@@ -489,7 +489,7 @@ Stores watch in `~/.trvl/watches.json`. Use `check_watches` to re-check prices, 
 ```json
 {}
 ```
-Shows per-provider success rate, average latency, and last error from `~/.trvl/health.jsonl`. Use to diagnose why a provider isn't returning results.
+Shows per-provider success rate, average latency, result-count quality, freshness, last error class, circuit-break state, next retry time, and fix hint from the redacted `~/.trvl/health.jsonl` log plus provider config state. Use to diagnose stale, sparse, blocked, or failing providers without exposing provider credentials.
 
 ### detect_travel_hacks — Find savings opportunities
 ```json

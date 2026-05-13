@@ -201,6 +201,7 @@ That's it. Your AI assistant now has 1 smart travel tool available. The old 63 t
 | **search_route** | Multi-modal routing combining flights, trains, buses and ferries | Helsinki → Dubrovnik, arrive by 2026-04-10 |
 | **get_weather** | Get a weather forecast for any city (Open-Meteo, up to 14 days) | Prague, weekend forecast |
 | **get_preferences** | Read user travel preferences (FF status, bag rules, seat preferences) | — |
+| **provider_health** | Diagnose configured providers with success rate, freshness, result counts, error class, circuit state, next retry, and fix hints | "why is Booking.com failing?" |
 | **detect_travel_hacks** | Run 18 parallel detectors for flight and ground savings opportunities | HEL → AMS, Apr 13, carry-on only |
 | **detect_accommodation_hacks** | Find hotel split savings (e.g. 2-city stay cheaper than 1 hotel) | Prague, Jun 15-22 |
 | **search_natural** | Natural language search using keyword heuristics — dispatches to the right tool automatically | "cheapest weekend in July from Helsinki" |

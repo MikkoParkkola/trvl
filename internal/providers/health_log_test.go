@@ -87,12 +87,13 @@ func TestReadHealthLog_Last(t *testing.T) {
 func TestHealthSummary_Aggregation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "health.jsonl")
+	now := time.Now().UTC()
 
 	entries := []HealthEntry{
-		{Provider: "agoda", Operation: "search", Status: "ok", LatencyMs: 100},
-		{Provider: "agoda", Operation: "search", Status: "ok", LatencyMs: 200},
-		{Provider: "agoda", Operation: "search", Status: "error", LatencyMs: 50, Error: "http 403"},
-		{Provider: "booking", Operation: "search", Status: "timeout", LatencyMs: 30000, Error: "deadline exceeded"},
+		{Timestamp: now.Add(-3 * time.Hour).Format(time.RFC3339), Provider: "agoda", Operation: "search", Status: "ok", LatencyMs: 100, Results: 4},
+		{Timestamp: now.Add(-2 * time.Hour).Format(time.RFC3339), Provider: "agoda", Operation: "search", Status: "ok", LatencyMs: 200, Results: 8},
+		{Timestamp: now.Add(-1 * time.Hour).Format(time.RFC3339), Provider: "agoda", Operation: "search", Status: "error", LatencyMs: 50, Error: "http 403", HintCode: string(FixHintAkamaiBlock)},
+		{Timestamp: now.Add(-48 * time.Hour).Format(time.RFC3339), Provider: "booking", Operation: "search", Status: "timeout", LatencyMs: 30000, Error: "deadline exceeded", ErrorClass: string(FixHintTLSTimeout)},
 	}
 
 	f, _ := os.Create(path)
@@ -128,6 +129,21 @@ func TestHealthSummary_Aggregation(t *testing.T) {
 	if agoda.LastError != "http 403" {
 		t.Errorf("agoda last_error: got %q", agoda.LastError)
 	}
+	if agoda.TotalResults != 12 {
+		t.Errorf("agoda total_results: got %d, want 12", agoda.TotalResults)
+	}
+	if agoda.AvgResults != 6 {
+		t.Errorf("agoda avg_results: got %f, want 6", agoda.AvgResults)
+	}
+	if agoda.LastResults != 8 {
+		t.Errorf("agoda last_results: got %d, want 8", agoda.LastResults)
+	}
+	if agoda.Freshness != "fresh" {
+		t.Errorf("agoda freshness: got %q, want fresh", agoda.Freshness)
+	}
+	if agoda.LastErrorClass != string(FixHintAkamaiBlock) {
+		t.Errorf("agoda last_error_class: got %q, want %q", agoda.LastErrorClass, FixHintAkamaiBlock)
+	}
 
 	booking := summary["booking"]
 	if booking.TimeoutCount != 1 {
@@ -135,6 +151,48 @@ func TestHealthSummary_Aggregation(t *testing.T) {
 	}
 	if booking.ErrorCount != 0 {
 		t.Errorf("booking error_count: got %d, want 0", booking.ErrorCount)
+	}
+	if booking.Freshness != "stale" {
+		t.Errorf("booking freshness: got %q, want stale", booking.Freshness)
+	}
+	if booking.LastErrorClass != string(FixHintTLSTimeout) {
+		t.Errorf("booking last_error_class: got %q, want %q", booking.LastErrorClass, FixHintTLSTimeout)
+	}
+}
+
+func TestSanitizeHealthEntryRedactsSecrets(t *testing.T) {
+	entry := sanitizeHealthEntry(HealthEntry{
+		Provider: "secret-provider",
+		Status:   "error",
+		Error:    "GET https://api.example/search?api_key=secret123&session_token=tok456 failed Authorization: Bearer abc.def",
+		HintCode: string(FixHintRateLimited),
+	})
+	if strings.Contains(entry.Error, "secret123") || strings.Contains(entry.Error, "tok456") || strings.Contains(entry.Error, "abc.def") {
+		t.Fatalf("secret leaked after redaction: %s", entry.Error)
+	}
+	if entry.ErrorClass != string(FixHintRateLimited) {
+		t.Fatalf("ErrorClass = %q, want %q", entry.ErrorClass, FixHintRateLimited)
+	}
+}
+
+func TestCircuitBreakerHealthStates(t *testing.T) {
+	now := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
+	if got := CircuitBreakerHealth(&ProviderConfig{ErrorCount: 1}, now); got.State != "closed" {
+		t.Fatalf("state = %q, want closed", got.State)
+	}
+	open := CircuitBreakerHealth(&ProviderConfig{
+		ErrorCount:  circuitBreakerThreshold,
+		LastErrorAt: now.Add(-time.Minute),
+	}, now)
+	if open.State != "open" || open.NextRetryAt == "" || open.FixHint == "" {
+		t.Fatalf("open circuit health = %#v", open)
+	}
+	half := CircuitBreakerHealth(&ProviderConfig{
+		ErrorCount:  circuitBreakerThreshold,
+		LastErrorAt: now.Add(-(circuitBreakerCooldown + time.Minute)),
+	}, now)
+	if half.State != "half_open" {
+		t.Fatalf("state = %q, want half_open", half.State)
 	}
 }
 
