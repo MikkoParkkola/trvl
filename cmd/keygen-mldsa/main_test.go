@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -90,6 +91,9 @@ func readHexFile(t *testing.T, path string) []byte {
 
 func assertMode(t *testing.T, path string, want os.FileMode) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose POSIX file modes through os.FileMode")
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
