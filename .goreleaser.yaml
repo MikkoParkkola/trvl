@@ -138,7 +138,7 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: https://github.com/MikkoParkkola/trvl
-    description: "AI travel agent — 55 MCP tools for flights, hotels, ground transport, price alerts. Free, no API keys."
+    description: "Travel MCP server — flights, hotels, ground transport, no API keys for search"
     license: "PolyForm-Noncommercial-1.0.0"
     install: |
       bin.install "trvl"
