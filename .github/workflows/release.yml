@@ -62,7 +62,7 @@ jobs:
         # "does not contain cert"). v6.4.0 skips that pre-flight check;
         # our own signs: block in .goreleaser.yaml still uses the
         # cosign-installer cosign for signing release artifacts correctly.
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2
         with:
           distribution: goreleaser
           version: "~> v2"
@@ -79,7 +79,7 @@ jobs:
 
       - name: Run GoReleaser without Homebrew tap
         if: env.HAS_HOMEBREW_TAP_TOKEN != 'true'
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2
         with:
           distribution: goreleaser
           version: "~> v2"
