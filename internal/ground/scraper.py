@@ -16,6 +16,7 @@ On error:
 import json
 import sys
 import re
+from urllib.parse import urlparse
 
 _Stealth = None
 _STEALTH_AVAILABLE = None
@@ -312,7 +313,8 @@ def capture_trainline_cookie(pw):
     all_cookies = context.cookies()
     cookie_parts = []
     for c in all_cookies:
-        if "thetrainline.com" in c.get("domain", ""):
+        domain = c.get("domain", "").lstrip(".")
+        if domain == "thetrainline.com" or domain.endswith(".thetrainline.com"):
             cookie_parts.append(f"{c['name']}={c['value']}")
 
     browser.close()
@@ -773,7 +775,7 @@ def scrape_sncf(page, from_city, to_city, date, currency):
             bff_key_holder["key"] = bff_key
 
     def _capture_response_status(resp):
-        if resp.url.startswith("https://www.sncf-connect.com"):
+        if urlparse(resp.url).hostname == "www.sncf-connect.com":
             http_statuses[resp.url] = resp.status
 
     page.on("request", _capture_request)
