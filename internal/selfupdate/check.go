@@ -25,8 +25,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/MikkoParkkola/trvl/internal/upgrade"
 )
 
 const (
@@ -160,7 +158,7 @@ func (c *Checker) Check(ctx context.Context, disableForCI bool) (UpdateInfo, err
 		// changed since the cache was written (user upgraded out of
 		// band — e.g. brew — and the cache hasn't expired yet).
 		cached.CurrentVersion = c.currentVer
-		cached.UpdateAvailable = upgrade.CompareSemver(cached.LatestVersion, c.currentVer) > 0
+		cached.UpdateAvailable = isUpdateAvailable(cached.LatestVersion, c.currentVer)
 		return cached, nil
 	}
 
@@ -171,7 +169,7 @@ func (c *Checker) Check(ctx context.Context, disableForCI bool) (UpdateInfo, err
 		// rather than nothing.
 		if cached, ok := c.readCache(); ok {
 			cached.CurrentVersion = c.currentVer
-			cached.UpdateAvailable = upgrade.CompareSemver(cached.LatestVersion, c.currentVer) > 0
+			cached.UpdateAvailable = isUpdateAvailable(cached.LatestVersion, c.currentVer)
 			return cached, nil
 		}
 		return UpdateInfo{CurrentVersion: c.currentVer}, nil
@@ -217,7 +215,7 @@ func (c *Checker) fetchLatest(ctx context.Context) (UpdateInfo, error) {
 	return UpdateInfo{
 		CurrentVersion:  c.currentVer,
 		LatestVersion:   latest,
-		UpdateAvailable: upgrade.CompareSemver(latest, c.currentVer) > 0,
+		UpdateAvailable: isUpdateAvailable(latest, c.currentVer),
 		ReleaseURL:      raw.HTMLURL,
 		CheckedAt:       time.Now().UTC(),
 	}, nil
