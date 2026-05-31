@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
-	"github.com/MikkoParkkola/trvl/internal/preferences"
 	"github.com/MikkoParkkola/trvl/internal/tripwindow"
 	"github.com/spf13/cobra"
 )
@@ -24,6 +23,7 @@ func whenCmd() *cobra.Command {
 		maxCandidates int
 		budgetEUR     float64
 		formatOut     string
+		noGeo         bool
 	)
 
 	cmd := &cobra.Command{
@@ -57,15 +57,13 @@ Examples:
 				return fmt.Errorf("--until YYYY-MM-DD is required")
 			}
 
-			// Resolve origin from flag or preferences.
-			if origin == "" {
-				if prefs, err := preferences.Load(); err == nil && prefs != nil && len(prefs.HomeAirports) > 0 {
-					origin = prefs.HomeAirports[0]
-				}
+			// Resolve origin: explicit --origin flag, else saved home airport,
+			// else best-effort geo-IP location (disable with --no-geo).
+			resolved, err := resolveCLIOrigin(cmd.Context(), origin, formatOut, noGeo)
+			if err != nil {
+				return fmt.Errorf("--origin is required (or set home_airports in ~/.trvl/preferences.json): %w", err)
 			}
-			if origin == "" {
-				return fmt.Errorf("--origin is required (or set home_airports in ~/.trvl/preferences.json)")
-			}
+			origin = resolved
 
 			// Validate origin IATA.
 			if err := models.ValidateIATA(origin); err != nil {
@@ -153,6 +151,7 @@ Examples:
 	cmd.Flags().String("to", "", "Destination city or IATA code (required)")
 	_ = cmd.MarkFlagRequired("to")
 	cmd.Flags().StringVar(&origin, "origin", "", "Origin IATA code (default: first home_airport from preferences)")
+	cmd.Flags().BoolVar(&noGeo, "no-geo", false, "Disable geo-IP origin detection (also via TRVL_NO_GEO=1)")
 	cmd.Flags().StringVar(&windowStart, "from", "", "Earliest departure date YYYY-MM-DD (required)")
 	_ = cmd.MarkFlagRequired("from")
 	cmd.Flags().StringVar(&windowEnd, "until", "", "Latest return date YYYY-MM-DD (required)")

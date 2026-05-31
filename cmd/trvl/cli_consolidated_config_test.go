@@ -430,6 +430,9 @@ func TestPrefsSetCmd_UnknownKeyV21(t *testing.T) {
 func TestWhenCmd_MissingOriginNoPrefsV22(t *testing.T) {
 	tmp := t.TempDir()
 	setTestHome(t, tmp)
+	// Disable geo-IP so origin resolution can't silently succeed off the
+	// network; with no home airport and no explicit --origin it must error.
+	t.Setenv("TRVL_NO_GEO", "1")
 	cmd := whenCmd()
 	cmd.SetArgs([]string{"--to", "BCN", "--from", "2026-07-01", "--until", "2026-07-31"})
 	err := cmd.Execute()

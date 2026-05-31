@@ -20,6 +20,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/points"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 	"github.com/MikkoParkkola/trvl/internal/scoring"
+	"github.com/MikkoParkkola/trvl/internal/travelctx"
 	"github.com/spf13/cobra"
 )
 
@@ -36,13 +37,14 @@ func flightsCmd() *cobra.Command {
 		compareCabins  bool
 		explain        bool
 		award          bool
+		noGeo          bool
 		awardCookies   string
 		provider       string
 		flightRailFly  bool
 	)
 
 	cmd := &cobra.Command{
-		Use:   "flights ORIGIN DESTINATION DATE",
+		Use:   "flights [ORIGIN] DESTINATION DATE",
 		Short: "Search flights between airports (supports multi-airport)",
 		Long: `Search flights between airports on a specific date.
 
@@ -54,20 +56,67 @@ Examples:
   trvl flights AMS,EIN,ANR HEL,TKU,TLL 2026-06-15
   trvl flights HEL NRT 2026-06-15 --return 2026-06-22
   trvl flights HEL NRT 2026-06-15 --cabin business --stops nonstop`,
-		Args: cobra.ExactArgs(3),
+		Args: cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			originArg := args[0]
+			// Accept both "ORIGIN DEST DATE" (explicit) and "DEST DATE"
+			// (origin auto-resolved from location/time context).
+			var originArg, destArg, date string
+			switch len(args) {
+			case 3:
+				originArg, destArg, date = args[0], args[1], args[2]
+			default: // 2 args
+				destArg, date = args[0], args[1]
+			}
 
-			// If the user passes "home" as origin, resolve from preferences.
+			// Resolve the ambient search context (current time + best-available
+			// origin). Precedence: explicit ORIGIN > "home" keyword / saved home
+			// airport > geo-IP (best-effort, opt-out via --no-geo / TRVL_NO_GEO).
+			prefs, _ := preferences.Load() //nolint:errcheck // default prefs on error
+			explicitForCtx := originArg
 			if strings.EqualFold(strings.TrimSpace(originArg), "home") {
-				if prefs, err := preferences.Load(); err == nil && prefs.HomeAirport() != "" {
-					originArg = prefs.HomeAirport()
+				explicitForCtx = "" // fall through to prefs/home resolution
+			}
+			tctx := travelctx.Resolve(cmd.Context(), prefs, travelctx.Options{
+				ExplicitOrigin: explicitForCtx,
+				AllowGeoIP:     !noGeo,
+			})
+
+			// Auto-fill the origin when the user didn't pass an explicit code
+			// (2-arg form or the "home" keyword).
+			autoResolved := false
+			if explicitForCtx == "" && tctx.Origin.HasAirport() {
+				originArg = tctx.Origin.Airport
+				autoResolved = true
+			}
+			if strings.TrimSpace(originArg) == "" {
+				return fmt.Errorf("no origin given and none could be resolved from your preferences or location; pass ORIGIN explicitly, e.g. `trvl flights HEL %s %s`", destArg, date)
+			}
+			if autoResolved && format != "json" {
+				origName := tctx.Origin.City
+				if origName == "" {
+					origName = tctx.Origin.Airport
+				}
+				switch tctx.Origin.Source {
+				case travelctx.SourcePrefs:
+					_, _ = fmt.Fprintf(os.Stderr, "Origin %s (%s) — from your saved home airport.\n", tctx.Origin.Airport, origName)
+				case travelctx.SourceGeoIP:
+					_, _ = fmt.Fprintf(os.Stderr, "Origin %s (%s) — detected from your current location. Override with an explicit code or --no-geo.\n", tctx.Origin.Airport, origName)
 				}
 			}
 
 			origins := flights.ParseAirports(originArg)
-			destinations := flights.ParseAirports(args[1])
-			date := args[2]
+			destinations := flights.ParseAirports(destArg)
+
+			// Surface the booking window: lead time is one of the strongest fare
+			// levers, and trvl knows "now", so it can flag last-minute / too-early
+			// searches without being asked.
+			if format != "json" {
+				if dep, derr := time.Parse("2006-01-02", date); derr == nil {
+					if adv := travelctx.ClassifyWindow(tctx.LeadTimeDays(dep)).Advisory(); adv != "" {
+						_, _ = fmt.Fprintf(os.Stderr, "%s\n", adv)
+					}
+				}
+			}
 
 			// Validate IATA codes up-front so invalid input fails fast with a
 			// deterministic error, not via downstream provider HTTP calls. This
@@ -82,7 +131,7 @@ Examples:
 				}
 			}
 			if len(destinations) == 0 {
-				return fmt.Errorf("invalid destination: %q: at least one IATA code required", args[1])
+				return fmt.Errorf("invalid destination: %q: at least one IATA code required", destArg)
 			}
 			for _, code := range destinations {
 				if err := models.ValidateIATA(code); err != nil {
@@ -201,6 +250,7 @@ Examples:
 	cmd.Flags().StringVar(&awardCookies, "award-cookies", "", "KLM/Flying Blue Cookie header for --award (or set AFKL_KLM_COOKIES)")
 	cmd.Flags().StringVar(&provider, "provider", "", "Flight provider: empty = default (Google Flights + Kiwi + Skiplagged merge), skiplagged = Skiplagged MCP only (hidden-city + virtual-interlining defaults)")
 	cmd.Flags().BoolVar(&flightRailFly, "rail-fly", false, "Expand the search to rail-connected origins (KL/AF Air&Rail), surfacing cheaper rail+fly bundles even when the origin is outside the default hub list")
+	cmd.Flags().BoolVar(&noGeo, "no-geo", false, "Disable geo-IP origin detection (also honored via TRVL_NO_GEO=1). Origin then resolves only from an explicit code or your saved home airport.")
 
 	cmd.ValidArgsFunction = airportCompletion
 

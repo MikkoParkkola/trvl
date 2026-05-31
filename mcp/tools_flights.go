@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/baggage"
 	"github.com/MikkoParkkola/trvl/internal/flights"
@@ -13,6 +14,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/points"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 	"github.com/MikkoParkkola/trvl/internal/profile"
+	"github.com/MikkoParkkola/trvl/internal/travelctx"
 )
 
 // --- Output schema builders ---
@@ -146,7 +148,7 @@ func searchFlightsTool() ToolDef {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"origin":              {Type: "string", Description: "Departure airport IATA code or city name (e.g., HEL, JFK, Paris, Tokyo). City names resolve to primary airport."},
+				"origin":              {Type: "string", Description: "Departure airport IATA code or city name (e.g., HEL, JFK, Paris, Tokyo). OPTIONAL: if omitted, trvl resolves the origin from the user's saved home airport, then best-effort from their current location (geo-IP). City names resolve to primary airport."},
 				"destination":         {Type: "string", Description: "Arrival airport IATA code or city name (e.g., NRT, LAX, London, Barcelona). City names resolve to primary airport."},
 				"departure_date":      {Type: "string", Description: "Departure date in YYYY-MM-DD format"},
 				"return_date":         {Type: "string", Description: "Return date in YYYY-MM-DD format for round-trip (omit for one-way)"},
@@ -173,7 +175,7 @@ func searchFlightsTool() ToolDef {
 				"first_result":        {Type: "boolean", Description: "Return only the first result with a valid price after sorting. Combine with sort_by to get e.g. the shortest priced flight (duration) or cheapest. Default: false."},
 				"provider":            {Type: "string", Description: "Flight provider: empty (default) = Google Flights + Kiwi + Skiplagged merge, 'skiplagged' = Skiplagged MCP only (hidden-city + virtual-interlining defaults). Use the solo provider when you want to cross-validate hidden-city candidates."},
 			},
-			Required: []string{"origin", "destination", "departure_date"},
+			Required: []string{"destination", "departure_date"},
 		},
 		OutputSchema: flightSearchOutputSchema(),
 		Annotations: &ToolAnnotations{
@@ -215,7 +217,11 @@ func searchDatesTool() ToolDef {
 // --- Tool handlers ---
 
 func handleSearchFlights(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
-	origin, dest, err := validateOriginDest(args)
+	// Origin is optional: resolve from explicit arg > saved home airport >
+	// geo-IP. This makes the MCP surface location-aware by default, matching
+	// the CLI. Geo network lookup is gated by the same env kill-switches as
+	// the rest of trvl (TRVL_NO_GEO / CI detection) via travelctx.
+	origin, dest, originSource, err := resolveDestOriginOptional(ctx, args, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -479,22 +485,24 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 
 	// Build structured response.
 	type enrichedFlightSearchResult struct {
-		Success     bool             `json:"success"`
-		Count       int              `json:"count"`
-		TripType    string           `json:"trip_type"`
-		Flights     []enrichedFlight `json:"flights"`
-		Error       string           `json:"error,omitempty"`
-		Suggestions []Suggestion     `json:"suggestions,omitempty"`
-		Hacks       []hacks.Hack     `json:"hacks,omitempty"`
+		Success        bool             `json:"success"`
+		Count          int              `json:"count"`
+		TripType       string           `json:"trip_type"`
+		Flights        []enrichedFlight `json:"flights"`
+		Error          string           `json:"error,omitempty"`
+		Suggestions    []Suggestion     `json:"suggestions,omitempty"`
+		Hacks          []hacks.Hack     `json:"hacks,omitempty"`
+		BookingContext *bookingContext  `json:"booking_context,omitempty"`
 	}
 	resp := enrichedFlightSearchResult{
-		Success:     result.Success,
-		Count:       result.Count,
-		TripType:    result.TripType,
-		Flights:     enrichedFlights,
-		Error:       result.Error,
-		Suggestions: suggestions,
-		Hacks:       flightHacks,
+		Success:        result.Success,
+		Count:          result.Count,
+		TripType:       result.TripType,
+		Flights:        enrichedFlights,
+		Error:          result.Error,
+		Suggestions:    suggestions,
+		Hacks:          flightHacks,
+		BookingContext: buildBookingContext(date, origin, originSource),
 	}
 
 	content, err := buildAnnotatedContentBlocks(flightSummary(result, origin, dest), resp)
@@ -503,6 +511,53 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 	}
 
 	return content, resp, nil
+}
+
+// bookingContext is the time-and-place context attached to a flight search
+// result so an AI agent can reason about WHEN the search happened (booking
+// lead time materially affects fares) and HOW the origin was determined.
+type bookingContext struct {
+	// SearchedAt is the local time the search ran (RFC3339).
+	SearchedAt string `json:"searched_at"`
+	// Timezone is the IANA name for SearchedAt.
+	Timezone string `json:"timezone"`
+	// LeadTimeDays is whole days from now to departure (negative = past).
+	LeadTimeDays int `json:"lead_time_days"`
+	// BookingWindow is the coarse band: last_min / short / sweet_spot / ...
+	BookingWindow string `json:"booking_window"`
+	// Advisory is a one-line human-facing nudge, empty for the neutral case.
+	Advisory string `json:"advisory,omitempty"`
+	// OriginSource reports how the origin was resolved: explicit / preferences
+	// / geoip. Lets the agent disclose "I used your home airport" vs "detected
+	// from your location".
+	OriginSource string `json:"origin_source,omitempty"`
+}
+
+// buildBookingContext assembles the time/place context for a search. It uses
+// the system clock (no network) and the date string already validated by the
+// caller. Returns nil only if the date cannot be parsed, in which case the
+// field is simply omitted.
+func buildBookingContext(date, origin string, originSource travelctx.Source) *bookingContext {
+	tctx := travelctx.Resolve(context.Background(), nil, travelctx.Options{
+		ExplicitOrigin: origin,
+		AllowGeoIP:     false, // time only; origin already resolved upstream
+	})
+	bc := &bookingContext{
+		SearchedAt:   tctx.Now.Format(time.RFC3339),
+		Timezone:     tctx.Timezone,
+		OriginSource: string(originSource),
+	}
+	dep, derr := time.ParseInLocation("2006-01-02", date, tctx.Now.Location())
+	if derr != nil {
+		// No lead-time math possible; still return the time context.
+		return bc
+	}
+	lead := tctx.LeadTimeDays(dep)
+	window := travelctx.ClassifyWindow(lead)
+	bc.LeadTimeDays = lead
+	bc.BookingWindow = string(window)
+	bc.Advisory = window.Advisory()
+	return bc
 }
 
 // dispatchFlightSearch routes a search_flights call to the right

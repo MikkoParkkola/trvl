@@ -188,11 +188,13 @@ func TestDatesCmd_FlagsV5(t *testing.T) {
 }
 
 func TestDatesCmd_RequiresTwoArgsV5(t *testing.T) {
+	// Origin is now optional; dates needs at least DESTINATION. Zero args
+	// must still fail cobra's RangeArgs(1,2).
 	cmd := datesCmd()
-	cmd.SetArgs([]string{"HEL"})
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	if err == nil {
-		t.Error("expected error with one arg")
+		t.Error("expected error with zero args")
 	}
 }
 
