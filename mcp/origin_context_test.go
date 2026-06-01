@@ -59,6 +59,7 @@ func TestResolveDestOriginOptional_NoOriginNoGeoErrors(t *testing.T) {
 	// and disable geo so no network is consulted.
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	t.Setenv("TRVL_NO_GEO", "1")
 	args := map[string]any{"destination": "BCN"}
 	_, _, src, err := resolveDestOriginOptional(context.Background(), args, false)
