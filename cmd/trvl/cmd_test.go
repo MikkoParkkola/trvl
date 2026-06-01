@@ -589,7 +589,7 @@ func TestExploreCmd_RequiresOneArg(t *testing.T) {
 	// no home airport, an explicit origin is still required — assert that
 	// path rather than a cobra arg-count error.
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	setTestHome(t, tmp)
 	t.Setenv("TRVL_NO_GEO", "1")
 	cmd := exploreCmd()
 	cmd.SilenceUsage = true

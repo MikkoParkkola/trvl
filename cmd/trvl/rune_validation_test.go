@@ -23,7 +23,7 @@ func TestExploreCmd_RequiresOneArg_Extra(t *testing.T) {
 	// explore now accepts 0 args (origin auto-resolved). With geo disabled and
 	// no home airport, it must still error on an unresolvable origin.
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	setTestHome(t, tmp)
 	t.Setenv("TRVL_NO_GEO", "1")
 	cmd := exploreCmd()
 	cmd.SilenceUsage = true
