@@ -12,12 +12,6 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/upgrade"
 )
 
-// semverCmp delegates to the upgrade package — same comparison used
-// throughout trvl for version ordering.
-func semverCmp(a, b string) int {
-	return upgrade.CompareSemver(a, b)
-}
-
 // gitDescribeSuffix matches a `git describe --tags` suffix of the form
 // "-<commits>-g<hash>" (with an optional "-dirty" marker). Such a suffix
 // means the binary was built N commits AHEAD of its base tag, so it is
@@ -175,12 +169,6 @@ func CheckInBackground(ctx context.Context, currentVer string, notifyW io.Writer
 		defer cancel()
 		_, _ = c.Check(bgCtx, false)
 	}()
-}
-
-// compareVersions wraps the upgrade package's CompareSemver to avoid
-// re-importing it at every callsite.
-func compareVersions(a, b string) int {
-	return semverCmp(a, b)
 }
 
 // LoadCachedInfo returns the most recently cached UpdateInfo, or the

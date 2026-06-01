@@ -124,9 +124,16 @@ func Resolve(ctx context.Context, prefs *preferences.Preferences, opts Options) 
 	}
 
 	// Precedence 3: geo-IP, best-effort and gated.
-	if opts.AllowGeoIP && !geoDisabledByEnv() {
+	if opts.AllowGeoIP {
 		geo := opts.Geo
+		// The env kill-switch (CI / TRVL_NO_GEO) only suppresses the REAL
+		// network resolver. An explicitly injected resolver (tests, or a
+		// caller supplying its own location source) is never gated — the
+		// gate exists to avoid outbound calls, not to disable injection.
 		if geo == nil {
+			if geoDisabledByEnv() {
+				return out
+			}
 			geo = newHTTPGeoResolver()
 		}
 		if loc, err := geo.Resolve(ctx); err == nil {
