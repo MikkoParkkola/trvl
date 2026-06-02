@@ -25,6 +25,9 @@ var (
 	defaultClientOnce sync.Once
 )
 
+// SearchBooking searches hotels on Booking.com. Overridable in tests.
+var SearchBooking = defaultSearchBooking
+
 // hotelGroup deduplicates concurrent in-flight searches with identical parameters.
 var hotelGroup singleflight.Group
 
