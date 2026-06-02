@@ -32,6 +32,7 @@ Examples:
 	cmd.Flags().String("checkin", "", "Check-in date (YYYY-MM-DD, required)")
 	cmd.Flags().String("checkout", "", "Check-out date (YYYY-MM-DD, required)")
 	cmd.Flags().String("currency", "", "Currency code (e.g. EUR, USD). Empty = API default")
+	cmd.Flags().String("location", "", "City or hotel name hint for fallback when no booking partner prices found")
 
 	_ = cmd.MarkFlagRequired("checkin")
 	_ = cmd.MarkFlagRequired("checkout")
@@ -47,12 +48,19 @@ func runPrices(cmd *cobra.Command, args []string) error {
 	checkin, _ := cmd.Flags().GetString("checkin")
 	checkout, _ := cmd.Flags().GetString("checkout")
 	currency, _ := cmd.Flags().GetString("currency")
+	location, _ := cmd.Flags().GetString("location")
 	format, _ := cmd.Flags().GetString("format")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
-	result, err := hotels.GetHotelPrices(ctx, hotelID, checkin, checkout, currency)
+	result, err := hotels.GetHotelPricesWithOpts(ctx, hotels.HotelPriceOpts{
+		HotelID:  hotelID,
+		CheckIn:  checkin,
+		CheckOut: checkout,
+		Currency: currency,
+		Location: location,
+	})
 	if err != nil {
 		return fmt.Errorf("hotel prices: %w", err)
 	}

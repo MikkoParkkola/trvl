@@ -189,7 +189,10 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		return nil, ""
 	}
 
-	// Find target hotel by ID.
+	// Find target hotel by ID first, then by name as fallback.
+	// Google Hotels uses different ID formats on the search page vs
+	// the entity page, so strict ID matching often fails for raw IDs
+	// passed from the CLI or MCP tools.
 	var hotel *models.HotelResult
 	for i := range result.Hotels {
 		if result.Hotels[i].HotelID == opts.HotelID {
@@ -198,7 +201,10 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		}
 	}
 	if hotel == nil {
-		return nil, ""
+		// ID matching failed — try name matching using the location hint.
+		// The location often contains the hotel name (e.g. "Hotel Lutetia Paris")
+		// which can be used as a fuzzy match query.
+		hotel = findBestNameMatch(result.Hotels, opts.Location)
 	}
 
 	var rooms []RoomType
