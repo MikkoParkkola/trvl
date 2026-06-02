@@ -762,4 +762,8 @@ trvl is part of a suite of MCP tools:
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal and noncommercial use. Commercial use requires a separate license.
+[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal and noncommercial use.
+
+Commercial use requires a separate license. That includes company-internal use, forks used for business workflows, hosted/shared-service deployments, embedding in commercial agent platforms, or using `trvl` to power paid travel, consulting, automation, or data products.
+
+Companies can buy a standard commercial-use license via [GitHub Sponsors](https://github.com/sponsors/MikkoParkkola) at EUR 500/month per named project. See [COMMERCIAL.md](COMMERCIAL.md) for scope, exclusions, and custom terms.
