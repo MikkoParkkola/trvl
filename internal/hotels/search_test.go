@@ -476,3 +476,34 @@ func TestNormalizeHotelCityIdempotent(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchHotels_IncludesBookingResults(t *testing.T) {
+	origSearch := SearchBooking
+	SearchBooking = func(ctx context.Context, location string, opts HotelSearchOptions) ([]models.HotelResult, error) {
+		return []models.HotelResult{{
+			Name:       "Booking Test Hotel",
+			Price:      99,
+			Currency:   "EUR",
+			BookingURL: "https://www.booking.com/hotel/test",
+		}}, nil
+	}
+	defer func() { SearchBooking = origSearch }()
+
+	results, err := SearchHotels(context.Background(), "Corfu", HotelSearchOptions{
+		CheckIn: "2026-08-10", CheckOut: "2026-08-17", Currency: "EUR", MaxPages: 1,
+	})
+	if err != nil {
+		t.Fatalf("SearchHotels failed: %v", err)
+	}
+
+	found := false
+	for _, h := range results.Hotels {
+		if h.Name == "Booking Test Hotel" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected Booking Test Hotel in merged results")
+	}
+}

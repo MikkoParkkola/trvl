@@ -404,6 +404,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	}
 	var trivagoResults []models.HotelResult
 	var hometogoResults []models.HotelResult
+	var bookingResults []models.HotelResult
 	var externalResults []models.HotelResult
 	var providerStatuses []models.ProviderStatus
 	var auxWg sync.WaitGroup
@@ -430,6 +431,20 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 			return
 		}
 		hometogoResults = res
+	}()
+
+	// Booking.com search — parallel with Google + Trivago + HomeToGo.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		res, err := SearchBooking(ctx, location, auxOpts)
+		if err != nil {
+			slog.Warn("booking search failed", "error", err)
+			return
+		}
+		if len(res) > 0 {
+			bookingResults = tagHotelSource(res, "booking.com")
+		}
 	}()
 
 	// External providers (user-configured via configure_provider MCP tool).
@@ -484,6 +499,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// primary.
 	allBatches := append(rawBatches, trivagoResults)
 	allBatches = append(allBatches, tagHotelSource(hometogoResults, "hometogo"))
+	allBatches = append(allBatches, bookingResults)
 	allBatches = append(allBatches, externalResults)
 	if len(externalResults) > 0 {
 		slog.Info("external providers contributed results", "count", len(externalResults))
