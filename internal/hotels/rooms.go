@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -98,6 +99,18 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		opts.Location = entityLocation
 	}
 
+	// Fetch Booking.com rooms in parallel when a Booking URL is available.
+	// This provides room-level data from Booking.com alongside Google's data.
+	var bookingRooms []RoomType
+	if opts.BookingURL != "" {
+		br, brErr := FetchBookingRooms(ctx, opts.BookingURL, opts.CheckIn, opts.CheckOut, opts.Currency)
+		if brErr != nil {
+			slog.Debug("booking rooms fetch failed", "error", brErr)
+		} else {
+			bookingRooms = br
+		}
+	}
+
 	// Fallback: search for the hotel on the search page by location extracted
 	// from the hotel ID's geocoded area. The search page still has inline
 	// AF_initDataCallback data.
@@ -105,15 +118,9 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		rooms, hotelName = trySearchPageFallback(ctx, opts)
 	}
 
-	// Enrich with Booking.com room data when a booking URL is provided.
-	if opts.BookingURL != "" {
-		bookingRooms, err := FetchBookingRooms(ctx, opts.BookingURL, opts.CheckIn, opts.CheckOut, opts.Currency)
-		if err != nil {
-			// Non-fatal: log and continue with Google rooms only.
-			_ = err // logged inside FetchBookingRooms
-		} else {
-			rooms = mergeRoomTypes(rooms, bookingRooms)
-		}
+	// Merge Booking.com rooms with Google rooms if both are available.
+	if len(bookingRooms) > 0 {
+		rooms = mergeRoomTypes(rooms, bookingRooms)
 	}
 
 	return &RoomAvailability{

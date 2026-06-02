@@ -44,7 +44,9 @@ type bookingRoomOffer struct {
 // Returns room offers with names, descriptions, prices, amenities, and
 // physical attributes (size, bed type, max guests) extracted from the
 // JSON-LD makesOffer array and room description text.
-func FetchBookingRooms(ctx context.Context, bookingURL, checkIn, checkOut, currency string) ([]RoomType, error) {
+var FetchBookingRooms = defaultFetchBookingRooms
+
+func defaultFetchBookingRooms(ctx context.Context, bookingURL, checkIn, checkOut, currency string) ([]RoomType, error) {
 	if bookingURL == "" {
 		return nil, fmt.Errorf("booking URL is required")
 	}
