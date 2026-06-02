@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -125,38 +123,33 @@ func buildBookingDetailURL(baseURL, checkIn, checkOut, currency string) string {
 	return baseURL + "?" + strings.Join(params, "&")
 }
 
-// fetchBookingPage performs an HTTP GET against a Booking.com detail URL
-// and returns the response body as a string.
+// fetchBookingPage performs an HTTP GET against a Booking.com URL
+// and returns the response body as a string. Uses the batchexec client
+// with Chrome TLS fingerprint impersonation to avoid anti-bot blocks.
 func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-
-	req, err := http.NewRequestWithContext(ctx, "GET", pageURL, nil)
+	client := DefaultClient()
+	status, body, err := client.Get(ctx, pageURL)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Accept-Encoding", "gzip, deflate")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
+	if status == 202 || status == 503 || status == 403 {
+		// Booking.com returns challenge pages for automated access.
+		// Retry once with a brief delay.
+		slog.Debug("booking.com challenge, retrying", "status", status)
+		select {
+		case <-time.After(3 * time.Second):
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+		status, body, err = client.Get(ctx, pageURL)
+		if err != nil {
+			return "", err
+		}
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("booking detail page returned status %d", resp.StatusCode)
+	if status != 200 {
+		return "", fmt.Errorf("booking detail page returned status %d", status)
 	}
-
-	// Limit response size to 10 MB.
-	limited := io.LimitReader(resp.Body, 10*1024*1024)
-	data, err := io.ReadAll(limited)
-	if err != nil {
-		return "", fmt.Errorf("read booking detail page: %w", err)
-	}
-
-	return string(data), nil
+	return string(body), nil
 }
 
 // jsonLDPattern matches <script type="application/ld+json"> blocks.
