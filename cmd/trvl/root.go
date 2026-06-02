@@ -107,6 +107,7 @@ func init() {
 	rootCmd.AddCommand(railPassCmd())
 	rootCmd.AddCommand(expensesCmd())
 	rootCmd.AddCommand(opportunityScoreCmd())
+	rootCmd.AddCommand(rateStatusCmd())
 }
 
 // airportCompletion provides IATA code completion for cobra commands.

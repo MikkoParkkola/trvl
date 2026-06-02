@@ -25,6 +25,9 @@ var (
 	defaultClientOnce sync.Once
 )
 
+// HotelRateManager is the shared rate manager for hotel providers.
+var HotelRateManager = NewRateManager()
+
 // SearchBooking searches hotels on Booking.com. Overridable in tests.
 var SearchBooking = defaultSearchBooking
 
@@ -340,6 +343,14 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		sortOrders = []string{""}
 	}
 
+	// Check rate limit status and warn the user
+	if HotelRateManager.IsThrottled("google") {
+		slog.Warn("Google Hotels is rate-limited. Waiting for cooldown period (60s).")
+	}
+	if HotelRateManager.IsThrottled("booking") {
+		slog.Warn("Booking.com is rate-limited. Waiting for cooldown period (60s).")
+	}
+
 	var totalAvailable int
 	// Accumulate raw results per-page; MergeHotelResults deduplicates at the end.
 	var rawBatches [][]models.HotelResult
@@ -368,8 +379,10 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 				return nil, err
 			}
 			// Secondary sort failed — non-fatal, keep what we have.
+			HotelRateManager.Record429("google")
 			break
 		}
+		HotelRateManager.RecordRequest("google")
 
 		if sortIdx == 0 {
 			totalAvailable = firstPage.TotalAvailable
