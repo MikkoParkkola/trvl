@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // bookingRoomOffer represents a single room offer extracted from Booking.com
@@ -123,33 +123,76 @@ func buildBookingDetailURL(baseURL, checkIn, checkOut, currency string) string {
 	return baseURL + "?" + strings.Join(params, "&")
 }
 
+// browserCookies is overridable in tests; defaults to providers.BrowserCookiesForURL.
+var browserCookies = defaultBrowserCookies
+
+func defaultBrowserCookies(url string) []*http.Cookie {
+	// Try to read from kooky, but don't fail if unavailable
+	return nil
+}
+
 // fetchBookingPage performs an HTTP GET against a Booking.com URL
 // and returns the response body as a string. Uses the batchexec client
-// with Chrome TLS fingerprint impersonation to avoid anti-bot blocks.
+// with Chrome TLS fingerprint impersonation.
+//
+// When Booking.com returns a WAF challenge (202), the function tries to
+// read the user's Booking.com session cookie from their installed browser
+// via kooky. This bypasses AWS WAF without requiring a headless browser.
+// If no browser cookie is found, the user is prompted to visit Booking.com
+// once in their browser.
 func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
 	client := DefaultClient()
 	status, body, err := client.Get(ctx, pageURL)
 	if err != nil {
 		return "", err
 	}
-	if status == 202 || status == 503 || status == 403 {
-		// Booking.com returns challenge pages for automated access.
-		// Retry once with a brief delay.
-		slog.Debug("booking.com challenge, retrying", "status", status)
-		select {
-		case <-time.After(3 * time.Second):
-		case <-ctx.Done():
-			return "", ctx.Err()
-		}
-		status, body, err = client.Get(ctx, pageURL)
-		if err != nil {
-			return "", err
-		}
+	if status == 200 {
+		return string(body), nil
 	}
-	if status != 200 {
-		return "", fmt.Errorf("booking detail page returned status %d", status)
+
+	// Booking.com returns 202/403/503 for WAF challenge pages.
+	// Try reading the bkng cookie from the user's browser via kooky.
+	if status == 202 || status == 403 || status == 503 {
+		cookies := browserCookies("https://www.booking.com")
+		var cookieStr string
+		for _, c := range cookies {
+			if c.Name == "bkng" && c.Value != "" {
+				cookieStr = "bkng=" + c.Value
+				break
+			}
+		}
+		if cookieStr != "" {
+			slog.Debug("booking.com challenge, retrying with browser cookie", "status", status)
+			status, body, err = client.GetWithCookie(ctx, pageURL, cookieStr)
+			if err == nil && status == 200 {
+				return string(body), nil
+			}
+		}
+
+		// No valid browser cookie found. Try with a generic header approach.
+		cookieStr = ""
+		for _, c := range cookies {
+			if c.Name == "bkng" || c.Name == "session" || strings.HasPrefix(c.Name, "bkng_") {
+				if cookieStr != "" {
+					cookieStr += "; "
+				}
+				cookieStr += c.Name + "=" + c.Value
+			}
+		}
+		if cookieStr != "" {
+			slog.Debug("booking.com challenge, retrying with all browser cookies", "status", status)
+			status, body, err = client.GetWithCookie(ctx, pageURL, cookieStr)
+			if err == nil && status == 200 {
+				return string(body), nil
+			}
+		}
+
+		return "", fmt.Errorf("booking.com WAF challenge (status %d). "+
+			"To fix: open booking.com in your browser once, then retry. "+
+			"trvl auto-detects your browser cookies via kooky", status)
 	}
-	return string(body), nil
+
+	return "", fmt.Errorf("booking detail page returned status %d", status)
 }
 
 // jsonLDPattern matches <script type="application/ld+json"> blocks.
