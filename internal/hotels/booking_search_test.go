@@ -7,6 +7,40 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
+func TestParseBookingHTMLHotels(t *testing.T) {
+	html := `<html><body>
+	<div data-testid="property-card">
+		<div data-testid="title">Summer Shades Hotel</div>
+		<span data-testid="price-and-discounted-price">€80</span>
+		<div data-testid="review-score" aria-label="Scored 8.4">8.4 <div>265 reviews</div></div>
+		<a href="/hotel/gr/summer-shades.html">Book now</a>
+	</div>
+	<div data-testid="property-card">
+		<div data-testid="title">Mr &amp; Mrs White Paros</div>
+		<span data-testid="price-and-discounted-price">€104</span>
+		<div data-testid="review-score" aria-label="Scored 8.6">8.6 <div>250 reviews</div></div>
+		<a href="/hotel/gr/mr-mrs-white.html">Book now</a>
+	</div>
+	</body></html>`
+
+	hotels := parseBookingHTMLHotels(html)
+	if len(hotels) != 2 {
+		t.Fatalf("expected 2 hotels, got %d", len(hotels))
+	}
+	if hotels[0].Name != "Summer Shades Hotel" {
+		t.Errorf("hotel[0].Name = %q, want Summer Shades Hotel", hotels[0].Name)
+	}
+	if hotels[0].Price != 80 {
+		t.Errorf("hotel[0].Price = %f, want 80", hotels[0].Price)
+	}
+	if hotels[0].BookingURL != "https://www.booking.com/hotel/gr/summer-shades.html" {
+		t.Errorf("hotel[0].BookingURL = %q", hotels[0].BookingURL)
+	}
+	if hotels[1].Name != "Mr & Mrs White Paros" {
+		t.Errorf("hotel[1].Name = %q, want Mr & Mrs White Paros", hotels[1].Name)
+	}
+}
+
 func TestSearchBooking_OverrideInTest(t *testing.T) {
 	orig := SearchBooking
 	SearchBooking = func(ctx context.Context, location string, opts HotelSearchOptions) ([]models.HotelResult, error) {

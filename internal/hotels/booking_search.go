@@ -3,6 +3,7 @@ package hotels
 import (
 	"context"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -57,12 +58,14 @@ func buildBookingSearchURL(location, checkIn, checkOut, currency string) string 
 }
 
 func parseBookingSearchResults(body string) []models.HotelResult {
-	// Try JSON-LD first (structured data embedded in the page)
+	// Try JSON-LD first (fast path for pages that include it)
 	hotels := parseJSONLDHotels(body)
 	if len(hotels) > 0 {
 		return hotels
 	}
-	return nil
+	// Fallback: extract from HTML property cards
+	hotels = parseBookingHTMLHotels(body)
+	return hotels
 }
 
 func parseJSONLDHotels(body string) []models.HotelResult {
@@ -141,4 +144,189 @@ func parsePriceFromRange(pr string) float64 {
 	var result float64
 	fmt.Sscanf(numStr, "%f", &result)
 	return result
+}
+
+func parseBookingHTMLHotels(body string) []models.HotelResult {
+	var results []models.HotelResult
+	seen := make(map[string]bool)
+
+	cardMarker := `data-testid="property-card"`
+	titleMarker := `data-testid="title"`
+	priceMarker := `data-testid="price-and-discounted-price"`
+	reviewMarker := `data-testid="review-score"`
+
+	pos := 0
+	for {
+		cardStart := strings.Index(body[pos:], cardMarker)
+		if cardStart < 0 {
+			break
+		}
+		cardStart += pos
+
+		nextCard := strings.Index(body[cardStart+50:], cardMarker)
+		cardEnd := len(body)
+		if nextCard >= 0 {
+			cardEnd = cardStart + 50 + nextCard
+		}
+		card := body[cardStart:cardEnd]
+		pos = cardEnd
+
+		name := extractBookingField(card, titleMarker, `>`, `<`)
+		if name == "" {
+			continue
+		}
+		if strings.Contains(name, "<") {
+			name = stripHTMLTags(name)
+		}
+		name = html.UnescapeString(name)
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+
+		priceStr := extractBookingField(card, priceMarker, `>`, `<`)
+		price := parsePriceFromHTML(priceStr)
+
+		rating, reviewCount := extractBookingRating(card, reviewMarker)
+
+		url := extractBookingURL(card, name)
+
+		results = append(results, models.HotelResult{
+			Name:        name,
+			Price:       price,
+			Currency:    "EUR",
+			Rating:      rating,
+			ReviewCount: reviewCount,
+			BookingURL:  url,
+		})
+	}
+
+	return results
+}
+
+func extractBookingField(body, marker, startTag, endTag string) string {
+	start := strings.Index(body, marker)
+	if start < 0 {
+		return ""
+	}
+	contentStart := strings.Index(body[start:], startTag)
+	if contentStart < 0 {
+		return ""
+	}
+	contentStart += start + len(startTag)
+	contentEnd := strings.Index(body[contentStart:], endTag)
+	if contentEnd < 0 {
+		return ""
+	}
+	return body[contentStart : contentStart+contentEnd]
+}
+
+func stripHTMLTags(s string) string {
+	var result strings.Builder
+	inTag := false
+	for i, c := range s {
+		if c == '<' {
+			inTag = true
+			continue
+		}
+		if c == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			if c == '&' && strings.HasPrefix(s[i:], "&amp;") {
+				result.WriteRune('&')
+			} else if c != '&' {
+				result.WriteRune(c)
+			}
+		}
+	}
+	return result.String()
+}
+
+func parsePriceFromHTML(priceStr string) float64 {
+	var numStr string
+	for _, c := range priceStr {
+		if c >= '0' && c <= '9' || c == '.' || c == ',' {
+			if c == ',' {
+				numStr += "."
+			} else {
+				numStr += string(c)
+			}
+		}
+	}
+	if numStr == "" {
+		return 0
+	}
+	var result float64
+	fmt.Sscanf(numStr, "%f", &result)
+	return result
+}
+
+func extractBookingRating(card, marker string) (rating float64, count int) {
+	start := strings.Index(card, marker)
+	if start < 0 {
+		return 0, 0
+	}
+
+	end := start + 300
+	if end > len(card) {
+		end = len(card)
+	}
+	section := card[start:end]
+
+	ratingStr := extractBookingField(section, `aria-label="Scored `, `"`, `"`)
+	if ratingStr == "" {
+		ratingStr = extractBookingField(section, `aria-label="`, `"`, `"`)
+	}
+	var numStr string
+	for _, c := range ratingStr {
+		if c >= '0' && c <= '9' || c == '.' {
+			numStr += string(c)
+		}
+	}
+	if numStr != "" {
+		fmt.Sscanf(numStr, "%f", &rating)
+	}
+
+	end2 := start + 400
+	if end2 > len(card) {
+		end2 = len(card)
+	}
+	reviewSection := card[start:end2]
+	var numStr2 string
+	for _, c := range reviewSection {
+		if c >= '0' && c <= '9' {
+			numStr2 += string(c)
+		} else if numStr2 != "" {
+			if len(numStr2) > 2 {
+				fmt.Sscanf(numStr2, "%d", &count)
+			}
+			break
+		}
+	}
+
+	return rating, count
+}
+
+func extractBookingURL(card, name string) string {
+	hrefMarker := `<a href="`
+	start := strings.Index(card, hrefMarker)
+	if start < 0 {
+		return ""
+	}
+	start += len(hrefMarker)
+	end := strings.Index(card[start:], `"`)
+	if end < 0 {
+		return ""
+	}
+	href := card[start : start+end]
+	if strings.HasPrefix(href, "/") {
+		return "https://www.booking.com" + href
+	}
+	if strings.HasPrefix(href, "http") {
+		return href
+	}
+	return ""
 }
