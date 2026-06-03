@@ -571,9 +571,9 @@ func TestNameSimilar(t *testing.T) {
 	for _, tt := range tests {
 		a := normalizeName(tt.a)
 		b := normalizeName(tt.b)
-		got := nameSimilar(a, b)
+		got := NameSimilar(a, b)
 		if got != tt.want {
-			t.Errorf("nameSimilar(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+			t.Errorf("NameSimilar(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
 		}
 	}
 }

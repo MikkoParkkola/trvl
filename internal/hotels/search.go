@@ -447,12 +447,15 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	}()
 
 	// Booking.com search — parallel with Google + Trivago + HomeToGo.
+	// Booking.com uses AWS WAF which blocks automated requests. The search
+	// is attempted but failures are expected and handled silently — the
+	// function falls back gracefully to Google + Trivago results.
 	auxWg.Add(1)
 	go func() {
 		defer auxWg.Done()
 		res, err := SearchBooking(ctx, location, auxOpts)
 		if err != nil {
-			slog.Warn("booking search failed", "error", err)
+			slog.Debug("booking search failed", "error", err)
 			return
 		}
 		if len(res) > 0 {

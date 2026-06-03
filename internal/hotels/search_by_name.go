@@ -12,6 +12,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
+
 // SearchHotelsByName searches for hotels matching a specific property name across
 // all providers (Google Hotels, Trivago, and any configured external providers).
 //
@@ -273,10 +274,10 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut stri
 				if tErr == nil {
 					for i := range targeted.Hotels {
 						if targeted.Hotels[i].HotelID != "" {
-							nm := strings.ToLower(targeted.Hotels[i].Name)
-							qn := strings.ToLower(namePart)
-							if strings.Contains(nm, qn) || strings.Contains(qn, nm) ||
-								wordOverlap(nm, qn) >= 0.5 {
+							if models.NameSimilar(
+								strings.ToLower(targeted.Hotels[i].Name),
+								strings.ToLower(namePart),
+							) {
 								return &targeted.Hotels[i], nil
 							}
 						}
@@ -505,40 +506,6 @@ func tagHotelSource(hotels []models.HotelResult, provider string) []models.Hotel
 		}
 	}
 	return tagged
-}
-
-// wordOverlap returns the Jaccard similarity (intersection/union) of the words
-// in two strings. 0 = no overlap, 1 = identical word sets.
-func wordOverlap(a, b string) float64 {
-	wordsA := strings.Fields(strings.ToLower(a))
-	wordsB := strings.Fields(strings.ToLower(b))
-	if len(wordsA) == 0 || len(wordsB) == 0 {
-		return 0
-	}
-	setA := make(map[string]struct{}, len(wordsA))
-	for _, w := range wordsA {
-		setA[w] = struct{}{}
-	}
-	setB := make(map[string]struct{}, len(wordsB))
-	for _, w := range wordsB {
-		setB[w] = struct{}{}
-	}
-	intersection := 0
-	for w := range setA {
-		if _, ok := setB[w]; ok {
-			intersection++
-		}
-	}
-	union := len(setA)
-	for w := range setB {
-		if _, ok := setA[w]; !ok {
-			union++
-		}
-	}
-	if union == 0 {
-		return 0
-	}
-	return float64(intersection) / float64(union)
 }
 
 func mergeAmenities(existing, additional []string) []string {
