@@ -1,3 +1,45 @@
+// Package serpapi provides a client for SerpAPI's Google Hotels engine.
+//
+// OVERVIEW
+//
+// SerpAPI is a third-party service that scrapes Google Hotels and returns
+// structured JSON with real hotel prices. It handles anti-bot protection
+// (CloudFlare, rate limiting, TLS fingerprinting) so you don't have to.
+//
+// WHY USE IT
+//
+// The standard 'trvl hotels' command scrapes Google directly and may return
+// estimated or partial prices (e.g. without taxes, or for sold-out rooms).
+// SerpAPI returns verified prices from multiple booking providers such as
+// Booking.com, Expedia, Trivago, Hotels.com, etc. — with per-night AND
+// total cost for your exact dates.
+//
+// SETUP
+//
+//  1. Sign up at https://serpapi.com (free: 250 searches/month, no card)
+//  2. Copy your API key from the dashboard
+//  3. Set the environment variable: export SERPAPI_KEY=your_key_here
+//
+// USAGE
+//
+//	result, err := serpapi.SearchHotels(ctx, "Naoussa, Paros", "2026-08-03", "2026-08-10", "EUR")
+//	if err != nil { /* handle */ }
+//	for _, h := range result.Properties {
+//	    fmt.Printf("%s: %.0f/nt (total: %.0f)\n", h.Name, h.PricePerNight(), h.TotalPrice())
+//	}
+//
+// PRICE FIELDS
+//
+// Each hotel in the response includes:
+//   - PricePerNight(): lowest price per night (float)
+//   - TotalPrice():    total for the entire stay (float)
+//   - Prices[]:        breakdown by provider (Booking, Expedia, etc.)
+//
+// LIMITATIONS
+//
+//   - Requires a free SerpAPI account and API key.
+//   - Free plan allows 250 searches/month.
+//   - Results depend on Google Hotels availability for the given dates.
 package serpapi
 
 import (

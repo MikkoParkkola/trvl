@@ -15,15 +15,29 @@ func serpapiCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serpapi <location>",
 		Short: "Search hotels via SerpAPI (accurate prices with provider breakdown)",
-		Long: `Search hotels using SerpAPI (google_hotels engine). Requires SERPAPI_KEY env var.
-Get a free API key at https://serpapi.com (250 searches/month free).
+		Long: `Search hotels using SerpAPI (google_hotels engine).
 
-Returns real prices per night and total from multiple providers (Booking, Expedia, Trivago, etc.)
-instead of the estimated prices from the standard 'trvl hotels' command.
+SerpAPI is a third-party service that scrapes Google Hotels and returns structured
+JSON with real prices from multiple booking providers (Booking.com, Expedia, Trivago, etc.).
+
+WHY USE IT:
+  The standard 'trvl hotels' command scrapes Google Hotels directly and may return
+  inaccurate or partial prices. SerpAPI handles the anti-bot protection and returns
+  verified prices with per-night AND total cost for your exact dates.
+
+SETUP:
+  1. Sign up for a free account at https://serpapi.com (250 searches/month, no credit card)
+  2. Copy your API key from the dashboard
+  3. Export it: export SERPAPI_KEY=your_key_here
+  4. Or add to ~/.zshrc: echo 'export SERPAPI_KEY=your_key_here' >> ~/.zshrc
+
+DIFFERENCES FROM 'trvl hotels':
+  - trvl hotels:  free, no API key, may show estimated prices
+  - trvl serpapi: requires free API key, shows real provider prices with totals
 
 Examples:
   trvl serpapi "Naoussa, Paros" --checkin 2026-08-03 --checkout 2026-08-10 --currency EUR
-  trvl serpapi "Rodi" --checkin 2026-08-05 --checkout 2026-08-12 --format json`,
+  trvl serpapi "Rhodes Greece" --checkin 2026-08-05 --checkout 2026-08-12 --format json`,
 		Args: cobra.ExactArgs(1),
 		RunE: runSerpapi,
 	}
