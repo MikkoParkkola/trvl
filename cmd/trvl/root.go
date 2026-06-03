@@ -54,6 +54,7 @@ func init() {
 	rootCmd.AddCommand(datesCmd())
 	rootCmd.AddCommand(hotelsCmd())
 	rootCmd.AddCommand(pricesCmd())
+	rootCmd.AddCommand(serpapiCmd())
 	rootCmd.AddCommand(forecastCmd())
 	rootCmd.AddCommand(reviewsCmd)
 	rootCmd.AddCommand(exploreCmd())
