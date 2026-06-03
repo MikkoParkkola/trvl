@@ -99,8 +99,9 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		opts.Location = entityLocation
 	}
 
-	// Fetch Booking.com rooms in parallel when a Booking URL is available.
-	// This provides room-level data from Booking.com alongside Google's data.
+	// Fetch Booking.com rooms to provide room-level data alongside Google's.
+	// Runs synchronously before the fallback so Booking data is available
+	// regardless of whether the Google entity page returns room data.
 	var bookingRooms []RoomType
 	if opts.BookingURL != "" {
 		br, brErr := FetchBookingRooms(ctx, opts.BookingURL, opts.CheckIn, opts.CheckOut, opts.Currency)

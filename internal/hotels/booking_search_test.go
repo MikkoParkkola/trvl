@@ -23,7 +23,7 @@ func TestParseBookingHTMLHotels(t *testing.T) {
 	</div>
 	</body></html>`
 
-	hotels := parseBookingHTMLHotels(html)
+	hotels := parseBookingHTMLHotels(html, "EUR")
 	if len(hotels) != 2 {
 		t.Fatalf("expected 2 hotels, got %d", len(hotels))
 	}

@@ -50,6 +50,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -111,13 +112,16 @@ func APIKey() string {
 	return os.Getenv("SERPAPI_KEY")
 }
 
+// searchURL is overridable in tests.
+var searchURL = "https://serpapi.com/search"
+
 func SearchHotels(ctx context.Context, query, checkIn, checkOut, currency string) (*Response, error) {
 	apiKey := APIKey()
 	if apiKey == "" {
 		return nil, fmt.Errorf("SERPAPI_KEY not set")
 	}
 
-	u, _ := url.Parse("https://serpapi.com/search")
+	u, _ := url.Parse(searchURL)
 	q := u.Query()
 	q.Set("engine", "google_hotels")
 	q.Set("q", query)
@@ -167,21 +171,26 @@ func (h *Hotel) TotalPrice() float64 {
 	if h.TotalRate.Extracted > 0 {
 		return h.TotalRate.Extracted
 	}
-	// Fallback: prezzo a notte × numero notti (approssimato)
-	return h.PricePerNight()
+	// Total not available — the caller should compute from nights.
+	return 0
 }
 
-func (h *Hotel) ProviderPrices() string {
+func (h *Hotel) ProviderPrices(currency string) string {
 	if len(h.Prices) == 0 {
 		return ""
 	}
-	var s string
+	var b strings.Builder
 	for i, p := range h.Prices {
 		if i > 0 {
-			s += ", "
+			b.WriteString(", ")
 		}
-		price := strconv.FormatFloat(p.RatePerNight.Extracted, 'f', 0, 64)
-		s += p.Source + " €" + price + "/nt"
+		b.WriteString(p.Source)
+		b.WriteString(" ")
+		if currency != "" {
+			b.WriteString(currency)
+		}
+		b.WriteString(strconv.FormatFloat(p.RatePerNight.Extracted, 'f', 0, 64))
+		b.WriteString("/nt")
 	}
-	return s
+	return b.String()
 }

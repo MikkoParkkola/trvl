@@ -44,7 +44,7 @@ func (rm *RateManager) Record429(provider string) {
 	s.recent429s++
 	s.last429 = time.Now()
 	switch {
-	case s.recent429s >= 3:
+	case s.recent429s >= throttleAfter:
 		s.backoff = maxBackoff
 		s.isThrottled = true
 	case s.recent429s >= 2:
@@ -58,6 +58,11 @@ func (rm *RateManager) Backoff(provider string) time.Duration {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 	s := rm.getStats(provider)
+	// Decay backoff if enough time has passed since the last 429.
+	if s.recent429s > 0 && time.Since(s.last429) > 60*time.Second {
+		s.recent429s = 0
+		s.backoff = baseBackoff
+	}
 	if s.backoff < baseBackoff {
 		s.backoff = baseBackoff
 	}

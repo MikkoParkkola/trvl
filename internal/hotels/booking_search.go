@@ -26,7 +26,7 @@ func defaultSearchBooking(ctx context.Context, location string, opts HotelSearch
 		return nil, fmt.Errorf("fetch booking search page: %w", err)
 	}
 
-	hotels := parseBookingSearchResults(body)
+	hotels := parseBookingSearchResults(body, opts.Currency)
 
 	// Apply client-side filters
 	var filtered []models.HotelResult
@@ -57,18 +57,18 @@ func buildBookingSearchURL(location, checkIn, checkOut, currency string) string 
 	return "https://www.booking.com/searchresults.html?" + q.Encode()
 }
 
-func parseBookingSearchResults(body string) []models.HotelResult {
+func parseBookingSearchResults(body, currency string) []models.HotelResult {
 	// Try JSON-LD first (fast path for pages that include it)
-	hotels := parseJSONLDHotels(body)
+	hotels := parseJSONLDHotels(body, currency)
 	if len(hotels) > 0 {
 		return hotels
 	}
 	// Fallback: extract from HTML property cards
-	hotels = parseBookingHTMLHotels(body)
+	hotels = parseBookingHTMLHotels(body, currency)
 	return hotels
 }
 
-func parseJSONLDHotels(body string) []models.HotelResult {
+func parseJSONLDHotels(body, currency string) []models.HotelResult {
 	// Simplistic JSON-LD extraction for Hotel types.
 	// Booking.com embeds schema.org/LodgingBusiness JSON-LD in search pages.
 	// We look for "@type":"Hotel" or "@type":"LodgingBusiness" blocks and
@@ -87,15 +87,20 @@ func parseJSONLDHotels(body string) []models.HotelResult {
 		}
 		idx += start
 
-		// Try to extract name
-		name := extractJSONField(body[idx:idx+500], `"name":"`, `"`)
+		// Clamp the end index to avoid panics when near EOF.
+		window := body[idx:]
+		if len(window) > 600 {
+			window = window[:600]
+		}
+
+		name := extractJSONField(window, `"name":"`, `"`)
 		if name == "" {
 			idx += 10
 			continue
 		}
 
-		priceRange := extractJSONField(body[idx:idx+500], `"priceRange":"`, `"`)
-		url := extractJSONField(body[idx:idx+500], `"url":"`, `"`)
+		priceRange := extractJSONField(window, `"priceRange":"`, `"`)
+		url := extractJSONField(window, `"url":"`, `"`)
 
 		price := 0.0
 		if priceRange != "" {
@@ -106,6 +111,7 @@ func parseJSONLDHotels(body string) []models.HotelResult {
 		results = append(results, models.HotelResult{
 			Name:       name,
 			Price:      price,
+			Currency:   currency,
 			BookingURL: url,
 		})
 
@@ -146,7 +152,7 @@ func parsePriceFromRange(pr string) float64 {
 	return result
 }
 
-func parseBookingHTMLHotels(body string) []models.HotelResult {
+func parseBookingHTMLHotels(body, currency string) []models.HotelResult {
 	var results []models.HotelResult
 	seen := make(map[string]bool)
 
@@ -195,7 +201,7 @@ func parseBookingHTMLHotels(body string) []models.HotelResult {
 		results = append(results, models.HotelResult{
 			Name:        name,
 			Price:       price,
-			Currency:    "EUR",
+			Currency:    currency,
 			Rating:      rating,
 			ReviewCount: reviewCount,
 			BookingURL:  url,

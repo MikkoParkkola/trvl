@@ -343,12 +343,14 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		sortOrders = []string{""}
 	}
 
-	// Check rate limit status and warn the user
+	// Check rate limit status and warn the user.
+	// When throttled, requests may fail until the cooldown period elapses.
+	// Use 'trvl rate-status' to check current provider status.
 	if HotelRateManager.IsThrottled("google") {
-		slog.Warn("Google Hotels is rate-limited. Waiting for cooldown period (60s).")
+		slog.Warn("Google Hotels is throttled — requests may fail until cooldown elapses (60s). Use 'trvl rate-status'.")
 	}
 	if HotelRateManager.IsThrottled("booking") {
-		slog.Warn("Booking.com is rate-limited. Waiting for cooldown period (60s).")
+		slog.Warn("Booking.com is throttled — requests may fail until cooldown elapses (60s). Use 'trvl rate-status'.")
 	}
 
 	var totalAvailable int
