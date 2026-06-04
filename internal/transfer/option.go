@@ -78,9 +78,22 @@ func routeLabel(r models.GroundRoute) string {
 		return r.Provider
 	}
 	if r.Type != "" {
-		return strings.Title(r.Type) //nolint:staticcheck // ASCII provider/type labels only
+		return titleASCII(r.Type)
 	}
 	return "Transfer"
+}
+
+// titleASCII capitalizes the first letter of an ASCII label (provider/type
+// labels are lowercase ASCII). Avoids the deprecated strings.Title.
+func titleASCII(s string) string {
+	if s == "" {
+		return s
+	}
+	b := []byte(s)
+	if b[0] >= 'a' && b[0] <= 'z' {
+		b[0] -= 'a' - 'A'
+	}
+	return string(b)
 }
 
 // labelComparison fills the cheapest/fastest/best-value/luggage sort labels.
