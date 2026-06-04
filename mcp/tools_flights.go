@@ -794,5 +794,22 @@ func flightSuggestions(result *models.FlightSearchResult, origin, dest, date str
 		})
 	}
 
+	// Proactively surface the door-to-door transfer (MIK-5734 A.1): once a
+	// flight is found, the next question is always "how do I get from the
+	// airport to where I'm staying, and when do I leave home?". Offer both the
+	// arrival-side transfer comparison and the departure-side leave-by schedule.
+	if dest != "" {
+		suggestions = append(suggestions, Suggestion{
+			Action:      "search_airport_transfers",
+			Description: fmt.Sprintf("Plan the airport transfer from %s to your accommodation (compare public transport, taxi, express)", dest),
+			Params:      map[string]any{"airport_code": dest, "destination": "YOUR_HOTEL_OR_ADDRESS", "date": date},
+		})
+		suggestions = append(suggestions, Suggestion{
+			Action:      "plan_journey",
+			Description: fmt.Sprintf("Get a leave-by schedule for the %s departure (when to leave home for check-in + security)", origin),
+			Params:      map[string]any{"airport_code": origin, "date": date, "departure_time": "HH:MM", "ground_minutes": 0, "ground_mode": "train"},
+		})
+	}
+
 	return suggestions
 }
