@@ -196,7 +196,8 @@ That's it. Your AI assistant now has 1 smart travel tool available. The old 63 t
 | **travel_guide** | Wikivoyage travel guide for a city | Neighbourhoods, getting around, safety |
 | **local_events** | Find events during your trip dates | Concerts, festivals, exhibitions |
 | **search_ground** | Search buses, trains and ferries (20 providers, API-first with optional browser fallbacks) | Prague -> Vienna, May 3rd, trains only |
-| **search_airport_transfers** | Search airport-to-hotel or airport-to-city ground transport, plus taxi estimates | CDG -> Hotel Lutetia Paris, after 14:30 |
+| **search_airport_transfers** | Door-to-door comparison card: every mode (transit, airport express, taxi, ride-hail) with time, price, pros/cons, grounded steps, and cheapest/fastest/best-value labels | CDG -> Hotel Lutetia Paris, after 14:30 |
+| **plan_journey** | Leave-By Scheduler: when to leave home to reach the gate comfortably (check-in + security buffer, conservative, never optimistic). Pass `origin` to auto-stitch the home→airport leg; `as_ics` returns a calendar event with a leave-home alarm | "when do I leave for my 09:40 HEL flight?" |
 | **search_restaurants** | Find restaurants near a location (Google Maps) | Barcelona, italian cuisine |
 | **search_deals** | Travel deals from 4 RSS feeds (error fares, flash sales) | Deals from HEL under EUR 400 |
 | **plan_trip** | Plan a complete trip — flights + hotel in one parallel search | AMS→PRG, Jun 15–18, EUR |
