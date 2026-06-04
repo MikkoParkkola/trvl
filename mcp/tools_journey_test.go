@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -66,6 +67,35 @@ func TestHandleJourney_BadDate(t *testing.T) {
 // TestPlanJourney_CallableViaIntent_NotAdvertised verifies plan_journey is a
 // reachable capability (registered handler) but not part of the advertised
 // legacy compatibility-alias surface in either mode.
+// TestHandleJourney_AsICS verifies the calendar handoff: as_ics attaches an
+// iCalendar leave-home event with a reminder alarm to the response.
+func TestHandleJourney_AsICS(t *testing.T) {
+	args := map[string]any{
+		"airport_code":   "HEL",
+		"date":           "2026-07-18",
+		"departure_time": "09:40",
+		"ground_minutes": float64(30),
+		"ground_mode":    "train",
+		"as_ics":         true,
+	}
+	_, structured, err := handleJourney(context.Background(), args, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("handleJourney error: %v", err)
+	}
+	data, _ := json.Marshal(structured)
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	ics, ok := got["ics"].(string)
+	if !ok || ics == "" {
+		t.Fatalf("expected ics field in response, got %v", got["ics"])
+	}
+	if !strings.Contains(ics, "BEGIN:VALARM") || !strings.Contains(ics, "Leave home for HEL") {
+		t.Errorf("ics missing leave-home event with alarm: %q", ics)
+	}
+}
+
 func TestPlanJourney_CallableViaIntent_NotAdvertised(t *testing.T) {
 	s := NewServer()
 	if _, ok := s.handlers["plan_journey"]; !ok {

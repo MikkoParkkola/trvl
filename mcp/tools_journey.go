@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/calendar"
+	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/transfer"
 )
 
@@ -36,7 +38,7 @@ func handleJourney(ctx context.Context, args map[string]any, elicit ElicitFunc, 
 	schedule := transfer.BuildSchedule(transfer.ScheduleInput{
 		DepartureLocal: departure,
 		AirportCode:    airport,
-		International:   intl,
+		International:  intl,
 		GroundMinutes:  groundMin,
 		GroundMode:     groundMode,
 		OriginWalkMin:  argInt(args, "origin_walk_min", 0),
@@ -61,5 +63,28 @@ func handleJourney(ctx context.Context, args map[string]any, elicit ElicitFunc, 
 	content := []ContentBlock{
 		{Type: "text", Text: summary, Annotations: &ContentAnnotation{Audience: []string{"user"}, Priority: 1.0}},
 	}
+
+	// Optional calendar handoff (F.1): when as_ics is set, attach an iCalendar
+	// "Leave home" event with a reminder alarm so the user can drop it straight
+	// into Apple/Google/Outlook. Additive — does not change the default output.
+	if argBool(args, "as_ics", false) {
+		ics, icsErr := calendar.ScheduleICS(calendar.ScheduleICSInput{
+			Date:          date,
+			AirportCode:   airport,
+			DepartureTime: depTime,
+			ReminderMin:   argInt(args, "reminder_minutes", 30),
+			Schedule:      schedule,
+		})
+		if icsErr == nil {
+			return content, journeyResponse{ScheduleTimeline: schedule, ICS: ics}, nil
+		}
+	}
 	return content, schedule, nil
+}
+
+// journeyResponse wraps the schedule with an optional iCalendar export when the
+// caller requests the calendar handoff via as_ics.
+type journeyResponse struct {
+	models.ScheduleTimeline
+	ICS string `json:"ics,omitempty"`
 }
