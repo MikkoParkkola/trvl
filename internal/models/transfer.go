@@ -42,3 +42,22 @@ type TransferComparison struct {
 	BestValue   string           `json:"best_value_mode,omitempty"`
 	LuggageBest string           `json:"most_luggage_friendly_mode,omitempty"`
 }
+
+// ScheduleTimeline is the Leave-By backward plan: when to leave home so the
+// traveller reaches the gate comfortably, with the buffer surfaced, a
+// confidence band, and (when available) a tighter fallback. Computed by
+// backward induction from the flight departure; never optimistic.
+type ScheduleTimeline struct {
+	LeaveHomeBy   string     `json:"leave_home_by"` // local "HH:MM"
+	Steps         []SchedRow `json:"steps"`
+	BufferMinutes int        `json:"airport_buffer_minutes"`
+	Assumptions   []string   `json:"assumptions"`
+	Confidence    string     `json:"confidence"` // high | medium | low
+	Fallback      string     `json:"fallback,omitempty"`
+}
+
+// SchedRow is one timed row of the Leave-By timeline.
+type SchedRow struct {
+	Time string `json:"time"` // local "HH:MM"
+	Text string `json:"text"`
+}
