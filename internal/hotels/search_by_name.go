@@ -217,19 +217,22 @@ func allWordsPresent(needles []string, haystack map[string]bool) bool {
 
 // word(s)), search that area, then fuzzy-match the hotel name in results. If that
 // fails we fall back to searching the full query as the location.
-func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut string) (*models.HotelResult, error) {
+func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, currency string) (*models.HotelResult, error) {
 	if query == "" {
 		return nil, fmt.Errorf("hotel name query is required")
 	}
 	if checkIn == "" || checkOut == "" {
 		return nil, fmt.Errorf("check-in and check-out dates are required")
 	}
+	if currency == "" {
+		currency = "USD"
+	}
 
 	opts := HotelSearchOptions{
 		CheckIn:  checkIn,
 		CheckOut: checkOut,
 		Guests:   2,
-		Currency: "USD",
+		Currency: currency,
 	}
 
 	// Build search location candidates: prefer context after comma, then last word.

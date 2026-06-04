@@ -177,6 +177,10 @@ func tryPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.HotelPri
 		return nil
 	}
 
+	cur := opts.Currency
+	if cur == "" {
+		cur = hotel.Currency
+	}
 	return &models.HotelPriceResult{
 		Success:   true,
 		HotelID:   opts.HotelID,
@@ -186,7 +190,7 @@ func tryPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.HotelPri
 			{
 				Provider: "Google Hotels",
 				Price:    hotel.Price,
-				Currency: hotel.Currency,
+				Currency: cur,
 			},
 		},
 	}

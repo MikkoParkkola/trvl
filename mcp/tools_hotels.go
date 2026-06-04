@@ -625,7 +625,7 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 	}
 
 	// Resolve hotel name to a Google ID.
-	hotel, err := hotels.SearchHotelByName(ctx, hotelName, checkIn, checkOut)
+	hotel, err := hotels.SearchHotelByName(ctx, hotelName, checkIn, checkOut, currency)
 	if err != nil {
 		return nil, nil, fmt.Errorf("hotel lookup for %q: %w", hotelName, err)
 	}

@@ -287,8 +287,9 @@ func TestRestaurantsCmd_ArgsIsExactTwo(t *testing.T) {
 	if restaurantsCmd.Args == nil {
 		t.Fatal("restaurants Args validator is nil")
 	}
-	if err := restaurantsCmd.Args(restaurantsCmd, []string{"41.38"}); err == nil {
-		t.Error("expected error with only 1 arg")
+	// Now accepts 1 arg ("lat,lon") or 2 args ("lat" "lon").
+	if err := restaurantsCmd.Args(restaurantsCmd, []string{"41.38"}); err != nil {
+		t.Errorf("unexpected error with 1 arg (lat,lon): %v", err)
 	}
 	if err := restaurantsCmd.Args(restaurantsCmd, []string{"41.38", "2.17"}); err != nil {
 		t.Errorf("unexpected error with 2 args: %v", err)

@@ -16,7 +16,7 @@ func TestRootCmd_SubcommandCount(t *testing.T) {
 	// auto-update path). 57 -> 58 with `trvl nested` (MIK-3076).
 	// 58 -> 61 with `air`, `sun`, `bikes` (free unauthenticated enrichment sources).
 	// 61 -> 62 with `pricetrends` (opt-in Travelpayouts price-signal source).
-	const want = 62
+	const want = 64
 	got := len(rootCmd.Commands())
 	if got != want {
 		names := make([]string, 0, got)

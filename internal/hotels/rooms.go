@@ -220,7 +220,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		rooms = append(rooms, RoomType{
 			Name:     "Standard Room",
 			Price:    hotel.Price,
-			Currency: hotel.Currency,
+			Currency: opts.Currency,
 			Provider: providerFromSources(hotel),
 		})
 	}
@@ -231,7 +231,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 			rooms = append(rooms, RoomType{
 				Name:     "Standard Room",
 				Price:    src.Price,
-				Currency: src.Currency,
+				Currency: opts.Currency,
 				Provider: src.Provider,
 			})
 		}

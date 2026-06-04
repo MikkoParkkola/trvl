@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/destinations"
@@ -19,7 +18,7 @@ var restaurantsCmd = &cobra.Command{
 	Use:   "restaurants LAT LON",
 	Short: "Search restaurants and places nearby using Google Maps",
 	Long:  "Search Google Maps for restaurants and places near the given coordinates. Works without any API key.",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.ArbitraryArgs,
 	RunE:  runRestaurants,
 }
 
@@ -29,13 +28,9 @@ func init() {
 }
 
 func runRestaurants(cmd *cobra.Command, args []string) error {
-	lat, err := strconv.ParseFloat(args[0], 64)
+	lat, lon, err := parseLatLonArgs(args)
 	if err != nil {
-		return fmt.Errorf("invalid latitude %q: %w", args[0], err)
-	}
-	lon, err := strconv.ParseFloat(args[1], 64)
-	if err != nil {
-		return fmt.Errorf("invalid longitude %q: %w", args[1], err)
+		return err
 	}
 
 	if lat < -90 || lat > 90 {

@@ -92,7 +92,7 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 		searchQuery = hotelQuery + ", " + location
 	}
 
-	hotel, err := hotels.SearchHotelByName(ctx, searchQuery, checkIn, checkOut)
+	hotel, err := hotels.SearchHotelByName(ctx, searchQuery, checkIn, checkOut, currency)
 	if err != nil {
 		return nil, fmt.Errorf("hotel lookup for %q: %w", hotelQuery, err)
 	}
