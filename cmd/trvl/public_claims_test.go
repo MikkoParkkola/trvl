@@ -127,7 +127,21 @@ func registeredMCPCompatibilityAliasCount(t *testing.T) int {
 		t.Fatal("mcp.Server should expose an internal handlers field")
 	}
 
-	return handlers.Len() - 1 // Exclude the primary travel smart router.
+	// Exclude the primary travel smart router and any non-alias smart
+	// capabilities (e.g. plan_journey) — these are reachable via the travel
+	// router intent but are NOT legacy compatibility aliases, so they must not
+	// inflate the marketed "compatibility aliases" count.
+	nonAliasCapabilities := map[string]bool{
+		"travel":       true, // the smart router itself
+		"plan_journey": true, // Leave-By Scheduler capability (MIK-5734 B)
+	}
+	count := 0
+	for _, key := range handlers.MapKeys() {
+		if !nonAliasCapabilities[key.String()] {
+			count++
+		}
+	}
+	return count
 }
 
 func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {

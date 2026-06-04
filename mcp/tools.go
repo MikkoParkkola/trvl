@@ -86,6 +86,10 @@ func registerTools(s *Server) {
 	}
 	s.tools = advertisedToolSurface(legacyTools)
 	s.handlers["travel"] = s.handleTravel
+	// plan_journey is a smart capability reachable via the travel router intent,
+	// not a legacy compatibility alias — registered as a handler but kept out of
+	// the advertised legacyTools surface (see registeredMCPCompatibilityAliasCount).
+	s.handlers["plan_journey"] = s.wrapHandler("plan_journey", handleJourney)
 	s.handlers["search_flights"] = s.wrapHandler("search_flights", handleSearchFlights)
 	s.handlers["plan_flight_bundle"] = s.wrapHandler("plan_flight_bundle", handlePlanFlightBundle)
 	s.handlers["find_interactive"] = s.wrapHandler("find_interactive", handleFindInteractive)
