@@ -3,7 +3,7 @@
 ## Purpose
 
 trvl is a travel MCP server and CLI: **1 smart `travel` MCP tool** (advertised) plus
-**64 compatibility aliases** and **63 CLI commands** stitched
+**64 compatibility aliases** and **55 CLI commands** stitched
 together against flight, hotel, ground-transport, destination, and deals
 providers. The smart router advertises a single tool (~378 tokens) instead of
 64 (~33,500 tokens) to keep AI context lean; the 64 aliases remain callable via

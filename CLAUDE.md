@@ -1,10 +1,10 @@
 # trvl
 
-Travel MCP server + CLI. 1 smart MCP tool plus 64 compatibility aliases, 63 CLI commands. Go 1.26, no frameworks.
+Travel MCP server + CLI. 1 smart MCP tool plus 64 compatibility aliases, 55 CLI commands. Go 1.26, no frameworks.
 
 ## Product Vision
 
-trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, Windsurf, Codex, …) direct access to flights, hotels, trains, buses, ferries, price alerts, travel hacks, weather, baggage rules, airport lounges, and destination intelligence — **without requiring personal API keys**. Single Go binary, MCP 2025-11-25 compliant, 1 smart MCP tool plus 64 compatibility aliases, 63 CLI commands, API-first with optional browser-assisted fallbacks for a handful of protected providers. The smart `travel` router advertises a single tool (~378 tokens of `tools/list` context) instead of all 64 (~33,500 tokens) — a ~98.9% context reduction; the 64 aliases stay callable via the `intent` field, and `TRVL_MCP_TOOL_MODE=legacy` advertises the full surface for clients that need it.
+trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, Windsurf, Codex, …) direct access to flights, hotels, trains, buses, ferries, price alerts, travel hacks, weather, baggage rules, airport lounges, and destination intelligence — **without requiring personal API keys**. Single Go binary, MCP 2025-11-25 compliant, 1 smart MCP tool plus 64 compatibility aliases, 55 CLI commands, API-first with optional browser-assisted fallbacks for a handful of protected providers. The smart `travel` router advertises a single tool (~378 tokens of `tools/list` context) instead of all 64 (~33,500 tokens) — a ~98.9% context reduction; the 64 aliases stay callable via the `intent` field, and `TRVL_MCP_TOOL_MODE=legacy` advertises the full surface for clients that need it.
 
 ## Current Status
 
