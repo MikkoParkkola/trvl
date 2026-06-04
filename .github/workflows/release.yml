@@ -152,7 +152,21 @@ jobs:
         run: ./mcp-publisher login github-oidc
 
       - name: Publish to MCP Registry
-        run: ./mcp-publisher publish
+        run: |
+          # Idempotent: the MCP registry rejects re-publishing the same version
+          # with a "duplicate version" 400. On a re-cut of an already-published
+          # tag that is success, not failure — don't fail the release run.
+          set +e
+          out="$(./mcp-publisher publish 2>&1)"
+          code=$?
+          echo "$out"
+          if [ "$code" -ne 0 ]; then
+            if echo "$out" | grep -qi "duplicate version"; then
+              echo "::notice::MCP registry already has this version — treating as published."
+              exit 0
+            fi
+            exit "$code"
+          fi
 
   # Publishes the trvl-mcp npm wrapper via npm Trusted Publishing (OIDC) — no
   # stored token. One-time npmjs.com setup required: package trvl-mcp ->
