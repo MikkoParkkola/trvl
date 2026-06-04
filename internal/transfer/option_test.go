@@ -35,8 +35,8 @@ func sampleRoutes() []models.GroundRoute {
 func TestBuildOptions_Success(t *testing.T) {
 	cmp := BuildOptions(sampleRoutes(), "BCN", "BCN airport", "Hotel Eixample")
 
-	if len(cmp.Options) != 3 {
-		t.Fatalf("want 3 options, got %d", len(cmp.Options))
+	if len(cmp.Options) != 5 { // 3 routes + 2 ride-hail deep-links (Uber, Bolt)
+		t.Fatalf("want 5 options (3 routes + 2 ride-hail), got %d", len(cmp.Options))
 	}
 	if cmp.Cheapest != "metro" { // metro provider, EUR 5.15
 		t.Errorf("cheapest mode = %q, want metro (EUR 5.15)", cmp.Cheapest)

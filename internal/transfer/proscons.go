@@ -9,33 +9,40 @@ import (
 
 // annotateProsCons fills Pros/Cons for every option from STRUCTURED SIGNALS
 // only (price ratios, change count, mode, amenities) — never free-text opinion.
-// This keeps the comparison honest and reproducible.
+// This keeps the comparison honest and reproducible. Options with unknown
+// price AND duration (e.g. ride-hail deep-links) keep their pre-set pros/cons
+// and are excluded from the cheapest/fastest comparison.
 func annotateProsCons(opts []models.TransferOption) {
 	if len(opts) == 0 {
 		return
 	}
-	cheapest := opts[0].TotalPrice
-	fastest := opts[0].DoorToDoorMin
-	for _, o := range opts[1:] {
-		if o.TotalPrice < cheapest {
+	// Cheapest/fastest computed over priced+timed options only.
+	cheapest, fastest := 0.0, 0
+	for _, o := range opts {
+		if o.TotalPrice > 0 && (cheapest == 0 || o.TotalPrice < cheapest) {
 			cheapest = o.TotalPrice
 		}
-		if o.DoorToDoorMin < fastest {
+		if o.DoorToDoorMin > 0 && (fastest == 0 || o.DoorToDoorMin < fastest) {
 			fastest = o.DoorToDoorMin
 		}
 	}
 
 	for i := range opts {
 		o := &opts[i]
+		// Skip options with unknown price AND duration (ride-hail deep-links):
+		// they carry their own pre-set pros/cons; do not overwrite or rank them.
+		if o.TotalPrice <= 0 && o.DoorToDoorMin <= 0 {
+			continue
+		}
 		var pros, cons []string
 
-		if o.TotalPrice <= cheapest {
+		if o.TotalPrice > 0 && o.TotalPrice <= cheapest {
 			pros = append(pros, "cheapest option")
 		} else if cheapest > 0 && o.TotalPrice >= cheapest*2 {
 			cons = append(cons, fmt.Sprintf("%.1fx the cheapest option", o.TotalPrice/cheapest))
 		}
 
-		if o.DoorToDoorMin <= fastest {
+		if o.DoorToDoorMin > 0 && o.DoorToDoorMin <= fastest {
 			pros = append(pros, "fastest option")
 		}
 
