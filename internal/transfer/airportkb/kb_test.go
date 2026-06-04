@@ -32,8 +32,8 @@ func TestLookup_Missing(t *testing.T) {
 
 func TestCodes_NonEmpty(t *testing.T) {
 	codes := Codes()
-	if len(codes) < 12 {
-		t.Errorf("expected the expanded major-hub profile set (>=12), got %d: %v", len(codes), codes)
+	if len(codes) < 25 {
+		t.Errorf("expected the expanded global-hub profile set (>=25), got %d: %v", len(codes), codes)
 	}
 	// Every listed code must load.
 	for _, c := range codes {
