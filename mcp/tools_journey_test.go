@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/trip"
 )
 
 func TestHandleJourney_Success(t *testing.T) {
@@ -109,5 +112,58 @@ func TestPlanJourney_CallableViaIntent_NotAdvertised(t *testing.T) {
 	legacy := NewServer()
 	if toolRegistered(legacy.tools, "plan_journey") {
 		t.Error("plan_journey must NOT be advertised among the legacy compatibility aliases")
+	}
+}
+
+// TestHandleJourney_AutoStitchOrigin verifies B.1-phase2: when origin is given
+// and no explicit ground option, plan_journey searches the home->airport leg
+// (stubbed seam), schedules from the best-value option, and returns the card.
+func TestHandleJourney_AutoStitchOrigin(t *testing.T) {
+	orig := journeyTransferSearch
+	t.Cleanup(func() { journeyTransferSearch = orig })
+	journeyTransferSearch = func(ctx context.Context, in trip.AirportTransferInput) (*trip.AirportTransferResult, error) {
+		return &trip.AirportTransferResult{
+			Success: true,
+			Count:   2,
+			Routes: []models.GroundRoute{
+				{Provider: "train", Type: "train", Price: 4.10, Currency: "EUR", Duration: 33, Transfers: 0},
+				{Provider: "taxi", Type: "taxi", Price: 55, Currency: "EUR", Duration: 28, Transfers: 0},
+			},
+		}, nil
+	}
+
+	args := map[string]any{
+		"airport_code":   "HEL",
+		"date":           "2026-07-18",
+		"departure_time": "09:40",
+		"origin":         "Espoo",
+		// no ground_minutes/ground_mode — must be auto-computed
+	}
+	_, structured, err := handleJourney(context.Background(), args, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("handleJourney auto-stitch error: %v", err)
+	}
+	data, _ := json.Marshal(structured)
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["leave_home_by"] == nil || got["leave_home_by"] == "" {
+		t.Error("auto-stitched journey must produce a leave_home_by time")
+	}
+	if got["ground_comparison"] == nil {
+		t.Error("auto-stitch must attach the home-to-airport comparison card")
+	}
+}
+
+func TestHandleJourney_NoGroundNoOrigin_Errors(t *testing.T) {
+	args := map[string]any{
+		"airport_code":   "HEL",
+		"date":           "2026-07-18",
+		"departure_time": "09:40",
+		// no ground option AND no origin
+	}
+	if _, _, err := handleJourney(context.Background(), args, nil, nil, nil); err == nil {
+		t.Fatal("expected error when neither ground option nor origin is provided")
 	}
 }
