@@ -4,9 +4,13 @@ project_name: trvl
 
 before:
   hooks:
-    - go mod tidy
-    - go vet ./...
-    - go test -short ./...
+    # goreleaser-action forces GOTOOLCHAIN=local; wrap each go hook in sh so we
+    # can set GOTOOLCHAIN=go1.26.4 (go.mod requires >= 1.26.4 for the stdlib CVE
+    # fixes) instead of failing on a runner that still ships 1.26.3. before.hooks
+    # must be strings in goreleaser v2, so the env cannot be a map here.
+    - sh -c "GOTOOLCHAIN=go1.26.4 go mod tidy"
+    - sh -c "GOTOOLCHAIN=go1.26.4 go vet ./..."
+    - sh -c "GOTOOLCHAIN=go1.26.4 go test -short ./..."
     # Sync npm/package.json version with the release tag before archives are
     # built. Previously lived under a top-level `after:` block which is not a
     # valid key in goreleaser v2 and made `goreleaser check` fail. Running it
@@ -22,6 +26,8 @@ builds:
     binary: trvl
     env:
       - CGO_ENABLED=0
+      # Build with the patched Go 1.26.4 stdlib (overrides the action's local).
+      - GOTOOLCHAIN=go1.26.4
     goos:
       - linux
       - darwin
