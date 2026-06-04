@@ -124,6 +124,12 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # goreleaser-action defaults GOTOOLCHAIN=local, which blocks the Go
+          # toolchain auto-download in the before-hooks. go.mod requires
+          # >= 1.26.4 (stdlib CVE fixes GO-2026-5037/5039) but GitHub runners
+          # may still ship 1.26.3, so pin the toolchain so go fetches 1.26.4
+          # for the hooks and the release build.
+          GOTOOLCHAIN: "go1.26.4"
           # HOMEBREW_TAP_TOKEN: a GitHub personal access token (classic) with
           # `repo` scope, stored as a repository secret. Goreleaser uses it to
           # push the auto-generated Homebrew formula to
