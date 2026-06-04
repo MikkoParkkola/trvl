@@ -170,9 +170,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      # OIDC trusted publishing needs npm >= 11.5.1; ubuntu-latest may ship older.
-      - name: Use recent npm
-        run: npm install -g npm@latest
+      # OIDC trusted publishing needs npm >= 11.5.1. Node 24 bundles a recent
+      # npm; using setup-node avoids the permission error from globally
+      # reinstalling npm on the runner.
+      - name: Set up Node 24
+        uses: actions/setup-node@49933ea5288caeca8642195f2ed94f3dd6952cd8 # v4.4.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Stamp version from tag and publish (OIDC, no token)
         working-directory: npm
