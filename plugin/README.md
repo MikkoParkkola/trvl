@@ -67,7 +67,7 @@ The command routes to `trvl-destination-research`, composing
 
 The original MIK-3400 acceptance text refers to the 43 underlying tools
 available when the plugin was proposed. The current trvl MCP server advertises
-1 smart MCP tool plus 63 compatibility aliases, and this plugin is wired for
+1 smart MCP tool plus 64 compatibility aliases, and this plugin is wired for
 the full current surface.
 
 Flights:

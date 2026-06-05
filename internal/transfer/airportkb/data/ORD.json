@@ -1,0 +1,6 @@
+{
+  "code": "ORD",
+  "name": "Chicago O'Hare International",
+  "intl_buffer_min": 180,
+  "domestic_buffer_min": 120
+}

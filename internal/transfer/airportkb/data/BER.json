@@ -1,0 +1,6 @@
+{
+  "code": "BER",
+  "name": "Berlin Brandenburg",
+  "intl_buffer_min": 120,
+  "domestic_buffer_min": 60
+}

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-04
+
+### Added
+- **Door-to-door transfer planning** — closes the first/last-mile gap (the part travellers Google every trip). New capabilities, all reachable via the `travel` smart router:
+  - **Transfer comparison card** — `search_airport_transfers` now returns every mode (public transit, airport express, metro, taxi, private transfer, ride-hail) as a choosable option with time, price, pros/cons, and **grounded step-by-step instructions**, plus cheapest / fastest / best-value / most-luggage-friendly labels. No single "best" is imposed; the traveller decides.
+  - **Leave-By Scheduler** (`plan_journey` intent) — answers "when do I leave home to reach the gate comfortably, not last-minute?" by backward induction from the flight: airport check-in/security buffer + ground time + mode variance + walk + safety margin, with surfaced assumptions, a confidence band, and a fallback. Conservative by design — never optimistic.
+  - **Home→airport auto-stitch** — pass `origin` to `plan_journey` and it computes the home→airport leg itself (comparison card + schedule) instead of requiring the ground option by hand.
+  - **Calendar handoff** — `plan_journey` with `as_ics` returns an iCalendar `.ics` carrying a "Leave home" event with a reminder alarm; drop it straight into Apple Calendar, Google Calendar, or Outlook.
+  - **Proactive surfacing** — after a flight search, trvl now offers the airport transfer and the leave-by schedule automatically.
+  - **Ride-hail options** — Uber and Bolt as deep-links in the card (no API, no scraping, no key); the app shows the real price before you confirm.
+  - **Curated airport knowledge base** — 31 major global hubs with conservative, grounded check-in/security buffers so the scheduler uses airport-specific guidance instead of a generic default.
+- **Time + location awareness by default** (CLI + MCP) — flight search resolves a missing origin from your saved home airport, then best-effort from your current location; results carry booking-time context. Includes an update-checker fix.
+
+### Changed
+- **Token efficiency front-and-centre** — the smart `travel` router advertises **1 tool (~378 tokens) instead of 64 (~33,500 tokens)** in `tools/list`, a measured **98.9% smaller context footprint**. README/npm now lead with this; corrected tool-count drift across all surfaces and added a registry-derived guard so the counts can't silently drift again.
+- **Go toolchain pinned to 1.26.4** (was 1.26.3) — picks up the upstream standard-library fixes for GO-2026-5037 (crypto/x509) and GO-2026-5039 (net/textproto).
+- Commercial-license sponsor rail added to the README.
+
+### CI / Release
+- npm package now published via **Trusted Publishing (OIDC)**, dropping the stored token; opt-in npm-publish job wired into the release workflow.
+
 ## [1.5.0] - 2026-05-26
 
 ### Added

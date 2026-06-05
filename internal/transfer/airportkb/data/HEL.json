@@ -1,0 +1,12 @@
+{
+  "code": "HEL",
+  "name": "Helsinki-Vantaa",
+  "intl_buffer_min": 120,
+  "domestic_buffer_min": 60,
+  "last_transit_depart": "00:30",
+  "exit_snippets": {
+    "train": "From the arrivals level, follow the \"Train\" signs down to the rail platform; the Ring Rail line (I/P) runs to Helsinki Central.",
+    "bus": "From T2 arrivals, exit to the bus platforms; line 615 runs to Helsinki Central, the Finnair City Bus is faster."
+  },
+  "taxi_caveats": "Taxi ranks are outside both terminals. Fares are deregulated, so the price is shown on the window sticker before you board; confirm a flat fare to the centre (~EUR 40-50)."
+}

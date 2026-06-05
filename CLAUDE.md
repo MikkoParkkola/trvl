@@ -1,10 +1,10 @@
 # trvl
 
-Travel MCP server + CLI. 1 smart MCP tool plus 62 compatibility aliases, 50 CLI commands. Go 1.26, no frameworks.
+Travel MCP server + CLI. 1 smart MCP tool plus 64 compatibility aliases, 55 CLI commands. Go 1.26, no frameworks.
 
 ## Product Vision
 
-trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, Windsurf, Codex, …) direct access to flights, hotels, trains, buses, ferries, price alerts, travel hacks, weather, baggage rules, airport lounges, and destination intelligence — **without requiring personal API keys**. Single Go binary, MCP 2025-11-25 compliant, 1 smart MCP tool plus 62 compatibility aliases, 50 CLI commands, API-first with optional browser-assisted fallbacks for a handful of protected providers.
+trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, Windsurf, Codex, …) direct access to flights, hotels, trains, buses, ferries, price alerts, travel hacks, weather, baggage rules, airport lounges, and destination intelligence — **without requiring personal API keys**. Single Go binary, MCP 2025-11-25 compliant, 1 smart MCP tool plus 64 compatibility aliases, 55 CLI commands, API-first with optional browser-assisted fallbacks for a handful of protected providers. The smart `travel` router advertises a single tool (~378 tokens of `tools/list` context) instead of all 64 (~33,500 tokens) — a ~98.9% context reduction; the 64 aliases stay callable via the `intent` field, and `TRVL_MCP_TOOL_MODE=legacy` advertises the full surface for clients that need it.
 
 ## Current Status
 
@@ -14,7 +14,7 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 - Enrichment (free, unauthenticated): weather (Open-Meteo), air quality (`trvl air`), sun times (`trvl sun`, sunrise-sunset.org), bike-share (`trvl bikes`, CityBikes)
 - CI: build, vet, staticcheck, govulncheck, race tests, coverage ≥50% on ubuntu + windows
 - Latest release train: tag-triggered workflow + adhoc codesign identifier (PR #50)
-- npm wrapper, ICS calendar export, 57→61 tool bump landed in last ~90d (MIK-3081/3082/3083/3084 + 6-package wiring batch in PR #57)
+- npm wrapper, ICS calendar export, and the smart-router consolidation (64 tools → 1 advertised `travel` tool, ~98.9% `tools/list` context reduction) landed in last ~90d (MIK-3081/3082/3083/3084 + 6-package wiring batch in PR #57)
 
 ## Plan Forward (near-term, technical)
 

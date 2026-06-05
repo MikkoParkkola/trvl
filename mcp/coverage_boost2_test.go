@@ -417,6 +417,30 @@ func TestFlightSuggestions_WithMultiStop(t *testing.T) {
 	}
 }
 
+func TestFlightSuggestions_SurfacesDoorToDoorTransfer(t *testing.T) {
+	t.Parallel()
+	result := &models.FlightSearchResult{
+		Success: true, Count: 1,
+		Flights: []models.FlightResult{{Price: 200, Stops: 0}},
+	}
+	suggestions := flightSuggestions(result, "HEL", "BCN", "2026-07-18", flightsOptsEmpty())
+	var hasTransfer, hasJourney bool
+	for _, s := range suggestions {
+		if s.Action == "search_airport_transfers" && s.Params["airport_code"] == "BCN" {
+			hasTransfer = true
+		}
+		if s.Action == "plan_journey" && s.Params["airport_code"] == "HEL" {
+			hasJourney = true
+		}
+	}
+	if !hasTransfer {
+		t.Error("should proactively surface the arrival airport transfer (A.1)")
+	}
+	if !hasJourney {
+		t.Error("should proactively surface the departure leave-by schedule (A.1)")
+	}
+}
+
 func TestFlightSuggestions_WidelyVaryingPrices(t *testing.T) {
 	t.Parallel()
 	result := &models.FlightSearchResult{

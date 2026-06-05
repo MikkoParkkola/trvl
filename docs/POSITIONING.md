@@ -1,6 +1,6 @@
 # trvl — Positioning
 
-> **The canonical travel MCP server. 1 smart tool, 63 compatibility aliases, 21 providers, zero API keys, one binary.**
+> **The canonical travel MCP server. 1 smart tool, 64 compatibility aliases, 21 providers, zero API keys, one binary.**
 
 Last updated: 2026-05-13 · Parent epic: [MIK-3438](https://linear.app/parm/issue/MIK-3438)
 
@@ -10,7 +10,7 @@ Last updated: 2026-05-13 · Parent epic: [MIK-3438](https://linear.app/parm/issu
 
 **trvl makes your AI assistant a competent travel agent.**
 
-Not a chatbot that "thinks" about travel. An agent with structured, live access to 21 real providers — flights, hotels, trains, buses, ferries, weather, awards, alerts — through one compact `travel` MCP tool plus 63 compatibility aliases that any compliant client (Claude, Cursor, Windsurf, Codex, ChatGPT-with-MCP, …) can call directly.
+Not a chatbot that "thinks" about travel. An agent with structured, live access to 21 real providers — flights, hotels, trains, buses, ferries, weather, awards, alerts — through one compact `travel` MCP tool plus 64 compatibility aliases that any compliant client (Claude, Cursor, Windsurf, Codex, ChatGPT-with-MCP, …) can call directly.
 
 ## 2. The problem we solve
 
@@ -60,7 +60,7 @@ trvl is the first MCP server purpose-built to fix all three at once.
 |---|---|---|
 | 21 providers | Highest count of any travel MCP. Multi-provider arbitrage is impossible without coverage. | [README provider list](../README.md#providers) |
 | Zero API keys | Removes the #1 install-abandonment cause. Free tier works on day zero. | Default config has no key fields |
-| Agent-native | Structured tool I/O beats HTML scraping for agent reliability. | [AGENTS.md](../AGENTS.md) — 1 smart tool, 63 compatibility aliases, typed schemas |
+| Agent-native | Structured tool I/O beats HTML scraping for agent reliability. | [AGENTS.md](../AGENTS.md) — 1 smart tool, 64 compatibility aliases, typed schemas |
 | Browser fallback | When a provider has no API (Booking.com, AFKLM), we use a headless browser, not pretend support. | [internal/browser/](../internal/browser/) |
 | One binary | `brew install`, done. No Docker, no Python venv, no Node toolchain. | `goreleaser` artifacts, all platforms |
 
@@ -80,7 +80,7 @@ The maintained head-to-head matrix lives in [COMPARISON.md](COMPARISON.md). It c
 
 ## 7. Proof points
 
-- 1 smart MCP tool plus 63 compatibility aliases live on `main` ([tool list](../AGENTS.md))
+- 1 smart MCP tool plus 64 compatibility aliases live on `main` ([tool list](../AGENTS.md))
 - Traveller Workspace v2 adds confirmation import, booking-candidate readiness, itinerary route-time warnings, and conservative fare intelligence without automatic purchase claims ([workspace docs](traveller-workspace.md)).
 - Hotel detail enrichment surfaces best-effort room cancellation/refundability, board/breakfast, nightly-vs-total pricing, and tax/fee metadata when providers expose it through structured detail pages.
 - 21 providers wired (`google-flights`, `airbnb`, `booking.com`, `trivago`, `hostelworld`, `ferryhopper`, `kelkoo`, `kiwi`, `flixbus`, `rome2rio`, `omio`, `trainline`, `afklm`, `lufthansa`, `aircanada`, `delta`, `iata`, `openweathermap`, `noaa`, `weather.gov`, `wikivoyage`)

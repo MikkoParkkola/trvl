@@ -140,6 +140,7 @@ These providers are part of trvl's source code and are active by default. trvl's
 | Open-Meteo | Weather API | Free, CC-BY 4.0 |
 | Wikivoyage | MediaWiki API | CC-BY-SA 3.0 |
 | OpenStreetMap | Overpass API | ODbL licensed |
+| Uber / Bolt (ride-hail) | Deep-links only (no API call, no scraping) | trvl constructs a booking deep-link with pickup/dropoff; the user opens the app, where the real price/availability is shown. No data is fetched, no ToS engaged. |
 | Ticketmaster, Foursquare, etc. | Official APIs with keys | Optional, free tier available |
 | Deal feeds | RSS (Secret Flying, Fly4Free, Holiday Pirates, The Points Guy) | Public RSS syndication |
 
