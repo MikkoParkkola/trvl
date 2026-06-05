@@ -23,7 +23,29 @@ permissions:
   id-token: write  # cosign keyless signing via Sigstore needs OIDC token
 
 jobs:
+  # Release backstop for the dependency-vulnerability gate. ci.yaml scans on
+  # every PR/push; this re-scans at tag time so a vuln that landed between the
+  # last green CI run and the release tag (or via a path that skipped CI) cannot
+  # ship. Every publishing job below is transitively `needs:`-ed to goreleaser,
+  # which `needs:` this gate — so GitHub release, Homebrew, Docker, npm, and the
+  # MCP registry all block if a known fixable vuln is present. Exceptions are
+  # time-boxed in .github/osv-scanner.toml.
+  security-gate:
+    name: Security gate (block release on known vulns)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Scan Go dependencies against OSV
+        uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+        with:
+          scan-args: |-
+            --config=.github/osv-scanner.toml
+            --recursive
+            ./
+
   goreleaser:
+    needs: security-gate
     runs-on: macos-14
     env:
       HAS_HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
@@ -111,10 +133,37 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      # Build a single-arch (amd64) image first and load it locally so trivy can
+      # scan the actual release artifact's layers. This is the Docker half of the
+      # vulnerability gate — the osv-scanner gates the Go deps; trivy gates the
+      # base-image OS/library CVEs. Only push (multi-arch) if the scan is clean.
+      - name: Build amd64 image for vulnerability scan
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg VERSION="${VERSION}" \
+            --tag "ghcr.io/mikkoparkkola/trvl:scan" \
+            --file Dockerfile.release \
+            --load \
+            .
+
+      - name: Trivy image scan (block push on fixable HIGH/CRITICAL CVEs)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: "ghcr.io/mikkoparkkola/trvl:scan"
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+
       - name: Build and push multi-arch image
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          docker buildx create --use --name trvl-release
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --build-arg VERSION="${VERSION}" \

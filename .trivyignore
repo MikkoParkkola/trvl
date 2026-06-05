@@ -1,0 +1,13 @@
+# trivy image-scan allowlist — pressure valve for the release Docker CVE gate.
+#
+# The `docker` job in release.yml builds the image, scans it with trivy, and
+# only pushes if no FIXABLE HIGH/CRITICAL OS/library CVE is present. Unfixed
+# CVEs (no patched package upstream yet) are ignored via `ignore-unfixed: true`,
+# so a CVE you cannot fix never blocks a release.
+#
+# Add an entry here only to suppress a FIXABLE finding you are explicitly
+# accepting, with a reason + review date. One CVE id per line:
+#   CVE-2024-12345  # accepted: <reason>; review 2026-07-01
+#
+# Keep this empty. The right fix for a fixable base-image CVE is to bump the
+# base image (FROM alpine:3.23 -> newer) or the offending package, not ignore it.
