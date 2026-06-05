@@ -39,8 +39,11 @@ jobs:
       - name: Scan Go dependencies against OSV
         uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
         with:
+          # --no-call-analysis=all: manifest-only gate, deterministic regardless
+          # of the scanner container's bundled Go toolchain (see ci.yaml osv-scan).
           scan-args: |-
             --config=.github/osv-scanner.toml
+            --no-call-analysis=all
             --recursive
             ./
 

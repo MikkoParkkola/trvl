@@ -112,8 +112,18 @@ jobs:
       - name: Scan Go dependencies against OSV
         uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
         with:
+          # --no-call-analysis=all: gate on the dependency manifest only, never
+          # the embedded govulncheck source pass. That pass runs inside the
+          # osv-scanner action's container against ITS bundled Go toolchain; if
+          # that Go is older than this repo's go.mod requirement it cannot build,
+          # fails, and then reports every stdlib advisory as a spurious finding
+          # (it red-failed CI exactly this way). Manifest-only is deterministic
+          # and matches Dependabot semantics (flag a vulnerable dependency
+          # version whether or not it is reachable). Reachability stays covered
+          # by the govulncheck step in the `test` job, on the correct toolchain.
           scan-args: |-
             --config=.github/osv-scanner.toml
+            --no-call-analysis=all
             --recursive
             ./
 
