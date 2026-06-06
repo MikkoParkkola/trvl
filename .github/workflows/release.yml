@@ -151,6 +151,8 @@ jobs:
             --build-arg VERSION="${VERSION}" \
             --tag "ghcr.io/mikkoparkkola/trvl:scan" \
             --file Dockerfile.release \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max,ignore-error=true \
             --load \
             .
 
@@ -173,6 +175,8 @@ jobs:
             --tag "ghcr.io/mikkoparkkola/trvl:${VERSION}" \
             --tag "ghcr.io/mikkoparkkola/trvl:latest" \
             --file Dockerfile.release \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max,ignore-error=true \
             --push \
             .
 
