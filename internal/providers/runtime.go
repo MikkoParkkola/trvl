@@ -319,14 +319,21 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 	var trippedStatuses []models.ProviderStatus
 	now := time.Now()
 	for _, cfg := range providers {
-		if cfg.ErrorCount >= circuitBreakerThreshold {
+		// Snapshot the circuit-breaker fields under the registry lock. These
+		// fields (ErrorCount/LastError/LastErrorAt/LastSuccess) are mutated by
+		// MarkSuccess/MarkError on the shared *ProviderConfig while a
+		// concurrent search — reached via singleflight — iterates the same
+		// pointers here. Reading cfg.* directly is a data race; the snapshot
+		// is a consistent, lock-protected copy used for the trip decision.
+		bs, _ := rt.registry.BreakerSnapshot(cfg.ID)
+		if bs.ErrorCount >= circuitBreakerThreshold {
 			// Determine when the cooldown window started. Prefer the
 			// explicit failure timestamp; fall back to LastSuccess when
 			// LastErrorAt is missing on legacy configs from before the
 			// field existed.
-			tripAt := cfg.LastErrorAt
+			tripAt := bs.LastErrorAt
 			if tripAt.IsZero() {
-				tripAt = cfg.LastSuccess
+				tripAt = bs.LastSuccess
 			}
 			// When neither timestamp is available, we have no way to
 			// know when the trip happened. Treat the provider as
@@ -337,21 +344,21 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 			if tripAt.IsZero() {
 				slog.Warn("circuit breaker: provider tripped",
 					"provider", cfg.ID,
-					"failure_count", cfg.ErrorCount,
+					"failure_count", bs.ErrorCount,
 					"last_error_at", "never",
 					"reason", "no_timestamp_freshly_tripped")
 				trippedStatuses = append(trippedStatuses, models.ProviderStatus{
 					ID:      cfg.ID,
 					Name:    cfg.Name,
 					Status:  "circuit_broken",
-					Error:   fmt.Sprintf("circuit breaker tripped after %d consecutive failures (never succeeded; awaiting cooldown)", cfg.ErrorCount),
+					Error:   fmt.Sprintf("circuit breaker tripped after %d consecutive failures (never succeeded; awaiting cooldown)", bs.ErrorCount),
 					FixHint: "fix the upstream credential / cookie / endpoint, then run `trvl provider reset <id>` to clear the breaker",
 				})
 				LogHealth(HealthEntry{
 					Provider:   cfg.ID,
 					Operation:  "search",
 					Status:     "circuit_broken",
-					Error:      fmt.Sprintf("circuit breaker tripped after %d consecutive failures (never succeeded; awaiting cooldown)", cfg.ErrorCount),
+					Error:      fmt.Sprintf("circuit breaker tripped after %d consecutive failures (never succeeded; awaiting cooldown)", bs.ErrorCount),
 					ErrorClass: "CIRCUIT_BROKEN",
 					HintCode:   "CIRCUIT_BROKEN",
 				})
@@ -361,7 +368,7 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 				recoveryAt := tripAt.Add(circuitBreakerCooldown)
 				args := []any{
 					"provider", cfg.ID,
-					"failure_count", cfg.ErrorCount,
+					"failure_count", bs.ErrorCount,
 					"last_error_at", tripAt.Format(time.RFC3339),
 					"recovery_at", recoveryAt.Format(time.RFC3339),
 				}
@@ -371,8 +378,8 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 					Name:   cfg.Name,
 					Status: "circuit_broken",
 					Error: fmt.Sprintf("circuit breaker tripped after %d consecutive failures; last error: %s; recovery probe at %s",
-						cfg.ErrorCount,
-						cfg.LastError,
+						bs.ErrorCount,
+						bs.LastError,
 						recoveryAt.Format(time.RFC3339)),
 					FixHint: "wait for cooldown to elapse, or run `trvl provider reset <id>` to retry immediately",
 				})
@@ -380,7 +387,7 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 					Provider:   cfg.ID,
 					Operation:  "search",
 					Status:     "circuit_broken",
-					Error:      fmt.Sprintf("circuit breaker tripped after %d consecutive failures; last error: %s; recovery probe at %s", cfg.ErrorCount, cfg.LastError, recoveryAt.Format(time.RFC3339)),
+					Error:      fmt.Sprintf("circuit breaker tripped after %d consecutive failures; last error: %s; recovery probe at %s", bs.ErrorCount, bs.LastError, recoveryAt.Format(time.RFC3339)),
 					ErrorClass: "CIRCUIT_BROKEN",
 					HintCode:   "CIRCUIT_BROKEN",
 				})
@@ -391,11 +398,11 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 			// retry attempt in the journal.
 			slog.Info("circuit breaker: half-open probe",
 				"provider", cfg.ID,
-				"failure_count", cfg.ErrorCount,
+				"failure_count", bs.ErrorCount,
 				"cooldown_elapsed", true)
 		}
-		if cfg.ErrorCount > 0 {
-			recovering[cfg.ID] = cfg.ErrorCount
+		if bs.ErrorCount > 0 {
+			recovering[cfg.ID] = bs.ErrorCount
 		}
 		live = append(live, cfg)
 	}

@@ -326,6 +326,31 @@ func writeProviderFile(path, dir string, data []byte) error {
 	return os.Chmod(path, 0o600)
 }
 
+// BreakerState holds breaker fields copied under the registry lock.
+type BreakerState struct {
+	ErrorCount  int
+	LastError   string
+	LastErrorAt time.Time
+	LastSuccess time.Time
+}
+
+// BreakerSnapshot copies breaker fields for the given provider under RLock.
+func (r *Registry) BreakerSnapshot(id string) (BreakerState, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	cfg, ok := r.configs[id]
+	if !ok {
+		return BreakerState{}, false
+	}
+	return BreakerState{
+		ErrorCount:  cfg.ErrorCount,
+		LastError:   cfg.LastError,
+		LastErrorAt: cfg.LastErrorAt,
+		LastSuccess: cfg.LastSuccess,
+	}, true
+}
+
 // MarkSuccess records a successful request for the given provider.
 func (r *Registry) MarkSuccess(id string) {
 	r.mu.Lock()
