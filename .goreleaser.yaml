@@ -103,12 +103,14 @@ signs:
     output: true
 
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
+  # Use GitHub's native release-note generation so the auto "## New Contributors"
+  # section (crediting first-time external contributors by @handle) is included.
+  # goreleaser's default git-based changelog only lists raw commit subjects and
+  # silently omits contributor credit — which is how an external contributor's
+  # major feature shipped uncredited in v1.7.0 (#142, @marcello-russo). 2026-06-07.
+  # NOTE: github-native delegates grouping/filtering to .github/release.yml
+  # (sort/filters here are ignored by design).
+  use: github-native
 
 release:
   github:

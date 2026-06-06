@@ -1,0 +1,19 @@
+# GitHub native release-notes config (read by goreleaser's `changelog.use: github-native`
+# and by GitHub's "Generate release notes"). The "## New Contributors" section that
+# credits first-time external contributors by @handle is added automatically by GitHub
+# and cannot be disabled here — that is the point (see .goreleaser.yaml changelog note).
+changelog:
+  exclude:
+    authors:
+      - dependabot
+      - github-actions
+    labels:
+      - ignore-for-release
+  categories:
+    - title: Bug Fixes
+      labels: ["bug", "fix"]
+    - title: Dependencies
+      labels: ["dependencies"]
+    # Catch-all MUST be last (GitHub assigns each PR to the first matching category).
+    - title: Changes
+      labels: ["*"]
