@@ -1,0 +1,34 @@
+{
+  "flightOffer": [
+    {
+      "outboundFlights": [
+        {
+          "flightNumber": 6051,
+          "origin": "AMS",
+          "destination": "BCN",
+          "departureDateTime": "2026-07-07T07:20:00",
+          "arrivalDateTime": "2026-07-07T09:35:00",
+          "marketingFlight": {"carrierCode": "HV", "number": 6051},
+          "aircraftType": "Boeing 737-800"
+        }
+      ],
+      "pricingInfoSummary": {
+        "totalPriceAllPassengers": 59.0,
+        "totalPriceOnePassenger": 59.0,
+        "currency": "EUR"
+      }
+    },
+    {
+      "outboundFlight": {
+        "flightNumber": 5022,
+        "origin": "AMS",
+        "destination": "BCN",
+        "departureDateTime": "2026-07-07T18:05:00",
+        "arrivalDateTime": "2026-07-07T20:15:00",
+        "marketingFlight": {"carrierCode": "HV", "number": 5022},
+        "aircraftType": "Boeing 737-700"
+      },
+      "price": {"total": 42.5, "currency": "EUR"}
+    }
+  ]
+}

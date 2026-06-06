@@ -109,20 +109,7 @@ func SearchKiwiFlights(ctx context.Context, origin, destination, date, currency 
 		currency = "EUR"
 	}
 
-	args := map[string]any{
-		"flyFrom":       origin,
-		"flyTo":         destination,
-		"departureDate": departureDate,
-		"passengers": map[string]int{
-			"adults": opts.Adults,
-		},
-		"sort":   kiwiSort(opts.SortBy),
-		"curr":   currency,
-		"locale": "en",
-	}
-	if cabin := kiwiCabinClass(opts.CabinClass); cabin != "" {
-		args["cabinClass"] = cabin
-	}
+	args := buildKiwiSearchArgs(origin, destination, departureDate, currency, opts)
 
 	rpcResp, err := kiwiRPC(ctx, sessionID, kiwiRPCRequest{
 		JSONRPC: "2.0",
@@ -406,11 +393,12 @@ func parseKiwiTimestamp(raw string) (time.Time, bool) {
 }
 
 func kiwiDate(date string) (string, error) {
-	t, err := models.ParseDate(date)
-	if err != nil {
-		return "", err
+	// Shared outbound date canonicalizer (MIK-4956 XSHOP.6) instead of a
+	// hand-rolled layout. Kiwi wants day/month/year.
+	if out, ok := models.FormatProviderDate(date, models.DateLayoutDMY); ok {
+		return out, nil
 	}
-	return t.Format("02/01/2006"), nil
+	return "", fmt.Errorf("kiwi: invalid date %q", date)
 }
 
 func kiwiCabinClass(cabin models.CabinClass) string {
@@ -426,6 +414,49 @@ func kiwiCabinClass(cabin models.CabinClass) string {
 	default:
 		return "M"
 	}
+}
+
+// buildKiwiSearchArgs assembles the Kiwi MCP search-flight arguments, including
+// the advanced options Kiwi exposes (round-trip returnDate + flexible date
+// ranges). departureDate must already be in Kiwi's day/month/year format.
+func buildKiwiSearchArgs(origin, destination, departureDate, currency string, opts SearchOptions) map[string]any {
+	args := map[string]any{
+		"flyFrom":       origin,
+		"flyTo":         destination,
+		"departureDate": departureDate,
+		"passengers": map[string]int{
+			"adults": opts.Adults,
+		},
+		"sort":   kiwiSort(opts.SortBy),
+		"curr":   currency,
+		"locale": "en",
+	}
+	if cabin := kiwiCabinClass(opts.CabinClass); cabin != "" {
+		args["cabinClass"] = cabin
+	}
+	if opts.ReturnDate != "" {
+		if rd, rerr := kiwiDate(opts.ReturnDate); rerr == nil {
+			args["returnDate"] = rd
+		}
+	}
+	if d := clampFlexDays(opts.DepartureFlexDays); d > 0 {
+		args["departureDateFlexRange"] = d
+	}
+	if r := clampFlexDays(opts.ReturnFlexDays); r > 0 && opts.ReturnDate != "" {
+		args["returnDateFlexRange"] = r
+	}
+	return args
+}
+
+// clampFlexDays bounds a flexible-date range to Kiwi's accepted 0..3.
+func clampFlexDays(n int) int {
+	if n < 0 {
+		return 0
+	}
+	if n > 3 {
+		return 3
+	}
+	return n
 }
 
 func kiwiSort(sortBy models.SortBy) string {

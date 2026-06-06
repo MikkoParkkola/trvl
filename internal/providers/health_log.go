@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -13,7 +14,15 @@ import (
 const (
 	healthLogMaxBytes = 1 * 1024 * 1024 // 1 MB rotate threshold
 	healthLogBufSize  = 256             // channel buffer
+	healthFreshWindow = 24 * time.Hour
 )
+
+var healthSecretPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)(authorization:\s*bearer\s+)[^\s,;]+`),
+	regexp.MustCompile(`(?i)\b(bearer\s+)[A-Za-z0-9._~+/\-]+=*`),
+	regexp.MustCompile(`(?i)([?&][^=\s&]*(?:api[_-]?key|token|secret|password|auth|session|csrf)[^=\s&]*=)[^&\s]+`),
+	regexp.MustCompile(`(?i)\b([A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|auth|session|csrf)[A-Za-z0-9_.-]*\s*[:=]\s*)[^\s,;&]+`),
+}
 
 // HealthEntry records a single external provider API call outcome.
 type HealthEntry struct {
@@ -21,25 +30,36 @@ type HealthEntry struct {
 	Provider  string `json:"provider"`
 	// Operation is "search", "preflight", or "auth".
 	Operation string `json:"op"`
-	// Status is "ok", "error", or "timeout".
+	// Status is "ok", "error", "timeout", or "circuit_broken".
 	Status    string `json:"status"`
 	LatencyMs int64  `json:"latency_ms"`
 	Results   int    `json:"results,omitempty"`
 	Error     string `json:"error,omitempty"`
-	HintCode  string `json:"hint_code,omitempty"` // typed root-cause code when status != "ok"
+	// ErrorClass is a stable root-cause category such as RATE_LIMITED,
+	// TLS_TIMEOUT, or CIRCUIT_BROKEN. HintCode is retained for older readers.
+	ErrorClass string `json:"error_class,omitempty"`
+	HintCode   string `json:"hint_code,omitempty"` // typed root-cause code when status != "ok"
 }
 
 // ProviderHealth is the per-provider aggregate computed by HealthSummary.
 type ProviderHealth struct {
-	Provider     string  `json:"provider"`
-	TotalCalls   int     `json:"total_calls"`
-	SuccessCount int     `json:"success_count"`
-	ErrorCount   int     `json:"error_count"`
-	TimeoutCount int     `json:"timeout_count"`
-	SuccessRate  float64 `json:"success_rate"`
-	AvgLatencyMs int64   `json:"avg_latency_ms"`
-	LastError    string  `json:"last_error,omitempty"`
-	LastHintCode string  `json:"last_hint_code,omitempty"` // most recent root-cause code for failures
+	Provider       string  `json:"provider"`
+	TotalCalls     int     `json:"total_calls"`
+	SuccessCount   int     `json:"success_count"`
+	ErrorCount     int     `json:"error_count"`
+	TimeoutCount   int     `json:"timeout_count"`
+	SuccessRate    float64 `json:"success_rate"`
+	AvgLatencyMs   int64   `json:"avg_latency_ms"`
+	TotalResults   int     `json:"total_results"`
+	AvgResults     float64 `json:"avg_results"`
+	LastResults    int     `json:"last_results"`
+	LastSeen       string  `json:"last_seen,omitempty"`
+	LastSuccess    string  `json:"last_success,omitempty"`
+	LastFailure    string  `json:"last_failure,omitempty"`
+	Freshness      string  `json:"freshness"`
+	LastError      string  `json:"last_error,omitempty"`
+	LastErrorClass string  `json:"last_error_class,omitempty"`
+	LastHintCode   string  `json:"last_hint_code,omitempty"` // most recent root-cause code for failures
 }
 
 // healthWriter is the package-level singleton that owns the write goroutine.
@@ -102,7 +122,7 @@ func appendHealthEntry(entry HealthEntry) error {
 	}
 	defer func() { _ = f.Close() }()
 
-	line, err := json.Marshal(entry)
+	line, err := json.Marshal(sanitizeHealthEntry(entry))
 	if err != nil {
 		return err
 	}
@@ -118,11 +138,27 @@ func LogHealth(entry HealthEntry) {
 	if entry.Timestamp == "" {
 		entry.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	}
+	entry = sanitizeHealthEntry(entry)
 	select {
 	case healthCh <- entry:
 	default:
 		// channel full — drop silently
 	}
+}
+
+func sanitizeHealthEntry(entry HealthEntry) HealthEntry {
+	entry.Error = redactHealthText(entry.Error)
+	if entry.ErrorClass == "" {
+		entry.ErrorClass = entry.HintCode
+	}
+	return entry
+}
+
+func redactHealthText(s string) string {
+	for _, pattern := range healthSecretPatterns {
+		s = pattern.ReplaceAllString(s, "${1}<redacted>")
+	}
+	return s
 }
 
 // ReadHealthLog reads the last N entries from the health log in dir.
@@ -150,6 +186,7 @@ func ReadHealthLog(dir string, last int) ([]HealthEntry, error) {
 		if err := json.Unmarshal(line, &e); err != nil {
 			continue // skip malformed lines
 		}
+		e = sanitizeHealthEntry(e)
 		entries = append(entries, e)
 	}
 	if err := scanner.Err(); err != nil {
@@ -171,13 +208,20 @@ func HealthSummary(dir string) map[string]ProviderHealth {
 	}
 
 	type agg struct {
-		total        int
-		successes    int
-		errors       int
-		timeouts     int
-		latSum       int64
-		lastErr      string
-		lastHintCode string
+		total          int
+		successes      int
+		errors         int
+		timeouts       int
+		latSum         int64
+		totalResults   int
+		resultSamples  int
+		lastResults    int
+		lastSeen       time.Time
+		lastSuccess    time.Time
+		lastFailure    time.Time
+		lastErr        string
+		lastErrorClass string
+		lastHintCode   string
 	}
 	m := make(map[string]*agg)
 
@@ -189,29 +233,48 @@ func HealthSummary(dir string) map[string]ProviderHealth {
 		}
 		a.total++
 		a.latSum += e.LatencyMs
+		ts, hasTS := parseHealthTimestamp(e.Timestamp)
+		if hasTS && ts.After(a.lastSeen) {
+			a.lastSeen = ts
+		}
 		switch e.Status {
 		case "ok":
 			a.successes++
+			a.totalResults += e.Results
+			a.resultSamples++
+			a.lastResults = e.Results
+			if hasTS && ts.After(a.lastSuccess) {
+				a.lastSuccess = ts
+			}
 		case "timeout":
 			a.timeouts++
+			if hasTS && ts.After(a.lastFailure) {
+				a.lastFailure = ts
+			}
 			if e.Error != "" {
 				a.lastErr = e.Error
 			}
-			if e.HintCode != "" {
-				a.lastHintCode = e.HintCode
+			if code := healthErrorClass(e); code != "" {
+				a.lastErrorClass = code
+				a.lastHintCode = code
 			}
 		default:
 			a.errors++
+			if hasTS && ts.After(a.lastFailure) {
+				a.lastFailure = ts
+			}
 			if e.Error != "" {
 				a.lastErr = e.Error
 			}
-			if e.HintCode != "" {
-				a.lastHintCode = e.HintCode
+			if code := healthErrorClass(e); code != "" {
+				a.lastErrorClass = code
+				a.lastHintCode = code
 			}
 		}
 	}
 
 	result := make(map[string]ProviderHealth, len(m))
+	now := time.Now().UTC()
 	for provider, a := range m {
 		var avgLat int64
 		if a.total > 0 {
@@ -221,17 +284,64 @@ func HealthSummary(dir string) map[string]ProviderHealth {
 		if a.total > 0 {
 			rate = float64(a.successes) / float64(a.total)
 		}
+		var avgResults float64
+		if a.resultSamples > 0 {
+			avgResults = float64(a.totalResults) / float64(a.resultSamples)
+		}
 		result[provider] = ProviderHealth{
-			Provider:     provider,
-			TotalCalls:   a.total,
-			SuccessCount: a.successes,
-			ErrorCount:   a.errors,
-			TimeoutCount: a.timeouts,
-			SuccessRate:  rate,
-			AvgLatencyMs: avgLat,
-			LastError:    a.lastErr,
-			LastHintCode: a.lastHintCode,
+			Provider:       provider,
+			TotalCalls:     a.total,
+			SuccessCount:   a.successes,
+			ErrorCount:     a.errors,
+			TimeoutCount:   a.timeouts,
+			SuccessRate:    rate,
+			AvgLatencyMs:   avgLat,
+			TotalResults:   a.totalResults,
+			AvgResults:     avgResults,
+			LastResults:    a.lastResults,
+			LastSeen:       formatHealthTime(a.lastSeen),
+			LastSuccess:    formatHealthTime(a.lastSuccess),
+			LastFailure:    formatHealthTime(a.lastFailure),
+			Freshness:      healthFreshness(a.lastSeen, now),
+			LastError:      a.lastErr,
+			LastErrorClass: a.lastErrorClass,
+			LastHintCode:   a.lastHintCode,
 		}
 	}
 	return result
+}
+
+func healthErrorClass(e HealthEntry) string {
+	if e.ErrorClass != "" {
+		return e.ErrorClass
+	}
+	return e.HintCode
+}
+
+func parseHealthTimestamp(raw string) (time.Time, bool) {
+	if raw == "" {
+		return time.Time{}, false
+	}
+	ts, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ts.UTC(), true
+}
+
+func formatHealthTime(ts time.Time) string {
+	if ts.IsZero() {
+		return ""
+	}
+	return ts.UTC().Format(time.RFC3339)
+}
+
+func healthFreshness(lastSeen, now time.Time) string {
+	if lastSeen.IsZero() {
+		return "unknown"
+	}
+	if now.Sub(lastSeen) > healthFreshWindow {
+		return "stale"
+	}
+	return "fresh"
 }

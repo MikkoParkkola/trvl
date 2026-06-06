@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
 func TestResourcesList(t *testing.T) {
@@ -160,9 +162,7 @@ func TestResourcesRead_NotFound(t *testing.T) {
 
 func TestResourceLinkInFlightResults(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping live HTTP test in short mode")
-	}
+	testutil.RequireLiveIntegration(t)
 	s := NewServer()
 	params := ToolCallParams{
 		Name: "search_flights",
@@ -213,9 +213,7 @@ func TestResourceLinkInFlightResults(t *testing.T) {
 
 func TestResourceLinkInHotelResults(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping live HTTP test in short mode")
-	}
+	testutil.RequireLiveIntegration(t)
 	s := NewServer()
 	params := ToolCallParams{
 		Name: "search_hotels",

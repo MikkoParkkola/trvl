@@ -1,0 +1,21 @@
+{
+  "outboundFlights": [
+    {
+      "departureStation": "BUD",
+      "arrivalStation": "BCN",
+      "departureDates": ["2026-07-07T06:15:00"],
+      "price": {"amount": 24.99, "currencyCode": "EUR"},
+      "priceType": "regular",
+      "flightNumber": "W6 2401"
+    },
+    {
+      "departureStation": "BUD",
+      "arrivalStation": "BCN",
+      "departureDates": ["2026-07-08T20:40:00"],
+      "price": {"amount": 19.99, "currencyCode": "EUR"},
+      "priceType": "regular",
+      "flightNumber": "W6 2403"
+    }
+  ],
+  "returnFlights": []
+}

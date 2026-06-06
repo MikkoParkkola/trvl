@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/MikkoParkkola/trvl/internal/hacks"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/optimizer"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
@@ -93,6 +94,21 @@ func optimizeBookingOutputSchema() interface{} {
 }
 
 func handleOptimizeBooking(ctx context.Context, args map[string]any, _ ElicitFunc, _ SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
+	// Multi-visit routing: when the caller flags two visits between the same
+	// cities, delegate to the nested round-trip optimizer (MIK-3076). Window 1
+	// is departure_date/return_date; window 2 is window2_depart/window2_return.
+	if argBool(args, "multi_visit", false) {
+		nestedArgs := map[string]any{
+			"origin":         args["origin"],
+			"destination":    args["destination"],
+			"window1_depart": args["departure_date"],
+			"window1_return": args["return_date"],
+			"window2_depart": args["window2_depart"],
+			"window2_return": args["window2_return"],
+		}
+		return optimizeNestedRT(ctx, nestedArgs, hacks.DefaultLegPricer)
+	}
+
 	input := optimizer.OptimizeInput{
 		Origin:         strings.ToUpper(argString(args, "origin")),
 		Destination:    strings.ToUpper(argString(args, "destination")),

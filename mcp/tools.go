@@ -83,9 +83,14 @@ func registerTools(s *Server) {
 		listOpportunityWatchesTool(),
 		searchHiddenCityTool(),
 		searchAwardsTool(),
+		nestedRTTool(),
 	}
 	s.tools = advertisedToolSurface(legacyTools)
 	s.handlers["travel"] = s.handleTravel
+	// plan_journey is a smart capability reachable via the travel router intent,
+	// not a legacy compatibility alias — registered as a handler but kept out of
+	// the advertised legacyTools surface (see registeredMCPCompatibilityAliasCount).
+	s.handlers["plan_journey"] = s.wrapHandler("plan_journey", handleJourney)
 	s.handlers["search_flights"] = s.wrapHandler("search_flights", handleSearchFlights)
 	s.handlers["plan_flight_bundle"] = s.wrapHandler("plan_flight_bundle", handlePlanFlightBundle)
 	s.handlers["find_interactive"] = s.wrapHandler("find_interactive", handleFindInteractive)
@@ -150,6 +155,7 @@ func registerTools(s *Server) {
 	s.handlers["list_opportunity_watches"] = s.wrapHandler("list_opportunity_watches", handleListOpportunityWatches)
 	s.handlers["search_hidden_city"] = s.wrapHandler("search_hidden_city", handleSearchHiddenCity)
 	s.handlers["search_awards"] = s.wrapHandler("search_awards", handleSearchAwards)
+	s.handlers["optimize_nested_rt"] = s.wrapHandler("optimize_nested_rt", handleOptimizeNestedRT)
 }
 
 // wrapHandler returns a ToolHandler that delegates to the inner handler and

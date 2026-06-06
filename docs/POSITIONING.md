@@ -1,6 +1,6 @@
 # trvl — Positioning
 
-> **The canonical travel MCP server. 1 smart tool, 64 compatibility aliases, 22 providers, zero API keys for core search, one binary.**
+> **The canonical travel MCP server. 1 smart tool, 64 compatibility aliases, 21 providers, zero API keys, one binary.**
 
 Last updated: 2026-05-13 · Parent epic: [MIK-3438](https://linear.app/parm/issue/MIK-3438)
 
@@ -10,7 +10,7 @@ Last updated: 2026-05-13 · Parent epic: [MIK-3438](https://linear.app/parm/issu
 
 **trvl makes your AI assistant a competent travel agent.**
 
-Not a chatbot that "thinks" about travel. An agent with structured, live access to 22 real providers — flights, hotels, rental cars, trains, buses, ferries, weather, awards, alerts — through one compact `travel` MCP tool plus 64 compatibility aliases that any compliant client (Claude, Cursor, Windsurf, Codex, ChatGPT-with-MCP, …) can call directly.
+Not a chatbot that "thinks" about travel. An agent with structured, live access to 21 real providers — flights, hotels, trains, buses, ferries, weather, awards, alerts — through one compact `travel` MCP tool plus 64 compatibility aliases that any compliant client (Claude, Cursor, Windsurf, Codex, ChatGPT-with-MCP, …) can call directly.
 
 ## 2. The problem we solve
 
@@ -39,13 +39,13 @@ trvl is the first MCP server purpose-built to fix all three at once.
 ## 5. Value triangle (what makes us category-defining)
 
 ```
-            22 providers (most in MCP space)
+            21 providers (most in MCP space)
                        /\
                       /  \
                      /    \
                     /      \
                    /        \
-  Core no-key use-/----------\-- Agent-native
+  Zero API keys --/----------\-- Agent-native
    (no signup,    \          /   (1 smart tool,
     free tier,     \        /    structured I/O,
     one binary)     \      /     not screen scrape)
@@ -58,8 +58,8 @@ trvl is the first MCP server purpose-built to fix all three at once.
 
 | Pillar | Why it matters | Evidence |
 |---|---|---|
-| 22 providers | Highest count of any travel MCP. Multi-provider arbitrage is impossible without coverage. | [README provider list](../README.md#providers) |
-| Core no-key use | Removes the #1 install-abandonment cause for flights, hotels, and ground search. Partner-gated verticals return explicit setup statuses. | Default config has no key fields for core search |
+| 21 providers | Highest count of any travel MCP. Multi-provider arbitrage is impossible without coverage. | [README provider list](../README.md#providers) |
+| Zero API keys | Removes the #1 install-abandonment cause. Free tier works on day zero. | Default config has no key fields |
 | Agent-native | Structured tool I/O beats HTML scraping for agent reliability. | [AGENTS.md](../AGENTS.md) — 1 smart tool, 64 compatibility aliases, typed schemas |
 | Browser fallback | When a provider has no API (Booking.com, AFKLM), we use a headless browser, not pretend support. | [internal/browser/](../internal/browser/) |
 | One binary | `brew install`, done. No Docker, no Python venv, no Node toolchain. | `goreleaser` artifacts, all platforms |
@@ -70,16 +70,20 @@ The maintained head-to-head matrix lives in [COMPARISON.md](COMPARISON.md). It c
 
 | Alternative | What it is | Where trvl wins |
 |---|---|---|
+| **fli** | Python library and CLI for Google Flights data | trvl keeps the Google Flights-style workflow but adds local MCP install, hotels, ground, watches, awards, hacks, and assistant skills |
+| **Skiplagged MCP** | Official remote MCP for Skiplagged flights, hotels, and rental cars | trvl is local-first and broader across Google Flights, Kiwi, hotels, ground, awards, profile, and watch workflows; rental cars remain tracked in [#88](https://github.com/MikkoParkkola/trvl/issues/88) |
+| **1Stay/stays** | Transaction-complete hotel booking MCP | trvl is broader and safer for local assistants; it deliberately stops at provider URLs and booking-readiness checks rather than taking payment/cancellation liability |
 | **Google Flights / Kayak (web)** | Consumer search UIs | Not callable by agents; no MCP; no award sweetspots; no multi-provider arbitrage in one query |
 | **ChatGPT browse + travel sites** | LLM searches and summarizes web pages | No deterministic travel schema; can't run trvl's hidden-city, award, and watch workflows as typed tool calls |
-| **Other travel MCPs (one-provider wrappers)** | Usually 1–3 providers, often Google Flights only | trvl has 22 providers in one binary |
+| **Other travel MCPs (one-provider wrappers)** | Usually 1–3 providers, often Google Flights only | trvl has 21 providers in one binary |
 | **Travel-agent SaaS (Hopper, etc.)** | Paid consumer app | trvl is free, open-source, embeddable, not a product to log in to |
 
 ## 7. Proof points
 
 - 1 smart MCP tool plus 64 compatibility aliases live on `main` ([tool list](../AGENTS.md))
 - Traveller Workspace v2 adds confirmation import, booking-candidate readiness, itinerary route-time warnings, and conservative fare intelligence without automatic purchase claims ([workspace docs](traveller-workspace.md)).
-- 22 providers wired or setup-aware (`google-flights`, `airbnb`, `booking.com`, `trivago`, `hostelworld`, `skyscanner-car-hire`, `ferryhopper`, `kelkoo`, `kiwi`, `flixbus`, `rome2rio`, `omio`, `trainline`, `afklm`, `lufthansa`, `aircanada`, `delta`, `iata`, `openweathermap`, `noaa`, `weather.gov`, `wikivoyage`)
+- Hotel detail enrichment surfaces best-effort room cancellation/refundability, board/breakfast, nightly-vs-total pricing, and tax/fee metadata when providers expose it through structured detail pages.
+- 21 providers wired (`google-flights`, `airbnb`, `booking.com`, `trivago`, `hostelworld`, `ferryhopper`, `kelkoo`, `kiwi`, `flixbus`, `rome2rio`, `omio`, `trainline`, `afklm`, `lufthansa`, `aircanada`, `delta`, `iata`, `openweathermap`, `noaa`, `weather.gov`, `wikivoyage`)
 - Real protobuf reverse-engineering for Google Flights (not HTML scrape — see `internal/providers/googleflights/`)
 - Single-binary distribution: macOS / Linux / Windows / Docker
 - License: PolyForm NC 1.0 — free for non-commercial agents, paid for commercial integrations (see [LICENSE](../LICENSE))

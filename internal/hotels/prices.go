@@ -20,34 +20,60 @@ func isNoProviderPricesError(err error) bool {
 	return strings.Contains(err.Error(), "no provider prices found")
 }
 
+// HotelPriceOpts configures a hotel price lookup with optional fallback search
+// for hotels where Google's batchexecute RPC has no booking partner data.
+type HotelPriceOpts struct {
+	HotelID  string // Google place ID
+	CheckIn  string // YYYY-MM-DD
+	CheckOut string // YYYY-MM-DD
+	Currency string // e.g. "EUR", "USD"
+	Location string // optional city/hotel name hint for search-page fallback
+}
+
 // GetHotelPrices looks up booking provider prices for a specific hotel.
 //
 // The hotelID should be a Google place ID (e.g. "/g/11b6d4_v_4" or
 // "ChIJ..."). These IDs are returned in hotel search results.
 //
+// When the internal batchexecute RPC returns no booking partner prices and
+// a Location hint is provided, the function falls back to searching the
+// Google Hotels search page. This ensures small hotels that don't participate
+// in Google's booking feed still return a price.
+//
 // Dates should be in YYYY-MM-DD format.
 func GetHotelPrices(ctx context.Context, hotelID string, checkIn, checkOut string, currency string) (*models.HotelPriceResult, error) {
-	if hotelID == "" {
+	return GetHotelPricesWithOpts(ctx, HotelPriceOpts{
+		HotelID:  hotelID,
+		CheckIn:  checkIn,
+		CheckOut: checkOut,
+		Currency: currency,
+	})
+}
+
+// GetHotelPricesWithOpts is like GetHotelPrices but accepts a full
+// HotelPriceOpts struct including an optional Location for fallback.
+func GetHotelPricesWithOpts(ctx context.Context, opts HotelPriceOpts) (*models.HotelPriceResult, error) {
+	if opts.HotelID == "" {
 		return nil, fmt.Errorf("hotel ID is required")
 	}
-	if checkIn == "" || checkOut == "" {
+	if opts.CheckIn == "" || opts.CheckOut == "" {
 		return nil, fmt.Errorf("check-in and check-out dates are required")
 	}
-	if currency == "" {
-		currency = "USD"
+	if opts.Currency == "" {
+		opts.Currency = "USD"
 	}
 
-	checkInArr, err := parseDateArray(checkIn)
+	checkInArr, err := parseDateArray(opts.CheckIn)
 	if err != nil {
 		return nil, fmt.Errorf("parse check-in date: %w", err)
 	}
-	checkOutArr, err := parseDateArray(checkOut)
+	checkOutArr, err := parseDateArray(opts.CheckOut)
 	if err != nil {
 		return nil, fmt.Errorf("parse check-out date: %w", err)
 	}
 
 	client := DefaultClient()
-	encoded := batchexec.BuildHotelPricePayload(hotelID, checkInArr, checkOutArr, currency)
+	encoded := batchexec.BuildHotelPricePayload(opts.HotelID, checkInArr, checkOutArr, opts.Currency)
 
 	status, body, err := client.BatchExecute(ctx, encoded)
 	if err != nil {
@@ -71,18 +97,18 @@ func GetHotelPrices(ctx context.Context, hotelID string, checkIn, checkOut strin
 
 	providers, err := ParseHotelPriceResponse(entries)
 	if err != nil {
-		// "no provider prices found" is a routine outcome — Google sometimes
-		// returns a yY52ce payload with no booking partners for a given
-		// hotel/date pair. Surface this as success=true with an empty
-		// provider list and a Notice so the caller can fall back to the
-		// search-result price (or display "no live partner prices") instead
-		// of treating it as a hard failure. Other parse errors still bubble.
+		// "no provider prices found" is a routine outcome. Fall back to
+		// the search-page price when we have a location hint.
 		if isNoProviderPricesError(err) {
+			fallback := tryPriceFallback(ctx, opts)
+			if fallback != nil {
+				return fallback, nil
+			}
 			return &models.HotelPriceResult{
 				Success:   true,
-				HotelID:   hotelID,
-				CheckIn:   checkIn,
-				CheckOut:  checkOut,
+				HotelID:   opts.HotelID,
+				CheckIn:   opts.CheckIn,
+				CheckOut:  opts.CheckOut,
 				Providers: nil,
 				Notice:    "no live booking partners returned prices for this hotel and date range",
 			}, nil
@@ -93,15 +119,79 @@ func GetHotelPrices(ctx context.Context, hotelID string, checkIn, checkOut strin
 	// Set currency on providers that don't have one.
 	for i := range providers {
 		if providers[i].Currency == "" {
-			providers[i].Currency = currency
+			providers[i].Currency = opts.Currency
 		}
 	}
 
 	return &models.HotelPriceResult{
 		Success:   true,
-		HotelID:   hotelID,
-		CheckIn:   checkIn,
-		CheckOut:  checkOut,
+		HotelID:   opts.HotelID,
+		CheckIn:   opts.CheckIn,
+		CheckOut:  opts.CheckOut,
 		Providers: providers,
 	}, nil
+}
+
+// tryPriceFallback searches the Google Hotels search page for the hotel
+// when the batchexecute RPC has no booking partner data. Uses the same
+// approach as trySearchPageFallback in rooms.go.
+func tryPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.HotelPriceResult {
+	if opts.Location == "" {
+		return nil
+	}
+
+	searchOpts := HotelSearchOptions{
+		CheckIn:  opts.CheckIn,
+		CheckOut: opts.CheckOut,
+		Guests:   2,
+		Currency: opts.Currency,
+		MaxPages: 1,
+	}
+
+	client := DefaultClient()
+	candidates := buildLocationCandidates(opts.Location)
+	var result *models.HotelSearchResult
+	for _, loc := range candidates {
+		r, err := SearchHotelsWithClient(ctx, client, loc, searchOpts)
+		if err == nil && len(r.Hotels) > 0 {
+			result = r
+			break
+		}
+	}
+	if result == nil || len(result.Hotels) == 0 {
+		return nil
+	}
+
+	// Try ID match first, then name match.
+	var hotel *models.HotelResult
+	for i := range result.Hotels {
+		if result.Hotels[i].HotelID == opts.HotelID {
+			hotel = &result.Hotels[i]
+			break
+		}
+	}
+	if hotel == nil {
+		hotel = findBestNameMatch(result.Hotels, opts.Location)
+	}
+	if hotel == nil || hotel.Price <= 0 {
+		return nil
+	}
+
+	cur := opts.Currency
+	if cur == "" {
+		cur = hotel.Currency
+	}
+	return &models.HotelPriceResult{
+		Success:   true,
+		HotelID:   opts.HotelID,
+		CheckIn:   opts.CheckIn,
+		CheckOut:  opts.CheckOut,
+		Providers: []models.ProviderPrice{
+			{
+				Provider: "Google Hotels",
+				Price:    hotel.Price,
+				Currency: cur,
+			},
+		},
+	}
 }

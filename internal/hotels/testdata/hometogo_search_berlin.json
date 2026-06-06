@@ -1,0 +1,478 @@
+{
+  "offers": [
+    {
+      "id": "dfb3090449f32b18",
+      "title": "65 m² Apartment",
+      "imageLinks": {
+        "small": "//cdn.hometogo.net/small/v1/98e/120/5e6e0bdf256544b7d2cb713824.jpg",
+        "medium": "//cdn.hometogo.net/medium/v1/98e/120/5e6e0bdf256544b7d2cb713824.jpg",
+        "large": "//cdn.hometogo.net/large/v1/98e/120/5e6e0bdf256544b7d2cb713824.jpg",
+        "thumbnail": "//cdn.hometogo.net/small/v1/98e/120/5e6e0bdf256544b7d2cb713824.jpg",
+        "aspectRatio": 1.3348783314020858,
+        "altText": "Holiday apartment with barbecue, patio & yard | Garden view | Suitable for remote work - 0"
+      },
+      "preferredImageId": null,
+      "lowestPriceInfo": {
+        "display": "94 €"
+      },
+      "deepLink": "/deeplink/?params=eJwtjkEKwjAURO_yt1oYf5O0zQEK7lx4gSRNaaA1pY2IiHc3UZcz7zHMi-boTArxRpqkUDB-ALoWoCOtW3A-PVefWYrJzJdSZLBP8dHf53_WVOQUFr8ns6w5M1hVkBXLK0Oj0bU6gPV3NAxZGEZbo4MQ3VizPbVl05vNTedChWqUatnKEdIJ2ELd5n35-NPo_QHi5zUx",
+      "actions": {
+        "conversion": {
+          "first": {
+            "link": "/rental/dfb3090449f32b18?location=5460aed009800&pricetype=totalPrice&showFullPrice=0&duration=7&searchId=4676682b5f05c40b",
+            "conversionCategory": "rental_open",
+            "action": "follow",
+            "offerId": "dfb3090449f32b18"
+          },
+          "second": {
+            "link": "/rental/dfb3090449f32b18?location=5460aed009800&pricetype=totalPrice&showFullPrice=0&duration=7&searchId=4676682b5f05c40b",
+            "conversionCategory": "rental_open",
+            "action": "follow",
+            "offerId": "dfb3090449f32b18"
+          },
+          "third": {
+            "link": "/rental/dfb3090449f32b18?location=5460aed009800&pricetype=totalPrice&showFullPrice=0&duration=7&searchId=4676682b5f05c40b",
+            "conversionCategory": "rental_open",
+            "action": "follow",
+            "offerId": "dfb3090449f32b18"
+          },
+          "fourth": {
+            "link": "/deeplink/?params=eJwtjkEKwjAURO_yt1oYf5O0zQEK7lx4gSRNaaA1pY2IiHc3UZcz7zHMi-boTArxRpqkUDB-ALoWoCOtW3A-PVefWYrJzJdSZLBP8dHf53_WVOQUFr8ns6w5M1hVkBXLK0Oj0bU6gPV3NAxZGEZbo4MQ3VizPbVl05vNTedChWqUatnKEdIJ2ELd5n35-NPo_QHi5zUx&clo=2",
+            "conversionCategory": "clickout",
+            "action": "follow",
+            "offerId": "dfb3090449f32b18"
+          },
+          "fifth": {
+            "link": "/rental/dfb3090449f32b18?location=5460aed009800&pricetype=totalPrice&showFullPrice=0&searchId=4676682b5f05c40b",
+            "conversionCategory": "rental_open",
+            "action": "follow",
+            "offerId": "dfb3090449f32b18"
+          }
+        },
+        "wishList": {
+          "add": {
+            "link": "/pinboard/update/dfb3090449f32b18",
+            "method": "POST",
+            "parameters": {
+              "locationId": "5460aed009800"
+            }
+          },
+          "delete": {
+            "link": "/pinboard/all/dfb3090449f32b18",
+            "method": "DELETE",
+            "parameters": {}
+          }
+        }
+      },
+      "initialPrice": null,
+      "locationTrailHeader": "Berlin, Germany",
+      "rentalObjectId": "d58babc597c49789",
+      "geoLocation": {
+        "lat": 52.6326179,
+        "lon": 13.2976098
+      },
+      "fullGeoHash": "u337qt7p0",
+      "nearby": false,
+      "alias": [
+        "dfb3090449f32b18",
+        "ba3ecffa74f4d3d7",
+        "b751a42ab703e401",
+        "0e76a805912ce5f1",
+        "d58babc597c49789",
+        "4302066ba630715779a7b278a82dbafe"
+      ],
+      "amenities": {
+        "labelSectionTitle": "Amenities",
+        "common": [
+          {
+            "label": "Pet-friendly",
+            "amenity": "pets_allowed"
+          },
+          {
+            "label": "Dishwasher",
+            "amenity": "dishwasher"
+          },
+          {
+            "label": "Balcony/patio",
+            "amenity": "terrace"
+          },
+          {
+            "label": "TV",
+            "amenity": "tv"
+          },
+          {
+            "label": "WiFi",
+            "amenity": "internet"
+          },
+          {
+            "label": "Fireplace",
+            "amenity": "fireplace"
+          },
+          {
+            "label": "Microwave",
+            "amenity": "microwave"
+          },
+          {
+            "label": "Crib",
+            "amenity": "cot"
+          },
+          {
+            "label": "Wheelchair access",
+            "amenity": "accessible"
+          },
+          {
+            "label": "No smoking",
+            "amenity": "smoking_not_allowed"
+          },
+          {
+            "label": "Kitchen",
+            "amenity": "kitchen"
+          },
+          {
+            "label": "Family-friendly",
+            "amenity": "children_friendly"
+          },
+          {
+            "label": "Yard",
+            "amenity": "garden"
+          },
+          {
+            "label": "Grill",
+            "amenity": "barbecue"
+          },
+          {
+            "label": "Hairdryer",
+            "amenity": "hairdryer"
+          },
+          {
+            "label": "Iron",
+            "amenity": "iron"
+          },
+          {
+            "label": "Coffee machine",
+            "amenity": "coffee_machine"
+          },
+          {
+            "label": "Kettle",
+            "amenity": "kettle"
+          },
+          {
+            "label": "Toaster",
+            "amenity": "toaster"
+          },
+          {
+            "label": "Detached",
+            "amenity": "detached"
+          },
+          {
+            "label": "High chair",
+            "amenity": "high_chair"
+          }
+        ]
+      },
+      "analyticsSnowPlow": {},
+      "serpImageIndex": 0
+    },
+    {
+      "id": "822889fbd4eb4631",
+      "title": "Apartment",
+      "imageLinks": {
+        "small": "//cdn.hometogo.net/small/v1/052/cdc/fdae4ab5dfb9bc1b985dc542b5.jpg",
+        "medium": "//cdn.hometogo.net/medium/v1/052/cdc/fdae4ab5dfb9bc1b985dc542b5.jpg",
+        "large": "//cdn.hometogo.net/large/v1/052/cdc/fdae4ab5dfb9bc1b985dc542b5.jpg",
+        "thumbnail": "//cdn.hometogo.net/small/v1/052/cdc/fdae4ab5dfb9bc1b985dc542b5.jpg",
+        "aspectRatio": 1.5,
+        "altText": "Children-friendly lovely apartment with terrace | Garden view | Pets are welcome - 0"
+      },
+      "preferredImageId": null,
+      "lowestPriceInfo": {
+        "display": "138 €"
+      },
+      "deepLink": "/deeplink/?params=eJwtjkEKwjAQRe8yWy2M02QacwDBnQsvkKRTGmhNaSMi4t1N1OX_7_H5L5hScDmmG1jQitFJj3g0iLCHZY1B8nORwnLKbrrUooBtTI_TffpnC1XOcZYtu3kpmZC4Qd2QvhJa7GzLOyT7HY19EQyRMcfB90q84vZQN8WtYTxXqrhjNuT1gDoo9JWGVaR-_Gnw_gDivzU8",
+      "actions": {
+        "conversion": {
+          "first": {
+            "link": "/rental/822889fbd4eb4631?location=5460aed009800&pricetype=totalPrice&showFullPrice=0&duration=7&searchId=4676682b5f05c40b",
+            "conversionCategory": "rental_open",
+            "action": "follow",
+            "offerId": "822889fbd4eb4631"
+          },
+          "second": {
+            "link": "/rental/822889fbd4eb4631?location=5460aed009800&pricetype=totalPrice&showFullPrice=0&duration=7&searchId=4676682b5f05c40b",
+            "conversionCategory": "rental_open",
+            "action": "follow",
+            "offerId": "822889fbd4eb4631"
+          },
+          "third": {
+            "link": "/rental/822889fbd4eb4631?location=5460aed009800&pricetype=totalPrice&showFullPrice=0&duration=7&searchId=4676682b5f05c40b",
+            "conversionCategory": "rental_open",
+            "action": "follow",
+            "offerId": "822889fbd4eb4631"
+          },
+          "fourth": {
+            "link": "/deeplink/?params=eJwtjkEKwjAQRe8yWy2M02QacwDBnQsvkKRTGmhNaSMi4t1N1OX_7_H5L5hScDmmG1jQitFJj3g0iLCHZY1B8nORwnLKbrrUooBtTI_TffpnC1XOcZYtu3kpmZC4Qd2QvhJa7GzLOyT7HY19EQyRMcfB90q84vZQN8WtYTxXqrhjNuT1gDoo9JWGVaR-_Gnw_gDivzU8&clo=2",
+            "conversionCategory": "clickout",
+            "action": "follow",
+            "offerId": "822889fbd4eb4631"
+          },
+          "fifth": {
+            "link": "/rental/822889fbd4eb4631?location=5460aed009800&pricetype=totalPrice&showFullPrice=0&searchId=4676682b5f05c40b",
+            "conversionCategory": "rental_open",
+            "action": "follow",
+            "offerId": "822889fbd4eb4631"
+          }
+        },
+        "wishList": {
+          "add": {
+            "link": "/pinboard/update/822889fbd4eb4631",
+            "method": "POST",
+            "parameters": {
+              "locationId": "5460aed009800"
+            }
+          },
+          "delete": {
+            "link": "/pinboard/all/822889fbd4eb4631",
+            "method": "DELETE",
+            "parameters": {}
+          }
+        }
+      },
+      "initialPrice": null,
+      "locationTrailHeader": "Berlin, Germany",
+      "rentalObjectId": "74ee1fb81fd50da6",
+      "geoLocation": {
+        "lat": 52.58473,
+        "lon": 13.30061
+      },
+      "fullGeoHash": "u337nsv0q",
+      "nearby": false,
+      "alias": [
+        "822889fbd4eb4631",
+        "ad8ae5307d84a08b",
+        "f34ba4d5b8cc8570",
+        "6c60eceb831dbce1",
+        "74ee1fb81fd50da6",
+        "4873c04eebb5650a839a66ee3a57bb37"
+      ],
+      "amenities": {
+        "labelSectionTitle": "Amenities",
+        "common": [
+          {
+            "label": "Pet-friendly",
+            "amenity": "pets_allowed"
+          },
+          {
+            "label": "Balcony/patio",
+            "amenity": "terrace"
+          },
+          {
+            "label": "TV",
+            "amenity": "tv"
+          },
+          {
+            "label": "WiFi",
+            "amenity": "internet"
+          },
+          {
+            "label": "Crib",
+            "amenity": "cot"
+          },
+          {
+            "label": "No smoking",
+            "amenity": "smoking_not_allowed"
+          },
+          {
+            "label": "Kitchen",
+            "amenity": "kitchen"
+          },
+          {
+            "label": "Family-friendly",
+            "amenity": "children_friendly"
+          },
+          {
+            "label": "Hairdryer",
+            "amenity": "hairdryer"
+          },
+          {
+            "label": "Coffee machine",
+            "amenity": "coffee_machine"
+          },
+          {
+            "label": "Kettle",
+            "amenity": "kettle"
+          },
+          {
+            "label": "Toaster",
+            "amenity": "toaster"
+          },
+          {
+            "label": "Detached",
+            "amenity": "detached"
+          },
+          {
+            "label": "High chair",
+            "amenity": "high_chair"
+          }
+        ]
+      },
+      "analyticsSnowPlow": {},
+      "serpImageIndex": 0
+    },
+    {
+      "id": "dafcb2ea716ee203",
+      "title": "200 m² Apartment",
+      "imageLinks": {
+        "small": "//cdn.hometogo.net/small/v1/8e4/17e/90ab237a0b0c44fc6a314acb0f.jpg",
+        "medium": "//cdn.hometogo.net/medium/v1/8e4/17e/90ab237a0b0c44fc6a314acb0f.jpg",
+        "large": "//cdn.hometogo.net/large/v1/8e4/17e/90ab237a0b0c44fc6a314acb0f.jpg",
+        "thumbnail": "//cdn.hometogo.net/small/v1/8e4/17e/90ab237a0b0c44fc6a314acb0f.jpg",
+        "aspectRatio": 1.5,
+        "altText": "Rental apartment with terrace | Panoramic view - 0"
+      },
+      "preferredImageId": null,
+      "lowestPriceInfo": {
+        "display": "130 €"
+      },
+      "deepLink": "/deeplink/?params=eJwtjkEKwjAQRe8yWy2M02ZacwDBnQsvME2nNNCakkZExLubqMv_3-PzXzAHJ8mHG1gwDaPogHjsEGEPa_RO03PVzFJIMl9KkcE2hcfpPv-zhSInv-iWZFlzJiSu0FRkroQWW1vzDsl-R_2QhUFG15NKe2BVwrpsqkQ3nQttuGXuqDcjGtdgX6iLquXjT4P3Bw6ANec",
+      "actions": {
+        "conversion": {
+          "first": {
+            "link": "/rental/dafcb2ea716ee203?location=5460aed009800&pricetype=totalPrice&showFullPrice=0&duration=7&searchId=4676682b5f05c40b",
+            "conversionCategory": "rental_open",
+            "action": "follow",
+            "offerId": "dafcb2ea716ee203"
+          },
+          "second": {
+            "link": "/rental/dafcb2ea716ee203?location=5460aed009800&pricetype=totalPrice&showFullPrice=0&duration=7&searchId=4676682b5f05c40b",
+            "conversionCategory": "rental_open",
+            "action": "follow",
+            "offerId": "dafcb2ea716ee203"
+          },
+          "third": {
+            "link": "/rental/dafcb2ea716ee203?location=5460aed009800&pricetype=totalPrice&showFullPrice=0&duration=7&searchId=4676682b5f05c40b",
+            "conversionCategory": "rental_open",
+            "action": "follow",
+            "offerId": "dafcb2ea716ee203"
+          },
+          "fourth": {
+            "link": "/deeplink/?params=eJwtjkEKwjAQRe8yWy2M02ZacwDBnQsvME2nNNCakkZExLubqMv_3-PzXzAHJ8mHG1gwDaPogHjsEGEPa_RO03PVzFJIMl9KkcE2hcfpPv-zhSInv-iWZFlzJiSu0FRkroQWW1vzDsl-R_2QhUFG15NKe2BVwrpsqkQ3nQttuGXuqDcjGtdgX6iLquXjT4P3Bw6ANec&clo=2",
+            "conversionCategory": "clickout",
+            "action": "follow",
+            "offerId": "dafcb2ea716ee203"
+          },
+          "fifth": {
+            "link": "/rental/dafcb2ea716ee203?location=5460aed009800&pricetype=totalPrice&showFullPrice=0&searchId=4676682b5f05c40b",
+            "conversionCategory": "rental_open",
+            "action": "follow",
+            "offerId": "dafcb2ea716ee203"
+          }
+        },
+        "wishList": {
+          "add": {
+            "link": "/pinboard/update/dafcb2ea716ee203",
+            "method": "POST",
+            "parameters": {
+              "locationId": "5460aed009800"
+            }
+          },
+          "delete": {
+            "link": "/pinboard/all/dafcb2ea716ee203",
+            "method": "DELETE",
+            "parameters": {}
+          }
+        }
+      },
+      "initialPrice": null,
+      "locationTrailHeader": "Berlin, Germany",
+      "rentalObjectId": "106451d572b43afa",
+      "geoLocation": {
+        "lat": 52.5239116,
+        "lon": 13.1951305
+      },
+      "fullGeoHash": "u336u38mu",
+      "nearby": false,
+      "alias": [
+        "dafcb2ea716ee203",
+        "2d910bf51f6f5a87",
+        "69004a0bf4c56855",
+        "b6295d5927f9bc9d",
+        "106451d572b43afa",
+        "faad0ac2fcab25b1d5e6f0d789695b04"
+      ],
+      "amenities": {
+        "labelSectionTitle": "Amenities",
+        "fishing": {
+          "label": "Fishing"
+        },
+        "common": [
+          {
+            "label": "Pet-friendly",
+            "amenity": "pets_allowed"
+          },
+          {
+            "label": "Dishwasher",
+            "amenity": "dishwasher"
+          },
+          {
+            "label": "Balcony/patio",
+            "amenity": "terrace"
+          },
+          {
+            "label": "Washing machine",
+            "amenity": "washing_machine_available"
+          },
+          {
+            "label": "TV",
+            "amenity": "tv"
+          },
+          {
+            "label": "WiFi",
+            "amenity": "internet"
+          },
+          {
+            "label": "Fireplace",
+            "amenity": "fireplace"
+          },
+          {
+            "label": "Microwave",
+            "amenity": "microwave"
+          },
+          {
+            "label": "Crib",
+            "amenity": "cot"
+          },
+          {
+            "label": "No smoking",
+            "amenity": "smoking_not_allowed"
+          },
+          {
+            "label": "Kitchen",
+            "amenity": "kitchen"
+          },
+          {
+            "label": "Family-friendly",
+            "amenity": "children_friendly"
+          },
+          {
+            "label": "Hairdryer",
+            "amenity": "hairdryer"
+          },
+          {
+            "label": "Iron",
+            "amenity": "iron"
+          },
+          {
+            "label": "Coffee machine",
+            "amenity": "coffee_machine"
+          },
+          {
+            "label": "Toaster",
+            "amenity": "toaster"
+          }
+        ]
+      },
+      "analyticsSnowPlow": {},
+      "serpImageIndex": 0
+    }
+  ]
+}

@@ -74,7 +74,7 @@ func MergeHotelResults(sources ...[]HotelResult) []HotelResult {
 				incomingName := normalizeName(h.Name)
 				for _, ge := range geoIndex {
 					if haversineMeters(h.Lat, h.Lon, ge.lat, ge.lon) <= geoMergeMeters &&
-						nameSimilar(incomingName, ge.name) {
+						NameSimilar(incomingName, ge.name) {
 						k = ge.k // remap to the existing entry's key
 						break
 					}
@@ -342,7 +342,7 @@ func normalizeAddress(address string) string {
 	return address
 }
 
-// nameSimilar returns true if two normalized hotel names are similar enough to
+// NameSimilar returns true if two normalized hotel names are similar enough to
 // consider them the same property. This is used as a guard for geo-proximity
 // merging to prevent unrelated nearby hotels from collapsing.
 //
@@ -350,7 +350,7 @@ func normalizeAddress(address string) string {
 // divided by the union of words. A threshold of 0.5 means at least half the
 // words must overlap. Both names must also have at least 2 words each to
 // prevent trivially short names from matching.
-func nameSimilar(a, b string) bool {
+func NameSimilar(a, b string) bool {
 	wordsA := strings.Fields(a)
 	wordsB := strings.Fields(b)
 	if len(wordsA) < 2 || len(wordsB) < 2 {

@@ -5,16 +5,43 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/upgrade"
 )
 
-// semverCmp delegates to the upgrade package — same comparison used
-// throughout trvl for version ordering.
-func semverCmp(a, b string) int {
-	return upgrade.CompareSemver(a, b)
+// gitDescribeSuffix matches a `git describe --tags` suffix of the form
+// "-<commits>-g<hash>" (with an optional "-dirty" marker). Such a suffix
+// means the binary was built N commits AHEAD of its base tag, so it is
+// strictly newer than that tag — NOT an older pre-release of it. Real
+// semver pre-releases ("-rc.1", "-beta.2") do not match this shape.
+var gitDescribeSuffix = regexp.MustCompile(`-[0-9]+-g[0-9a-f]+(-dirty)?$`)
+
+// baseTag strips a git-describe suffix, returning the underlying tag and
+// whether a suffix was present. "v1.5.0-3-gabc123" -> ("v1.5.0", true);
+// "v1.5.0-rc.1" -> ("v1.5.0-rc.1", false).
+func baseTag(v string) (string, bool) {
+	if loc := gitDescribeSuffix.FindStringIndex(v); loc != nil {
+		return v[:loc[0]], true
+	}
+	return v, false
+}
+
+// isUpdateAvailable reports whether the latest upstream release is strictly
+// newer than the running build. It is git-describe-aware: a development
+// build N commits ahead of tag X ("vX-N-ghash") already CONTAINS release X,
+// so it is treated as >= X and never nags about "updating" to a release the
+// local binary has already surpassed. Plain releases and real pre-releases
+// fall through to the standard semver comparison.
+func isUpdateAvailable(latest, current string) bool {
+	if base, ok := baseTag(current); ok {
+		// Ahead-of-tag build: an update exists only if the latest release
+		// is newer than the base tag this build descends from.
+		return upgrade.CompareSemver(latest, base) > 0
+	}
+	return upgrade.CompareSemver(latest, current) > 0
 }
 
 // IsCIEnv heuristically detects continuous-integration / sandboxed
@@ -73,8 +100,14 @@ func NotifyAvailable(w io.Writer, info UpdateInfo) {
 	if current == "" {
 		current = "dev"
 	}
+	// Normalize a leading "v" on both fields so the "v%s" formatting below
+	// never produces a doubled prefix (e.g. "vv1.5.0"). LatestVersion is
+	// stored without "v" by the checker, but CurrentVersion comes straight
+	// from main.Version, which goreleaser/git-describe stamps WITH a "v".
+	latest := strings.TrimPrefix(info.LatestVersion, "v")
+	current = strings.TrimPrefix(current, "v")
 	msg := fmt.Sprintf("trvl: v%s available (you have v%s). Release notes: %s\n",
-		info.LatestVersion, current, info.ReleaseURL)
+		latest, current, info.ReleaseURL)
 	_, _ = io.WriteString(w, msg)
 }
 
@@ -120,7 +153,7 @@ func CheckInBackground(ctx context.Context, currentVer string, notifyW io.Writer
 		cached.CurrentVersion = currentVer
 		// Recompute against the running binary version in case the
 		// user upgraded out of band since the cache was written.
-		cached.UpdateAvailable = compareVersions(cached.LatestVersion, currentVer) > 0
+		cached.UpdateAvailable = isUpdateAvailable(cached.LatestVersion, currentVer)
 		if notifyW != nil {
 			NotifyAvailable(notifyW, cached)
 		}
@@ -136,12 +169,6 @@ func CheckInBackground(ctx context.Context, currentVer string, notifyW io.Writer
 		defer cancel()
 		_, _ = c.Check(bgCtx, false)
 	}()
-}
-
-// compareVersions wraps the upgrade package's CompareSemver to avoid
-// re-importing it at every callsite.
-func compareVersions(a, b string) int {
-	return semverCmp(a, b)
 }
 
 // LoadCachedInfo returns the most recently cached UpdateInfo, or the

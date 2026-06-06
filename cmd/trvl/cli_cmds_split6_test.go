@@ -188,11 +188,13 @@ func TestDatesCmd_FlagsV5(t *testing.T) {
 }
 
 func TestDatesCmd_RequiresTwoArgsV5(t *testing.T) {
+	// Origin is now optional; dates needs at least DESTINATION. Zero args
+	// must still fail cobra's RangeArgs(1,2).
 	cmd := datesCmd()
-	cmd.SetArgs([]string{"HEL"})
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	if err == nil {
-		t.Error("expected error with one arg")
+		t.Error("expected error with zero args")
 	}
 }
 
@@ -299,7 +301,7 @@ func TestMaybeShowFlightHackTips_EmptyFlightsV7(t *testing.T) {
 		Flights: nil,
 	}
 
-	maybeShowFlightHackTips(context.Background(), []string{"HEL"}, []string{"BCN"}, "2026-07-01", "", 1, result)
+	maybeShowFlightHackTips(context.Background(), []string{"HEL"}, []string{"BCN"}, "2026-07-01", "", 1, result, false)
 }
 
 func TestSuggestCmd_InvalidOriginIATAV7(t *testing.T) {

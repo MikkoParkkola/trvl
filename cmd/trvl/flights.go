@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"sort"
@@ -19,6 +20,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/points"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 	"github.com/MikkoParkkola/trvl/internal/scoring"
+	"github.com/MikkoParkkola/trvl/internal/travelctx"
 	"github.com/spf13/cobra"
 )
 
@@ -35,12 +37,14 @@ func flightsCmd() *cobra.Command {
 		compareCabins  bool
 		explain        bool
 		award          bool
+		noGeo          bool
 		awardCookies   string
 		provider       string
+		flightRailFly  bool
 	)
 
 	cmd := &cobra.Command{
-		Use:   "flights ORIGIN DESTINATION DATE",
+		Use:   "flights [ORIGIN] DESTINATION DATE",
 		Short: "Search flights between airports (supports multi-airport)",
 		Long: `Search flights between airports on a specific date.
 
@@ -52,20 +56,67 @@ Examples:
   trvl flights AMS,EIN,ANR HEL,TKU,TLL 2026-06-15
   trvl flights HEL NRT 2026-06-15 --return 2026-06-22
   trvl flights HEL NRT 2026-06-15 --cabin business --stops nonstop`,
-		Args: cobra.ExactArgs(3),
+		Args: cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			originArg := args[0]
+			// Accept both "ORIGIN DEST DATE" (explicit) and "DEST DATE"
+			// (origin auto-resolved from location/time context).
+			var originArg, destArg, date string
+			switch len(args) {
+			case 3:
+				originArg, destArg, date = args[0], args[1], args[2]
+			default: // 2 args
+				destArg, date = args[0], args[1]
+			}
 
-			// If the user passes "home" as origin, resolve from preferences.
+			// Resolve the ambient search context (current time + best-available
+			// origin). Precedence: explicit ORIGIN > "home" keyword / saved home
+			// airport > geo-IP (best-effort, opt-out via --no-geo / TRVL_NO_GEO).
+			prefs, _ := preferences.Load() //nolint:errcheck // default prefs on error
+			explicitForCtx := originArg
 			if strings.EqualFold(strings.TrimSpace(originArg), "home") {
-				if prefs, err := preferences.Load(); err == nil && prefs.HomeAirport() != "" {
-					originArg = prefs.HomeAirport()
+				explicitForCtx = "" // fall through to prefs/home resolution
+			}
+			tctx := travelctx.Resolve(cmd.Context(), prefs, travelctx.Options{
+				ExplicitOrigin: explicitForCtx,
+				AllowGeoIP:     !noGeo,
+			})
+
+			// Auto-fill the origin when the user didn't pass an explicit code
+			// (2-arg form or the "home" keyword).
+			autoResolved := false
+			if explicitForCtx == "" && tctx.Origin.HasAirport() {
+				originArg = tctx.Origin.Airport
+				autoResolved = true
+			}
+			if strings.TrimSpace(originArg) == "" {
+				return fmt.Errorf("no origin given and none could be resolved from your preferences or location; pass ORIGIN explicitly, e.g. `trvl flights HEL %s %s`", destArg, date)
+			}
+			if autoResolved && format != "json" {
+				origName := tctx.Origin.City
+				if origName == "" {
+					origName = tctx.Origin.Airport
+				}
+				switch tctx.Origin.Source {
+				case travelctx.SourcePrefs:
+					_, _ = fmt.Fprintf(os.Stderr, "Origin %s (%s) — from your saved home airport.\n", tctx.Origin.Airport, origName)
+				case travelctx.SourceGeoIP:
+					_, _ = fmt.Fprintf(os.Stderr, "Origin %s (%s) — detected from your current location. Override with an explicit code or --no-geo.\n", tctx.Origin.Airport, origName)
 				}
 			}
 
 			origins := flights.ParseAirports(originArg)
-			destinations := flights.ParseAirports(args[1])
-			date := args[2]
+			destinations := flights.ParseAirports(destArg)
+
+			// Surface the booking window: lead time is one of the strongest fare
+			// levers, and trvl knows "now", so it can flag last-minute / too-early
+			// searches without being asked.
+			if format != "json" {
+				if dep, derr := time.Parse("2006-01-02", date); derr == nil {
+					if adv := travelctx.ClassifyWindow(tctx.LeadTimeDays(dep)).Advisory(); adv != "" {
+						_, _ = fmt.Fprintf(os.Stderr, "%s\n", adv)
+					}
+				}
+			}
 
 			// Validate IATA codes up-front so invalid input fails fast with a
 			// deterministic error, not via downstream provider HTTP calls. This
@@ -80,7 +131,7 @@ Examples:
 				}
 			}
 			if len(destinations) == 0 {
-				return fmt.Errorf("invalid destination: %q: at least one IATA code required", args[1])
+				return fmt.Errorf("invalid destination: %q: at least one IATA code required", destArg)
 			}
 			for _, code := range destinations {
 				if err := models.ValidateIATA(code); err != nil {
@@ -176,7 +227,7 @@ Examples:
 
 			// Auto-trigger: run applicable hack detectors and print tips
 			// below the flight results.
-			maybeShowFlightHackTips(cmd.Context(), origins, destinations, date, returnDate, adults, result)
+			maybeShowFlightHackTips(cmd.Context(), origins, destinations, date, returnDate, adults, result, flightRailFly)
 
 			if openFlag && result.Success && len(result.Flights) > 0 && result.Flights[0].BookingURL != "" {
 				_ = openBrowser(result.Flights[0].BookingURL)
@@ -198,6 +249,8 @@ Examples:
 	cmd.Flags().BoolVar(&award, "award", false, "Search Flying Blue award availability instead of cash fares")
 	cmd.Flags().StringVar(&awardCookies, "award-cookies", "", "KLM/Flying Blue Cookie header for --award (or set AFKL_KLM_COOKIES)")
 	cmd.Flags().StringVar(&provider, "provider", "", "Flight provider: empty = default (Google Flights + Kiwi + Skiplagged merge), skiplagged = Skiplagged MCP only (hidden-city + virtual-interlining defaults)")
+	cmd.Flags().BoolVar(&flightRailFly, "rail-fly", false, "Expand the search to rail-connected origins (KL/AF Air&Rail), surfacing cheaper rail+fly bundles even when the origin is outside the default hub list")
+	cmd.Flags().BoolVar(&noGeo, "no-geo", false, "Disable geo-IP origin detection (also honored via TRVL_NO_GEO=1). Origin then resolves only from an explicit code or your saved home airport.")
 
 	cmd.ValidArgsFunction = airportCompletion
 
@@ -288,7 +341,7 @@ func printFlightsTable(ctx context.Context, origin, destination, targetCurrency 
 		}
 	}
 
-	headers := []string{"Price"}
+	headers := []string{"#", "Price"}
 	if showAllIn {
 		headers = append(headers, "All-in")
 	}
@@ -296,7 +349,7 @@ func printFlightsTable(ctx context.Context, origin, destination, targetCurrency 
 	if showProvider {
 		headers = append(headers, "Provider")
 	}
-	headers = append(headers, "Airline", "Flight", "Departs", "Arrives")
+	headers = append(headers, "Airline", "Flight", "Aircraft", "Departs", "Arrives")
 	if showNotes {
 		headers = append(headers, "Notes")
 	}
@@ -309,19 +362,19 @@ func printFlightsTable(ctx context.Context, origin, destination, targetCurrency 
 
 	for i, f := range result.Flights {
 		route := flightRoute(f)
-		airline := ""
-		flightNum := ""
+		airline := flightAirlinesDisplay(f)
+		flightNum := flightNumbersDisplay(f)
+		aircraft := flightAircraftDisplay(f)
 		departs := ""
 		arrives := ""
 
 		if len(f.Legs) > 0 {
-			airline = f.Legs[0].Airline
-			flightNum = f.Legs[0].FlightNumber
-			departs = f.Legs[0].DepartureTime
-			arrives = f.Legs[len(f.Legs)-1].ArrivalTime
+			departs = formatLegDeparture(f.Legs[0].DepartureTime)
+			arrives = formatLegArrival(f.Legs[0].DepartureTime, f.Legs[len(f.Legs)-1].ArrivalTime)
 		}
 
 		row := []string{
+			fmt.Sprintf("%d", i+1),
 			prices.Apply(f.Price, formatPrice(f.Price, f.Currency)),
 		}
 		if showAllIn {
@@ -335,7 +388,7 @@ func printFlightsTable(ctx context.Context, origin, destination, targetCurrency 
 		if showProvider {
 			row = append(row, flightProviderLabel(f))
 		}
-		row = append(row, airline, flightNum, departs, arrives)
+		row = append(row, airline, flightNum, aircraft, departs, arrives)
 		if showNotes {
 			row = append(row, flightWarnings(f))
 		}
@@ -343,6 +396,11 @@ func printFlightsTable(ctx context.Context, origin, destination, targetCurrency 
 	}
 
 	models.FormatTable(os.Stdout, headers, rows)
+
+	// Direct booking links, numbered to match the table's "#" column, so every
+	// option shown is directly actionable. Full URLs would shatter table
+	// alignment, so they live in a list beneath the grid.
+	printBookingLinks(os.Stdout, result.Flights)
 
 	// Summary: cheapest flight
 	if len(result.Flights) > 0 {
@@ -421,6 +479,43 @@ func flightProviderLabel(f models.FlightResult) string {
 	}
 }
 
+// printBookingLinks lists the direct booking URL for each flight, numbered to
+// match the table's "#" column so every option in the grid is actionable.
+// Flights without a URL are skipped; nothing is printed when none carry a link.
+func printBookingLinks(w io.Writer, flights []models.FlightResult) {
+	type linkRow struct {
+		idx   int
+		label string
+		url   string
+	}
+	var links []linkRow
+	for i, f := range flights {
+		if strings.TrimSpace(f.BookingURL) == "" {
+			continue
+		}
+		label := flightAirlinesDisplay(f)
+		if p := flightProviderLabel(f); p != "" {
+			if label != "" {
+				label += " · " + p
+			} else {
+				label = p
+			}
+		}
+		if label == "" {
+			label = "-"
+		}
+		links = append(links, linkRow{idx: i + 1, label: label, url: f.BookingURL})
+	}
+	if len(links) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "Booking links:")
+	for _, l := range links {
+		_, _ = fmt.Fprintf(w, "  [%d] %s — %s\n", l.idx, l.label, l.url)
+	}
+}
+
 func flightWarnings(f models.FlightResult) string {
 	if len(f.Warnings) > 0 {
 		return strings.Join(f.Warnings, "; ")
@@ -431,17 +526,157 @@ func flightWarnings(f models.FlightResult) string {
 	return ""
 }
 
-// flightRoute builds a route string like "HEL -> FRA -> NRT".
+// flightRoute builds a route string like "HEL -> FRA -> NRT", annotating
+// connection airports with their layover duration, e.g.
+// "HEL -> FRA (2h00) -> NRT". Nonstop flights render as "AMS -> HEL".
 func flightRoute(f models.FlightResult) string {
 	if len(f.Legs) == 0 {
 		return ""
 	}
 
 	parts := []string{f.Legs[0].DepartureAirport.Code}
-	for _, leg := range f.Legs {
+	for i, leg := range f.Legs {
+		// Annotate the connection airport (arrival of a non-final leg) with the
+		// layover before the next leg, when the model carries it.
+		if i < len(f.Legs)-1 {
+			lo := f.Legs[i+1].LayoverMinutes
+			if lo > 0 {
+				parts = append(parts, fmt.Sprintf("%s (%s)", leg.ArrivalAirport.Code, formatDuration(lo)))
+				continue
+			}
+		}
 		parts = append(parts, leg.ArrivalAirport.Code)
 	}
 	return strings.Join(parts, " -> ")
+}
+
+// flightAirlinesDisplay returns the operating carrier(s). A single-carrier
+// itinerary shows that airline; a mixed itinerary joins distinct carriers with
+// " / " so connection flights reveal every operator (e.g. "Brussels / Lufthansa").
+func flightAirlinesDisplay(f models.FlightResult) string {
+	var names []string
+	seen := map[string]bool{}
+	for _, leg := range f.Legs {
+		name := strings.TrimSpace(leg.Airline)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return strings.Join(names, " / ")
+}
+
+// flightNumbersDisplay joins every leg's flight number with " / " so a
+// connection shows each segment (e.g. "SN2611 / LH882"). Empty leg numbers
+// (some providers omit them) are skipped; an all-empty itinerary yields "-".
+func flightNumbersDisplay(f models.FlightResult) string {
+	var nums []string
+	for _, leg := range f.Legs {
+		n := strings.TrimSpace(leg.FlightNumber)
+		if n == "" {
+			continue
+		}
+		nums = append(nums, n)
+	}
+	if len(nums) == 0 {
+		return "-"
+	}
+	return strings.Join(nums, " / ")
+}
+
+// flightAircraftDisplay joins every leg's aircraft type with " / " so a
+// connection shows the plane on each segment (e.g. "A319 / A320"). Manufacturer
+// prefixes are trimmed for table width. An all-empty itinerary yields "-".
+func flightAircraftDisplay(f models.FlightResult) string {
+	var craft []string
+	for _, leg := range f.Legs {
+		c := shortAircraft(leg.Aircraft)
+		if c == "" {
+			continue
+		}
+		craft = append(craft, c)
+	}
+	if len(craft) == 0 {
+		return "-"
+	}
+	return strings.Join(craft, " / ")
+}
+
+// shortAircraft trims verbose manufacturer prefixes so the Aircraft column
+// stays narrow: "Airbus A350" -> "A350", "Boeing 737-800" -> "737-800".
+func shortAircraft(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	for _, prefix := range []string{"Airbus ", "Boeing ", "Embraer ", "Bombardier ", "Embraer-", "Airbus-"} {
+		if strings.HasPrefix(s, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(s, prefix))
+		}
+	}
+	return s
+}
+
+// parseFlightTime parses the assorted timestamp formats trvl's providers emit:
+// RFC3339 with offset (skiplagged), and the offset-less "2006-01-02T15:04" /
+// "...T15:04:05" forms (Google Flights / Kiwi). Returns ok=false if unparseable.
+func parseFlightTime(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// formatLegDeparture renders a departure timestamp with its date, e.g.
+// "Thu 28 May 19:25". Falls back to the raw string if it cannot be parsed.
+func formatLegDeparture(raw string) string {
+	t, ok := parseFlightTime(raw)
+	if !ok {
+		return raw
+	}
+	return t.Format("Mon 2 Jan 15:04")
+}
+
+// formatLegArrival renders an arrival time, appending a "+N" day marker when the
+// arrival lands on a later calendar date than departure (overnight flights),
+// e.g. "00:25 +1". Falls back to the raw arrival string if unparseable.
+func formatLegArrival(depRaw, arrRaw string) string {
+	arr, ok := parseFlightTime(arrRaw)
+	if !ok {
+		return arrRaw
+	}
+	out := arr.Format("15:04")
+	if dep, depOK := parseFlightTime(depRaw); depOK {
+		d := dayDelta(dep, arr)
+		if d > 0 {
+			out += fmt.Sprintf(" +%d", d)
+		}
+	}
+	return out
+}
+
+// dayDelta returns the number of calendar days arrival is after departure,
+// using each timestamp's own location so an overnight flight reads "+1".
+func dayDelta(dep, arr time.Time) int {
+	dy, dm, dd := dep.Date()
+	ay, am, ad := arr.Date()
+	depDay := time.Date(dy, dm, dd, 0, 0, 0, 0, time.UTC)
+	arrDay := time.Date(ay, am, ad, 0, 0, 0, 0, time.UTC)
+	return int(arrDay.Sub(depDay).Hours() / 24)
 }
 
 // formatPrice formats a price with currency.
@@ -571,14 +806,17 @@ func formatMiles(n int) string {
 	return b.String()
 }
 
-// railFlyHubs lists destination airports where Rail+Fly arbitrage is possible.
+// railFlyHubs lists origin hub airports where Rail+Fly arbitrage is possible
+// (departing from a rail-connected nearby station/airport can be cheaper).
+// Keyed by ORIGIN — the detector substitutes rail-reachable origins. The
+// --rail-fly flag forces the check even for origins outside this allowlist.
 var railFlyHubs = map[string]bool{
 	"AMS": true, "FRA": true, "CDG": true, "ZRH": true,
 }
 
 // maybeShowFlightHackTips runs applicable hack detectors after a flight search
 // and prints up to 3 compact tips sorted by savings (highest first).
-func maybeShowFlightHackTips(ctx context.Context, origins, dests []string, departDate, returnDate string, passengers int, result *models.FlightSearchResult) {
+func maybeShowFlightHackTips(ctx context.Context, origins, dests []string, departDate, returnDate string, passengers int, result *models.FlightSearchResult, railFly bool) {
 	if result == nil || !result.Success || len(result.Flights) == 0 {
 		return
 	}
@@ -636,7 +874,7 @@ func maybeShowFlightHackTips(ctx context.Context, origins, dests []string, depar
 	// --- API-call detector: Rail+Fly (goroutine with 15s timeout) ---
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	if railFlyHubs[dest] {
+	if railFly || railFlyHubs[origin] {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

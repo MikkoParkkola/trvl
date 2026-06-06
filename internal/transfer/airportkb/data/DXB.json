@@ -1,0 +1,6 @@
+{
+  "code": "DXB",
+  "name": "Dubai International",
+  "intl_buffer_min": 180,
+  "domestic_buffer_min": 90
+}

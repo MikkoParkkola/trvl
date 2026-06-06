@@ -52,55 +52,72 @@ const (
 )
 
 func main() {
-	in := flag.String("in", "", "path to the artifact to sign")
-	out := flag.String("out", "", "output signature path (default: <in>.mldsa65.sig)")
-	flag.Parse()
+	if err := run(os.Args[1:], os.Stderr, os.Getenv); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "sign-mldsa: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+type getenvFunc func(string) string
+
+func run(args []string, stderr io.Writer, getenv getenvFunc) error {
+	fs := flag.NewFlagSet("sign-mldsa", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	in := fs.String("in", "", "path to the artifact to sign")
+	out := fs.String("out", "", "output signature path (default: <in>.mldsa65.sig)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 	if *in == "" {
-		die("usage: sign-mldsa --in <artifact> [--out <sig>]")
+		return fmt.Errorf("usage: sign-mldsa --in <artifact> [--out <sig>]")
 	}
 	outPath := *out
 	if outPath == "" {
 		outPath = *in + sigSuffix
 	}
 
-	privHex := os.Getenv(envPrivkey)
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	privHex := getenv(envPrivkey)
 	if privHex == "" {
-		die("env %s is empty; cannot sign without privkey", envPrivkey)
+		return fmt.Errorf("env %s is empty; cannot sign without privkey", envPrivkey)
 	}
 	skBytes, err := hex.DecodeString(privHex)
 	if err != nil {
-		die("decode privkey hex: %v", err)
+		return fmt.Errorf("decode privkey hex: %w", err)
 	}
 	if len(skBytes) != mldsa65.PrivateKeySize {
-		die("privkey wrong length: got %d, want %d", len(skBytes), mldsa65.PrivateKeySize)
+		return fmt.Errorf("privkey wrong length: got %d, want %d", len(skBytes), mldsa65.PrivateKeySize)
 	}
 	var sk mldsa65.PrivateKey
 	if err := sk.UnmarshalBinary(skBytes); err != nil {
-		die("unmarshal privkey: %v", err)
+		return fmt.Errorf("unmarshal privkey: %w", err)
 	}
 
 	digest, err := sha256File(*in)
 	if err != nil {
-		die("sha256 %s: %v", *in, err)
+		return fmt.Errorf("sha256 %s: %w", *in, err)
 	}
 
 	sig := make([]byte, mldsa65.SignatureSize)
 	if err := mldsa65.SignTo(&sk, digest, nil, false, sig); err != nil {
-		die("sign: %v", err)
+		return fmt.Errorf("sign: %w", err)
 	}
 
 	// Sanity: verify the signature we just produced before writing it.
 	// Catches a corrupted privkey-in-secret before it lands in a release.
 	pk := sk.Public().(*mldsa65.PublicKey)
 	if !mldsa65.Verify(pk, digest, nil, sig) {
-		die("self-verify failed; refusing to ship a signature that does not verify")
+		return fmt.Errorf("self-verify failed; refusing to ship a signature that does not verify")
 	}
 
 	if err := writeFileExcl(outPath, sig, 0o644); err != nil {
-		die("write sig %s: %v", outPath, err)
+		return fmt.Errorf("write sig %s: %w", outPath, err)
 	}
-	_, _ = fmt.Fprintf(os.Stderr, "sign-mldsa: %s -> %s (sha256=%x, sig=%d bytes)\n",
+	_, _ = fmt.Fprintf(stderr, "sign-mldsa: %s -> %s (sha256=%x, sig=%d bytes)\n",
 		*in, outPath, digest[:8], len(sig))
+	return nil
 }
 
 func sha256File(path string) ([]byte, error) {
@@ -125,9 +142,4 @@ func writeFileExcl(path string, data []byte, mode os.FileMode) error {
 	defer func() { _ = f.Close() }()
 	_, err = f.Write(data)
 	return err
-}
-
-func die(format string, a ...any) {
-	_, _ = fmt.Fprintf(os.Stderr, "sign-mldsa: "+format+"\n", a...)
-	os.Exit(1)
 }

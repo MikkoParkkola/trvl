@@ -5,7 +5,7 @@
 
 ## What To Do
 
-You are setting up `trvl` — a travel MCP server that gives you real-time Google Flights and Google Hotels data. No API keys needed for core search. Run these steps in order:
+You are setting up `trvl` — a travel MCP server that gives you real-time Google Flights and Google Hotels data. No API keys needed. Run these steps in order:
 
 ### Step 1: Install
 
@@ -63,7 +63,7 @@ trvl flights HEL LHR 2026-07-01 --format json | head -5
 # Expected: JSON with flight results
 ```
 
-Tell the user: "trvl is installed with 1 smart MCP tool, 64 compatibility aliases, and 2 bundled Claude skills. It includes 37 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, cross-provider hotel price comparison with cross-currency savings display, and rental-car setup-aware provider statuses. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_hotels`, and `watch_price` continue to work as compatibility aliases. I can search flights, hotels, rental cars, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
+Tell the user: "trvl is installed with 1 smart MCP tool, 65 compatibility aliases, and 2 bundled Claude skills. It includes 37 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_hotels`, and `watch_price` continue to work as compatibility aliases. I can search flights, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
 
 ### Step 5: Build travel profile (recommended)
 
@@ -182,7 +182,7 @@ Save with `update_preferences`.
 | Field | Behavior |
 |-------|----------|
 | `home_airports` | Default origin for flight/trip/weekend/discover searches |
-| `display_currency` | Price display across the smart router and all 64 compatibility aliases |
+| `display_currency` | Price display across the smart router and all 65 compatibility aliases |
 | `no_dormitories` | `FilterHotels()` drops hostels, capsules, guesthouse rooms by chain name + regex |
 | `ensuite_only` | `FilterHotels()` drops shared-bathroom properties |
 | `min_hotel_stars` | Passed to Google Hotels API as search filter |
@@ -264,7 +264,7 @@ CLI alternative: `trvl prefs init`
 
 ## How To Use (after setup)
 
-You now have one `travel` MCP tool available by default, with 64 legacy tool names still callable as compatibility aliases. Use `travel` for new clients and the aliases when an older workflow names a specific tool:
+You now have one `travel` MCP tool available by default, with 63 legacy tool names still callable as compatibility aliases. Use `travel` for new clients and the aliases when an older workflow names a specific tool:
 
 ### search_flights — Find flights between airports
 ```json
@@ -317,7 +317,7 @@ Optional:
 ```json
 {"location": "Tokyo", "check_in": "2026-06-15", "check_out": "2026-06-18", "max_hotels": 3}
 ```
-Runs `search_hotels`, then fetches room-level availability and full amenity detail for the top hotels in one call. Optional:
+Runs `search_hotels`, then fetches room-level availability and full amenity detail for the top hotels in one call. Room results include best-effort normalized `cancellation_policy`, `refundable`, `free_cancellation`, `board`, `breakfast_included`, `nightly_price`, `total_price`, `taxes_and_fees`, and `taxes_fees_included` fields when providers expose them. Partial detail failures stay localized to typed `detail_errors` objects instead of failing the whole hotel search. Optional:
 - all `search_hotels` filters
 - `max_hotels`: top hotels to enrich (default 3, max 5)
 - `include_rooms`: true/false (default true)
@@ -382,6 +382,13 @@ Returns: optimal visit order, per-segment prices, total cost, savings vs worst o
 Merges individual fields into `~/.trvl/preferences.json`. Only send the
 fields you want to change — other fields are preserved. Always confirm
 with the user before calling this tool.
+
+### search_cars — Rental car search
+```json
+{"pickup_location": "HEL", "pickup_date": "2026-07-01", "dropoff_date": "2026-07-04", "currency": "EUR", "passengers": 3}
+```
+Optional: `dropoff_location`, `pickup_time`, `dropoff_time`, `driver_age`, `vehicle_class`, `max_price`, `provider`.
+Uses optional Skyscanner Car Hire access when `SKYSCANNER_API_KEY` is configured. Without credentials it returns a typed `provider_statuses` setup result instead of crashing or inventing prices.
 
 ### search_lounges — Find airport lounges at a given airport
 ```json
@@ -464,7 +471,7 @@ Returns: GO / WAIT / NO_GO verdict with parallel checks for flights, hotels, vis
 ```json
 {"name": "CORU House", "location": "Prague", "check_in": "2026-07-01", "check_out": "2026-07-05"}
 ```
-Searches all providers (Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld) using the property name as the search query, then fuzzy-matches results. Use when the user knows the exact hotel name.
+Searches all providers (Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld, HomeToGo) using the property name as the search query, then fuzzy-matches results. Use when the user knows the exact hotel name.
 
 ### search_ground — Buses, trains, ferries between cities
 ```json
@@ -472,13 +479,6 @@ Searches all providers (Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld
 ```
 Optional: `type` ("bus"|"train"|"ferry"), `currency`, `max_price`, `provider`
 Searches 20+ providers in parallel including FlixBus, RegioJet, Eurostar, DB, NS, SNCF, Trainline, ferries. Eurostar Snap fares auto-searched for valid routes.
-
-### search_cars — Rental car search
-```json
-{"pickup_location": "HEL", "pickup_date": "2026-07-01", "dropoff_date": "2026-07-04", "currency": "EUR", "passengers": 3}
-```
-Optional: `dropoff_location`, `pickup_time`, `dropoff_time`, `driver_age`, `vehicle_class`, `max_price`, `provider`.
-Uses optional Skyscanner Car Hire access when `SKYSCANNER_API_KEY` is configured. Without credentials it returns a typed `provider_statuses` setup result instead of crashing or inventing prices.
 
 ### onboard_profile — Progressive user interview
 ```json
@@ -496,7 +496,7 @@ Stores watch in `~/.trvl/watches.json`. Use `check_watches` to re-check prices, 
 ```json
 {}
 ```
-Shows per-provider success rate, average latency, and last error from `~/.trvl/health.jsonl`. Use to diagnose why a provider isn't returning results.
+Shows per-provider success rate, average latency, result-count quality, freshness, last error class, circuit-break state, next retry time, and fix hint from the redacted `~/.trvl/health.jsonl` log plus provider config state. Use to diagnose stale, sparse, blocked, or failing providers without exposing provider credentials.
 
 ### detect_travel_hacks — Find savings opportunities
 ```json

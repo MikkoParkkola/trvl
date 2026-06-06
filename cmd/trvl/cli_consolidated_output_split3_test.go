@@ -355,7 +355,7 @@ func TestMaybeShowFlightHackTips_JSONFormatV7(t *testing.T) {
 		},
 	}
 
-	maybeShowFlightHackTips(context.Background(), []string{"HEL"}, []string{"BCN"}, "2026-07-01", "", 1, result)
+	maybeShowFlightHackTips(context.Background(), []string{"HEL"}, []string{"BCN"}, "2026-07-01", "", 1, result, false)
 }
 
 func TestPrintExploreTable_WithCityIDOnly(t *testing.T) {

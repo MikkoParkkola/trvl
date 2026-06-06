@@ -25,6 +25,12 @@ var (
 	defaultClientOnce sync.Once
 )
 
+// HotelRateManager is the shared rate manager for hotel providers.
+var HotelRateManager = NewRateManager()
+
+// SearchBooking searches hotels on Booking.com. Overridable in tests.
+var SearchBooking = defaultSearchBooking
+
 // hotelGroup deduplicates concurrent in-flight searches with identical parameters.
 var hotelGroup singleflight.Group
 
@@ -337,6 +343,16 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		sortOrders = []string{""}
 	}
 
+	// Check rate limit status and warn the user.
+	// When throttled, requests may fail until the cooldown period elapses.
+	// Use 'trvl rate-status' to check current provider status.
+	if HotelRateManager.IsThrottled("google") {
+		slog.Warn("Google Hotels is throttled — requests may fail until cooldown elapses (60s). Use 'trvl rate-status'.")
+	}
+	if HotelRateManager.IsThrottled("booking") {
+		slog.Warn("Booking.com is throttled — requests may fail until cooldown elapses (60s). Use 'trvl rate-status'.")
+	}
+
 	var totalAvailable int
 	// Accumulate raw results per-page; MergeHotelResults deduplicates at the end.
 	var rawBatches [][]models.HotelResult
@@ -365,8 +381,10 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 				return nil, err
 			}
 			// Secondary sort failed — non-fatal, keep what we have.
+			HotelRateManager.Record429("google")
 			break
 		}
+		HotelRateManager.RecordRequest("google")
 
 		if sortIdx == 0 {
 			totalAvailable = firstPage.TotalAvailable
@@ -400,6 +418,8 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		Currency: opts.Currency,
 	}
 	var trivagoResults []models.HotelResult
+	var hometogoResults []models.HotelResult
+	var bookingResults []models.HotelResult
 	var externalResults []models.HotelResult
 	var providerStatuses []models.ProviderStatus
 	var auxWg sync.WaitGroup
@@ -413,6 +433,36 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 			return
 		}
 		trivagoResults = res
+	}()
+
+	// HomeToGo vacation-rental aggregator (Airbnb/Vrbo/Booking + local hosts).
+	// Non-fatal: failures log a warning and contribute zero results.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		res, err := SearchHomeToGo(ctx, location, auxOpts)
+		if err != nil {
+			slog.Warn("hometogo search failed", "error", err)
+			return
+		}
+		hometogoResults = res
+	}()
+
+	// Booking.com search — parallel with Google + Trivago + HomeToGo.
+	// Booking.com uses AWS WAF which blocks automated requests. The search
+	// is attempted but failures are expected and handled silently — the
+	// function falls back gracefully to Google + Trivago results.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		res, err := SearchBooking(ctx, location, auxOpts)
+		if err != nil {
+			slog.Debug("booking search failed", "error", err)
+			return
+		}
+		if len(res) > 0 {
+			bookingResults = tagHotelSource(res, "booking.com")
+		}
 	}()
 
 	// External providers (user-configured via configure_provider MCP tool).
@@ -466,6 +516,8 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// preserves all provider price sources and keeps the lowest price as the
 	// primary.
 	allBatches := append(rawBatches, trivagoResults)
+	allBatches = append(allBatches, tagHotelSource(hometogoResults, "hometogo"))
+	allBatches = append(allBatches, bookingResults)
 	allBatches = append(allBatches, externalResults)
 	if len(externalResults) > 0 {
 		slog.Info("external providers contributed results", "count", len(externalResults))
@@ -543,6 +595,14 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	for i := range hotels {
 		if hotels[i].BookingURL == "" {
 			hotels[i].BookingURL = buildHotelBookingURL(location, opts.CheckIn, opts.CheckOut)
+		}
+	}
+
+	// Mark adults-only properties so renderers and child-aware filters can act
+	// on them. Detection is centralised here so every provider path benefits.
+	for i := range hotels {
+		if models.IsAdultsOnly(hotels[i].Name, hotels[i].Description) {
+			hotels[i].AdultsOnly = true
 		}
 	}
 

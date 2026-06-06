@@ -138,10 +138,13 @@ func TestReadResource_Watches_EmptyStore(t *testing.T) {
 // --- handleSearchFlights validation (26.2% coverage) ---
 
 func TestHandleSearchFlights_MissingOriginDest_Push(t *testing.T) {
+	// Origin is now optional (resolved from prefs/geo), so an empty args map
+	// fails on the still-required destination. Disable geo for determinism.
+	t.Setenv("TRVL_NO_GEO", "1")
 	_, _, err := handleSearchFlights(context.Background(),
 		map[string]any{}, nil, nil, nil)
-	if err == nil || !contains(err.Error(), "origin and destination") {
-		t.Errorf("expected origin/dest error, got: %v", err)
+	if err == nil || !contains(err.Error(), "destination is required") {
+		t.Errorf("expected destination-required error, got: %v", err)
 	}
 }
 
@@ -149,8 +152,11 @@ func TestHandleSearchFlights_InvalidOriginIATA(t *testing.T) {
 	_, _, err := handleSearchFlights(context.Background(),
 		map[string]any{"origin": "TOOLONG", "destination": "BCN", "departure_date": "2026-06-15"},
 		nil, nil, nil)
-	if err == nil || !contains(err.Error(), "invalid origin") {
-		t.Errorf("expected invalid origin error, got: %v", err)
+	// An explicitly-supplied bad origin is still rejected; the message now
+	// reads "resolved origin ... is invalid" since origin flows through the
+	// optional-origin resolver.
+	if err == nil || !contains(err.Error(), "origin") {
+		t.Errorf("expected origin validation error, got: %v", err)
 	}
 }
 

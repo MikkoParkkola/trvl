@@ -1,0 +1,13 @@
+{
+  "code": "BCN",
+  "name": "Barcelona–El Prat Josep Tarradellas",
+  "intl_buffer_min": 120,
+  "domestic_buffer_min": 60,
+  "last_transit_depart": "00:00",
+  "exit_snippets": {
+    "airport_express": "From T1 arrivals, follow the \"Aerobus A1\" signs to the stop just outside; buy the ticket at the blue machine or onboard.",
+    "metro": "From T1, follow signs to \"Aeroport T1\" (Metro L9 Sud); validate your ticket at the gates.",
+    "bus": "From T1 arrivals, exit to the bus bays and check the line number on the platform display."
+  },
+  "taxi_caveats": "Use the official black-and-yellow taxi rank outside arrivals only. Meter starts ~EUR 2.55; a fixed airport supplement (~EUR 4.50) applies. All Barcelona taxis accept card."
+}

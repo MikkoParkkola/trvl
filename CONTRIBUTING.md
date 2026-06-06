@@ -2,9 +2,12 @@
 
 ## Purpose
 
-trvl is a travel MCP server and CLI: 41 MCP tools and 42 CLI commands stitched
+trvl is a travel MCP server and CLI: **1 smart `travel` MCP tool** (advertised) plus
+**64 compatibility aliases** and **55 CLI commands** stitched
 together against flight, hotel, ground-transport, destination, and deals
-providers. Pull requests are welcome from anyone — bug reports, missing
+providers. The smart router advertises a single tool (~378 tokens) instead of
+64 (~33,500 tokens) to keep AI context lean; the 64 aliases remain callable via
+the `intent` field. Pull requests are welcome from anyone — bug reports, missing
 airlines, parser breakages, new providers, documentation. Because trvl depends
 on a long tail of third-party Go libraries (cookie jars, HTTP clients, JS
 runtimes, CLI scaffolding), we strongly favor upstream fixes over local

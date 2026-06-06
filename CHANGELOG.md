@@ -7,11 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-04
+
 ### Added
+- **Door-to-door transfer planning** — closes the first/last-mile gap (the part travellers Google every trip). New capabilities, all reachable via the `travel` smart router:
+  - **Transfer comparison card** — `search_airport_transfers` now returns every mode (public transit, airport express, metro, taxi, private transfer, ride-hail) as a choosable option with time, price, pros/cons, and **grounded step-by-step instructions**, plus cheapest / fastest / best-value / most-luggage-friendly labels. No single "best" is imposed; the traveller decides.
+  - **Leave-By Scheduler** (`plan_journey` intent) — answers "when do I leave home to reach the gate comfortably, not last-minute?" by backward induction from the flight: airport check-in/security buffer + ground time + mode variance + walk + safety margin, with surfaced assumptions, a confidence band, and a fallback. Conservative by design — never optimistic.
+  - **Home→airport auto-stitch** — pass `origin` to `plan_journey` and it computes the home→airport leg itself (comparison card + schedule) instead of requiring the ground option by hand.
+  - **Calendar handoff** — `plan_journey` with `as_ics` returns an iCalendar `.ics` carrying a "Leave home" event with a reminder alarm; drop it straight into Apple Calendar, Google Calendar, or Outlook.
+  - **Proactive surfacing** — after a flight search, trvl now offers the airport transfer and the leave-by schedule automatically.
+  - **Ride-hail options** — Uber and Bolt as deep-links in the card (no API, no scraping, no key); the app shows the real price before you confirm.
+  - **Curated airport knowledge base** — 31 major global hubs with conservative, grounded check-in/security buffers so the scheduler uses airport-specific guidance instead of a generic default.
+- **Time + location awareness by default** (CLI + MCP) — flight search resolves a missing origin from your saved home airport, then best-effort from your current location; results carry booking-time context. Includes an update-checker fix.
+
+### Changed
+- **Token efficiency front-and-centre** — the smart `travel` router advertises **1 tool (~378 tokens) instead of 64 (~33,500 tokens)** in `tools/list`, a measured **98.9% smaller context footprint**. README/npm now lead with this; corrected tool-count drift across all surfaces and added a registry-derived guard so the counts can't silently drift again.
+- **Go toolchain pinned to 1.26.4** (was 1.26.3) — picks up the upstream standard-library fixes for GO-2026-5037 (crypto/x509) and GO-2026-5039 (net/textproto).
+- Commercial-license sponsor rail added to the README.
+
+### CI / Release
+- npm package now published via **Trusted Publishing (OIDC)**, dropping the stored token; opt-in npm-publish job wired into the release workflow.
+
+## [1.5.0] - 2026-05-26
+
+### Added
+- **Wizz Air flight provider** — public unauthenticated `be.wizzair.com` timetable endpoint (no key); recovers another ultra-LCC that Google/GDS omit, mapped into the aggregated flight search.
+- **Transavia flight provider (opt-in)** — official public API, env-gated via `TRANSAVIA_API_KEY` (AFKLM-style opt-in); no-op when unset.
+- **HomeToGo hotel provider** — public SSR+JSON vacation-rental aggregator (no key/browser/proxy); brings whole-apartment inventory alongside the existing 5 hotel sources.
+- **Travelpayouts/Aviasales price signals (opt-in)** — `trvl pricetrends ORIGIN DEST`, env-gated via `TRAVELPAYOUTS_TOKEN`; indicative cached fares, deliberately kept out of the bookable merge. Disabled by default.
+- **Air quality** — `trvl air CITY` via Open-Meteo Air Quality (European AQI + pollutants), free, no key.
+- **Sun times** — `trvl sun CITY` via sunrise-sunset.org (sunrise/sunset/twilight), free, no key.
+- **Bike-share** — `trvl bikes CITY` via CityBikes (nearest network + live station availability), free, no key.
+- **Full per-leg flight detail in CLI tables** — aircraft type, layover-annotated route, human dates with overnight (`+1`) markers.
+- **Direct booking links** beneath flight and hotel result tables (numbered to a `#` column); hotels also link photos.
+- **Adults-only hotel filter** — `--children` auto-excludes adults-only properties for parties with children.
+
+### Changed
+- Hotel search surfaces degraded/failed providers in CLI output; Booking.com now fails loudly with an actionable cookie fix-hint instead of silently.
+
+## [1.3.0] - 2026-05-25
+
+### Added
+- **Nested/overlapping round-trip optimizer (MIK-3076)** — `optimize_nested_rt` MCP tool and `trvl nested` CLI find whether overlapping round-trips beat two separate returns for two visits between the same cities; both windows priced live in parallel. `optimize_booking` routes here when `multi_visit=true`.
+- **Direct Ryanair provider (MIK-4963)** — recovers the ultra-LCC Google/GDS omit, via Fare Finder (no API key); carrier/flight number, exact times+price, bag-aware comparable cost.
+- **Comparable all-in flight ranking (MIK-4962)** — rank by base fare + unavoidable bag fees − per-user frequent-flyer benefits, FX-normalized; LCC base fares no longer outrank bag-included fares.
+- **Evidence envelope (MIK-4950)** — richer per-provider status + completeness; a provider timeout never renders as "no flights found".
+- **Multisource resolver for flights & ground (MIK-4951)** — collapses the same itinerary across providers into one result with `cheapest_source`.
+- **Price freshness + source-quality registry (MIK-4952)** — stale prices are never labeled "cheapest".
+- **Kiwi advanced search (MIK-4956 Phase A)** — round-trip + flexible-date (±0–3 days) pass-through.
+- **Canonicalizers (MIK-4949)** — shared ParseMoney/ParseTemporal/ParseDuration/ParsePlace/FormatProviderDate in internal/models.
 - **MIK-3087 hotel arbitrage engine** — `internal/hotelarb` now tracks active hotel holds in `~/.trvl/active_holds.json`, evaluates manual re-book decisions against fresh quotes, detects sub-48h last-minute hotel drops at 25%+ below last seen price, and compares hotel points offers against cash using conservative loyalty-program floor values.
 - **Hotel re-book CLI flow** — `trvl prices hold` saves a refundable reservation and `trvl prices rebook` fetches current provider prices (or accepts `--current-price`) to present a hold-current vs. manual re-book recommendation.
 - **Last-minute hotel watch mode** — `trvl watch add --type hotel --last-minute` and MCP `watch_price(last_minute=true)` surface sub-48h hotel drops through the existing watch notifier/webhook path.
 - **Hotel points arbitrage offers** — `trvl points-value --offer program:points[:cash_fees]` compares multiple hotel redemption options in one command; Wyndham Rewards was added to the hotel loyalty program table.
+
+### Added
+- **`trvl flights --rail-fly` (MIK-3079)** — opt-in expansion that surfaces KL/AF Air&Rail bundles from rail-connected origins (e.g. BRU/ANR/ZYR for AMS departures), even outside the default hub list.
+
+### Fixed
+- **Rail+Fly arbitrage gate (MIK-3079)** — the flight CLI gated rail+fly on the destination airport instead of the origin hub, so departures from a hub (e.g. AMS) never triggered it. Now keyed on origin; the detector fires for the routes it was built for.
+
+### Changed
+- **MCP tool annotations complete (MIK-2984)** — every advertised tool carries a ToolAnnotations block (behavior hints + title); coverage test (mcp/tool_annotations_test.go) enforces it.
+- Tool surface 63 → 64 compatibility aliases (added optimize_nested_rt); CLI 50 → 51 commands (added nested).
 
 ## [1.2.0] - 2026-05-02
 

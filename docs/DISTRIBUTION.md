@@ -54,7 +54,7 @@ The 2026-05-12 baseline captured 337 GitHub release asset downloads and 0 npm `t
 
 Short description:
 
-> AI travel agent with 1 smart MCP tool plus 64 compatibility aliases for flights, hotels, rental cars, trains, buses, ferries, price alerts, hidden-city search, and award redemptions. Free core flight/hotel/ground providers, no personal API keys for core search, one Go binary.
+> AI travel agent with 1 smart MCP tool plus 65 compatibility aliases for flights, hotels, rental cars, trains, buses, ferries, price alerts, hidden-city search, and award redemptions. Free core providers, no personal API keys, one Go binary.
 
 Install snippet:
 

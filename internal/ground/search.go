@@ -405,6 +405,10 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	// before MaxPrice and Type filters are applied.
 	allRoutes = filterGroundRoutes(allRoutes, opts)
 
+	// Collapse the same physical connection returned by multiple providers into
+	// one route carrying every provider as a PriceSource (cheapest headline).
+	allRoutes = models.ResolveGroundSources(allRoutes)
+
 	// Sort by price
 	sort.Slice(allRoutes, func(i, j int) bool {
 		return allRoutes[i].Price < allRoutes[j].Price

@@ -21,24 +21,37 @@ func gridCmd() *cobra.Command {
 		returnTo       string
 		format         string
 		targetCurrency string
+		noGeo          bool
 	)
 
 	cmd := &cobra.Command{
-		Use:   "grid ORIGIN DESTINATION",
+		Use:   "grid [ORIGIN] DESTINATION",
 		Short: "Show a departure x return price grid",
 		Long: `Show a 2D price grid of departure date x return date combinations.
 
-ORIGIN and DESTINATION are IATA airport codes (e.g. HEL, NRT, JFK).
+ORIGIN and DESTINATION are IATA airport codes (e.g. HEL, NRT, JFK). ORIGIN is
+optional: omit it and trvl resolves it from your saved home airport or current
+location (geo-IP, best-effort; disable with --no-geo).
 The grid shows the cheapest round-trip price for each date combination.
 
 Examples:
+  trvl grid NRT --depart-from 2026-07-01 --depart-to 2026-07-07 --return-from 2026-07-08 --return-to 2026-07-14
   trvl grid HEL NRT --depart-from 2026-07-01 --depart-to 2026-07-07 --return-from 2026-07-08 --return-to 2026-07-14
   trvl grid HEL BCN --depart-from 2026-06-15 --depart-to 2026-06-20 --return-from 2026-06-22 --return-to 2026-06-28
   trvl grid HEL NRT --format json`,
-		Args: cobra.ExactArgs(2),
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			origin := strings.ToUpper(args[0])
-			destination := strings.ToUpper(args[1])
+			var originArg, destination string
+			if len(args) == 2 {
+				originArg = args[0]
+				destination = strings.ToUpper(args[1])
+			} else {
+				destination = strings.ToUpper(args[0])
+			}
+			origin, err := resolveCLIOrigin(cmd.Context(), originArg, format, noGeo)
+			if err != nil {
+				return err
+			}
 
 			if err := models.ValidateIATA(origin); err != nil {
 				return fmt.Errorf("invalid origin: %w", err)
@@ -73,6 +86,7 @@ Examples:
 	cmd.Flags().StringVar(&returnTo, "return-to", "", "End of return range (YYYY-MM-DD); default: return-from + 6 days")
 	cmd.Flags().StringVar(&format, "format", "table", "Output format: table, json")
 	cmd.Flags().StringVar(&targetCurrency, "currency", "", "Convert prices to this currency (e.g. EUR, USD). Empty = show API default")
+	cmd.Flags().BoolVar(&noGeo, "no-geo", false, "Disable geo-IP origin detection (also via TRVL_NO_GEO=1)")
 
 	cmd.ValidArgsFunction = airportCompletion
 

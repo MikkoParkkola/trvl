@@ -340,13 +340,13 @@ func TestSearchHotelsByName_NoDates(t *testing.T) {
 }
 
 func TestSearchHotelByName_EmptyQuery(t *testing.T) {
-	if _, err := SearchHotelByName(context.Background(), "", "2026-07-01", "2026-07-05"); err == nil {
+	if _, err := SearchHotelByName(context.Background(), "", "2026-07-01", "2026-07-05", "EUR"); err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestSearchHotelByName_NoDates(t *testing.T) {
-	if _, err := SearchHotelByName(context.Background(), "Hotel", "", ""); err == nil {
+	if _, err := SearchHotelByName(context.Background(), "Hotel", "", "", "EUR"); err == nil {
 		t.Fatal("expected error")
 	}
 }

@@ -54,6 +54,7 @@ func init() {
 	rootCmd.AddCommand(datesCmd())
 	rootCmd.AddCommand(hotelsCmd())
 	rootCmd.AddCommand(pricesCmd())
+	rootCmd.AddCommand(serpapiCmd())
 	rootCmd.AddCommand(forecastCmd())
 	rootCmd.AddCommand(reviewsCmd)
 	rootCmd.AddCommand(exploreCmd())
@@ -76,12 +77,17 @@ func init() {
 	rootCmd.AddCommand(watchCmd())
 	rootCmd.AddCommand(roomsCmd())
 	rootCmd.AddCommand(hacksCmd())
+	rootCmd.AddCommand(nestedCmd())
 	rootCmd.AddCommand(hiddenCityCmd())
 	rootCmd.AddCommand(accomHackCmd())
 	rootCmd.AddCommand(mcpCmd())
 	rootCmd.AddCommand(prefsCmd())
 	rootCmd.AddCommand(tripsCmd())
 	rootCmd.AddCommand(weatherCmd())
+	rootCmd.AddCommand(airCmd())
+	rootCmd.AddCommand(sunCmd())
+	rootCmd.AddCommand(bikesCmd())
+	rootCmd.AddCommand(pricetrendsCmd())
 	rootCmd.AddCommand(baggageCmd())
 	rootCmd.AddCommand(whenCmd())
 	rootCmd.AddCommand(discoverCmd())
@@ -103,6 +109,7 @@ func init() {
 	rootCmd.AddCommand(railPassCmd())
 	rootCmd.AddCommand(expensesCmd())
 	rootCmd.AddCommand(opportunityScoreCmd())
+	rootCmd.AddCommand(rateStatusCmd())
 }
 
 // airportCompletion provides IATA code completion for cobra commands.

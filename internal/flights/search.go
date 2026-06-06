@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/searchctx"
 	"golang.org/x/sync/singleflight"
@@ -37,6 +38,11 @@ type SearchOptions struct {
 	SortBy     models.SortBy     // Result sort order
 	Airlines   []string          // Restrict to these airline IATA codes
 	Adults     int               // Number of adult passengers (default: 1)
+
+	// DepartureFlexDays / ReturnFlexDays enable Kiwi's flexible-date search
+	// (cheapest within +/- N days). Range 0-3; values are clamped. 0 = exact.
+	DepartureFlexDays int
+	ReturnFlexDays    int
 
 	// Currency forces Google Flights to return prices in this currency by
 	// setting the gl= (geolocation) query parameter. When empty, no gl= is
@@ -166,14 +172,14 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 		statuses = append(statuses, models.ProviderStatus{
 			ID:      "google_flights",
 			Name:    "Google Flights",
-			Status:  "ok",
+			Status:  okOrNoHit(len(googleFlights)),
 			Results: len(googleFlights),
 		})
 	} else {
 		statuses = append(statuses, models.ProviderStatus{
 			ID:     "google_flights",
 			Name:   "Google Flights",
-			Status: "error",
+			Status: models.ClassifyProviderError(googleErr),
 			Error:  googleErr.Error(),
 		})
 	}
@@ -188,7 +194,7 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 			statuses = append(statuses, models.ProviderStatus{
 				ID:     "kiwi",
 				Name:   "Kiwi",
-				Status: "error",
+				Status: models.ClassifyProviderError(kiwiErr),
 				Error:  kiwiErr.Error(),
 			})
 		} else {
@@ -196,7 +202,7 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 			statuses = append(statuses, models.ProviderStatus{
 				ID:      "kiwi",
 				Name:    "Kiwi",
-				Status:  "ok",
+				Status:  okOrNoHit(len(kiwiFlights)),
 				Results: len(kiwiFlights),
 			})
 		}
@@ -221,7 +227,7 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 			statuses = append(statuses, models.ProviderStatus{
 				ID:     "skiplagged",
 				Name:   "Skiplagged",
-				Status: "error",
+				Status: models.ClassifyProviderError(err),
 				Error:  err.Error(),
 			})
 		} else if skiplaggedResult != nil {
@@ -230,7 +236,7 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 			statuses = append(statuses, models.ProviderStatus{
 				ID:      "skiplagged",
 				Name:    "Skiplagged",
-				Status:  "ok",
+				Status:  okOrNoHit(len(skiplaggedFlights)),
 				Results: len(skiplaggedFlights),
 			})
 		}
@@ -244,14 +250,135 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 		})
 	}
 
-	mergedFlights := mergeFlightResults(googleFlights, kiwiFlights, skiplaggedFlights, opts)
-	if googleSucceeded || kiwiSucceeded || skiplaggedSucceeded {
+	// Ryanair direct (Fare Finder) — recovers the ultra-LCC that Google/GDS omit.
+	var ryanairFlights []models.FlightResult
+	var ryanairErr error
+	ryanairSucceeded := false
+	if ryanairSearchEligible(client, opts) {
+		ryanairFlights, ryanairErr = SearchRyanair(ctx, origin, destination, date, currency, opts)
+		if ryanairErr != nil {
+			slog.Warn("ryanair flight search failed", "origin", origin, "destination", destination, "date", date, "error", ryanairErr)
+			statuses = append(statuses, models.ProviderStatus{
+				ID:     "ryanair",
+				Name:   "Ryanair",
+				Status: models.ClassifyProviderError(ryanairErr),
+				Error:  ryanairErr.Error(),
+			})
+		} else {
+			ryanairSucceeded = true
+			statuses = append(statuses, models.ProviderStatus{
+				ID:      "ryanair",
+				Name:    "Ryanair",
+				Status:  okOrNoHit(len(ryanairFlights)),
+				Results: len(ryanairFlights),
+			})
+		}
+	} else {
+		statuses = append(statuses, models.ProviderStatus{
+			ID:      "ryanair",
+			Name:    "Ryanair",
+			Status:  "skipped",
+			Error:   "options not supported by Ryanair direct (round-trip, non-economy cabin, alliance filter, or a non-FR airline filter)",
+			FixHint: "search one-way economy, or drop the alliance/airline filter",
+		})
+	}
+
+	// Wizz Air direct (timetable) recovers the CEE ultra-LCC that Google/GDS omit.
+	var wizzairFlights []models.FlightResult
+	var wizzairErr error
+	wizzairSucceeded := false
+	if wizzairSearchEligible(client, opts) {
+		wizzairFlights, wizzairErr = SearchWizzair(ctx, origin, destination, date, currency, opts)
+		if wizzairErr != nil {
+			slog.Warn("wizzair flight search failed", "origin", origin, "destination", destination, "date", date, "error", wizzairErr)
+			statuses = append(statuses, models.ProviderStatus{
+				ID:     "wizzair",
+				Name:   "Wizz Air",
+				Status: models.ClassifyProviderError(wizzairErr),
+				Error:  wizzairErr.Error(),
+			})
+		} else {
+			wizzairSucceeded = true
+			statuses = append(statuses, models.ProviderStatus{
+				ID:      "wizzair",
+				Name:    "Wizz Air",
+				Status:  okOrNoHit(len(wizzairFlights)),
+				Results: len(wizzairFlights),
+			})
+		}
+	} else {
+		statuses = append(statuses, models.ProviderStatus{
+			ID:      "wizzair",
+			Name:    "Wizz Air",
+			Status:  "skipped",
+			Error:   "options not supported by Wizz Air direct (round-trip / non-economy cabin / alliance filter / non-W6 airline filter)",
+			FixHint: "search one-way economy; drop the alliance/airline filter",
+		})
+	}
+
+	// Transavia direct (Flight Offers API) is opt-in, requires TRANSAVIA_API_KEY.
+	// Mirrors the AFKLM opt-in pattern: silently skipped when no key is set.
+	var transaviaFlights []models.FlightResult
+	var transaviaErr error
+	transaviaSucceeded := false
+	if transaviaSearchEligible(client, opts) {
+		transaviaFlights, transaviaErr = SearchTransavia(ctx, origin, destination, date, currency, opts)
+		if transaviaErr != nil {
+			slog.Warn("transavia flight search failed", "origin", origin, "destination", destination, "date", date, "error", transaviaErr)
+			statuses = append(statuses, models.ProviderStatus{
+				ID:     "transavia",
+				Name:   "Transavia",
+				Status: models.ClassifyProviderError(transaviaErr),
+				Error:  transaviaErr.Error(),
+			})
+		} else {
+			transaviaSucceeded = true
+			statuses = append(statuses, models.ProviderStatus{
+				ID:      "transavia",
+				Name:    "Transavia",
+				Status:  okOrNoHit(len(transaviaFlights)),
+				Results: len(transaviaFlights),
+			})
+		}
+	} else {
+		fixHint := "search one-way; drop the alliance/airline filter"
+		reason := "options not supported by Transavia direct (round-trip / alliance filter / non-HV/TO airline filter)"
+		if !transaviaConfigured() {
+			reason = "Transavia is opt-in and requires a free developer API key"
+			fixHint = "set TRANSAVIA_API_KEY (free key from developer.transavia.com)"
+		}
+		statuses = append(statuses, models.ProviderStatus{
+			ID:      "transavia",
+			Name:    "Transavia",
+			Status:  "skipped",
+			Error:   reason,
+			FixHint: fixHint,
+		})
+	}
+
+	// Normalize all provider prices to the session currency so resolution and
+	// ranking compare like with like (Skiplagged returns USD, Kiwi its own).
+	// Best-effort and offline-safe: same-currency conversions never hit the net.
+	target := currency
+	if opts.Currency != "" {
+		target = opts.Currency
+	}
+	normalizeFlightCurrencies(ctx, googleFlights, target, destinations.ConvertCurrency)
+	normalizeFlightCurrencies(ctx, kiwiFlights, target, destinations.ConvertCurrency)
+	normalizeFlightCurrencies(ctx, skiplaggedFlights, target, destinations.ConvertCurrency)
+	normalizeFlightCurrencies(ctx, ryanairFlights, target, destinations.ConvertCurrency)
+	normalizeFlightCurrencies(ctx, wizzairFlights, target, destinations.ConvertCurrency)
+	normalizeFlightCurrencies(ctx, transaviaFlights, target, destinations.ConvertCurrency)
+
+	mergedFlights := mergeFlightResults(googleFlights, kiwiFlights, skiplaggedFlights, opts, ryanairFlights, wizzairFlights, transaviaFlights)
+	if googleSucceeded || kiwiSucceeded || skiplaggedSucceeded || ryanairSucceeded || wizzairSucceeded || transaviaSucceeded {
 		return &models.FlightSearchResult{
 			Success:          true,
 			Count:            len(mergedFlights),
 			TripType:         tripTypeForSearch(opts),
 			Flights:          mergedFlights,
 			ProviderStatuses: statuses,
+			Completeness:     models.ComputeCompleteness(statuses),
 		}, nil
 	}
 
@@ -264,6 +391,15 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 	}
 	if skiplaggedErr != nil {
 		errs = append(errs, skiplaggedErr)
+	}
+	if ryanairErr != nil {
+		errs = append(errs, ryanairErr)
+	}
+	if wizzairErr != nil {
+		errs = append(errs, wizzairErr)
+	}
+	if transaviaErr != nil {
+		errs = append(errs, transaviaErr)
 	}
 	if len(errs) > 0 {
 		err := errors.Join(errs...)

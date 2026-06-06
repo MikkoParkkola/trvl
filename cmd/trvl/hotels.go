@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -36,6 +38,7 @@ Examples:
 	cmd.Flags().String("checkin", "", "Check-in date (YYYY-MM-DD, required)")
 	cmd.Flags().String("checkout", "", "Check-out date (YYYY-MM-DD, required)")
 	cmd.Flags().Int("guests", 2, "Number of guests")
+	cmd.Flags().Int("children", 0, "Number of children in the party (excludes adults-only properties when > 0)")
 	cmd.Flags().Int("stars", 0, "Minimum star rating (0=any, 2-5)")
 	cmd.Flags().String("sort", "cheapest", "Sort by: cheapest, rating, distance, stars")
 	cmd.Flags().String("currency", "", "Target currency (e.g. EUR, USD). Empty = API default. Passed to Google if supported, otherwise converted")
@@ -87,6 +90,7 @@ func runHotels(cmd *cobra.Command, args []string) error {
 	checkin, _ := cmd.Flags().GetString("checkin")
 	checkout, _ := cmd.Flags().GetString("checkout")
 	guests, _ := cmd.Flags().GetInt("guests")
+	children, _ := cmd.Flags().GetInt("children")
 	stars, _ := cmd.Flags().GetInt("stars")
 	sortBy, _ := cmd.Flags().GetString("sort")
 	currency, _ := cmd.Flags().GetString("currency")
@@ -181,6 +185,20 @@ func runHotels(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("hotel search: %w", err)
 	}
 
+	// When the party includes children, never surface adults-only properties.
+	if children > 0 && result != nil {
+		var hidden int
+		result.Hotels, hidden = excludeAdultsOnly(result.Hotels)
+		if hidden > 0 {
+			result.Count = len(result.Hotels)
+			plural := "property"
+			if hidden != 1 {
+				plural = "properties"
+			}
+			fmt.Printf("Note: %d adults-only %s hidden (party includes children).\n", hidden, plural)
+		}
+	}
+
 	// Cache best result for `trvl share --last`.
 	if result != nil && len(result.Hotels) > 0 {
 		h := result.Hotels[0]
@@ -255,7 +273,7 @@ func formatHotelsTable(ctx context.Context, targetCurrency, location string, res
 		}
 	}
 
-	headers := []string{"Name", "Stars", "Rating", "Reviews", "Price"}
+	headers := []string{"#", "Name", "Stars", "Rating", "Reviews", "Price"}
 	if showSources {
 		headers = append(headers, "Sources")
 	}
@@ -269,7 +287,7 @@ func formatHotelsTable(ctx context.Context, targetCurrency, location string, res
 	for _, h := range result.Hotels {
 		prices = prices.With(h.Price)
 	}
-	for _, h := range result.Hotels {
+	for i, h := range result.Hotels {
 		starsStr := ""
 		if h.Stars > 0 {
 			starsStr = fmt.Sprintf("%d", h.Stars)
@@ -287,10 +305,17 @@ func formatHotelsTable(ctx context.Context, targetCurrency, location string, res
 			priceStr = prices.Apply(h.Price, fmt.Sprintf("%.0f %s", h.Price, h.Currency))
 		}
 		amenStr := strings.Join(h.Amenities, ", ")
+		if h.AdultsOnly {
+			if amenStr != "" {
+				amenStr = "adults-only, " + amenStr
+			} else {
+				amenStr = "adults-only"
+			}
+		}
 		if len(amenStr) > 40 {
 			amenStr = amenStr[:37] + "..."
 		}
-		row := []string{h.Name, starsStr, colorizeRating(h.Rating, ratingStr), reviewsStr, priceStr}
+		row := []string{fmt.Sprintf("%d", i+1), h.Name, starsStr, colorizeRating(h.Rating, ratingStr), reviewsStr, priceStr}
 		if showSources {
 			row = append(row, hotelSourceLabels(h))
 		}
@@ -306,6 +331,19 @@ func formatHotelsTable(ctx context.Context, targetCurrency, location string, res
 	}
 
 	models.FormatTable(os.Stdout, headers, rows)
+
+	// Per-property links (photos + booking), numbered to the table's "#"
+	// column, so every hotel shown is directly viewable and bookable.
+	printHotelLinks(os.Stdout, result.Hotels, location)
+
+	// Transparency: surface providers that errored or were disabled so the
+	// user knows the listed prices may be incomplete (e.g. Booking.com — the
+	// primary discount source — being unavailable). Additive: JSON output is
+	// unchanged and already carries provider_statuses.
+	if warn := formatProviderWarning(result.ProviderStatuses); warn != "" {
+		fmt.Println()
+		fmt.Println(warn)
+	}
 
 	// Summary
 	if len(result.Hotels) > 0 {
@@ -348,6 +386,113 @@ func formatHotelsTable(ctx context.Context, targetCurrency, location string, res
 	}
 
 	return nil
+}
+
+// hotelSearchLinks builds per-property links so the user can view photos and
+// book. Booking.com is listed first (captures the user's negotiated rate and
+// shows full photo galleries); Google Hotels is the cross-check. Both are
+// deterministic search-interface URLs keyed on the hotel name (+ location),
+// not fabricated per-resource deep links.
+func hotelSearchLinks(h models.HotelResult, location string) (booking, google string) {
+	q := strings.TrimSpace(h.Name)
+	loc := strings.TrimSpace(location)
+	if loc != "" && !strings.Contains(strings.ToLower(q), strings.ToLower(loc)) {
+		q = q + " " + loc
+	}
+	enc := url.QueryEscape(q)
+	booking = "https://www.booking.com/searchresults.html?ss=" + enc
+	google = "https://www.google.com/travel/search?q=" + enc
+	return
+}
+
+// printHotelLinks lists per-property photo/booking links beneath the hotel
+// table, numbered to match the "#" column. Always prints when hotels exist so
+// every option is directly viewable; the direct image URL is included when the
+// provider supplied one.
+func printHotelLinks(w io.Writer, hotels []models.HotelResult, location string) {
+	if len(hotels) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "Links (photos & booking):")
+	for i, h := range hotels {
+		booking, google := hotelSearchLinks(h, location)
+		_, _ = fmt.Fprintf(w, "  [%d] %s\n", i+1, h.Name)
+		_, _ = fmt.Fprintf(w, "      Booking.com:   %s\n", booking)
+		_, _ = fmt.Fprintf(w, "      Google Hotels: %s\n", google)
+		if u := strings.TrimSpace(h.ImageURL); u != "" {
+			_, _ = fmt.Fprintf(w, "      Photo:         %s\n", u)
+		}
+	}
+}
+
+// excludeAdultsOnly returns the hotels with every adults-only property
+// removed, plus the count removed. The input slice is not mutated.
+func excludeAdultsOnly(in []models.HotelResult) (kept []models.HotelResult, hidden int) {
+	kept = make([]models.HotelResult, 0, len(in))
+	for _, h := range in {
+		if h.AdultsOnly {
+			hidden++
+			continue
+		}
+		kept = append(kept, h)
+	}
+	return kept, hidden
+}
+
+// formatProviderWarning builds a one-line transparency warning when any
+// provider errored or was disabled, so the user knows the listed prices may be
+// incomplete. Returns "" when every provider reported "ok" (or there are
+// none), in which case the caller prints nothing. Pure function — no I/O — so
+// it can be unit-tested with fabricated ProviderStatus structs.
+func formatProviderWarning(statuses []models.ProviderStatus) string {
+	total := len(statuses)
+	if total == 0 {
+		return ""
+	}
+
+	var down, hints []string
+	for _, s := range statuses {
+		if s.Status != "error" && s.Status != "disabled" {
+			continue
+		}
+		label := s.Name
+		if label == "" {
+			label = s.ID
+		}
+		detail := truncateErr(s.Error)
+		if detail == "" {
+			detail = s.Status
+		}
+		down = append(down, fmt.Sprintf("%s: %s", label, detail))
+		if s.FixHint != "" {
+			hints = append(hints, fmt.Sprintf("%s — %s", label, s.FixHint))
+		}
+	}
+	if len(down) == 0 {
+		return ""
+	}
+
+	warn := fmt.Sprintf("%s %d of %d sources unavailable (%s) — listed prices may be incomplete.",
+		models.Yellow("⚠"), len(down), total, strings.Join(down, ", "))
+	if len(hints) > 0 {
+		warn += "\n  Fix: " + strings.Join(hints, "; ")
+	}
+	return warn
+}
+
+// truncateErr trims provider error strings to a single short, single-line
+// fragment suitable for inline display in the warning.
+func truncateErr(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = strings.TrimSpace(s[:i])
+	}
+	const max = 60
+	if len(s) > max {
+		s = strings.TrimSpace(s[:max-1]) + "…"
+	}
+	return s
 }
 
 func hotelSourceLabels(h models.HotelResult) string {

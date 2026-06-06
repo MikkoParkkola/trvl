@@ -1,7 +1,10 @@
 package providers
 
 import (
+	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -21,6 +24,10 @@ func TestClassifyProviderError_AllCodes(t *testing.T) {
 		{"http_403", "http 403 forbidden", FixHintAkamaiBlock},
 		{"http_202", "http 202 challenge page", FixHintAkamaiBlock},
 		{"access_denied", "access denied by provider waf", FixHintAkamaiBlock},
+
+		// Missing browser cookies (Booking.com kooky auto-detect found none)
+		{"browser_cookies_missing", "browser cookies missing for booking: no cookies found", FixHintBrowserCookiesMissing},
+		{"no_browser_cookies", "no browser cookies available for the configured browser", FixHintBrowserCookiesMissing},
 
 		// Cookie / auth failure
 		{"cookie_expired", "cookie jar expired, re-login required", FixHintCookieExpired},
@@ -86,6 +93,77 @@ func TestClassifyProviderError_OrderingPriority(t *testing.T) {
 	code, _ = classifyProviderError(errors.New("http 403, cookie header was present"))
 	if code != FixHintAkamaiBlock {
 		t.Errorf("WAF (403) should beat cookie when both match, got %q", code)
+	}
+
+	// "browser cookies missing" must beat the generic cookie-expired branch:
+	// the message contains "cookie" but the root cause is no session at all.
+	code, _ = classifyProviderError(errors.New("browser cookies missing for booking"))
+	if code != FixHintBrowserCookiesMissing {
+		t.Errorf("missing browser cookies should beat COOKIE_EXPIRED, got %q", code)
+	}
+}
+
+// TestSearchProvider_BrowserCookiesMissing verifies that a browser-cookie
+// provider with the escape hatch enabled (e.g. Booking.com) fails loudly when
+// no browser cookies are available, and that the failure is classified as
+// BOOKING_COOKIES_MISSING with an actionable fix hint rather than silently
+// returning zero results. The test binary never has real browser cookies, so
+// applyBrowserCookies returns false deterministically (offline).
+func TestSearchProvider_BrowserCookiesMissing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"hotels":[]}`))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	reg, err := NewRegistryAt(dir)
+	if err != nil {
+		t.Fatalf("NewRegistryAt: %v", err)
+	}
+	cfg := &ProviderConfig{
+		ID:       "booking",
+		Name:     "Booking.com",
+		Category: "hotels",
+		Endpoint: srv.URL + "/search",
+		Method:   "GET",
+		Cookies:  CookieConfig{Source: "browser"},
+		Auth: &AuthConfig{
+			Type:               "preflight",
+			PreflightURL:       srv.URL + "/preflight",
+			BrowserEscapeHatch: true,
+		},
+		ResponseMapping: ResponseMapping{ResultsPath: "hotels"},
+		RateLimit:       RateLimitConfig{RequestsPerSecond: 100, Burst: 100},
+	}
+	if err := reg.Save(cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	rt := NewRuntime(reg)
+	_, statuses, err := rt.SearchHotels(context.Background(), "Paris", 48.85, 2.35,
+		"2026-06-01", "2026-06-03", "EUR", 2, nil)
+	if err == nil {
+		t.Fatal("expected error when browser cookies are missing, got nil")
+	}
+
+	var found bool
+	for _, s := range statuses {
+		if s.ID != "booking" {
+			continue
+		}
+		found = true
+		if s.Status != "error" {
+			t.Errorf("status = %q, want error", s.Status)
+		}
+		if s.FixHintCode != string(FixHintBrowserCookiesMissing) {
+			t.Errorf("FixHintCode = %q, want %q", s.FixHintCode, FixHintBrowserCookiesMissing)
+		}
+		if s.FixHint == "" {
+			t.Error("FixHint should be non-empty and actionable")
+		}
+	}
+	if !found {
+		t.Fatal("no provider status for booking")
 	}
 }
 

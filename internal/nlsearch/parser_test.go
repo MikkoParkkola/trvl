@@ -87,6 +87,13 @@ func TestHeuristic_ISODateRange(t *testing.T) {
 	}
 }
 
+func TestHeuristic_IgnoresInvalidISODate(t *testing.T) {
+	p := Heuristic("from HEL to BCN on 0000-00-00", "2026-04-12")
+	if p.Date != "" || p.CheckIn != "" {
+		t.Fatalf("invalid ISO date populated date fields: %#v", p)
+	}
+}
+
 func TestHeuristic_NextWeekend(t *testing.T) {
 	// 2026-04-12 is a Sunday. Next Saturday = 2026-04-18.
 	p := Heuristic("anywhere next weekend", "2026-04-12")

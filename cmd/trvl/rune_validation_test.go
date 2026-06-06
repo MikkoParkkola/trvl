@@ -8,22 +8,29 @@ import "testing"
 // ---------------------------------------------------------------------------
 
 func TestDatesCmd_RequiresThreeArgs(t *testing.T) {
+	// Origin is now optional; dates needs at least DESTINATION. Zero args
+	// must still fail cobra's RangeArgs(1,2).
 	cmd := datesCmd()
-	cmd.SilenceUsage = true
-	cmd.SilenceErrors = true
-	cmd.SetArgs([]string{"HEL"})
-	if err := cmd.Execute(); err == nil {
-		t.Error("expected error with 1 arg")
-	}
-}
-
-func TestExploreCmd_RequiresOneArg_Extra(t *testing.T) {
-	cmd := exploreCmd()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 	cmd.SetArgs([]string{})
 	if err := cmd.Execute(); err == nil {
 		t.Error("expected error with 0 args")
+	}
+}
+
+func TestExploreCmd_RequiresOneArg_Extra(t *testing.T) {
+	// explore now accepts 0 args (origin auto-resolved). With geo disabled and
+	// no home airport, it must still error on an unresolvable origin.
+	tmp := t.TempDir()
+	setTestHome(t, tmp)
+	t.Setenv("TRVL_NO_GEO", "1")
+	cmd := exploreCmd()
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
+	cmd.SetArgs([]string{})
+	if err := cmd.Execute(); err == nil {
+		t.Error("expected error when no origin and none resolvable")
 	}
 }
 

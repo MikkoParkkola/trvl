@@ -1,19 +1,20 @@
 # trvl
 
-Travel MCP server + CLI. 1 smart MCP tool plus 64 compatibility aliases, 51 CLI commands. Go 1.26, no frameworks.
+Travel MCP server + CLI. 1 smart MCP tool plus 65 compatibility aliases, 56 CLI commands. Go 1.26, no frameworks.
 
 ## Product Vision
 
-trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, Windsurf, Codex, …) direct access to flights, hotels, rental cars, trains, buses, ferries, price alerts, travel hacks, weather, baggage rules, airport lounges, and destination intelligence — **without requiring personal API keys for core search**. Single Go binary, MCP 2025-11-25 compliant, 1 smart MCP tool plus 64 compatibility aliases, 51 CLI commands, API-first with optional browser-assisted fallbacks for a handful of protected providers.
+trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, Windsurf, Codex, …) direct access to flights, hotels, trains, buses, ferries, price alerts, travel hacks, weather, baggage rules, airport lounges, and destination intelligence — **without requiring personal API keys**. Single Go binary, MCP 2025-11-25 compliant, 1 smart MCP tool plus 65 compatibility aliases, 56 CLI commands, API-first with optional browser-assisted fallbacks for a handful of protected providers. The smart `travel` router advertises a single tool (~378 tokens of `tools/list` context) instead of all 65 (~33,500 tokens) — a ~98.9% context reduction; the 65 aliases stay callable via the `intent` field, and `TRVL_MCP_TOOL_MODE=legacy` advertises the full surface for clients that need it.
 
 ## Current Status
 
-- Go 1.26.3 · MCP 2025-11-25 · single binary · 22 providers
-- Hotel providers working: Google Hotels, Booking.com (browser cookies), Airbnb (SSR/Niobe), Hostelworld (autocomplete), Trivago (Streamable HTTP MCP)
-- Flight providers: Google Flights (hand-rolled protobuf), Air France–KLM Offers API v3 (opt-in)
+- Go 1.26.4 · MCP 2025-11-25 · single binary · 22 transport providers (+ flight & hotel sources below)
+- Hotel providers working: Google Hotels, Booking.com (browser cookies), Airbnb (SSR/Niobe), Hostelworld (autocomplete), Trivago (Streamable HTTP MCP), HomeToGo (public SSR+JSON, vacation rentals)
+- Flight providers: Google Flights (hand-rolled protobuf), Kiwi, Skiplagged (hidden-city, opt-in), Ryanair (public API), Wizz Air (public unauthenticated), Air France–KLM Offers API v3 (opt-in), Transavia (official API, opt-in). Travelpayouts/Aviasales price signals are an opt-in source surfaced via `trvl pricetrends` (not in the bookable merge).
+- Enrichment (free, unauthenticated): weather (Open-Meteo), air quality (`trvl air`), sun times (`trvl sun`, sunrise-sunset.org), bike-share (`trvl bikes`, CityBikes)
 - CI: build, vet, staticcheck, govulncheck, race tests, coverage ≥50% on ubuntu + windows
 - Latest release train: tag-triggered workflow + adhoc codesign identifier (PR #50)
-- npm wrapper, ICS calendar export, 57→61 tool bump landed in last ~90d (MIK-3081/3082/3083/3084 + 6-package wiring batch in PR #57)
+- npm wrapper, ICS calendar export, and the smart-router consolidation (64 tools → 1 advertised `travel` tool, ~98.9% `tools/list` context reduction) landed in last ~90d (MIK-3081/3082/3083/3084 + 6-package wiring batch in PR #57)
 
 ## Plan Forward (near-term, technical)
 
@@ -28,7 +29,7 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 | Decision | Rationale | Do not |
 |---|---|---|
 | **No frameworks** — stdlib + carefully chosen libs only | Predictable behavior, minimal deps, long-lived binary | Add web frameworks, ORMs, DI containers |
-| **No API keys required for core search** | Zero-friction onboarding for flights, hotels, and ground; "API-first" phrasing uses *provider* APIs, not user-paid ones | Introduce paid-API requirements on default core code paths |
+| **No API keys required by default** | Zero-friction onboarding; "API-first" phrasing uses *provider* APIs, not user-paid ones | Introduce paid-API requirements on default code paths |
 | **`GOTOOLCHAIN=go1.26.3` pinning via Makefile** | CI reproducibility; host `go` on PATH may be older | Run raw `go build/test` without the prefix on older hosts |
 | **`internal/models` is the shared type package** | Unidirectional import flow; no cycles | Import from other `internal/` packages into `models/` |
 | **Live tests are opt-in** via `TRVL_TEST_LIVE_INTEGRATIONS=1` and `TRVL_TEST_LIVE_PROBES=1` | Default suite must be deterministic and offline | Enable live probes in the default `go test ./...` suite |
@@ -127,7 +128,7 @@ Make targets pin `GOTOOLCHAIN=go1.26.3` so local build/test entrypoints match CI
 
 ## Key Details
 
-- **No API keys required for core search** (Google Flights/Hotels and ground search work without personal keys; partner-gated rental cars report setup status)
+- **No API keys required** for core functionality (Google Flights/Hotels scraped directly)
 - **Optional API keys**: Ticketmaster, Foursquare, Geoapify, OpenTripMap (env vars)
 - **User prefs**: `~/.trvl/preferences.json` (home airports, budgets, loyalty status)
 - **License**: PolyForm Noncommercial 1.0.0

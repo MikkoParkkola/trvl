@@ -12,8 +12,12 @@ import (
 
 func TestRootCmd_SubcommandCount(t *testing.T) {
 	// rootCmd is the package-level var registered in root.go init().
-	// Bumped 57 -> 58 when rental car search landed.
-	const want = 58
+	// Bumped 56 -> 57 when self-update landed (v1.2.0 client-side
+	// auto-update path). 57 -> 58 with `trvl nested` (MIK-3076).
+	// 58 -> 61 with `air`, `sun`, `bikes` (free unauthenticated enrichment sources).
+	// 61 -> 62 with `pricetrends` (opt-in Travelpayouts price-signal source).
+	// 64 -> 65 when rental car search (`trvl cars`) landed.
+	const want = 65
 	got := len(rootCmd.Commands())
 	if got != want {
 		names := make([]string, 0, got)

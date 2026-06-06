@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
@@ -23,24 +22,35 @@ func exploreCmd() *cobra.Command {
 		stops          string
 		format         string
 		targetCurrency string
+		noGeo          bool
 	)
 
 	cmd := &cobra.Command{
-		Use:   "explore ORIGIN",
+		Use:   "explore [ORIGIN]",
 		Short: "Discover cheapest destinations from an airport",
 		Long: `Explore flight destinations from an airport, sorted by price.
 
-ORIGIN is an IATA airport code (e.g. HEL, JFK, NRT).
+ORIGIN is an IATA airport code (e.g. HEL, JFK, NRT). It is optional: omit it
+and trvl resolves it from your saved home airport or current location (geo-IP,
+best-effort; disable with --no-geo).
 Returns a list of destinations with the cheapest available prices.
 
 Examples:
+  trvl explore
   trvl explore HEL
   trvl explore HEL --from 2026-07-01 --to 2026-07-14
   trvl explore JFK --type one-way
   trvl explore HEL --format json`,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.RangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			origin := strings.ToUpper(args[0])
+			originArg := ""
+			if len(args) == 1 {
+				originArg = args[0]
+			}
+			origin, err := resolveCLIOrigin(cmd.Context(), originArg, format, noGeo)
+			if err != nil {
+				return err
+			}
 
 			if err := models.ValidateIATA(origin); err != nil {
 				return fmt.Errorf("invalid origin: %w", err)
@@ -117,6 +127,7 @@ Examples:
 	cmd.Flags().StringVar(&stops, "stops", "any", "Stops filter: any, nonstop")
 	cmd.Flags().StringVar(&format, "format", "table", "Output format: table, json")
 	cmd.Flags().StringVar(&targetCurrency, "currency", "", "Convert prices to this currency (e.g. EUR, USD). Empty = show API default")
+	cmd.Flags().BoolVar(&noGeo, "no-geo", false, "Disable geo-IP origin detection (also via TRVL_NO_GEO=1)")
 
 	cmd.ValidArgsFunction = airportCompletion
 
