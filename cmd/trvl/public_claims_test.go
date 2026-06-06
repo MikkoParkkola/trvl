@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -21,7 +22,8 @@ import (
 // The dynamic count from rootCmd.Commands() includes all cobra-registered
 // commands, but marketing materials only count functional travel commands.
 // Current exclusions: version, providers (both are utility/meta commands).
-const cliCommandCountMarketed = 50
+// Bumped 51 -> 55 with air, sun, bikes, pricetrends (functional travel commands).
+const cliCommandCountMarketed = 55
 
 var readmeToolMarkers = []string{
 	"travel",
@@ -125,7 +127,21 @@ func registeredMCPCompatibilityAliasCount(t *testing.T) int {
 		t.Fatal("mcp.Server should expose an internal handlers field")
 	}
 
-	return handlers.Len() - 1 // Exclude the primary travel smart router.
+	// Exclude the primary travel smart router and any non-alias smart
+	// capabilities (e.g. plan_journey) — these are reachable via the travel
+	// router intent but are NOT legacy compatibility aliases, so they must not
+	// inflate the marketed "compatibility aliases" count.
+	nonAliasCapabilities := map[string]bool{
+		"travel":       true, // the smart router itself
+		"plan_journey": true, // Leave-By Scheduler capability (MIK-5734 B)
+	}
+	count := 0
+	for _, key := range handlers.MapKeys() {
+		if !nonAliasCapabilities[key.String()] {
+			count++
+		}
+	}
+	return count
 }
 
 func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
@@ -208,11 +224,28 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 			path: filepath.Join("..", "..", "demo.tape"),
 			required: []string{
 				fmt.Sprintf("# %d smart MCP tool · %d aliases · %d CLI commands · %d providers · No API keys", toolCount, compatAliasCount, cliCommandCount, totalProviderCount),
+				"scripts/demo/full-demo.sh",
+				"scripts/demo/one-prompt-demo.sh",
 			},
 			forbidden: []string{
 				"# 31 MCP tools · 31 CLI commands · 17 providers · No API keys",
 				"# 29 MCP tools · 29 CLI commands · 17 providers · No API keys",
 				"# 62 MCP tools",
+				"# 61 MCP tools",
+			},
+		},
+		{
+			path: filepath.Join("..", "..", "demo.cast"),
+			required: []string{
+				"Plan a realistic long weekend from HEL to London in July",
+				"hotel details, ground transfer, hacks",
+				"optional watch_price below EUR 200",
+				fmt.Sprintf("%d smart MCP tool + %d compatibility aliases + %d providers", toolCount, compatAliasCount, totalProviderCount),
+				"Manual booking only",
+			},
+			forbidden: []string{
+				"# 61 MCP tools",
+				"first travel query: nonstop HEL -> LHR weekend",
 			},
 		},
 		{
@@ -255,6 +288,43 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 			forbidden: []string{
 				"Bus + train + ferry search (11 providers in parallel)",
 				"max(all 11 providers)",
+			},
+		},
+		{
+			path: filepath.Join("..", "..", "docs", "COMPARISON.md"),
+			required: []string{
+				"fli",
+				"https://github.com/punitarani/fli",
+				"Skiplagged MCP",
+				"https://skiplagged.github.io/mcp/",
+				"1Stay/stays",
+				"https://mcpservers.org/servers/stayker-com/1stay-mcp",
+				"https://www.kayak.com/c/help/pricing/",
+				"https://support.google.com/travel/answer/16497283",
+				"Rental cars are a current trvl gap",
+				"Transaction-complete hotel booking is intentionally out of scope",
+			},
+		},
+		{
+			path: filepath.Join("..", "..", "docs", "POSITIONING.md"),
+			required: []string{
+				"fli",
+				"Skiplagged MCP",
+				"1Stay/stays",
+				"rental cars remain tracked in [#88]",
+				"provider URLs and booking-readiness checks",
+			},
+		},
+		{
+			path: filepath.Join("..", "..", "docs", "DEMO.md"),
+			required: []string{
+				"scripts/demo/full-demo.sh",
+				"scripts/demo/one-prompt-demo.sh",
+				"flight search with a booking URL",
+				"hotel detail enrichment",
+				"ground transfer comparison",
+				"optional `watch_price` creation",
+				"not a booking claim",
 			},
 		},
 		{
@@ -303,5 +373,31 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestOnePromptDemoScriptRendersRequiredFlow(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join("..", "..", "scripts", "demo", "one-prompt-demo.sh")
+	cmd := exec.Command("bash", path)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s failed: %v\n%s", path, err, out)
+	}
+	text := string(out)
+	for _, needle := range []string{
+		"travel(intent=plan_trip",
+		"1. flights:",
+		"2. hotel detail:",
+		"3. ground:",
+		"4. hacks:",
+		"5. watch:",
+		"Naive -> Optimized -> Saved",
+		"Manual booking only",
+	} {
+		if !strings.Contains(text, needle) {
+			t.Fatalf("demo script missing %q:\n%s", needle, text)
+		}
 	}
 }

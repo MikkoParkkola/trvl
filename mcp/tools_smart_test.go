@@ -44,8 +44,8 @@ func TestLegacyToolModeStillAdvertisesLegacySurface(t *testing.T) {
 
 	s := NewServer()
 
-	if len(s.tools) != 63 {
-		t.Fatalf("legacy tool mode should advertise 63 legacy tools, got %d", len(s.tools))
+	if len(s.tools) != 64 {
+		t.Fatalf("legacy tool mode should advertise 64 legacy tools, got %d", len(s.tools))
 	}
 	if !toolRegistered(s.tools, "search_flights") {
 		t.Fatalf("legacy mode should advertise search_flights")

@@ -507,3 +507,19 @@ func TestAllianceTierBenefits_ConsistentKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveBagBenefit_PerUserStatuses covers tiers a user may hold: Flying
+// Blue Gold (SkyTeam) and a downgraded oneworld "Silver" — both grant a free
+// checked bag. These are per-user (from profile), never global defaults.
+func TestResolveBagBenefit_PerUserStatuses(t *testing.T) {
+	if b := ResolveBagBenefit("skyteam", "gold"); b.ExtraCheckedBags < 1 {
+		t.Errorf("Flying Blue Gold should grant a free checked bag, got %+v", b)
+	}
+	if b := ResolveBagBenefit("oneworld", "silver"); b.ExtraCheckedBags < 1 {
+		t.Errorf("oneworld Silver (Sapphire) should grant a free checked bag, got %+v", b)
+	}
+	// Bronze (Ruby) must NOT grant a free bag — guards against over-crediting.
+	if b := ResolveBagBenefit("oneworld", "bronze"); b.ExtraCheckedBags != 0 {
+		t.Errorf("oneworld Bronze should not grant a free checked bag, got %+v", b)
+	}
+}

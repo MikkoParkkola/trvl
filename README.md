@@ -14,11 +14,13 @@
 
 ![trvl demo](https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif?v=1.2.3)
 
-Asciinema source: [`demo.cast`](demo.cast)
+Asciinema source: [`demo.cast`](demo.cast) · Demo script and claims: [`docs/DEMO.md`](docs/DEMO.md)
 
-> **The canonical travel MCP for AI assistants. 1 smart tool. 63 compatibility aliases. 21 providers. Zero API keys. One binary.**
+> **The canonical travel MCP for AI assistants. 1 smart tool. 64 compatibility aliases. 21 providers. Zero API keys. One binary.**
 >
-> Gives Claude, Cursor, Windsurf, Codex, and any MCP-compatible AI 1 smart MCP tool for your AI assistant — the `travel` router — with 63 compatibility aliases for flights, hotels, trains, buses, ferries, price alerts, award sweet spots, weather, baggage, lounges, and destination intel. Free. API-first. Also works as a standalone CLI with 50 commands.
+> Gives Claude, Cursor, Windsurf, Codex, and any MCP-compatible AI 1 smart MCP tool for your AI assistant — the `travel` router — with 64 compatibility aliases for flights, hotels, trains, buses, ferries, price alerts, award sweet spots, weather, baggage, lounges, and destination intel. Free. API-first. Also works as a standalone CLI with 55 commands.
+>
+> **Token-efficient by design:** advertising 1 smart tool instead of 64 keeps the `tools/list` payload at ~378 tokens instead of ~33,500 — a **98.9% smaller context footprint**, ~33K tokens handed back to your assistant. The 64 aliases stay callable via the `intent` field (set `TRVL_MCP_TOOL_MODE=legacy` to advertise all 64).
 
 **For**: AI-assistant users who book ≥4 trips/yr · AI-app builders integrating travel intent · devs shopping MCP registries.
 **Not for**: humans booking via a website (use Google Flights) · travel-agency SaaS shoppers (we are not a hosted product).
@@ -181,7 +183,7 @@ That's it. Your AI assistant now has 1 smart travel tool available. The old 63 t
 | **search_flights** | Search flights on a specific date | HEL -> NRT, 2026-06-15, business class, nonstop |
 | **search_dates** | Find cheapest day to fly across a date range | HEL -> BCN, June-August 2026 |
 | **search_hotels** | Search hotels in any city | Tokyo, June 15-18, 4+ stars |
-| **search_hotels_with_details** | Search hotels and enrich top picks with rooms, rates, and amenities | Paris, Jul 1-5, top 3 detailed |
+| **search_hotels_with_details** | Search hotels and enrich top picks with rooms, rates, cancellation, board, fees, and amenities | Paris, Jul 1-5, top 3 detailed |
 | **hotel_prices** | Compare hotel prices from Google (aggregated from multiple providers) |
 | **hotel_reviews** | Get reviews for a specific hotel | Top reviews, sorted by rating or recency |
 | **hotel_rooms** | Fetch room-level availability, board, and cancellation details | Hotel place ID, Jul 1-5 |
@@ -194,13 +196,15 @@ That's it. Your AI assistant now has 1 smart travel tool available. The old 63 t
 | **travel_guide** | Wikivoyage travel guide for a city | Neighbourhoods, getting around, safety |
 | **local_events** | Find events during your trip dates | Concerts, festivals, exhibitions |
 | **search_ground** | Search buses, trains and ferries (20 providers, API-first with optional browser fallbacks) | Prague -> Vienna, May 3rd, trains only |
-| **search_airport_transfers** | Search airport-to-hotel or airport-to-city ground transport, plus taxi estimates | CDG -> Hotel Lutetia Paris, after 14:30 |
+| **search_airport_transfers** | Door-to-door comparison card: every mode (transit, airport express, taxi, ride-hail) with time, price, pros/cons, grounded steps, and cheapest/fastest/best-value labels | CDG -> Hotel Lutetia Paris, after 14:30 |
+| **plan_journey** | Leave-By Scheduler: when to leave home to reach the gate comfortably (check-in + security buffer, conservative, never optimistic). Pass `origin` to auto-stitch the home→airport leg; `as_ics` returns a calendar event with a leave-home alarm | "when do I leave for my 09:40 HEL flight?" |
 | **search_restaurants** | Find restaurants near a location (Google Maps) | Barcelona, italian cuisine |
 | **search_deals** | Travel deals from 4 RSS feeds (error fares, flash sales) | Deals from HEL under EUR 400 |
 | **plan_trip** | Plan a complete trip — flights + hotel in one parallel search | AMS→PRG, Jun 15–18, EUR |
 | **search_route** | Multi-modal routing combining flights, trains, buses and ferries | Helsinki → Dubrovnik, arrive by 2026-04-10 |
 | **get_weather** | Get a weather forecast for any city (Open-Meteo, up to 14 days) | Prague, weekend forecast |
 | **get_preferences** | Read user travel preferences (FF status, bag rules, seat preferences) | — |
+| **provider_health** | Diagnose configured providers with success rate, freshness, result counts, error class, circuit state, next retry, and fix hints | "why is Booking.com failing?" |
 | **detect_travel_hacks** | Run 18 parallel detectors for flight and ground savings opportunities | HEL → AMS, Apr 13, carry-on only |
 | **detect_accommodation_hacks** | Find hotel split savings (e.g. 2-city stay cheaper than 1 hotel) | Prague, Jun 15-22 |
 | **search_natural** | Natural language search using keyword heuristics — dispatches to the right tool automatically | "cheapest weekend in July from Helsinki" |
@@ -270,7 +274,7 @@ That's it. Your AI assistant now has 1 smart travel tool available. The old 63 t
 |---------|---------|
 | **Structured content** | Typed JSON (`structuredContent`) alongside human-readable summaries |
 | **Content annotations** | `audience: ["user"]` for summaries, `audience: ["assistant"]` for data |
-| **Output schemas** | Full JSON Schema validation for the `travel` smart router and all 63 compatibility tool responses |
+| **Output schemas** | Full JSON Schema validation for the `travel` smart router and all 64 compatibility tool responses |
 | **Prompts** | `plan-trip`, `find-cheapest-dates`, `compare-hotels`, `where-should-i-go` |
 | **Resources** | Airport codes (50 major hubs), flight/hotel usage guides, price-watch subscriptions |
 | **Tool description orchestration** | `find_trip_window` instructs the LLM to fetch calendar data first, then pass busy intervals in — works on every MCP client. See [docs/MCP-ORCHESTRATION.md](docs/MCP-ORCHESTRATION.md) |
@@ -381,9 +385,9 @@ For the agent-focused comparison against Google Flights, KAYAK, ChatGPT search, 
 | Flight search | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Bus/train/ferry search | ✅ (20 providers: FlixBus, RegioJet, Eurostar, DB, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS, Ferryhopper) | ❌ | ❌ | ❌ | ❌ |
 | Price tracking | ✅ (watches with alerts) | ❌ | ❌ | ❌ | ❌ |
-| Hotel search | ✅ (5 providers: Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld) | ❌ | ❌ | ❌ | ❌ |
-| Hotel search + top-N room/amenity detail | ✅ (`search_hotels_with_details`) | ❌ | ✅ (web UI) | ❌ | ❌ |
-| Flight providers | ✅ (Google Flights default + Kiwi virtual-interlining merge; AFKLM Flying Blue award scanner; Skiplagged hidden-city via opt-in `--provider skiplagged`) | ✅ | ✅ | ✅ | ✅ |
+| Hotel search | ✅ (6 providers: Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld, HomeToGo) | ❌ | ❌ | ❌ | ❌ |
+| Hotel search + top-N room/amenity detail | ✅ (`search_hotels_with_details`, including best-effort cancellation, board, and fee metadata) | ❌ | ✅ (web UI) | ❌ | ❌ |
+| Flight providers | ✅ (Google Flights default + Kiwi virtual-interlining merge; direct LCC fares: Ryanair + Wizz Air; AFKLM Flying Blue award scanner; Transavia opt-in; Skiplagged hidden-city via opt-in `--provider skiplagged`; Travelpayouts price signals via opt-in `pricetrends`) | ✅ | ✅ | ✅ | ✅ |
 | Hotel reviews | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Trip cost calculator | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Explore destinations | ✅ | ❌ | ✅ (web only) | ✅ (web) | ✅ |
@@ -709,16 +713,16 @@ The AI uses these to give you actionable recommendations: "Book here: [link]". N
 | | |
 |---|---|
 | **Binary** | Single static ~15MB for API-first flows. Optional protected-provider fallbacks may use local browser/python tooling. |
-| **Data** | Real-time from Google Flights + 5 hotel sources (Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld) + 20 ground providers (FlixBus, RegioJet, Eurostar, DB, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS, Ferryhopper) + 5 free destination APIs |
+| **Data** | Real-time from Google Flights (+ Kiwi, Ryanair, Wizz Air; Transavia/Skiplagged/Travelpayouts opt-in) + 6 hotel sources (Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld, HomeToGo) + 20 ground providers (FlixBus, RegioJet, Eurostar, DB, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS, Ferryhopper) + free destination/enrichment APIs (weather, air quality, sun times, bike-share, holidays, currency) |
 | **Auth** | No personal API keys required. Two providers (NS, Digitransit/VR) use public keys embedded in the binary. Optional browser/cookie fallbacks are available for protected providers when explicitly enabled. |
-| **MCP** | Full v2025-11-25 — 1 smart MCP tool, 63 compatibility aliases (incl. 4 profile aliases, 3 price watch aliases, provider health, award sweet-spot scanning), 7 prompts, resources, structured content, progress notifications, resource subscriptions, tool description orchestration |
-| **CLI** | 50 commands (+ 7 watch subcommands) with table/JSON output, color, shell completion |
+| **MCP** | Full v2025-11-25 — 1 smart MCP tool, 64 compatibility aliases (incl. 4 profile aliases, 3 price watch aliases, provider health, award sweet-spot scanning), 7 prompts, resources, structured content, progress notifications, resource subscriptions, tool description orchestration |
+| **CLI** | 55 commands (+ 7 watch subcommands) with table/JSON output, color, shell completion |
 | **Booking links** | Every flight and hotel result includes a direct Google booking link |
 | **Travel hacks** | 37 detectors (throwaway, hidden-city, positioning, ferry, multi-modal, stopover, date-flex, error fare, back-to-back, rail competition, and more) |
 | **Personal profile** | Learns from your booking history (email parsing + LLM). Remembers FF status, luggage needs, favourite properties, departure preferences, travel hacks used, accommodation preferences, family composition. Pre-search interviews skip questions the profile already answers. |
 | **Output** | Pretty tables with color (default) or JSON (`--format json`) |
 | **Platforms** | Linux, macOS (amd64, arm64). Windows CI in progress. |
-| **Code** | 622 Go files, 203K LOC, 32 packages, 6400+ tests, 82% coverage |
+| **Code** | Go codebase with CI race/coverage gates and a documented local test matrix in [docs/TESTING.md](docs/TESTING.md) |
 | **License** | PolyForm Noncommercial 1.0 |
 
 ## Attribution
@@ -743,7 +747,7 @@ trvl is part of a suite of MCP tools:
 | Tool | Description |
 |------|-------------|
 | [mcp-gateway](https://github.com/MikkoParkkola/mcp-gateway) | Universal MCP gateway — compact 12-15 tool surface replaces 100+ registrations |
-| **[trvl](https://github.com/MikkoParkkola/trvl)** | **AI travel agent — 1 smart MCP tool plus 63 compatibility aliases for flights, hotels, ground transport** |
+| **[trvl](https://github.com/MikkoParkkola/trvl)** | **AI travel agent — 1 smart MCP tool plus 64 compatibility aliases for flights, hotels, ground transport** |
 | [nab](https://github.com/MikkoParkkola/nab) | Web content extraction — fetch any URL with cookies + anti-bot bypass |
 | [axterminator](https://github.com/MikkoParkkola/axterminator) | macOS GUI automation — 35 MCP tools via Accessibility API |
 
@@ -795,4 +799,8 @@ Write scope implies read scope.
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal and noncommercial use. Commercial use requires a separate license.
+[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal and noncommercial use.
+
+Commercial use requires a separate license. That includes company-internal use, forks used for business workflows, hosted/shared-service deployments, embedding in commercial agent platforms, or using `trvl` to power paid travel, consulting, automation, or data products.
+
+Companies can buy a standard commercial-use license via [GitHub Sponsors](https://github.com/sponsors/MikkoParkkola) at EUR 500/month per named project. See [COMMERCIAL.md](COMMERCIAL.md) for scope, exclusions, and custom terms.

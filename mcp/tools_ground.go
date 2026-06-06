@@ -8,6 +8,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/profile"
+	"github.com/MikkoParkkola/trvl/internal/transfer"
 	"github.com/MikkoParkkola/trvl/internal/trip"
 )
 
@@ -218,11 +219,28 @@ func handleSearchAirportTransfers(ctx context.Context, args map[string]any, elic
 		summary += "\n\nTaxi fares are estimates based on route distance and typical local tariffs."
 	}
 
+	// Door-to-door comparison card (Option C): enrich the raw routes into a
+	// choosable set of modes with time/price/pros/cons/grounded steps and
+	// cheapest/fastest/best-value/luggage labels. Additive + backward-compatible.
+	comparison := transfer.BuildOptions(result.Routes, result.AirportCode, result.Airport, result.Destination)
+	if len(comparison.Options) > 1 {
+		summary += "\n\nCompare modes and choose what suits you — see cheapest / fastest / best-value / most-luggage-friendly in the structured 'comparison'."
+	}
+	response := airportTransferResponse{AirportTransferResult: result, Comparison: comparison}
+
 	content, err := buildAnnotatedContentBlocks(summary, result)
 	if err != nil {
 		return nil, nil, err
 	}
-	return content, result, nil
+	return content, response, nil
+}
+
+// airportTransferResponse extends the legacy AirportTransferResult with the
+// door-to-door comparison card. The embedded pointer promotes all original
+// JSON fields, so existing consumers are unaffected; `comparison` is additive.
+type airportTransferResponse struct {
+	*trip.AirportTransferResult
+	Comparison models.TransferComparison `json:"comparison"`
 }
 
 func groundRoutesHaveProvider(routes []models.GroundRoute, provider string) bool {

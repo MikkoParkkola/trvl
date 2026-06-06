@@ -1,6 +1,6 @@
 ---
 name: trvl
-description: "AI Travel Agent — flights, hotels, buses, trains, ferries, night trains, restaurants, price tracking, destinations, hacks, visas, points/award redemptions, airport lounges, traveller profile. Searches Google Flights/Hotels, Skiplagged, Kiwi, AFKLM Offers v3, Trivago, Airbnb, Booking.com, Hostelworld, Ferryhopper, FlixBus, RegioJet, Eurostar/Snap, Deutsche Bahn, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS in real-time. 1 smart MCP tool, 63 compatibility aliases, 37 hack detectors. No API keys required by default."
+description: "AI Travel Agent — flights, hotels, buses, trains, ferries, night trains, restaurants, price tracking, destinations, hacks, visas, points/award redemptions, airport lounges, traveller profile. Searches Google Flights/Hotels, Skiplagged, Kiwi, AFKLM Offers v3, Trivago, Airbnb, Booking.com, Hostelworld, Ferryhopper, FlixBus, RegioJet, Eurostar/Snap, Deutsche Bahn, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS in real-time. 1 smart MCP tool, 64 compatibility aliases, 37 hack detectors. No API keys required by default."
 triggers:
   - flight
   - flights
@@ -56,7 +56,7 @@ allowed-tools:
 
 # trvl — AI Travel Agent
 
-> **1 smart MCP tool, 63 compatibility aliases, 50 CLI commands, 37 hack detectors, 21 providers.** Single-binary travel agent for any AI assistant. No API keys required by default.
+> **1 smart MCP tool, 64 compatibility aliases, 55 CLI commands, 37 hack detectors, 21 providers.** Single-binary travel agent for any AI assistant. No API keys required by default.
 
 ## LOAD PROFILE — ALWAYS FIRST
 
@@ -79,7 +79,7 @@ From? · To? · When (date/window)? · Flex? · Travelers? · Budget? · Carry-o
 
 ---
 
-## CORE TOOL ROUTING (primary `travel` tool + 63 compatibility aliases)
+## CORE TOOL ROUTING (primary `travel` tool + 64 compatibility aliases)
 
 Use `travel` for new calls. Put the target family or exact alias in `intent`,
 state-changing verbs in `action`, and the old tool arguments in `params`.
@@ -91,7 +91,7 @@ The full compatibility surface is below.
 | `search_flights` | Flights via Google Flights + Kiwi + Skiplagged merge |
 | `search_dates` | Cheapest-by-date across a range |
 | `search_hotels` | Multi-provider hotel search |
-| `search_hotels_with_details` | Search + top-N room and amenity enrichment |
+| `search_hotels_with_details` | Search + top-N room, cancellation, board, fee, and amenity enrichment |
 | `search_route` | Multi-modal: flights + Bus/train/ferry (20 providers) |
 | `search_ground` | Bus/train/ferry (20 providers) |
 | `plan_trip` | Flights + hotels in one parallel search |
@@ -125,11 +125,11 @@ The full compatibility surface is below.
 | Tool | Use | Headline params |
 |---|---|---|
 | `search_hotels` | Multi-provider hotel search (Google Hotels + Trivago + Booking.com cookie auth + configured providers) | `location`, `check_in`, `check_out`, `guests`, `currency`, `min_stars`, `min_rating`, `max_price`, `min_price`, `max_distance_km`, `amenities`, `property_type`, `brand`, `eco_certified`, `free_cancellation`, plus Airbnb (`min_bedrooms`, `room_type`, `superhost_only`, `instant_bookable`) and Booking (`max_distance_meters`, `breakfast_included`) filters |
-| `search_hotels_with_details` | Multi-provider hotel search plus top-N room-level rates and full amenities in one call | `location`, `check_in`, `check_out`, `guests`, `currency`, `max_hotels`, `include_rooms`, `include_amenities`, all `search_hotels` filters |
+| `search_hotels_with_details` | Multi-provider hotel search plus top-N room-level rates, cancellation/refundability, board/breakfast, taxes/fees, and full amenities in one call | `location`, `check_in`, `check_out`, `guests`, `currency`, `max_hotels`, `include_rooms`, `include_amenities`, all `search_hotels` filters |
 | `search_hotel_by_name` | Cross-provider lookup of a specific property (fuzzy match) | `name`, `check_in`, `check_out`, `location` |
 | `hotel_prices` | Provider price comparison for a property | `hotel_id`, `check_in`, `check_out`, `currency` |
 | `hotel_reviews` | Reviews + aggregate stats | `hotel_id`, `limit`, `sort` |
-| `hotel_rooms` | Room types + per-night pricing | `hotel_name`, `check_in`, `check_out`, `currency` |
+| `hotel_rooms` | Room types + per-night/total pricing, cancellation/refundability, board/breakfast, and fee metadata when exposed | `hotel_name`, `check_in`, `check_out`, `currency`, `booking_url` |
 | `watch_room_availability` | Monitor specific property availability over time | `hotel_name`, `check_in`, `check_out` |
 | `detect_accommodation_hacks` | Split a long stay across 2-3 properties (€15/move, ≥€50 + 15% saved threshold) | `city`, `check_in`, `check_out`, `max_split`, `guests`, `currency` |
 
@@ -208,7 +208,7 @@ The full compatibility surface is below.
 | Tool | Use |
 |---|---|
 | `list_providers` | List all configured providers + status |
-| `provider_health` | Per-provider success rate, latency, last error/hint code |
+| `provider_health` | Per-provider success rate, latency, freshness, result counts, last error class, circuit state, next retry, and fix hint |
 | `suggest_providers` | Catalogue of optional providers to enable (with auth pattern, OSS reference) |
 | `configure_provider` | Enable a provider (requires user consent) |
 | `test_provider` | Validate a provider's config |
@@ -565,7 +565,7 @@ Offer 2-3 refinements: "Other dates?" · "Nearby airports?" · "Different hotel?
 - **"What €X gets you"** → budget→destination mapping via `search_dates` fan-out.
 - **"Calendar hole"** → `find_trip_window` with calendar busy-intervals → flight savings for free weeks.
 - **"Award sweet spot"** → `search_awards` with the user's MR / UR / Bilt / FB / VS / AS balances.
-- **"Provider audit"** → `provider_health` + `list_providers` to diagnose flaky upstream sources.
+- **"Provider audit"** → `provider_health` + `list_providers` to diagnose stale, sparse, circuit-broken, or flaky upstream sources.
 - **"Remote MCP setup"** → `trvl mcp --http` stays loopback by default; remote exposure needs explicit `--host` plus bearer or OAuth introspection auth. Use `trvl:read` for read-only clients and `trvl:write` for local mutations.
 
 ---

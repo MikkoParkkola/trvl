@@ -6,10 +6,12 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
+
 
 // SearchHotelsByName searches for hotels matching a specific property name across
 // all providers (Google Hotels, Trivago, and any configured external providers).
@@ -215,26 +217,39 @@ func allWordsPresent(needles []string, haystack map[string]bool) bool {
 
 // word(s)), search that area, then fuzzy-match the hotel name in results. If that
 // fails we fall back to searching the full query as the location.
-func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut string) (*models.HotelResult, error) {
+func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, currency string) (*models.HotelResult, error) {
 	if query == "" {
 		return nil, fmt.Errorf("hotel name query is required")
 	}
 	if checkIn == "" || checkOut == "" {
 		return nil, fmt.Errorf("check-in and check-out dates are required")
 	}
+	if currency == "" {
+		currency = "USD"
+	}
 
 	opts := HotelSearchOptions{
 		CheckIn:  checkIn,
 		CheckOut: checkOut,
 		Guests:   2,
-		Currency: "USD",
+		Currency: currency,
 	}
 
 	// Build search location candidates: prefer context after comma, then last word.
 	candidates := buildLocationCandidates(query)
 
 	var lastErr error
-	for _, loc := range candidates {
+	for i, loc := range candidates {
+		// Cooldown between candidates to avoid Google 429 rate limits.
+		// Each SearchHotels call makes multiple page requests across sort
+		// orders, so sequential calls without delay trigger rate limiting.
+		if i > 0 {
+			select {
+			case <-time.After(2 * time.Second):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 		result, err := SearchHotels(ctx, loc, opts)
 		if err != nil {
 			lastErr = err
@@ -246,12 +261,40 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut stri
 
 		match := findBestNameMatch(result.Hotels, query)
 		if match != nil {
+			// If the match has no Google ID, do a targeted Google-only search
+			// using the hotel name + location as the query. Google Hotels
+			// interprets "Summer Shades Hotel, Naoussa" as a specific hotel
+			// query and returns it with the proper Google ID, while auxiliary
+			// providers (Trivago etc.) may not set HotelID.
+			if match.HotelID == "" {
+				// Extract just the hotel name part from the query (before comma)
+				namePart := query
+				if idx := strings.LastIndex(query, ","); idx >= 0 {
+					namePart = strings.TrimSpace(query[:idx])
+				}
+				targetedQuery := namePart + ", " + loc
+				targeted, tErr := SearchHotels(ctx, targetedQuery, opts)
+				if tErr == nil {
+					for i := range targeted.Hotels {
+						if targeted.Hotels[i].HotelID != "" {
+							if models.NameSimilar(
+								strings.ToLower(targeted.Hotels[i].Name),
+								strings.ToLower(namePart),
+							) {
+								return &targeted.Hotels[i], nil
+							}
+						}
+					}
+				}
+			}
 			return match, nil
 		}
 
-		// Area search succeeded but no name match — return first result with a note.
-		first := result.Hotels[0]
-		return &first, nil
+		// Area search succeeded but no name match — try next location candidate
+		// instead of returning a random first result. Returning the wrong
+		// hotel causes the caller to fetch room data for a completely
+		// different property, which is worse than failing.
+		continue
 	}
 
 	if lastErr != nil {
@@ -261,18 +304,27 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut stri
 }
 
 // buildLocationCandidates generates location search strings from a hotel name query.
-// E.g. "Beverly Hills Heights, Tenerife" -> ["Tenerife", "Beverly Hills Heights Tenerife"]
+// E.g. "Hotel Lutetia, Paris" -> ["Paris", "Hotel Lutetia Paris", "Hotel Lutetia, Paris"]
+// "Summer Shades hotel, Naoussa, Paros" -> ["Paros", "Naoussa, Paros", "Summer Shades hotel, Naoussa Paros", "Summer Shades hotel, Naoussa, Paros"]
 func buildLocationCandidates(query string) []string {
 	var candidates []string
 
-	// If comma-separated, use the part after the last comma as primary location.
-	if idx := strings.LastIndex(query, ","); idx >= 0 {
-		after := strings.TrimSpace(query[idx+1:])
-		before := strings.TrimSpace(query[:idx])
-		if after != "" {
-			candidates = append(candidates, after)
+	// Find all comma-separated parts and generate progressively broader
+	// location candidates. For "name, area, city":
+	//   ["city", "area, city", "name area city", "name, area, city"]
+	parts := strings.Split(query, ",")
+	if len(parts) >= 2 {
+		// Add location suffixes: start from the rightmost part, build up
+		for i := len(parts) - 1; i >= 1; i-- {
+			loc := strings.TrimSpace(strings.Join(parts[i:], ","))
+			if loc != "" {
+				candidates = append(candidates, loc)
+			}
 		}
-		// Also try "before after" as the full query.
+
+		// Also try "before after" as the full query (no comma).
+		before := strings.TrimSpace(parts[0])
+		after := strings.TrimSpace(parts[len(parts)-1])
 		if before != "" && after != "" {
 			candidates = append(candidates, before+" "+after)
 		}
@@ -285,9 +337,33 @@ func buildLocationCandidates(query string) []string {
 }
 
 // findBestNameMatch searches hotels for the best fuzzy match to the query.
+// The query may include location context after a comma (e.g. "Makis Place, Mykonos").
+// Only the part before the comma is used for name matching, so location words
+// don't cause false matches with unrelated hotels.
 func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelResult {
-	queryLower := strings.ToLower(query)
+	// Strip location context: only match against the part before the last comma.
+	namePart := query
+	if idx := strings.LastIndex(query, ","); idx >= 0 {
+		namePart = strings.TrimSpace(query[:idx])
+	}
+	queryLower := strings.ToLower(namePart)
 	queryWords := strings.Fields(queryLower)
+	if len(queryWords) == 0 {
+		return nil
+	}
+
+	// Filter out short words that commonly indicate location rather than the
+	// actual hotel name being searched for (e.g. "hotel", "apartments").
+	filtered := queryWords[:0]
+	for _, w := range queryWords {
+		if len(w) >= 3 {
+			filtered = append(filtered, w)
+		}
+	}
+	queryWords = filtered
+	if len(queryWords) == 0 {
+		return nil
+	}
 
 	var best *models.HotelResult
 	bestScore := 0
@@ -301,9 +377,8 @@ func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelR
 		if strings.Contains(nameLower, queryLower) {
 			score = 100
 		} else {
-			// Count how many query words (≥3 chars) appear in the hotel name.
 			for _, w := range queryWords {
-				if len(w) >= 3 && strings.Contains(nameLower, w) {
+				if strings.Contains(nameLower, w) {
 					score += 10
 				}
 			}
@@ -316,6 +391,11 @@ func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelR
 	}
 
 	if bestScore == 0 {
+		return nil
+	}
+	// Require at least a meaningful match (≥10 points from actual hotel name
+	// words, not just "hotel" or other generic terms).
+	if bestScore < 10 {
 		return nil
 	}
 	return best

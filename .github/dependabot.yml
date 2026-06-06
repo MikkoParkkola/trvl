@@ -7,6 +7,14 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "UTC"
+    ignore:
+      # Pin goreleaser-action to v6.x. v7 adds a cosign self-verification of
+      # the downloaded goreleaser binary that is incompatible with the
+      # sigstore-bundle-v0.3 format goreleaser v2.4+ ships (cosign rejects
+      # the bundle: "does not contain cert"). PR #108 auto-bumped to v7.2.2
+      # and broke the v1.4.0 release. See the comment in release.yml.
+      - dependency-name: "goreleaser/goreleaser-action"
+        versions: [">=7"]
 
   - package-ecosystem: "gomod"
     directory: "/"

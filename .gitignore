@@ -27,6 +27,7 @@ Thumbs.db
 /bin/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
+.claude/agent-memory/
 
 # Demo artifacts (empty files created by argument parsing during demo recording)
 /HEL

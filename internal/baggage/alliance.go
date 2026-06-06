@@ -135,6 +135,28 @@ var allianceTierBenefits = map[string]map[string]BagBenefit{
 			PriorityBoarding: true,
 			LoungeAccess:     true,
 		},
+		// Airline-tier aliases: many oneworld carriers label tiers Bronze/Silver/
+		// Gold (e.g. Finnair Plus, BA Executive Club), mapping to Ruby/Sapphire/
+		// Emerald. Silver (Sapphire) and above grant a free checked bag.
+		"bronze": {
+			ExtraCheckedBags: 0,
+			FreeCarryOn:      true,
+			PriorityBoarding: true,
+		},
+		"silver": {
+			ExtraCheckedBags: 1,
+			CheckedWeightKg:  23,
+			FreeCarryOn:      true,
+			PriorityBoarding: true,
+			LoungeAccess:     true,
+		},
+		"gold": {
+			ExtraCheckedBags: 1,
+			CheckedWeightKg:  32,
+			FreeCarryOn:      true,
+			PriorityBoarding: true,
+			LoungeAccess:     true,
+		},
 	},
 	"star_alliance": {
 		"silver": {

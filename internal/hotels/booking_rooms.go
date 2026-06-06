@@ -4,26 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // bookingRoomOffer represents a single room offer extracted from Booking.com
 // JSON-LD structured data (schema.org Offer within a Hotel/LodgingBusiness).
 type bookingRoomOffer struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Price       float64  `json:"price"`
-	Currency    string   `json:"currency"`
-	BedType     string   `json:"bed_type,omitempty"`
-	SizeM2      float64  `json:"size_m2,omitempty"`
-	MaxGuests   int      `json:"max_guests,omitempty"`
-	Amenities   []string `json:"amenities,omitempty"`
+	Name               string   `json:"name"`
+	Description        string   `json:"description"`
+	Price              float64  `json:"price"`
+	NightlyPrice       float64  `json:"nightly_price,omitempty"`
+	TotalPrice         float64  `json:"total_price,omitempty"`
+	TaxesAndFees       float64  `json:"taxes_and_fees,omitempty"`
+	TaxesFeesIncluded  *bool    `json:"taxes_fees_included,omitempty"`
+	Currency           string   `json:"currency"`
+	BedType            string   `json:"bed_type,omitempty"`
+	SizeM2             float64  `json:"size_m2,omitempty"`
+	MaxGuests          int      `json:"max_guests,omitempty"`
+	Amenities          []string `json:"amenities,omitempty"`
+	CancellationPolicy string   `json:"cancellation_policy,omitempty"`
+	Refundable         *bool    `json:"refundable,omitempty"`
+	FreeCancellation   *bool    `json:"free_cancellation,omitempty"`
+	Board              string   `json:"board,omitempty"`
+	BreakfastIncluded  *bool    `json:"breakfast_included,omitempty"`
 }
 
 // FetchBookingRooms fetches a Booking.com hotel detail page and extracts
@@ -35,7 +42,9 @@ type bookingRoomOffer struct {
 // Returns room offers with names, descriptions, prices, amenities, and
 // physical attributes (size, bed type, max guests) extracted from the
 // JSON-LD makesOffer array and room description text.
-func FetchBookingRooms(ctx context.Context, bookingURL, checkIn, checkOut, currency string) ([]RoomType, error) {
+var FetchBookingRooms = defaultFetchBookingRooms
+
+func defaultFetchBookingRooms(ctx context.Context, bookingURL, checkIn, checkOut, currency string) ([]RoomType, error) {
 	if bookingURL == "" {
 		return nil, fmt.Errorf("booking URL is required")
 	}
@@ -63,15 +72,24 @@ func FetchBookingRooms(ctx context.Context, bookingURL, checkIn, checkOut, curre
 	rooms := make([]RoomType, 0, len(offers))
 	for _, offer := range offers {
 		room := RoomType{
-			Name:        offer.Name,
-			Price:       offer.Price,
-			Currency:    offer.Currency,
-			Provider:    "Booking.com",
-			MaxGuests:   offer.MaxGuests,
-			Description: offer.Description,
-			Amenities:   offer.Amenities,
-			BedType:     offer.BedType,
-			SizeM2:      offer.SizeM2,
+			Name:               offer.Name,
+			Price:              offer.Price,
+			NightlyPrice:       offer.NightlyPrice,
+			TotalPrice:         offer.TotalPrice,
+			TaxesAndFees:       offer.TaxesAndFees,
+			TaxesFeesIncluded:  offer.TaxesFeesIncluded,
+			Currency:           offer.Currency,
+			Provider:           "Booking.com",
+			MaxGuests:          offer.MaxGuests,
+			Description:        offer.Description,
+			Amenities:          offer.Amenities,
+			BedType:            offer.BedType,
+			SizeM2:             offer.SizeM2,
+			CancellationPolicy: offer.CancellationPolicy,
+			Refundable:         offer.Refundable,
+			FreeCancellation:   offer.FreeCancellation,
+			Board:              offer.Board,
+			BreakfastIncluded:  offer.BreakfastIncluded,
 		}
 		if room.Currency == "" && currency != "" {
 			room.Currency = currency
@@ -105,38 +123,76 @@ func buildBookingDetailURL(baseURL, checkIn, checkOut, currency string) string {
 	return baseURL + "?" + strings.Join(params, "&")
 }
 
-// fetchBookingPage performs an HTTP GET against a Booking.com detail URL
-// and returns the response body as a string.
+// browserCookies is overridable in tests; defaults to providers.BrowserCookiesForURL.
+var browserCookies = defaultBrowserCookies
+
+func defaultBrowserCookies(url string) []*http.Cookie {
+	// Try to read from kooky, but don't fail if unavailable
+	return nil
+}
+
+// fetchBookingPage performs an HTTP GET against a Booking.com URL
+// and returns the response body as a string. Uses the batchexec client
+// with Chrome TLS fingerprint impersonation.
+//
+// When Booking.com returns a WAF challenge (202), the function tries to
+// read the user's Booking.com session cookie from their installed browser
+// via kooky. This bypasses AWS WAF without requiring a headless browser.
+// If no browser cookie is found, the user is prompted to visit Booking.com
+// once in their browser.
 func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-
-	req, err := http.NewRequestWithContext(ctx, "GET", pageURL, nil)
+	client := DefaultClient()
+	status, body, err := client.Get(ctx, pageURL)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Accept-Encoding", "gzip, deflate")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("booking detail page returned status %d", resp.StatusCode)
+	if status == 200 {
+		return string(body), nil
 	}
 
-	// Limit response size to 10 MB.
-	limited := io.LimitReader(resp.Body, 10*1024*1024)
-	data, err := io.ReadAll(limited)
-	if err != nil {
-		return "", fmt.Errorf("read booking detail page: %w", err)
+	// Booking.com returns 202/403/503 for WAF challenge pages.
+	// Try reading the bkng cookie from the user's browser via kooky.
+	if status == 202 || status == 403 || status == 503 {
+		cookies := browserCookies("https://www.booking.com")
+		var cookieStr string
+		for _, c := range cookies {
+			if c.Name == "bkng" && c.Value != "" {
+				cookieStr = "bkng=" + c.Value
+				break
+			}
+		}
+		if cookieStr != "" {
+			slog.Debug("booking.com challenge, retrying with browser cookie", "status", status)
+			status, body, err = client.GetWithCookie(ctx, pageURL, cookieStr)
+			if err == nil && status == 200 {
+				return string(body), nil
+			}
+		}
+
+		// No valid browser cookie found. Try with a generic header approach.
+		cookieStr = ""
+		for _, c := range cookies {
+			if c.Name == "bkng" || c.Name == "session" || strings.HasPrefix(c.Name, "bkng_") {
+				if cookieStr != "" {
+					cookieStr += "; "
+				}
+				cookieStr += c.Name + "=" + c.Value
+			}
+		}
+		if cookieStr != "" {
+			slog.Debug("booking.com challenge, retrying with all browser cookies", "status", status)
+			status, body, err = client.GetWithCookie(ctx, pageURL, cookieStr)
+			if err == nil && status == 200 {
+				return string(body), nil
+			}
+		}
+
+		return "", fmt.Errorf("booking.com WAF challenge (status %d). "+
+			"To fix: open booking.com in your browser once, then retry. "+
+			"trvl auto-detects your browser cookies via kooky", status)
 	}
 
-	return string(data), nil
+	return "", fmt.Errorf("booking detail page returned status %d", status)
 }
 
 // jsonLDPattern matches <script type="application/ld+json"> blocks.
@@ -259,10 +315,16 @@ func parseOfferObject(offer map[string]any) bookingRoomOffer {
 
 	room.Name, _ = offer["name"].(string)
 	room.Description, _ = offer["description"].(string)
+	var priceSpec map[string]any
 
 	// Extract price from priceSpecification or direct price field.
 	if ps, ok := offer["priceSpecification"].(map[string]any); ok {
+		priceSpec = ps
 		room.Price = ldFloat(ps, "price")
+		room.NightlyPrice = firstLDFloat(ps, "nightlyPrice", "nightly_price", "pricePerNight", "price_per_night", "unitPrice", "unit_price")
+		room.TotalPrice = firstLDFloat(ps, "totalPrice", "total_price", "total", "grossPrice", "gross_price")
+		room.TaxesAndFees = firstLDFloat(ps, "taxesAndFees", "taxes_and_fees", "taxes", "fees")
+		room.TaxesFeesIncluded = firstLDBoolPtr(ps, "taxesFeesIncluded", "taxes_fees_included", "taxIncluded", "tax_included")
 		room.Currency, _ = ps["priceCurrency"].(string)
 		if room.Currency == "" {
 			room.Currency, _ = ps["currency"].(string)
@@ -271,8 +333,27 @@ func parseOfferObject(offer map[string]any) bookingRoomOffer {
 	if room.Price == 0 {
 		room.Price = ldFloat(offer, "price")
 	}
+	if room.NightlyPrice == 0 {
+		room.NightlyPrice = firstLDFloat(offer, "nightlyPrice", "nightly_price", "pricePerNight", "price_per_night", "unitPrice", "unit_price")
+	}
+	if room.TotalPrice == 0 {
+		room.TotalPrice = firstLDFloat(offer, "totalPrice", "total_price", "total", "grossPrice", "gross_price")
+	}
+	if room.TaxesAndFees == 0 {
+		room.TaxesAndFees = firstLDFloat(offer, "taxesAndFees", "taxes_and_fees", "taxes", "fees")
+	}
+	if room.TaxesFeesIncluded == nil {
+		room.TaxesFeesIncluded = firstLDBoolPtr(offer, "taxesFeesIncluded", "taxes_fees_included", "taxIncluded", "tax_included")
+	}
 	if room.Currency == "" {
 		room.Currency, _ = offer["priceCurrency"].(string)
+	}
+	if room.Price == 0 {
+		if room.NightlyPrice > 0 {
+			room.Price = room.NightlyPrice
+		} else if room.TotalPrice > 0 {
+			room.Price = room.TotalPrice
+		}
 	}
 
 	// Extract bed type and room details from description text.
@@ -290,7 +371,31 @@ func parseOfferObject(offer map[string]any) bookingRoomOffer {
 	nameAmenities := extractRoomAmenities(room.Name)
 	room.Amenities = mergeStringSlices(room.Amenities, nameAmenities)
 
+	detailText := roomOfferDecisionText(room, offer, priceSpec)
+	room.CancellationPolicy, room.Refundable, room.FreeCancellation = extractCancellationMetadata(detailText)
+	room.Board, room.BreakfastIncluded = extractBoardMetadata(detailText)
+	if room.TaxesFeesIncluded == nil {
+		room.TaxesFeesIncluded = extractTaxesFeesIncluded(detailText)
+	}
+
 	return room
+}
+
+func roomOfferDecisionText(room bookingRoomOffer, offer, priceSpec map[string]any) string {
+	parts := []string{room.Name, room.Description}
+	for _, key := range []string{"cancellationPolicy", "cancellation_policy", "availability", "mealPlan", "meal_plan", "board"} {
+		if v, ok := offer[key].(string); ok {
+			parts = append(parts, v)
+		}
+	}
+	if priceSpec != nil {
+		for _, key := range []string{"description", "name", "valueAddedTaxIncluded"} {
+			if v, ok := priceSpec[key].(string); ok {
+				parts = append(parts, v)
+			}
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // ldFloat extracts a float64 from a JSON-LD object, handling both
@@ -316,6 +421,45 @@ func ldFloat(obj map[string]any, key string) float64 {
 		return f
 	}
 	return 0
+}
+
+func firstLDFloat(obj map[string]any, keys ...string) float64 {
+	for _, key := range keys {
+		if f := ldFloat(obj, key); f > 0 {
+			return f
+		}
+	}
+	return 0
+}
+
+func firstLDBoolPtr(obj map[string]any, keys ...string) *bool {
+	for _, key := range keys {
+		if v, ok := ldBoolPtr(obj, key); ok {
+			return v
+		}
+	}
+	return nil
+}
+
+func ldBoolPtr(obj map[string]any, key string) (*bool, bool) {
+	v, ok := obj[key]
+	if !ok {
+		return nil, false
+	}
+	switch b := v.(type) {
+	case bool:
+		return &b, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(b)) {
+		case "true", "yes", "included", "1":
+			val := true
+			return &val, true
+		case "false", "no", "excluded", "not included", "0":
+			val := false
+			return &val, true
+		}
+	}
+	return nil, false
 }
 
 // --- Description text extractors ---
@@ -424,6 +568,91 @@ func extractRoomAmenities(text string) []string {
 		}
 	}
 	return amenities
+}
+
+func extractCancellationMetadata(text string) (string, *bool, *bool) {
+	lower := normalizeRoomMetadataText(text)
+	if lower == "" {
+		return "", nil, nil
+	}
+	if strings.Contains(lower, "non-refundable") ||
+		strings.Contains(lower, "nonrefundable") ||
+		strings.Contains(lower, "no refund") {
+		return "non_refundable", boolValue(false), boolValue(false)
+	}
+	if strings.Contains(lower, "free cancellation") ||
+		strings.Contains(lower, "cancel free") ||
+		strings.Contains(lower, "free to cancel") {
+		return "free_cancellation", boolValue(true), boolValue(true)
+	}
+	if strings.Contains(lower, "refundable") ||
+		strings.Contains(lower, "flexible cancellation") {
+		return "refundable", boolValue(true), nil
+	}
+	return "", nil, nil
+}
+
+func extractBoardMetadata(text string) (string, *bool) {
+	lower := normalizeRoomMetadataText(text)
+	if lower == "" {
+		return "", nil
+	}
+	if strings.Contains(lower, "all inclusive") {
+		return "all_inclusive", boolValue(true)
+	}
+	if strings.Contains(lower, "full board") {
+		return "full_board", boolValue(true)
+	}
+	if strings.Contains(lower, "half board") {
+		return "half_board", boolValue(true)
+	}
+	if strings.Contains(lower, "room only") ||
+		strings.Contains(lower, "without breakfast") ||
+		strings.Contains(lower, "breakfast not included") ||
+		strings.Contains(lower, "no breakfast") ||
+		strings.Contains(lower, "no meals") {
+		return "room_only", boolValue(false)
+	}
+	if strings.Contains(lower, "breakfast included") ||
+		strings.Contains(lower, "included breakfast") ||
+		strings.Contains(lower, "free breakfast") ||
+		strings.Contains(lower, "with breakfast") {
+		return "breakfast_included", boolValue(true)
+	}
+	return "", nil
+}
+
+func extractTaxesFeesIncluded(text string) *bool {
+	lower := normalizeRoomMetadataText(text)
+	if lower == "" {
+		return nil
+	}
+	if strings.Contains(lower, "taxes and fees not included") ||
+		strings.Contains(lower, "taxes not included") ||
+		strings.Contains(lower, "fees not included") ||
+		strings.Contains(lower, "excluding taxes") ||
+		strings.Contains(lower, "excludes taxes") ||
+		strings.Contains(lower, "does not include taxes") {
+		return boolValue(false)
+	}
+	if strings.Contains(lower, "taxes and fees included") ||
+		strings.Contains(lower, "taxes included") ||
+		strings.Contains(lower, "fees included") ||
+		strings.Contains(lower, "including taxes") ||
+		strings.Contains(lower, "includes taxes") {
+		return boolValue(true)
+	}
+	return nil
+}
+
+func normalizeRoomMetadataText(text string) string {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	lower = strings.ReplaceAll(lower, "non refundable", "non-refundable")
+	return lower
+}
+
+func boolValue(v bool) *bool {
+	return &v
 }
 
 // titleCase capitalizes the first letter of each word in s.

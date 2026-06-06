@@ -8,14 +8,15 @@ import "strings"
 type FixHintCode string
 
 const (
-	FixHintAkamaiBlock          FixHintCode = "AKAMAI_BLOCK"
-	FixHintDNSFail              FixHintCode = "DNS_FAIL"
-	FixHintTLSTimeout           FixHintCode = "TLS_TIMEOUT"
-	FixHintCookieExpired        FixHintCode = "COOKIE_EXPIRED"
-	FixHintRateLimited          FixHintCode = "RATE_LIMITED"
-	FixHintResponseShapeChanged FixHintCode = "RESPONSE_SHAPE_CHANGED"
-	FixHintPreflightFailed      FixHintCode = "PREFLIGHT_FAILED"
-	FixHintUnclassified         FixHintCode = "UNCLASSIFIED"
+	FixHintAkamaiBlock           FixHintCode = "AKAMAI_BLOCK"
+	FixHintDNSFail               FixHintCode = "DNS_FAIL"
+	FixHintTLSTimeout            FixHintCode = "TLS_TIMEOUT"
+	FixHintCookieExpired         FixHintCode = "COOKIE_EXPIRED"
+	FixHintBrowserCookiesMissing FixHintCode = "BOOKING_COOKIES_MISSING"
+	FixHintRateLimited           FixHintCode = "RATE_LIMITED"
+	FixHintResponseShapeChanged  FixHintCode = "RESPONSE_SHAPE_CHANGED"
+	FixHintPreflightFailed       FixHintCode = "PREFLIGHT_FAILED"
+	FixHintUnclassified          FixHintCode = "UNCLASSIFIED"
 )
 
 // classifyProviderError maps a provider error to a typed FixHintCode and a
@@ -32,6 +33,15 @@ func classifyProviderError(err error) (FixHintCode, string) {
 	msg := strings.ToLower(err.Error())
 
 	switch {
+	// Missing browser cookies beats the generic cookie-expired branch: the
+	// user has no usable browser session at all (vs. a stale/expired one).
+	// kooky auto-detects cookies from an installed browser, so the fix is to
+	// have a logged-in browser available rather than to re-import.
+	case strings.Contains(msg, "browser cookies missing") ||
+		strings.Contains(msg, "no browser cookies"):
+		return FixHintBrowserCookiesMissing,
+			"No browser cookies found — open and log in to Booking.com in an installed browser (Chrome/Firefox/Safari/Edge); trvl auto-detects them via kooky on the next search."
+
 	// Rate-limit beats WAF: a 429 is more specific than a generic 403.
 	case strings.Contains(msg, "rate limit") ||
 		strings.Contains(msg, "429") ||

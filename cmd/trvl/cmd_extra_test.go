@@ -287,8 +287,9 @@ func TestRestaurantsCmd_ArgsIsExactTwo(t *testing.T) {
 	if restaurantsCmd.Args == nil {
 		t.Fatal("restaurants Args validator is nil")
 	}
-	if err := restaurantsCmd.Args(restaurantsCmd, []string{"41.38"}); err == nil {
-		t.Error("expected error with only 1 arg")
+	// Now accepts 1 arg ("lat,lon") or 2 args ("lat" "lon").
+	if err := restaurantsCmd.Args(restaurantsCmd, []string{"41.38"}); err != nil {
+		t.Errorf("unexpected error with 1 arg (lat,lon): %v", err)
 	}
 	if err := restaurantsCmd.Args(restaurantsCmd, []string{"41.38", "2.17"}); err != nil {
 		t.Errorf("unexpected error with 2 args: %v", err)
@@ -567,6 +568,200 @@ func TestFlightRoute(t *testing.T) {
 				t.Errorf("flightRoute() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFlightRoute_AnnotatesLayover(t *testing.T) {
+	f := models.FlightResult{
+		Legs: []models.FlightLeg{
+			{DepartureAirport: models.AirportInfo{Code: "BRU"}, ArrivalAirport: models.AirportInfo{Code: "FRA"}},
+			{DepartureAirport: models.AirportInfo{Code: "FRA"}, ArrivalAirport: models.AirportInfo{Code: "TLL"}, LayoverMinutes: 120},
+		},
+	}
+	want := "BRU -> FRA (2h 0m) -> TLL"
+	if got := flightRoute(f); got != want {
+		t.Errorf("flightRoute() = %q, want %q", got, want)
+	}
+}
+
+func TestFlightAirlinesDisplay(t *testing.T) {
+	tests := []struct {
+		name string
+		f    models.FlightResult
+		want string
+	}{
+		{"single", models.FlightResult{Legs: []models.FlightLeg{{Airline: "Finnair"}}}, "Finnair"},
+		{"dedup same", models.FlightResult{Legs: []models.FlightLeg{{Airline: "Finnair"}, {Airline: "Finnair"}}}, "Finnair"},
+		{"mixed", models.FlightResult{Legs: []models.FlightLeg{{Airline: "Brussels"}, {Airline: "Lufthansa"}}}, "Brussels / Lufthansa"},
+		{"empty", models.FlightResult{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := flightAirlinesDisplay(tt.f); got != tt.want {
+				t.Errorf("flightAirlinesDisplay() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFlightNumbersDisplay(t *testing.T) {
+	tests := []struct {
+		name string
+		f    models.FlightResult
+		want string
+	}{
+		{"single", models.FlightResult{Legs: []models.FlightLeg{{FlightNumber: "AY1306"}}}, "AY1306"},
+		{"connection", models.FlightResult{Legs: []models.FlightLeg{{FlightNumber: "SN2611"}, {FlightNumber: "LH882"}}}, "SN2611 / LH882"},
+		{"all empty", models.FlightResult{Legs: []models.FlightLeg{{}, {}}}, "-"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := flightNumbersDisplay(tt.f); got != tt.want {
+				t.Errorf("flightNumbersDisplay() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFlightAircraftDisplay(t *testing.T) {
+	tests := []struct {
+		name string
+		f    models.FlightResult
+		want string
+	}{
+		{"single", models.FlightResult{Legs: []models.FlightLeg{{Aircraft: "Airbus A350"}}}, "A350"},
+		{"connection", models.FlightResult{Legs: []models.FlightLeg{{Aircraft: "Airbus A319"}, {Aircraft: "Airbus A320"}}}, "A319 / A320"},
+		{"boeing", models.FlightResult{Legs: []models.FlightLeg{{Aircraft: "Boeing 737-800"}}}, "737-800"},
+		{"all empty", models.FlightResult{Legs: []models.FlightLeg{{}, {}}}, "-"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := flightAircraftDisplay(tt.f); got != tt.want {
+				t.Errorf("flightAircraftDisplay() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatLegDeparture(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"google form", "2026-05-28T19:25", "Thu 28 May 19:25"},
+		{"rfc3339", "2026-05-28T19:25:00+02:00", "Thu 28 May 19:25"},
+		{"unparseable falls back", "garbage", "garbage"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatLegDeparture(tt.raw); got != tt.want {
+				t.Errorf("formatLegDeparture(%q) = %q, want %q", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatLegArrival(t *testing.T) {
+	tests := []struct {
+		name string
+		dep  string
+		arr  string
+		want string
+	}{
+		{"same day", "2026-05-28T19:25", "2026-05-28T22:45", "22:45"},
+		{"overnight +1", "2026-05-29T21:00", "2026-05-30T00:25", "00:25 +1"},
+		{"unparseable arr falls back", "2026-05-28T19:25", "nope", "nope"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatLegArrival(tt.dep, tt.arr); got != tt.want {
+				t.Errorf("formatLegArrival(%q,%q) = %q, want %q", tt.dep, tt.arr, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrintBookingLinks(t *testing.T) {
+	flights := []models.FlightResult{
+		{Provider: "google_flights", BookingURL: "https://book.test/a", Legs: []models.FlightLeg{{Airline: "Finnair"}}},
+		{Provider: "kiwi", BookingURL: "", Legs: []models.FlightLeg{{Airline: "KLM"}}}, // no URL -> skipped
+		{Provider: "skiplagged", BookingURL: "https://book.test/c", Legs: []models.FlightLeg{{Airline: "easyJet"}}},
+	}
+	var b strings.Builder
+	printBookingLinks(&b, flights)
+	out := b.String()
+	if !strings.Contains(out, "Booking links:") {
+		t.Fatalf("missing header; got:\n%s", out)
+	}
+	// Index must match the table position (1-based): first flight is [1], third is [3].
+	if !strings.Contains(out, "[1] Finnair · Google — https://book.test/a") {
+		t.Errorf("missing/incorrect link 1; got:\n%s", out)
+	}
+	if !strings.Contains(out, "[3] easyJet · skiplagged — https://book.test/c") {
+		t.Errorf("missing/incorrect link 3; got:\n%s", out)
+	}
+	if strings.Contains(out, "[2]") {
+		t.Errorf("flight without URL should be skipped; got:\n%s", out)
+	}
+}
+
+func TestPrintBookingLinks_NoLinksPrintsNothing(t *testing.T) {
+	var b strings.Builder
+	printBookingLinks(&b, []models.FlightResult{{Provider: "kiwi", BookingURL: ""}})
+	if b.String() != "" {
+		t.Errorf("expected empty output when no URLs, got: %q", b.String())
+	}
+}
+
+func TestHotelSearchLinks(t *testing.T) {
+	h := models.HotelResult{Name: "Pestana Casino Park"}
+	booking, google := hotelSearchLinks(h, "Funchal")
+	if !strings.Contains(booking, "booking.com/searchresults.html?ss=") {
+		t.Errorf("booking link wrong: %s", booking)
+	}
+	if !strings.Contains(booking, "Pestana") || !strings.Contains(booking, "Funchal") {
+		t.Errorf("booking link missing name/location: %s", booking)
+	}
+	if !strings.Contains(google, "google.com/travel/search?q=") {
+		t.Errorf("google link wrong: %s", google)
+	}
+	// Location already in the name -> not duplicated.
+	h2 := models.HotelResult{Name: "Hotel Funchal Centro"}
+	b2, _ := hotelSearchLinks(h2, "Funchal")
+	if strings.Count(strings.ToLower(b2), "funchal") != 1 {
+		t.Errorf("location should not be duplicated when already in name: %s", b2)
+	}
+}
+
+func TestPrintHotelLinks(t *testing.T) {
+	hotels := []models.HotelResult{
+		{Name: "TUI BLUE Madeira Gardens", ImageURL: "https://img.test/a.jpg"},
+		{Name: "Quinta da Penha"}, // no image -> Photo line omitted
+	}
+	var b strings.Builder
+	printHotelLinks(&b, hotels, "Funchal")
+	out := b.String()
+	if !strings.Contains(out, "Links (photos & booking):") {
+		t.Fatalf("missing header; got:\n%s", out)
+	}
+	if !strings.Contains(out, "[1] TUI BLUE Madeira Gardens") || !strings.Contains(out, "[2] Quinta da Penha") {
+		t.Errorf("indices wrong; got:\n%s", out)
+	}
+	if !strings.Contains(out, "Photo:         https://img.test/a.jpg") {
+		t.Errorf("missing image link for hotel 1; got:\n%s", out)
+	}
+	// Hotel 2 has no image -> exactly one Photo line total.
+	if strings.Count(out, "Photo:") != 1 {
+		t.Errorf("expected exactly 1 Photo line; got:\n%s", out)
+	}
+}
+
+func TestPrintHotelLinks_EmptyPrintsNothing(t *testing.T) {
+	var b strings.Builder
+	printHotelLinks(&b, nil, "Funchal")
+	if b.String() != "" {
+		t.Errorf("expected empty output for no hotels, got: %q", b.String())
 	}
 }
 

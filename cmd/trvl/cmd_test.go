@@ -66,7 +66,9 @@ func TestRootCmd_HelpContainsExamples(t *testing.T) {
 // flights command
 // ---------------------------------------------------------------------------
 
-func TestFlightsCmd_RequiresThreeArgs(t *testing.T) {
+func TestFlightsCmd_RequiresTwoArgs(t *testing.T) {
+	// Origin is now optional (resolved from prefs/geo), so the minimum is
+	// DESTINATION + DATE. A single arg must still be rejected by cobra.
 	cmd := flightsCmd()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
@@ -76,13 +78,21 @@ func TestFlightsCmd_RequiresThreeArgs(t *testing.T) {
 	}
 }
 
-func TestFlightsCmd_TooFewArgsTwo(t *testing.T) {
+func TestFlightsCmd_AcceptsTwoArgs(t *testing.T) {
+	// DEST + DATE (no origin) must pass cobra arg validation. We disable the
+	// network geo path so the run is deterministic and offline; with no
+	// resolvable origin it returns a clear "no origin" error rather than an
+	// arg-count error. Either a nil error (origin resolved from prefs) or a
+	// non-arg-count error is acceptable here — what we assert is that cobra's
+	// RangeArgs(2,3) does NOT reject the 2-arg form.
+	t.Setenv("TRVL_NO_GEO", "1")
 	cmd := flightsCmd()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
-	cmd.SetArgs([]string{"HEL", "NRT"})
-	if err := cmd.Execute(); err == nil {
-		t.Error("expected error with only 2 args")
+	cmd.SetArgs([]string{"NRT", "2099-01-01"})
+	err := cmd.Execute()
+	if err != nil && strings.Contains(err.Error(), "accepts") {
+		t.Errorf("2-arg form should pass cobra arg validation, got arg-count error: %v", err)
 	}
 }
 
@@ -114,7 +124,7 @@ func TestFlightsCmd_Flags(t *testing.T) {
 
 func TestFlightsCmd_UseLine(t *testing.T) {
 	cmd := flightsCmd()
-	if cmd.Use != "flights ORIGIN DESTINATION DATE" {
+	if cmd.Use != "flights [ORIGIN] DESTINATION DATE" {
 		t.Errorf("flights Use = %q", cmd.Use)
 	}
 }
@@ -533,12 +543,14 @@ func TestWatchDaemonCmd_Flags(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDatesCmd_RequiresTwoArgs(t *testing.T) {
+	// Origin is now optional; the minimum is DESTINATION. Zero args must
+	// still be rejected by cobra's RangeArgs(1,2).
 	cmd := datesCmd()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
-	cmd.SetArgs([]string{"HEL"})
+	cmd.SetArgs([]string{})
 	if err := cmd.Execute(); err == nil {
-		t.Error("expected error with only 1 arg")
+		t.Error("expected error with 0 args")
 	}
 }
 
@@ -573,12 +585,18 @@ func TestDatesCmd_Flags(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExploreCmd_RequiresOneArg(t *testing.T) {
+	// Origin is now optional (resolved from prefs/geo). With geo disabled and
+	// no home airport, an explicit origin is still required — assert that
+	// path rather than a cobra arg-count error.
+	tmp := t.TempDir()
+	setTestHome(t, tmp)
+	t.Setenv("TRVL_NO_GEO", "1")
 	cmd := exploreCmd()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
 	cmd.SetArgs([]string{})
 	if err := cmd.Execute(); err == nil {
-		t.Error("expected error with 0 args")
+		t.Error("expected error when no origin and none resolvable")
 	}
 }
 

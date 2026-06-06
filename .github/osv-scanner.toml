@@ -1,0 +1,35 @@
+# osv-scanner allowlist — the pressure valve for the CI security gate.
+#
+# The gate fails the build on ANY known, fixable vulnerability in the
+# dependency tree. It runs in two places:
+#   - ci.yaml `osv-scan` job        -> fast layer, fires on every PR/push
+#   - release.yml `security-gate` job -> backstop, blocks the release if a
+#     vuln slipped past CI between merge and tag
+#
+# Scope (verified by local run 2026-06-05): Go modules — osv-scanner reads
+# go.mod/go.sum and checks every dep (including ones govulncheck skips as
+# unreachable) against OSV. NOT covered: github-actions advisories (our actions
+# are SHA-pinned, which is itself the mitigation, and osv-scanner does not map
+# SHA pins to advisory versions) and Docker base-image OS-layer CVEs (osv-scanner
+# reads lockfiles, not image layers — that needs a separate trivy image scan,
+# tracked as a follow-up). This covers the primary attack surface: the Go
+# dependency tree that .github/dependabot.yml's gomod updater watches.
+#
+# Failing on any fixable vuln is intentional: a new build must include the
+# security fixes that are available. Dependabot PROPOSES the bump PR; this gate
+# DISPOSES — it refuses to ship until the fix is merged.
+#
+# When a vulnerability has NO upstream fix yet, or is verified unreachable, it
+# would otherwise block every release indefinitely. Add a time-boxed exception
+# here instead of weakening the gate. Each entry MUST carry a reason and an
+# ignoreUntil review date — expired entries re-trigger the gate automatically.
+#
+# Format (https://google.github.io/osv-scanner/configuration/):
+#
+#   [[IgnoredVulns]]
+#   id = "GO-2024-1234"
+#   ignoreUntil = 2026-07-01   # review by this date; after it the gate fires again
+#   reason = "No patched release upstream yet; unreachable per govulncheck. Reviewed 2026-06-05 by <who>."
+#
+# Keep this list EMPTY unless a vuln genuinely has no fix. The right fix for a
+# fixable vuln is to bump the dependency, not to ignore it.

@@ -39,6 +39,38 @@ type FlightResult struct {
 	CarryOnIncluded     *bool       `json:"carry_on_included,omitempty"`     // true if carry-on bag is included in price
 	CheckedBagsIncluded *int        `json:"checked_bags_included,omitempty"` // 0=not included, 1=one bag, 2=two bags
 	Emissions           int         `json:"emissions,omitempty"`             // estimated CO2 in grams; 0 if unavailable
+	// Sources lists every provider that returned this same physical itinerary
+	// (mirrors HotelResult). Populated by ResolveFlightSources. Headline Price
+	// is the cheapest across sources.
+	Sources        []PriceSource `json:"sources,omitempty"`
+	Savings        float64       `json:"savings,omitempty"`         // dearest source price - cheapest
+	CheapestSource string        `json:"cheapest_source,omitempty"` // provider name of cheapest source
+	// ComparablePrice is the all-in cost (base fare + unavoidable bag fees minus
+	// applicable frequent-flyer benefits), in the same currency as Price. It is
+	// what ranking should use so low-cost-carrier base fares are not unfairly
+	// favoured over fares that already include a bag. 0 = not computed (use Price).
+	ComparablePrice     float64 `json:"comparable_price,omitempty"`
+	ComparableBreakdown string  `json:"comparable_breakdown,omitempty"`
+}
+
+// PriceForRanking returns ComparablePrice when computed, else the base Price.
+func (f FlightResult) PriceForRanking() float64 {
+	if f.ComparablePrice > 0 {
+		return f.ComparablePrice
+	}
+	return f.Price
+}
+
+// HasStalePrice reports whether the cheapest-bearing source for this flight is
+// stale, so renderers can avoid superlatives ("cheapest") on aged prices.
+// A flight with no recorded sources is treated as fresh (just fetched).
+func (f FlightResult) HasStalePrice() bool {
+	for _, s := range f.Sources {
+		if s.Freshness == FreshnessStale {
+			return true
+		}
+	}
+	return false
 }
 
 // FlightSearchResult is the top-level response for a flight search.
@@ -55,7 +87,11 @@ type FlightSearchResult struct {
 	// an error its status is "ok" with Results=0; this is distinct from
 	// "error" or "skipped".
 	ProviderStatuses []ProviderStatus `json:"provider_statuses,omitempty"`
-	Error            string           `json:"error,omitempty"`
+	// Completeness is the composite evidence summary derived from
+	// ProviderStatuses. When State != "complete", callers MUST NOT claim
+	// "no flights found" — some providers timed out or failed.
+	Completeness Completeness `json:"completeness,omitempty"`
+	Error        string       `json:"error,omitempty"`
 }
 
 // DatePriceResult represents the cheapest price for a single departure date.
@@ -105,13 +141,13 @@ func (c CabinClass) String() string {
 // ParseCabinClass converts a string to a CabinClass. Case-insensitive.
 func ParseCabinClass(s string) (CabinClass, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "economy", "e", "1":
+	case "economy", "e", "y", "1", "coach", "standard", "2nd", "eco", "economy class":
 		return Economy, nil
-	case "premium_economy", "premium-economy", "premiumeconomy", "pe", "2":
+	case "premium_economy", "premium-economy", "premiumeconomy", "premium economy", "premium", "pe", "w", "2":
 		return PremiumEconomy, nil
-	case "business", "b", "3":
+	case "business", "b", "c", "j", "biz", "business class", "3":
 		return Business, nil
-	case "first", "f", "4":
+	case "first", "f", "1st", "first class", "4":
 		return First, nil
 	default:
 		return Economy, fmt.Errorf("unknown cabin class: %q", s)

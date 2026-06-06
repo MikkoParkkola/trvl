@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -174,7 +175,9 @@ func extractNaturalDate(query string) string {
 			d := 0
 			_, _ = fmt.Sscanf(day, "%d", &d)
 			if d >= 1 && d <= 31 {
-				return fmt.Sprintf("%s-%02d-%02d", year, month, d)
+				if date := fmt.Sprintf("%s-%02d-%02d", year, month, d); validISODate(date) {
+					return date
+				}
 			}
 		}
 	}
@@ -186,11 +189,18 @@ func extractNaturalDate(query string) string {
 			d := 0
 			_, _ = fmt.Sscanf(day, "%d", &d)
 			if d >= 1 && d <= 31 {
-				return fmt.Sprintf("%s-%02d-%02d", year, month, d)
+				if date := fmt.Sprintf("%s-%02d-%02d", year, month, d); validISODate(date) {
+					return date
+				}
 			}
 		}
 	}
 	return ""
+}
+
+func validISODate(date string) bool {
+	parsed, err := time.Parse(time.DateOnly, date)
+	return err == nil && parsed.Format(time.DateOnly) == date
 }
 
 // Heuristic extracts travel intent and parameters from a free-form query
@@ -268,11 +278,19 @@ func Heuristic(query, today string) Params {
 
 	// 3a. ISO 8601 dates.
 	if dates := isoDatePattern.FindAllString(query, -1); len(dates) > 0 {
-		p.Date = dates[0]
-		p.CheckIn = dates[0]
-		if len(dates) >= 2 {
-			p.ReturnDate = dates[1]
-			p.CheckOut = dates[1]
+		validDates := make([]string, 0, len(dates))
+		for _, date := range dates {
+			if validISODate(date) {
+				validDates = append(validDates, date)
+			}
+		}
+		if len(validDates) > 0 {
+			p.Date = validDates[0]
+			p.CheckIn = validDates[0]
+			if len(validDates) >= 2 {
+				p.ReturnDate = validDates[1]
+				p.CheckOut = validDates[1]
+			}
 		}
 	}
 

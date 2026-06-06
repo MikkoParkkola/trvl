@@ -23,6 +23,12 @@ type GroundRoute struct {
 	Amenities  []string    `json:"amenities,omitempty"`
 	SeatsLeft  *int        `json:"seats_left,omitempty"`
 	BookingURL string      `json:"booking_url"`
+	// Sources lists every provider that returned this same physical connection
+	// (mirrors HotelResult). Populated by ResolveGroundSources. Headline Price
+	// is the cheapest across sources.
+	Sources        []PriceSource `json:"sources,omitempty"`
+	Savings        float64       `json:"savings,omitempty"`
+	CheapestSource string        `json:"cheapest_source,omitempty"`
 }
 
 // GroundStop represents a departure or arrival point.

@@ -13,8 +13,14 @@ var getRoomAvailabilityWithOptsFunc = hotels.GetRoomAvailabilityWithOpts
 
 type hotelWithDetails struct {
 	models.HotelResult
-	RoomTypes    []hotels.RoomType `json:"room_types,omitempty"`
-	DetailErrors []string          `json:"detail_errors,omitempty"`
+	RoomTypes    []hotels.RoomType  `json:"room_types,omitempty"`
+	DetailErrors []hotelDetailError `json:"detail_errors,omitempty"`
+}
+
+type hotelDetailError struct {
+	Scope   string `json:"scope"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type hotelDetailsSearchResponse struct {
@@ -75,21 +81,8 @@ func hotelDetailsSearchOutputSchema() interface{} {
 					"eco_certified":   schemaBool(),
 					"savings":         schemaNumDesc("Price savings vs most expensive source"),
 					"cheapest_source": schemaStringDesc("Provider with lowest price"),
-					"room_types": schemaArray(map[string]interface{}{
-						"type": "object",
-						"properties": map[string]interface{}{
-							"name":        schemaString(),
-							"price":       schemaNum(),
-							"currency":    schemaString(),
-							"provider":    schemaString(),
-							"max_guests":  schemaInt(),
-							"bed_type":    schemaString(),
-							"size_m2":     schemaNum(),
-							"description": schemaString(),
-							"amenities":   schemaStringArray(),
-						},
-					}),
-					"detail_errors": schemaStringArray(),
+					"room_types":      schemaArray(hotelRoomTypeSchema()),
+					"detail_errors":   hotelDetailErrorsSchema(),
 					"sources": schemaArray(map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
@@ -127,6 +120,45 @@ func hotelDetailsSearchOutputSchema() interface{} {
 	}
 }
 
+func hotelRoomTypeSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"name":                schemaString(),
+			"price":               schemaNumDesc("Primary display price for backward-compatible clients."),
+			"nightly_price":       schemaNumDesc("Nightly room price when the provider exposes it separately."),
+			"total_price":         schemaNumDesc("Total stay price when the provider exposes it separately."),
+			"taxes_and_fees":      schemaNumDesc("Tax and fee amount when exposed separately by the provider."),
+			"taxes_fees_included": schemaBoolDesc("Whether taxes and fees are included in the exposed price when known."),
+			"currency":            schemaString(),
+			"provider":            schemaString(),
+			"max_guests":          schemaInt(),
+			"bed_type":            schemaString(),
+			"size_m2":             schemaNum(),
+			"description":         schemaString(),
+			"amenities":           schemaStringArray(),
+			"cancellation_policy": schemaStringDesc("Normalized cancellation label such as free_cancellation, refundable, or non_refundable."),
+			"refundable":          schemaBoolDesc("Whether the room rate is refundable when known."),
+			"free_cancellation":   schemaBoolDesc("Whether the room rate has free cancellation when known."),
+			"board":               schemaStringDesc("Normalized meal plan such as room_only, breakfast_included, half_board, full_board, or all_inclusive."),
+			"breakfast_included":  schemaBoolDesc("Whether breakfast is included when known."),
+		},
+		"required": []string{"name", "price", "currency"},
+	}
+}
+
+func hotelDetailErrorsSchema() map[string]interface{} {
+	return schemaArray(map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"scope":   schemaStringDesc("Detail fetch area: hotel, amenities, or rooms."),
+			"code":    schemaStringDesc("Stable machine-readable error code."),
+			"message": schemaStringDesc("Human-readable error summary."),
+		},
+		"required": []string{"scope", "code", "message"},
+	})
+}
+
 func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
 	req, err := buildHotelSearchRequest(args)
 	if err != nil {
@@ -146,14 +178,18 @@ func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, eli
 		hotel := result.Hotels[i]
 		detailed := hotelWithDetails{HotelResult: hotel}
 		if hotel.HotelID == "" {
-			detailed.DetailErrors = append(detailed.DetailErrors, "missing hotel_id; cannot fetch hotel details")
+			detailed.DetailErrors = append(detailed.DetailErrors, hotelDetailError{
+				Scope:   "hotel",
+				Code:    "missing_hotel_id",
+				Message: "missing hotel_id; cannot fetch hotel details",
+			})
 			hotelsWithDetails = append(hotelsWithDetails, detailed)
 			continue
 		}
 		if includeAmenities {
 			amenities, err := fetchHotelAmenitiesFunc(ctx, hotel.HotelID)
 			if err != nil {
-				detailed.DetailErrors = append(detailed.DetailErrors, fmt.Sprintf("amenities: %v", err))
+				detailed.DetailErrors = append(detailed.DetailErrors, newHotelDetailError("amenities", "amenities_fetch_failed", err))
 			} else if len(amenities) > 0 {
 				detailed.Amenities = amenities
 			}
@@ -168,7 +204,7 @@ func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, eli
 				Location:   req.Location,
 			})
 			if err != nil {
-				detailed.DetailErrors = append(detailed.DetailErrors, fmt.Sprintf("rooms: %v", err))
+				detailed.DetailErrors = append(detailed.DetailErrors, newHotelDetailError("rooms", "rooms_fetch_failed", err))
 			} else if availability != nil {
 				detailed.RoomTypes = availability.Rooms
 			}
@@ -193,6 +229,14 @@ func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, eli
 	}
 
 	return content, resp, nil
+}
+
+func newHotelDetailError(scope, code string, err error) hotelDetailError {
+	return hotelDetailError{
+		Scope:   scope,
+		Code:    code,
+		Message: fmt.Sprintf("%s: %v", scope, err),
+	}
 }
 
 func hotelDetailsLimit(requested, available int) int {

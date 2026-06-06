@@ -319,7 +319,7 @@ func TestMaybeShowFlightHackTips_SingleFlight(t *testing.T) {
 	}
 	// Should not panic.
 	out := captureStdoutMax(t, func() {
-		maybeShowFlightHackTips(context.Background(), []string{"HEL"}, []string{"NRT"}, "2026-07-01", "2026-07-08", 1, result)
+		maybeShowFlightHackTips(context.Background(), []string{"HEL"}, []string{"NRT"}, "2026-07-01", "2026-07-08", 1, result, false)
 	})
 	_ = out // Just verify no panic.
 }

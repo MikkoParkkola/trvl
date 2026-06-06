@@ -52,7 +52,7 @@ func runRooms(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	result, err := resolveRoomAvailability(ctx, hotelQuery, checkIn, checkOut, currency, location)
@@ -83,7 +83,16 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 		return hotels.GetRoomAvailabilityWithOpts(ctx, opts)
 	}
 
-	hotel, err := hotels.SearchHotelByName(ctx, hotelQuery, checkIn, checkOut)
+	// If --location is provided, append it to the query so SearchHotelByName
+	// uses it as the search area instead of trying to infer location from
+	// the hotel name alone (which fails for generic names like "Lemon Grove
+	// Hotel" that match hotels in different cities).
+	searchQuery := hotelQuery
+	if location != "" && !strings.Contains(strings.ToLower(hotelQuery), strings.ToLower(location)) {
+		searchQuery = hotelQuery + ", " + location
+	}
+
+	hotel, err := hotels.SearchHotelByName(ctx, searchQuery, checkIn, checkOut, currency)
 	if err != nil {
 		return nil, fmt.Errorf("hotel lookup for %q: %w", hotelQuery, err)
 	}
@@ -91,16 +100,20 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 		return nil, fmt.Errorf("hotel %q found (%s) but has no Google ID", hotelQuery, hotel.Name)
 	}
 
-	// Pass the user's original query as a location hint so the search-page
-	// fallback can find the hotel when the entity page has deferred data.
-	// buildLocationCandidates inside the fallback extracts the location
-	// part (e.g. "Paris" from "Hotel Lutetia, Paris").
+	// Pass the search query (name + location) as a location hint so the
+	// search-page fallback can find the hotel when the entity page has
+	// deferred data. Use searchQuery when available (includes --location),
+	// fall back to the original hotelQuery.
+	hint := hotelQuery
+	if searchQuery != hotelQuery {
+		hint = searchQuery
+	}
 	opts := hotels.RoomSearchOptions{
 		HotelID:  hotel.HotelID,
 		CheckIn:  checkIn,
 		CheckOut: checkOut,
 		Currency: currency,
-		Location: hotelQuery,
+		Location: hint,
 	}
 	result, err := hotels.GetRoomAvailabilityWithOpts(ctx, opts)
 	if err != nil {

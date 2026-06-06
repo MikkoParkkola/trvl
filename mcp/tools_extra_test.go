@@ -317,6 +317,7 @@ func TestToolRegistration_AllTools(t *testing.T) {
 		"list_opportunity_watches",
 		"search_hidden_city",
 		"search_awards",
+		"optimize_nested_rt",
 	}
 
 	if len(s.tools) != len(expectedTools) {

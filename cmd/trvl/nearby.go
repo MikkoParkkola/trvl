@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/destinations"
@@ -23,8 +24,9 @@ FOURSQUARE_API_KEY is set.
 Examples:
   trvl nearby 41.38 2.17 --category restaurant
   trvl nearby 41.38 2.17 --category all --radius 1000
-  trvl nearby 35.68 139.76 --format json`,
-		Args: cobra.ExactArgs(2),
+  trvl nearby 35.68 139.76 --format json
+  trvl nearby "28.731,-13.867" --category all --radius 5000`,
+		Args: cobra.ArbitraryArgs,
 		RunE: runNearby,
 	}
 
@@ -35,13 +37,9 @@ Examples:
 }
 
 func runNearby(cmd *cobra.Command, args []string) error {
-	lat, err := strconv.ParseFloat(args[0], 64)
+	lat, lon, err := parseLatLonArgs(args)
 	if err != nil {
-		return fmt.Errorf("invalid latitude: %w", err)
-	}
-	lon, err := strconv.ParseFloat(args[1], 64)
-	if err != nil {
-		return fmt.Errorf("invalid longitude: %w", err)
+		return err
 	}
 
 	category, _ := cmd.Flags().GetString("category")
@@ -126,6 +124,39 @@ func formatNearbyCard(result *destinations.NearbyResult) error {
 	}
 
 	return nil
+}
+
+// parseLatLonArgs accepts either 1 arg ("lat,lon") or 2 args ("lat" "lon").
+// This allows negative longitudes (e.g. "-13.867") to be used without cobra
+// misinterpreting them as flags.
+func parseLatLonArgs(args []string) (lat, lon float64, err error) {
+	if len(args) == 1 {
+		parts := strings.Split(args[0], ",")
+		if len(parts) != 2 {
+			return 0, 0, fmt.Errorf("expected 1 arg as \"lat,lon\" or 2 args as \"lat lon\", got %d parts", len(parts))
+		}
+		lat, e := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+		if e != nil {
+			return 0, 0, fmt.Errorf("invalid latitude %q: %w", parts[0], e)
+		}
+		lon, e = strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+		if e != nil {
+			return 0, 0, fmt.Errorf("invalid longitude %q: %w", parts[1], e)
+		}
+		return lat, lon, nil
+	}
+	if len(args) == 2 {
+		lat, e := strconv.ParseFloat(args[0], 64)
+		if e != nil {
+			return 0, 0, fmt.Errorf("invalid latitude: %w", e)
+		}
+		lon, e = strconv.ParseFloat(args[1], 64)
+		if e != nil {
+			return 0, 0, fmt.Errorf("invalid longitude: %w", e)
+		}
+		return lat, lon, nil
+	}
+	return 0, 0, fmt.Errorf("expected 1 or 2 arguments, got %d", len(args))
 }
 
 func truncate(s string, maxLen int) string {

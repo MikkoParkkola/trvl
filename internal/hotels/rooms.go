@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -11,15 +12,24 @@ import (
 
 // RoomType represents a specific room category at a hotel.
 type RoomType struct {
-	Name        string   `json:"name"`
-	Price       float64  `json:"price"`
-	Currency    string   `json:"currency"`
-	Provider    string   `json:"provider,omitempty"`
-	MaxGuests   int      `json:"max_guests,omitempty"`
-	BedType     string   `json:"bed_type,omitempty"`
-	SizeM2      float64  `json:"size_m2,omitempty"`
-	Description string   `json:"description,omitempty"`
-	Amenities   []string `json:"amenities,omitempty"`
+	Name               string   `json:"name"`
+	Price              float64  `json:"price"`
+	NightlyPrice       float64  `json:"nightly_price,omitempty"`
+	TotalPrice         float64  `json:"total_price,omitempty"`
+	TaxesAndFees       float64  `json:"taxes_and_fees,omitempty"`
+	TaxesFeesIncluded  *bool    `json:"taxes_fees_included,omitempty"`
+	Currency           string   `json:"currency"`
+	Provider           string   `json:"provider,omitempty"`
+	MaxGuests          int      `json:"max_guests,omitempty"`
+	BedType            string   `json:"bed_type,omitempty"`
+	SizeM2             float64  `json:"size_m2,omitempty"`
+	Description        string   `json:"description,omitempty"`
+	Amenities          []string `json:"amenities,omitempty"`
+	CancellationPolicy string   `json:"cancellation_policy,omitempty"`
+	Refundable         *bool    `json:"refundable,omitempty"`
+	FreeCancellation   *bool    `json:"free_cancellation,omitempty"`
+	Board              string   `json:"board,omitempty"`
+	BreakfastIncluded  *bool    `json:"breakfast_included,omitempty"`
 }
 
 // RoomAvailability is the response for a room-type search.
@@ -89,6 +99,19 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		opts.Location = entityLocation
 	}
 
+	// Fetch Booking.com rooms to provide room-level data alongside Google's.
+	// Runs synchronously before the fallback so Booking data is available
+	// regardless of whether the Google entity page returns room data.
+	var bookingRooms []RoomType
+	if opts.BookingURL != "" {
+		br, brErr := FetchBookingRooms(ctx, opts.BookingURL, opts.CheckIn, opts.CheckOut, opts.Currency)
+		if brErr != nil {
+			slog.Debug("booking rooms fetch failed", "error", brErr)
+		} else {
+			bookingRooms = br
+		}
+	}
+
 	// Fallback: search for the hotel on the search page by location extracted
 	// from the hotel ID's geocoded area. The search page still has inline
 	// AF_initDataCallback data.
@@ -96,15 +119,9 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		rooms, hotelName = trySearchPageFallback(ctx, opts)
 	}
 
-	// Enrich with Booking.com room data when a booking URL is provided.
-	if opts.BookingURL != "" {
-		bookingRooms, err := FetchBookingRooms(ctx, opts.BookingURL, opts.CheckIn, opts.CheckOut, opts.Currency)
-		if err != nil {
-			// Non-fatal: log and continue with Google rooms only.
-			_ = err // logged inside FetchBookingRooms
-		} else {
-			rooms = mergeRoomTypes(rooms, bookingRooms)
-		}
+	// Merge Booking.com rooms with Google rooms if both are available.
+	if len(bookingRooms) > 0 {
+		rooms = mergeRoomTypes(rooms, bookingRooms)
 	}
 
 	return &RoomAvailability{
@@ -180,7 +197,10 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		return nil, ""
 	}
 
-	// Find target hotel by ID.
+	// Find target hotel by ID first, then by name as fallback.
+	// Google Hotels uses different ID formats on the search page vs
+	// the entity page, so strict ID matching often fails for raw IDs
+	// passed from the CLI or MCP tools.
 	var hotel *models.HotelResult
 	for i := range result.Hotels {
 		if result.Hotels[i].HotelID == opts.HotelID {
@@ -189,7 +209,10 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		}
 	}
 	if hotel == nil {
-		return nil, ""
+		// ID matching failed — try name matching using the location hint.
+		// The location often contains the hotel name (e.g. "Hotel Lutetia Paris")
+		// which can be used as a fuzzy match query.
+		hotel = findBestNameMatch(result.Hotels, opts.Location)
 	}
 
 	var rooms []RoomType
@@ -197,7 +220,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		rooms = append(rooms, RoomType{
 			Name:     "Standard Room",
 			Price:    hotel.Price,
-			Currency: hotel.Currency,
+			Currency: opts.Currency,
 			Provider: providerFromSources(hotel),
 		})
 	}
@@ -208,7 +231,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 			rooms = append(rooms, RoomType{
 				Name:     "Standard Room",
 				Price:    src.Price,
-				Currency: src.Currency,
+				Currency: opts.Currency,
 				Provider: src.Provider,
 			})
 		}
@@ -354,6 +377,33 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 			}
 			if len(br.Amenities) > 0 {
 				enriched.Amenities = mergeStringSlices(enriched.Amenities, br.Amenities)
+			}
+			if br.NightlyPrice > 0 && enriched.NightlyPrice == 0 {
+				enriched.NightlyPrice = br.NightlyPrice
+			}
+			if br.TotalPrice > 0 && enriched.TotalPrice == 0 {
+				enriched.TotalPrice = br.TotalPrice
+			}
+			if br.TaxesAndFees > 0 && enriched.TaxesAndFees == 0 {
+				enriched.TaxesAndFees = br.TaxesAndFees
+			}
+			if br.TaxesFeesIncluded != nil && enriched.TaxesFeesIncluded == nil {
+				enriched.TaxesFeesIncluded = br.TaxesFeesIncluded
+			}
+			if br.CancellationPolicy != "" && enriched.CancellationPolicy == "" {
+				enriched.CancellationPolicy = br.CancellationPolicy
+			}
+			if br.Refundable != nil && enriched.Refundable == nil {
+				enriched.Refundable = br.Refundable
+			}
+			if br.FreeCancellation != nil && enriched.FreeCancellation == nil {
+				enriched.FreeCancellation = br.FreeCancellation
+			}
+			if br.Board != "" && enriched.Board == "" {
+				enriched.Board = br.Board
+			}
+			if br.BreakfastIncluded != nil && enriched.BreakfastIncluded == nil {
+				enriched.BreakfastIncluded = br.BreakfastIncluded
 			}
 			// Keep Google price if available; add Booking as secondary.
 			if enriched.Price == 0 && br.Price > 0 {

@@ -339,17 +339,17 @@ func TestRunInstallCodexTOML_ForceOverwrite(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMaybeShowFlightHackTips_NilResult(t *testing.T) {
-	maybeShowFlightHackTips(context.Background(), nil, nil, "", "", 1, nil)
+	maybeShowFlightHackTips(context.Background(), nil, nil, "", "", 1, nil, false)
 }
 
 func TestMaybeShowFlightHackTips_EmptyFlights(t *testing.T) {
 	result := &models.FlightSearchResult{Success: true, Flights: nil}
-	maybeShowFlightHackTips(context.Background(), []string{"HEL"}, []string{"BCN"}, "2026-06-15", "", 1, result)
+	maybeShowFlightHackTips(context.Background(), []string{"HEL"}, []string{"BCN"}, "2026-06-15", "", 1, result, false)
 }
 
 func TestMaybeShowFlightHackTips_FailedResult(t *testing.T) {
 	result := &models.FlightSearchResult{Success: false}
-	maybeShowFlightHackTips(context.Background(), []string{"HEL"}, []string{"BCN"}, "2026-06-15", "", 1, result)
+	maybeShowFlightHackTips(context.Background(), []string{"HEL"}, []string{"BCN"}, "2026-06-15", "", 1, result, false)
 }
 
 // ---------------------------------------------------------------------------

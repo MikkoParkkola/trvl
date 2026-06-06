@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -827,48 +828,126 @@ func providerHealthTool() ToolDef {
 }
 
 // handleProviderHealth processes a provider_health tool call.
-func handleProviderHealth(_ context.Context, _ map[string]any, _ ElicitFunc, _ SamplingFunc, _ ProgressFunc, _ *providers.Registry, _ *providers.Runtime) ([]ContentBlock, interface{}, error) {
+func handleProviderHealth(_ context.Context, _ map[string]any, _ ElicitFunc, _ SamplingFunc, _ ProgressFunc, reg *providers.Registry, _ *providers.Runtime) ([]ContentBlock, interface{}, error) {
 	dir, err := providers.HealthLogDir()
 	if err != nil {
 		return nil, nil, fmt.Errorf("provider_health: %w", err)
 	}
 
 	summary := providers.HealthSummary(dir)
-	if len(summary) == 0 {
+	configs := map[string]*providers.ProviderConfig{}
+	if reg != nil {
+		for _, cfg := range reg.List() {
+			configs[cfg.ID] = cfg
+		}
+	}
+	if len(summary) == 0 && len(configs) == 0 {
 		return textContent("No health data recorded yet. Health entries are written after provider searches."), nil, nil
 	}
 
 	type row struct {
-		Provider     string  `json:"provider"`
-		TotalCalls   int     `json:"total_calls"`
-		SuccessCount int     `json:"success_count"`
-		ErrorCount   int     `json:"error_count"`
-		TimeoutCount int     `json:"timeout_count"`
-		SuccessRate  float64 `json:"success_rate"`
-		AvgLatencyMs int64   `json:"avg_latency_ms"`
-		LastError    string  `json:"last_error,omitempty"`
+		Provider           string  `json:"provider"`
+		Name               string  `json:"name,omitempty"`
+		TotalCalls         int     `json:"total_calls"`
+		SuccessCount       int     `json:"success_count"`
+		ErrorCount         int     `json:"error_count"`
+		TimeoutCount       int     `json:"timeout_count"`
+		SuccessRate        float64 `json:"success_rate"`
+		AvgLatencyMs       int64   `json:"avg_latency_ms"`
+		TotalResults       int     `json:"total_results"`
+		AvgResults         float64 `json:"avg_results"`
+		LastResults        int     `json:"last_results"`
+		LastSeen           string  `json:"last_seen,omitempty"`
+		LastSuccess        string  `json:"last_success,omitempty"`
+		LastFailure        string  `json:"last_failure,omitempty"`
+		Freshness          string  `json:"freshness"`
+		LastError          string  `json:"last_error,omitempty"`
+		LastErrorClass     string  `json:"last_error_class,omitempty"`
+		LastHintCode       string  `json:"last_hint_code,omitempty"`
+		CircuitState       string  `json:"circuit_state"`
+		CircuitErrorCount  int     `json:"circuit_error_count,omitempty"`
+		CircuitReason      string  `json:"circuit_reason,omitempty"`
+		CircuitNextRetryAt string  `json:"circuit_next_retry_at,omitempty"`
+		FixHint            string  `json:"fix_hint,omitempty"`
 	}
 
-	rows := make([]row, 0, len(summary))
-	var lines []string
-	for _, h := range summary {
-		rows = append(rows, row{
-			Provider:     h.Provider,
-			TotalCalls:   h.TotalCalls,
-			SuccessCount: h.SuccessCount,
-			ErrorCount:   h.ErrorCount,
-			TimeoutCount: h.TimeoutCount,
-			SuccessRate:  h.SuccessRate,
-			AvgLatencyMs: h.AvgLatencyMs,
-			LastError:    h.LastError,
-		})
-		line := fmt.Sprintf("- %s: %d calls, %.0f%% ok, avg %dms",
-			h.Provider, h.TotalCalls, h.SuccessRate*100, h.AvgLatencyMs)
-		if h.ErrorCount > 0 || h.TimeoutCount > 0 {
-			line += fmt.Sprintf(", %d errors, %d timeouts", h.ErrorCount, h.TimeoutCount)
+	providerIDs := make(map[string]bool, len(summary)+len(configs))
+	for id := range summary {
+		providerIDs[id] = true
+	}
+	for id := range configs {
+		providerIDs[id] = true
+	}
+
+	rows := make([]row, 0, len(providerIDs))
+	now := time.Now()
+	for id := range providerIDs {
+		h := summary[id]
+		if h.Provider == "" {
+			h.Provider = id
+			h.Freshness = "unknown"
 		}
-		if h.LastError != "" {
-			line += fmt.Sprintf(", last error: %s", h.LastError)
+		cfg := configs[id]
+		circuit := providers.CircuitBreakerHealth(cfg, now)
+		name := ""
+		if cfg != nil {
+			name = cfg.Name
+		}
+		rows = append(rows, row{
+			Provider:           h.Provider,
+			Name:               name,
+			TotalCalls:         h.TotalCalls,
+			SuccessCount:       h.SuccessCount,
+			ErrorCount:         h.ErrorCount,
+			TimeoutCount:       h.TimeoutCount,
+			SuccessRate:        h.SuccessRate,
+			AvgLatencyMs:       h.AvgLatencyMs,
+			TotalResults:       h.TotalResults,
+			AvgResults:         h.AvgResults,
+			LastResults:        h.LastResults,
+			LastSeen:           h.LastSeen,
+			LastSuccess:        h.LastSuccess,
+			LastFailure:        h.LastFailure,
+			Freshness:          h.Freshness,
+			LastError:          h.LastError,
+			LastErrorClass:     h.LastErrorClass,
+			LastHintCode:       h.LastHintCode,
+			CircuitState:       circuit.State,
+			CircuitErrorCount:  circuit.ErrorCount,
+			CircuitReason:      circuit.Reason,
+			CircuitNextRetryAt: circuit.NextRetryAt,
+			FixHint:            circuit.FixHint,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Provider < rows[j].Provider })
+
+	var lines []string
+	for _, r := range rows {
+		label := r.Provider
+		if r.Name != "" && r.Name != r.Provider {
+			label = fmt.Sprintf("%s (%s)", r.Provider, r.Name)
+		}
+		line := fmt.Sprintf("- %s: %d calls, %.0f%% ok, avg %dms, freshness %s, results total %d avg %.1f, circuit %s",
+			label, r.TotalCalls, r.SuccessRate*100, r.AvgLatencyMs, r.Freshness, r.TotalResults, r.AvgResults, r.CircuitState)
+		if r.ErrorCount > 0 || r.TimeoutCount > 0 {
+			line += fmt.Sprintf(", %d errors, %d timeouts", r.ErrorCount, r.TimeoutCount)
+		}
+		if r.LastErrorClass != "" {
+			line += fmt.Sprintf(", class %s", r.LastErrorClass)
+		}
+		if r.LastError != "" {
+			line += fmt.Sprintf(", last error: %s", r.LastError)
+		}
+		if r.CircuitState == "open" || r.CircuitState == "half_open" {
+			if r.CircuitReason != "" {
+				line += fmt.Sprintf(", reason: %s", r.CircuitReason)
+			}
+			if r.CircuitNextRetryAt != "" {
+				line += fmt.Sprintf(", next retry: %s", r.CircuitNextRetryAt)
+			}
+			if r.FixHint != "" {
+				line += fmt.Sprintf(", fix: %s", r.FixHint)
+			}
 		}
 		lines = append(lines, line)
 	}
