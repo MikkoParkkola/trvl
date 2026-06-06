@@ -139,6 +139,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      # Expose ACTIONS_CACHE_URL + ACTIONS_RUNTIME_TOKEN to the raw `docker buildx
+      # build` run: steps below. Without this, `--cache-to type=gha` in a run:
+      # step is a silent no-op (those vars are only auto-injected into uses:
+      # action steps, not run: shells). This makes the gha layer cache actually
+      # populate/reuse.
+      - name: Expose GitHub Actions cache to buildx
+        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
+
       # Build a single-arch (amd64) image first and load it locally so trivy can
       # scan the actual release artifact's layers. This is the Docker half of the
       # vulnerability gate — the osv-scanner gates the Go deps; trivy gates the
