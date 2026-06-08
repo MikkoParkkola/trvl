@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -41,7 +42,7 @@ func NewHTTPAuth(opts HTTPServerOptions) *HTTPAuth {
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
-	return &HTTPAuth{
+	a := &HTTPAuth{
 		token:                 strings.TrimSpace(opts.Token),
 		readToken:             strings.TrimSpace(opts.ReadToken),
 		writeToken:            strings.TrimSpace(opts.WriteToken),
@@ -51,6 +52,13 @@ func NewHTTPAuth(opts HTTPServerOptions) *HTTPAuth {
 		oauthAudience:         strings.TrimSpace(opts.OAuthAudience),
 		client:                client,
 	}
+	if a.oauthIntrospectionURL != "" && a.oauthAudience == "" {
+		// Confused-deputy guard (RFC 7662 §2.2): without a pinned audience, any
+		// valid token at this IdP — including tokens minted for other services —
+		// is accepted. Warn loudly; do not hard-fail (single-tenant dev setups).
+		slog.Warn("mcp oauth: no --oauth-audience configured; tokens issued for any client at this introspection endpoint will be accepted (set --oauth-audience for production)")
+	}
+	return a
 }
 
 // Configured reports whether HTTP auth should be enforced.
@@ -69,19 +77,25 @@ func (a *HTTPAuth) Authenticate(ctx context.Context, token string) (RequestAcces
 	if token == "" {
 		return RequestAccess{}, false
 	}
-	if a.token != "" && token == a.token {
+	if a.token != "" && safeTokenCompare(token, a.token) {
 		return FullAccess("local-token", "static"), true
 	}
-	if a.writeToken != "" && token == a.writeToken {
+	if a.writeToken != "" && safeTokenCompare(token, a.writeToken) {
 		return FullAccess("write-token", "static"), true
 	}
-	if a.readToken != "" && token == a.readToken {
+	if a.readToken != "" && safeTokenCompare(token, a.readToken) {
 		return ReadAccess("read-token", "static"), true
 	}
 	if a.oauthIntrospectionURL != "" {
 		return a.authenticateOAuth(ctx, token)
 	}
 	return RequestAccess{}, false
+}
+
+// safeTokenCompare reports whether two tokens are equal in constant time,
+// preventing a byte-by-byte timing oracle on static bearer tokens.
+func safeTokenCompare(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 // FullAccess returns an access context with read and write scopes.

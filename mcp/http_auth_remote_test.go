@@ -296,3 +296,34 @@ func writeLabel(w bool) string {
 	}
 	return "read"
 }
+
+// TestSafeTokenCompare_ConstantTime verifies the constant-time token comparison
+// accepts only exact matches (timing-attack hardening, security review fix 1).
+func TestSafeTokenCompare_ConstantTime(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"secret-token-abc", "secret-token-abc", true},
+		{"secret-token-abc", "secret-token-abd", false},
+		{"secret-token-abc", "secret-token-ab", false}, // length mismatch
+		{"", "", true},
+		{"x", "", false},
+	}
+	for _, c := range cases {
+		if got := safeTokenCompare(c.a, c.b); got != c.want {
+			t.Errorf("safeTokenCompare(%q,%q)=%v want %v", c.a, c.b, got, c.want)
+		}
+	}
+}
+
+// TestNewHTTPAuth_OAuthWithoutAudienceStillConstructs verifies the confused-deputy
+// warning path (security review fix 2) does not break construction or auth.
+func TestNewHTTPAuth_OAuthWithoutAudienceStillConstructs(t *testing.T) {
+	t.Parallel()
+	a := NewHTTPAuth(HTTPServerOptions{OAuthIntrospectionURL: "https://idp.example/introspect"})
+	if a == nil || !a.Configured() {
+		t.Fatal("expected configured auth with OAuth introspection URL")
+	}
+}

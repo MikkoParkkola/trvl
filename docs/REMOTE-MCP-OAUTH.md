@@ -94,8 +94,11 @@ Environment variables: `TRVL_MCP_OAUTH_INTROSPECTION_URL`,
 `TRVL_MCP_OAUTH_CLIENT_ID`, `TRVL_MCP_OAUTH_CLIENT_SECRET`,
 `TRVL_MCP_OAUTH_AUDIENCE`.
 
-Set `--oauth-audience` to the resource identifier you registered for trvl so a
-token minted for a different service is rejected.
+**Required for production.** Set `--oauth-audience` to the resource identifier
+you registered for trvl so a token minted for a different service at the same
+IdP is rejected (confused-deputy protection, RFC 7662 §2.2). Without it, trvl
+accepts any active token from the introspection endpoint and logs a startup
+warning.
 
 ### Client-side flow: Authorization Code + PKCE
 
@@ -153,7 +156,7 @@ for per-decision detail.
 
 - Keep the default loopback bind unless you genuinely need remote access.
 - Never expose a remote host without auth; trvl refuses this by design.
-- Prefer OAuth introspection with a pinned `--oauth-audience` over static tokens
+- Use OAuth introspection with a pinned `--oauth-audience` (required for production) over static tokens
   for multi-user deployments.
 - Hand out `trvl:read` by default; grant `trvl:write` only to clients that must
   mutate `~/.trvl` state.
