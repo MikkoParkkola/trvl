@@ -26,7 +26,7 @@ test-live-integrations:
 	TRVL_TEST_LIVE_INTEGRATIONS=1 $(GO_RUN) test -v -count=1 ./...
 
 test-live-probes:
-	TRVL_TEST_LIVE_PROBES=1 $(GO_RUN) test -v -count=1 ./internal/flights ./internal/hotels -run Probe
+	TRVL_TEST_LIVE_PROBES=1 $(GO_RUN) test -v -count=1 ./... -run Probe
 
 lint:
 	$(GO_RUN) vet ./...

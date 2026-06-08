@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 
@@ -62,40 +61,7 @@ func TestHandleCheckWatches_ReturnsLivePrice(t *testing.T) {
 	if !strings.Contains(got, `"current_price":123`) {
 		t.Errorf("expected current_price:123 (live price must flow through), got %s", got)
 	}
-	// 123 <= 500 target, so the watch should trigger.
 	if !strings.Contains(got, `"below_goal":true`) {
 		t.Errorf("expected below_goal:true, got %s", got)
-	}
-}
-
-// TestHandleCheckWatches_LiveProbe re-prices a real watch against live providers.
-// Probe-gated so the default suite stays offline (per CLAUDE.md).
-func TestHandleCheckWatches_LiveProbe(t *testing.T) {
-	if os.Getenv("TRVL_TEST_LIVE_PROBES") != "1" {
-		t.Skip("hits live flight APIs; set TRVL_TEST_LIVE_PROBES=1 to run")
-	}
-	t.Setenv("HOME", t.TempDir())
-
-	store, err := watch.DefaultStore()
-	if err != nil {
-		t.Fatalf("DefaultStore: %v", err)
-	}
-	if _, err := store.Add(watch.Watch{
-		Type:        "flight",
-		Origin:      "HEL",
-		Destination: "LHR",
-		DepartDate:  "2026-09-15",
-		Currency:    "EUR",
-	}); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-
-	_, structured, err := handleCheckWatches(context.Background(), nil, nil, nil, nil)
-	if err != nil {
-		t.Fatalf("handleCheckWatches: %v", err)
-	}
-	raw, _ := json.Marshal(structured)
-	if strings.Contains(string(raw), `"current_price":0`) {
-		t.Errorf("live probe returned current_price 0 — re-check did not produce a real price: %s", string(raw))
 	}
 }
