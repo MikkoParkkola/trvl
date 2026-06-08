@@ -118,9 +118,9 @@ func handleSearchRoute(ctx context.Context, args map[string]any, elicit ElicitFu
 	sendProgress(progress, 100, 100, fmt.Sprintf("Found %d routes", result.Count))
 
 	summary := buildRouteSummary(result)
-	content := []ContentBlock{
-		{Type: "text", Text: summary, Annotations: &ContentAnnotation{Audience: []string{"user"}, Priority: 1.0}},
-		{Type: "text", Text: "Structured data attached.", Annotations: &ContentAnnotation{Audience: []string{"assistant"}, Priority: 0.5}},
+	content, err := buildAnnotatedContentBlocks(summary, result)
+	if err != nil {
+		return nil, nil, err
 	}
 	return content, result, nil
 }

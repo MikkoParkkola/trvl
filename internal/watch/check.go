@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/hotelarb"
@@ -115,6 +116,85 @@ func checkWatchesWithRoomsAndWebhookContext(checkCtx, webhookCtx context.Context
 			}
 		}
 	}
+	return results
+}
+
+// BoundedOptions tunes CheckAllBounded for synchronous callers (e.g. the MCP
+// check_watches tool) that must return within a request deadline rather than
+// running as an unbounded background daemon.
+type BoundedOptions struct {
+	// Concurrency caps how many watches are re-priced in parallel. Defaults to
+	// DefaultBoundedConcurrency when <= 0.
+	Concurrency int
+	// PerWatchTimeout bounds each individual live search. A watch that exceeds it
+	// is reported with an explicit timeout Error rather than a fabricated price.
+	// Defaults to DefaultBoundedPerWatchTimeout when <= 0.
+	PerWatchTimeout time.Duration
+}
+
+const (
+	// DefaultBoundedConcurrency is the default parallelism for CheckAllBounded.
+	DefaultBoundedConcurrency = 4
+	// DefaultBoundedPerWatchTimeout is the default per-watch deadline.
+	DefaultBoundedPerWatchTimeout = 15 * time.Second
+)
+
+// CheckAllBounded re-prices every watch concurrently with a per-watch timeout
+// and a concurrency cap, recording results in the store. Unlike CheckAll it does
+// not pause between checks, making it suitable for synchronous request/response
+// callers. Results are returned in the same order as store.List(). A watch whose
+// live search exceeds PerWatchTimeout (or whose parent context is canceled) is
+// returned with a non-nil Error so callers can render an honest "not checked"
+// status instead of a misleading price of 0.
+func CheckAllBounded(ctx context.Context, store *Store, checker PriceChecker, roomChecker RoomChecker, opts BoundedOptions) []CheckResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	concurrency := opts.Concurrency
+	if concurrency <= 0 {
+		concurrency = DefaultBoundedConcurrency
+	}
+	perWatch := opts.PerWatchTimeout
+	if perWatch <= 0 {
+		perWatch = DefaultBoundedPerWatchTimeout
+	}
+
+	watches := store.List()
+	results := make([]CheckResult, len(watches))
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+
+	for i, w := range watches {
+		wg.Add(1)
+		go func(i int, w Watch) {
+			defer wg.Done()
+
+			// Respect parent cancellation before acquiring a slot.
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				results[i] = CheckResult{Watch: w, Error: ctx.Err()}
+				return
+			}
+
+			// The webhook context is the parent ctx so delivery is not killed by
+			// the per-watch search deadline; the check context is bounded.
+			checkCtx, cancel := context.WithTimeout(ctx, perWatch)
+			defer cancel()
+
+			switch {
+			case w.IsRoomWatch() && roomChecker != nil:
+				results[i] = checkRoomWithWebhookContext(checkCtx, ctx, store, roomChecker, w)
+			case w.IsRoomWatch():
+				results[i] = CheckResult{Watch: w, Error: fmt.Errorf("room checker not configured")}
+			default:
+				results[i] = checkOneWithWebhookContext(checkCtx, ctx, store, checker, w)
+			}
+		}(i, w)
+	}
+
+	wg.Wait()
 	return results
 }
 

@@ -122,9 +122,9 @@ func handleSearchDeals(ctx context.Context, args map[string]any, elicit ElicitFu
 		_, _ = fmt.Fprintf(&sb, "\n... and %d more deals", result.Count-10)
 	}
 
-	content := []ContentBlock{
-		{Type: "text", Text: sb.String(), Annotations: &ContentAnnotation{Audience: []string{"user"}, Priority: 1.0}},
-		{Type: "text", Text: "Structured data attached.", Annotations: &ContentAnnotation{Audience: []string{"assistant"}, Priority: 0.5}},
+	content, err := buildAnnotatedContentBlocks(sb.String(), result)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return content, result, nil

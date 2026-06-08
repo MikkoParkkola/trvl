@@ -230,9 +230,9 @@ func handleSearchAwards(_ context.Context, args map[string]any, _ ElicitFunc, _ 
 	}
 
 	summary := buildAwardsSummary(filtered)
-	content := []ContentBlock{
-		{Type: "text", Text: summary, Annotations: &ContentAnnotation{Audience: []string{"user"}, Priority: 1.0}},
-		{Type: "text", Text: "Structured award sweet-spot data attached.", Annotations: &ContentAnnotation{Audience: []string{"assistant"}, Priority: 0.5}},
+	content, err := buildAnnotatedContentBlocks(summary, resp)
+	if err != nil {
+		return nil, nil, err
 	}
 	return content, resp, nil
 }
