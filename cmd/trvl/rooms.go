@@ -153,7 +153,7 @@ func formatRoomsTable(result *hotels.RoomAvailability) error {
 	models.Banner(os.Stdout, "🛏️", "Rooms", fmt.Sprintf("%s · %s to %s", name, result.CheckIn, result.CheckOut))
 	fmt.Println()
 
-	headers := []string{"Room", "Price", "Guests", "Provider", "Amenities"}
+	headers := []string{"Room", "Price", "Guests", "Bed", "Board", "Cancellation", "Provider", "Amenities"}
 	rows := make([][]string, 0, len(result.Rooms))
 	var prices priceScale
 
@@ -181,6 +181,9 @@ func formatRoomsTable(result *hotels.RoomAvailability) error {
 			room.Name,
 			priceText,
 			guestsText,
+			room.BedType,
+			boardLabel(room),
+			cancellationLabel(room),
 			room.Provider,
 			amenitiesText,
 		})
@@ -195,8 +198,72 @@ func formatRoomsTable(result *hotels.RoomAvailability) error {
 		}
 	}
 	if cheapest.Price > 0 {
-		models.Summary(os.Stdout, fmt.Sprintf("Cheapest: %.0f %s (%s)", cheapest.Price, cheapest.Currency, cheapest.Name))
+		summary := fmt.Sprintf("Cheapest: %.0f %s (%s)", cheapest.Price, cheapest.Currency, cheapest.Name)
+		if extras := roomHighlight(cheapest); extras != "" {
+			summary += " — " + extras
+		}
+		models.Summary(os.Stdout, summary)
 	}
 
 	return nil
+}
+
+// boardLabel returns a short human-readable meal-plan label for a room, or an
+// empty string when the provider did not surface board data. It never
+// fabricates a value: an empty Board with no breakfast signal renders blank.
+func boardLabel(room hotels.RoomType) string {
+	if room.Board != "" {
+		return prettyLabel(room.Board)
+	}
+	if room.BreakfastIncluded != nil {
+		if *room.BreakfastIncluded {
+			return "Breakfast included"
+		}
+		return "No breakfast"
+	}
+	return ""
+}
+
+// cancellationLabel returns a short human-readable cancellation label for a
+// room, or an empty string when the provider did not surface cancellation
+// data. Absent-safe: nil pointers and empty policy render blank.
+func cancellationLabel(room hotels.RoomType) string {
+	if room.CancellationPolicy != "" {
+		return prettyLabel(room.CancellationPolicy)
+	}
+	if room.FreeCancellation != nil && *room.FreeCancellation {
+		return "Free cancellation"
+	}
+	if room.Refundable != nil {
+		if *room.Refundable {
+			return "Refundable"
+		}
+		return "Non refundable"
+	}
+	return ""
+}
+
+// roomHighlight builds a compact one-line decision summary (board +
+// cancellation) for the cheapest room, omitting absent fields entirely.
+func roomHighlight(room hotels.RoomType) string {
+	var parts []string
+	if b := boardLabel(room); b != "" {
+		parts = append(parts, b)
+	}
+	if c := cancellationLabel(room); c != "" {
+		parts = append(parts, c)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// prettyLabel converts a normalized snake_case enum value (e.g.
+// "free_cancellation", "breakfast_included") into a human-readable,
+// sentence-cased label ("Free cancellation", "Breakfast included").
+func prettyLabel(s string) string {
+	s = strings.ReplaceAll(s, "_", " ")
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

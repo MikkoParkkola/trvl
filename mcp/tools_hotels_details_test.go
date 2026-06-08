@@ -103,7 +103,7 @@ func TestHandleSearchHotelsWithDetailsEnrichesTopResults(t *testing.T) {
 	if len(content) == 0 {
 		t.Fatal("expected summary content")
 	}
-	if got := content[0].Text; got != "Enriched 1 of 2 hotels in Paris. Found 1 room type." {
+	if got := content[0].Text; got != "Enriched 1 of 2 hotels in Paris. Found 1 room type. 1 with free cancellation. 1 with breakfast included." {
 		t.Fatalf("summary = %q, want sensible detail summary", got)
 	}
 	resp, ok := structured.(hotelDetailsSearchResponse)
@@ -217,6 +217,51 @@ func TestHandleSearchHotelsWithDetailsPartialFailuresUseTypedDetailErrors(t *tes
 	}
 	if len(resp.Hotels[1].DetailErrors) != 0 || len(resp.Hotels[1].RoomTypes) != 1 {
 		t.Fatalf("successful hotel = errors %#v rooms %#v, want no errors and one room", resp.Hotels[1].DetailErrors, resp.Hotels[1].RoomTypes)
+	}
+}
+
+func TestHotelDetailsSummaryAbsentSafe(t *testing.T) {
+	// Rooms that expose no cancellation/board metadata must not produce
+	// fabricated "free cancellation" / "breakfast included" summary clauses.
+	resp := hotelDetailsSearchResponse{
+		Success:        true,
+		Count:          1,
+		TotalAvailable: 1,
+		Hotels: []hotelWithDetails{
+			{
+				HotelResult: models.HotelResult{Name: "Plain Hotel"},
+				RoomTypes: []hotels.RoomType{
+					{Name: "Standard Room", Price: 100, Currency: "EUR"},
+				},
+			},
+		},
+	}
+	got := hotelDetailsSummary(resp, "Paris")
+	want := "Enriched 1 of 1 hotels in Paris. Found 1 room type."
+	if got != want {
+		t.Fatalf("summary = %q, want %q (no fabricated enrichment clauses)", got, want)
+	}
+}
+
+func TestHotelDetailsSummaryEnrichmentClauses(t *testing.T) {
+	resp := hotelDetailsSearchResponse{
+		Success:        true,
+		Count:          1,
+		TotalAvailable: 1,
+		Hotels: []hotelWithDetails{
+			{
+				HotelResult: models.HotelResult{Name: "Rich Hotel"},
+				RoomTypes: []hotels.RoomType{
+					{Name: "Flex Room", Price: 200, Currency: "EUR", FreeCancellation: boolPtr(true), BreakfastIncluded: boolPtr(true)},
+					{Name: "Saver Room", Price: 150, Currency: "EUR", CancellationPolicy: "non_refundable"},
+				},
+			},
+		},
+	}
+	got := hotelDetailsSummary(resp, "Paris")
+	want := "Enriched 1 of 1 hotels in Paris. Found 2 room types. 1 with free cancellation. 1 with breakfast included."
+	if got != want {
+		t.Fatalf("summary = %q, want %q", got, want)
 	}
 }
 
