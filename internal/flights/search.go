@@ -354,6 +354,51 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 		})
 	}
 
+	// easyJet direct (availability API) is opt-in: the public endpoint is Akamai
+	// bot-defended (HTTP 403), so it only fires when the operator supplies a
+	// reachable base URL via EASYJET_API_BASE. Mirrors the Transavia opt-in
+	// pattern; honest typed status when unavailable (never a fabricated empty).
+	var easyjetFlights []models.FlightResult
+	var easyjetErr error
+	easyjetSucceeded := false
+	if easyjetSearchEligible(client, opts) {
+		easyjetFlights, easyjetErr = SearchEasyjet(ctx, origin, destination, date, currency, opts)
+		if easyjetErr != nil {
+			slog.Warn("easyjet flight search failed", "origin", origin, "destination", destination, "date", date, "error", easyjetErr)
+			statuses = append(statuses, models.ProviderStatus{
+				ID:     "easyjet",
+				Name:   "easyJet",
+				Status: models.ClassifyProviderError(easyjetErr),
+				Error:  easyjetErr.Error(),
+			})
+		} else {
+			easyjetSucceeded = true
+			statuses = append(statuses, models.ProviderStatus{
+				ID:      "easyjet",
+				Name:    "easyJet",
+				Status:  okOrNoHit(len(easyjetFlights)),
+				Results: len(easyjetFlights),
+			})
+		}
+	} else {
+		fixHint := "search one-way economy; drop the alliance/airline filter"
+		reason := "options not supported by easyJet direct (round-trip / non-economy cabin / alliance filter / non-U2 airline filter)"
+		fixHintCode := ""
+		if !easyjetConfigured() {
+			reason = "easyJet's public availability API is Akamai bot-defended (HTTP 403); it is opt-in and requires a reachable endpoint"
+			fixHint = "set EASYJET_API_BASE to an authorised partner endpoint or a self-hosted proxy that returns the JSON availability API"
+			fixHintCode = "AKAMAI_BLOCK"
+		}
+		statuses = append(statuses, models.ProviderStatus{
+			ID:          "easyjet",
+			Name:        "easyJet",
+			Status:      "skipped",
+			Error:       reason,
+			FixHint:     fixHint,
+			FixHintCode: fixHintCode,
+		})
+	}
+
 	// Normalize all provider prices to the session currency so resolution and
 	// ranking compare like with like (Skiplagged returns USD, Kiwi its own).
 	// Best-effort and offline-safe: same-currency conversions never hit the net.
@@ -367,9 +412,10 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 	normalizeFlightCurrencies(ctx, ryanairFlights, target, destinations.ConvertCurrency)
 	normalizeFlightCurrencies(ctx, wizzairFlights, target, destinations.ConvertCurrency)
 	normalizeFlightCurrencies(ctx, transaviaFlights, target, destinations.ConvertCurrency)
+	normalizeFlightCurrencies(ctx, easyjetFlights, target, destinations.ConvertCurrency)
 
-	mergedFlights := mergeFlightResults(googleFlights, kiwiFlights, skiplaggedFlights, opts, ryanairFlights, wizzairFlights, transaviaFlights)
-	if googleSucceeded || kiwiSucceeded || skiplaggedSucceeded || ryanairSucceeded || wizzairSucceeded || transaviaSucceeded {
+	mergedFlights := mergeFlightResults(googleFlights, kiwiFlights, skiplaggedFlights, opts, ryanairFlights, wizzairFlights, transaviaFlights, easyjetFlights)
+	if googleSucceeded || kiwiSucceeded || skiplaggedSucceeded || ryanairSucceeded || wizzairSucceeded || transaviaSucceeded || easyjetSucceeded {
 		return &models.FlightSearchResult{
 			Success:          true,
 			Count:            len(mergedFlights),
@@ -398,6 +444,9 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 	}
 	if transaviaErr != nil {
 		errs = append(errs, transaviaErr)
+	}
+	if easyjetErr != nil {
+		errs = append(errs, easyjetErr)
 	}
 	if len(errs) > 0 {
 		err := errors.Join(errs...)
