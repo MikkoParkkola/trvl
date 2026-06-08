@@ -2,9 +2,12 @@ package flights
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -109,5 +112,120 @@ func TestWizzairEligibleOptions(t *testing.T) {
 	}
 	if !wizzairEligibleOptions(SearchOptions{Airlines: []string{"W6"}}) {
 		t.Error("W6 airline filter should be eligible")
+	}
+}
+
+// TestSearchWizzair_404_VersionRotated proves the version-rotation 404 surfaces
+// the typed sentinel (errors.Is) rather than crashing or returning a generic
+// failure. The aggregate uses this to render an actionable status.
+func TestSearchWizzair_404_VersionRotated(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	origHost, origVer := wizzHost, wizzVersion
+	wizzHost = srv.URL
+	wizzVersion = "10.1.0"
+	defer func() { wizzHost, wizzVersion = origHost, origVer }()
+	t.Setenv("WIZZAIR_API_VERSION", "")
+
+	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
+	if err == nil {
+		t.Fatal("want error on 404, got nil")
+	}
+	if !errors.Is(err, ErrWizzVersionRotated) {
+		t.Fatalf("error = %v, want errors.Is ErrWizzVersionRotated", err)
+	}
+	if out != nil {
+		t.Errorf("want nil results on failure, got %d", len(out))
+	}
+	// The tried version must appear in the message (honest, no fabricated current).
+	if !strings.Contains(err.Error(), "10.1.0") {
+		t.Errorf("error %q should name the tried version 10.1.0", err)
+	}
+}
+
+// TestWizzairFailureStatus_TypedActionable asserts the helper turns a rotation
+// error into an actionable ProviderStatus with the typed FixHintCode and a hint
+// naming the env override and last-known-good version. Pure / offline.
+func TestWizzairFailureStatus_TypedActionable(t *testing.T) {
+	orig := wizzVersion
+	wizzVersion = "10.1.0"
+	defer func() { wizzVersion = orig }()
+	t.Setenv("WIZZAIR_API_VERSION", "")
+
+	rotated := fmt.Errorf("wizzair: tried API version %q: %w", "10.1.0", ErrWizzVersionRotated)
+	st := wizzairFailureStatus(rotated)
+
+	if st.ID != "wizzair" || st.Name != "Wizz Air" {
+		t.Errorf("bad identity: %+v", st)
+	}
+	if st.Status == "ok" || st.Status == "" {
+		t.Errorf("status = %q, want a failure status", st.Status)
+	}
+	if st.FixHintCode != "WIZZ_VERSION_ROTATED" {
+		t.Errorf("fix_hint_code = %q, want WIZZ_VERSION_ROTATED", st.FixHintCode)
+	}
+	if !strings.Contains(st.FixHint, "WIZZAIR_API_VERSION") {
+		t.Errorf("fix_hint %q should name WIZZAIR_API_VERSION", st.FixHint)
+	}
+	if !strings.Contains(st.FixHint, "10.1.0") {
+		t.Errorf("fix_hint %q should name last-known-good 10.1.0", st.FixHint)
+	}
+	if st.Error == "" {
+		t.Error("error message should be populated")
+	}
+}
+
+// TestWizzairFailureStatus_GenericError checks a non-rotation error gets no
+// version-rotation fix hint (no false actionability).
+func TestWizzairFailureStatus_GenericError(t *testing.T) {
+	st := wizzairFailureStatus(errors.New("wizzair: decode: boom"))
+	if st.FixHintCode != "" {
+		t.Errorf("fix_hint_code = %q, want empty for generic error", st.FixHintCode)
+	}
+	if st.FixHint != "" {
+		t.Errorf("fix_hint = %q, want empty for generic error", st.FixHint)
+	}
+}
+
+// TestSearchWizzair_EnvOverrideRestores proves the WIZZAIR_API_VERSION override
+// is the working manual fix: the server 404s every path EXCEPT the override
+// version, and the search succeeds only because the override is honored on the
+// request path. This is the deterministic proof that the override restores the
+// provider after a rotation.
+func TestSearchWizzair_EnvOverrideRestores(t *testing.T) {
+	const goodVersion = "27.5.0"
+	fixture := loadFixture(t, "wizzair_timetable.json")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/"+goodVersion+"/") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixture)
+	}))
+	defer srv.Close()
+
+	origHost, origVer := wizzHost, wizzVersion
+	wizzHost = srv.URL
+	wizzVersion = "10.1.0" // stale default would 404
+	defer func() { wizzHost, wizzVersion = origHost, origVer }()
+
+	// Without the override: stale default 404s -> rotation sentinel.
+	t.Setenv("WIZZAIR_API_VERSION", "")
+	if _, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1}); !errors.Is(err, ErrWizzVersionRotated) {
+		t.Fatalf("stale default: err = %v, want ErrWizzVersionRotated", err)
+	}
+
+	// With the override: request path carries the good version -> results.
+	t.Setenv("WIZZAIR_API_VERSION", goodVersion)
+	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
+	if err != nil {
+		t.Fatalf("override should restore provider, got err: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("want 1 result after override, got %d", len(out))
 	}
 }

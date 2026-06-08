@@ -21,17 +21,23 @@ package flights
 //  1. WIZZAIR_API_VERSION env var (operator override, no code change / redeploy).
 //  2. wizzVersion package var (overridable in tests; seeded from the const).
 //
-// wizzDefaultVersion is the last-known-good value. A clean live-discovery path
-// (Wizz exposes its metadata via https://wizzair.com/.../metadata) is left as a
-// documented TODO below because it cannot be verified offline; the env override
-// gives operators a zero-deploy escape hatch in the meantime.
+// wizzDefaultVersion is the last-known-good value. There is deliberately NO
+// live-discovery path: Wizz's current API version is JS-gated and has no clean
+// server-side HTTP endpoint that reliably returns it, and a headless-browser
+// dependency is forbidden (single static binary, no frameworks). When the
+// segment rotates, the timetable endpoint 404s; SearchWizzair detects that and
+// returns ErrWizzVersionRotated, which the aggregate renders as a typed,
+// actionable ProviderStatus (FixHintCode "WIZZ_VERSION_ROTATED") telling the
+// operator to set WIZZAIR_API_VERSION. The env override is the authoritative,
+// zero-deploy manual fix.
 //
-// Tracking: low-cost-carrier provider breadth (flights domain).
+// Tracking: low-cost-carrier provider breadth (flights domain); GH #115.
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,12 +50,23 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// ErrWizzVersionRotated is the sentinel returned when the Wizz timetable endpoint
+// answers 404 — the signature of a rotated {version} path segment. Callers detect
+// it with errors.Is and render a typed, actionable ProviderStatus instead of a
+// silent failure. The wrapped message carries the version that was tried.
+//
+// Why no auto-discovery: Wizz's current API version is JS-gated and has no clean
+// server-side HTTP endpoint that reliably returns it. A guessed-but-unverified
+// discovery mechanism would be worse than none (it could pin the wrong version),
+// and a headless-browser dependency is forbidden by the single-binary principle.
+// The honest design is graceful degradation plus the WIZZAIR_API_VERSION env
+// override as the authoritative manual fix.
+var ErrWizzVersionRotated = errors.New("wizzair API version path rotated")
+
 // wizzDefaultVersion is the last-known-good API version path segment. See the
 // package comment: the segment rotates, so this is a fallback, not a contract.
-//
-// TODO(flights): add DiscoverWizzVersion(ctx) that fetches Wizz's published
-// metadata endpoint and refreshes wizzVersion at runtime. Cannot be implemented
-// + verified offline; WIZZAIR_API_VERSION env override covers operators today.
+// No runtime auto-discovery exists by design (JS-gated, undiscoverable
+// server-side); WIZZAIR_API_VERSION is the operator's authoritative override.
 const wizzDefaultVersion = "10.1.0"
 
 // wizzVersion is the active API version. Overridable in tests; the env var
@@ -159,9 +176,12 @@ func SearchWizzair(ctx context.Context, origin, destination, date, currency stri
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		// A 404 here most likely means the version path segment rotated.
+		// A 404 here is the version-rotation signature: the {version} path
+		// segment rotated and the one we tried no longer exists. Wrap the
+		// sentinel so the aggregate can render a typed, actionable status; the
+		// search continues and returns other providers' results regardless.
 		if resp.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf("wizzair: unexpected status 404 (API version %q may have rotated; set WIZZAIR_API_VERSION)", wizzResolvedVersion())
+			return nil, fmt.Errorf("wizzair: tried API version %q: %w", wizzResolvedVersion(), ErrWizzVersionRotated)
 		}
 		return nil, fmt.Errorf("wizzair: unexpected status %d", resp.StatusCode)
 	}
@@ -245,6 +265,30 @@ func wizzDisplayTime(s string) string {
 		return t.Format(flightTimeLayout)
 	}
 	return s
+}
+
+// wizzairFailureStatus maps a SearchWizzair error to a typed ProviderStatus.
+// A version-rotation 404 (ErrWizzVersionRotated) renders an actionable status
+// carrying a typed FixHintCode and a hint naming the WIZZAIR_API_VERSION env
+// override plus the last-known-good version, so an operator or orchestrating LLM
+// can restore the provider without a code change. All other errors fall through
+// to the standard classification (timeout vs failed). This helper is pure so it
+// can be unit-tested offline, independent of the live aggregate search.
+func wizzairFailureStatus(err error) models.ProviderStatus {
+	st := models.ProviderStatus{
+		ID:     "wizzair",
+		Name:   "Wizz Air",
+		Status: models.ClassifyProviderError(err),
+		Error:  err.Error(),
+	}
+	if errors.Is(err, ErrWizzVersionRotated) {
+		st.FixHintCode = "WIZZ_VERSION_ROTATED"
+		st.FixHint = fmt.Sprintf(
+			"Wizz API version path rotated; set WIZZAIR_API_VERSION=<current> to restore (tried %q; last-known-good: %s)",
+			wizzResolvedVersion(), wizzDefaultVersion,
+		)
+	}
+	return st
 }
 
 func wizzBookingURL(origin, destination, departure string) string {

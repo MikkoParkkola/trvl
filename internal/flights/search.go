@@ -291,12 +291,10 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 		wizzairFlights, wizzairErr = SearchWizzair(ctx, origin, destination, date, currency, opts)
 		if wizzairErr != nil {
 			slog.Warn("wizzair flight search failed", "origin", origin, "destination", destination, "date", date, "error", wizzairErr)
-			statuses = append(statuses, models.ProviderStatus{
-				ID:     "wizzair",
-				Name:   "Wizz Air",
-				Status: models.ClassifyProviderError(wizzairErr),
-				Error:  wizzairErr.Error(),
-			})
+			// wizzairFailureStatus renders a typed, actionable status; a 404
+			// version-rotation gets a WIZZ_VERSION_ROTATED fix hint. The search
+			// continues with the other providers either way.
+			statuses = append(statuses, wizzairFailureStatus(wizzairErr))
 		} else {
 			wizzairSucceeded = true
 			statuses = append(statuses, models.ProviderStatus{
