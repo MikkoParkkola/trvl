@@ -1,0 +1,80 @@
+name: regression-test-gate
+
+# Enforce "regression-test-first for fixes" as a merge gate (not documentation).
+# Rationale: a data-race (#144, and earlier #39/#40) shipped to production even
+# though CI runs -race, because the fix changed Go source but landed no test that
+# exercises the fixed path. -race only catches races a test actually drives. This
+# gate requires every fix-type PR that touches Go source to also change a
+# *_test.go in the SAME package, so the escaped class gets a permanent regression
+# guard instead of recurring.
+#
+# Escape hatch: add the label "skip-regression-test" for a genuinely untestable
+# fix (e.g. a pure dependency bump). The label is visible in history, so the
+# exception is auditable rather than silent.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  require-test-for-fix:
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-regression-test') }}
+    steps:
+      - name: Checkout (full history for base..head diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require a same-package regression test for fix PRs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=200 origin "$BASE_SHA" "$HEAD_SHA" 2>/dev/null || true
+
+          # Is this a fix-type PR? Check the title and every commit subject.
+          is_fix=false
+          if printf '%s\n' "$PR_TITLE" | grep -qiE '^(fix|hotfix|bugfix)(\(|:| )'; then
+            is_fix=true
+          fi
+          if git log --format=%s "${BASE_SHA}..${HEAD_SHA}" | grep -qiE '^(fix|hotfix|bugfix)(\(|:| )'; then
+            is_fix=true
+          fi
+
+          # Changed files in the PR.
+          changed="$(git diff --name-only "${BASE_SHA}..${HEAD_SHA}")"
+          src="$(printf '%s\n' "$changed" | grep -E '\.go$' | grep -v '_test\.go$' | grep -vE '^(docs/|\.github/)' || true)"
+          tests="$(printf '%s\n' "$changed" | grep -E '_test\.go$' || true)"
+
+          # Per-package check: every package (directory) with changed source must
+          # also have a changed *_test.go in the SAME directory. A test change in
+          # an unrelated package does not count. This is exactly how #144 slipped:
+          # the race fix was in internal/providers/, but the only test touched was
+          # the docs-claim oracle in cmd/trvl/. Same-package is a heuristic and
+          # cannot prove the test exercises the fixed path (undecidable statically),
+          # but it forces the fix to land a test beside the code it changed.
+          src_dirs="$(printf '%s\n' "$src" | sed '/^$/d' | xargs -r -n1 dirname | sort -u)"
+          test_dirs="$(printf '%s\n' "$tests" | sed '/^$/d' | xargs -r -n1 dirname | sort -u)"
+
+          echo "is_fix=$is_fix"
+          echo "source packages changed:"; printf '%s\n' "$src_dirs" | sed '/^$/d' || true
+          echo "test packages changed:";   printf '%s\n' "$test_dirs" | sed '/^$/d' || true
+
+          missing=""
+          for d in $src_dirs; do
+            if ! printf '%s\n' "$test_dirs" | grep -qx "$d"; then
+              missing="$missing $d"
+            fi
+          done
+
+          if [ "$is_fix" = true ] && [ -n "$missing" ]; then
+            echo "::error title=Regression test required::This fix PR changes Go source in package(s):${missing} with no matching *_test.go change in the same package(s). A bug fix must ship a regression test beside the code it fixes (fail-before / pass-after); the -race gate only catches races a test actually drives. Add the test, or label the PR 'skip-regression-test' with a justification if genuinely untestable."
+            exit 1
+          fi
+
+          echo "regression-test-gate: ok"
