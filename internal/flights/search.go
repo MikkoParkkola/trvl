@@ -415,6 +415,21 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 	normalizeFlightCurrencies(ctx, easyjetFlights, target, destinations.ConvertCurrency)
 
 	mergedFlights := mergeFlightResults(googleFlights, kiwiFlights, skiplaggedFlights, opts, ryanairFlights, wizzairFlights, transaviaFlights, easyjetFlights)
+
+	// Cross-shop re-pricing (MIK-4956 Phase C): re-price each segment of a
+	// Kiwi-discovered self-connect itinerary on Google Flights and append a
+	// "book-direct" separate-tickets alternative. Gated + append-only, so it
+	// never alters the existing merge/booking flow. A segment that cannot be
+	// priced yields a non-definitive status -> completeness goes partial below
+	// (no fabricated total). Only runs when Google succeeded (it is the pricer).
+	if crossShopEnabled() && googleSucceeded {
+		alts, xshopStatus := enrichCrossShop(ctx, mergedFlights, googleSegmentPricer(target), crossShopDefaultWindow, opts)
+		statuses = append(statuses, xshopStatus)
+		if len(alts) > 0 {
+			mergedFlights = append(mergedFlights, alts...)
+		}
+	}
+
 	if googleSucceeded || kiwiSucceeded || skiplaggedSucceeded || ryanairSucceeded || wizzairSucceeded || transaviaSucceeded || easyjetSucceeded {
 		return &models.FlightSearchResult{
 			Success:          true,
@@ -481,6 +496,12 @@ func cloneFlightSearchResult(shared *models.FlightSearchResult) *models.FlightSe
 			}
 			if flight.Legs != nil {
 				flightCopy.Legs = append([]models.FlightLeg(nil), flight.Legs...)
+			}
+			if flight.Sources != nil {
+				flightCopy.Sources = append([]models.PriceSource(nil), flight.Sources...)
+			}
+			if flight.SegmentSources != nil {
+				flightCopy.SegmentSources = append([]models.PriceSource(nil), flight.SegmentSources...)
 			}
 			if flight.CarryOnIncluded != nil {
 				carryOn := *flight.CarryOnIncluded

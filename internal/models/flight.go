@@ -51,6 +51,22 @@ type FlightResult struct {
 	// favoured over fares that already include a bag. 0 = not computed (use Price).
 	ComparablePrice     float64 `json:"comparable_price,omitempty"`
 	ComparableBreakdown string  `json:"comparable_breakdown,omitempty"`
+
+	// SegmentSources carries the cross-shop "book-direct" re-pricing of a
+	// multi-stop / self-connect itinerary (MIK-4956 Phase C, XSHOP.4): one
+	// PriceSource per leg, aligned to Legs by index, each re-priced on a
+	// direct provider (Google Flights) for that segment's route + date. It is
+	// DISTINCT from Sources: Sources collapses the same physical itinerary
+	// returned by several providers (cheapest headline), whereas
+	// SegmentSources decomposes ONE itinerary into separately-bookable legs
+	// whose prices are SUMMED into the headline Price. The no-fabrication
+	// guard (XSHOP.4) requires SegmentSources to be either empty or fully
+	// populated (one entry per leg); a partially-priced itinerary never
+	// carries a summed total.
+	SegmentSources []PriceSource `json:"segment_sources,omitempty"`
+	// BookDirect marks this FlightResult as a synthetic separate-tickets
+	// alternative assembled from SegmentSources, not a single bookable fare.
+	BookDirect bool `json:"book_direct,omitempty"`
 }
 
 // PriceForRanking returns ComparablePrice when computed, else the base Price.
