@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/livecheck"
 	"github.com/MikkoParkkola/trvl/internal/watch"
 )
 
@@ -388,9 +389,11 @@ func handleCheckWatches(ctx context.Context, _ map[string]any, _ ElicitFunc, _ S
 		return content, resp, nil
 	}
 
-	// Build a price checker that uses live flight/hotel search.
-	checker := &mcpPriceChecker{}
-	results := watch.CheckAll(ctx, store, checker)
+	// Re-price every watch against live sources, bounded so a synchronous MCP
+	// call cannot block indefinitely. checkWatchesChecker is a package var so
+	// tests can inject a deterministic checker. Room watches are reported with an
+	// honest "not checked" error until the room checker is wired (no fake price).
+	results := watch.CheckAllBounded(ctx, store, checkWatchesChecker, nil, watch.BoundedOptions{})
 
 	type resultItem struct {
 		ID           string  `json:"id"`
@@ -479,23 +482,20 @@ func handleCheckWatches(ctx context.Context, _ map[string]any, _ ElicitFunc, _ S
 	return content, resp, nil
 }
 
-// mcpPriceChecker implements watch.PriceChecker using live flight/hotel searches.
-// It is intentionally kept simple: it returns 0 price (no result) for hotel
-// watches since the hotel search requires a city resolver and external APIs that
-// are not easily callable without the full MCP handler context. Flight watches
-// are also non-trivial to re-invoke here; surfacing the mechanism without a
-// runtime import cycle is deferred to the daemon path. The check_watches tool
-// therefore records an informational result rather than a live price when no
-// price source is available.
+// checkWatchesChecker is the price checker used by handleCheckWatches. It is a
+// package var so tests can inject a deterministic fake; in production it performs
+// real live flight/hotel searches via the shared livecheck implementation.
+var checkWatchesChecker watch.PriceChecker = &mcpPriceChecker{}
+
+// mcpPriceChecker implements watch.PriceChecker by delegating to the shared
+// livecheck implementation that the CLI watch daemon also uses. Keeping a single
+// implementation behind both entry points is deliberate: the original bug was a
+// live CLI checker paired with a stubbed MCP checker that always returned 0,
+// which made check_watches silently report no price movement.
 type mcpPriceChecker struct{}
 
-func (m *mcpPriceChecker) CheckPrice(_ context.Context, w watch.Watch) (float64, string, string, error) {
-	// Live re-checking requires the full scraper stack (protobuf encoding,
-	// cookie jars, rate-limit backoff). The check_watches MCP tool surfaces
-	// the watch state and history; actual live re-checking is done by the
-	// background daemon (trvl watch --daemon). Return 0 to signal "no new
-	// data" so the store is not mutated and the existing last_price is shown.
-	return 0, w.Currency, "", nil
+func (m *mcpPriceChecker) CheckPrice(ctx context.Context, w watch.Watch) (float64, string, string, error) {
+	return livecheck.Checker{}.CheckPrice(ctx, w)
 }
 
 // --- helpers ---

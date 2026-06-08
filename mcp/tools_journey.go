@@ -101,10 +101,6 @@ func handleJourney(ctx context.Context, args map[string]any, elicit ElicitFunc, 
 		summary += "\n\nGround leg scheduled with the best-value option; the full comparison is attached so you can choose another."
 	}
 
-	content := []ContentBlock{
-		{Type: "text", Text: summary, Annotations: &ContentAnnotation{Audience: []string{"user"}, Priority: 1.0}},
-	}
-
 	// Optional calendar handoff (F.1): when as_ics is set, attach an iCalendar
 	// "Leave home" event with a reminder alarm so the user can drop it straight
 	// into Apple/Google/Outlook. Additive — does not change the default output.
@@ -121,8 +117,20 @@ func handleJourney(ctx context.Context, args map[string]any, elicit ElicitFunc, 
 		}
 	}
 
+	// Emit the human summary plus an assistant-facing JSON block of the same
+	// structured payload returned as structuredContent, so content-block-only
+	// clients still receive the data (not just a placeholder string).
 	if ics != "" || comparison != nil {
-		return content, journeyResponse{ScheduleTimeline: schedule, ICS: ics, GroundComparison: comparison}, nil
+		resp := journeyResponse{ScheduleTimeline: schedule, ICS: ics, GroundComparison: comparison}
+		content, err := buildAnnotatedContentBlocks(summary, resp)
+		if err != nil {
+			return nil, nil, err
+		}
+		return content, resp, nil
+	}
+	content, err := buildAnnotatedContentBlocks(summary, schedule)
+	if err != nil {
+		return nil, nil, err
 	}
 	return content, schedule, nil
 }

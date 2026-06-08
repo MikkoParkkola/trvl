@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/hotels"
+	"github.com/MikkoParkkola/trvl/internal/livecheck"
 	"github.com/MikkoParkkola/trvl/internal/providers"
 	"github.com/MikkoParkkola/trvl/internal/telemetry"
 	"github.com/MikkoParkkola/trvl/internal/watch"
@@ -125,7 +126,10 @@ func NewServer() *Server {
 	// not here, so that tests calling NewServer() directly don't spawn goroutines).
 	if home, err := os.UserHomeDir(); err == nil {
 		watchDir := filepath.Join(home, ".trvl")
-		s.scheduler = watch.NewScheduler(watchDir, 30*time.Minute, watch.NoopChecker{})
+		// Use the real live checker so the in-process background scheduler
+		// actually re-prices watches; NoopChecker here meant the scheduler ran
+		// every 30 minutes but never updated any price.
+		s.scheduler = watch.NewScheduler(watchDir, 30*time.Minute, livecheck.Checker{})
 	}
 
 	// Initialize provider registry (best-effort; nil registry is handled gracefully).

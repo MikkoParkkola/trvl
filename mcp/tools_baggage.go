@@ -67,9 +67,9 @@ func handleGetBaggageRules(_ context.Context, args map[string]any, _ ElicitFunc,
 			Found    bool                     `json:"found"`
 		}
 		resp := response{Airlines: airlines, Found: true}
-		content := []ContentBlock{
-			{Type: "text", Text: summary, Annotations: &ContentAnnotation{Audience: []string{"user"}, Priority: 1.0}},
-			{Type: "text", Text: "Structured baggage data attached.", Annotations: &ContentAnnotation{Audience: []string{"assistant"}, Priority: 0.5}},
+		content, err := buildAnnotatedContentBlocks(summary, resp)
+		if err != nil {
+			return nil, nil, err
 		}
 		return content, resp, nil
 	}
@@ -88,9 +88,9 @@ func handleGetBaggageRules(_ context.Context, args map[string]any, _ ElicitFunc,
 		summary = fmt.Sprintf("Airline %q not found in baggage database. Use airline_code=\"all\" to see all available airlines.", code)
 	}
 
-	content := []ContentBlock{
-		{Type: "text", Text: summary, Annotations: &ContentAnnotation{Audience: []string{"user"}, Priority: 1.0}},
-		{Type: "text", Text: "Structured baggage data attached.", Annotations: &ContentAnnotation{Audience: []string{"assistant"}, Priority: 0.5}},
+	content, err := buildAnnotatedContentBlocks(summary, resp)
+	if err != nil {
+		return nil, nil, err
 	}
 	return content, resp, nil
 }

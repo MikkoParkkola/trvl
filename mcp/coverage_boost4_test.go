@@ -460,24 +460,23 @@ func TestWatchRoute_Default(t *testing.T) {
 // mcpPriceChecker.CheckPrice
 // ============================================================
 
-func TestMCPPriceChecker_ReturnsZero(t *testing.T) {
+// TestMCPPriceChecker_DelegatesUnsupportedType verifies the MCP price checker
+// delegates to the shared livecheck implementation: an unsupported watch type
+// yields an error (not a fabricated zero price). This is deterministic and hits
+// no network. Live re-pricing is covered by the probe-gated test in
+// tools_watch_price_live_test.go.
+func TestMCPPriceChecker_DelegatesUnsupportedType(t *testing.T) {
 	t.Parallel()
 	c := &mcpPriceChecker{}
-	price, currency, date, err := c.CheckPrice(context.Background(), watch.Watch{
-		Type:     "flight",
+	price, _, _, err := c.CheckPrice(context.Background(), watch.Watch{
+		Type:     "ferry", // not flight/hotel: livecheck rejects it
 		Currency: "EUR",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for unsupported watch type, got nil")
 	}
 	if price != 0 {
-		t.Errorf("price = %f, want 0", price)
-	}
-	if currency != "EUR" {
-		t.Errorf("currency = %q, want EUR", currency)
-	}
-	if date != "" {
-		t.Errorf("date = %q, want empty", date)
+		t.Errorf("price = %f, want 0 on error", price)
 	}
 }
 

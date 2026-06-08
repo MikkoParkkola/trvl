@@ -134,9 +134,9 @@ func handleDetectTravelHacks(ctx context.Context, args map[string]any, _ ElicitF
 	sendProgress(progress, 100, 100, fmt.Sprintf("Found %d hacks", len(detected)))
 
 	summary := buildHacksSummary(origin, destination, date, detected)
-	content := []ContentBlock{
-		{Type: "text", Text: summary, Annotations: &ContentAnnotation{Audience: []string{"user"}, Priority: 1.0}},
-		{Type: "text", Text: "Structured hack data attached.", Annotations: &ContentAnnotation{Audience: []string{"assistant"}, Priority: 0.5}},
+	content, err := buildAnnotatedContentBlocks(summary, resp)
+	if err != nil {
+		return nil, nil, err
 	}
 	return content, resp, nil
 }
@@ -255,9 +255,9 @@ func handleDetectAccommodationHacks(ctx context.Context, args map[string]any, _ 
 	}
 
 	summary := buildAccomHacksSummary(city, checkin, checkout, detected)
-	content := []ContentBlock{
-		{Type: "text", Text: summary, Annotations: &ContentAnnotation{Audience: []string{"user"}, Priority: 1.0}},
-		{Type: "text", Text: "Structured accommodation hack data attached.", Annotations: &ContentAnnotation{Audience: []string{"assistant"}, Priority: 0.5}},
+	content, err := buildAnnotatedContentBlocks(summary, resp)
+	if err != nil {
+		return nil, nil, err
 	}
 	return content, resp, nil
 }

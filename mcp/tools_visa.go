@@ -64,9 +64,9 @@ func handleCheckVisa(_ context.Context, args map[string]any, _ ElicitFunc, _ Sam
 	sendProgress(progress, 100, 100, "Done")
 
 	summary := buildVisaSummary(result)
-	content := []ContentBlock{
-		{Type: "text", Text: summary, Annotations: &ContentAnnotation{Audience: []string{"user"}, Priority: 1.0}},
-		{Type: "text", Text: "Structured visa data attached.", Annotations: &ContentAnnotation{Audience: []string{"assistant"}, Priority: 0.5}},
+	content, err := buildAnnotatedContentBlocks(summary, result)
+	if err != nil {
+		return nil, nil, err
 	}
 	return content, result, nil
 }

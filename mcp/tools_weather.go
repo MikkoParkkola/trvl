@@ -81,9 +81,9 @@ func handleGetWeather(ctx context.Context, args map[string]any, _ ElicitFunc, _ 
 	sendProgress(progress, 100, 100, fmt.Sprintf("Got %d day forecast", len(result.Forecasts)))
 
 	summary := buildWeatherSummary(result)
-	content := []ContentBlock{
-		{Type: "text", Text: summary, Annotations: &ContentAnnotation{Audience: []string{"user"}, Priority: 1.0}},
-		{Type: "text", Text: "Structured forecast data attached.", Annotations: &ContentAnnotation{Audience: []string{"assistant"}, Priority: 0.5}},
+	content, err := buildAnnotatedContentBlocks(summary, result)
+	if err != nil {
+		return nil, nil, err
 	}
 	return content, result, nil
 }
