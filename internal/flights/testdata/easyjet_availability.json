@@ -1,0 +1,29 @@
+{
+  "flights": [
+    {
+      "flightNumber": "8431",
+      "departureAirport": "AMS",
+      "arrivalAirport": "BCN",
+      "departureDateTime": "2026-07-07T06:40:00",
+      "arrivalDateTime": "2026-07-07T08:55:00",
+      "fare": { "amount": 38.99, "currencyCode": "EUR" }
+    },
+    {
+      "flightNumber": "U28433",
+      "departureAirport": "AMS",
+      "arrivalAirport": "BCN",
+      "departureDateTime": "2026-07-07T19:10:00",
+      "arrivalDateTime": "2026-07-07T21:25:00",
+      "lowestFare": 52.49,
+      "currencyCode": "EUR"
+    },
+    {
+      "flightNumber": "8435",
+      "departureAirport": "AMS",
+      "arrivalAirport": "BCN",
+      "departureDateTime": "2026-07-08T06:40:00",
+      "arrivalDateTime": "2026-07-08T08:55:00",
+      "fare": { "amount": 41.99, "currencyCode": "EUR" }
+    }
+  ]
+}
