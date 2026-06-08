@@ -244,8 +244,22 @@ func claimString(claims map[string]any, key string) string {
 	return ""
 }
 
-func slogHTTPAuthDenied(method, message string) {
-	slog.Warn("mcp http request denied", "method", method, "reason", message)
+// slogHTTPAuthDecision emits a structured audit record of an auth decision.
+// detail carries the denial reason for "deny" or the subject for "allow"; it
+// is logged server-side only and never surfaced on the unauthenticated
+// /health endpoint. Denials log at Warn (security-relevant), allows at Info.
+func slogHTTPAuthDecision(decision, method, scope, detail string) {
+	attrs := []any{
+		"decision", decision,
+		"tool", method,
+		"scope", scope,
+		"detail", detail,
+	}
+	if decision == "deny" {
+		slog.Warn("mcp http auth decision", attrs...)
+		return
+	}
+	slog.Info("mcp http auth decision", attrs...)
 }
 
 func (s *Server) toolWriteRequirement(req *Request) (string, bool, bool) {

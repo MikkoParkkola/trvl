@@ -13,10 +13,21 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 const defaultHTTPHost = "127.0.0.1"
+
+// authAudit holds aggregate counters for auth decisions surfaced on /health.
+//
+// Only aggregate counts are exposed (never subjects, tokens, or denial
+// reasons) because /health is unauthenticated. Counters are atomic so the
+// shared HTTPServer is safe under concurrent requests.
+type authAudit struct {
+	allowed atomic.Uint64
+	denied  atomic.Uint64
+}
 
 // HTTPServer wraps an MCP Server with an HTTP transport.
 type HTTPServer struct {
@@ -24,6 +35,7 @@ type HTTPServer struct {
 	host   string
 	port   int
 	auth   *HTTPAuth
+	audit  authAudit
 }
 
 // HTTPServerOptions configures the HTTP MCP transport.
@@ -96,6 +108,8 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 
 	access, ok := h.authorize(r)
 	if !ok {
+		h.audit.denied.Add(1)
+		slogHTTPAuthDecision("deny", "", "", "missing or invalid bearer token")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -127,7 +141,8 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if errResp := h.authorizeJSONRPC(&req, access); errResp != nil {
-		slogHTTPAuthDenied(req.Method, errResp.Message)
+		h.audit.denied.Add(1)
+		slogHTTPAuthDecision("deny", req.Method, scopeSummary(access), errResp.Message)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(Response{
@@ -137,6 +152,9 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	h.audit.allowed.Add(1)
+	slogHTTPAuthDecision("allow", req.Method, scopeSummary(access), access.Subject)
 
 	resp := h.server.HandleRequest(&req)
 	if resp == nil {
@@ -180,11 +198,18 @@ func (h *HTTPServer) authorizeJSONRPC(req *Request, access RequestAccess) *Error
 
 func (h *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	// /health is unauthenticated: expose only aggregate auth-decision counts,
+	// never subjects, tokens, scopes, or denial reasons.
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "ok",
 		"server":  serverName,
 		"version": serverVersion,
 		"tools":   len(h.server.tools),
+		"auth": map[string]interface{}{
+			"enforced":          h.auth != nil && h.auth.Configured(),
+			"decisions_allowed": h.audit.allowed.Load(),
+			"decisions_denied":  h.audit.denied.Load(),
+		},
 	})
 }
 
@@ -203,6 +228,53 @@ func isLocalhostOrigin(origin string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// isRemoteBindHost reports whether binding to host exposes the server beyond
+// the loopback interface. Empty/loopback hosts are local; "0.0.0.0", "::", any
+// public IP, or a non-localhost hostname are treated as remote.
+func isRemoteBindHost(host string) bool {
+	h := strings.TrimSpace(host)
+	if h == "" {
+		// Empty defaults to the loopback host (see NewHTTPServerWithOptions).
+		return false
+	}
+	if strings.EqualFold(h, "localhost") {
+		return false
+	}
+	if ip := net.ParseIP(h); ip != nil {
+		// Unspecified (0.0.0.0, ::) binds all interfaces — that is remote.
+		return !ip.IsLoopback()
+	}
+	// A non-loopback hostname (e.g. a public DNS name) is remote.
+	return true
+}
+
+// requireRemoteAuth enforces GH-89.AUTH.4: a remote (non-loopback) bind must
+// have authentication explicitly configured. authConfigured reports whether a
+// token or OAuth introspection URL was supplied. It returns a clear error when
+// a remote bind would otherwise run unauthenticated.
+func requireRemoteAuth(host string, authConfigured bool) error {
+	if authConfigured || !isRemoteBindHost(host) {
+		return nil
+	}
+	return fmt.Errorf(
+		"refusing to start: --host %q exposes the MCP server beyond localhost but no authentication is configured; "+
+			"set --token/--read-token/--write-token (or TRVL_MCP_TOKEN), or --oauth-introspection-url, before binding to a non-loopback host",
+		strings.TrimSpace(host),
+	)
+}
+
+// scopeSummary renders an access scope set for audit logging (never the token).
+func scopeSummary(access RequestAccess) string {
+	switch {
+	case access.CanWrite():
+		return "read+write"
+	case access.CanRead():
+		return "read"
+	default:
+		return "none"
+	}
 }
 
 // RunHTTP starts the MCP server in HTTP mode on the given host and port.
@@ -237,6 +309,13 @@ func RunHTTPWithOptions(opts HTTPServerOptions) error {
 		opts.OAuthAudience = strings.TrimSpace(os.Getenv("TRVL_MCP_OAUTH_AUDIENCE"))
 	}
 	if !NewHTTPAuth(opts).Configured() {
+		// GH-89.AUTH.4: remote exposure requires explicit auth. A non-loopback
+		// bind with no configured token/OAuth is refused rather than silently
+		// protected by an auto-generated token printed to logs. Localhost keeps
+		// the convenient auto-generated token.
+		if err := requireRemoteAuth(opts.Host, false); err != nil {
+			return err
+		}
 		generated, err := generateMCPToken()
 		if err != nil {
 			return fmt.Errorf("generate MCP HTTP token: %w", err)
