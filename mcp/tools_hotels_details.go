@@ -266,15 +266,42 @@ func hotelDetailsSummary(result hotelDetailsSearchResponse, location string) str
 	summary := fmt.Sprintf("Enriched %d of %d hotels in %s.", result.Count, result.TotalAvailable, location)
 	roomCount := 0
 	errorCount := 0
+	freeCancelCount := 0
+	breakfastCount := 0
 	for _, hotel := range result.Hotels {
 		roomCount += len(hotel.RoomTypes)
 		errorCount += len(hotel.DetailErrors)
+		for _, room := range hotel.RoomTypes {
+			if roomHasFreeCancellation(room) {
+				freeCancelCount++
+			}
+			if room.BreakfastIncluded != nil && *room.BreakfastIncluded {
+				breakfastCount++
+			}
+		}
 	}
 	if roomCount > 0 {
 		summary += fmt.Sprintf(" Found %d room type%s.", roomCount, pluralSuffix(roomCount))
+	}
+	if freeCancelCount > 0 {
+		summary += fmt.Sprintf(" %d with free cancellation.", freeCancelCount)
+	}
+	if breakfastCount > 0 {
+		summary += fmt.Sprintf(" %d with breakfast included.", breakfastCount)
 	}
 	if errorCount > 0 {
 		summary += fmt.Sprintf(" %d detail lookup%s had partial failures.", errorCount, pluralSuffix(errorCount))
 	}
 	return summary
+}
+
+// roomHasFreeCancellation reports whether a room's parsed metadata indicates
+// free cancellation. It only returns true when the provider surfaced an
+// affirmative signal (explicit flag or normalized policy); absent data
+// (nil pointer, empty policy) returns false rather than fabricating a claim.
+func roomHasFreeCancellation(room hotels.RoomType) bool {
+	if room.FreeCancellation != nil && *room.FreeCancellation {
+		return true
+	}
+	return room.CancellationPolicy == "free_cancellation"
 }
