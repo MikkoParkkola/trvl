@@ -152,6 +152,9 @@ func formatRoomsTable(result *hotels.RoomAvailability) error {
 
 	models.Banner(os.Stdout, "🛏️", "Rooms", fmt.Sprintf("%s · %s to %s", name, result.CheckIn, result.CheckOut))
 	fmt.Println()
+	if result.Notice != "" {
+		fmt.Printf("Notice: %s\n\n", result.Notice)
+	}
 
 	headers := []string{"Room", "Price", "Guests", "Bed", "Board", "Cancellation", "Provider", "Amenities"}
 	rows := make([][]string, 0, len(result.Rooms))

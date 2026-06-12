@@ -26,6 +26,7 @@ const (
 	StatusNotConfigured = "not_configured" // credentials/connector missing — never checked
 	StatusNotAuthorized = "not_authorized" // caller lacks scope
 	StatusStale         = "stale"          // results exist but older than freshness threshold
+	StatusCircuitBroken = "circuit_broken" // provider skipped because recent failures tripped breaker
 )
 
 // ClassifyProviderError maps an error to StatusTimeout when it is a deadline /
@@ -93,7 +94,7 @@ func ComputeCompleteness(statuses []ProviderStatus) Completeness {
 			c.Succeeded++
 			continue
 		}
-		if s.Status == StatusTimeout || s.Status == StatusFailed || s.Status == StatusError {
+		if s.Status == StatusTimeout || s.Status == StatusFailed || s.Status == StatusError || s.Status == StatusCircuitBroken {
 			c.Missing = append(c.Missing, s.ID)
 		}
 	}

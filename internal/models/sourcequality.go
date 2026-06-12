@@ -35,8 +35,12 @@ var sourceRegistry = map[string]SourceProfile{
 	"skiplagged":     {ID: "skiplagged", API: true, LiveMinutes: 30, StaleMinutes: 180, NoHitMeaning: "no hidden-city/standard fare found"},
 	"ryanair":        {ID: "ryanair", API: true, LiveMinutes: 60, StaleMinutes: 360, NoHitMeaning: "Ryanair does not fly this route/date"},
 	"booking":        {ID: "booking", API: false, LiveMinutes: 60, StaleMinutes: 720, NoHitMeaning: "no Booking.com availability for these dates"},
+	"booking.com":    {ID: "booking.com", API: false, LiveMinutes: 60, StaleMinutes: 720, NoHitMeaning: "no Booking.com availability for these dates"},
 	"airbnb":         {ID: "airbnb", API: false, LiveMinutes: 60, StaleMinutes: 720, NoHitMeaning: "no Airbnb listings matched"},
 	"google_hotels":  {ID: "google_hotels", API: false, LiveMinutes: 60, StaleMinutes: 720, NoHitMeaning: "no hotels Google indexed for this query"},
+	"trivago":        {ID: "trivago", API: false, LiveMinutes: 60, StaleMinutes: 720, NoHitMeaning: "no Trivago accommodations matched"},
+	"hometogo":       {ID: "hometogo", API: false, LiveMinutes: 60, StaleMinutes: 720, NoHitMeaning: "no HomeToGo vacation rentals matched"},
+	"hostelworld":    {ID: "hostelworld", API: true, LiveMinutes: 60, StaleMinutes: 720, NoHitMeaning: "no Hostelworld properties matched"},
 }
 
 // defaultProfile applies when a provider is not in the registry.

@@ -79,6 +79,9 @@ func formatPricesTable(result *models.HotelPriceResult) error {
 	}
 
 	fmt.Printf("Prices for hotel %s (%s to %s):\n\n", result.HotelID, result.CheckIn, result.CheckOut)
+	if result.Notice != "" {
+		fmt.Printf("Notice: %s\n\n", result.Notice)
+	}
 
 	headers := []string{"Provider", "Price", "Currency"}
 	rows := make([][]string, 0, len(result.Providers))

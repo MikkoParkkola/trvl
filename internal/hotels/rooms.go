@@ -40,17 +40,21 @@ type RoomAvailability struct {
 	CheckIn  string     `json:"check_in"`
 	CheckOut string     `json:"check_out"`
 	Rooms    []RoomType `json:"rooms"`
+	Notice   string     `json:"notice,omitempty"`
 	Error    string     `json:"error,omitempty"`
 }
 
 // RoomSearchOptions configures a room availability search.
 type RoomSearchOptions struct {
-	HotelID    string // Google Hotels entity ID
-	CheckIn    string // YYYY-MM-DD
-	CheckOut   string // YYYY-MM-DD
-	Currency   string // e.g. "USD", "EUR"
-	BookingURL string // optional Booking.com hotel URL for rich room data
-	Location   string // optional city/area hint for search-based fallback
+	HotelID      string // Google Hotels entity ID
+	CheckIn      string // YYYY-MM-DD
+	CheckOut     string // YYYY-MM-DD
+	Currency     string // e.g. "USD", "EUR"
+	Guests       int    // searched guest count; defaults to 2
+	ChildrenAges []int  // requested child ages
+	Rooms        int    // requested room count
+	BookingURL   string // optional Booking.com hotel URL for rich room data
+	Location     string // optional city/area hint for search-based fallback
 }
 
 // GetRoomAvailability fetches room-level pricing for a specific hotel.
@@ -118,6 +122,14 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	if len(rooms) == 0 {
 		rooms, hotelName = trySearchPageFallback(ctx, opts)
 	}
+	notice := ""
+	if len(rooms) == 0 {
+		var serpName string
+		rooms, serpName, notice = trySerpAPIRoomFallback(ctx, opts)
+		if hotelName == "" {
+			hotelName = serpName
+		}
+	}
 
 	// Merge Booking.com rooms with Google rooms if both are available.
 	if len(bookingRooms) > 0 {
@@ -131,6 +143,7 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		CheckIn:  opts.CheckIn,
 		CheckOut: opts.CheckOut,
 		Rooms:    rooms,
+		Notice:   notice,
 	}, nil
 }
 
@@ -173,13 +186,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		return nil, ""
 	}
 
-	searchOpts := HotelSearchOptions{
-		CheckIn:  opts.CheckIn,
-		CheckOut: opts.CheckOut,
-		Guests:   2,
-		Currency: opts.Currency,
-		MaxPages: 1, // Single page — just need to find the target hotel.
-	}
+	searchOpts := roomFallbackSearchOptions(opts)
 
 	// Try multiple location candidates extracted from the hint (e.g.
 	// "Hotel Lutetia, Paris" yields ["Paris", "Hotel Lutetia Paris"]).
@@ -214,13 +221,20 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		// which can be used as a fuzzy match query.
 		hotel = findBestNameMatch(result.Hotels, opts.Location)
 	}
+	if hotel == nil {
+		return nil, ""
+	}
 
 	var rooms []RoomType
 	if hotel.Price > 0 {
+		currency := hotel.Currency
+		if currency == "" {
+			currency = opts.Currency
+		}
 		rooms = append(rooms, RoomType{
 			Name:     "Standard Room",
 			Price:    hotel.Price,
-			Currency: opts.Currency,
+			Currency: currency,
 			Provider: providerFromSources(hotel),
 		})
 	}
@@ -228,16 +242,36 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 	// Add additional provider prices as separate "room" entries.
 	for _, src := range hotel.Sources {
 		if src.Price > 0 && src.Price != hotel.Price {
+			currency := src.Currency
+			if currency == "" {
+				currency = opts.Currency
+			}
 			rooms = append(rooms, RoomType{
 				Name:     "Standard Room",
 				Price:    src.Price,
-				Currency: opts.Currency,
+				Currency: currency,
 				Provider: src.Provider,
 			})
 		}
 	}
 
 	return rooms, hotel.Name
+}
+
+func roomFallbackSearchOptions(opts RoomSearchOptions) HotelSearchOptions {
+	guests := opts.Guests
+	if guests <= 0 {
+		guests = 2
+	}
+	return HotelSearchOptions{
+		CheckIn:      opts.CheckIn,
+		CheckOut:     opts.CheckOut,
+		Guests:       guests,
+		ChildrenAges: append([]int(nil), opts.ChildrenAges...),
+		Rooms:        opts.Rooms,
+		Currency:     opts.Currency,
+		MaxPages:     1, // Single page — just need to find the target hotel.
+	}
 }
 
 // extractLocationFromSearchData recursively searches parsed callback data

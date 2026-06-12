@@ -67,3 +67,42 @@ func TestGetRoomAvailability_SkipsBookingWhenNoURL(t *testing.T) {
 		t.Error("expected FetchBookingRooms NOT to be called when no BookingURL")
 	}
 }
+
+func TestRoomFallbackSearchOptionsUsesRequestedGuests(t *testing.T) {
+	opts := RoomSearchOptions{
+		HotelID:      "test-hotel-id",
+		CheckIn:      "2026-08-10",
+		CheckOut:     "2026-08-17",
+		Currency:     "EUR",
+		Guests:       4,
+		ChildrenAges: []int{7, 10},
+		Rooms:        2,
+	}
+
+	got := roomFallbackSearchOptions(opts)
+	if got.Guests != 4 {
+		t.Fatalf("fallback Guests = %d, want requested guests 4", got.Guests)
+	}
+	if len(got.ChildrenAges) != 2 || got.ChildrenAges[0] != 7 || got.ChildrenAges[1] != 10 {
+		t.Fatalf("fallback ChildrenAges = %v, want [7 10]", got.ChildrenAges)
+	}
+	if got.Rooms != 2 {
+		t.Fatalf("fallback Rooms = %d, want requested rooms 2", got.Rooms)
+	}
+	if got.CheckIn != opts.CheckIn || got.CheckOut != opts.CheckOut || got.Currency != opts.Currency {
+		t.Fatalf("fallback dates/currency = %s/%s/%s, want %s/%s/%s",
+			got.CheckIn, got.CheckOut, got.Currency, opts.CheckIn, opts.CheckOut, opts.Currency)
+	}
+}
+
+func TestRoomFallbackSearchOptionsDefaultsGuests(t *testing.T) {
+	got := roomFallbackSearchOptions(RoomSearchOptions{
+		HotelID:  "test-hotel-id",
+		CheckIn:  "2026-08-10",
+		CheckOut: "2026-08-17",
+		Currency: "EUR",
+	})
+	if got.Guests != 2 {
+		t.Fatalf("fallback Guests = %d, want default guests 2", got.Guests)
+	}
+}

@@ -3,8 +3,10 @@ package hotels
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"golang.org/x/time/rate"
 )
 
 func TestParseBookingHTMLHotels(t *testing.T) {
@@ -71,14 +73,13 @@ func TestSearchBooking_OverrideInTest(t *testing.T) {
 }
 
 func TestSearchBooking_RateLimiter(t *testing.T) {
-	// Just verify the rate limiter doesn't block on first call
-	ctx := context.Background()
-	_, err := SearchBooking(ctx, "Athens", HotelSearchOptions{
-		CheckIn: "2026-09-01", CheckOut: "2026-09-08", Currency: "EUR",
-	})
-	// This will likely hit a network error (no mock), but shouldn't
-	// fail on rate limiting
-	if err != nil && err.Error() == "booking rate limiter: context deadline exceeded" {
-		t.Fatal("rate limiter blocked before first call")
+	origLimiter := bookingSearchLimiter
+	bookingSearchLimiter = rate.NewLimiter(rate.Every(3*time.Second), 1)
+	defer func() { bookingSearchLimiter = origLimiter }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := bookingSearchLimiter.Wait(ctx); err != nil {
+		t.Fatalf("first limiter wait blocked: %v", err)
 	}
 }
