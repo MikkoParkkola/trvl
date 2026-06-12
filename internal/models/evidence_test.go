@@ -49,6 +49,20 @@ func TestComputeCompleteness(t *testing.T) {
 		t.Errorf("Missing = %v, want [kiwi]", c.Missing)
 	}
 
+	// A circuit-broken provider also makes coverage partial: it was not a
+	// checked no-hit, so renderers must not claim exhaustive hotel coverage.
+	circuitBroken := []ProviderStatus{
+		{ID: "google_hotels", Status: StatusCheckedHit, Results: 3},
+		{ID: "booking", Status: StatusCircuitBroken},
+	}
+	c = ComputeCompleteness(circuitBroken)
+	if c.State != CompletenessPartial || c.MayClaimExhaustive() {
+		t.Errorf("circuit-broken -> %+v, want partial + not-exhaustive", c)
+	}
+	if len(c.Missing) != 1 || c.Missing[0] != "booking" {
+		t.Errorf("Missing = %v, want [booking]", c.Missing)
+	}
+
 	// Nothing definitive: blocked.
 	blocked := []ProviderStatus{
 		{ID: "google_flights", Status: StatusTimeout},

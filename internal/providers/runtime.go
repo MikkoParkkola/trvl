@@ -96,6 +96,9 @@ type HotelFilterParams struct {
 	MinRating        float64  // minimum guest rating, 0 = no filter
 	Amenities        []string // required amenities
 	FreeCancellation bool
+	Refundable       bool
+	ChildrenAges     []int
+	Rooms            int
 
 	// Extended filters — wired to providers that support them.
 	MinBedrooms    int    // minimum bedrooms (Airbnb)
@@ -108,6 +111,10 @@ type HotelFilterParams struct {
 	Sustainable    bool   // eco/sustainable properties (Booking)
 	MealPlan       bool   // breakfast/meal included (Booking)
 	IncludeSoldOut bool   // include sold-out properties in results (Booking)
+
+	MustHaveKitchen   bool
+	MustHaveWifi      bool
+	MustHaveWorkspace bool
 }
 
 // Runtime is the generic HTTP execution engine for configured providers.
@@ -350,7 +357,7 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 				trippedStatuses = append(trippedStatuses, models.ProviderStatus{
 					ID:      cfg.ID,
 					Name:    cfg.Name,
-					Status:  "circuit_broken",
+					Status:  models.StatusCircuitBroken,
 					Error:   fmt.Sprintf("circuit breaker tripped after %d consecutive failures (never succeeded; awaiting cooldown)", bs.ErrorCount),
 					FixHint: "fix the upstream credential / cookie / endpoint, then run `trvl provider reset <id>` to clear the breaker",
 				})
@@ -376,7 +383,7 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 				trippedStatuses = append(trippedStatuses, models.ProviderStatus{
 					ID:     cfg.ID,
 					Name:   cfg.Name,
-					Status: "circuit_broken",
+					Status: models.StatusCircuitBroken,
 					Error: fmt.Sprintf("circuit breaker tripped after %d consecutive failures; last error: %s; recovery probe at %s",
 						bs.ErrorCount,
 						bs.LastError,
@@ -493,7 +500,7 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 			statuses = append(statuses, models.ProviderStatus{
 				ID:          r.id,
 				Name:        r.name,
-				Status:      "error",
+				Status:      status,
 				Error:       errMsg,
 				FixHint:     hint,
 				FixHintCode: string(hintCode),
@@ -704,7 +711,7 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	// Add filter variables when provided. These allow provider URL
 	// templates and query params to reference ${min_price}, ${max_price},
 	// ${property_type}, ${sort}, ${stars}, ${min_rating}, ${amenities},
-	// and ${free_cancellation}.
+	// ${free_cancellation}, and criteria-first occupancy/rate fields.
 	if filters != nil {
 		if filters.MinPrice > 0 {
 			vars["${min_price}"] = strconv.FormatFloat(filters.MinPrice, 'f', -1, 64)
@@ -756,6 +763,16 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 		if filters.FreeCancellation {
 			vars["${free_cancellation}"] = "1"
 			vars["${flexible_cancellation}"] = "true"
+		}
+		if filters.Refundable {
+			vars["${refundable}"] = "1"
+		}
+		if len(filters.ChildrenAges) > 0 {
+			vars["${children}"] = strconv.Itoa(len(filters.ChildrenAges))
+			vars["${children_ages}"] = joinIntValues(filters.ChildrenAges, ",")
+		}
+		if filters.Rooms > 0 {
+			vars["${rooms}"] = strconv.Itoa(filters.Rooms)
 		}
 		// Build composite price_range var for providers like Booking that
 		// encode price filters as "currency-min-max-1" (e.g. "EUR-50-200-1").
@@ -813,6 +830,15 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 		}
 		if filters.IncludeSoldOut {
 			vars["${include_sold_out}"] = "1"
+		}
+		if filters.MustHaveKitchen {
+			vars["${must_have_kitchen}"] = "1"
+		}
+		if filters.MustHaveWifi {
+			vars["${must_have_wifi}"] = "1"
+		}
+		if filters.MustHaveWorkspace {
+			vars["${must_have_workspace}"] = "1"
 		}
 	}
 
@@ -1359,4 +1385,15 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	}
 
 	return hotels, nil
+}
+
+func joinIntValues(values []int, separator string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, strconv.Itoa(value))
+	}
+	return strings.Join(parts, separator)
 }

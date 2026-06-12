@@ -2,6 +2,7 @@ package models
 
 import (
 	"testing"
+	"time"
 )
 
 func TestMergeHotelResults_NoDuplicates(t *testing.T) {
@@ -589,5 +590,56 @@ func TestHaversineMeters(t *testing.T) {
 	dist = haversineMeters(60.17, 24.94, 60.17, 24.94)
 	if dist != 0 {
 		t.Errorf("same point expected 0m, got %.0fm", dist)
+	}
+}
+
+func TestFinalizeHotelPriceTrustPrefersRequestedCurrency(t *testing.T) {
+	checkedAt := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)
+	hotels := []HotelResult{{
+		Name:     "Hotel Example",
+		Price:    44,
+		Currency: "USD",
+		Sources: []PriceSource{
+			{Provider: "google_hotels", Price: 122, Currency: "EUR", BookingURL: "https://google.example/hotel"},
+			{Provider: "hometogo", Price: 44, Currency: "USD", BookingURL: "https://hometogo.example/home"},
+		},
+	}}
+
+	FinalizeHotelPriceTrust(hotels, "EUR", checkedAt)
+
+	h := hotels[0]
+	if h.Price != 122 || h.Currency != "EUR" || h.BookingURL != "https://google.example/hotel" {
+		t.Fatalf("primary price = %.0f %s %s, want 122 EUR from requested-currency source", h.Price, h.Currency, h.BookingURL)
+	}
+	if h.PriceBasis != PriceBasisLeadIn || h.PriceConfidence != PriceConfidenceUnverified {
+		t.Fatalf("price trust = basis %q confidence %q, want lead_in/unverified", h.PriceBasis, h.PriceConfidence)
+	}
+	if h.RetrievedAt.IsZero() || h.Freshness != FreshnessLive {
+		t.Fatalf("freshness = retrieved_at %v freshness %q, want checked timestamp + live", h.RetrievedAt, h.Freshness)
+	}
+	if len(h.PriceWarnings) != 1 || h.PriceWarnings[0] != PriceWarningMixedSourceCurrencies {
+		t.Fatalf("price warnings = %#v, want mixed_source_currencies", h.PriceWarnings)
+	}
+	for _, source := range h.Sources {
+		if source.RetrievedAt.IsZero() || source.Freshness == "" || source.PriceBasis == "" || source.PriceConfidence == "" {
+			t.Fatalf("source not finalized: %#v", source)
+		}
+	}
+}
+
+func TestInferHotelPropertyTypeFromProviderAndName(t *testing.T) {
+	cases := []struct {
+		hotel HotelResult
+		want  string
+	}{
+		{hotel: HotelResult{Name: "JO&JOE Paris", Sources: []PriceSource{{Provider: "hostelworld"}}}, want: "hostel"},
+		{hotel: HotelResult{Name: "Central Apartment", Sources: []PriceSource{{Provider: "google_hotels"}}}, want: "apartment"},
+		{hotel: HotelResult{Name: "Villa Rosa"}, want: "villa"},
+		{hotel: HotelResult{Name: "Angelina"}, want: "unknown"},
+	}
+	for _, tt := range cases {
+		if got := InferHotelPropertyType(tt.hotel); got != tt.want {
+			t.Errorf("InferHotelPropertyType(%q) = %q, want %q", tt.hotel.Name, got, tt.want)
+		}
 	}
 }

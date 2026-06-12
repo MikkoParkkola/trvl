@@ -1,0 +1,214 @@
+package models
+
+import (
+	"strings"
+	"time"
+)
+
+const (
+	PriceBasisLeadIn            = "lead_in"
+	PriceBasisRoomNightly       = "room_nightly"
+	PriceBasisRoomTotal         = "room_total"
+	PriceBasisTaxInclusiveTotal = "tax_inclusive_total"
+
+	PriceConfidenceUnverified = "unverified"
+	PriceConfidenceRoomLevel  = "room_level"
+	PriceConfidenceVerified   = "verified"
+
+	PriceWarningMixedSourceCurrencies = "mixed_source_currencies"
+)
+
+// FinalizeHotelPriceTrust fills source-level trust metadata, chooses a primary
+// price from comparable currencies, and mirrors that source's trust fields onto
+// the hotel. Search results should call this after all providers have merged.
+func FinalizeHotelPriceTrust(hotels []HotelResult, preferredCurrency string, now time.Time) {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	preferredCurrency = strings.ToUpper(strings.TrimSpace(preferredCurrency))
+
+	for i := range hotels {
+		FinalizeHotelResultPriceTrust(&hotels[i], preferredCurrency, now)
+	}
+}
+
+// FinalizeHotelResultPriceTrust is the single-result form used by tests and
+// detail handlers.
+func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now time.Time) {
+	if h == nil {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if len(h.Sources) == 0 && h.Price > 0 {
+		h.Sources = []PriceSource{{
+			Provider:        "unknown",
+			Price:           h.Price,
+			Currency:        h.Currency,
+			BookingURL:      h.BookingURL,
+			PriceBasis:      PriceBasisLeadIn,
+			PriceConfidence: PriceConfidenceUnverified,
+		}}
+	}
+
+	h.Sources = finalizePriceSources(h.Sources, now)
+	if selected, ok := selectPrimaryHotelSource(h.Sources, preferredCurrency, h.Currency); ok {
+		h.Price = selected.Price
+		h.Currency = selected.Currency
+		if selected.BookingURL != "" {
+			h.BookingURL = selected.BookingURL
+		}
+		h.PriceBasis = selected.PriceBasis
+		h.PriceConfidence = selected.PriceConfidence
+		h.RetrievedAt = selected.RetrievedAt
+		h.Freshness = selected.Freshness
+	}
+	if h.PropertyType == "" {
+		h.PropertyType = InferHotelPropertyType(*h)
+	}
+	if hasMixedSourceCurrencies(h.Sources) {
+		h.PriceWarnings = appendUniqueString(h.PriceWarnings, PriceWarningMixedSourceCurrencies)
+	}
+}
+
+func finalizePriceSources(sources []PriceSource, now time.Time) []PriceSource {
+	if len(sources) == 0 {
+		return nil
+	}
+	out := make([]PriceSource, len(sources))
+	for i, s := range sources {
+		s.Provider = strings.TrimSpace(s.Provider)
+		if s.Provider == "" {
+			s.Provider = "unknown"
+		}
+		s.Currency = strings.ToUpper(strings.TrimSpace(s.Currency))
+		if s.PriceBasis == "" {
+			s.PriceBasis = PriceBasisLeadIn
+		}
+		if s.PriceConfidence == "" {
+			s.PriceConfidence = PriceConfidenceUnverified
+		}
+		if s.RetrievedAt.IsZero() {
+			s.RetrievedAt = now
+		}
+		s.Freshness = ClassifyFreshness(s.Provider, s.RetrievedAt, now)
+		out[i] = s
+	}
+	return out
+}
+
+func selectPrimaryHotelSource(sources []PriceSource, preferredCurrency, currentCurrency string) (PriceSource, bool) {
+	preferredCurrency = strings.ToUpper(strings.TrimSpace(preferredCurrency))
+	currentCurrency = strings.ToUpper(strings.TrimSpace(currentCurrency))
+	if selected, ok := cheapestSourceInCurrency(sources, preferredCurrency); ok {
+		return selected, true
+	}
+	if selected, ok := cheapestSourceInCurrency(sources, currentCurrency); ok {
+		return selected, true
+	}
+	bestCurrency := mostRepresentedSourceCurrency(sources)
+	if selected, ok := cheapestSourceInCurrency(sources, bestCurrency); ok {
+		return selected, true
+	}
+	return PriceSource{}, false
+}
+
+func cheapestSourceInCurrency(sources []PriceSource, currency string) (PriceSource, bool) {
+	if currency == "" {
+		return PriceSource{}, false
+	}
+	var selected PriceSource
+	for _, s := range sources {
+		if s.Price <= 0 || strings.ToUpper(s.Currency) != currency {
+			continue
+		}
+		if selected.Price == 0 || s.Price < selected.Price {
+			selected = s
+		}
+	}
+	return selected, selected.Price > 0
+}
+
+func mostRepresentedSourceCurrency(sources []PriceSource) string {
+	counts := make(map[string]int)
+	firstSeen := make(map[string]int)
+	bestCurrency := ""
+	bestCount := 0
+	for i, s := range sources {
+		if s.Price <= 0 || s.Currency == "" {
+			continue
+		}
+		currency := strings.ToUpper(s.Currency)
+		counts[currency]++
+		if _, ok := firstSeen[currency]; !ok {
+			firstSeen[currency] = i
+		}
+		if counts[currency] > bestCount ||
+			(counts[currency] == bestCount && bestCurrency != "" && firstSeen[currency] < firstSeen[bestCurrency]) {
+			bestCurrency = currency
+			bestCount = counts[currency]
+		}
+	}
+	return bestCurrency
+}
+
+func hasMixedSourceCurrencies(sources []PriceSource) bool {
+	seen := ""
+	for _, s := range sources {
+		if s.Price <= 0 || s.Currency == "" {
+			continue
+		}
+		currency := strings.ToUpper(s.Currency)
+		if seen == "" {
+			seen = currency
+			continue
+		}
+		if currency != seen {
+			return true
+		}
+	}
+	return false
+}
+
+func appendUniqueString(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+// InferHotelPropertyType gives callers a conservative machine-readable type
+// for filtering and UI labeling. It intentionally returns "unknown" when the
+// evidence is weak instead of pretending every lodging-like Google result is a
+// hotel.
+func InferHotelPropertyType(h HotelResult) string {
+	text := strings.ToLower(h.Name + " " + h.Description + " " + h.Address)
+	for _, s := range h.Sources {
+		provider := strings.ToLower(strings.TrimSpace(s.Provider))
+		switch {
+		case strings.Contains(provider, "hostelworld"):
+			return "hostel"
+		case strings.Contains(provider, "airbnb"), strings.Contains(provider, "hometogo"), strings.Contains(provider, "vrbo"):
+			return "vacation_rental"
+		}
+	}
+	switch {
+	case strings.Contains(text, "hostel"):
+		return "hostel"
+	case strings.Contains(text, "apartment"), strings.Contains(text, "apartments"), strings.Contains(text, "aparthotel"), strings.Contains(text, "residence"):
+		return "apartment"
+	case strings.Contains(text, "villa"):
+		return "villa"
+	case strings.Contains(text, "resort"):
+		return "resort"
+	case strings.Contains(text, "bed and breakfast"), strings.Contains(text, "b&b"):
+		return "bnb"
+	case strings.Contains(text, "hotel"), strings.Contains(text, "inn"), strings.Contains(text, "motel"):
+		return "hotel"
+	default:
+		return "unknown"
+	}
+}

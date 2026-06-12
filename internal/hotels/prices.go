@@ -136,62 +136,59 @@ func GetHotelPricesWithOpts(ctx context.Context, opts HotelPriceOpts) (*models.H
 // when the batchexecute RPC has no booking partner data. Uses the same
 // approach as trySearchPageFallback in rooms.go.
 func tryPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.HotelPriceResult {
-	if opts.Location == "" {
-		return nil
-	}
-
-	searchOpts := HotelSearchOptions{
-		CheckIn:  opts.CheckIn,
-		CheckOut: opts.CheckOut,
-		Guests:   2,
-		Currency: opts.Currency,
-		MaxPages: 1,
-	}
-
-	client := DefaultClient()
-	candidates := buildLocationCandidates(opts.Location)
-	var result *models.HotelSearchResult
-	for _, loc := range candidates {
-		r, err := SearchHotelsWithClient(ctx, client, loc, searchOpts)
-		if err == nil && len(r.Hotels) > 0 {
-			result = r
-			break
+	if opts.Location != "" {
+		searchOpts := HotelSearchOptions{
+			CheckIn:  opts.CheckIn,
+			CheckOut: opts.CheckOut,
+			Guests:   2,
+			Currency: opts.Currency,
+			MaxPages: 1,
 		}
-	}
-	if result == nil || len(result.Hotels) == 0 {
-		return nil
-	}
 
-	// Try ID match first, then name match.
-	var hotel *models.HotelResult
-	for i := range result.Hotels {
-		if result.Hotels[i].HotelID == opts.HotelID {
-			hotel = &result.Hotels[i]
-			break
+		client := DefaultClient()
+		candidates := buildLocationCandidates(opts.Location)
+		var result *models.HotelSearchResult
+		for _, loc := range candidates {
+			r, err := SearchHotelsWithClient(ctx, client, loc, searchOpts)
+			if err == nil && len(r.Hotels) > 0 {
+				result = r
+				break
+			}
 		}
-	}
-	if hotel == nil {
-		hotel = findBestNameMatch(result.Hotels, opts.Location)
-	}
-	if hotel == nil || hotel.Price <= 0 {
-		return nil
+		if result != nil && len(result.Hotels) > 0 {
+			// Try ID match first, then name match.
+			var hotel *models.HotelResult
+			for i := range result.Hotels {
+				if result.Hotels[i].HotelID == opts.HotelID {
+					hotel = &result.Hotels[i]
+					break
+				}
+			}
+			if hotel == nil {
+				hotel = findBestNameMatch(result.Hotels, opts.Location)
+			}
+			if hotel != nil && hotel.Price > 0 {
+				cur := opts.Currency
+				if cur == "" {
+					cur = hotel.Currency
+				}
+				return &models.HotelPriceResult{
+					Success:  true,
+					HotelID:  opts.HotelID,
+					CheckIn:  opts.CheckIn,
+					CheckOut: opts.CheckOut,
+					Providers: []models.ProviderPrice{
+						{
+							Provider: "Google Hotels",
+							Price:    hotel.Price,
+							Currency: cur,
+						},
+					},
+				}
+			}
+		}
+
 	}
 
-	cur := opts.Currency
-	if cur == "" {
-		cur = hotel.Currency
-	}
-	return &models.HotelPriceResult{
-		Success:   true,
-		HotelID:   opts.HotelID,
-		CheckIn:   opts.CheckIn,
-		CheckOut:  opts.CheckOut,
-		Providers: []models.ProviderPrice{
-			{
-				Provider: "Google Hotels",
-				Price:    hotel.Price,
-				Currency: cur,
-			},
-		},
-	}
+	return trySerpAPIPriceFallback(ctx, opts)
 }

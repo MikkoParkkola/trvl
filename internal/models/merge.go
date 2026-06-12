@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 )
 
 // HasExternalProviderSource returns true if the hotel has at least one price
@@ -160,6 +161,7 @@ func MergeHotelResults(sources ...[]HotelResult) []HotelResult {
 	for _, k := range order {
 		result = append(result, *merged[k])
 	}
+	FinalizeHotelPriceTrust(result, "", time.Now())
 	ComputeSavings(result)
 	return result
 }

@@ -34,7 +34,10 @@ var SearchBooking = defaultSearchBooking
 // hotelGroup deduplicates concurrent in-flight searches with identical parameters.
 var hotelGroup singleflight.Group
 
-const sharedHotelSearchTimeout = 30 * time.Second
+const (
+	sharedHotelSearchTimeout = 60 * time.Second
+	hotelAuxProviderTimeout  = 10 * time.Second
+)
 
 // externalProviderRuntime is set by the MCP server when providers are configured.
 // It is nil when no external providers are available.
@@ -73,12 +76,14 @@ func DefaultClient() *batchexec.Client {
 
 // HotelSearchOptions configures a hotel search.
 type HotelSearchOptions struct {
-	CheckIn  string // YYYY-MM-DD
-	CheckOut string // YYYY-MM-DD
-	Guests   int
-	Stars    int    // 0 = any, 2-5 filter
-	Sort     string // "cheapest", "rating", "distance", "stars"
-	Currency string // default "USD"
+	CheckIn      string // YYYY-MM-DD
+	CheckOut     string // YYYY-MM-DD
+	Guests       int
+	ChildrenAges []int
+	Rooms        int
+	Stars        int    // 0 = any, 2-5 filter
+	Sort         string // "cheapest", "rating", "distance", "stars"
+	Currency     string // default "USD"
 
 	// Post-fetch filters.
 	MinPrice      float64  // minimum price per night (0 = no filter)
@@ -101,6 +106,11 @@ type HotelSearchOptions struct {
 
 	// FreeCancellation filters for hotels offering free cancellation when true.
 	FreeCancellation bool
+
+	// RefundableRequired filters for refundable rates when provider support
+	// exists. Providers that cannot pre-filter still expose refundability in
+	// room-level offers so callers can reject non-matching rates.
+	RefundableRequired bool
 
 	// PropertyType restricts results to a specific property category.
 	// Accepted values: "hotel", "apartment", "hostel", "resort", "bnb", "villa".
@@ -129,6 +139,11 @@ type HotelSearchOptions struct {
 	Sustainable    bool   // eco/sustainable properties (Booking nflt=sustainable)
 	MealPlan       bool   // breakfast/meal included (Booking nflt=mealplan)
 	IncludeSoldOut bool   // include sold-out properties (Booking nflt=oos)
+
+	// Need-level amenities that should survive into provider/detail searches.
+	MustHaveKitchen   bool
+	MustHaveWifi      bool
+	MustHaveWorkspace bool
 }
 
 // SearchHotels searches for hotels in the given location.
@@ -188,69 +203,81 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 	amenities := normalizedHotelSearchAmenities(opts.Amenities)
 	sort.Strings(amenities)
 	key := struct {
-		Location         string   `json:"location"`
-		CheckIn          string   `json:"check_in"`
-		CheckOut         string   `json:"check_out"`
-		Guests           int      `json:"guests"`
-		Stars            int      `json:"stars"`
-		Sort             string   `json:"sort"`
-		Currency         string   `json:"currency"`
-		MinPrice         float64  `json:"min_price"`
-		MaxPrice         float64  `json:"max_price"`
-		MinRating        float64  `json:"min_rating"`
-		MaxDistanceKm    float64  `json:"max_distance_km"`
-		Amenities        []string `json:"amenities,omitempty"`
-		CenterLat        float64  `json:"center_lat"`
-		CenterLon        float64  `json:"center_lon"`
-		EnrichAmenities  bool     `json:"enrich_amenities"`
-		EnrichLimit      int      `json:"enrich_limit"`
-		MaxPages         int      `json:"max_pages"`
-		FreeCancellation bool     `json:"free_cancellation"`
-		PropertyType     string   `json:"property_type"`
-		Brand            string   `json:"brand"`
-		EcoCertified     bool     `json:"eco_certified"`
-		MinBedrooms      int      `json:"min_bedrooms"`
-		MinBathrooms     int      `json:"min_bathrooms"`
-		MinBeds          int      `json:"min_beds"`
-		RoomType         string   `json:"room_type"`
-		Superhost        bool     `json:"superhost"`
-		InstantBook      bool     `json:"instant_book"`
-		MaxDistanceM     int      `json:"max_distance_m"`
-		Sustainable      bool     `json:"sustainable"`
-		MealPlan         bool     `json:"meal_plan"`
-		IncludeSoldOut   bool     `json:"include_sold_out"`
+		Location          string   `json:"location"`
+		CheckIn           string   `json:"check_in"`
+		CheckOut          string   `json:"check_out"`
+		Guests            int      `json:"guests"`
+		ChildrenAges      []int    `json:"children_ages,omitempty"`
+		Rooms             int      `json:"rooms"`
+		Stars             int      `json:"stars"`
+		Sort              string   `json:"sort"`
+		Currency          string   `json:"currency"`
+		MinPrice          float64  `json:"min_price"`
+		MaxPrice          float64  `json:"max_price"`
+		MinRating         float64  `json:"min_rating"`
+		MaxDistanceKm     float64  `json:"max_distance_km"`
+		Amenities         []string `json:"amenities,omitempty"`
+		CenterLat         float64  `json:"center_lat"`
+		CenterLon         float64  `json:"center_lon"`
+		EnrichAmenities   bool     `json:"enrich_amenities"`
+		EnrichLimit       int      `json:"enrich_limit"`
+		MaxPages          int      `json:"max_pages"`
+		FreeCancellation  bool     `json:"free_cancellation"`
+		Refundable        bool     `json:"refundable"`
+		PropertyType      string   `json:"property_type"`
+		Brand             string   `json:"brand"`
+		EcoCertified      bool     `json:"eco_certified"`
+		MinBedrooms       int      `json:"min_bedrooms"`
+		MinBathrooms      int      `json:"min_bathrooms"`
+		MinBeds           int      `json:"min_beds"`
+		RoomType          string   `json:"room_type"`
+		Superhost         bool     `json:"superhost"`
+		InstantBook       bool     `json:"instant_book"`
+		MaxDistanceM      int      `json:"max_distance_m"`
+		Sustainable       bool     `json:"sustainable"`
+		MealPlan          bool     `json:"meal_plan"`
+		IncludeSoldOut    bool     `json:"include_sold_out"`
+		MustHaveKitchen   bool     `json:"must_have_kitchen"`
+		MustHaveWifi      bool     `json:"must_have_wifi"`
+		MustHaveWorkspace bool     `json:"must_have_workspace"`
 	}{
-		Location:         location,
-		CheckIn:          opts.CheckIn,
-		CheckOut:         opts.CheckOut,
-		Guests:           opts.Guests,
-		Stars:            opts.Stars,
-		Sort:             opts.Sort,
-		Currency:         strings.ToUpper(opts.Currency),
-		MinPrice:         opts.MinPrice,
-		MaxPrice:         opts.MaxPrice,
-		MinRating:        opts.MinRating,
-		MaxDistanceKm:    opts.MaxDistanceKm,
-		Amenities:        amenities,
-		CenterLat:        opts.CenterLat,
-		CenterLon:        opts.CenterLon,
-		EnrichAmenities:  opts.EnrichAmenities,
-		EnrichLimit:      opts.EnrichLimit,
-		MaxPages:         hotelPageLimit(opts.MaxPages),
-		FreeCancellation: opts.FreeCancellation,
-		PropertyType:     opts.PropertyType,
-		Brand:            strings.ToLower(strings.TrimSpace(opts.Brand)),
-		EcoCertified:     opts.EcoCertified,
-		MinBedrooms:      opts.MinBedrooms,
-		MinBathrooms:     opts.MinBathrooms,
-		MinBeds:          opts.MinBeds,
-		RoomType:         opts.RoomType,
-		Superhost:        opts.Superhost,
-		InstantBook:      opts.InstantBook,
-		MaxDistanceM:     opts.MaxDistanceM,
-		Sustainable:      opts.Sustainable,
-		MealPlan:         opts.MealPlan,
-		IncludeSoldOut:   opts.IncludeSoldOut,
+		Location:          location,
+		CheckIn:           opts.CheckIn,
+		CheckOut:          opts.CheckOut,
+		Guests:            opts.Guests,
+		ChildrenAges:      append([]int(nil), opts.ChildrenAges...),
+		Rooms:             opts.Rooms,
+		Stars:             opts.Stars,
+		Sort:              opts.Sort,
+		Currency:          strings.ToUpper(opts.Currency),
+		MinPrice:          opts.MinPrice,
+		MaxPrice:          opts.MaxPrice,
+		MinRating:         opts.MinRating,
+		MaxDistanceKm:     opts.MaxDistanceKm,
+		Amenities:         amenities,
+		CenterLat:         opts.CenterLat,
+		CenterLon:         opts.CenterLon,
+		EnrichAmenities:   opts.EnrichAmenities,
+		EnrichLimit:       opts.EnrichLimit,
+		MaxPages:          hotelPageLimit(opts.MaxPages),
+		FreeCancellation:  opts.FreeCancellation,
+		Refundable:        opts.RefundableRequired,
+		PropertyType:      opts.PropertyType,
+		Brand:             strings.ToLower(strings.TrimSpace(opts.Brand)),
+		EcoCertified:      opts.EcoCertified,
+		MinBedrooms:       opts.MinBedrooms,
+		MinBathrooms:      opts.MinBathrooms,
+		MinBeds:           opts.MinBeds,
+		RoomType:          opts.RoomType,
+		Superhost:         opts.Superhost,
+		InstantBook:       opts.InstantBook,
+		MaxDistanceM:      opts.MaxDistanceM,
+		Sustainable:       opts.Sustainable,
+		MealPlan:          opts.MealPlan,
+		IncludeSoldOut:    opts.IncludeSoldOut,
+		MustHaveKitchen:   opts.MustHaveKitchen,
+		MustHaveWifi:      opts.MustHaveWifi,
+		MustHaveWorkspace: opts.MustHaveWorkspace,
 	}
 	data, err := json.Marshal(key)
 	if err != nil {
@@ -356,6 +383,21 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	var totalAvailable int
 	// Accumulate raw results per-page; MergeHotelResults deduplicates at the end.
 	var rawBatches [][]models.HotelResult
+	var providerStatuses []models.ProviderStatus
+	var providerStatusesMu sync.Mutex
+	addProviderStatus := func(status models.ProviderStatus) {
+		providerStatusesMu.Lock()
+		providerStatuses = append(providerStatuses, status)
+		providerStatusesMu.Unlock()
+	}
+	addProviderStatuses := func(statuses []models.ProviderStatus) {
+		if len(statuses) == 0 {
+			return
+		}
+		providerStatusesMu.Lock()
+		providerStatuses = append(providerStatuses, statuses...)
+		providerStatusesMu.Unlock()
+	}
 
 	for sortIdx, googleSort := range sortOrders {
 		// Bail if context is already cancelled (tool timeout hit).
@@ -407,32 +449,31 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 			rawBatches = append(rawBatches, tagHotelSource(pageHotels, "google_hotels"))
 		}
 	}
+	addProviderStatus(hotelProviderStatusFromResults("google_hotels", "Google Hotels", countHotelBatchResults(rawBatches)))
 
 	// Run parallel searches against Trivago, optional Booking.com, and
 	// user-configured external providers. All auxiliary providers are non-fatal:
 	// failures log a warning and contribute zero results.
-	auxOpts := HotelSearchOptions{
-		CheckIn:  opts.CheckIn,
-		CheckOut: opts.CheckOut,
-		Guests:   opts.Guests,
-		Currency: opts.Currency,
-	}
+	auxOpts := opts
 	var trivagoResults []models.HotelResult
 	var hometogoResults []models.HotelResult
 	var bookingResults []models.HotelResult
 	var externalResults []models.HotelResult
-	var providerStatuses []models.ProviderStatus
 	var auxWg sync.WaitGroup
 
 	auxWg.Add(1)
 	go func() {
 		defer auxWg.Done()
-		res, err := SearchTrivago(ctx, location, auxOpts)
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchTrivago(providerCtx, location, auxOpts)
 		if err != nil {
 			slog.Warn("trivago search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("trivago", "Trivago", err))
 			return
 		}
 		trivagoResults = res
+		addProviderStatus(hotelProviderStatusFromResults("trivago", "Trivago", len(res)))
 	}()
 
 	// HomeToGo vacation-rental aggregator (Airbnb/Vrbo/Booking + local hosts).
@@ -440,12 +481,16 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	auxWg.Add(1)
 	go func() {
 		defer auxWg.Done()
-		res, err := SearchHomeToGo(ctx, location, auxOpts)
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchHomeToGo(providerCtx, location, auxOpts)
 		if err != nil {
 			slog.Warn("hometogo search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("hometogo", "HomeToGo", err))
 			return
 		}
 		hometogoResults = res
+		addProviderStatus(hotelProviderStatusFromResults("hometogo", "HomeToGo", len(res)))
 	}()
 
 	// Booking.com search — parallel with Google + Trivago + HomeToGo.
@@ -455,14 +500,18 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	auxWg.Add(1)
 	go func() {
 		defer auxWg.Done()
-		res, err := SearchBooking(ctx, location, auxOpts)
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchBooking(providerCtx, location, auxOpts)
 		if err != nil {
 			slog.Debug("booking search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("booking", "Booking.com", err))
 			return
 		}
 		if len(res) > 0 {
 			bookingResults = tagHotelSource(res, "booking.com")
 		}
+		addProviderStatus(hotelProviderStatusFromResults("booking", "Booking.com", len(res)))
 	}()
 
 	// External providers (user-configured via configure_provider MCP tool).
@@ -478,34 +527,40 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 				return
 			}
 			filters := &providers.HotelFilterParams{
-				MinPrice:         opts.MinPrice,
-				MaxPrice:         opts.MaxPrice,
-				PropertyType:     opts.PropertyType,
-				Sort:             opts.Sort,
-				Stars:            opts.Stars,
-				MinRating:        opts.MinRating,
-				Amenities:        opts.Amenities,
-				FreeCancellation: opts.FreeCancellation,
-				MinBedrooms:      opts.MinBedrooms,
-				MinBathrooms:     opts.MinBathrooms,
-				MinBeds:          opts.MinBeds,
-				RoomType:         opts.RoomType,
-				Superhost:        opts.Superhost,
-				InstantBook:      opts.InstantBook,
-				MaxDistanceM:     opts.MaxDistanceM,
-				Sustainable:      opts.Sustainable,
-				MealPlan:         opts.MealPlan,
-				IncludeSoldOut:   opts.IncludeSoldOut,
+				MinPrice:          opts.MinPrice,
+				MaxPrice:          opts.MaxPrice,
+				PropertyType:      opts.PropertyType,
+				Sort:              opts.Sort,
+				Stars:             opts.Stars,
+				MinRating:         opts.MinRating,
+				Amenities:         opts.Amenities,
+				FreeCancellation:  opts.FreeCancellation,
+				Refundable:        opts.RefundableRequired,
+				ChildrenAges:      opts.ChildrenAges,
+				Rooms:             opts.Rooms,
+				MinBedrooms:       opts.MinBedrooms,
+				MinBathrooms:      opts.MinBathrooms,
+				MinBeds:           opts.MinBeds,
+				RoomType:          opts.RoomType,
+				Superhost:         opts.Superhost,
+				InstantBook:       opts.InstantBook,
+				MaxDistanceM:      opts.MaxDistanceM,
+				Sustainable:       opts.Sustainable,
+				MealPlan:          opts.MealPlan,
+				IncludeSoldOut:    opts.IncludeSoldOut,
+				MustHaveKitchen:   opts.MustHaveKitchen,
+				MustHaveWifi:      opts.MustHaveWifi,
+				MustHaveWorkspace: opts.MustHaveWorkspace,
 			}
 			res, statuses, err := eprt.SearchHotels(ctx, location, lat, lon,
 				auxOpts.CheckIn, auxOpts.CheckOut, auxOpts.Currency, auxOpts.Guests, filters)
 			if err != nil {
 				slog.Warn("external providers search failed", "error", err)
-				providerStatuses = statuses // keep statuses even on error
+				addProviderStatuses(statuses) // keep statuses even on error
 				return
 			}
 			externalResults = res
-			providerStatuses = statuses
+			addProviderStatuses(statuses)
 		}()
 	}
 
@@ -523,6 +578,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		slog.Info("external providers contributed results", "count", len(externalResults))
 	}
 	hotels := models.MergeHotelResults(allBatches...)
+	models.FinalizeHotelPriceTrust(hotels, opts.Currency, time.Now())
 
 	// Resolve city center coordinates. Used for distance filter/sort and
 	// for computing DistanceKm on every hotel (useful info for the user
@@ -612,6 +668,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		TotalAvailable:   totalAvailable,
 		Hotels:           hotels,
 		ProviderStatuses: providerStatuses,
+		Completeness:     models.ComputeCompleteness(providerStatuses),
 	}, nil
 }
 
@@ -644,11 +701,17 @@ func cloneHotelSearchResult(shared *models.HotelSearchResult) *models.HotelSearc
 			if hotel.Sources != nil {
 				hotelCopy.Sources = append([]models.PriceSource(nil), hotel.Sources...)
 			}
+			if hotel.PriceWarnings != nil {
+				hotelCopy.PriceWarnings = append([]string(nil), hotel.PriceWarnings...)
+			}
 			cp.Hotels[i] = hotelCopy
 		}
 	}
 	if shared.ProviderStatuses != nil {
 		cp.ProviderStatuses = append([]models.ProviderStatus(nil), shared.ProviderStatuses...)
+	}
+	if shared.Completeness.Missing != nil {
+		cp.Completeness.Missing = append([]string(nil), shared.Completeness.Missing...)
 	}
 	return &cp
 }
@@ -764,6 +827,13 @@ func buildTravelURL(location string, opts HotelSearchOptions) string {
 	query.Set("q", location)
 	query.Set("dates", opts.CheckIn+","+opts.CheckOut)
 	query.Set("adults", strconv.Itoa(opts.Guests))
+	if len(opts.ChildrenAges) > 0 {
+		query.Set("children", strconv.Itoa(len(opts.ChildrenAges)))
+		query.Set("children_ages", joinInts(opts.ChildrenAges, ","))
+	}
+	if opts.Rooms > 0 {
+		query.Set("rooms", strconv.Itoa(opts.Rooms))
+	}
 	query.Set("hl", "en")
 	query.Set("currency", opts.Currency)
 
@@ -788,6 +858,9 @@ func buildTravelURL(location string, opts HotelSearchOptions) string {
 	}
 	if opts.FreeCancellation {
 		query.Set("fc", "1")
+	}
+	if opts.RefundableRequired {
+		query.Set("refundable", "1")
 	}
 	if ptype := propertyTypeCode(opts.PropertyType); ptype != "" {
 		query.Set("ptype", ptype)
@@ -948,6 +1021,48 @@ func lessPrice(a, b models.HotelResult) bool {
 		return true
 	}
 	return a.Price < b.Price
+}
+
+func hotelProviderStatusFromResults(id, name string, results int) models.ProviderStatus {
+	status := models.StatusCheckedNoHit
+	if results > 0 {
+		status = models.StatusCheckedHit
+	}
+	return models.ProviderStatus{
+		ID:      id,
+		Name:    name,
+		Status:  status,
+		Results: results,
+	}
+}
+
+func hotelProviderStatusFromError(id, name string, err error) models.ProviderStatus {
+	status := models.ClassifyProviderError(err)
+	return models.ProviderStatus{
+		ID:     id,
+		Name:   name,
+		Status: status,
+		Error:  err.Error(),
+	}
+}
+
+func countHotelBatchResults(batches [][]models.HotelResult) int {
+	count := 0
+	for _, batch := range batches {
+		count += len(batch)
+	}
+	return count
+}
+
+func joinInts(values []int, separator string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, strconv.Itoa(value))
+	}
+	return strings.Join(parts, separator)
 }
 
 func countBySource(hotels []models.HotelResult, provider string) int {

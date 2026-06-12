@@ -23,7 +23,7 @@ func TestLiveProbe_GoogleHotels(t *testing.T) {
 		Currency: "EUR",
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	results, err := SearchHotels(ctx, "Paris", opts)

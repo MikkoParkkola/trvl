@@ -27,6 +27,10 @@ func TestFetchBookingPage_Success(t *testing.T) {
 }
 
 func TestFetchBookingPage_Non200(t *testing.T) {
+	origBrowserCookies := browserCookies
+	browserCookies = func(string) []*http.Cookie { return nil }
+	t.Cleanup(func() { browserCookies = origBrowserCookies })
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
