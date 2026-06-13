@@ -8,8 +8,7 @@
 # Optional secrets:
 #   HOMEBREW_TAP_TOKEN — PAT with `contents: write` on
 #     MikkoParkkola/homebrew-tap, enabling goreleaser's `homebrew_casks` block
-#     to auto-bump the cask. Formula updates are checked from release checksums
-#     before announcing the Homebrew channel.
+#     to auto-bump the cask. Formula freshness is enforced in homebrew-tap.
 name: Release
 
 on:
