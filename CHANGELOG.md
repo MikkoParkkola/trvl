@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Homebrew formula freshness** — the public tap now syncs the documented `brew install MikkoParkkola/tap/trvl` formula from trvl releases so it cannot lag behind the cask unnoticed.
+
 ## [1.9.1] - 2026-06-13
 
 ### Fixed
