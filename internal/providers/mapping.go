@@ -514,10 +514,14 @@ func extractRoomTypes(raw any) []models.Room {
 		currency, _ := jsonPath(b, "finalPrice.currency").(string)
 
 		room := models.Room{
-			Name:     name,
-			Price:    price,
-			Currency: currency,
-			BedType:  bedDesc,
+			Name:            name,
+			Price:           price,
+			TotalPrice:      price,
+			Currency:        currency,
+			BedType:         bedDesc,
+			MatchConfidence: models.RoomInventoryMatchExact,
+			PriceBasis:      models.PriceBasisRoomTotal,
+			PriceConfidence: models.PriceConfidenceRoomLevel,
 		}
 
 		// Room size (m²).
@@ -581,8 +585,9 @@ func extractRoomTypes(raw any) []models.Room {
 		if !seen[info.name] {
 			seen[info.name] = true
 			rooms = append(rooms, models.Room{
-				Name:    info.name,
-				BedType: info.bedDescription,
+				Name:            info.name,
+				BedType:         info.bedDescription,
+				MatchConfidence: models.RoomInventoryMatchExact,
 			})
 			_ = unitID // used for cross-reference only
 		}

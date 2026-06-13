@@ -63,7 +63,26 @@ trvl flights HEL LHR 2026-07-01 --format json | head -5
 # Expected: JSON with flight results
 ```
 
-Tell the user: "trvl is installed with 1 smart MCP tool, 65 compatibility aliases, and 2 bundled Claude skills. It includes 37 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_hotels`, and `watch_price` continue to work as compatibility aliases. I can search flights, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
+Tell the user: "trvl is installed with 1 smart MCP tool, 66 compatibility aliases, and 2 bundled Claude skills. It includes 37 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_accommodations`, `search_hotels`, and `watch_price` continue to work as compatibility aliases. I can search flights, accommodations, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
+
+### Hotel price trust protocol
+
+For accommodation decisions, use `search_accommodations` first. It starts from
+the requested room/apartment need and returns only matched, room-level offers in
+the ranked `offers` list. `search_hotels` is discovery only. Treat raw hotel
+prices as lead-in search prices until you verify the shortlist. Before making a
+public recommendation or ranking a final trip cost:
+
+1. Use `search_accommodations` for traveller-facing stay recommendations.
+2. Use `search_hotels` only for broad candidate discovery or debugging.
+3. Verify specific candidates with `search_hotels_with_details`, `hotel_rooms`
+   (pass `booking_url` when available), or `trvl serpapi` when the user has
+   `SERPAPI_KEY`.
+4. Rank on `total_price` or tax-inclusive provider totals when present.
+5. Surface taxes/fees, cancellation, board, and local tourist tax separately
+   when known.
+6. Do not say a hotel rate is booked, held, locked, guaranteed, or checkout-final
+   unless a provider checkout page confirms it.
 
 ### Step 5: Build travel profile (recommended)
 
@@ -182,7 +201,7 @@ Save with `update_preferences`.
 | Field | Behavior |
 |-------|----------|
 | `home_airports` | Default origin for flight/trip/weekend/discover searches |
-| `display_currency` | Price display across the smart router and all 65 compatibility aliases |
+| `display_currency` | Price display across the smart router and all 66 compatibility aliases |
 | `no_dormitories` | `FilterHotels()` drops hostels, capsules, guesthouse rooms by chain name + regex |
 | `ensuite_only` | `FilterHotels()` drops shared-bathroom properties |
 | `min_hotel_stars` | Passed to Google Hotels API as search filter |
@@ -294,6 +313,15 @@ Optional parameters:
 ```
 Optional: `trip_duration` (days), `is_round_trip` (true/false)
 
+### search_accommodations — Criteria-first room/apartment search
+```json
+{"location": "Tokyo", "check_in": "2026-06-15", "check_out": "2026-06-18", "adults": 2, "children_ages": [7], "accommodation_type": "entire_apartment", "must_have_kitchen": true, "refundable_required": true}
+```
+Use this before recommending where to stay. It searches candidate properties,
+checks room-level availability for the shortlist, and returns only
+criteria-matched room/apartment offers in `offers`. Candidate lead-in prices stay
+under `candidates` and must not be used for final trip-cost ranking.
+
 ### search_hotels — Find hotels in any city (Google Hotels + Trivago + Airbnb)
 ```json
 {"location": "Tokyo", "check_in": "2026-06-15", "check_out": "2026-06-18"}
@@ -327,6 +355,11 @@ Runs `search_hotels`, then fetches room-level availability and full amenity deta
 ```json
 {"hotel_id": "<from search_hotels>", "check_in": "2026-06-15", "check_out": "2026-06-18"}
 ```
+
+Use `hotel_prices` as a provider comparison when Google exposes booking partners,
+not as a standalone guarantee. For final hotel recommendations, prefer
+`search_hotels_with_details` or `hotel_rooms` totals because they can include
+room-level cancellation, board, and tax/fee fields.
 
 CLI re-book flow for existing refundable reservations:
 ```bash

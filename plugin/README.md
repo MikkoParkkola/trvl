@@ -38,9 +38,18 @@ brew install MikkoParkkola/tap/trvl
 ```
 
 The command routes to `trvl-trip-planner`, loads the traveller profile through
-the `travel` smart tool, then dispatches to `plan_trip`, `search_flights`, and
-`search_hotels` compatibility aliases when useful. It runs `assess_trip` and
+the `travel` smart tool, then dispatches to `plan_trip`, `search_flights`,
+`search_accommodations`, and `search_hotels` compatibility aliases when useful.
+It runs `assess_trip` and
 reports the itinerary with travel hack savings.
+
+For hotels, the plugin must use `search_accommodations` for traveller-facing
+stay recommendations and treat `search_hotels` prices as discovery lead-ins.
+Before a final recommendation, use criteria-matched offers or verify shortlisted
+properties with `search_hotels_with_details`, `hotel_rooms`, or `trvl serpapi`
+when the user has `SERPAPI_KEY`, then rank on room-level totals or
+tax-inclusive provider totals.
+Do not present a hotel rate as booked, held, locked, or guaranteed.
 
 ### 2. Watch A Flight Or Hotel Deal
 
@@ -67,7 +76,7 @@ The command routes to `trvl-destination-research`, composing
 
 The original MIK-3400 acceptance text refers to the 43 underlying tools
 available when the plugin was proposed. The current trvl MCP server advertises
-1 smart MCP tool plus 64 compatibility aliases, and this plugin is wired for
+1 smart MCP tool plus 66 compatibility aliases, and this plugin is wired for
 the full current surface.
 
 Flights:
@@ -77,7 +86,7 @@ Flights:
 `optimize_booking`.
 
 Hotels:
-`search_hotels`, `search_hotels_with_details`, `search_hotel_by_name`,
+`search_accommodations`, `search_hotels`, `search_hotels_with_details`, `search_hotel_by_name`,
 `hotel_prices`, `hotel_reviews`, `hotel_rooms`, `watch_room_availability`,
 `detect_accommodation_hacks`.
 

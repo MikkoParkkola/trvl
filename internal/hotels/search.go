@@ -662,6 +662,8 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		}
 	}
 
+	providerStatuses = coalesceProviderStatuses(providerStatuses)
+
 	return &models.HotelSearchResult{
 		Success:          true,
 		Count:            len(hotels),
@@ -1043,6 +1045,59 @@ func hotelProviderStatusFromError(id, name string, err error) models.ProviderSta
 		Name:   name,
 		Status: status,
 		Error:  err.Error(),
+	}
+}
+
+func coalesceProviderStatuses(statuses []models.ProviderStatus) []models.ProviderStatus {
+	if len(statuses) < 2 {
+		return statuses
+	}
+	out := make([]models.ProviderStatus, 0, len(statuses))
+	indexByKey := make(map[string]int, len(statuses))
+	for _, status := range statuses {
+		key := providerStatusKey(status)
+		if key == "" {
+			out = append(out, status)
+			continue
+		}
+		if idx, ok := indexByKey[key]; ok {
+			if providerStatusRank(status) > providerStatusRank(out[idx]) {
+				out[idx] = status
+			}
+			continue
+		}
+		indexByKey[key] = len(out)
+		out = append(out, status)
+	}
+	return out
+}
+
+func providerStatusKey(status models.ProviderStatus) string {
+	key := strings.TrimSpace(status.ID)
+	if key == "" {
+		key = strings.TrimSpace(status.Name)
+	}
+	return strings.ToLower(key)
+}
+
+func providerStatusRank(status models.ProviderStatus) int {
+	switch strings.ToLower(strings.TrimSpace(status.Status)) {
+	case models.StatusCheckedHit:
+		return 6000 + status.Results
+	case models.StatusOK:
+		return 5000 + status.Results
+	case models.StatusCheckedNoHit:
+		return 4000
+	case models.StatusStale:
+		return 3000 + status.Results
+	case models.StatusFailed, models.StatusError, models.StatusTimeout:
+		return 2000
+	case models.StatusCircuitBroken:
+		return 1500
+	case models.StatusSkipped, models.StatusDisabled, models.StatusNotConfigured, models.StatusNotAuthorized:
+		return 1000
+	default:
+		return status.Results
 	}
 }
 

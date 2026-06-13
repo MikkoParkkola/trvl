@@ -3,6 +3,8 @@ package hotels
 import (
 	"context"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 func TestParseBookingJSONLD(t *testing.T) {
@@ -429,6 +431,12 @@ func TestMergeRoomTypes(t *testing.T) {
 		t.Errorf("merged[0].Board = %q, want breakfast_included", merged[0].Board)
 	}
 	assertBoolPtr(t, "merged[0].Refundable", merged[0].Refundable, true)
+	if len(merged[0].InventoryOptions) != 2 {
+		t.Fatalf("merged[0].InventoryOptions = %#v, want Google + Booking quotes", merged[0].InventoryOptions)
+	}
+	if merged[0].InventoryOptions[1].Provider != "Booking.com" || merged[0].InventoryOptions[1].MatchConfidence != models.RoomInventoryMatchExact {
+		t.Fatalf("booking inventory quote = %#v, want exact Booking.com quote", merged[0].InventoryOptions[1])
+	}
 
 	// Second room: unchanged Google room.
 	if merged[1].Name != "Superior Suite" {

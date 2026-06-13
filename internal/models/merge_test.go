@@ -31,6 +31,60 @@ func TestMergeHotelResults_MergesSameHotel(t *testing.T) {
 	}
 }
 
+func TestMergeHotelResults_PreservesRoomTypesFromMultipleNoKeySources(t *testing.T) {
+	a := []HotelResult{{
+		Name:     "Hotel Matrix",
+		Price:    210,
+		Currency: "EUR",
+		Address:  "1 Test Street",
+		RoomTypes: []Room{{
+			Name:            "Deluxe Room",
+			Provider:        "booking",
+			ProviderURL:     "https://booking.example/hotel-matrix",
+			Price:           210,
+			TotalPrice:      420,
+			Currency:        "EUR",
+			MatchConfidence: RoomInventoryMatchExact,
+			PriceBasis:      PriceBasisRoomTotal,
+			PriceConfidence: PriceConfidenceRoomLevel,
+		}},
+		Sources: []PriceSource{{Provider: "booking", Price: 210, Currency: "EUR"}},
+	}}
+	b := []HotelResult{{
+		Name:     "hotel matrix",
+		Price:    190,
+		Currency: "EUR",
+		Address:  "1 Test Street",
+		RoomTypes: []Room{{
+			Name:            "Deluxe Room",
+			Provider:        "hometogo",
+			ProviderURL:     "https://hometogo.example/hotel-matrix",
+			Price:           190,
+			TotalPrice:      380,
+			Currency:        "EUR",
+			MatchConfidence: RoomInventoryMatchExact,
+			PriceBasis:      PriceBasisRoomTotal,
+			PriceConfidence: PriceConfidenceRoomLevel,
+		}},
+		Sources: []PriceSource{{Provider: "hometogo", Price: 190, Currency: "EUR"}},
+	}}
+
+	result := MergeHotelResults(a, b)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 merged hotel, got %d", len(result))
+	}
+	if len(result[0].RoomTypes) != 2 {
+		t.Fatalf("room types = %#v, want rooms from both no-key providers", result[0].RoomTypes)
+	}
+	providers := map[string]bool{}
+	for _, room := range result[0].RoomTypes {
+		providers[room.Provider] = true
+	}
+	if !providers["booking"] || !providers["hometogo"] {
+		t.Fatalf("room providers = %v, want booking and hometogo", providers)
+	}
+}
+
 func TestMergeHotelResults_KeepsLowestPrice(t *testing.T) {
 	a := []HotelResult{{Name: "Test Hotel", Price: 200, Currency: "EUR", Address: "10 Rue Example", Sources: []PriceSource{{Provider: "google_hotels", Price: 200, Currency: "EUR"}}}}
 	b := []HotelResult{{Name: "Test Hotel", Price: 180, Currency: "EUR", Address: "10 Rue Example", Sources: []PriceSource{{Provider: "trivago", Price: 180, Currency: "EUR"}}}}

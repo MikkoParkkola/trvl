@@ -379,3 +379,19 @@ func (r *Registry) MarkError(id string, errMsg string) {
 	cfg.LastErrorAt = time.Now()
 	_ = r.saveLocked(cfg)
 }
+
+// ResetBreaker clears the circuit-breaker error fields for a configured
+// provider after login, session, or endpoint details have been fixed.
+func (r *Registry) ResetBreaker(id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	cfg, ok := r.configs[id]
+	if !ok {
+		return fmt.Errorf("providers: %s not found", id)
+	}
+	cfg.ErrorCount = 0
+	cfg.LastError = ""
+	cfg.LastErrorAt = time.Time{}
+	return r.saveLocked(cfg)
+}

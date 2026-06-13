@@ -87,4 +87,3 @@ func TestOAuthIntrospection_SubjectFallbackToUsernameThenClientID(t *testing.T) 
 		t.Errorf("subject = %q ok=%v, want svc-42", acc2.Subject, ok2)
 	}
 }
-

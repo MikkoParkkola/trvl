@@ -1,8 +1,10 @@
 # trvl
 
-> Google Flights + 5 hotel sources + 20 ground providers from your terminal. Free, no API keys.
+> AI travel MCP server and CLI for Google Flights, Google Hotels, Booking.com, Trivago, Airbnb, Hostelworld, HomeToGo, trains, buses, ferries, price alerts, award travel, and travel-hack detection.
 
-trvl is a single Go binary that searches Google Flights, Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld, and 20 ground transport providers by speaking their APIs directly. No scraping, no browser automation, no API keys.
+trvl is a single Go binary for AI assistants and terminal users. It searches flights, hotels, ground transport, destinations, airport transfers, price watches, and trip plans with a 1-tool MCP router plus compatibility aliases. Default use needs no personal API keys. Most providers use public HTTP/JSON endpoints; a few protected providers use explicit browser/cookie/curl fallbacks when enabled.
+
+Trust boundary for hotels: use `search_accommodations` for traveller-facing stay recommendations. `search_hotels` is a discovery search. Google Hotels-style prices can be lead-in or teaser rates and must not be treated as checkout-final. For public recommendations, ranked offers should come from criteria-matched `search_accommodations` results or from shortlisted hotels verified with `search_hotels_with_details`, `hotel_rooms`, or `trvl serpapi` and ranked on room-level `total_price`/tax-inclusive provider totals when present. trvl surfaces booking/provider links for manual booking handoff; it does not book, hold, or guarantee a rate.
 
 ## Install
 
@@ -23,20 +25,25 @@ for s in trvl providers; do
   curl -fsSL "https://raw.githubusercontent.com/MikkoParkkola/trvl/main/.claude/skills/$s.md" -o "$HOME/.claude/skills/$s.md"
 done
 
-## MCP Tools (61 total)
+## MCP Tools (1 smart tool + compatibility aliases)
 
 - search_flights(origin, destination, departure_date, [return_date, cabin_class, max_stops, sort_by, alliances, depart_after, depart_before, less_emissions, carry_on_bags, checked_bags, require_checked_bag, max_price, max_duration, exclude_basic, airlines])
   - checked_bags: HIDDEN GOOGLE FEATURE — server-side filter not exposed in Google's own UI
 - search_dates(origin, destination, start_date, end_date, [trip_duration, is_round_trip])
+- search_accommodations(location, check_in, check_out, [adults, children_ages, guests, accommodation_type, amenities, preferred_amenities, neighborhoods, max_total_price, refundable_required, free_cancellation, property_type, room_type, min_bedrooms, min_bathrooms, min_beds, must_have_kitchen, must_have_wifi, must_have_workspace, max_candidates, max_offers])
+  - Traveller-first room/apartment search. Ranked `offers` are matched room-level prices for the requested criteria; discovery lead-in prices stay under `candidates`.
 - search_hotels(location, check_in, check_out, [guests, stars, sort, currency, free_cancellation, property_type, brand, min_rating, max_distance, amenities, min_price, max_price, enrich_amenities, eco_certified])
+  - Discovery/ranking search. Treat prices as lead-in until verified with room/detail/provider totals.
   - free_cancellation: server-side Google Hotels ?fc=1 param
   - property_type: hotel|apartment|hostel|resort|bnb|villa — server-side ?ptype=N
   - brand: chain name substring — client-side
   - min_rating/max_distance/min_price/max_price: server-side + client-side guard
   - eco_certified: boolean (default false) — only show eco-certified hotels with sustainability certifications — server-side &ecof=1
 - hotel_prices(hotel_id, check_in, check_out, [currency])
+  - Provider price comparison when Google exposes booking partners. Prefer criteria-matched offers from `search_accommodations` or room-level totals from `hotel_rooms`/`search_hotels_with_details` for booking decisions.
 - hotel_reviews(hotel_id, [limit, sort])
-- hotel_rooms(hotel_name, check_in, check_out, [currency])
+- hotel_rooms(hotel_name, check_in, check_out, [currency, booking_url])
+  - Verification drill-down for room availability, cancellation, board, nightly price, total price, and taxes/fees when providers expose them.
 - watch_room_availability(hotel_name, check_in, check_out, [currency])
 - search_hotel_by_name(name, check_in, check_out, [location, currency])
   - Searches for a specific hotel by name across all providers (Google Hotels, Trivago, Booking, Airbnb, Hostelworld). Fuzzy-matches results to the search name. Ideal for finding a known property.

@@ -52,16 +52,30 @@ type PriceSource struct {
 // which rates are shown. Rich room data enables LLM reasoning about
 // room selection ("which room has a balcony?", "cheapest with breakfast?").
 type Room struct {
-	Name              string   `json:"name"`            // e.g. "Standard Double Room", "Superior Suite"
-	Price             float64  `json:"price,omitempty"` // price for this room type (for the searched guest count)
-	Currency          string   `json:"currency,omitempty"`
-	SizeM2            float64  `json:"size_m2,omitempty"`            // room size in square meters
-	MaxGuests         int      `json:"max_guests,omitempty"`         // maximum occupancy
-	BedType           string   `json:"bed_type,omitempty"`           // e.g. "1 double bed", "2 single beds"
-	Amenities         []string `json:"amenities,omitempty"`          // room-level amenities (balcony, minibar, bathtub, etc.)
-	FreeCancellation  bool     `json:"free_cancellation,omitempty"`  // free cancellation available
-	BreakfastIncluded bool     `json:"breakfast_included,omitempty"` // breakfast included in price
-	Description       string   `json:"description,omitempty"`        // room description text
+	Name               string   `json:"name"`            // e.g. "Standard Double Room", "Superior Suite"
+	Price              float64  `json:"price,omitempty"` // price for this room type (for the searched guest count)
+	NightlyPrice       float64  `json:"nightly_price,omitempty"`
+	TotalPrice         float64  `json:"total_price,omitempty"`
+	TaxesAndFees       float64  `json:"taxes_and_fees,omitempty"`
+	TaxesFeesIncluded  *bool    `json:"taxes_fees_included,omitempty"`
+	Currency           string   `json:"currency,omitempty"`
+	Provider           string   `json:"provider,omitempty"`
+	ProviderURL        string   `json:"provider_url,omitempty"`
+	RateID             string   `json:"rate_id,omitempty"`
+	RatePlanName       string   `json:"rate_plan_name,omitempty"`
+	MatchConfidence    string   `json:"match_confidence,omitempty"`
+	PriceBasis         string   `json:"price_basis,omitempty"`
+	PriceConfidence    string   `json:"price_confidence,omitempty"`
+	SizeM2             float64  `json:"size_m2,omitempty"`           // room size in square meters
+	MaxGuests          int      `json:"max_guests,omitempty"`        // maximum occupancy
+	BedType            string   `json:"bed_type,omitempty"`          // e.g. "1 double bed", "2 single beds"
+	Amenities          []string `json:"amenities,omitempty"`         // room-level amenities (balcony, minibar, bathtub, etc.)
+	FreeCancellation   bool     `json:"free_cancellation,omitempty"` // free cancellation available
+	Refundable         *bool    `json:"refundable,omitempty"`
+	CancellationPolicy string   `json:"cancellation_policy,omitempty"`
+	BreakfastIncluded  bool     `json:"breakfast_included,omitempty"` // breakfast included in price
+	Board              string   `json:"board,omitempty"`
+	Description        string   `json:"description,omitempty"` // room description text
 }
 
 // HotelResult represents a single hotel from a search.

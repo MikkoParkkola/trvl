@@ -169,6 +169,33 @@ func TestExtractTopHotels_ZeroPriceFiltered(t *testing.T) {
 	}
 }
 
+func TestExtractTopHotels_SkipsLeadInPricesForFinalTotals(t *testing.T) {
+	hotels := []models.HotelResult{
+		{
+			Name:            "Cheap Lead-In",
+			Price:           40,
+			Currency:        "EUR",
+			PriceBasis:      models.PriceBasisLeadIn,
+			PriceConfidence: models.PriceConfidenceUnverified,
+		},
+		{
+			Name:            "Matched Room",
+			Price:           90,
+			Currency:        "EUR",
+			PriceBasis:      models.PriceBasisRoomTotal,
+			PriceConfidence: models.PriceConfidenceRoomLevel,
+		},
+	}
+
+	got := extractTopHotels(hotels, 2, 5)
+	if len(got) != 1 {
+		t.Fatalf("expected only the matched room to be eligible, got %d hotels: %#v", len(got), got)
+	}
+	if got[0].Name != "Matched Room" {
+		t.Fatalf("selected hotel = %q, want Matched Room", got[0].Name)
+	}
+}
+
 func TestExtractTopHotels_Empty(t *testing.T) {
 	got := extractTopHotels(nil, 3, 5)
 	if len(got) != 0 {

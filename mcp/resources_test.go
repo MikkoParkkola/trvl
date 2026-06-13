@@ -39,6 +39,7 @@ func TestResourcesList(t *testing.T) {
 		"trvl://trips/upcoming":   false,
 		"trvl://trips/alerts":     false,
 		"trvl://onboarding":       false,
+		trvlSearchResultsAppURI:   false,
 	}
 	for _, r := range result.Resources {
 		if _, ok := expected[r.URI]; !ok {

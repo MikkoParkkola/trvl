@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -12,24 +13,29 @@ import (
 
 // RoomType represents a specific room category at a hotel.
 type RoomType struct {
-	Name               string   `json:"name"`
-	Price              float64  `json:"price"`
-	NightlyPrice       float64  `json:"nightly_price,omitempty"`
-	TotalPrice         float64  `json:"total_price,omitempty"`
-	TaxesAndFees       float64  `json:"taxes_and_fees,omitempty"`
-	TaxesFeesIncluded  *bool    `json:"taxes_fees_included,omitempty"`
-	Currency           string   `json:"currency"`
-	Provider           string   `json:"provider,omitempty"`
-	MaxGuests          int      `json:"max_guests,omitempty"`
-	BedType            string   `json:"bed_type,omitempty"`
-	SizeM2             float64  `json:"size_m2,omitempty"`
-	Description        string   `json:"description,omitempty"`
-	Amenities          []string `json:"amenities,omitempty"`
-	CancellationPolicy string   `json:"cancellation_policy,omitempty"`
-	Refundable         *bool    `json:"refundable,omitempty"`
-	FreeCancellation   *bool    `json:"free_cancellation,omitempty"`
-	Board              string   `json:"board,omitempty"`
-	BreakfastIncluded  *bool    `json:"breakfast_included,omitempty"`
+	Name               string                      `json:"name"`
+	Price              float64                     `json:"price"`
+	NightlyPrice       float64                     `json:"nightly_price,omitempty"`
+	TotalPrice         float64                     `json:"total_price,omitempty"`
+	TaxesAndFees       float64                     `json:"taxes_and_fees,omitempty"`
+	TaxesFeesIncluded  *bool                       `json:"taxes_fees_included,omitempty"`
+	Currency           string                      `json:"currency"`
+	Provider           string                      `json:"provider,omitempty"`
+	ProviderURL        string                      `json:"provider_url,omitempty"`
+	RateID             string                      `json:"rate_id,omitempty"`
+	RatePlanName       string                      `json:"rate_plan_name,omitempty"`
+	MatchConfidence    string                      `json:"match_confidence,omitempty"`
+	MaxGuests          int                         `json:"max_guests,omitempty"`
+	BedType            string                      `json:"bed_type,omitempty"`
+	SizeM2             float64                     `json:"size_m2,omitempty"`
+	Description        string                      `json:"description,omitempty"`
+	Amenities          []string                    `json:"amenities,omitempty"`
+	CancellationPolicy string                      `json:"cancellation_policy,omitempty"`
+	Refundable         *bool                       `json:"refundable,omitempty"`
+	FreeCancellation   *bool                       `json:"free_cancellation,omitempty"`
+	Board              string                      `json:"board,omitempty"`
+	BreakfastIncluded  *bool                       `json:"breakfast_included,omitempty"`
+	InventoryOptions   []models.RoomInventoryQuote `json:"inventory_options,omitempty"`
 }
 
 // RoomAvailability is the response for a room-type search.
@@ -232,10 +238,12 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 			currency = opts.Currency
 		}
 		rooms = append(rooms, RoomType{
-			Name:     "Standard Room",
-			Price:    hotel.Price,
-			Currency: currency,
-			Provider: providerFromSources(hotel),
+			Name:            "Standard Room",
+			Price:           hotel.Price,
+			Currency:        currency,
+			Provider:        providerFromSources(hotel),
+			ProviderURL:     hotel.BookingURL,
+			MatchConfidence: models.RoomInventoryMatchPropertyLevelOnly,
 		})
 	}
 
@@ -247,10 +255,12 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 				currency = opts.Currency
 			}
 			rooms = append(rooms, RoomType{
-				Name:     "Standard Room",
-				Price:    src.Price,
-				Currency: currency,
-				Provider: src.Provider,
+				Name:            "Standard Room",
+				Price:           src.Price,
+				Currency:        currency,
+				Provider:        src.Provider,
+				ProviderURL:     src.BookingURL,
+				MatchConfidence: models.RoomInventoryMatchPropertyLevelOnly,
 			})
 		}
 	}
@@ -397,6 +407,8 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 		if gr, found := googleByName[bKey]; found {
 			// Merge: enrich Google room with Booking data.
 			enriched := gr.room
+			enriched.InventoryOptions = appendRoomInventoryOption(enriched.InventoryOptions, roomInventoryQuote(enriched))
+			enriched.InventoryOptions = appendRoomInventoryOption(enriched.InventoryOptions, roomInventoryQuote(br))
 			if br.Description != "" && enriched.Description == "" {
 				enriched.Description = br.Description
 			}
@@ -443,6 +455,7 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 			if enriched.Price == 0 && br.Price > 0 {
 				enriched.Price = br.Price
 				enriched.Provider = br.Provider
+				enriched.ProviderURL = br.ProviderURL
 			}
 			merged[gr.index] = enriched
 			matched[bKey] = true
@@ -458,6 +471,84 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 	}
 
 	return merged
+}
+
+func roomInventoryQuote(room RoomType) models.RoomInventoryQuote {
+	provider := strings.TrimSpace(room.Provider)
+	if provider == "" {
+		provider = "Google Hotels"
+	}
+	confidence := strings.TrimSpace(room.MatchConfidence)
+	if confidence == "" {
+		confidence = models.RoomInventoryMatchExact
+	}
+	priceBasis := models.PriceBasisRoomNightly
+	priceConfidence := models.PriceConfidenceRoomLevel
+	if confidence == models.RoomInventoryMatchPropertyLevelOnly {
+		priceBasis = models.PriceBasisLeadIn
+		priceConfidence = models.PriceConfidenceUnverified
+	} else if room.TotalPrice > 0 {
+		priceBasis = models.PriceBasisRoomTotal
+		if room.TaxesFeesIncluded != nil && *room.TaxesFeesIncluded {
+			priceBasis = models.PriceBasisTaxInclusiveTotal
+			priceConfidence = models.PriceConfidenceVerified
+		}
+	}
+	nightly := room.NightlyPrice
+	total := room.TotalPrice
+	if nightly == 0 && total == 0 {
+		nightly = room.Price
+	}
+	return models.RoomInventoryQuote{
+		Provider:           provider,
+		ProviderRoomName:   room.Name,
+		ProviderRateName:   room.RatePlanName,
+		ProviderURL:        room.ProviderURL,
+		RateID:             room.RateID,
+		MatchConfidence:    confidence,
+		NightlyPrice:       nightly,
+		TotalPrice:         total,
+		TaxesAndFees:       room.TaxesAndFees,
+		TaxesFeesIncluded:  room.TaxesFeesIncluded,
+		Currency:           room.Currency,
+		Refundable:         room.Refundable,
+		FreeCancellation:   room.FreeCancellation,
+		CancellationPolicy: room.CancellationPolicy,
+		Board:              room.Board,
+		BreakfastIncluded:  room.BreakfastIncluded,
+		PriceBasis:         priceBasis,
+		PriceConfidence:    priceConfidence,
+	}
+}
+
+func appendRoomInventoryOption(options []models.RoomInventoryQuote, quote models.RoomInventoryQuote) []models.RoomInventoryQuote {
+	if quote.Provider == "" && quote.ProviderRoomName == "" && quote.NightlyPrice == 0 && quote.TotalPrice == 0 {
+		return options
+	}
+	key := strings.ToLower(strings.Join([]string{
+		quote.Provider,
+		quote.ProviderRoomName,
+		quote.ProviderRateName,
+		quote.Currency,
+		strings.TrimRight(strings.TrimRight(strconv.FormatFloat(quote.NightlyPrice, 'f', 2, 64), "0"), "."),
+		strings.TrimRight(strings.TrimRight(strconv.FormatFloat(quote.TotalPrice, 'f', 2, 64), "0"), "."),
+		quote.CancellationPolicy,
+	}, "|"))
+	for _, existing := range options {
+		existingKey := strings.ToLower(strings.Join([]string{
+			existing.Provider,
+			existing.ProviderRoomName,
+			existing.ProviderRateName,
+			existing.Currency,
+			strings.TrimRight(strings.TrimRight(strconv.FormatFloat(existing.NightlyPrice, 'f', 2, 64), "0"), "."),
+			strings.TrimRight(strings.TrimRight(strconv.FormatFloat(existing.TotalPrice, 'f', 2, 64), "0"), "."),
+			existing.CancellationPolicy,
+		}, "|"))
+		if existingKey == key {
+			return options
+		}
+	}
+	return append(options, quote)
 }
 
 // parseRoomsFromPage extracts room-type data from a hotel entity page.
@@ -599,9 +690,10 @@ func tryRoomEntry(arr []any, defaultCurrency string) *RoomType {
 	}
 
 	room := &RoomType{
-		Name:     name,
-		Price:    price,
-		Currency: defaultCurrency,
+		Name:            name,
+		Price:           price,
+		Currency:        defaultCurrency,
+		MatchConfidence: models.RoomInventoryMatchExact,
 	}
 
 	// Optional: currency at [2].

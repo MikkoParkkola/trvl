@@ -133,7 +133,7 @@ jobs:
     # Disabled: the canonical release pipeline lives in release.yml (macOS
     # codesign + cosign + Homebrew + docker + npm + mcp-registry). Running
     # goreleaser here too raced release.yml to create the same GitHub release.
-    if: false
+    if: ${{ github.repository == 'MikkoParkkola/trvl-disabled' }}
     permissions:
       contents: write
       packages: write
@@ -175,7 +175,7 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     # Disabled: npm is published by the canonical release.yml pipeline.
-    if: false
+    if: ${{ github.repository == 'MikkoParkkola/trvl-disabled' }}
     permissions:
       contents: read
     steps:

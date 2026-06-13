@@ -20,7 +20,7 @@ func travelTool() ToolDef {
 			"to the right capability while keeping the advertised tool list compact. Use query for " +
 			"plain-language requests, intent for a family such as flights, hotels, cars, ground, trip, " +
 			"watches, preferences, or providers, and params for the target tool arguments. Exact " +
-			"legacy tool names such as search_flights, search_hotels, search_ground, watch_price, " +
+			"legacy tool names such as search_flights, search_accommodations, search_hotels, search_ground, watch_price, " +
 			"update_preferences, or configure_provider are accepted as intent values and remain " +
 			"compatibility aliases.",
 		InputSchema: InputSchema{
@@ -206,10 +206,14 @@ var smartIntentAliases = map[string]string{
 	"flight":             "search_flights",
 	"flights":            "search_flights",
 	"flight_search":      "search_flights",
-	"hotel":              "search_hotels",
-	"hotels":             "search_hotels",
-	"hotel_search":       "search_hotels",
-	"accommodation":      "search_hotels",
+	"hotel":              "search_accommodations",
+	"hotels":             "search_accommodations",
+	"hotel_search":       "search_accommodations",
+	"accommodation":      "search_accommodations",
+	"accommodations":     "search_accommodations",
+	"lodging":            "search_accommodations",
+	"stay":               "search_accommodations",
+	"stays":              "search_accommodations",
 	"car":                "search_cars",
 	"cars":               "search_cars",
 	"rental_car":         "search_cars",
@@ -356,6 +360,8 @@ func providerActionTarget(token, action string) string {
 
 func hotelTarget(token string) string {
 	switch {
+	case containsAny(token, "discovery", "candidate", "candidates", "lead_in"):
+		return "search_hotels"
 	case containsAny(token, "detail", "details", "amenities", "enrich"):
 		return "search_hotels_with_details"
 	case containsAny(token, "by_name", "named", "specific_property"):
@@ -372,7 +378,7 @@ func hotelTarget(token string) string {
 	case containsAny(token, "hack", "hacks"):
 		return "detect_accommodation_hacks"
 	default:
-		return "search_hotels"
+		return "search_accommodations"
 	}
 }
 

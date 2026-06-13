@@ -48,6 +48,7 @@ func TestMIK3400PluginBundle(t *testing.T) {
 			"weekend getaway",
 			"plan_trip",
 			"search_flights",
+			"search_accommodations",
 			"search_hotels",
 			"search_hotels_with_details",
 			"assess_trip",
@@ -104,7 +105,7 @@ func TestMIK3400PluginBundle(t *testing.T) {
 		"/trvl price-watch",
 		"/trvl destination-research",
 		"43 underlying tools",
-		"1 smart MCP tool plus 64 compatibility aliases",
+		"1 smart MCP tool plus 66 compatibility aliases",
 	)
 }
 

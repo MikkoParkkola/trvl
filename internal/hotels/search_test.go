@@ -44,6 +44,27 @@ func TestParseDateArray(t *testing.T) {
 	}
 }
 
+func TestCoalesceProviderStatuses_PrefersBookingSuccessOverFallbackFailure(t *testing.T) {
+	statuses := coalesceProviderStatuses([]models.ProviderStatus{
+		{ID: "booking", Name: "Booking.com", Status: models.StatusFailed, Error: "WAF challenge"},
+		{ID: "booking", Name: "Booking.com", Status: models.StatusOK, Results: 25},
+		{ID: "google_hotels", Name: "Google Hotels", Status: models.StatusCheckedHit, Results: 100},
+	})
+	if len(statuses) != 2 {
+		t.Fatalf("statuses = %d, want 2", len(statuses))
+	}
+	if statuses[0].ID != "booking" {
+		t.Fatalf("first status ID = %q, want booking", statuses[0].ID)
+	}
+	if statuses[0].Status != models.StatusOK || statuses[0].Results != 25 || statuses[0].Error != "" {
+		t.Fatalf("booking status = %+v, want ok result without stale error", statuses[0])
+	}
+	c := models.ComputeCompleteness(statuses)
+	if c.State != models.CompletenessComplete || len(c.Missing) != 0 {
+		t.Fatalf("completeness = %+v, want complete", c)
+	}
+}
+
 // TestParseHotelSearchResponse tests parsing of mock hotel search data.
 func TestParseHotelSearchResponse(t *testing.T) {
 	// Simulated batchexecute response with organic hotel entries.

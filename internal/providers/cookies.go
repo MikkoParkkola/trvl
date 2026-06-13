@@ -373,6 +373,12 @@ func InvalidateWarmCache(targetURL, browserHint string) {
 	warmCache.mu.Unlock()
 }
 
+// BrowserCookiesForURL reads matching browser cookies for targetURL using the
+// same bounded, test-guarded path as provider search recovery.
+func BrowserCookiesForURL(targetURL string) []*http.Cookie {
+	return browserCookiesForURL(targetURL)
+}
+
 // browserCookiesForURL reads cookies from the user's browsers matching the
 // given URL's domain. Iterates all registered browser cookie stores and
 // returns every cookie whose domain matches the URL host (or is a parent

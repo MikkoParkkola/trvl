@@ -233,11 +233,8 @@ func TestHandleDetectTravelHacks_DefaultCurrency(t *testing.T) {
 
 func TestHandleDetectAccommodationHacks_Minimal(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping live HTTP test in short mode")
-	}
 	content, result, err := handleDetectAccommodationHacks(context.Background(), map[string]any{
-		"city": "Prague", "checkin": "2026-07-01", "checkout": "2026-07-05",
+		"city": "Prague", "checkin": "2026-07-01", "checkout": "2026-07-03",
 	}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
