@@ -136,9 +136,14 @@ type HotelSearchResult struct {
 
 // ProviderPrice represents a single booking provider's price for a hotel.
 type ProviderPrice struct {
-	Provider string  `json:"provider"`
-	Price    float64 `json:"price"`
-	Currency string  `json:"currency"`
+	Provider        string  `json:"provider"`
+	Price           float64 `json:"price"`
+	Currency        string  `json:"currency"`
+	NightlyPrice    float64 `json:"nightly_price,omitempty"`
+	TotalPrice      float64 `json:"total_price,omitempty"`
+	ProviderURL     string  `json:"provider_url,omitempty"`
+	PriceBasis      string  `json:"price_basis,omitempty"`
+	PriceConfidence string  `json:"price_confidence,omitempty"`
 }
 
 // HotelPriceResult is the top-level response for a hotel price lookup.

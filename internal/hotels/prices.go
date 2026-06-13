@@ -35,10 +35,10 @@ type HotelPriceOpts struct {
 // The hotelID should be a Google place ID (e.g. "/g/11b6d4_v_4" or
 // "ChIJ..."). These IDs are returned in hotel search results.
 //
-// When the internal batchexecute RPC returns no booking partner prices and
-// a Location hint is provided, the function falls back to searching the
-// Google Hotels search page. This ensures small hotels that don't participate
-// in Google's booking feed still return a price.
+// When the internal batchexecute RPC returns no booking partner prices, the
+// function first tries the optional SerpAPI selected-property detail path. If no
+// key is configured and a Location hint is provided, it can fall back to the
+// Google Hotels search page, but only when it can match the requested property.
 //
 // Dates should be in YYYY-MM-DD format.
 func GetHotelPrices(ctx context.Context, hotelID string, checkIn, checkOut string, currency string) (*models.HotelPriceResult, error) {
@@ -132,10 +132,15 @@ func GetHotelPricesWithOpts(ctx context.Context, opts HotelPriceOpts) (*models.H
 	}, nil
 }
 
-// tryPriceFallback searches the Google Hotels search page for the hotel
-// when the batchexecute RPC has no booking partner data. Uses the same
-// approach as trySearchPageFallback in rooms.go.
+// tryPriceFallback resolves no-provider responses. Prefer the optional SerpAPI
+// selected-property detail path because it can expose the same OTA matrix users
+// see after selecting a Google Hotels property. The search-page fallback is last
+// and only returns a property lead-in when it can match the requested hotel.
 func tryPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.HotelPriceResult {
+	if fallback := trySerpAPIPriceFallback(ctx, opts); fallback != nil {
+		return fallback
+	}
+
 	if opts.Location != "" {
 		searchOpts := HotelSearchOptions{
 			CheckIn:  opts.CheckIn,
@@ -156,17 +161,7 @@ func tryPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.HotelPri
 			}
 		}
 		if result != nil && len(result.Hotels) > 0 {
-			// Try ID match first, then name match.
-			var hotel *models.HotelResult
-			for i := range result.Hotels {
-				if result.Hotels[i].HotelID == opts.HotelID {
-					hotel = &result.Hotels[i]
-					break
-				}
-			}
-			if hotel == nil {
-				hotel = findBestNameMatch(result.Hotels, opts.Location)
-			}
+			hotel := searchPageFallbackHotel(result, opts)
 			if hotel != nil && hotel.Price > 0 {
 				cur := opts.Currency
 				if cur == "" {
@@ -179,16 +174,59 @@ func tryPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.HotelPri
 					CheckOut: opts.CheckOut,
 					Providers: []models.ProviderPrice{
 						{
-							Provider: "Google Hotels",
-							Price:    hotel.Price,
-							Currency: cur,
+							Provider:        "Google Hotels",
+							Price:           hotel.Price,
+							NightlyPrice:    hotel.Price,
+							Currency:        cur,
+							ProviderURL:     hotel.BookingURL,
+							PriceBasis:      models.PriceBasisLeadIn,
+							PriceConfidence: models.PriceConfidenceUnverified,
 						},
 					},
+					Notice: "search-page lead-in fallback only; selected-property OTA matrix unavailable",
 				}
 			}
 		}
 
 	}
 
-	return trySerpAPIPriceFallback(ctx, opts)
+	return nil
+}
+
+func searchPageFallbackHotel(result *models.HotelSearchResult, opts HotelPriceOpts) *models.HotelResult {
+	if result == nil {
+		return nil
+	}
+	for i := range result.Hotels {
+		if result.Hotels[i].HotelID == opts.HotelID {
+			return &result.Hotels[i]
+		}
+	}
+	if locationHintLooksLikePropertyName(opts.Location) {
+		return findBestNameMatch(result.Hotels, opts.Location)
+	}
+	return nil
+}
+
+func locationHintLooksLikePropertyName(location string) bool {
+	location = strings.TrimSpace(location)
+	if location == "" {
+		return false
+	}
+	if strings.Contains(location, ",") {
+		return true
+	}
+	words := strings.Fields(strings.ToLower(location))
+	if len(words) >= 3 {
+		return true
+	}
+	for _, word := range words {
+		switch word {
+		case "hotel", "hotels", "resort", "resorts", "villa", "villas", "suite", "suites",
+			"apartment", "apartments", "hostel", "hostels", "inn", "motel", "bnb",
+			"guesthouse", "guest", "palace", "thermae", "spa":
+			return true
+		}
+	}
+	return false
 }

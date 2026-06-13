@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-06-13
+
+### Fixed
+- **Google Hotels selected-property OTA matrix** — `hotel_prices` now uses SerpAPI efficiently when available: one list lookup to find the exact `property_token`, then one selected-property detail lookup for that hotel. This exposes provider rows with nightly/total prices, booking URLs, and price trust metadata instead of collapsing an unverified list total into a single `Google Hotels` provider.
+- **Hotel price fallback safety** — city-level search fallback no longer name-matches a broad location like `Ischia` to an unrelated hotel price when the requested hotel ID is absent. It only uses search-page lead-in fallback after an exact ID match or a property-name-like hint.
+
 ## [1.9.0] - 2026-06-13
 
 ### Added
@@ -651,6 +657,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Single static binary, zero runtime dependencies
 - MIT license
 
+[1.9.1]: https://github.com/MikkoParkkola/trvl/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/MikkoParkkola/trvl/compare/v1.8.2...v1.9.0
 [0.5.0]: https://github.com/MikkoParkkola/trvl/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/MikkoParkkola/trvl/compare/v0.3.0...v0.4.0

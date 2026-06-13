@@ -16,7 +16,8 @@ const serpapiFallbackNotice = "verified via SerpAPI Google Hotels property detai
 var (
 	serpapiAPIKeyFunc                 = serpapi.APIKey
 	serpapiResolveGoogleMapsPlaceFunc = serpapi.ResolveGoogleMapsPlace
-	serpapiSearchHotelsVerifiedFunc   = serpapi.SearchHotelsVerified
+	serpapiSearchHotelsFunc           = serpapi.SearchHotelsWithOptions
+	serpapiGetPropertyDetailsFunc     = serpapi.GetPropertyDetails
 )
 
 func trySerpAPIPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.HotelPriceResult {
@@ -29,14 +30,15 @@ func trySerpAPIPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.H
 		return nil
 	}
 
-	result, err := serpapiSearchHotelsVerifiedFunc(ctx, serpapiFallbackSearchOptions(
+	searchOpts := serpapiFallbackSearchOptions(
 		query,
 		opts.CheckIn,
 		opts.CheckOut,
 		opts.Currency,
 		2,
 		nil,
-	))
+	)
+	result, err := serpapiSearchHotelsFunc(ctx, searchOpts)
 	if err != nil || result == nil {
 		return nil
 	}
@@ -45,6 +47,7 @@ func trySerpAPIPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.H
 	if hotel == nil {
 		return nil
 	}
+	hotel = selectedSerpAPIPropertyDetails(ctx, hotel, searchOpts)
 	providers := providerPricesFromSerpAPIHotel(hotel, opts.Currency)
 	if len(providers) == 0 {
 		return nil
@@ -79,14 +82,15 @@ func trySerpAPIRoomFallback(ctx context.Context, opts RoomSearchOptions) ([]Room
 	if guests <= 0 {
 		guests = 2
 	}
-	result, err := serpapiSearchHotelsVerifiedFunc(ctx, serpapiFallbackSearchOptions(
+	searchOpts := serpapiFallbackSearchOptions(
 		query,
 		opts.CheckIn,
 		opts.CheckOut,
 		opts.Currency,
 		guests,
 		opts.ChildrenAges,
-	))
+	)
+	result, err := serpapiSearchHotelsFunc(ctx, searchOpts)
 	if err != nil || result == nil {
 		return nil, "", ""
 	}
@@ -95,6 +99,7 @@ func trySerpAPIRoomFallback(ctx context.Context, opts RoomSearchOptions) ([]Room
 	if hotel == nil {
 		return nil, "", ""
 	}
+	hotel = selectedSerpAPIPropertyDetails(ctx, hotel, searchOpts)
 	rooms := roomTypesFromSerpAPIHotel(hotel, opts.Currency)
 	if len(rooms) == 0 {
 		return nil, "", ""
@@ -209,8 +214,36 @@ func serpapiFallbackSearchOptions(query, checkIn, checkOut, currency string, adu
 		ChildrenAges: append([]int(nil), childrenAges...),
 		GL:           "us",
 		HL:           "en",
-		MaxDetails:   4,
 	}
+}
+
+func selectedSerpAPIPropertyDetails(ctx context.Context, hotel *serpapi.Hotel, opts serpapi.SearchOptions) *serpapi.Hotel {
+	if hotel == nil || len(hotel.ProviderOptions()) > 0 || strings.TrimSpace(hotel.PropertyToken) == "" {
+		return hotel
+	}
+	detail, err := serpapiGetPropertyDetailsFunc(ctx, opts, hotel.PropertyToken)
+	if err != nil || detail == nil {
+		return hotel
+	}
+	if detail.Name == "" {
+		detail.Name = hotel.Name
+	}
+	if detail.PropertyToken == "" {
+		detail.PropertyToken = hotel.PropertyToken
+	}
+	if detail.Link == "" {
+		detail.Link = hotel.Link
+	}
+	if detail.RatePerNight.Extracted <= 0 {
+		detail.RatePerNight = hotel.RatePerNight
+	}
+	if detail.TotalRate.Extracted <= 0 {
+		detail.TotalRate = hotel.TotalRate
+	}
+	if detail.PriceVerification == nil {
+		detail.PriceVerification = hotel.PriceVerification
+	}
+	return detail
 }
 
 func findSerpAPIHotel(result *serpapi.Response, place *serpapi.MapsPlace, fallbackQuery string) *serpapi.Hotel {
@@ -261,17 +294,19 @@ func providerPricesFromSerpAPIHotel(hotel *serpapi.Hotel, currency string) []mod
 		if price <= 0 {
 			continue
 		}
+		basis := models.PriceBasisTaxInclusiveTotal
+		if option.TotalRate.Extracted <= 0 {
+			basis = models.PriceBasisRoomNightly
+		}
 		providers = append(providers, models.ProviderPrice{
-			Provider: serpapiProviderName(option.Source),
-			Price:    price,
-			Currency: currency,
-		})
-	}
-	if len(providers) == 0 && hotel.TotalPrice() > 0 {
-		providers = append(providers, models.ProviderPrice{
-			Provider: serpapiProviderName(serpapiVerifiedSource(hotel)),
-			Price:    hotel.TotalPrice(),
-			Currency: currency,
+			Provider:        serpapiProviderName(option.Source),
+			Price:           price,
+			NightlyPrice:    option.RatePerNight.Extracted,
+			TotalPrice:      option.TotalRate.Extracted,
+			Currency:        currency,
+			ProviderURL:     option.Link,
+			PriceBasis:      basis,
+			PriceConfidence: models.PriceConfidenceVerified,
 		})
 	}
 	return dedupeAndSortProviderPrices(providers)

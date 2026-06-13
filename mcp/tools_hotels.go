@@ -116,13 +116,19 @@ func hotelPricesOutputSchema() interface{} {
 			"providers": schemaArray(map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"provider": schemaString(),
-					"price":    schemaNum(),
-					"currency": schemaString(),
+					"provider":         schemaString(),
+					"price":            schemaNum(),
+					"currency":         schemaString(),
+					"nightly_price":    schemaNumDesc("Nightly rate when the provider exposes it separately."),
+					"total_price":      schemaNumDesc("Total stay price when the provider exposes it separately."),
+					"provider_url":     schemaString(),
+					"price_basis":      schemaStringDesc("lead_in, room_nightly, room_total, or tax_inclusive_total."),
+					"price_confidence": schemaStringDesc("unverified, room_level, or verified."),
 				},
 				"required": []string{"provider", "price", "currency"},
 			}),
-			"error": schemaString(),
+			"notice": schemaString(),
+			"error":  schemaString(),
 		},
 		"required": []string{"success"},
 	}

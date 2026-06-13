@@ -13,7 +13,7 @@
 
 # trvl — The Travel MCP Server
 
-![trvl demo](https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif?v=1.9.0)
+![trvl demo](https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif?v=1.9.1)
 
 Asciinema source: [`demo.cast`](demo.cast) · Demo script and claims: [`docs/DEMO.md`](docs/DEMO.md)
 
@@ -85,7 +85,7 @@ Hotel search has three trust levels:
 2. **Discovery:** `search_hotels` and `trvl hotels` find candidate properties quickly across Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld, HomeToGo, and configured external providers. Treat these prices as lead-in search prices, not checkout-final quotes.
 3. **Verification drill-down:** use `search_hotels_with_details`, `hotel_rooms`, or `trvl serpapi` (SerpAPI key optional) for explicit room/provider detail checks. Rank final trip costs on room-level `total_price` or tax-inclusive provider totals when present, and surface cancellation, board, and taxes/fees separately.
 
-This matters because public hotel metasearch can expose teaser rates. trvl provides booking/provider links for manual handoff, but it does not book, hold, lock, or guarantee a hotel rate. Public article feedback and caveats are tracked in [`docs/PUBLIC_ARTICLE_FEEDBACK.md`](docs/PUBLIC_ARTICLE_FEEDBACK.md).
+This matters because public hotel metasearch exposes list-level rates first. Some are real selected-provider prices; others only become trustworthy after the property detail page exposes the OTA/room matrix, taxes/fees, and cancellation terms. trvl provides booking/provider links for manual handoff, but it does not book, hold, lock, or guarantee a hotel rate. Public article feedback and caveats are tracked in [`docs/PUBLIC_ARTICLE_FEEDBACK.md`](docs/PUBLIC_ARTICLE_FEEDBACK.md).
 
 ## Setup
 

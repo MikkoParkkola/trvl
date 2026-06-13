@@ -14,9 +14,11 @@ Public signal:
 
 - The articles present trvl as a useful accommodation MCP companion to `fli`
   for budget travel searches.
-- The trust caveat is serious: raw free hotel prices are described as Google
-  Hotels teaser or lead-in rates, with a worked case where a EUR 46/night hotel
-  became EUR 269/night at checkout.
+- The trust caveat is serious: raw free hotel prices are list-level Google
+  Hotels lead-in rates. Some are backed by real providers after selecting the
+  property, but they must not be used for final trip ranking until trvl exposes
+  the selected-property OTA/room matrix. The worked article case had a EUR
+  46/night hotel become EUR 269/night at checkout.
 - Part 2 says the working pipeline needs a verified read before ranking hotels:
   exact dates, exact party size, tax-inclusive total where exposed, and a link
   that lands on a durable provider or property page.
@@ -36,6 +38,10 @@ Current trvl response:
 - `trvl serpapi` is the optional verified-price path when the user has a free
   SerpAPI key. It exposes provider prices with per-night and total cost for the
   exact dates.
+- `hotel_prices` now mirrors the selected-property Google Hotels step when
+  SerpAPI is configured: it finds the exact `property_token`, fetches that
+  property's detail matrix, and returns OTA/provider rows instead of treating a
+  list-level total as a single generic provider.
 
 Required public-trust rule:
 
@@ -56,3 +62,6 @@ Follow-up product work:
 - Preserve `retrieved_at` / `checked_at` and freshness for every hotel price
   source; never leave a zero timestamp on public recommendation paths.
 - Keep a durable fallback URL for provider links that may expire.
+- Track provider trust tiers separately from price. A lower Google Hotels matrix
+  price from a lesser-known OTA can be real, but users may still prefer a
+  mainstream OTA, the official hotel site, or a refundable rate.
