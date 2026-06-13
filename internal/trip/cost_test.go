@@ -114,6 +114,29 @@ func TestCheapestHotel_SkipsZero(t *testing.T) {
 	}
 }
 
+func TestCheapestHotel_SkipsLeadInPricesForFinalTotals(t *testing.T) {
+	htls := []models.HotelResult{
+		{
+			Price:           60,
+			Currency:        "EUR",
+			Name:            "Lead-In",
+			PriceBasis:      models.PriceBasisLeadIn,
+			PriceConfidence: models.PriceConfidenceUnverified,
+		},
+		{
+			Price:           110,
+			Currency:        "EUR",
+			Name:            "Room-Level",
+			PriceBasis:      models.PriceBasisRoomTotal,
+			PriceConfidence: models.PriceConfidenceRoomLevel,
+		},
+	}
+	best := cheapestHotel(htls)
+	if best.Name != "Room-Level" {
+		t.Fatalf("cheapestHotel selected %q, want Room-Level", best.Name)
+	}
+}
+
 func TestCheapestFlight_SingleElement(t *testing.T) {
 	flts := []models.FlightResult{
 		{Price: 250, Currency: "EUR", Stops: 1},

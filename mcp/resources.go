@@ -67,6 +67,13 @@ func registerResources(s *Server) {
 			Description: "Current trip monitoring alerts and reminders",
 			MimeType:    "application/json",
 		},
+		{
+			URI:         trvlSearchResultsAppURI,
+			Name:        "trvl Search Results App",
+			Description: "Interactive MCP Apps view for flight, hotel, room, and booking option results.",
+			MimeType:    mcpAppResourceMimeType,
+			Meta:        searchResultsAppResourceMeta(),
+		},
 	}
 }
 
@@ -198,6 +205,15 @@ func (s *Server) readResource(uri string) (*ResourcesReadResult, error) {
 		return s.readTripsUpcoming()
 	case uri == "trvl://trips/alerts":
 		return s.readTripsAlerts()
+	case uri == trvlSearchResultsAppURI:
+		return &ResourcesReadResult{
+			Contents: []ResourceContent{{
+				URI:      uri,
+				MimeType: mcpAppResourceMimeType,
+				Text:     trvlSearchResultsAppHTML(),
+				Meta:     searchResultsAppResourceMeta(),
+			}},
+		}, nil
 	default:
 		return nil, fmt.Errorf("resource not found: %s", uri)
 	}

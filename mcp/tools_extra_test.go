@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/hotels"
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // --- argFloat ---
@@ -269,7 +272,7 @@ func TestToolRegistration_AllTools(t *testing.T) {
 	s := NewServer()
 	expectedTools := []string{
 		"search_flights", "plan_flight_bundle", "find_interactive",
-		"search_dates", "search_hotels", "search_hotels_with_details", "hotel_prices",
+		"search_dates", "search_accommodations", "search_hotels", "search_hotels_with_details", "hotel_prices",
 		"hotel_reviews", "destination_info", "calculate_trip_cost",
 		"weekend_getaway", "suggest_dates", "optimize_multi_city",
 		"nearby_places", "travel_guide", "local_events",
@@ -424,9 +427,18 @@ func TestSearchHotelsTool_RequiredUnchanged(t *testing.T) {
 // --- handleSearchHotels filter args parsing ---
 
 func TestHandleSearchHotels_FilterArgsDefaults(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping live HTTP test in short mode")
+	t.Setenv("HOME", t.TempDir())
+	origSearchHotels := searchHotelsFunc
+	t.Cleanup(func() { searchHotelsFunc = origSearchHotels })
+	searchHotelsFunc = func(_ context.Context, location string, opts hotels.HotelSearchOptions) (*models.HotelSearchResult, error) {
+		if location != "Helsinki" {
+			t.Fatalf("location = %q, want Helsinki", location)
+		}
+		if opts.MinPrice != 0 || opts.MaxPrice != 0 || opts.MinRating != 0 || opts.MaxDistanceKm != 0 {
+			t.Fatalf("default filters = min %.1f max %.1f rating %.1f distance %.1f, want zeros",
+				opts.MinPrice, opts.MaxPrice, opts.MinRating, opts.MaxDistanceKm)
+		}
+		return &models.HotelSearchResult{Success: true, Count: 0}, nil
 	}
 	_, _, err := handleSearchHotels(context.Background(), map[string]any{
 		"location":  "Helsinki",
@@ -439,9 +451,15 @@ func TestHandleSearchHotels_FilterArgsDefaults(t *testing.T) {
 }
 
 func TestHandleSearchHotels_FilterArgsFloat(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping live HTTP test in short mode")
+	t.Setenv("HOME", t.TempDir())
+	origSearchHotels := searchHotelsFunc
+	t.Cleanup(func() { searchHotelsFunc = origSearchHotels })
+	searchHotelsFunc = func(_ context.Context, location string, opts hotels.HotelSearchOptions) (*models.HotelSearchResult, error) {
+		if opts.MinPrice != 100 || opts.MaxPrice != 300 || opts.MinRating != 4 || opts.MaxDistanceKm != 5 {
+			t.Fatalf("filters = min %.1f max %.1f rating %.1f distance %.1f, want 100/300/4/5",
+				opts.MinPrice, opts.MaxPrice, opts.MinRating, opts.MaxDistanceKm)
+		}
+		return &models.HotelSearchResult{Success: true, Count: 0}, nil
 	}
 	_, _, err := handleSearchHotels(context.Background(), map[string]any{
 		"location":     "Helsinki",

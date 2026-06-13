@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-06-13
+
+### Added
+- **Criteria-first accommodation search** — added `search_accommodations` as the traveller-facing stay decision surface. It starts from the requested room/apartment need, verifies room-level offers for shortlisted properties, and keeps property lead-in prices out of final ranked offers unless the room/apartment satisfies the requested criteria.
+- **Accommodation evidence envelope** — responses now expose criteria echoes, matched/rejected offers, candidate lead-in prices, provider statuses, price basis/confidence, checked timestamps, parser versions, and booking-order hints for refundability-sensitive trips.
+- **MCP Apps accommodation views** — added app resources for room/accommodation results so MCP clients can render richer stay options instead of forcing users through plain text.
+
+### Changed
+- **Hotel trust model documented across public surfaces** — README, npm docs, plugin docs, bundled skills, `AGENTS.md`, and `llms.txt` now instruct agents to use `search_accommodations` for final stay recommendations and treat raw `search_hotels` prices as lead-in discovery prices.
+- **Booking.com reliability** — Booking.com now reuses browser cookies through the shared provider cookie helper, exposes provider reset commands, and prefers a later successful provider status over an earlier fallback failure when multiple Booking paths run in the same search.
+- **Release pipeline compatibility** — migrated Homebrew publishing from deprecated GoReleaser `brews` to `homebrew_casks`, removed redundant deprecated GoReleaser Docker stanzas, and kept Docker publishing in the scanned multi-arch release workflow.
+
+### Fixed
+- Final accommodation ranking no longer presents unverifiable teaser rates as booking-ready prices for criteria-specific room/apartment requests.
+- No-key live accommodation probes no longer emit a false Booking.com failure warning when configured Booking.com provider results succeeded.
+
 ## [1.6.0] - 2026-06-04
 
 ### Added
@@ -635,6 +651,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Single static binary, zero runtime dependencies
 - MIT license
 
+[1.9.0]: https://github.com/MikkoParkkola/trvl/compare/v1.8.2...v1.9.0
 [0.5.0]: https://github.com/MikkoParkkola/trvl/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/MikkoParkkola/trvl/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/MikkoParkkola/trvl/compare/v0.2.0...v0.3.0

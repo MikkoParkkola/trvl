@@ -13,6 +13,7 @@ allowed-tools:
   - mcp__trvl__interview_trip
   - mcp__trvl__plan_trip
   - mcp__trvl__search_flights
+  - mcp__trvl__search_accommodations
   - mcp__trvl__search_hotels
   - mcp__trvl__search_hotels_with_details
   - mcp__trvl__assess_trip
@@ -48,10 +49,12 @@ three questions or call `interview_trip` when available.
 3. Use `travel` with `intent="search_flights"` when the user needs more flight options, a specific
    airline/alliance/cabin, direct-only filtering, baggage-aware pricing, or a
    cheaper fallback than `plan_trip` returned.
-4. Use `travel` with `intent="search_hotels_with_details"` when comparing a
-   short hotel list by rooms, rates, and amenities; otherwise use
-   `intent="search_hotels"` for broad hotel alternatives, district filtering,
-   stars/rating constraints, amenities, or max-price filtering.
+4. Use `travel` with `intent="search_accommodations"` when recommending where
+   to stay. It matches the requested room/apartment type, occupancy,
+   amenities, refundability, and total price before ranking. Use
+   `intent="search_hotels_with_details"` when comparing a known short hotel
+   list by rooms, rates, and amenities; use `intent="search_hotels"` only for
+   broad discovery, district filtering, stars/rating constraints, or debugging.
 5. Use `travel` with `intent="assess_trip"` and dates/passport when nationality
    is known or visa/weather viability matters.
 6. Use `travel` with `intent="detect_travel_hacks"` after flight search unless

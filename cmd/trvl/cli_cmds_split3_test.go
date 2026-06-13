@@ -2,6 +2,8 @@ package main
 
 import (
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/providers"
 )
 
 func TestRunInstall_CodexDryRunV19(t *testing.T) {
@@ -387,6 +389,31 @@ func TestRunProvidersDisable_SucceedsV22(t *testing.T) {
 	cmd.SetArgs([]string{"deletable-provider"})
 	if err := cmd.Execute(); err != nil {
 		t.Errorf("providers disable: %v", err)
+	}
+}
+
+func TestRunProvidersReset_ClearsBreakerV22(t *testing.T) {
+	tmp := t.TempDir()
+	setTestHome(t, tmp)
+	writeTestProviderV19(t, tmp, "resettable-provider")
+
+	reg, err := providers.NewRegistry()
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	reg.MarkError("resettable-provider", "browser cookies missing")
+
+	cmd := providersResetCmd()
+	cmd.SetArgs([]string{"resettable-provider"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("providers reset: %v", err)
+	}
+	got := reg.ReloadIfChanged("resettable-provider")
+	if got == nil {
+		t.Fatal("expected resettable provider")
+	}
+	if got.ErrorCount != 0 || got.LastError != "" || !got.LastErrorAt.IsZero() {
+		t.Fatalf("provider breaker not reset: count=%d last_error=%q last_error_at=%v", got.ErrorCount, got.LastError, got.LastErrorAt)
 	}
 }
 

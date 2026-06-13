@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // bookingRoomOffer represents a single room offer extracted from Booking.com
@@ -16,6 +18,7 @@ import (
 type bookingRoomOffer struct {
 	Name               string   `json:"name"`
 	Description        string   `json:"description"`
+	URL                string   `json:"url,omitempty"`
 	Price              float64  `json:"price"`
 	NightlyPrice       float64  `json:"nightly_price,omitempty"`
 	TotalPrice         float64  `json:"total_price,omitempty"`
@@ -80,6 +83,8 @@ func defaultFetchBookingRooms(ctx context.Context, bookingURL, checkIn, checkOut
 			TaxesFeesIncluded:  offer.TaxesFeesIncluded,
 			Currency:           offer.Currency,
 			Provider:           "Booking.com",
+			ProviderURL:        firstNonEmptyBookingString(offer.URL, pageURL),
+			MatchConfidence:    models.RoomInventoryMatchExact,
 			MaxGuests:          offer.MaxGuests,
 			Description:        offer.Description,
 			Amenities:          offer.Amenities,
@@ -127,7 +132,6 @@ func buildBookingDetailURL(baseURL, checkIn, checkOut, currency string) string {
 var browserCookies = defaultBrowserCookies
 
 func defaultBrowserCookies(url string) []*http.Cookie {
-	// Try to read from kooky, but don't fail if unavailable
 	return nil
 }
 
@@ -136,10 +140,9 @@ func defaultBrowserCookies(url string) []*http.Cookie {
 // with Chrome TLS fingerprint impersonation.
 //
 // When Booking.com returns a WAF challenge (202), the function tries to
-// read the user's Booking.com session cookie from their installed browser
-// via kooky. This bypasses AWS WAF without requiring a headless browser.
-// If no browser cookie is found, the user is prompted to visit Booking.com
-// once in their browser.
+// read the user's Booking.com session cookies from their installed browser.
+// This bypasses Booking's WAF without requiring a headless browser. If no
+// browser cookie is found, the returned error gives the user the recovery step.
 func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
 	client := DefaultClient()
 	status, body, err := client.Get(ctx, pageURL)
@@ -315,6 +318,7 @@ func parseOfferObject(offer map[string]any) bookingRoomOffer {
 
 	room.Name, _ = offer["name"].(string)
 	room.Description, _ = offer["description"].(string)
+	room.URL, _ = offer["url"].(string)
 	var priceSpec map[string]any
 
 	// Extract price from priceSpecification or direct price field.
@@ -396,6 +400,15 @@ func roomOfferDecisionText(room bookingRoomOffer, offer, priceSpec map[string]an
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+func firstNonEmptyBookingString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 // ldFloat extracts a float64 from a JSON-LD object, handling both

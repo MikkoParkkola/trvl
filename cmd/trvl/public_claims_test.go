@@ -31,6 +31,7 @@ var readmeToolMarkers = []string{
 	"travel",
 	"search_flights",
 	"search_dates",
+	"search_accommodations",
 	"search_hotels",
 	"search_hotels_with_details",
 	"hotel_prices",

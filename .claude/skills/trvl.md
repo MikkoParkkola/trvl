@@ -1,6 +1,6 @@
 ---
 name: trvl
-description: "AI Travel Agent — flights, hotels, buses, trains, ferries, night trains, restaurants, price tracking, destinations, hacks, visas, points/award redemptions, airport lounges, traveller profile. Searches Google Flights/Hotels, Skiplagged, Kiwi, AFKLM Offers v3, Trivago, Airbnb, Booking.com, Hostelworld, Ferryhopper, FlixBus, RegioJet, Eurostar/Snap, Deutsche Bahn, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS in real-time. 1 smart MCP tool, 65 compatibility aliases, 37 hack detectors. No API keys required by default."
+description: "AI Travel Agent — flights, accommodations, hotels, buses, trains, ferries, night trains, restaurants, price tracking, destinations, hacks, visas, points/award redemptions, airport lounges, traveller profile. Searches Google Flights/Hotels, Skiplagged, Kiwi, AFKLM Offers v3, Trivago, Airbnb, Booking.com, Hostelworld, Ferryhopper, FlixBus, RegioJet, Eurostar/Snap, Deutsche Bahn, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS in real-time. 1 smart MCP tool, 66 compatibility aliases, 37 hack detectors. No API keys required by default."
 triggers:
   - flight
   - flights
@@ -56,7 +56,7 @@ allowed-tools:
 
 # trvl — AI Travel Agent
 
-> **1 smart MCP tool, 65 compatibility aliases, 56 CLI commands, 37 hack detectors, 22 providers.** Single-binary travel agent for any AI assistant. No API keys required by default.
+> **1 smart MCP tool, 66 compatibility aliases, 56 CLI commands, 37 hack detectors, 22 providers.** Single-binary travel agent for any AI assistant. No API keys required by default.
 
 ## LOAD PROFILE — ALWAYS FIRST
 
@@ -74,12 +74,12 @@ From? · To? · When (date/window)? · Flex? · Travelers? · Budget? · Carry-o
 
 - Native MCP: prefer `mcp__trvl__travel` when the compact schema is loaded.
 - Gateway: prefer `mcp__gateway__gateway_invoke` with `server="trvl"` and `tool="travel"`, passing `query`, `intent`, `action`, and `params`.
-- Compatibility aliases: exact names such as `search_flights`, `search_hotels`, `search_ground`, `watch_price`, and `update_preferences` still work when a workflow or older client names them.
+- Compatibility aliases: exact names such as `search_flights`, `search_accommodations`, `search_hotels`, `search_ground`, `watch_price`, and `update_preferences` still work when a workflow or older client names them.
 - Discovery: `mcp__gateway__gateway_search_tools` only when uncertain about availability/schema.
 
 ---
 
-## CORE TOOL ROUTING (primary `travel` tool + 65 compatibility aliases)
+## CORE TOOL ROUTING (primary `travel` tool + 66 compatibility aliases)
 
 Use `travel` for new calls. Put the target family or exact alias in `intent`,
 state-changing verbs in `action`, and the old tool arguments in `params`.
@@ -90,6 +90,7 @@ The full compatibility surface is below.
 | `travel` | Primary smart router for flights, hotels, ground, trips, watches, preferences, providers |
 | `search_flights` | Flights via Google Flights + Kiwi + Skiplagged merge |
 | `search_dates` | Cheapest-by-date across a range |
+| `search_accommodations` | Criteria-first room/apartment search; ranked offers must match occupancy, amenities, refundability, and price basis |
 | `search_hotels` | Multi-provider hotel search |
 | `search_hotels_with_details` | Search + top-N room, cancellation, board, fee, and amenity enrichment |
 | `search_route` | Multi-modal: flights + Bus/train/ferry (20 providers) |
@@ -102,7 +103,7 @@ The full compatibility surface is below.
 
 ---
 
-## COMPATIBILITY SURFACE — ALL 63 ALIASES
+## COMPATIBILITY SURFACE — ALL 66 ALIASES
 
 ### Flights (12)
 
@@ -124,7 +125,8 @@ The full compatibility surface is below.
 
 | Tool | Use | Headline params |
 |---|---|---|
-| `search_hotels` | Multi-provider hotel search (Google Hotels + Trivago + Booking.com cookie auth + configured providers) | `location`, `check_in`, `check_out`, `guests`, `currency`, `min_stars`, `min_rating`, `max_price`, `min_price`, `max_distance_km`, `amenities`, `property_type`, `brand`, `eco_certified`, `free_cancellation`, plus Airbnb (`min_bedrooms`, `room_type`, `superhost_only`, `instant_bookable`) and Booking (`max_distance_meters`, `breakfast_included`) filters |
+| `search_accommodations` | Traveller-facing room/apartment search that verifies candidate properties and returns only criteria-matched ranked offers | `location`, `check_in`, `check_out`, `adults`, `children_ages`, `guests`, `accommodation_type`, `amenities`, `preferred_amenities`, `neighborhoods`, `max_total_price`, `refundable_required`, `free_cancellation`, `property_type`, `room_type`, `min_bedrooms`, `min_bathrooms`, `min_beds`, `must_have_kitchen`, `must_have_wifi`, `must_have_workspace` |
+| `search_hotels` | Multi-provider hotel candidate search (Google Hotels + Trivago + Booking.com cookie auth + configured providers). Treat prices as lead-in until verified. | `location`, `check_in`, `check_out`, `guests`, `currency`, `min_stars`, `min_rating`, `max_price`, `min_price`, `max_distance_km`, `amenities`, `property_type`, `brand`, `eco_certified`, `free_cancellation`, plus Airbnb (`min_bedrooms`, `room_type`, `superhost_only`, `instant_bookable`) and Booking (`max_distance_meters`, `breakfast_included`) filters |
 | `search_hotels_with_details` | Multi-provider hotel search plus top-N room-level rates, cancellation/refundability, board/breakfast, taxes/fees, and full amenities in one call | `location`, `check_in`, `check_out`, `guests`, `currency`, `max_hotels`, `include_rooms`, `include_amenities`, all `search_hotels` filters |
 | `search_hotel_by_name` | Cross-provider lookup of a specific property (fuzzy match) | `name`, `check_in`, `check_out`, `location` |
 | `hotel_prices` | Provider price comparison for a property | `hotel_id`, `check_in`, `check_out`, `currency` |
@@ -244,7 +246,7 @@ The full compatibility surface is below.
 - Cheap dates → `optimize_trip_dates` / `suggest_dates`
 - Calendar-aware window → `find_trip_window` (pass `busy_intervals` from user calendar)
 - Flights → `plan_flight_bundle` (Mikko-style filters), else `search_flights`
-- Hotels → `search_hotel_by_name` for known favourites, else `search_hotels`
+- Hotels/accommodation → `search_hotel_by_name` for known favourites, `search_accommodations` for traveller-facing stay recommendations, else `search_hotels` for broad discovery
 - Ground / multimodal → `search_route` first, then `search_ground`
 - Hacks → `detect_travel_hacks` + `detect_accommodation_hacks`
 - Award alternative → `search_awards` if loyalty balances justify it
@@ -512,7 +514,7 @@ Every strategy below maps to a concrete trvl tool call or parameter. **Strategie
 
 | Strategy | trvl call |
 |---|---|
-| Cross-provider hotel comparison | `search_hotels` (Google + Trivago + Booking + Airbnb + Hostelworld + configured providers, deduplicated by lowest price) |
+| Cross-provider hotel comparison | `search_accommodations` for final stay recommendations; `search_hotels` for lead-in candidate recall across Google + Trivago + Booking + Airbnb + Hostelworld + configured providers |
 | Provider-by-provider for one property | `hotel_prices hotel_id` |
 | Split stay across 2-3 properties | `detect_accommodation_hacks` (€15/move, ≥€50 + 15% saved threshold) |
 | Specific-property fuzzy lookup | `search_hotel_by_name` |

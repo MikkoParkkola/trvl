@@ -137,60 +137,25 @@ release:
     go install github.com/MikkoParkkola/trvl/cmd/trvl@v{{ .Version }}
     ```
 
-brews:
+homebrew_casks:
   - ids:
       - trvl
+    name: trvl
     repository:
       owner: MikkoParkkola
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: https://github.com/MikkoParkkola/trvl
     description: "AI travel agent: flights, hotels and transport via MCP, no API keys"
     license: "PolyForm-Noncommercial-1.0.0"
-    install: |
-      bin.install "trvl"
-      system "xattr", "-dr", "com.apple.quarantine", "#{bin}/trvl" if OS.mac?
-    test: |
-      system "#{bin}/trvl", "version"
+    binaries:
+      - trvl
+    caveats: |
+      Run `trvl mcp install` to connect trvl to Claude Desktop, Cursor,
+      Windsurf, Codex, VS Code Copilot, Zed, or another MCP client.
 
-dockers:
-  - image_templates:
-      - "ghcr.io/mikkoparkkola/trvl:{{ .Version }}-amd64"
-    use: buildx
-    dockerfile: Dockerfile
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.title=trvl"
-      - "--label=org.opencontainers.image.description=Google Flights + Hotels from your terminal"
-      - "--label=org.opencontainers.image.url=https://github.com/MikkoParkkola/trvl"
-      - "--label=org.opencontainers.image.source=https://github.com/MikkoParkkola/trvl"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.licenses=MIT"
-  - image_templates:
-      - "ghcr.io/mikkoparkkola/trvl:{{ .Version }}-arm64"
-    use: buildx
-    goarch: arm64
-    dockerfile: Dockerfile
-    build_flag_templates:
-      - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.title=trvl"
-      - "--label=org.opencontainers.image.description=Google Flights + Hotels from your terminal"
-      - "--label=org.opencontainers.image.url=https://github.com/MikkoParkkola/trvl"
-      - "--label=org.opencontainers.image.source=https://github.com/MikkoParkkola/trvl"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.licenses=MIT"
-
-# Note: the previous top-level `after.hooks` that bumped npm/package.json was
-# moved into `before.hooks` at the top of this file. `after:` is not a valid
-# goreleaser v2 key; retaining it made `goreleaser check` fail.
-
-docker_manifests:
-  - name_template: "ghcr.io/mikkoparkkola/trvl:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/mikkoparkkola/trvl:{{ .Version }}-amd64"
-      - "ghcr.io/mikkoparkkola/trvl:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/mikkoparkkola/trvl:latest"
-    image_templates:
-      - "ghcr.io/mikkoparkkola/trvl:{{ .Version }}-amd64"
-      - "ghcr.io/mikkoparkkola/trvl:{{ .Version }}-arm64"
+# Docker images are published by .github/workflows/release.yml so release CI can
+# build multi-arch images with Dockerfile.release, scan them with Trivy, and push
+# versioned plus latest tags independently of GoReleaser's deprecated Docker
+# pipes.

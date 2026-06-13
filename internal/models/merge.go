@@ -89,6 +89,7 @@ func MergeHotelResults(sources ...[]HotelResult) []HotelResult {
 					dk := key{name: hotelDisambiguationKey(h)}
 					if _, exists := merged[dk]; !exists {
 						clone := h
+						clone.RoomTypes = mergeHotelRoomTypes(nil, h.RoomTypes)
 						clone.Sources = buildSources(clone)
 						merged[dk] = &clone
 						order = append(order, dk)
@@ -142,11 +143,10 @@ func MergeHotelResults(sources ...[]HotelResult) []HotelResult {
 				if existing.Neighborhood == "" && h.Neighborhood != "" {
 					existing.Neighborhood = h.Neighborhood
 				}
-				if len(existing.RoomTypes) == 0 && len(h.RoomTypes) > 0 {
-					existing.RoomTypes = h.RoomTypes
-				}
+				existing.RoomTypes = mergeHotelRoomTypes(existing.RoomTypes, h.RoomTypes)
 			} else {
 				clone := h
+				clone.RoomTypes = mergeHotelRoomTypes(nil, h.RoomTypes)
 				clone.Sources = buildSources(clone)
 				merged[k] = &clone
 				order = append(order, k)
@@ -164,6 +164,51 @@ func MergeHotelResults(sources ...[]HotelResult) []HotelResult {
 	FinalizeHotelPriceTrust(result, "", time.Now())
 	ComputeSavings(result)
 	return result
+}
+
+func mergeHotelRoomTypes(existing, incoming []Room) []Room {
+	if len(incoming) == 0 {
+		return existing
+	}
+	out := make([]Room, 0, len(existing)+len(incoming))
+	seen := make(map[string]struct{}, len(existing)+len(incoming))
+	for _, room := range existing {
+		key := hotelRoomTypeKey(room)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, cloneRoom(room))
+	}
+	for _, room := range incoming {
+		key := hotelRoomTypeKey(room)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, cloneRoom(room))
+	}
+	return out
+}
+
+func hotelRoomTypeKey(room Room) string {
+	provider := strings.ToLower(strings.Join(strings.Fields(room.Provider), " "))
+	name := strings.ToLower(strings.Join(strings.Fields(room.Name), " "))
+	rate := strings.ToLower(strings.Join(strings.Fields(room.RatePlanName), " "))
+	return strings.Join([]string{
+		provider,
+		name,
+		rate,
+		strings.ToUpper(strings.TrimSpace(room.Currency)),
+		fmt.Sprintf("%.2f", room.Price),
+		fmt.Sprintf("%.2f", room.NightlyPrice),
+		fmt.Sprintf("%.2f", room.TotalPrice),
+	}, "|")
+}
+
+func cloneRoom(room Room) Room {
+	room.Amenities = append([]string(nil), room.Amenities...)
+	return room
 }
 
 // ComputeSavings populates Savings and CheapestSource for each hotel that has

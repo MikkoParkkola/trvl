@@ -232,7 +232,7 @@ func formatLastSearchMarkdown(ls *LastSearch) string {
 // Tool-surface copy is enforced by share tests so public trip cards do not
 // drift back to stale advertised counts.
 func trvlFooter() string {
-	return "*Found by [trvl](https://github.com/MikkoParkkola/trvl) — 1 smart MCP tool + 64 compatibility aliases, no API keys for core search*\n"
+	return "*Found by [trvl](https://github.com/MikkoParkkola/trvl) — 1 smart MCP tool + 66 compatibility aliases, no API keys for core search*\n"
 }
 
 // extractTripRoute derives origin, destination, dates, and nights from trip legs.

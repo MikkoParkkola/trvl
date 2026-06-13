@@ -315,9 +315,12 @@ func cheapestFlight(flts []models.FlightResult) models.FlightResult {
 
 // cheapestHotel returns the hotel with the lowest positive price.
 func cheapestHotel(htls []models.HotelResult) models.HotelResult {
-	best := htls[0]
-	for _, h := range htls[1:] {
-		if h.Price > 0 && (best.Price <= 0 || h.Price < best.Price) {
+	var best models.HotelResult
+	for _, h := range htls {
+		if !models.HotelPriceEligibleForFinalTripCost(h) {
+			continue
+		}
+		if best.Price <= 0 || h.Price < best.Price {
 			best = h
 		}
 	}

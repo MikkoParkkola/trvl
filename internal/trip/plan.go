@@ -572,9 +572,16 @@ func joinRoute(parts []string) string {
 }
 
 func extractTopHotels(htls []models.HotelResult, nights, n int) []PlanHotel {
+	eligible := make([]models.HotelResult, 0, len(htls))
+	for _, h := range htls {
+		if models.HotelPriceEligibleForFinalTripCost(h) {
+			eligible = append(eligible, h)
+		}
+	}
+
 	// Sort by price.
-	sorted := make([]models.HotelResult, len(htls))
-	copy(sorted, htls)
+	sorted := make([]models.HotelResult, len(eligible))
+	copy(sorted, eligible)
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].Price < sorted[j].Price
 	})

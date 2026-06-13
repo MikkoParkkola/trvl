@@ -118,6 +118,7 @@ type ToolDef struct {
 	InputSchema  InputSchema      `json:"inputSchema"`
 	OutputSchema interface{}      `json:"outputSchema,omitempty"`
 	Annotations  *ToolAnnotations `json:"annotations,omitempty"`
+	Meta         map[string]any   `json:"_meta,omitempty"`
 }
 
 // ToolAnnotations provides metadata hints about a tool's behavior.
@@ -343,10 +344,11 @@ type ResourcesListResult struct {
 
 // ResourceDef describes a single resource.
 type ResourceDef struct {
-	URI         string `json:"uri"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	MimeType    string `json:"mimeType,omitempty"`
+	URI         string         `json:"uri"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	MimeType    string         `json:"mimeType,omitempty"`
+	Meta        map[string]any `json:"_meta,omitempty"`
 }
 
 // ResourcesReadParams is the params object for resources/read.
@@ -361,9 +363,10 @@ type ResourcesReadResult struct {
 
 // ResourceContent is a single content block in a resource read result.
 type ResourceContent struct {
-	URI      string `json:"uri"`
-	MimeType string `json:"mimeType,omitempty"`
-	Text     string `json:"text,omitempty"`
+	URI      string         `json:"uri"`
+	MimeType string         `json:"mimeType,omitempty"`
+	Text     string         `json:"text,omitempty"`
+	Meta     map[string]any `json:"_meta,omitempty"`
 }
 
 // --- Trip state types ---

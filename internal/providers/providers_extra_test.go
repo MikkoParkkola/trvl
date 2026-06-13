@@ -476,6 +476,55 @@ func TestRegistry_MarkError_Nonexistent(t *testing.T) {
 	reg.MarkError("nonexistent", "err")
 }
 
+func TestRegistry_ResetBreaker(t *testing.T) {
+	dir := t.TempDir()
+	reg, err := NewRegistryAt(dir)
+	if err != nil {
+		t.Fatalf("NewRegistryAt: %v", err)
+	}
+	lastSuccess := time.Now().Add(-time.Hour).Truncate(time.Second)
+	cfg := &ProviderConfig{
+		ID: "reset-test", Name: "Test", Category: "hotel",
+		Endpoint:        "https://api.example.com",
+		ResponseMapping: ResponseMapping{ResultsPath: "r"},
+		ErrorCount:      7,
+		LastError:       "browser cookies missing",
+		LastErrorAt:     time.Now().Add(-time.Minute),
+		LastSuccess:     lastSuccess,
+	}
+	if err := reg.Save(cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if err := reg.ResetBreaker("reset-test"); err != nil {
+		t.Fatalf("ResetBreaker: %v", err)
+	}
+	got := reg.Get("reset-test")
+	if got.ErrorCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", got.ErrorCount)
+	}
+	if got.LastError != "" {
+		t.Errorf("LastError = %q, want empty", got.LastError)
+	}
+	if !got.LastErrorAt.IsZero() {
+		t.Errorf("LastErrorAt = %v, want zero", got.LastErrorAt)
+	}
+	if !got.LastSuccess.Equal(lastSuccess) {
+		t.Errorf("LastSuccess = %v, want %v", got.LastSuccess, lastSuccess)
+	}
+}
+
+func TestRegistry_ResetBreakerMissingProvider(t *testing.T) {
+	dir := t.TempDir()
+	reg, err := NewRegistryAt(dir)
+	if err != nil {
+		t.Fatalf("NewRegistryAt: %v", err)
+	}
+	if err := reg.ResetBreaker("missing"); err == nil {
+		t.Fatal("expected error for missing provider")
+	}
+}
+
 // ============================================================
 // substituteVars
 // ============================================================

@@ -16,8 +16,9 @@ import (
 
 func providersCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "providers",
-		Short: "Manage external data providers",
+		Use:     "providers",
+		Aliases: []string{"provider"},
+		Short:   "Manage external data providers",
 		Long: `View, enable, disable, and monitor external data providers.
 
 Providers are optional integrations that extend trvl with additional data
@@ -28,12 +29,14 @@ Examples:
   trvl providers list
   trvl providers enable kiwi --accept-tos
   trvl providers disable kiwi
+  trvl providers reset booking
   trvl providers status`,
 	}
 
 	cmd.AddCommand(providersListCmd())
 	cmd.AddCommand(providersEnableCmd())
 	cmd.AddCommand(providersDisableCmd())
+	cmd.AddCommand(providersResetCmd())
 	cmd.AddCommand(providersStatusCmd())
 
 	return cmd
@@ -272,6 +275,38 @@ func runProvidersDisable(id string) error {
 	}
 
 	fmt.Printf("Provider %q disabled.\n", cfg.Name)
+	return nil
+}
+
+// --- reset ---
+
+func providersResetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reset <id>",
+		Short: "Clear a provider circuit breaker",
+		Long: `Clear the error counter and last-error fields for a configured provider.
+
+Use this after fixing upstream login, browser session, endpoint details, or a
+temporary provider block.
+
+Examples:
+  trvl providers reset booking`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runProvidersReset(args[0])
+		},
+	}
+}
+
+func runProvidersReset(id string) error {
+	reg, err := providers.NewRegistry()
+	if err != nil {
+		return fmt.Errorf("reset provider: %w", err)
+	}
+	if err := reg.ResetBreaker(id); err != nil {
+		return fmt.Errorf("reset provider %q: %w", id, err)
+	}
+	fmt.Printf("Provider %q circuit breaker reset.\n", id)
 	return nil
 }
 

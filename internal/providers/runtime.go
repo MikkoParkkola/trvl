@@ -1341,6 +1341,7 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 			src.BookingURL = h.BookingURL
 		}
 
+		h.RoomTypes = tagProviderRoomTypes(h.RoomTypes, cfg, src, h.BookingURL, currency)
 		h.Sources = []models.PriceSource{src}
 
 		// Normalize top-level price to the requested currency so
@@ -1385,6 +1386,54 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	}
 
 	return hotels, nil
+}
+
+func tagProviderRoomTypes(rooms []models.Room, cfg *ProviderConfig, source models.PriceSource, bookingURL, currency string) []models.Room {
+	if len(rooms) == 0 {
+		return rooms
+	}
+	out := make([]models.Room, len(rooms))
+	for i, room := range rooms {
+		if room.Provider == "" {
+			room.Provider = source.Provider
+			if room.Provider == "" && cfg != nil {
+				room.Provider = cfg.ID
+			}
+		}
+		if room.ProviderURL == "" {
+			room.ProviderURL = firstNonEmptyString(source.BookingURL, bookingURL)
+		}
+		if room.Currency == "" {
+			room.Currency = firstNonEmptyString(source.Currency, currency)
+		}
+		if room.MatchConfidence == "" {
+			room.MatchConfidence = models.RoomInventoryMatchExact
+		}
+		if room.PriceBasis == "" {
+			if room.TotalPrice > 0 {
+				room.PriceBasis = models.PriceBasisRoomTotal
+			} else {
+				room.PriceBasis = models.PriceBasisRoomNightly
+			}
+		}
+		if room.PriceConfidence == "" {
+			room.PriceConfidence = models.PriceConfidenceRoomLevel
+		}
+		if room.TotalPrice == 0 && room.Price > 0 && room.PriceBasis == models.PriceBasisRoomTotal {
+			room.TotalPrice = room.Price
+		}
+		out[i] = room
+	}
+	return out
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func joinIntValues(values []int, separator string) string {

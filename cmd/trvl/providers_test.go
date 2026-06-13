@@ -20,13 +20,20 @@ func TestProvidersCmd_Use(t *testing.T) {
 	}
 }
 
+func TestProvidersCmd_Alias(t *testing.T) {
+	cmd := providersCmd()
+	if len(cmd.Aliases) != 1 || cmd.Aliases[0] != "provider" {
+		t.Errorf("providersCmd aliases = %v, want [provider]", cmd.Aliases)
+	}
+}
+
 func TestProvidersCmd_HasSubcommands(t *testing.T) {
 	cmd := providersCmd()
 	names := make(map[string]bool)
 	for _, sub := range cmd.Commands() {
 		names[sub.Name()] = true
 	}
-	for _, want := range []string{"list", "enable", "disable", "status"} {
+	for _, want := range []string{"list", "enable", "disable", "reset", "status"} {
 		if !names[want] {
 			t.Errorf("providersCmd missing subcommand %q", want)
 		}

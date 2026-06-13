@@ -322,11 +322,12 @@ func roomTypesFromSerpAPIHotel(hotel *serpapi.Hotel, currency string) []RoomType
 	}
 	if len(rooms) == 0 && hotel.TotalPrice() > 0 {
 		rooms = append(rooms, RoomType{
-			Name:       "Standard Room",
-			Price:      hotel.TotalPrice(),
-			TotalPrice: hotel.TotalPrice(),
-			Currency:   currency,
-			Provider:   serpapiProviderName(serpapiVerifiedSource(hotel)),
+			Name:            "Standard Room",
+			Price:           hotel.TotalPrice(),
+			TotalPrice:      hotel.TotalPrice(),
+			Currency:        currency,
+			Provider:        serpapiProviderName(serpapiVerifiedSource(hotel)),
+			MatchConfidence: models.RoomInventoryMatchPropertyLevelOnly,
 		})
 	}
 	return dedupeAndSortRoomTypes(rooms)
@@ -390,9 +391,14 @@ func roomTypeFromSerpAPIOffer(offer serpapi.PriceOption, room *serpapi.RoomOptio
 	nightly := offer.RatePerNight.Extracted
 	name := "Standard Room"
 	maxGuests := 0
+	providerURL := offer.Link
+	matchConfidence := models.RoomInventoryMatchPropertyLevelOnly
 	if room != nil {
 		if room.Name != "" {
 			name = room.Name
+		}
+		if room.Link != "" {
+			providerURL = room.Link
 		}
 		if room.TotalRate.Extracted > 0 {
 			total = room.TotalRate.Extracted
@@ -401,6 +407,7 @@ func roomTypeFromSerpAPIOffer(offer serpapi.PriceOption, room *serpapi.RoomOptio
 			nightly = room.RatePerNight.Extracted
 		}
 		maxGuests = room.NumGuests
+		matchConfidence = models.RoomInventoryMatchExact
 	}
 	price := total
 	if price <= 0 {
@@ -411,13 +418,16 @@ func roomTypeFromSerpAPIOffer(offer serpapi.PriceOption, room *serpapi.RoomOptio
 	}
 
 	result := RoomType{
-		Name:         name,
-		Price:        price,
-		NightlyPrice: nightly,
-		TotalPrice:   total,
-		Currency:     currency,
-		Provider:     serpapiProviderName(offer.Source),
-		MaxGuests:    maxGuests,
+		Name:            name,
+		Price:           price,
+		NightlyPrice:    nightly,
+		TotalPrice:      total,
+		Currency:        currency,
+		Provider:        serpapiProviderName(offer.Source),
+		ProviderURL:     providerURL,
+		RatePlanName:    offer.Benefits,
+		MatchConfidence: matchConfidence,
+		MaxGuests:       maxGuests,
 	}
 	if offer.FreeCancellation {
 		result.FreeCancellation = boolPtr(true)

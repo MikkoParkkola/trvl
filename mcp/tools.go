@@ -23,6 +23,7 @@ func registerTools(s *Server) {
 		planFlightBundleTool(),
 		findInteractiveTool(),
 		searchDatesTool(),
+		searchAccommodationsTool(),
 		searchHotelsTool(),
 		searchHotelsWithDetailsTool(),
 		searchHotelByNameTool(),
@@ -87,6 +88,7 @@ func registerTools(s *Server) {
 	}
 	s.toolDefs = make(map[string]ToolDef, len(legacyTools)+1)
 	for _, tool := range legacyTools {
+		tool = withSearchResultsApp(tool)
 		s.toolDefs[tool.Name] = tool
 	}
 	s.toolDefs["travel"] = travelTool()
@@ -100,6 +102,7 @@ func registerTools(s *Server) {
 	s.handlers["plan_flight_bundle"] = s.wrapHandler("plan_flight_bundle", handlePlanFlightBundle)
 	s.handlers["find_interactive"] = s.wrapHandler("find_interactive", handleFindInteractive)
 	s.handlers["search_dates"] = s.wrapHandler("search_dates", handleSearchDates)
+	s.handlers["search_accommodations"] = s.wrapHandler("search_accommodations", handleSearchAccommodations)
 	s.handlers["search_hotels"] = s.wrapHandler("search_hotels", handleSearchHotels)
 	s.handlers["search_hotels_with_details"] = s.wrapHandler("search_hotels_with_details", handleSearchHotelsWithDetails)
 	s.handlers["search_hotel_by_name"] = s.wrapHandler("search_hotel_by_name", handleSearchHotelByName)
@@ -379,6 +382,56 @@ func argStringSlice(args map[string]any, key string) []string {
 		return result
 	}
 	return nil
+}
+
+func argIntSlice(args map[string]any, key string) []int {
+	if args == nil {
+		return nil
+	}
+	v, ok := args[key]
+	if !ok {
+		return nil
+	}
+	switch values := v.(type) {
+	case []int:
+		return append([]int(nil), values...)
+	case []any:
+		result := make([]int, 0, len(values))
+		for _, elem := range values {
+			switch n := elem.(type) {
+			case float64:
+				result = append(result, int(n))
+			case int:
+				result = append(result, n)
+			case json.Number:
+				i, err := n.Int64()
+				if err == nil {
+					result = append(result, int(i))
+				}
+			}
+		}
+		return result
+	case string:
+		if strings.TrimSpace(values) == "" {
+			return nil
+		}
+		parts := strings.Split(values, ",")
+		result := make([]int, 0, len(parts))
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			var n json.Number = json.Number(part)
+			i, err := n.Int64()
+			if err == nil {
+				result = append(result, int(i))
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 func argBool(args map[string]any, key string, def bool) bool {

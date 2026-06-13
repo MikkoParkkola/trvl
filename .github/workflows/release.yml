@@ -7,9 +7,9 @@
 #
 # Optional secrets:
 #   HOMEBREW_TAP_TOKEN — PAT with `contents: write` on
-#     MikkoParkkola/homebrew-tap, enabling goreleaser's `brews` block to
-#     auto-bump the formula. Without it, the brews step will fail; remove or
-#     comment out the `brews:` block in .goreleaser.yaml if unavailable.
+#     MikkoParkkola/homebrew-tap, enabling goreleaser's `homebrew_casks` block
+#     to auto-bump the cask. Formula updates are checked from release checksums
+#     before announcing the Homebrew channel.
 name: Release
 
 on:
@@ -263,4 +263,3 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           npm version "${VERSION}" --no-git-tag-version --allow-same-version
           npm publish --provenance --access public
-
