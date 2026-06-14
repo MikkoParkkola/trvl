@@ -278,6 +278,91 @@ func TestSearchPageFallbackAllowsPropertyNameMatch(t *testing.T) {
 	}
 }
 
+func stubSerpAPIFallbackNoPlace(t *testing.T, response *serpapi.Response, forbidDetail bool) {
+	t.Helper()
+	origKey := serpapiAPIKeyFunc
+	origResolve := serpapiResolveGoogleMapsPlaceFunc
+	origSearch := serpapiSearchHotelsFunc
+	origDetails := serpapiGetPropertyDetailsFunc
+	t.Cleanup(func() {
+		serpapiAPIKeyFunc = origKey
+		serpapiResolveGoogleMapsPlaceFunc = origResolve
+		serpapiSearchHotelsFunc = origSearch
+		serpapiGetPropertyDetailsFunc = origDetails
+	})
+	serpapiAPIKeyFunc = func() string { return "test-key" }
+	// A hotel name (not a Google place ID) does not resolve to a Maps place.
+	serpapiResolveGoogleMapsPlaceFunc = func(_ context.Context, _ string) (*serpapi.MapsPlace, error) {
+		return nil, nil
+	}
+	serpapiSearchHotelsFunc = func(_ context.Context, _ serpapi.SearchOptions) (*serpapi.Response, error) {
+		return response, nil
+	}
+	serpapiGetPropertyDetailsFunc = func(_ context.Context, _ serpapi.SearchOptions, _ string) (*serpapi.Hotel, error) {
+		if forbidDetail {
+			t.Fatal("detail lookup must not run when no requested property matches")
+		}
+		return nil, nil
+	}
+}
+
+// Regression for RobertoReale's report: with SerpAPI active and a hotel *name*
+// (no resolvable Google place ID), the name-based fallback used to return the
+// first priced property in the area and label it `verified` — a different
+// hotel. Querying "Hotel Villa Maria" returned "Miramare Sea Resort & Spa" at
+// €2,336. The safe outcome is no match (providers: null upstream), never a
+// confident price for the wrong property.
+func TestSerpAPIPriceFallbackRejectsWrongHotelOnNameMismatch(t *testing.T) {
+	stubSerpAPIFallbackNoPlace(t, &serpapi.Response{Properties: []serpapi.Hotel{{
+		Name:      "Miramare Sea Resort & Spa",
+		TotalRate: serpapi.Rate{Extracted: 2336},
+		Prices: []serpapi.PriceOption{{
+			Source:    "Booking.com",
+			TotalRate: serpapi.Rate{Extracted: 2336},
+		}},
+	}}}, true)
+
+	result := trySerpAPIPriceFallback(context.Background(), HotelPriceOpts{
+		HotelID:  "Hotel Villa Maria",
+		Location: "Sant Angelo Ischia Italy",
+		CheckIn:  "2026-07-30",
+		CheckOut: "2026-08-04",
+		Currency: "EUR",
+	})
+	if result != nil {
+		t.Fatalf("price fallback = %#v, want nil: a name mismatch must not return a different hotel as verified", result)
+	}
+}
+
+// Guards against over-rejection: when the requested property *is* among the
+// results, the name-based fallback must still resolve it even without a Google
+// place ID.
+func TestSerpAPIPriceFallbackMatchesRequestedPropertyByName(t *testing.T) {
+	stubSerpAPIFallbackNoPlace(t, &serpapi.Response{Properties: []serpapi.Hotel{{
+		Name:      "Other Resort",
+		TotalRate: serpapi.Rate{Extracted: 2336},
+		Prices:    []serpapi.PriceOption{{Source: "Booking.com", TotalRate: serpapi.Rate{Extracted: 2336}}},
+	}, {
+		Name:      "Hotel Villa Maria",
+		TotalRate: serpapi.Rate{Extracted: 1106},
+		Prices:    []serpapi.PriceOption{{Source: "Booking.com", TotalRate: serpapi.Rate{Extracted: 1106}}},
+	}}}, false)
+
+	result := trySerpAPIPriceFallback(context.Background(), HotelPriceOpts{
+		HotelID:  "Hotel Villa Maria",
+		Location: "Sant Angelo Ischia Italy",
+		CheckIn:  "2026-07-30",
+		CheckOut: "2026-08-04",
+		Currency: "EUR",
+	})
+	if result == nil {
+		t.Fatal("price fallback = nil, want the name-matched property")
+	}
+	if result.Name != "Hotel Villa Maria" {
+		t.Fatalf("name = %q, want Hotel Villa Maria (must match the requested property, not the first priced one)", result.Name)
+	}
+}
+
 func stubSerpAPIFallback(t *testing.T, place *serpapi.MapsPlace, response *serpapi.Response) func() {
 	return stubSerpAPIFallbackWithDetail(t, place, response, nil, 0)
 }
