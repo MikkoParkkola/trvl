@@ -313,6 +313,18 @@ Optional parameters:
 ```
 Optional: `trip_duration` (days), `is_round_trip` (true/false)
 
+### find_trip_window — Cheapest flexible-date window for a stay of N–M nights
+```json
+{"origin": "BGY", "destination": "NAP", "earliest_depart": "2026-07-22", "latest_return": "2026-08-06", "min_nights": 5, "max_nights": 7}
+```
+Use this when the trip length is a *range*, not a fixed date: it returns the cheapest
+round-trip date combinations whose stay falls between `min_nights` (default 3) and
+`max_nights` (default 7), ranked by price. This is the flexible-date duration-window
+search — one tool call instead of scanning every date pair by hand. `Adults` is
+honoured, so prices are for the real party size (not single-adult-only). For a
+multi-airport city, call it once per airport code (e.g. BGY, MXP, LIN) and merge —
+`fli`-style metro codes are not used; each airport is a separate round-trip.
+
 ### search_accommodations — Criteria-first room/apartment search
 ```json
 {"location": "Tokyo", "check_in": "2026-06-15", "check_out": "2026-06-18", "adults": 2, "children_ages": [7], "accommodation_type": "entire_apartment", "must_have_kitchen": true, "refundable_required": true}
@@ -541,6 +553,25 @@ Runs 37 detectors in parallel: hidden-city, throwaway, positioning, back-to-back
 - `plan-trip` — Full trip planning: flights + hotels + budget analysis
 - `find-cheapest-dates` — Month-wide price calendar for a route
 - `compare-hotels` — Side-by-side hotel comparison by user priorities
+
+## Budget travel pipeline (one binary)
+
+trvl covers the whole flight + accommodation budget search on its own — no separate
+flight tool, no separate price-verification server. The reliable pattern (sequential,
+not joint — LLMs lose track over hundreds of speculative calls):
+
+1. **Flights window** — `find_trip_window` per departure airport (`min_nights`/`max_nights`,
+   real `adults` count). Merge the per-airport results and keep the top 8–10 cheapest dates.
+2. **Accommodation, verified** — for each kept flight date, call `search_accommodations`
+   (check-in = outbound, check-out = return, the real `adults`). It verifies room-level
+   rates for the shortlist and returns only criteria-matched offers in `offers`; raw
+   `candidates` lead-in prices are Google Hotels teasers and must not be ranked on.
+3. **Rank by total trip cost** — flight (×party) + the verified accommodation total.
+   Hotel nightly rates are far more stable than flight prices across small date shifts,
+   so let flights be the variable part and rank on the combined total.
+
+This is the same flights-then-accommodation flow people build with three separate tools,
+done with trvl alone.
 
 ## Response Tips
 
