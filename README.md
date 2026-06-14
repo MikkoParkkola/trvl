@@ -768,6 +768,18 @@ Built on the shoulders of:
 
 **Important:** Automated access may violate some providers' Terms of Service. This tool is licensed under PolyForm Noncommercial 1.0 — commercial use, operation as a service, or redistribution of scraped data is prohibited. You are responsible for ensuring your use complies with applicable terms and laws in your jurisdiction. Same approach as [fli](https://github.com/punitarani/fli) (1K+ stars, MIT licensed).
 
+## Available on
+
+Find trvl across the MCP ecosystem:
+
+[Glama](https://glama.ai/mcp/servers/MikkoParkkola/trvl) · [LobeHub](https://lobehub.com/mcp/mikkoparkkola-trvl) · [PulseMCP](https://www.pulsemcp.com/servers/mikkoparkkola-trvl) · [Agent Index](https://agentindex.app/en/tool/mikkoparkkola-trvl) · [MCP Market](https://mcpmarket.com/server/trvl) · [pkg.go.dev](https://pkg.go.dev/github.com/MikkoParkkola/trvl)
+
+Install via Homebrew, `go install`, Docker, a prebuilt binary, or one-click in VS Code / Cursor (badges above).
+
+### Independent coverage
+
+Roberto Reale, [**Budget Travel Pipeline**](https://blog-roberto-reale.vercel.app) (3-part series): an independent build-and-test of a flights + accommodation agent pipeline on trvl, with a hotel-price verification deep-dive. His testing surfaced real fixes (shipped in v1.9.1–v1.9.2) and shaped the v1.10 trust roadmap.
+
 ## Ecosystem
 
 trvl is part of a suite of MCP tools:
