@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-06-14
+
+Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Travel Pipeline" blog series, made native.
+
+### Added
+- **Flexible-duration date search on the CLI** — `trvl dates` now accepts `--min-duration`/`--max-duration` for a window of stay lengths (e.g. 5 to 7 nights), ranked by price. `--duration N` stays the single-length shorthand. The `find_trip_window` MCP tool already supported this; the CLI now matches.
+- **Durable booking fallback** — every hotel price result carries `booking_fallback_url`, a Booking.com property+date deep-link that never 404s, alongside provider links that may expire.
+- **Link-durability triage** — provider links are tagged `link_durability` (`stable` for direct OTA links, `expiring` for Google `aclk` ad-click redirects). Dead vacation-rental `travel/clk` redirects are stripped.
+- **Tourist-tax note** — accommodation results carry `tourist_tax_note`, a descriptive (never estimated) caveat that a local tourist/city tax may be payable in cash and is in no online total. It never affects ranking.
+- **Tax-added-at-checkout flag** — a provider whose shown total equals its pre-tax figure carries `tax_added_at_checkout`, signalling the price will grow at checkout.
+
+### Documentation
+- `AGENTS.md` now documents `find_trip_window`, multi-passenger pricing, and a one-binary budget-pipeline recipe, so the capabilities are discoverable.
+- README "Available on" section with verified MCP registry listings and independent coverage.
+
+### Credit
+- Fixes and roadmap shaped by @RobertoReale's independent testing and his `travel-search` reference implementation.
+
 ## [1.9.2] - 2026-06-14
 
 ### Fixed
