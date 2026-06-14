@@ -43,7 +43,7 @@ func trySerpAPIPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.H
 		return nil
 	}
 
-	hotel := findSerpAPIHotel(result, place, opts.Location)
+	hotel := findSerpAPIHotel(result, place, opts.Location, opts.HotelID)
 	if hotel == nil {
 		return nil
 	}
@@ -95,7 +95,7 @@ func trySerpAPIRoomFallback(ctx context.Context, opts RoomSearchOptions) ([]Room
 		return nil, "", ""
 	}
 
-	hotel := findSerpAPIHotel(result, place, opts.Location)
+	hotel := findSerpAPIHotel(result, place, opts.Location, opts.HotelID)
 	if hotel == nil {
 		return nil, "", ""
 	}
@@ -246,7 +246,7 @@ func selectedSerpAPIPropertyDetails(ctx context.Context, hotel *serpapi.Hotel, o
 	return detail
 }
 
-func findSerpAPIHotel(result *serpapi.Response, place *serpapi.MapsPlace, fallbackQuery string) *serpapi.Hotel {
+func findSerpAPIHotel(result *serpapi.Response, place *serpapi.MapsPlace, nameHints ...string) *serpapi.Hotel {
 	if result == nil {
 		return nil
 	}
@@ -265,13 +265,33 @@ func findSerpAPIHotel(result *serpapi.Response, place *serpapi.MapsPlace, fallba
 		}
 		return nil
 	}
-	if fallbackQuery != "" {
+
+	// No resolved Google Maps place: only return a result that name-matches the
+	// requested property. When the caller asked for a specific hotel that does
+	// not match any result, we must NOT fall through to an arbitrary priced
+	// hotel — that would label a *different* property's prices as verified.
+	// (Reported by RobertoReale: querying "Hotel Villa Maria" with SerpAPI
+	// active returned "Miramare Sea Resort & Spa" at verified confidence.) The
+	// safe outcome is no match, which surfaces upstream as providers: null.
+	requestedProperty := false
+	for _, hint := range nameHints {
+		hint = strings.TrimSpace(hint)
+		if hint == "" || !locationHintLooksLikePropertyName(hint) {
+			continue
+		}
+		requestedProperty = true
 		for i := range hotels {
-			if sameSerpAPIHotelName(hotels[i].Name, fallbackQuery) {
+			if sameSerpAPIHotelName(hotels[i].Name, hint) {
 				return &hotels[i]
 			}
 		}
 	}
+	if requestedProperty {
+		return nil
+	}
+
+	// No specific-property intent (pure locality/area search): a single priced
+	// lead is acceptable.
 	for i := range hotels {
 		if len(hotels[i].ProviderOptions()) > 0 || hotels[i].TotalPrice() > 0 {
 			return &hotels[i]
