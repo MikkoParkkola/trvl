@@ -144,6 +144,12 @@ type ProviderPrice struct {
 	ProviderURL     string  `json:"provider_url,omitempty"`
 	PriceBasis      string  `json:"price_basis,omitempty"`
 	PriceConfidence string  `json:"price_confidence,omitempty"`
+	// LinkDurability classifies ProviderURL so an agent knows whether the link
+	// is safe to hand to a user or likely to expire: "stable" (direct OTA),
+	// "expiring" (a google.com/aclk ad-click redirect, good for a day or two),
+	// or "" when no link is present. Dead vacation-rental redirects
+	// (google.com/travel/clk) are stripped before this is set. See #168.
+	LinkDurability string `json:"link_durability,omitempty"`
 }
 
 // HotelPriceResult is the top-level response for a hotel price lookup.
@@ -160,4 +166,7 @@ type HotelPriceResult struct {
 	// failure (HTTP/decode/parse). When Notice is set Success is still true.
 	Notice string `json:"notice,omitempty"`
 	Error  string `json:"error,omitempty"`
+	// BookingFallbackURL is a durable Booking.com property+date deep-link that
+	// never 404s, attached alongside provider links that may expire. See #168.
+	BookingFallbackURL string `json:"booking_fallback_url,omitempty"`
 }
