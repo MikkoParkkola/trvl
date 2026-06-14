@@ -150,6 +150,10 @@ type ProviderPrice struct {
 	// or "" when no link is present. Dead vacation-rental redirects
 	// (google.com/travel/clk) are stripped before this is set. See #168.
 	LinkDurability string `json:"link_durability,omitempty"`
+	// TaxAddedAtCheckout is true when the provider's shown total equals its
+	// pre-tax figure, meaning taxes/fees will be added at checkout and the
+	// quoted price will grow. Set only when both figures are known. See #171.
+	TaxAddedAtCheckout bool `json:"tax_added_at_checkout,omitempty"`
 }
 
 // HotelPriceResult is the top-level response for a hotel price lookup.
@@ -169,4 +173,9 @@ type HotelPriceResult struct {
 	// BookingFallbackURL is a durable Booking.com property+date deep-link that
 	// never 404s, attached alongside provider links that may expire. See #168.
 	BookingFallbackURL string `json:"booking_fallback_url,omitempty"`
+	// TouristTaxNote flags that a local tourist/city tax may be payable in cash
+	// at the property and is not included in any online total. It is descriptive
+	// only — never a numeric estimate, and never folded into ranking, since it
+	// is roughly equal across candidates at a destination. See #169.
+	TouristTaxNote string `json:"tourist_tax_note,omitempty"`
 }

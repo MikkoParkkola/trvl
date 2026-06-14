@@ -318,15 +318,22 @@ func providerPricesFromSerpAPIHotel(hotel *serpapi.Hotel, currency string) []mod
 		if option.TotalRate.Extracted <= 0 {
 			basis = models.PriceBasisRoomNightly
 		}
+		// #171: when the shown total equals the pre-tax figure, taxes/fees are
+		// added at checkout and this price will grow. Only flag when both
+		// numbers are present.
+		taxAtCheckout := option.TotalRate.Extracted > 0 &&
+			option.TotalRate.BeforeFeesExtracted > 0 &&
+			pricesEqual(option.TotalRate.Extracted, option.TotalRate.BeforeFeesExtracted)
 		providers = append(providers, models.ProviderPrice{
-			Provider:        serpapiProviderName(option.Source),
-			Price:           price,
-			NightlyPrice:    option.RatePerNight.Extracted,
-			TotalPrice:      option.TotalRate.Extracted,
-			Currency:        currency,
-			ProviderURL:     option.Link,
-			PriceBasis:      basis,
-			PriceConfidence: models.PriceConfidenceVerified,
+			Provider:           serpapiProviderName(option.Source),
+			Price:              price,
+			NightlyPrice:       option.RatePerNight.Extracted,
+			TotalPrice:         option.TotalRate.Extracted,
+			Currency:           currency,
+			ProviderURL:        option.Link,
+			PriceBasis:         basis,
+			PriceConfidence:    models.PriceConfidenceVerified,
+			TaxAddedAtCheckout: taxAtCheckout,
 		})
 	}
 	return dedupeAndSortProviderPrices(providers)
