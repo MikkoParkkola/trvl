@@ -32,7 +32,7 @@ Asciinema source: [`demo.cast`](demo.cast) · Demo script and claims: [`docs/DEM
 
 ## Available on
 
-Listed across the MCP ecosystem: [Glama](https://glama.ai/mcp/servers/MikkoParkkola/trvl) · [LobeHub](https://lobehub.com/mcp/mikkoparkkola-trvl) · [Smithery](https://smithery.ai/server/@MikkoParkkola/trvl) · [MCPHub](https://www.mcphub.com/mcp-servers/MikkoParkkola/trvl) · [Cursor Directory](https://cursor.directory/mcp/trvl) · [PulseMCP](https://www.pulsemcp.com/servers/mikkoparkkola-trvl) · [Agent Index](https://agentindex.app/en/tool/mikkoparkkola-trvl) · [MCP Market](https://mcpmarket.com/server/trvl) · [pkg.go.dev](https://pkg.go.dev/github.com/MikkoParkkola/trvl)
+Listed across the MCP ecosystem: [Glama](https://glama.ai/mcp/servers/MikkoParkkola/trvl) · [LobeHub](https://lobehub.com/mcp/mikkoparkkola-trvl) · [Smithery](https://smithery.ai/server/@MikkoParkkola/trvl) · [MCPHub](https://www.mcphub.com/mcp-servers/MikkoParkkola/trvl) · [Cursor Directory](https://cursor.directory/mcp/trvl) · [PulseMCP](https://www.pulsemcp.com/servers/mikkoparkkola-trvl) · [Agent Index](https://agentindex.app/en/tool/mikkoparkkola-trvl) · [MCP Market](https://mcpmarket.com/server/trvl) · [Fleur](https://fleurmcp.com/mcp/trvl) · [MagicSlides](https://www.magicslides.app/mcps/mikkoparkkola-trvl) · [pkg.go.dev](https://pkg.go.dev/github.com/MikkoParkkola/trvl)
 
 **Independent coverage:** Roberto Reale, [Budget Travel Pipeline](https://blog-roberto-reale.vercel.app) (3-part series) — an independent build-and-test of a flights + accommodation agent pipeline on trvl, with a hotel-price verification deep-dive. His testing surfaced real fixes (v1.9.1–v1.9.2) and shaped the v1.10 trust roadmap.
 
