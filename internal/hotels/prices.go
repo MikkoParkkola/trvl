@@ -102,6 +102,7 @@ func GetHotelPricesWithOpts(ctx context.Context, opts HotelPriceOpts) (*models.H
 		if isNoProviderPricesError(err) {
 			fallback := tryPriceFallback(ctx, opts)
 			if fallback != nil {
+				applyLinkDurability(fallback)
 				return fallback, nil
 			}
 			return &models.HotelPriceResult{
@@ -123,13 +124,15 @@ func GetHotelPricesWithOpts(ctx context.Context, opts HotelPriceOpts) (*models.H
 		}
 	}
 
-	return &models.HotelPriceResult{
+	result := &models.HotelPriceResult{
 		Success:   true,
 		HotelID:   opts.HotelID,
 		CheckIn:   opts.CheckIn,
 		CheckOut:  opts.CheckOut,
 		Providers: providers,
-	}, nil
+	}
+	applyLinkDurability(result)
+	return result, nil
 }
 
 // tryPriceFallback resolves no-provider responses. Prefer the optional SerpAPI
