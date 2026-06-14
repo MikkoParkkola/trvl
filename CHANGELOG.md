@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-06-14
+
 ### Fixed
+- **Wrong-hotel price guard** — when SerpAPI is configured and a hotel is looked up by name (no Google place ID), the price/room fallback no longer returns the first priced property in the area and labels it verified. It now matches the requested property name and returns no result (`providers: null`) when nothing matches, instead of presenting a different hotel's prices as booking-ready. Reported by @RobertoReale, who hit `Hotel Villa Maria` resolving to `Miramare Sea Resort & Spa`.
 - **Homebrew formula freshness** — the public tap now syncs the documented `brew install MikkoParkkola/tap/trvl` formula from trvl releases so it cannot lag behind the cask unnoticed.
 
 ## [1.9.1] - 2026-06-13
