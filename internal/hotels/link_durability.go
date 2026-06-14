@@ -1,6 +1,7 @@
 package hotels
 
 import (
+	"math"
 	"net/url"
 	"strings"
 
@@ -30,6 +31,11 @@ const (
 	linkStable   = "stable"
 	linkExpiring = "expiring"
 )
+
+// touristTaxNote is the descriptive, non-numeric caveat surfaced on price
+// results so an agent budgets for the local tourist/city tax separately. See
+// #169 and RobertoReale's "Budget Travel Pipeline" (rule 2).
+const touristTaxNote = "A local tourist or city tax may be payable in cash at the property and is typically not included in any online total. Confirm the rate locally and budget it as a separate cash cost."
 
 // isDeadRentalRedirect reports whether a URL is a vacation-rental click
 // redirect that expires within hours and should be dropped.
@@ -67,6 +73,12 @@ func durableBookingURL(propertyName, checkIn, checkOut string) string {
 	return "https://www.booking.com/searchresults.html?" + q.Encode()
 }
 
+// pricesEqual reports whether two prices are equal within a one-cent epsilon,
+// used to detect when a shown total matches its pre-tax figure (#171).
+func pricesEqual(a, b float64) bool {
+	return math.Abs(a-b) < 0.01
+}
+
 // applyLinkDurability triages every provider link on a price result: it strips
 // dead vacation-rental redirects, tags the remaining links as "stable" or
 // "expiring", and attaches a durable Booking.com fallback. Safe to call on any
@@ -92,5 +104,11 @@ func applyLinkDurability(result *models.HotelPriceResult) {
 	}
 	if result.BookingFallbackURL == "" {
 		result.BookingFallbackURL = durableBookingURL(result.Name, result.CheckIn, result.CheckOut)
+	}
+	// #169: surface the local tourist/city tax as a separate cash caveat when
+	// there are bookable prices. Descriptive only — never an estimate, never
+	// folded into ranking (it is roughly equal across candidates).
+	if len(result.Providers) > 0 && result.TouristTaxNote == "" {
+		result.TouristTaxNote = touristTaxNote
 	}
 }
