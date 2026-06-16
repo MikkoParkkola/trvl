@@ -226,6 +226,14 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		return nil, nil, err
 	}
 
+	// origin/dest may be comma-separated multi-airport lists. The flight search
+	// fans out across all of them, but the scalar enrichments below (profile
+	// hints, miles earned, fuel-surcharge + hack detectors, booking context)
+	// are keyed by a single IATA code — feed them the primary (first) airport
+	// so they do not misfire on a comma string.
+	primaryOrigin := primaryAirport(origin)
+	primaryDest := primaryAirport(dest)
+
 	date, err := validateDate(args, "departure_date")
 	if err != nil {
 		return nil, nil, err
@@ -291,7 +299,7 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 	// the merge-zero-results regression (default search returned 0 flights
 	// when the user's profile had a preferred alliance set).
 	prof, _ := profile.Load()
-	hints := profile.FlightHints(prof, origin, dest)
+	hints := profile.FlightHints(prof, primaryOrigin, primaryDest)
 	if _, explicit := args["cabin_class"]; !explicit && hints.CabinClass > 0 && opts.CabinClass == 0 {
 		opts.CabinClass = models.CabinClass(hints.CabinClass)
 	}
@@ -403,7 +411,7 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 			// Miles earning estimate per FF programme.
 			if airlineCode != "" {
 				for _, ff := range prefs.FrequentFlyerPrograms {
-					est := points.EstimateMilesEarned(origin, dest, cabinClass, airlineCode, ff.Alliance, f.Price)
+					est := points.EstimateMilesEarned(primaryOrigin, primaryDest, cabinClass, airlineCode, ff.Alliance, f.Price)
 					if est.Miles > 0 {
 						programLabel := ff.ProgramName
 						if programLabel == "" {
@@ -442,8 +450,8 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		}
 
 		hackInput := hacks.DetectorInput{
-			Origin:      origin,
-			Destination: dest,
+			Origin:      primaryOrigin,
+			Destination: primaryDest,
 			Date:        date,
 			ReturnDate:  opts.ReturnDate,
 			Currency:    hackCurrency,
@@ -466,7 +474,7 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 			for code := range airlineCodeSet {
 				codes = append(codes, code)
 			}
-			flightHacks = append(flightHacks, hacks.DetectFuelSurcharge(origin, dest, codes)...)
+			flightHacks = append(flightHacks, hacks.DetectFuelSurcharge(primaryOrigin, primaryDest, codes)...)
 		}
 
 		// Sort by savings descending, then type for deterministic ordering.
@@ -502,7 +510,7 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		Error:          result.Error,
 		Suggestions:    suggestions,
 		Hacks:          flightHacks,
-		BookingContext: buildBookingContext(date, origin, originSource),
+		BookingContext: buildBookingContext(date, primaryOrigin, originSource),
 	}
 
 	content, err := buildAnnotatedContentBlocks(flightSummary(result, origin, dest), resp)
@@ -570,14 +578,45 @@ func buildBookingContext(date, origin string, originSource travelctx.Source) *bo
 // switchboard.
 func dispatchFlightSearch(ctx context.Context, args map[string]any, origin, dest, date string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
 	provider := strings.ToLower(strings.TrimSpace(argString(args, "provider")))
+	// origin/dest are validated, possibly comma-separated multi-airport lists.
+	// Split them so a search spanning >1 airport on either side fans out via
+	// SearchMultiAirport (the same path the CLI uses), mirroring its routing.
+	origins := flights.ParseAirports(origin)
+	dests := flights.ParseAirports(dest)
+	if len(origins) == 0 || len(dests) == 0 {
+		return nil, fmt.Errorf("origin and destination are required")
+	}
 	switch provider {
 	case "skiplagged":
-		return flights.SearchSkiplagged(ctx, origin, dest, date, opts)
+		if len(origins) != 1 || len(dests) != 1 {
+			return nil, fmt.Errorf("provider skiplagged supports exactly one origin and one destination")
+		}
+		return flights.SearchSkiplagged(ctx, origins[0], dests[0], date, opts)
 	case "", "default", "google", "google_flights", "kiwi":
-		return flights.SearchFlights(ctx, origin, dest, date, opts)
+		if multiAirportRoute(origins, dests) {
+			return flights.SearchMultiAirport(ctx, origins, dests, date, opts)
+		}
+		return flights.SearchFlights(ctx, origins[0], dests[0], date, opts)
 	default:
 		return nil, fmt.Errorf("unsupported provider %q (valid: skiplagged, or empty for default Google+Kiwi+Skiplagged merge)", provider)
 	}
+}
+
+// multiAirportRoute reports whether a search spans more than one airport on
+// either side, in which case it must fan out via SearchMultiAirport rather
+// than the single-route SearchFlights path.
+func multiAirportRoute(origins, dests []string) bool {
+	return len(origins) > 1 || len(dests) > 1
+}
+
+// primaryAirport returns the first airport code from a (possibly
+// comma-separated multi-airport) origin/destination string. Used to feed the
+// single-airport scalar enrichments without misfiring on a comma string.
+func primaryAirport(s string) string {
+	if i := strings.IndexByte(s, ','); i >= 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return strings.TrimSpace(s)
 }
 
 func handleSearchDates(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
