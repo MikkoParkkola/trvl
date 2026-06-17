@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/ground"
@@ -66,7 +67,9 @@ func TestAvg_Multiple(t *testing.T) {
 // ============================================================
 
 func TestSearchAirportTransfers_EmptyCode(t *testing.T) {
-	result, err := SearchAirportTransfers(context.Background(), AirportTransferInput{
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	result, err := SearchAirportTransfers(ctx, AirportTransferInput{
 		Destination: "Helsinki",
 		Date:        "2026-07-01",
 	})

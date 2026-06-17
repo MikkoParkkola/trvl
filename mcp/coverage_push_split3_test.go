@@ -3,7 +3,15 @@ package mcp
 import (
 	"context"
 	"testing"
+	"time"
 )
+
+// futureDate returns an ISO date one month out, so date-validation (which
+// rejects past dates) never masks the assertion under test. Computed at call
+// time to stay rot-proof rather than a hardcoded literal.
+func futureDate() string {
+	return time.Now().AddDate(0, 1, 0).Format("2006-01-02")
+}
 
 func TestRecordSearchFromArgs_DestinationOnly(t *testing.T) {
 	s := NewServer()
@@ -203,7 +211,7 @@ func TestHandleSearchFlights_InvalidCabinClass_Push(t *testing.T) {
 	_, _, err := handleSearchFlights(context.Background(),
 		map[string]any{
 			"origin": "HEL", "destination": "BCN",
-			"departure_date": "2026-06-15", "cabin_class": "ultralux",
+			"departure_date": futureDate(), "cabin_class": "ultralux",
 		},
 		nil, nil, nil)
 	if err == nil || !contains(err.Error(), "cabin_class") {
@@ -215,7 +223,7 @@ func TestHandleSearchFlights_InvalidMaxStops_Push(t *testing.T) {
 	_, _, err := handleSearchFlights(context.Background(),
 		map[string]any{
 			"origin": "HEL", "destination": "BCN",
-			"departure_date": "2026-06-15", "max_stops": "invalid",
+			"departure_date": futureDate(), "max_stops": "invalid",
 		},
 		nil, nil, nil)
 	if err == nil || !contains(err.Error(), "max_stops") {
