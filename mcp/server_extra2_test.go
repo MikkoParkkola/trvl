@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -272,8 +273,8 @@ func TestToolTitle(t *testing.T) {
 
 func TestStructuredContent(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping live HTTP test in short mode")
+	if testing.Short() || os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") == "" {
+		t.Skip("skipping live HTTP test; set TRVL_TEST_LIVE_INTEGRATIONS=1 to run")
 	}
 	s := NewServer()
 
@@ -321,8 +322,8 @@ func TestStructuredContent(t *testing.T) {
 
 func TestContentAnnotations(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping live HTTP test in short mode")
+	if testing.Short() || os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") == "" {
+		t.Skip("skipping live HTTP test; set TRVL_TEST_LIVE_INTEGRATIONS=1 to run")
 	}
 	s := NewServer()
 

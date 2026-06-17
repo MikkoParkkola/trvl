@@ -64,7 +64,9 @@ func TestDiscover_BadUntilDateFormat(t *testing.T) {
 }
 
 func TestDiscover_UntilSameAsFrom(t *testing.T) {
-	_, err := Discover(context.Background(), DiscoverOptions{
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	_, err := Discover(ctx, DiscoverOptions{
 		Origin: "HEL",
 		From:   "2026-07-15",
 		Until:  "2026-07-15",
