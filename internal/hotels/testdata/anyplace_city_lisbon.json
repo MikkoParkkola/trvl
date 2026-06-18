@@ -1,0 +1,49 @@
+{
+  "pageProps": {
+    "listings": [
+      {
+        "id": "ap-1001",
+        "slug": "sunny-studio-chiado-lisbon",
+        "title": "Sunny Studio in Chiado",
+        "price": 4645,
+        "monthlyPrice": 4170,
+        "currency": "USD",
+        "minimumStay": 30,
+        "bedroom": 1,
+        "bathroom": 1,
+        "propertyType": "furnished_apartment",
+        "lat": 38.7101,
+        "long": -9.1421,
+        "photo": "//cdn.anyplace.com/listings/ap-1001/cover.jpg",
+        "address": "Chiado, Lisbon, Portugal"
+      },
+      {
+        "id": "ap-1002",
+        "slug": "alfama-two-bed-terrace",
+        "title": "Two-Bedroom with Terrace in Alfama",
+        "price": 6200,
+        "monthlyPrice": 5500,
+        "currency": "USD",
+        "minimumStay": 30,
+        "bedroom": 2,
+        "bathroom": 2,
+        "propertyType": "furnished_apartment",
+        "lat": 38.7139,
+        "long": -9.1278,
+        "photo": "https://cdn.anyplace.com/listings/ap-1002/cover.jpg",
+        "address": "Alfama, Lisbon, Portugal"
+      },
+      {
+        "id": "ap-1003",
+        "slug": "no-price-stub",
+        "title": "Unpriced Stub Listing",
+        "price": 0,
+        "currency": "USD",
+        "minimumStay": 30,
+        "propertyType": "furnished_apartment",
+        "lat": 38.72,
+        "long": -9.13
+      }
+    ]
+  }
+}
