@@ -460,6 +460,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	var anyplaceResults []models.HotelResult
 	var uniplacesResults []models.HotelResult
 	var wunderflatsResults []models.HotelResult
+	var housinganywhereResults []models.HotelResult
 	var bookingResults []models.HotelResult
 	var externalResults []models.HotelResult
 	var auxWg sync.WaitGroup
@@ -502,6 +503,9 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// Wunderflats mid-term / furnished-apartment provider (monthly rentals that
 	// hotel and short-term sources miss). Non-fatal: failures log a warning and
 	// contribute zero results.
+	// HousingAnywhere mid-term rental marketplace (furnished monthly lettings).
+	// Algolia-backed; credentials are runtime-harvested. Non-fatal: failures log
+	// a warning and contribute zero results.
 	auxWg.Add(1)
 	go func() {
 		defer auxWg.Done()
@@ -551,6 +555,24 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		}
 		wunderflatsResults = res
 		addProviderStatus(hotelProviderStatusFromResults("wunderflats", "Wunderflats", len(res)))
+	}()
+
+	// HousingAnywhere mid-term marketplace (largest EU furnished-rental
+	// inventory, Algolia-backed). Non-fatal: failures log a warning and
+	// contribute zero results.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchHousingAnywhere(providerCtx, location, auxOpts)
+		if err != nil {
+			slog.Warn("housinganywhere search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("housinganywhere", "HousingAnywhere", err))
+			return
+		}
+		housinganywhereResults = res
+		addProviderStatus(hotelProviderStatusFromResults("housinganywhere", "HousingAnywhere", len(res)))
 	}()
 
 	// Booking.com search — parallel with Google + Trivago + HomeToGo.
@@ -635,6 +657,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	allBatches = append(allBatches, tagHotelSource(anyplaceResults, "anyplace"))
 	allBatches = append(allBatches, tagHotelSource(uniplacesResults, "uniplaces"))
 	allBatches = append(allBatches, tagHotelSource(wunderflatsResults, "wunderflats"))
+	allBatches = append(allBatches, tagHotelSource(housinganywhereResults, "housinganywhere"))
 	allBatches = append(allBatches, bookingResults)
 	allBatches = append(allBatches, externalResults)
 	if len(externalResults) > 0 {
