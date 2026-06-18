@@ -1,0 +1,619 @@
+{
+ "pageProps": {
+  "serverData": {
+   "market": {
+    "id": 5,
+    "name": "Austin",
+    "slug": "austin",
+    "state": "TX"
+   },
+   "home_groups": [
+    {
+     "key": "main",
+     "title": "Main",
+     "homes": [
+      {
+       "id": 1416687,
+       "name": "Waters Edge 2308",
+       "bedrooms": 1,
+       "baths": "1.0",
+       "square_footage": 724,
+       "price": 1812,
+       "discount_price": 1812,
+       "monthly_rent": 1812,
+       "display_price_without_discount": 2256,
+       "monthly": true,
+       "minimum_nightly_stay": 2,
+       "duration_label": "/mo",
+       "display_price_label": " per month",
+       "slug": "apartment-in-salado-tx-waters-edge-2308",
+       "address": "210 Nottingham Ln, Salado, TX 76571",
+       "street": "210 Nottingham Ln",
+       "market": "Austin",
+       "property_name": "Waters Edge",
+       "pets_allowed": true,
+       "home_image": "https://files.hellolanding.com/file_server/Home/1416687/images/35215464/tmp-7kifj9eebt5bf2r2cvepvpo03s.jpeg?height=400&width=400",
+       "home_images": [
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215464/tmp-7kifj9eebt5bf2r2cvepvpo03s.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215462/tmp-j4slihih8t6ih9r1jfvl3uct7j.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215474/tmp-uetr753lt94rv13rf6eddl803e.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215469/tmp-1t2qububpd1m7eqa2gd2vdlm1l.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215473/tmp-53edkaopo13if7bqo61fmlgt5g.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215477/tmp-k7v48dn08l0dp4ba751qoqjc3n.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215475/tmp-9kvkobeipp48je2hq2b5p3544f.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215476/tmp-tt56a98db94nv0h00dj1jt666s.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215480/tmp-ohlh6ueg2p4tn6hq162a1u1p04.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215482/tmp-f3kc39q1p156nfapp9f8691266.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215481/tmp-03uan7ki9l3qf33lruvpg74e1e.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215485/tmp-istg1f5be96r12hkr0n8bdiv37.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215487/tmp-8og8ri8r6d5hd0qhergpjfd60r.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215488/tmp-n2k4su6i5d12j8k9gi1a9fdp7o.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215489/tmp-h2ohjei00t3a180vpn6jsevh2i.jpeg?height=600&width=600"
+        }
+       ],
+       "dynamic_images": [
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215464/tmp-7kifj9eebt5bf2r2cvepvpo03s.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215462/tmp-j4slihih8t6ih9r1jfvl3uct7j.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215474/tmp-uetr753lt94rv13rf6eddl803e.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579094/Water_s+Edge-POI-009.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579093/Water_s+Edge-POI-008.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215469/tmp-1t2qububpd1m7eqa2gd2vdlm1l.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215473/tmp-53edkaopo13if7bqo61fmlgt5g.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215477/tmp-k7v48dn08l0dp4ba751qoqjc3n.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215475/tmp-9kvkobeipp48je2hq2b5p3544f.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215476/tmp-tt56a98db94nv0h00dj1jt666s.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215480/tmp-ohlh6ueg2p4tn6hq162a1u1p04.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215482/tmp-f3kc39q1p156nfapp9f8691266.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215481/tmp-03uan7ki9l3qf33lruvpg74e1e.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215485/tmp-istg1f5be96r12hkr0n8bdiv37.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215487/tmp-8og8ri8r6d5hd0qhergpjfd60r.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215488/tmp-n2k4su6i5d12j8k9gi1a9fdp7o.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1416687/images/35215489/tmp-h2ohjei00t3a180vpn6jsevh2i.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579097/Water_s+Edge-POI-011.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579100/Water_s+Edge-POI-014.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579101/Water_s+Edge-POI-015.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579090/Water_s+Edge-POI-001-e66adabc.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579091/Water_s+Edge-POI-004-3684eecf.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579092/Water_s+Edge-POI-006-b535dc97.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579098/Water_s+Edge-POI-012.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579099/Water_s+Edge-POI-013.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579102/Water_s+Edge-POI-016.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579103/Water_s+Edge-POI-017.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579104/Water_s+Edge-POI-018.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579105/Water_s+Edge-POI-019.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579106/Water_s+Edge-POI-020-5062d87f.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579107/Water_s+Edge-POI-020.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/44610/images/34579096/Water_s+Edge-POI-011-6ca968c4.jpg"
+        }
+       ],
+       "available_from": "2026-06-17",
+       "no_service_fee": true,
+       "landing_verified": true
+      },
+      {
+       "id": 1408903,
+       "name": "Cortland Bluff Springs 6119",
+       "bedrooms": 1,
+       "baths": "1.0",
+       "square_footage": 750,
+       "price": 1691,
+       "discount_price": 1691,
+       "monthly_rent": 1691,
+       "display_price_without_discount": 2126,
+       "monthly": true,
+       "minimum_nightly_stay": 30,
+       "duration_label": "/mo",
+       "display_price_label": " per month",
+       "slug": "apartment-in-austin-tx-cortland-bluff-springs-6119",
+       "address": "7330 Bluff Springs Rd, Austin, TX 78744",
+       "street": "7330 Bluff Springs Rd",
+       "market": "Austin",
+       "property_name": "Cortland Bluff Springs",
+       "pets_allowed": true,
+       "home_image": "https://files.hellolanding.com/file_server/Home/1408903/images/31466673/tmp-o3q0d7kk8d3ejciku4qi9fjh78.jpeg?height=400&width=400",
+       "home_images": [
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466673/tmp-o3q0d7kk8d3ejciku4qi9fjh78.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466674/tmp-u1crtlcsh94gb394surhn7iv4o.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466676/tmp-9i1oq2o6k56lp2e6prclrs5c46.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466677/tmp-p3qjdh4fap5p55m9s0rrvfu23u.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466680/tmp-l2kfhmgvip6737crcsrkkmb40g.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466681/tmp-g2ppa7aqp149nef42r9jqrf67q.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466686/tmp-2ieqnhidsd05j5f07htm2igq4s.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466687/tmp-m0e7e9fsvd1k9098qaptcs5b0n.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466689/tmp-eap62ej50p3df4o1lkg925134g.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466690/tmp-g809vd7ecl0sn3j28ancihj91q.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466691/tmp-9cnc7erabl2ot19gi8enatce4j.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466692/tmp-j47ko03a5l6j590cent98h0m4v.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466693/tmp-27i5iej3tp5pl29dmc2f58c35r.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466695/tmp-1528d0mrol0gh9pvmi5pmc117d.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466697/tmp-6f2c91tg0t35t1o1huet60fl3c.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466699/tmp-tv02tb8u7h7e7bod36utdukn1o.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466700/tmp-bauk2rb75l7vj4lbknfsueos30.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466706/tmp-vuk27kigdl4m9cukvm7o8bvj01.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466707/tmp-0r6kfhbemd7hvcfgpg58rglf7o.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466714/tmp-cisjm1fh411m95oo6s1trhkg4f.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466715/tmp-osn8d1oom14bd1cj1jnobb7s48.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466717/tmp-mc840fi8u50j18aivjdmt1d57u.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466721/tmp-3htr4ae0ot2v32p6jghggqh929.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466729/tmp-n93o83crvl4nv29nnbhbrmqi4o.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466732/tmp-ofjituapq54s9c29m17t7ef33f.jpeg?height=600&width=600"
+        }
+       ],
+       "dynamic_images": [
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466673/tmp-o3q0d7kk8d3ejciku4qi9fjh78.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466674/tmp-u1crtlcsh94gb394surhn7iv4o.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466676/tmp-9i1oq2o6k56lp2e6prclrs5c46.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052327/DSC_5745-99262ae2b8b1e4b7ac494e7330e4099d.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052321/Bluff-Springs-10.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466677/tmp-p3qjdh4fap5p55m9s0rrvfu23u.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466680/tmp-l2kfhmgvip6737crcsrkkmb40g.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466681/tmp-g2ppa7aqp149nef42r9jqrf67q.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466686/tmp-2ieqnhidsd05j5f07htm2igq4s.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466687/tmp-m0e7e9fsvd1k9098qaptcs5b0n.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466689/tmp-eap62ej50p3df4o1lkg925134g.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466690/tmp-g809vd7ecl0sn3j28ancihj91q.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466691/tmp-9cnc7erabl2ot19gi8enatce4j.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466692/tmp-j47ko03a5l6j590cent98h0m4v.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466693/tmp-27i5iej3tp5pl29dmc2f58c35r.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466695/tmp-1528d0mrol0gh9pvmi5pmc117d.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466697/tmp-6f2c91tg0t35t1o1huet60fl3c.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466699/tmp-tv02tb8u7h7e7bod36utdukn1o.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466700/tmp-bauk2rb75l7vj4lbknfsueos30.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466706/tmp-vuk27kigdl4m9cukvm7o8bvj01.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466707/tmp-0r6kfhbemd7hvcfgpg58rglf7o.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466714/tmp-cisjm1fh411m95oo6s1trhkg4f.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466715/tmp-osn8d1oom14bd1cj1jnobb7s48.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466717/tmp-mc840fi8u50j18aivjdmt1d57u.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466721/tmp-3htr4ae0ot2v32p6jghggqh929.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466729/tmp-n93o83crvl4nv29nnbhbrmqi4o.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408903/images/31466732/tmp-ofjituapq54s9c29m17t7ef33f.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052322/Bluff-Springs-13.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052323/Bluff-springs-high-res-4.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052320/Bluff-Springs-7.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052315/750_2232.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052316/750_2257.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052324/Clubhouse-Bluff-Springs.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052329/DSC_5863.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052328/DSC_5774.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052330/DSC_5949-5c6113faf457ded5188683a16386819e.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052334/DSC_7322-3dd8b1f0035f8415f668f2378b54ae7f.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052335/DSC_58244-3de1646603e1a9c5ffe8b9fd4ab471e1.jpg"
+        }
+       ],
+       "available_from": "2026-06-17",
+       "no_service_fee": true,
+       "landing_verified": true
+      },
+      {
+       "id": 1408908,
+       "name": "Cortland Bluff Springs 6202",
+       "bedrooms": 1,
+       "baths": "1.0",
+       "square_footage": 850,
+       "price": 1756,
+       "discount_price": 1756,
+       "monthly_rent": 1756,
+       "display_price_without_discount": 2196,
+       "monthly": true,
+       "minimum_nightly_stay": 30,
+       "duration_label": "/mo",
+       "display_price_label": " per month",
+       "slug": "apartment-in-austin-tx-cortland-bluff-springs-6202",
+       "address": "7330 Bluff Springs Rd, Austin, TX 78744",
+       "street": "7330 Bluff Springs Rd",
+       "market": "Austin",
+       "property_name": "Cortland Bluff Springs",
+       "pets_allowed": true,
+       "home_image": "https://files.hellolanding.com/file_server/Home/1408908/images/31252339/tmp-fthu1dcsp544n097bvgoukvd1h.jpeg?height=400&width=400",
+       "home_images": [
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252339/tmp-fthu1dcsp544n097bvgoukvd1h.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252345/tmp-4kv688sl6l3sp295o0htb8qs5s.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252340/tmp-6rap4i2nr107t73lad1a1mck1v.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252338/tmp-q5392s1fgh3e32fm4pjtndav5b.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252336/tmp-tpipjf9qhl5c759cngev9uhl6i.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252347/tmp-athuf7l2r15ot4pem1tqbqe771.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252343/tmp-jlsgrjpa5t3ffc8o8meop2d26k.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252348/tmp-u76fs3k3815mt7r9h68o8dtl2u.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252349/tmp-5j9ldtnkcp3858217tjalih973.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252350/tmp-fduc82nmkd4u905qa6ba206646.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252351/tmp-40cv8asobh4td6ng9jdr4qpm3q.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252352/tmp-4g1hf6t2cp0obbiq820b47ie3o.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252353/tmp-s1vvutosmh17tc68220f144575.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252354/tmp-5s873dkajd783cbj9e4kcaig40.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252356/tmp-ubupmjn7i157n8so95u7rh263u.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252357/tmp-e3e5uho2i501d46r353kkk037g.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252358/tmp-hc8baqiqc54q9bbnutts1kdg1a.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252360/tmp-jbp43l214t4qlescer0l9ddv3b.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252361/tmp-i1o3kfap0d0776ofqpg3uhtn7f.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252362/tmp-dp1hj6ai7l3uteamh4ddnqft1i.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252363/tmp-gec9pd77et43r0sasvihi46p16.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252368/tmp-abtgc9mo6513b36f3fs9rdc33h.jpeg?height=600&width=600"
+        },
+        {
+         "url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252369/tmp-vs88e2aktd05149rkn767mf13r.jpeg?height=600&width=600"
+        }
+       ],
+       "dynamic_images": [
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252339/tmp-fthu1dcsp544n097bvgoukvd1h.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252345/tmp-4kv688sl6l3sp295o0htb8qs5s.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252340/tmp-6rap4i2nr107t73lad1a1mck1v.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052327/DSC_5745-99262ae2b8b1e4b7ac494e7330e4099d.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052321/Bluff-Springs-10.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252338/tmp-q5392s1fgh3e32fm4pjtndav5b.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252336/tmp-tpipjf9qhl5c759cngev9uhl6i.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252347/tmp-athuf7l2r15ot4pem1tqbqe771.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252343/tmp-jlsgrjpa5t3ffc8o8meop2d26k.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252348/tmp-u76fs3k3815mt7r9h68o8dtl2u.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252349/tmp-5j9ldtnkcp3858217tjalih973.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252350/tmp-fduc82nmkd4u905qa6ba206646.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252351/tmp-40cv8asobh4td6ng9jdr4qpm3q.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252352/tmp-4g1hf6t2cp0obbiq820b47ie3o.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252353/tmp-s1vvutosmh17tc68220f144575.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252354/tmp-5s873dkajd783cbj9e4kcaig40.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252356/tmp-ubupmjn7i157n8so95u7rh263u.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252357/tmp-e3e5uho2i501d46r353kkk037g.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252358/tmp-hc8baqiqc54q9bbnutts1kdg1a.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252360/tmp-jbp43l214t4qlescer0l9ddv3b.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252361/tmp-i1o3kfap0d0776ofqpg3uhtn7f.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252362/tmp-dp1hj6ai7l3uteamh4ddnqft1i.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252363/tmp-gec9pd77et43r0sasvihi46p16.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252368/tmp-abtgc9mo6513b36f3fs9rdc33h.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Home/1408908/images/31252369/tmp-vs88e2aktd05149rkn767mf13r.jpeg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052322/Bluff-Springs-13.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052323/Bluff-springs-high-res-4.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052320/Bluff-Springs-7.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052315/750_2232.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052316/750_2257.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052324/Clubhouse-Bluff-Springs.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052329/DSC_5863.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052328/DSC_5774.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052330/DSC_5949-5c6113faf457ded5188683a16386819e.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052334/DSC_7322-3dd8b1f0035f8415f668f2378b54ae7f.jpg"
+        },
+        {
+         "dynamic_image_url": "https://files.hellolanding.com/file_server/Property/39154/images/31052335/DSC_58244-3de1646603e1a9c5ffe8b9fd4ab471e1.jpg"
+        }
+       ],
+       "available_from": "2026-06-17",
+       "no_service_fee": true,
+       "landing_verified": true
+      }
+     ]
+    },
+    {
+     "key": "available_in_the_future",
+     "title": "Available in the future",
+     "homes": []
+    }
+   ]
+  }
+ }
+}

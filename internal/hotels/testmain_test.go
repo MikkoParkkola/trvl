@@ -20,6 +20,7 @@ func TestMain(m *testing.M) {
 	uniplacesEnabled = false
 	wunderflatsEnabled = false
 	housinganywhereEnabled = false
+	landingEnabled = false
 	SearchBooking = func(_ context.Context, _ string, _ HotelSearchOptions) ([]models.HotelResult, error) {
 		return nil, nil
 	}
