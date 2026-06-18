@@ -457,6 +457,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	auxOpts := opts
 	var trivagoResults []models.HotelResult
 	var hometogoResults []models.HotelResult
+	var landingResults []models.HotelResult
 	var bookingResults []models.HotelResult
 	var externalResults []models.HotelResult
 	var auxWg sync.WaitGroup
@@ -491,6 +492,25 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		}
 		hometogoResults = res
 		addProviderStatus(hotelProviderStatusFromResults("hometogo", "HomeToGo", len(res)))
+	}()
+
+	// Landing (hellolanding.com) furnished mid-term apartment provider.
+	// US month-to-month furnished apartments — fills the monthly-stay gap that
+	// hotel/short-let providers miss. Non-fatal: failures log a warning and
+	// contribute zero results.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchLanding(providerCtx, location, auxOpts)
+		if err != nil {
+			slog.Warn("landing search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("landing", "Landing", err))
+			return
+		}
+		landingResults = res
+		addProviderStatus(hotelProviderStatusFromResults("landing", "Landing", len(res)))
 	}()
 
 	// Booking.com search — parallel with Google + Trivago + HomeToGo.
@@ -572,6 +592,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// primary.
 	allBatches := append(rawBatches, trivagoResults)
 	allBatches = append(allBatches, tagHotelSource(hometogoResults, "hometogo"))
+	allBatches = append(allBatches, tagHotelSource(landingResults, "landing"))
 	allBatches = append(allBatches, bookingResults)
 	allBatches = append(allBatches, externalResults)
 	if len(externalResults) > 0 {
