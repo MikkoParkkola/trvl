@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/hotels"
@@ -56,6 +57,27 @@ var (
 	accommodationRoomLookupTimeout         = 20 * time.Second
 	accommodationReverifyRoomLookupTimeout = 45 * time.Second
 )
+
+// accommodationVerifyResult holds one candidate hotel's room-level verification
+// output, collected by a worker so the shortlist can be verified concurrently
+// while the final merge preserves deterministic candidate order.
+type accommodationVerifyResult struct {
+	candidate accommodationCandidate
+	offers    []models.AccommodationOffer
+	rejected  []models.AccommodationOffer
+	evidence  []models.AccommodationEvidence
+}
+
+// accommodationVerifyConcurrency bounds the parallel candidate-verification
+// worker pool. Room lookups are network-bound, so a small fixed cap keeps peak
+// goroutines/sockets predictable without re-introducing serial latency.
+func accommodationVerifyConcurrency(n int) int {
+	const maxWorkers = 6
+	if n < maxWorkers {
+		return n
+	}
+	return maxWorkers
+}
 
 func searchAccommodationsTool() ToolDef {
 	props := hotelSearchInputProperties()
@@ -233,92 +255,119 @@ func handleSearchAccommodations(ctx context.Context, args map[string]any, elicit
 	rejected := make([]models.AccommodationOffer, 0)
 	candidates := make([]accommodationCandidate, 0, len(candidateHotels))
 	evidence := accommodationEvidenceFromProviderStatuses(need, result.ProviderStatuses, time.Now())
-	for _, hotel := range candidateHotels {
-		candidate := accommodationCandidateFromHotel(hotel)
-		checkedAt := time.Now()
-		searchInventoryRooms := roomTypesFromHotelSearchInventory(hotel, need, checkedAt)
-		if hotel.HotelID == "" {
-			if len(searchInventoryRooms) > 0 {
-				roomOffers := accommodationOffersFromRooms(hotel, searchInventoryRooms, need, checkedAt)
-				candidate.OfferCount = len(roomOffers)
-				for _, offer := range roomOffers {
-					offer = withAccommodationPriceShockWarning(hotel, offer)
-					if offer.CriteriaMatched {
-						candidate.MatchingOfferCount++
-						offers = append(offers, offer)
-						if offer.BookingReadyStatus {
-							candidate.BookingReadyOfferCount++
+	perHotel := make([]accommodationVerifyResult, len(candidateHotels))
+	if total := len(candidateHotels); total > 0 {
+		work := make(chan int)
+		var wg sync.WaitGroup
+		go func() {
+			defer close(work)
+			for i := range candidateHotels {
+				select {
+				case work <- i:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		workers := accommodationVerifyConcurrency(total)
+		for w := 0; w < workers; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := range work {
+					hotel := candidateHotels[i]
+					var res accommodationVerifyResult
+					res.candidate = accommodationCandidateFromHotel(hotel)
+					checkedAt := time.Now()
+					searchInventoryRooms := roomTypesFromHotelSearchInventory(hotel, need, checkedAt)
+					if hotel.HotelID == "" {
+						if len(searchInventoryRooms) > 0 {
+							roomOffers := accommodationOffersFromRooms(hotel, searchInventoryRooms, need, checkedAt)
+							res.candidate.OfferCount = len(roomOffers)
+							for _, offer := range roomOffers {
+								offer = withAccommodationPriceShockWarning(hotel, offer)
+								if offer.CriteriaMatched {
+									res.candidate.MatchingOfferCount++
+									res.offers = append(res.offers, offer)
+									if offer.BookingReadyStatus {
+										res.candidate.BookingReadyOfferCount++
+									}
+									res.evidence = append(res.evidence, accommodationOfferEvidence(need, hotel, offer, "criteria_matched"))
+								} else if includeUnmatched {
+									res.rejected = append(res.rejected, offer)
+									res.evidence = append(res.evidence, accommodationOfferEvidence(need, hotel, offer, "criteria_rejected"))
+								}
+							}
+						} else {
+							res.candidate.DetailErrors = append(res.candidate.DetailErrors, hotelDetailError{
+								Scope:   "hotel",
+								Code:    "missing_hotel_id",
+								Message: "missing hotel_id; cannot verify room-level accommodation offers",
+							})
+							res.evidence = append(res.evidence, accommodationCandidateEvidence(need, hotel, res.candidate, "missing_hotel_id", checkedAt))
 						}
-						evidence = append(evidence, accommodationOfferEvidence(need, hotel, offer, "criteria_matched"))
-					} else if includeUnmatched {
-						rejected = append(rejected, offer)
-						evidence = append(evidence, accommodationOfferEvidence(need, hotel, offer, "criteria_rejected"))
+						perHotel[i] = res
+						continue
 					}
-				}
-			} else {
-				candidate.DetailErrors = append(candidate.DetailErrors, hotelDetailError{
-					Scope:   "hotel",
-					Code:    "missing_hotel_id",
-					Message: "missing hotel_id; cannot verify room-level accommodation offers",
-				})
-				evidence = append(evidence, accommodationCandidateEvidence(need, hotel, candidate, "missing_hotel_id", checkedAt))
-			}
-			if includeCandidates {
-				candidates = append(candidates, candidate)
-			}
-			continue
-		}
 
-		roomCtx, cancelRoomLookup := context.WithTimeout(ctx, accommodationRoomLookupTimeout)
-		availability, err := getRoomAvailabilityWithOptsFunc(roomCtx, hotels.RoomSearchOptions{
-			HotelID:      hotel.HotelID,
-			CheckIn:      req.CheckIn,
-			CheckOut:     req.CheckOut,
-			Currency:     req.Options.Currency,
-			Guests:       req.Options.Guests,
-			ChildrenAges: req.Options.ChildrenAges,
-			Rooms:        req.Options.Rooms,
-			BookingURL:   hotel.BookingURL,
-			Location:     req.Location,
-		})
-		cancelRoomLookup()
-		if err != nil {
-			candidate.DetailErrors = append(candidate.DetailErrors, newHotelDetailError("rooms", "rooms_fetch_failed", err))
-			evidence = append(evidence, accommodationCandidateEvidence(need, hotel, candidate, "rooms_fetch_failed", checkedAt))
-			if len(searchInventoryRooms) == 0 {
-				if includeCandidates {
-					candidates = append(candidates, candidate)
-				}
-				continue
-			}
-		}
-		rooms := searchInventoryRooms
-		if availability != nil {
-			rooms = mergeDetailAndSearchInventoryRooms(availability.Rooms, searchInventoryRooms)
-		}
-		if len(rooms) > 0 {
-			roomOffers := accommodationOffersFromRooms(hotel, rooms, need, checkedAt)
-			candidate.OfferCount = len(roomOffers)
-			for _, offer := range roomOffers {
-				offer = withAccommodationPriceShockWarning(hotel, offer)
-				if offer.CriteriaMatched {
-					candidate.MatchingOfferCount++
-					offers = append(offers, offer)
-					if offer.BookingReadyStatus {
-						candidate.BookingReadyOfferCount++
+					roomCtx, cancelRoomLookup := context.WithTimeout(ctx, accommodationRoomLookupTimeout)
+					availability, err := getRoomAvailabilityWithOptsFunc(roomCtx, hotels.RoomSearchOptions{
+						HotelID:      hotel.HotelID,
+						CheckIn:      req.CheckIn,
+						CheckOut:     req.CheckOut,
+						Currency:     req.Options.Currency,
+						Guests:       req.Options.Guests,
+						ChildrenAges: req.Options.ChildrenAges,
+						Rooms:        req.Options.Rooms,
+						BookingURL:   hotel.BookingURL,
+						Location:     req.Location,
+					})
+					cancelRoomLookup()
+					if err != nil {
+						res.candidate.DetailErrors = append(res.candidate.DetailErrors, newHotelDetailError("rooms", "rooms_fetch_failed", err))
+						res.evidence = append(res.evidence, accommodationCandidateEvidence(need, hotel, res.candidate, "rooms_fetch_failed", checkedAt))
+						if len(searchInventoryRooms) == 0 {
+							perHotel[i] = res
+							continue
+						}
 					}
-					evidence = append(evidence, accommodationOfferEvidence(need, hotel, offer, "criteria_matched"))
-				} else if includeUnmatched {
-					rejected = append(rejected, offer)
-					evidence = append(evidence, accommodationOfferEvidence(need, hotel, offer, "criteria_rejected"))
+					rooms := searchInventoryRooms
+					if availability != nil {
+						rooms = mergeDetailAndSearchInventoryRooms(availability.Rooms, searchInventoryRooms)
+					}
+					if len(rooms) > 0 {
+						roomOffers := accommodationOffersFromRooms(hotel, rooms, need, checkedAt)
+						res.candidate.OfferCount = len(roomOffers)
+						for _, offer := range roomOffers {
+							offer = withAccommodationPriceShockWarning(hotel, offer)
+							if offer.CriteriaMatched {
+								res.candidate.MatchingOfferCount++
+								res.offers = append(res.offers, offer)
+								if offer.BookingReadyStatus {
+									res.candidate.BookingReadyOfferCount++
+								}
+								res.evidence = append(res.evidence, accommodationOfferEvidence(need, hotel, offer, "criteria_matched"))
+							} else if includeUnmatched {
+								res.rejected = append(res.rejected, offer)
+								res.evidence = append(res.evidence, accommodationOfferEvidence(need, hotel, offer, "criteria_rejected"))
+							}
+						}
+						if len(roomOffers) == 0 {
+							res.evidence = append(res.evidence, accommodationCandidateEvidence(need, hotel, res.candidate, "no_room_offers", checkedAt))
+						}
+					}
+					perHotel[i] = res
 				}
-			}
-			if len(roomOffers) == 0 {
-				evidence = append(evidence, accommodationCandidateEvidence(need, hotel, candidate, "no_room_offers", checkedAt))
-			}
+			}()
 		}
+		wg.Wait()
+	}
+	for _, res := range perHotel {
+		offers = append(offers, res.offers...)
+		rejected = append(rejected, res.rejected...)
+		evidence = append(evidence, res.evidence...)
 		if includeCandidates {
-			candidates = append(candidates, candidate)
+			candidates = append(candidates, res.candidate)
 		}
 	}
 

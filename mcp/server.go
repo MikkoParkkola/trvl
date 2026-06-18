@@ -56,6 +56,22 @@ const (
 // serverVersion is set at link time for release builds.
 var serverVersion = "dev"
 
+// effectiveToolTimeout returns the per-tool-call wall-clock cap. It defaults to
+// toolTimeout but can be tightened via TRVL_MCP_TOOL_TIMEOUT (a Go duration,
+// e.g. "25s"). This matters when trvl runs behind a proxy/gateway whose own
+// client call budget is shorter than toolTimeout: without a tighter cap, a
+// slow search keeps running (and holding the stdio transport) after the client
+// has already abandoned the call, wedging subsequent calls. Setting the cap
+// under the client budget makes trvl return — and free the pipe — in time.
+func effectiveToolTimeout() time.Duration {
+	if raw := os.Getenv("TRVL_MCP_TOOL_TIMEOUT"); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			return d
+		}
+	}
+	return toolTimeout
+}
+
 // --- Server ---
 
 // Server handles MCP JSON-RPC requests.
@@ -427,7 +443,7 @@ func (s *Server) handleToolsCall(req *Request) *Response {
 	// but this server-level timeout is the canonical one. Previously 120s,
 	// which was too generous — agents spawning 8 parallel searches would all
 	// hang for 2 minutes before timing out.
-	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), effectiveToolTimeout())
 	defer cancel()
 	ctx = providers.WithInteractive(ctx)
 
