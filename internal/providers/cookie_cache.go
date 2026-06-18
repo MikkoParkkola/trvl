@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -107,6 +108,26 @@ func loadCachedCookies(client *http.Client, targetURL string) bool {
 		return true
 	}
 	return false
+}
+
+// CachedCookiesForURL returns the persisted, non-expired cookies for targetURL
+// from the ~/.trvl/cookies cache. Returns nil when no fresh cache entry exists.
+// This is the exported read path used by providers that harvest a WAF token via
+// CDP once and reuse it across process restarts (token lifetime ~days).
+func CachedCookiesForURL(targetURL string) []*http.Cookie {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil
+	}
+	client := &http.Client{Jar: jar}
+	if !loadCachedCookies(client, targetURL) {
+		return nil
+	}
+	u, err := url.Parse(targetURL)
+	if err != nil || u.Host == "" {
+		return nil
+	}
+	return jar.Cookies(u)
 }
 
 // saveCachedCookies persists the current cookies for a URL to disk.

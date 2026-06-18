@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -9,38 +10,58 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func TestParseBookingHTMLHotels(t *testing.T) {
-	html := `<html><body>
-	<div data-testid="property-card">
-		<div data-testid="title">Summer Shades Hotel</div>
-		<span data-testid="price-and-discounted-price">€80</span>
-		<div data-testid="review-score" aria-label="Scored 8.4">8.4 <div>265 reviews</div></div>
-		<a href="/hotel/gr/summer-shades.html">Book now</a>
-	</div>
-	<div data-testid="property-card">
-		<div data-testid="title">Mr &amp; Mrs White Paros</div>
-		<span data-testid="price-and-discounted-price">€104</span>
-		<div data-testid="review-score" aria-label="Scored 8.6">8.6 <div>250 reviews</div></div>
-		<a href="/hotel/gr/mr-mrs-white.html">Book now</a>
-	</div>
-	</body></html>`
+func TestExtractBookingApolloBlob(t *testing.T) {
+	page := `<html><head>` +
+		`<script data-capla-store-data="apollo" type="application/json">{"ROOT_QUERY":{}}</script>` +
+		`</head></html>`
+	got := extractBookingApolloBlob(page)
+	if got != `{"ROOT_QUERY":{}}` {
+		t.Fatalf("extractBookingApolloBlob = %q", got)
+	}
+	if extractBookingApolloBlob("<html>no apollo here</html>") != "" {
+		t.Error("expected empty blob when marker absent")
+	}
+}
 
-	hotels := parseBookingHTMLHotels(html, "EUR")
-	if len(hotels) != 2 {
-		t.Fatalf("expected 2 hotels, got %d", len(hotels))
+// TestParseBookingApollo_Fixture parses a real Booking.com Apollo store blob
+// captured into testdata/ and asserts the field mapping. Capture/refresh the
+// fixture with TestCaptureBookingFixture (TRVL_CAPTURE_BOOKING=1).
+func TestParseBookingApollo_Fixture(t *testing.T) {
+	blob, err := os.ReadFile("testdata/booking_search_apollo.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
 	}
-	if hotels[0].Name != "Summer Shades Hotel" {
-		t.Errorf("hotel[0].Name = %q, want Summer Shades Hotel", hotels[0].Name)
+
+	hotels := parseBookingApollo(string(blob), "EUR")
+	if len(hotels) == 0 {
+		t.Fatal("expected >=1 hotel from fixture")
 	}
-	if hotels[0].Price != 80 {
-		t.Errorf("hotel[0].Price = %f, want 80", hotels[0].Price)
+
+	priced := 0
+	var sample *models.HotelResult
+	for i := range hotels {
+		if hotels[i].Price > 0 {
+			priced++
+			if sample == nil {
+				sample = &hotels[i]
+			}
+		}
 	}
-	if hotels[0].BookingURL != "https://www.booking.com/hotel/gr/summer-shades.html" {
-		t.Errorf("hotel[0].BookingURL = %q", hotels[0].BookingURL)
+	if priced == 0 {
+		t.Fatal("expected >=1 priced hotel from fixture")
 	}
-	if hotels[1].Name != "Mr & Mrs White Paros" {
-		t.Errorf("hotel[1].Name = %q, want Mr & Mrs White Paros", hotels[1].Name)
+	if sample.Name == "" {
+		t.Error("priced hotel missing Name")
 	}
+	if sample.Currency == "" {
+		t.Error("priced hotel missing Currency")
+	}
+	if sample.BookingURL == "" {
+		t.Error("priced hotel missing BookingURL")
+	}
+	t.Logf("fixture parsed %d hotels (%d priced); sample: %q %.2f %s rating=%.1f reviews=%d stars=%d url=%s",
+		len(hotels), priced, sample.Name, sample.Price, sample.Currency,
+		sample.Rating, sample.ReviewCount, sample.Stars, sample.BookingURL)
 }
 
 func TestSearchBooking_OverrideInTest(t *testing.T) {
@@ -70,6 +91,31 @@ func TestSearchBooking_OverrideInTest(t *testing.T) {
 	if results[0].BookingURL != "https://www.booking.com/hotel/test" {
 		t.Errorf("BookingURL = %q, want https://www.booking.com/hotel/test", results[0].BookingURL)
 	}
+}
+
+func TestBuildBookingSearchURL(t *testing.T) {
+	got := buildBookingSearchURL("Berlin", "2026-08-10", "2026-08-12", "eur", 2, 25)
+	for _, want := range []string{
+		"ss=Berlin", "checkin=2026-08-10", "checkout=2026-08-12",
+		"group_adults=2", "selected_currency=EUR", "offset=25",
+	} {
+		if !contains(got, want) {
+			t.Errorf("URL %q missing %q", got, want)
+		}
+	}
+}
+
+func contains(s, sub string) bool {
+	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
 }
 
 func TestSearchBooking_RateLimiter(t *testing.T) {
