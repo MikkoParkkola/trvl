@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -73,17 +74,34 @@ const (
 	// reliable signal of a systematic problem (WAF block, API change, outage).
 	circuitBreakerThreshold = 5
 	circuitBreakerCooldown  = 5 * time.Minute
-
-	// perProviderTimeout caps any single provider's full execution:
-	// preflight → cookie read → WAF solve → search → parse. Without
-	// this, a provider stuck in the browser cookie lookup (15s) + WAF
-	// solver (20s) + retry cascade can hold up the entire search.
-	//
-	// Why 30s: browser cookie read (kooky cold start) ≤ 15s + HTTP
-	// round-trip ≤ 8s + WAF JS solver ≤ 5s = 28s worst case. 30s gives
-	// 2s margin without exceeding the MCP client's typical 60s call budget.
-	perProviderTimeout = 30 * time.Second
 )
+
+// perProviderTimeout caps any single provider's full execution:
+// preflight → cookie read → WAF solve → search → parse. Without it, a
+// provider wedged in a browser cookie lookup or a WAF retry cascade holds up
+// the whole batch — discovery runs providers in parallel but still waits for
+// the slowest, so one blocked provider (Booking WAF, Airbnb dial failures)
+// sets the floor, and a freshly-spawned process pays it in full because the
+// circuit breaker is process-local and starts closed.
+//
+// Default 18s: API-first providers (the default, no-key paths) answer in ≤8s,
+// so 18s is generous for them while halving the penalty a dead/blocked
+// provider imposes on a cold process. The optional browser-assisted cookie
+// path (kooky cold start ≤15s) still fits. Override via TRVL_PROVIDER_TIMEOUT
+// (e.g. "30s") when relying on slow browser WAF solving.
+var perProviderTimeout = providerTimeoutFromEnv()
+
+func providerTimeoutFromEnv() time.Duration {
+	const def = 18 * time.Second
+	raw := strings.TrimSpace(os.Getenv("TRVL_PROVIDER_TIMEOUT"))
+	if raw == "" {
+		return def
+	}
+	if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+		return d
+	}
+	return def
+}
 
 // HotelFilterParams carries search filter values that should be passed through
 // to external provider URL templates and query parameters via ${var} substitution.

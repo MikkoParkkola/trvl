@@ -184,7 +184,7 @@ func (s *Server) wrapHandler(name string, inner ToolHandler) ToolHandler {
 		// upstream APIs.
 		if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, toolTimeout)
+			ctx, cancel = context.WithTimeout(ctx, effectiveToolTimeout())
 			defer cancel()
 		}
 
