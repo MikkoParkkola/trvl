@@ -13,7 +13,9 @@ import (
 // CachedCookiesForURL so it can replay searches without re-driving a browser.
 // If the cache read regresses, every Booking request re-harvests (or 202s).
 func TestCachedCookiesForURL_RoundTrip(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)        // unix
+	t.Setenv("USERPROFILE", tmp) // windows (os.UserHomeDir)
 	const target = "https://www.booking.com/searchresults.html"
 
 	jar, err := cookiejar.New(nil)
@@ -40,8 +42,10 @@ func TestCachedCookiesForURL_RoundTrip(t *testing.T) {
 }
 
 func TestCachedCookiesForURL_MissReturnsNil(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	if got := CachedCookiesForURL("https://www.booking.com/searchresults.html"); got != nil {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)        // unix
+	t.Setenv("USERPROFILE", tmp) // windows (os.UserHomeDir)
+	if got := CachedCookiesForURL("https://miss.example.test/none"); got != nil {
 		t.Errorf("expected nil on cache miss, got %+v", got)
 	}
 }
