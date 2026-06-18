@@ -462,6 +462,9 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	var wunderflatsResults []models.HotelResult
 	var housinganywhereResults []models.HotelResult
 	var landingResults []models.HotelResult
+	var spotahomeResults []models.HotelResult
+	var flatioResults []models.HotelResult
+	var bluegroundResults []models.HotelResult
 	var bookingResults []models.HotelResult
 	var externalResults []models.HotelResult
 	var auxWg sync.WaitGroup
@@ -596,6 +599,56 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		addProviderStatus(hotelProviderStatusFromResults("landing", "Landing", len(res)))
 	}()
 
+	// Spotahome mid-term furnished apartments (turbo-stream single-fetch .data).
+	// Non-fatal: failures log a warning and contribute zero results.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchSpotahome(providerCtx, location, auxOpts)
+		if err != nil {
+			slog.Warn("spotahome search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("spotahome", "Spotahome", err))
+			return
+		}
+		spotahomeResults = res
+		addProviderStatus(hotelProviderStatusFromResults("spotahome", "Spotahome", len(res)))
+	}()
+
+	// Flatio monthly furnished apartments (SSR markerData JSON). Non-fatal.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchFlatio(providerCtx, location, auxOpts)
+		if err != nil {
+			slog.Warn("flatio search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("flatio", "Flatio", err))
+			return
+		}
+		flatioResults = res
+		addProviderStatus(hotelProviderStatusFromResults("flatio", "Flatio", len(res)))
+	}()
+
+	// Blueground monthly furnished apartments (__INITIAL_STATE__ list + detail
+	// hop for price). Non-fatal: failures log a warning and contribute zero.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchBlueground(providerCtx, location, auxOpts)
+		if err != nil {
+			slog.Warn("blueground search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("blueground", "Blueground", err))
+			return
+		}
+		bluegroundResults = res
+		addProviderStatus(hotelProviderStatusFromResults("blueground", "Blueground", len(res)))
+	}()
+
 	// Booking.com search — parallel with Google + Trivago + HomeToGo.
 	// Booking.com uses AWS WAF which blocks automated requests. The search
 	// is attempted but failures are expected and handled silently — the
@@ -680,6 +733,9 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	allBatches = append(allBatches, tagHotelSource(wunderflatsResults, "wunderflats"))
 	allBatches = append(allBatches, tagHotelSource(housinganywhereResults, "housinganywhere"))
 	allBatches = append(allBatches, tagHotelSource(landingResults, "landing"))
+	allBatches = append(allBatches, tagHotelSource(spotahomeResults, "spotahome"))
+	allBatches = append(allBatches, tagHotelSource(flatioResults, "flatio"))
+	allBatches = append(allBatches, tagHotelSource(bluegroundResults, "blueground"))
 	allBatches = append(allBatches, bookingResults)
 	allBatches = append(allBatches, externalResults)
 	if len(externalResults) > 0 {
