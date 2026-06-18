@@ -457,6 +457,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	auxOpts := opts
 	var trivagoResults []models.HotelResult
 	var hometogoResults []models.HotelResult
+	var wunderflatsResults []models.HotelResult
 	var bookingResults []models.HotelResult
 	var externalResults []models.HotelResult
 	var auxWg sync.WaitGroup
@@ -491,6 +492,24 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		}
 		hometogoResults = res
 		addProviderStatus(hotelProviderStatusFromResults("hometogo", "HomeToGo", len(res)))
+	}()
+
+	// Wunderflats mid-term / furnished-apartment provider (monthly rentals that
+	// hotel and short-term sources miss). Non-fatal: failures log a warning and
+	// contribute zero results.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchWunderflats(providerCtx, location, auxOpts)
+		if err != nil {
+			slog.Warn("wunderflats search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("wunderflats", "Wunderflats", err))
+			return
+		}
+		wunderflatsResults = res
+		addProviderStatus(hotelProviderStatusFromResults("wunderflats", "Wunderflats", len(res)))
 	}()
 
 	// Booking.com search — parallel with Google + Trivago + HomeToGo.
@@ -572,6 +591,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// primary.
 	allBatches := append(rawBatches, trivagoResults)
 	allBatches = append(allBatches, tagHotelSource(hometogoResults, "hometogo"))
+	allBatches = append(allBatches, tagHotelSource(wunderflatsResults, "wunderflats"))
 	allBatches = append(allBatches, bookingResults)
 	allBatches = append(allBatches, externalResults)
 	if len(externalResults) > 0 {
