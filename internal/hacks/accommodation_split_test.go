@@ -2,6 +2,7 @@ package hacks
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -225,6 +226,15 @@ func TestPreferencesApplied(t *testing.T) {
 
 // TestBoundaryDates verifies that split point date arithmetic is correct.
 func TestBoundaryDates(t *testing.T) {
+	// evaluateSplit makes live provider calls — the "nonexistent city" is meant
+	// to fail them fast, but in practice they hit the network and the outcome is
+	// timing/network-dependent (flaky in CI). Per trvl's locked decision the
+	// default suite must be deterministic and offline, so gate this behind the
+	// live-integration opt-in. Pure date arithmetic stays covered offline by
+	// TestNightsBetweenDates below.
+	if os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") == "" {
+		t.Skip("skipping live-API test; set TRVL_TEST_LIVE_INTEGRATIONS=1 to run")
+	}
 	base := "2026-04-12"
 	checkIn, _ := parseDate(base)
 

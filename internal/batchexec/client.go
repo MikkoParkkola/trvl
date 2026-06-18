@@ -234,6 +234,26 @@ func (c *Client) GetWithCookie(ctx context.Context, url, cookieHeader string) (i
 	})
 }
 
+// GetWithHeaders performs a GET request like Get but applies caller-supplied
+// request headers on top of the Chrome User-Agent. Empty header values are
+// skipped. Used by providers that need a precise Accept header and/or a
+// pre-seeded Cookie (e.g. Booking.com's aws-waf-token) to clear a WAF.
+func (c *Client) GetWithHeaders(ctx context.Context, url string, headers map[string]string) (int, []byte, error) {
+	return c.doWithRetry(ctx, func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", chromeUA)
+		for k, v := range headers {
+			if v != "" {
+				req.Header.Set(k, v)
+			}
+		}
+		return req, nil
+	})
+}
+
 // PostForm sends a POST with form-encoded body to the given URL. It sets the
 // Content-Type to application/x-www-form-urlencoded and uses a Chrome User-Agent.
 // The request is subject to rate limiting and automatic retry on 429/5xx.

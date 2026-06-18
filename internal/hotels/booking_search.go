@@ -2,33 +2,57 @@ package hotels
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"html"
 	"log/slog"
+	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/providers"
 	"golang.org/x/time/rate"
 )
 
 var bookingSearchLimiter = rate.NewLimiter(rate.Every(3*time.Second), 1)
 
+const (
+	bookingBaseURL    = "https://www.booking.com"
+	bookingWAFCookie  = "aws-waf-token"
+	bookingAcceptHTML = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+)
+
+// defaultSearchBooking fetches Booking.com search results without requiring the
+// user to "visit booking.com first". It harvests an aws-waf-token (from the
+// ~/.trvl/cookies cache, the user's installed browser via kooky, or — as a
+// last resort — a headless CDP token harvest), then performs a plain Chrome-
+// fingerprinted GET and parses the embedded Apollo JSON store. A 202 response
+// means the token is stale, so it re-harvests once and retries.
 func defaultSearchBooking(ctx context.Context, location string, opts HotelSearchOptions) ([]models.HotelResult, error) {
 	if err := bookingSearchLimiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("booking rate limiter: %w", err)
 	}
 
-	searchURL := buildBookingSearchURL(location, opts.CheckIn, opts.CheckOut, opts.Currency)
-	body, err := fetchBookingPage(ctx, searchURL)
+	adults := opts.Guests
+	if adults <= 0 {
+		adults = 2
+	}
+	searchURL := buildBookingSearchURL(location, opts.CheckIn, opts.CheckOut, opts.Currency, adults, 0)
+
+	body, err := fetchBookingSearch(ctx, searchURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetch booking search page: %w", err)
 	}
 
-	hotels := parseBookingSearchResults(body, opts.Currency)
+	blob := extractBookingApolloBlob(body)
+	if blob == "" {
+		return nil, fmt.Errorf("booking search: apollo store not found in page")
+	}
+	hotels := parseBookingApollo(blob, opts.Currency)
 
-	// Apply client-side filters
+	// Apply client-side filters.
 	var filtered []models.HotelResult
 	for _, h := range hotels {
 		if opts.MaxPrice > 0 && h.Price > opts.MaxPrice {
@@ -47,292 +71,386 @@ func defaultSearchBooking(ctx context.Context, location string, opts HotelSearch
 	return filtered, nil
 }
 
-func buildBookingSearchURL(location, checkIn, checkOut, currency string) string {
+// buildBookingSearchURL builds a Booking.com searchresults.html URL. offset is
+// the pagination offset (rowsPerPage 25); pass 0 for the first page.
+func buildBookingSearchURL(location, checkIn, checkOut, currency string, adults, offset int) string {
 	q := url.Values{}
 	q.Set("ss", location)
-	q.Set("checkin", checkIn)
-	q.Set("checkout", checkOut)
-	q.Set("selected_currency", currency)
-	q.Set("order", "price")
-	return "https://www.booking.com/searchresults.html?" + q.Encode()
+	if checkIn != "" {
+		q.Set("checkin", checkIn)
+	}
+	if checkOut != "" {
+		q.Set("checkout", checkOut)
+	}
+	if adults <= 0 {
+		adults = 2
+	}
+	q.Set("group_adults", strconv.Itoa(adults))
+	q.Set("group_children", "0")
+	q.Set("no_rooms", "1")
+	if currency != "" {
+		q.Set("selected_currency", strings.ToUpper(currency))
+	}
+	if offset > 0 {
+		q.Set("offset", strconv.Itoa(offset))
+	}
+	return bookingBaseURL + "/searchresults.html?" + q.Encode()
 }
 
-func parseBookingSearchResults(body, currency string) []models.HotelResult {
-	// Try JSON-LD first (fast path for pages that include it)
-	hotels := parseJSONLDHotels(body, currency)
-	if len(hotels) > 0 {
-		return hotels
+// fetchBookingSearch performs the token-seeded GET against Booking.com. On a
+// 202 (WAF challenge / stale token) it re-harvests the token once and retries.
+func fetchBookingSearch(ctx context.Context, searchURL string) (string, error) {
+	token, err := acquireBookingWAFToken(ctx, searchURL, false)
+	if err != nil {
+		return "", fmt.Errorf("acquire aws-waf-token: %w", err)
 	}
-	// Fallback: extract from HTML property cards
-	hotels = parseBookingHTMLHotels(body, currency)
-	return hotels
+
+	status, body, err := bookingGet(ctx, searchURL, token)
+	if err != nil {
+		return "", err
+	}
+	if status == 200 {
+		return string(body), nil
+	}
+
+	// 202 (and 403/503) mean the WAF rejected the token. Re-harvest once.
+	if status == 202 || status == 403 || status == 503 {
+		slog.Debug("booking search: WAF challenge, re-harvesting token", "status", status)
+		token, err = acquireBookingWAFToken(ctx, searchURL, true)
+		if err != nil {
+			return "", fmt.Errorf("re-harvest aws-waf-token after status %d: %w", status, err)
+		}
+		status, body, err = bookingGet(ctx, searchURL, token)
+		if err != nil {
+			return "", err
+		}
+		if status == 200 {
+			return string(body), nil
+		}
+		return "", fmt.Errorf("booking search returned status %d after token re-harvest", status)
+	}
+
+	return "", fmt.Errorf("booking search returned status %d", status)
 }
 
-func parseJSONLDHotels(body, currency string) []models.HotelResult {
-	// Simplistic JSON-LD extraction for Hotel types.
-	// Booking.com embeds schema.org/LodgingBusiness JSON-LD in search pages.
-	// We look for "@type":"Hotel" or "@type":"LodgingBusiness" blocks and
-	// extract name, price range, and URL.
-	var results []models.HotelResult
-
-	// Find JSON-LD script blocks
-	idx := 0
-	for {
-		start := strings.Index(body[idx:], `"@type":"Hotel"`)
-		if start < 0 {
-			start = strings.Index(body[idx:], `"@type":"LodgingBusiness"`)
-		}
-		if start < 0 {
-			break
-		}
-		idx += start
-
-		// Clamp the end index to avoid panics when near EOF.
-		window := body[idx:]
-		if len(window) > 600 {
-			window = window[:600]
-		}
-
-		name := extractJSONField(window, `"name":"`, `"`)
-		if name == "" {
-			idx += 10
-			continue
-		}
-
-		priceRange := extractJSONField(window, `"priceRange":"`, `"`)
-		url := extractJSONField(window, `"url":"`, `"`)
-
-		price := 0.0
-		if priceRange != "" {
-			// Extract first number from "€60 - €120" or similar
-			price = parsePriceFromRange(priceRange)
-		}
-
-		results = append(results, models.HotelResult{
-			Name:       name,
-			Price:      price,
-			Currency:   currency,
-			BookingURL: url,
-		})
-
-		idx += 100 // move past this match
+// bookingGet issues the actual listings GET with a real Chrome User-Agent,
+// Accept: text/html, and the aws-waf-token cookie. This is a plain (Tier-1)
+// HTTP fetch — the browser is only ever used for token harvest, never to render.
+func bookingGet(ctx context.Context, searchURL, token string) (int, []byte, error) {
+	client := DefaultClient()
+	headers := map[string]string{
+		"Accept":          bookingAcceptHTML,
+		"Accept-Language": "en-US,en;q=0.9",
 	}
-
-	return results
+	if token != "" {
+		headers["Cookie"] = bookingWAFCookie + "=" + token
+	}
+	return client.GetWithHeaders(ctx, searchURL, headers)
 }
 
-func extractJSONField(s, prefix, terminator string) string {
-	start := strings.Index(s, prefix)
-	if start < 0 {
-		return ""
+// acquireBookingWAFToken returns an aws-waf-token for booking.com. Order:
+//
+//	(a) the persisted ~/.trvl/cookies cache (token lifetime ~days);
+//	(b) the user's installed browser cookies via kooky;
+//	(c) a headless CDP harvest using the user's installed Chrome (token gets
+//	    persisted to the cache by RefreshCookiesViaCDP for reuse).
+//
+// When forceRefresh is true, (a) and (b) are skipped and a fresh CDP harvest
+// is performed (used on a 202 re-harvest and by the fixture-capture tool).
+func acquireBookingWAFToken(ctx context.Context, searchURL string, forceRefresh bool) (string, error) {
+	if !forceRefresh {
+		if tok := awsWAFToken(providers.CachedCookiesForURL(bookingBaseURL)); tok != "" {
+			return tok, nil
+		}
+		if tok := awsWAFToken(providers.BrowserCookiesForURL(bookingBaseURL)); tok != "" {
+			return tok, nil
+		}
 	}
-	start += len(prefix)
-	end := strings.Index(s[start:], terminator)
-	if end < 0 {
-		return ""
+
+	cookies, err := providers.RefreshCookiesViaCDP(ctx, searchURL, providers.WithTier2Force())
+	if err != nil {
+		return "", fmt.Errorf("cdp token harvest: %w", err)
 	}
-	return s[start : start+end]
+	if tok := awsWAFToken(cookies); tok != "" {
+		return tok, nil
+	}
+	return "", fmt.Errorf("aws-waf-token not present after cdp harvest")
 }
 
-func parsePriceFromRange(pr string) float64 {
-	// Extract first number from strings like "€60 - €120", "$100", "EUR 80"
-	var numStr string
-	for _, c := range pr {
-		if c >= '0' && c <= '9' || c == '.' {
-			numStr += string(c)
-		} else if numStr != "" {
-			break
+// awsWAFToken returns the aws-waf-token value from a cookie slice, or "".
+func awsWAFToken(cookies []*http.Cookie) string {
+	for _, c := range cookies {
+		if c != nil && c.Name == bookingWAFCookie && c.Value != "" {
+			return c.Value
 		}
-	}
-	if numStr == "" {
-		return 0
-	}
-	var result float64
-	fmt.Sscanf(numStr, "%f", &result)
-	return result
-}
-
-func parseBookingHTMLHotels(body, currency string) []models.HotelResult {
-	var results []models.HotelResult
-	seen := make(map[string]bool)
-
-	cardMarker := `data-testid="property-card"`
-	titleMarker := `data-testid="title"`
-	priceMarker := `data-testid="price-and-discounted-price"`
-	reviewMarker := `data-testid="review-score"`
-
-	pos := 0
-	for {
-		cardStart := strings.Index(body[pos:], cardMarker)
-		if cardStart < 0 {
-			break
-		}
-		cardStart += pos
-
-		nextCard := strings.Index(body[cardStart+50:], cardMarker)
-		cardEnd := len(body)
-		if nextCard >= 0 {
-			cardEnd = cardStart + 50 + nextCard
-		}
-		card := body[cardStart:cardEnd]
-		pos = cardEnd
-
-		name := extractBookingField(card, titleMarker, `>`, `<`)
-		if name == "" {
-			continue
-		}
-		if strings.Contains(name, "<") {
-			name = stripHTMLTags(name)
-		}
-		name = html.UnescapeString(name)
-		name = strings.TrimSpace(name)
-		if name == "" || seen[name] {
-			continue
-		}
-		seen[name] = true
-
-		priceStr := extractBookingField(card, priceMarker, `>`, `<`)
-		price := parsePriceFromHTML(priceStr)
-
-		rating, reviewCount := extractBookingRating(card, reviewMarker)
-
-		url := extractBookingURL(card, name)
-
-		results = append(results, models.HotelResult{
-			Name:        name,
-			Price:       price,
-			Currency:    currency,
-			Rating:      rating,
-			ReviewCount: reviewCount,
-			BookingURL:  url,
-		})
-	}
-
-	return results
-}
-
-func extractBookingField(body, marker, startTag, endTag string) string {
-	start := strings.Index(body, marker)
-	if start < 0 {
-		return ""
-	}
-	contentStart := strings.Index(body[start:], startTag)
-	if contentStart < 0 {
-		return ""
-	}
-	contentStart += start + len(startTag)
-	contentEnd := strings.Index(body[contentStart:], endTag)
-	if contentEnd < 0 {
-		return ""
-	}
-	return body[contentStart : contentStart+contentEnd]
-}
-
-func stripHTMLTags(s string) string {
-	var result strings.Builder
-	inTag := false
-	for i, c := range s {
-		if c == '<' {
-			inTag = true
-			continue
-		}
-		if c == '>' {
-			inTag = false
-			continue
-		}
-		if !inTag {
-			if c == '&' && strings.HasPrefix(s[i:], "&amp;") {
-				result.WriteRune('&')
-			} else if c != '&' {
-				result.WriteRune(c)
-			}
-		}
-	}
-	return result.String()
-}
-
-func parsePriceFromHTML(priceStr string) float64 {
-	var numStr string
-	for _, c := range priceStr {
-		if c >= '0' && c <= '9' || c == '.' || c == ',' {
-			if c == ',' {
-				numStr += "."
-			} else {
-				numStr += string(c)
-			}
-		}
-	}
-	if numStr == "" {
-		return 0
-	}
-	var result float64
-	fmt.Sscanf(numStr, "%f", &result)
-	return result
-}
-
-func extractBookingRating(card, marker string) (rating float64, count int) {
-	start := strings.Index(card, marker)
-	if start < 0 {
-		return 0, 0
-	}
-
-	end := start + 300
-	if end > len(card) {
-		end = len(card)
-	}
-	section := card[start:end]
-
-	ratingStr := extractBookingField(section, `aria-label="Scored `, `"`, `"`)
-	if ratingStr == "" {
-		ratingStr = extractBookingField(section, `aria-label="`, `"`, `"`)
-	}
-	var numStr string
-	for _, c := range ratingStr {
-		if c >= '0' && c <= '9' || c == '.' {
-			numStr += string(c)
-		}
-	}
-	if numStr != "" {
-		fmt.Sscanf(numStr, "%f", &rating)
-	}
-
-	end2 := start + 400
-	if end2 > len(card) {
-		end2 = len(card)
-	}
-	reviewSection := card[start:end2]
-	var numStr2 string
-	for _, c := range reviewSection {
-		if c >= '0' && c <= '9' {
-			numStr2 += string(c)
-		} else if numStr2 != "" {
-			if len(numStr2) > 2 {
-				fmt.Sscanf(numStr2, "%d", &count)
-			}
-			break
-		}
-	}
-
-	return rating, count
-}
-
-func extractBookingURL(card, name string) string {
-	hrefMarker := `<a href="`
-	start := strings.Index(card, hrefMarker)
-	if start < 0 {
-		return ""
-	}
-	start += len(hrefMarker)
-	end := strings.Index(card[start:], `"`)
-	if end < 0 {
-		return ""
-	}
-	href := card[start : start+end]
-	if strings.HasPrefix(href, "/") {
-		return "https://www.booking.com" + href
-	}
-	if strings.HasPrefix(href, "http") {
-		return href
 	}
 	return ""
+}
+
+// extractBookingApolloBlob extracts the JSON payload of the
+// <script data-capla-store-data="apollo" type="application/json">…</script>
+// element from a Booking.com search page.
+func extractBookingApolloBlob(page string) string {
+	const marker = `data-capla-store-data="apollo"`
+	mi := strings.Index(page, marker)
+	if mi < 0 {
+		return ""
+	}
+	// Find the end of the opening <script ...> tag.
+	open := strings.Index(page[mi:], ">")
+	if open < 0 {
+		return ""
+	}
+	start := mi + open + 1
+	end := strings.Index(page[start:], "</script>")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(page[start : start+end])
+}
+
+// parseBookingApollo parses the Apollo store JSON and returns hotel results.
+// It walks ROOT_QUERY → searchQueries → search(<input>) → results[], resolving
+// Apollo normalized __ref pointers against the top-level cache as needed.
+func parseBookingApollo(blob, currency string) []models.HotelResult {
+	var cache map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(blob), &cache); err != nil {
+		slog.Debug("booking apollo: top-level unmarshal failed", "error", err)
+		return nil
+	}
+
+	resolver := apolloResolver{cache: cache}
+
+	results := resolver.findSearchResults()
+	if len(results) == 0 {
+		return nil
+	}
+
+	out := make([]models.HotelResult, 0, len(results))
+	seen := make(map[string]bool)
+	for _, raw := range results {
+		node := resolver.resolve(raw)
+		if node == nil {
+			continue
+		}
+		h := bookingResultToHotel(resolver, node, currency)
+		if h.Name == "" {
+			continue
+		}
+		key := h.Name + "|" + h.BookingURL
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, h)
+	}
+	return out
+}
+
+// apolloResolver resolves Apollo normalized references against the flat cache.
+type apolloResolver struct {
+	cache map[string]json.RawMessage
+}
+
+// resolve turns a raw JSON value into an object map, following a single
+// {"__ref":"…"} indirection into the top-level cache when present.
+func (r apolloResolver) resolve(raw json.RawMessage) map[string]json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil
+	}
+	if refRaw, ok := obj["__ref"]; ok {
+		var ref string
+		if err := json.Unmarshal(refRaw, &ref); err == nil {
+			if target, ok := r.cache[ref]; ok {
+				var resolved map[string]json.RawMessage
+				if err := json.Unmarshal(target, &resolved); err == nil {
+					return resolved
+				}
+			}
+		}
+	}
+	return obj
+}
+
+// field returns a resolved child object of node under key.
+func (r apolloResolver) field(node map[string]json.RawMessage, key string) map[string]json.RawMessage {
+	if node == nil {
+		return nil
+	}
+	v, ok := node[key]
+	if !ok {
+		return nil
+	}
+	return r.resolve(v)
+}
+
+// findSearchResults locates the results array under
+// ROOT_QUERY → searchQueries → search(<input>). Falls back to a recursive scan
+// for any "results" array if the canonical path is not present.
+func (r apolloResolver) findSearchResults() []json.RawMessage {
+	if root := r.resolve(r.cache["ROOT_QUERY"]); root != nil {
+		// searchQueries may be inline or a __ref; its search(<input>) child
+		// holds the results.
+		for k, v := range root {
+			if !strings.HasPrefix(k, "searchQueries") {
+				continue
+			}
+			sq := r.resolve(v)
+			if sq == nil {
+				continue
+			}
+			for sk, sv := range sq {
+				if !strings.HasPrefix(sk, "search") {
+					continue
+				}
+				if res := r.resultsField(sv); len(res) > 0 {
+					return res
+				}
+			}
+		}
+		// Flattened shape: ROOT_QUERY may hold "searchQueries.search(...)".
+		for k, v := range root {
+			if strings.Contains(k, "search") {
+				if res := r.resultsField(v); len(res) > 0 {
+					return res
+				}
+			}
+		}
+	}
+
+	// Last-resort: scan the whole cache for a results array.
+	for _, v := range r.cache {
+		if res := r.resultsField(v); len(res) > 0 {
+			return res
+		}
+	}
+	return nil
+}
+
+// resultsField returns the "results" array of a resolved node, if any.
+func (r apolloResolver) resultsField(raw json.RawMessage) []json.RawMessage {
+	node := r.resolve(raw)
+	if node == nil {
+		return nil
+	}
+	resRaw, ok := node["results"]
+	if !ok {
+		return nil
+	}
+	var arr []json.RawMessage
+	if err := json.Unmarshal(resRaw, &arr); err != nil {
+		return nil
+	}
+	return arr
+}
+
+// bookingResultToHotel maps one resolved search result node to a HotelResult.
+func bookingResultToHotel(r apolloResolver, result map[string]json.RawMessage, currency string) models.HotelResult {
+	h := models.HotelResult{Currency: currency}
+
+	bpd := r.field(result, "basicPropertyData")
+	if bpd != nil {
+		h.HotelID = jsonStr(bpd["id"])
+	}
+
+	// Display name.
+	if dn := r.field(result, "displayName"); dn != nil {
+		h.Name = jsonStr(dn["text"])
+	}
+	if h.Name == "" && bpd != nil {
+		h.Name = jsonStr(bpd["name"])
+	}
+
+	if bpd != nil {
+		// URL from pageName + country segment.
+		pageName := jsonStr(bpd["pageName"])
+		country := ""
+		if loc := r.field(bpd, "location"); loc != nil {
+			country = strings.ToLower(jsonStr(loc["countryCode"]))
+			h.Lat = jsonFloat(loc["latitude"])
+			h.Lon = jsonFloat(loc["longitude"])
+			h.Address = jsonStr(loc["address"])
+		}
+		if pageName != "" {
+			seg := country
+			if seg == "" {
+				seg = "de" // documented fallback country segment
+			}
+			h.BookingURL = bookingBaseURL + "/hotel/" + seg + "/" + pageName + ".html"
+		}
+
+		// Reviews and rating.
+		if rv := r.field(bpd, "reviews"); rv != nil {
+			h.Rating = jsonFloat(rv["totalScore"])
+			h.ReviewCount = int(jsonFloat(rv["reviewsCount"]))
+		}
+		if sr := r.field(bpd, "starRating"); sr != nil {
+			h.Stars = int(jsonFloat(sr["value"]))
+		}
+
+		// Photo.
+		if ph := r.field(bpd, "photos"); ph != nil {
+			if main := r.field(ph, "main"); main != nil {
+				if hi := r.field(main, "highResUrl"); hi != nil {
+					if rel := jsonStr(hi["relativeUrl"]); rel != "" {
+						h.ImageURL = "https://cf.bstatic.com" + rel
+					}
+				}
+			}
+		}
+	}
+
+	// Price from blocks[0].finalPrice (total for stay).
+	if blocksRaw, ok := result["blocks"]; ok {
+		var blocks []json.RawMessage
+		if err := json.Unmarshal(blocksRaw, &blocks); err == nil && len(blocks) > 0 {
+			if block := r.resolve(blocks[0]); block != nil {
+				if fp := r.field(block, "finalPrice"); fp != nil {
+					if amt := jsonFloat(fp["amount"]); amt > 0 {
+						h.Price = amt
+					}
+					if cur := jsonStr(fp["currency"]); cur != "" {
+						h.Currency = cur
+					}
+				}
+			}
+		}
+	}
+
+	return h
+}
+
+// --- small JSON helpers ---
+
+func jsonStr(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	return ""
+}
+
+func jsonFloat(raw json.RawMessage) float64 {
+	if len(raw) == 0 {
+		return 0
+	}
+	var f float64
+	if err := json.Unmarshal(raw, &f); err == nil {
+		return f
+	}
+	// Numeric value encoded as a string.
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		if v, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
+			return v
+		}
+	}
+	return 0
 }
