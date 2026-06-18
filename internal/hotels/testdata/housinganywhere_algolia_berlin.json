@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "index": "production_listings_rank_withOrpheus",
+      "nbHits": 1287,
+      "page": 0,
+      "nbPages": 65,
+      "hitsPerPage": 20,
+      "hits": [
+        {
+          "objectID": "1048576",
+          "priceEUR": 950,
+          "currency": "EUR",
+          "minimumStayMonths": 1,
+          "maximumStay": 12,
+          "_geoloc": { "lat": 52.5163, "lng": 13.3777 },
+          "city": "Berlin",
+          "country": "Germany",
+          "propertyType": "Apartment",
+          "propertySize": 65,
+          "path": "/en/rental-unit/apartment-for-rent-berlin/1048576",
+          "dateFrom": "2026-07-01"
+        },
+        {
+          "objectID": "2097152",
+          "priceEUR": 640,
+          "currency": "EUR",
+          "minimumStayMonths": 3,
+          "maximumStay": 0,
+          "_geoloc": { "lat": 52.4901, "lng": 13.4203 },
+          "city": "Berlin",
+          "country": "Germany",
+          "propertyType": "Private room",
+          "propertySize": 18,
+          "path": "/en/rental-unit/private-room-berlin/2097152",
+          "dateFrom": "2026-08-15"
+        },
+        {
+          "objectID": "3145728",
+          "priceEUR": 0,
+          "currency": "EUR",
+          "minimumStayMonths": 6,
+          "maximumStay": 24,
+          "_geoloc": { "lat": 52.52, "lng": 13.405 },
+          "city": "Berlin",
+          "country": "Germany",
+          "propertyType": "Studio",
+          "propertySize": 30,
+          "path": "/en/rental-unit/studio-berlin/3145728",
+          "dateFrom": "2026-09-01"
+        }
+      ]
+    }
+  ]
+}

@@ -16,6 +16,7 @@ import (
 func TestMain(m *testing.M) {
 	trivagoEnabled = false
 	hometogoEnabled = false
+	housinganywhereEnabled = false
 	SearchBooking = func(_ context.Context, _ string, _ HotelSearchOptions) ([]models.HotelResult, error) {
 		return nil, nil
 	}
