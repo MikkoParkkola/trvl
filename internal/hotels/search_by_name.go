@@ -12,7 +12,6 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-
 // SearchHotelsByName searches for hotels matching a specific property name across
 // all providers (Google Hotels, Trivago, and any configured external providers).
 //

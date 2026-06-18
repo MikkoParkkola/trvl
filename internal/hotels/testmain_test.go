@@ -21,6 +21,9 @@ func TestMain(m *testing.M) {
 	wunderflatsEnabled = false
 	housinganywhereEnabled = false
 	landingEnabled = false
+	spotahomeEnabled = false
+	flatioEnabled = false
+	bluegroundEnabled = false
 	SearchBooking = func(_ context.Context, _ string, _ HotelSearchOptions) ([]models.HotelResult, error) {
 		return nil, nil
 	}
