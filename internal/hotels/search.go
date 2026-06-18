@@ -458,6 +458,10 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	var trivagoResults []models.HotelResult
 	var hometogoResults []models.HotelResult
 	var anyplaceResults []models.HotelResult
+	var uniplacesResults []models.HotelResult
+	var wunderflatsResults []models.HotelResult
+	var housinganywhereResults []models.HotelResult
+	var landingResults []models.HotelResult
 	var bookingResults []models.HotelResult
 	var externalResults []models.HotelResult
 	var auxWg sync.WaitGroup
@@ -497,6 +501,12 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// Anyplace mid-term / nomad furnished-apartment provider (monthly-priced
 	// furnished rentals, 30-night minimum — the relocation/nomad segment).
 	// Non-fatal: failures log a warning and contribute zero results.
+	// Wunderflats mid-term / furnished-apartment provider (monthly rentals that
+	// hotel and short-term sources miss). Non-fatal: failures log a warning and
+	// contribute zero results.
+	// HousingAnywhere mid-term rental marketplace (furnished monthly lettings).
+	// Algolia-backed; credentials are runtime-harvested. Non-fatal: failures log
+	// a warning and contribute zero results.
 	auxWg.Add(1)
 	go func() {
 		defer auxWg.Done()
@@ -510,6 +520,80 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		}
 		anyplaceResults = res
 		addProviderStatus(hotelProviderStatusFromResults("anyplace", "Anyplace", len(res)))
+	}()
+
+	// Uniplaces mid-term / student-housing provider (rooms, studios, apartments
+	// for weeks-to-months stays that nightly-rate providers miss). Non-fatal:
+	// failures log a warning and contribute zero results.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchUniplaces(providerCtx, location, auxOpts)
+		if err != nil {
+			slog.Warn("uniplaces search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("uniplaces", "Uniplaces", err))
+			return
+		}
+		uniplacesResults = res
+		addProviderStatus(hotelProviderStatusFromResults("uniplaces", "Uniplaces", len(res)))
+	}()
+
+	// Wunderflats mid-term furnished-apartment provider (Germany & Europe,
+	// monthly-priced furnished flats). Non-fatal: failures log a warning and
+	// Landing (hellolanding.com) furnished mid-term apartment provider.
+	// US month-to-month furnished apartments — fills the monthly-stay gap that
+	// hotel/short-let providers miss. Non-fatal: failures log a warning and
+	// contribute zero results.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchWunderflats(providerCtx, location, auxOpts)
+		if err != nil {
+			slog.Warn("wunderflats search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("wunderflats", "Wunderflats", err))
+			return
+		}
+		wunderflatsResults = res
+		addProviderStatus(hotelProviderStatusFromResults("wunderflats", "Wunderflats", len(res)))
+	}()
+
+	// HousingAnywhere mid-term marketplace (largest EU furnished-rental
+	// inventory, Algolia-backed). Non-fatal: failures log a warning and
+	// contribute zero results.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchHousingAnywhere(providerCtx, location, auxOpts)
+		if err != nil {
+			slog.Warn("housinganywhere search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("housinganywhere", "HousingAnywhere", err))
+			return
+		}
+		housinganywhereResults = res
+		addProviderStatus(hotelProviderStatusFromResults("housinganywhere", "HousingAnywhere", len(res)))
+	}()
+
+	// Landing (hellolanding.com) US furnished month-to-month apartments.
+	// Non-fatal: failures log a warning and contribute zero results.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchLanding(providerCtx, location, auxOpts)
+		if err != nil {
+			slog.Warn("landing search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("landing", "Landing", err))
+			return
+		}
+		landingResults = res
+		addProviderStatus(hotelProviderStatusFromResults("landing", "Landing", len(res)))
 	}()
 
 	// Booking.com search — parallel with Google + Trivago + HomeToGo.
@@ -592,6 +676,10 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	allBatches := append(rawBatches, trivagoResults)
 	allBatches = append(allBatches, tagHotelSource(hometogoResults, "hometogo"))
 	allBatches = append(allBatches, tagHotelSource(anyplaceResults, "anyplace"))
+	allBatches = append(allBatches, tagHotelSource(uniplacesResults, "uniplaces"))
+	allBatches = append(allBatches, tagHotelSource(wunderflatsResults, "wunderflats"))
+	allBatches = append(allBatches, tagHotelSource(housinganywhereResults, "housinganywhere"))
+	allBatches = append(allBatches, tagHotelSource(landingResults, "landing"))
 	allBatches = append(allBatches, bookingResults)
 	allBatches = append(allBatches, externalResults)
 	if len(externalResults) > 0 {

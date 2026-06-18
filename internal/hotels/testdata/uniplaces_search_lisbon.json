@@ -1,0 +1,333 @@
+{
+ "pageProps": {
+  "offers": {
+   "data": [
+    {
+     "type": "offers",
+     "id": "846117",
+     "attributes": {
+      "accommodation_offer": {
+       "title": "Cozy Double Bedroom close to Carnide Metro",
+       "description": "",
+       "reviews_average": 0,
+       "price": {
+        "amount": 47000,
+        "currency_code": "EUR"
+       },
+       "old_price": null,
+       "available_from": "2026-06-17T00:00:00+00:00",
+       "all_bills_included": true,
+       "exclusive": false,
+       "is_instant_booking": false,
+       "reviews_count": 0,
+       "has_variable_price": false,
+       "max_guests": 2,
+       "contract_type": "fortnight",
+       "created_at": "2026-02-17T17:55:25+00:00",
+       "is_sponsored": false,
+       "is_insured": false,
+       "number_of_units_available": null,
+       "is_sold_out": false,
+       "has_rent_collection": false
+      },
+      "accommodation_provider": {
+       "id": "4741e462-0f34-441c-a64b-402607bd6616",
+       "verifications": {
+        "email": true,
+        "phone": true,
+        "offline_id": true,
+        "trusted": true
+       },
+       "stats": {
+        "response_rate_percentage": 100,
+        "response_time_hours": 9.011816
+       }
+      },
+      "photos": [
+       {
+        "hash": "0d814029fa49074353def54fc8891f2e532e9f60f76cc2d4a681294aec32ccbc",
+        "placeholder": false
+       },
+       {
+        "hash": "68cb2840658cd3f9deabad536883ef6485910f1db4080b36e2ed6b66b94e0a28",
+        "placeholder": false
+       }
+      ],
+      "property": {
+       "id": 500623,
+       "rent_by": "unit",
+       "has_video": false,
+       "neighbourhood": {
+        "name": "Carnide"
+       },
+       "verified": false,
+       "number_of_rooms": 5,
+       "number_of_bathrooms": 2,
+       "coordinates": [
+        38.7573393,
+        -9.1914737
+       ],
+       "has_resident_landlord": false,
+       "type": "apartment",
+       "accommodation_type": "private",
+       "building": {
+        "features": [],
+        "units": []
+       },
+       "photos": [
+        {
+         "hash": "5319ca16687baef177709162e4cf7b1c74cf53b2c30214ad555882a6836d63d9",
+         "placeholder": true
+        },
+        {
+         "hash": "0d814029fa49074353def54fc8891f2e532e9f60f76cc2d4a681294aec32ccbc",
+         "placeholder": false
+        }
+       ],
+       "university_places": []
+      },
+      "quality": 0.88410085,
+      "query_quality": 0.88410085
+     }
+    },
+    {
+     "type": "offers",
+     "id": "871815",
+     "attributes": {
+      "accommodation_offer": {
+       "title": "Comfy Double Bedroom with a private Bathroom close to Sao Pedro do Estoril Train Station",
+       "description": "",
+       "reviews_average": 0,
+       "price": {
+        "amount": 65000,
+        "currency_code": "EUR"
+       },
+       "old_price": null,
+       "available_from": "2026-06-17T00:00:00+00:00",
+       "all_bills_included": true,
+       "exclusive": false,
+       "is_instant_booking": false,
+       "reviews_count": 0,
+       "has_variable_price": false,
+       "max_guests": 2,
+       "contract_type": "fortnight",
+       "created_at": "2026-05-25T14:22:30+00:00",
+       "is_sponsored": false,
+       "is_insured": false,
+       "number_of_units_available": null,
+       "is_sold_out": false,
+       "has_rent_collection": false
+      },
+      "accommodation_provider": {
+       "id": "d5615923-c5ac-429f-9856-18af64f39aef",
+       "verifications": {
+        "email": true,
+        "phone": true,
+        "offline_id": false,
+        "trusted": false
+       },
+       "stats": {
+        "response_rate_percentage": 100,
+        "response_time_hours": 0
+       }
+      },
+      "photos": [
+       {
+        "hash": "1c148e537e083465f22b27e4dbc8df96118be67f0af09df605ba0bc3ed613f41",
+        "placeholder": false
+       },
+       {
+        "hash": "1494527fc422d099c9f6bd7595ed43c072825fbb6d36e8250fa8feeda94bc269",
+        "placeholder": false
+       }
+      ],
+      "property": {
+       "id": 512883,
+       "rent_by": "unit",
+       "has_video": false,
+       "neighbourhood": {
+        "name": "Estoril"
+       },
+       "verified": false,
+       "number_of_rooms": 3,
+       "number_of_bathrooms": 3,
+       "coordinates": [
+        38.7000293,
+        -9.3768026
+       ],
+       "has_resident_landlord": false,
+       "type": "apartment",
+       "accommodation_type": "private",
+       "building": {
+        "features": [],
+        "units": []
+       },
+       "photos": [
+        {
+         "hash": "7d9241806046dae8d230b4374a7a879b7885c6817511608d7fe51c8773e6b711",
+         "placeholder": false
+        },
+        {
+         "hash": "1494527fc422d099c9f6bd7595ed43c072825fbb6d36e8250fa8feeda94bc269",
+         "placeholder": false
+        }
+       ],
+       "university_places": []
+      },
+      "quality": 0.8728865,
+      "query_quality": 0.8728865
+     }
+    },
+    {
+     "type": "offers",
+     "id": "130713",
+     "attributes": {
+      "accommodation_offer": {
+       "title": "Cosy and modern apartment in Santa Apolónia",
+       "description": "",
+       "reviews_average": 0,
+       "price": {
+        "amount": 95000,
+        "currency_code": "EUR"
+       },
+       "old_price": null,
+       "available_from": "2026-07-01T00:00:00+00:00",
+       "all_bills_included": false,
+       "exclusive": true,
+       "is_instant_booking": false,
+       "reviews_count": 0,
+       "has_variable_price": false,
+       "max_guests": 2,
+       "contract_type": "fortnight",
+       "created_at": "2018-04-02T08:53:44+00:00",
+       "is_sponsored": false,
+       "is_insured": false,
+       "number_of_units_available": null,
+       "is_sold_out": false,
+       "has_rent_collection": false
+      },
+      "accommodation_provider": {
+       "id": "96fca12f-9048-4831-b9e3-f11756f4ed8a",
+       "verifications": {
+        "email": true,
+        "phone": true,
+        "offline_id": false,
+        "trusted": true
+       },
+       "stats": {
+        "response_rate_percentage": 97,
+        "response_time_hours": 7.5817347
+       }
+      },
+      "photos": [
+       {
+        "hash": "752c4326bdd93a9c709b4ec6da01b340311e22c1ec02358854e4e5b5c194e8b1",
+        "placeholder": false
+       },
+       {
+        "hash": "7b967dcec25c988b87936a82a481ed0f6bf6fac71c5402b3c9cf928ccdcd4b10",
+        "placeholder": false
+       }
+      ],
+      "property": {
+       "id": 76787,
+       "rent_by": "property",
+       "has_video": false,
+       "neighbourhood": {
+        "name": "Santa Apolónia"
+       },
+       "verified": true,
+       "number_of_rooms": 1,
+       "number_of_bathrooms": 1,
+       "coordinates": [
+        38.716983,
+        -9.1250977
+       ],
+       "has_resident_landlord": false,
+       "type": "apartment",
+       "accommodation_type": "private",
+       "building": {
+        "features": [],
+        "units": []
+       },
+       "photos": [
+        {
+         "hash": "ecf302bf14d3feec295c56bccdd9ff8c48a49b6c62869069d53c7eeda179f9f6",
+         "placeholder": false
+        },
+        {
+         "hash": "cfa98ab7f43bc156b5ef982cee61cb6fada0077de4990b1f7fd999aefb1e57be",
+         "placeholder": false
+        }
+       ],
+       "university_places": []
+      },
+      "quality": 0.8583209,
+      "query_quality": 0.8583209
+     }
+    }
+   ],
+   "meta": {
+    "experiment_id": "default-0",
+    "max_price": 900000,
+    "max_query_quality": 3.5256145,
+    "min_price": 20000,
+    "price_histogram": {
+     "0": 0,
+     "18000": 321,
+     "36000": 1358,
+     "54000": 1258,
+     "72000": 378,
+     "90000": 145,
+     "108000": 138,
+     "126000": 128,
+     "144000": 153,
+     "162000": 92,
+     "180000": 126,
+     "198000": 99,
+     "216000": 85,
+     "234000": 61,
+     "252000": 29,
+     "270000": 38,
+     "288000": 38,
+     "306000": 7,
+     "324000": 9,
+     "342000": 18,
+     "360000": 2,
+     "378000": 11,
+     "396000": 11,
+     "414000": 0,
+     "432000": 9,
+     "450000": 7,
+     "468000": 2,
+     "486000": 7,
+     "504000": 0,
+     "522000": 0,
+     "540000": 3,
+     "558000": 0,
+     "576000": 0,
+     "594000": 5,
+     "612000": 0,
+     "630000": 0,
+     "648000": 0,
+     "666000": 1,
+     "684000": 0,
+     "702000": 0,
+     "720000": 0,
+     "738000": 1,
+     "756000": 0,
+     "774000": 0,
+     "792000": 0,
+     "810000": 0,
+     "828000": 0,
+     "846000": 0,
+     "864000": 0,
+     "882000": 0,
+     "900000": 1
+    },
+    "total_found": 4541,
+    "total_page_number": 95
+   }
+  }
+ }
+}
