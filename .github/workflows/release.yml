@@ -79,6 +79,70 @@ jobs:
         with:
           cosign-release: 'v2.2.4'
 
+      # Smoke-test the packaged binary BEFORE the release pipeline publishes it
+      # (issue #203 / AC RELEASE.FIX.2 + Fail-fast). v1.11.0 shipped a release
+      # whose binaries were reported non-functional (silent, zero output) and
+      # the homebrew_casks step pushed the broken build to the tap before anyone
+      # could run it. These steps build the exact host-arch binary GoReleaser
+      # produces (same .goreleaser.yaml builds: block, including the darwin
+      # codesign post-hook), execute it, and assert:
+      #   1. `trvl version` prints a non-empty version string (binary actually
+      #      runs and the command tree is compiled in), and
+      #   2. an invalid command exits non-zero (cobra error path is wired up).
+      # A binary that silently exits 0 with no output — or is SIGKILLed (137) —
+      # fails BOTH assertions, so it fails the job here and is never published.
+      # --single-target + --snapshot keeps it fast and skips archives/signs.
+      - name: Build snapshot binary for smoke test
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: build --single-target --snapshot --clean
+        env:
+          GOTOOLCHAIN: "go1.26.4"
+
+      - name: Smoke-test packaged binary (gate release on a working CLI)
+        run: |
+          set -euo pipefail
+          BIN="$(find dist -type f -name trvl -path '*darwin*' | head -n1)"
+          if [ -z "${BIN}" ]; then
+            echo "::error::smoke test could not locate the built darwin trvl binary under dist/"
+            exit 1
+          fi
+          echo "Smoke-testing ${BIN}"
+
+          # Check 1: `trvl version` must print a non-empty version line and exit 0.
+          set +e
+          VERSION_OUT="$("${BIN}" version 2>&1)"; VERSION_CODE=$?
+          set -e
+          echo "version stdout: [${VERSION_OUT}] (exit ${VERSION_CODE})"
+          if [ "${VERSION_CODE}" -ne 0 ]; then
+            echo "::error::trvl version exited ${VERSION_CODE} (expected 0) — binary is non-functional"
+            exit 1
+          fi
+          if ! printf '%s' "${VERSION_OUT}" | grep -qi 'trvl'; then
+            echo "::error::trvl version produced no recognizable output — silent/non-functional binary (the #203 defect)"
+            exit 1
+          fi
+
+          # Check 2: an invalid command must error to stderr and exit non-zero.
+          set +e
+          BAD_OUT="$("${BIN}" definitelynotacommand 2>&1)"; BAD_CODE=$?
+          set -e
+          echo "invalid-cmd stdout: [${BAD_OUT}] (exit ${BAD_CODE})"
+          if [ "${BAD_CODE}" -eq 0 ]; then
+            echo "::error::invalid command exited 0 — cobra command tree not wired in (the #203 silent-exit-0 defect)"
+            exit 1
+          fi
+
+          echo "Smoke test PASSED: version prints, invalid command errors non-zero."
+
+      # Re-clean dist/ so the snapshot artifacts above don't collide with the
+      # real release build below (goreleaser release also runs --clean, but be
+      # explicit so a stale snapshot binary can never be archived/published).
+      - name: Reset dist before release build
+        run: rm -rf dist
+
       - name: Run GoReleaser with Homebrew tap
         if: env.HAS_HOMEBREW_TAP_TOKEN == 'true'
         # Pin to v6.4.0: goreleaser-action@v7 introduced a cosign-based
