@@ -127,6 +127,14 @@ func SearchFlightsWithClient(ctx context.Context, client *batchexec.Client, orig
 		}, fmt.Errorf("client is required")
 	}
 
+	// Round-trip is served by composition (two one-way searches paired) rather
+	// than the native Google round-trip request, which Google rejects (issue
+	// #198). The leg sub-searches re-enter this function with ReturnDate cleared,
+	// so they take the one-way path below.
+	if opts.ReturnDate != "" {
+		return searchRoundTripComposed(ctx, client, origin, destination, date, opts)
+	}
+
 	key := flightSearchKey(origin, destination, date, opts)
 	return doFlightSearchSingleflight(ctx, key, func(sharedCtx context.Context) (*models.FlightSearchResult, error) {
 		return searchFlightsCore(sharedCtx, client, origin, destination, date, opts)
