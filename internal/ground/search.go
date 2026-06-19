@@ -228,6 +228,18 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		})
 	}
 
+	// Rome2Rio — multimodal route DISCOVERY (not bookable fares). Surfaces the
+	// set of ways to travel A->B, including multi-leg combinations (e.g. "ferry
+	// to a hub, then fly") that single-mode providers never produce, with an
+	// indicative price range per option. Real per-leg prices still come from the
+	// dedicated providers above; failure is isolated by launchProvider so a
+	// Rome2Rio bot-wall never breaks the bookable results.
+	if useProvider("rome2rio") {
+		launchProvider(&wg, results, "rome2rio", func() ([]models.GroundRoute, error) {
+			return SearchRome2Rio(ctx, from, to)
+		})
+	}
+
 	// Eurostar — only if both cities have Eurostar stations.
 	// Search both Snap (last-minute deals) and regular fares in parallel so the
 	// user sees both options (e.g. "eurostar snap GBP 39" and "eurostar GBP 130").
