@@ -189,19 +189,15 @@ func TestSearchTrivago_FullRoundTrip(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{}}}`)
 
+		case "tools/list":
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"trivago-accommodation-radius-search"},{"name":"trivago-accommodation-search"}]}}`)
+
 		case "tools/call":
-			// First tools/call is suggestions, second is accommodation search.
-			if callCount == 2 {
-				// Suggestions response.
-				payload := `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}],"structuredContent":{"suggestions":[{"ns":200,"id":22235,"location":"Paris"}]}}}`
-				w.WriteHeader(http.StatusOK)
-				_, _ = fmt.Fprint(w, payload)
-			} else {
-				// Accommodation search response.
-				payload := `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}],"structuredContent":{"accommodations":[{"accommodation_name":"Mock Paris Hotel","currency":"EUR","price_per_night":"€150","hotel_rating":4,"review_rating":"8.8","review_count":300,"latitude":48.8566,"longitude":2.3522,"accommodation_url":"https://trivago.com/book/mock1"}]}}}`
-				w.WriteHeader(http.StatusOK)
-				_, _ = fmt.Fprint(w, payload)
-			}
+			// Single accommodation-search call (no suggestions step anymore).
+			payload := `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}],"structuredContent":{"accommodations":[{"accommodation_name":"Mock Paris Hotel","currency":"EUR","price_per_night":"€150","hotel_rating":4,"review_rating":"8.8","review_count":"300","latitude":48.8566,"longitude":2.3522,"accommodation_url":"https://trivago.com/book/mock1"}]}}}`
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, payload)
 
 		default:
 			http.Error(w, fmt.Sprintf("unexpected method: %s", req.Method), http.StatusBadRequest)
@@ -313,14 +309,16 @@ func TestSearchTrivago_InitSessionFails_MockHTTP500(t *testing.T) {
 	}
 }
 
+// TestSearchTrivago_SuggestionsFail verifies a tool-call rejection surfaces as
+// an error. The suggestions step was removed (GH #187/#188); when tools/list
+// and the accommodation-search call both return 429, the error reports the
+// accommodation search failure.
 func TestSearchTrivago_SuggestionsFail(t *testing.T) {
 	origEnabled := trivagoEnabled
 	trivagoEnabled = true
 	defer func() { trivagoEnabled = origEnabled }()
 
-	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
 		var req trivagoRPCRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
 
@@ -331,7 +329,7 @@ func TestSearchTrivago_SuggestionsFail(t *testing.T) {
 			_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
 			return
 		}
-		// Return 429 for the tool call to simulate suggestions failure.
+		// Return 429 for tools/list and the tool call.
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
 	defer srv.Close()
@@ -347,10 +345,10 @@ func TestSearchTrivago_SuggestionsFail(t *testing.T) {
 		CheckOut: "2026-07-05",
 	})
 	if err == nil {
-		t.Fatal("expected error for suggestions failure")
+		t.Fatal("expected error for tool-call failure")
 	}
-	if !strings.Contains(err.Error(), "trivago suggestions") {
-		t.Errorf("expected 'trivago suggestions' in error, got: %v", err)
+	if !strings.Contains(err.Error(), "trivago accommodation search") {
+		t.Errorf("expected 'trivago accommodation search' in error, got: %v", err)
 	}
 }
 

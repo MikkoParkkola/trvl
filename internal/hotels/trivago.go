@@ -129,7 +129,7 @@ type trivagoAccommodation struct {
 	CountryCity       string                   `json:"country_city"`
 	HotelRating       int                      `json:"hotel_rating"`
 	ReviewRating      string                   `json:"review_rating"`
-	ReviewCount       int                      `json:"review_count"`
+	ReviewCount       trivagoFlexInt           `json:"review_count"`
 	Currency          string                   `json:"currency"`
 	PricePerNight     string                   `json:"price_per_night"`
 	PricePerStay      string                   `json:"price_per_stay"`
@@ -154,6 +154,48 @@ type trivagoAccommodation struct {
 type trivagoDistanceToCenter struct {
 	Value float64 `json:"value"`
 	Unit  string  `json:"unit"`
+}
+
+// trivagoFlexInt unmarshals an integer that the Trivago API may encode either
+// as a JSON number (legacy) or as a thousands-separated string such as
+// "25,711" (current API). A failed parse yields 0 rather than an error, so a
+// single malformed count never aborts the whole accommodation list decode.
+type trivagoFlexInt int
+
+func (c *trivagoFlexInt) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		*c = 0
+		return nil
+	}
+	// Numeric form: 25711
+	if b[0] != '"' {
+		var n float64
+		if err := json.Unmarshal(b, &n); err != nil {
+			*c = 0
+			return nil
+		}
+		*c = trivagoFlexInt(int(n))
+		return nil
+	}
+	// String form: "25,711" or "25711".
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		*c = 0
+		return nil
+	}
+	s = strings.NewReplacer(",", "", " ", "", " ", "").Replace(strings.TrimSpace(s))
+	if s == "" {
+		*c = 0
+		return nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		*c = 0
+		return nil
+	}
+	*c = trivagoFlexInt(n)
+	return nil
 }
 
 type trivagoPrice struct {
@@ -337,10 +379,13 @@ func extractTrivagoContent(rpc trivagoRPCResponse) (json.RawMessage, error) {
 
 // SearchTrivago searches for hotels using the Trivago MCP API.
 //
-// It performs three sequential HTTP calls:
+// Trivago's MCP server dropped the old two-step (suggestions → ns/id → search)
+// flow. The current `trivago-accommodation-search` tool resolves the location
+// itself from a free-text `query`, so trvl now performs:
 //  1. initialize — handshake to obtain a session ID.
-//  2. trivago-search-suggestions(query) — resolve location to ns + id.
-//  3. trivago-accommodation-search(ns, id, arrival, departure, …) — hotel list.
+//  2. tools/list — discover the live accommodation-search tool name (resilient
+//     to further upstream renames; falls back to the documented default).
+//  3. <accommodation-search>(query, arrival, departure, adults, …) — hotel list.
 //
 // Each returned HotelResult is tagged with a PriceSource for "trivago".
 func SearchTrivago(ctx context.Context, location string, opts HotelSearchOptions) ([]models.HotelResult, error) {
@@ -365,32 +410,43 @@ func SearchTrivago(ctx context.Context, location string, opts HotelSearchOptions
 		return nil, fmt.Errorf("trivago init: %w", err)
 	}
 
-	// Step 1: Resolve location to a Trivago ns + id.
-	slog.Debug("trivago search suggestions", "location", location)
-	suggRaw, err := trivagoMCPCall(ctx, sessionID, "trivago-search-suggestions", map[string]any{
-		"query": location,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("trivago suggestions: %w", err)
+	// Step 1: Discover the accommodation-search tool from tools/list rather
+	// than hard-coding it. If discovery fails (network/parse), fall back to
+	// the documented default so a transient list error doesn't take Trivago
+	// down. If the server genuinely no longer exposes any query-based search
+	// tool, return a clear, actionable error.
+	toolName := trivagoDefaultSearchTool
+	if names, lerr := trivagoListToolNames(ctx, sessionID); lerr == nil {
+		selected, serr := selectTrivagoSearchTool(names)
+		if serr != nil {
+			return nil, fmt.Errorf("trivago: %w", serr)
+		}
+		toolName = selected
+	} else {
+		slog.Debug("trivago tools/list failed, using default tool", "tool", toolName, "error", lerr)
 	}
 
-	locRef, err := parseTrivagoSuggestions(suggRaw)
-	if err != nil {
-		return nil, fmt.Errorf("trivago suggestions parse: %w", err)
-	}
-
-	// Step 2: Search accommodations.
-	slog.Debug("trivago accommodation search", "location", location, "ns", locRef.NS, "id", locRef.ID,
+	// Step 2: Search accommodations. The current tool resolves the location
+	// from a free-text query, so no separate suggestions lookup is required.
+	slog.Debug("trivago accommodation search", "location", location, "tool", toolName,
 		"arrival", opts.CheckIn, "departure", opts.CheckOut, "guests", opts.Guests)
 	accomArgs := map[string]any{
-		"ns":        locRef.NS,
-		"id":        locRef.ID,
+		"query":     location,
 		"arrival":   opts.CheckIn,
 		"departure": opts.CheckOut,
 		"adults":    opts.Guests,
 		"rooms":     1,
+		"currency":  strings.ToUpper(currency),
 	}
-	accomRaw, err := trivagoMCPCall(ctx, sessionID, "trivago-accommodation-search", accomArgs)
+	if len(opts.ChildrenAges) > 0 {
+		accomArgs["children"] = len(opts.ChildrenAges)
+		ages := make([]string, 0, len(opts.ChildrenAges))
+		for _, a := range opts.ChildrenAges {
+			ages = append(ages, strconv.Itoa(a))
+		}
+		accomArgs["children_ages"] = strings.Join(ages, "-")
+	}
+	accomRaw, err := trivagoMCPCall(ctx, sessionID, toolName, accomArgs)
 	if err != nil {
 		return nil, fmt.Errorf("trivago accommodation search: %w", err)
 	}
@@ -402,6 +458,111 @@ func SearchTrivago(ctx context.Context, location string, opts HotelSearchOptions
 
 	slog.Debug("trivago results", "location", location, "count", len(hotels))
 	return hotels, nil
+}
+
+// trivagoDefaultSearchTool is the documented query-based accommodation search
+// tool. Used as a fallback when tools/list discovery is unavailable.
+const trivagoDefaultSearchTool = "trivago-accommodation-search"
+
+// trivagoToolsListResult is the minimal shape of a tools/list response.
+type trivagoToolsListResult struct {
+	Tools []struct {
+		Name string `json:"name"`
+	} `json:"tools"`
+}
+
+// trivagoListToolNames calls tools/list on the Trivago MCP endpoint and returns
+// the advertised tool names.
+func trivagoListToolNames(ctx context.Context, sessionID string) ([]string, error) {
+	if err := trivagoLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("trivago: rate limiter: %w", err)
+	}
+
+	reqBody := trivagoRPCRequest{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/list",
+		Params:  map[string]any{},
+	}
+	reqBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("trivago: marshal tools/list: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, trivagoMCPEndpoint, bytes.NewReader(reqBytes))
+	if err != nil {
+		return nil, fmt.Errorf("trivago: build tools/list request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+
+	resp, err := trivagoHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("trivago: tools/list HTTP request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("trivago: tools/list HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("trivago: read tools/list body: %w", err)
+	}
+	return parseTrivagoToolNames(body)
+}
+
+// parseTrivagoToolNames extracts tool names from a tools/list JSON-RPC body.
+func parseTrivagoToolNames(body []byte) ([]string, error) {
+	var rpcResp trivagoRPCResponse
+	if err := json.Unmarshal(body, &rpcResp); err != nil {
+		return nil, fmt.Errorf("trivago: unmarshal tools/list: %w", err)
+	}
+	if rpcResp.Error != nil {
+		return nil, fmt.Errorf("trivago: tools/list RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+	}
+	var result trivagoToolsListResult
+	if err := json.Unmarshal(rpcResp.Result, &result); err != nil {
+		return nil, fmt.Errorf("trivago: decode tools/list result: %w", err)
+	}
+	names := make([]string, 0, len(result.Tools))
+	for _, t := range result.Tools {
+		if t.Name != "" {
+			names = append(names, t.Name)
+		}
+	}
+	return names, nil
+}
+
+// selectTrivagoSearchTool picks the best query-based accommodation-search tool
+// from the advertised tool names. It prefers the exact documented name, then
+// any accommodation-search tool that is not the coordinate/radius variant.
+// Returns an error if no suitable tool is present so the caller can surface an
+// actionable message instead of calling a non-existent tool.
+func selectTrivagoSearchTool(names []string) (string, error) {
+	for _, n := range names {
+		if n == trivagoDefaultSearchTool {
+			return n, nil
+		}
+	}
+	for _, n := range names {
+		lower := strings.ToLower(n)
+		if strings.Contains(lower, "accommodation-search") && !strings.Contains(lower, "radius") {
+			return n, nil
+		}
+	}
+	// Fall back to any accommodation search tool (including radius) as a last
+	// resort before failing outright.
+	for _, n := range names {
+		if strings.Contains(strings.ToLower(n), "accommodation") && strings.Contains(strings.ToLower(n), "search") {
+			return n, nil
+		}
+	}
+	return "", fmt.Errorf("no accommodation-search tool found in Trivago tools/list (advertised: %s)", strings.Join(names, ", "))
 }
 
 // parseTrivagoSuggestions extracts the first location's ns and id from a
@@ -610,7 +771,7 @@ func mapTrivagoAccommodations(accoms []trivagoAccommodation, defaultCurrency str
 		}
 
 		// Determine review count.
-		reviewCount := a.ReviewCount
+		reviewCount := int(a.ReviewCount)
 
 		// Determine booking URL.
 		bookingURL := sanitizeBookingURL(a.BookingURL)

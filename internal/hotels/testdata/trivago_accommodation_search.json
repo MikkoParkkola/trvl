@@ -1,0 +1,56 @@
+{
+ "jsonrpc": "2.0",
+ "id": 3,
+ "result": {
+  "content": [
+   {
+    "type": "text",
+    "text": "{\"accommodations\": [{\"accommodation_id\": \"100-8007\", \"arrival\": \"2026-09-05\", \"departure\": \"2026-09-09\", \"accommodation_name\": \"Hotel Riu Plaza Fishermans Wharf\", \"currency\": \"USD\", \"price_per_night\": \"$223\", \"price_per_stay\": \"$891\", \"advertisers\": \"Riu.com\", \"hotel_rating\": 4, \"country_city\": \"San Francisco, USA\", \"review_rating\": \"8.5\", \"review_count\": \"25,711\", \"top_amenities\": \"WiFi in lobby, WiFi in rooms, Pool, Parking, A/C, Restaurant, Hotel bar, Gym\", \"accommodation_url\": \"https://www.trivago.com/en-US/lm/hotel-riu-plaza-fishermans-wharf-san-francisco?search=100-8007;dr-20260905-20260909;drs-40;rc-1-2&cip=234716015\", \"latitude\": 37.807411193847656, \"longitude\": -122.41348266601562, \"distance\": \"0.2 miles to Fisherman's Wharf\", \"main_image\": \"https://imgcy.trivago.com/c_fill,d_dummy.jpeg,e_sharpen:60,f_auto,h_534,q_40,w_800/partner-images/ac/a7/dac684a0a4869ce18da6e77b6b63c6c417ed68e774f5b1aa55f303735d5e\"}, {\"accommodation_id\": \"100-61755\", \"arrival\": \"2026-09-05\", \"departure\": \"2026-09-09\", \"accommodation_name\": \"Holiday Inn San Francisco-golden Gateway By Ihg\", \"currency\": \"USD\", \"price_per_night\": \"$168\", \"price_per_stay\": \"$673\", \"advertisers\": \"Hotels.com\", \"hotel_rating\": 3, \"country_city\": \"San Francisco, USA\", \"review_rating\": \"8.4\", \"review_count\": \"20,318\", \"top_amenities\": \"WiFi in lobby, WiFi in rooms, Pool, Parking, A/C, Restaurant, Hotel bar, Gym\", \"accommodation_url\": \"https://www.trivago.com/en-US/lm/hotel-holiday-inn-san-francisco-golden-gateway-by-ihg?search=100-61755;dr-20260905-20260909;drs-40;rc-1-2&cip=234716015\", \"latitude\": 37.78981018066406, \"longitude\": -122.42195129394531, \"distance\": \"0.8 miles to Union Square\", \"main_image\": \"https://imgcy.trivago.com/c_fill,d_dummy.jpeg,e_sharpen:60,f_auto,h_534,q_40,w_800/partner-images/dc/88/0c18b16182f0e89ceac661bf3db163bbc4d62b8b6bdba0e00e16fdf81a19\"}]}"
+   }
+  ],
+  "structuredContent": {
+   "accommodations": [
+    {
+     "accommodation_id": "100-8007",
+     "arrival": "2026-09-05",
+     "departure": "2026-09-09",
+     "accommodation_name": "Hotel Riu Plaza Fishermans Wharf",
+     "currency": "USD",
+     "price_per_night": "$223",
+     "price_per_stay": "$891",
+     "advertisers": "Riu.com",
+     "hotel_rating": 4,
+     "country_city": "San Francisco, USA",
+     "review_rating": "8.5",
+     "review_count": "25,711",
+     "top_amenities": "WiFi in lobby, WiFi in rooms, Pool, Parking, A/C, Restaurant, Hotel bar, Gym",
+     "accommodation_url": "https://www.trivago.com/en-US/lm/hotel-riu-plaza-fishermans-wharf-san-francisco?search=100-8007;dr-20260905-20260909;drs-40;rc-1-2&cip=234716015",
+     "latitude": 37.807411193847656,
+     "longitude": -122.41348266601562,
+     "distance": "0.2 miles to Fisherman's Wharf",
+     "main_image": "https://imgcy.trivago.com/c_fill,d_dummy.jpeg,e_sharpen:60,f_auto,h_534,q_40,w_800/partner-images/ac/a7/dac684a0a4869ce18da6e77b6b63c6c417ed68e774f5b1aa55f303735d5e"
+    },
+    {
+     "accommodation_id": "100-61755",
+     "arrival": "2026-09-05",
+     "departure": "2026-09-09",
+     "accommodation_name": "Holiday Inn San Francisco-golden Gateway By Ihg",
+     "currency": "USD",
+     "price_per_night": "$168",
+     "price_per_stay": "$673",
+     "advertisers": "Hotels.com",
+     "hotel_rating": 3,
+     "country_city": "San Francisco, USA",
+     "review_rating": "8.4",
+     "review_count": "20,318",
+     "top_amenities": "WiFi in lobby, WiFi in rooms, Pool, Parking, A/C, Restaurant, Hotel bar, Gym",
+     "accommodation_url": "https://www.trivago.com/en-US/lm/hotel-holiday-inn-san-francisco-golden-gateway-by-ihg?search=100-61755;dr-20260905-20260909;drs-40;rc-1-2&cip=234716015",
+     "latitude": 37.78981018066406,
+     "longitude": -122.42195129394531,
+     "distance": "0.8 miles to Union Square",
+     "main_image": "https://imgcy.trivago.com/c_fill,d_dummy.jpeg,e_sharpen:60,f_auto,h_534,q_40,w_800/partner-images/dc/88/0c18b16182f0e89ceac661bf3db163bbc4d62b8b6bdba0e00e16fdf81a19"
+    }
+   ]
+  }
+ }
+}
