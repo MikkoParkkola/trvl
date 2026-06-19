@@ -140,8 +140,21 @@ jobs:
       # Re-clean dist/ so the snapshot artifacts above don't collide with the
       # real release build below (goreleaser release also runs --clean, but be
       # explicit so a stale snapshot binary can never be archived/published).
-      - name: Reset dist before release build
-        run: rm -rf dist
+      #
+      # The smoke-test `goreleaser build` above runs .goreleaser.yaml before.hooks
+      # (go mod tidy + a sed that bumps npm/package.json to the tag version). That
+      # leaves the working tree dirty, and `goreleaser release` validates git state
+      # at startup and aborts with "git is in a dirty state" (it tolerates its OWN
+      # before-hooks dirtying the tree, but not a pre-existing dirty tree). So
+      # restore all tracked files to HEAD before the real release runs. dist/ is
+      # gitignored and removed separately; no local commits exist to lose (HEAD is
+      # the tag), so `git checkout -- .` is safe and surgical.
+      - name: Reset working tree before release build
+        run: |
+          rm -rf dist
+          git checkout -- .
+          echo "git status after reset:"
+          git status --porcelain
 
       - name: Run GoReleaser with Homebrew tap
         if: env.HAS_HOMEBREW_TAP_TOKEN == 'true'
