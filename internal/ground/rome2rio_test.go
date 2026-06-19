@@ -1,6 +1,7 @@
 package ground
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -178,4 +179,23 @@ func TestRome2RioDuration(t *testing.T) {
 			t.Errorf("duration(%q) = %d, want %d", c.text, got, c.want)
 		}
 	}
+}
+
+// TestSearchRome2Rio_LiveBrowser is a gated live integration test proving the
+// --allow-browser-fallbacks path (Tier1 Chrome JA3 + kooky cf_clearance + matching
+// UA) actually returns multimodal routes past Cloudflare. Requires
+// TRVL_TEST_LIVE_INTEGRATIONS=1 and TRVL_ALLOW_BROWSER_COOKIES=1 (the operator
+// must have visited rome2rio.com in an installed browser). Skipped by default.
+func TestSearchRome2Rio_LiveBrowser(t *testing.T) {
+	if os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") != "1" {
+		t.Skip("live integration")
+	}
+	routes, err := SearchRome2Rio(context.Background(), "London", "Paris", true)
+	if err != nil {
+		t.Fatalf("SearchRome2Rio(allowBrowser=true): %v", err)
+	}
+	if len(routes) == 0 {
+		t.Fatal("expected live multimodal routes via browser fallback, got none")
+	}
+	t.Logf("live: %d Rome2Rio route options", len(routes))
 }

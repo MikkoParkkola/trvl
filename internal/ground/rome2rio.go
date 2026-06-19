@@ -13,6 +13,7 @@ import (
 	"golang.org/x/net/html"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/providers"
 )
 
 // Rome2Rio is a multimodal route-DISCOVERY provider. It does NOT return
@@ -62,14 +63,22 @@ var (
 // SearchRome2Rio fetches and parses the Rome2Rio SSR discovery page for a
 // from->to pair. It retries on a thin/partial render and returns a typed error
 // (never a silently-empty success) when the page is bot-walled or unparseable.
-func SearchRome2Rio(ctx context.Context, from, to string) ([]models.GroundRoute, error) {
+//
+// Rome2Rio sits behind Cloudflare, which 403s a plain HTTP client (even with a
+// browser UA). When allowBrowser is true (the --allow-browser-fallbacks gate),
+// the fetch is routed through a Chrome-impersonating TLS client (browser JA3)
+// carrying the user's live browser cookies (incl cf_clearance, read via kooky) —
+// the same cookie+fingerprint pairing the user's real browser presents, which is
+// what Cloudflare accepts. Without the gate, the plain path is used and a
+// Cloudflare wall surfaces as an honest typed error.
+func SearchRome2Rio(ctx context.Context, from, to string, allowBrowser bool) ([]models.GroundRoute, error) {
 	if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" {
 		return nil, fmt.Errorf("rome2rio: from and to are required")
 	}
 
 	var lastErr error
 	for attempt := 0; attempt <= rome2rioThinRenderRetries; attempt++ {
-		body, err := fetchRome2Rio(ctx, from, to)
+		body, err := fetchRome2Rio(ctx, from, to, allowBrowser)
 		if err != nil {
 			lastErr = err
 			continue
@@ -103,18 +112,42 @@ func rome2rioURL(from, to string) string {
 	return fmt.Sprintf("%s/s/%s/%s", rome2rioBaseURL, url.PathEscape(strings.TrimSpace(from)), url.PathEscape(strings.TrimSpace(to)))
 }
 
-func fetchRome2Rio(ctx context.Context, from, to string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rome2rioURL(from, to), nil)
+// rome2rioChromeUA must match the Chrome JA3 profile the Tier1 client presents,
+// because Cloudflare binds cf_clearance to the (IP, UA, JA3) triple — a mismatch
+// causes the replayed clearance cookie to be rejected (verified: a non-matching
+// UA still 403s even with a valid cf_clearance).
+const rome2rioChromeUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+
+func fetchRome2Rio(ctx context.Context, from, to string, allowBrowser bool) (string, error) {
+	target := rome2rioURL(from, to)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return "", err
 	}
-	// A realistic browser UA + Accept reduces the chance of a bot challenge on
-	// the public page.
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0 Safari/537.36")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 
-	resp, err := httpClient.Do(req)
+	// Choose the fetch transport. Default: plain client (will be Cloudflare-walled,
+	// surfaced as an honest typed error). With --allow-browser-fallbacks: a
+	// Chrome-impersonating TLS client (browser JA3) carrying the user's live
+	// browser cookies (cf_clearance via kooky) + a matching Chrome UA — the
+	// combination Cloudflare accepts (verified end-to-end).
+	doer := func(r *http.Request) (*http.Response, error) { return httpClient.Do(r) }
+	if allowBrowser {
+		if tier1, terr := providers.NewTier1Client(); terr == nil {
+			req.Header.Set("User-Agent", rome2rioChromeUA)
+			for _, ck := range providers.BrowserCookiesForURL(target) {
+				req.AddCookie(ck)
+			}
+			doer = tier1.Do
+		} else {
+			req.Header.Set("User-Agent", rome2rioChromeUA)
+		}
+	} else {
+		req.Header.Set("User-Agent", rome2rioChromeUA)
+	}
+
+	resp, err := doer(req)
 	if err != nil {
 		return "", err
 	}
