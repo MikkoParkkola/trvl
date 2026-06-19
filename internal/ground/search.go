@@ -236,7 +236,7 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	// Rome2Rio bot-wall never breaks the bookable results.
 	if useProvider("rome2rio") {
 		launchProvider(&wg, results, "rome2rio", func() ([]models.GroundRoute, error) {
-			return SearchRome2Rio(ctx, from, to)
+			return SearchRome2Rio(ctx, from, to, allowBrowserFallbacks)
 		})
 	}
 
