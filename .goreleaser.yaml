@@ -45,9 +45,17 @@ builds:
     # darwin artifacts because codesign is a darwin-only binary; Linux and
     # Windows build hosts never reach this path during `goreleaser release`
     # executed from macOS-14 runners.
+    #
+    # IMPORTANT: do NOT add `-o runtime` (hardened runtime) here. An ad-hoc
+    # signature can never pass Gatekeeper for distribution anyway (that needs
+    # a Developer ID cert + notarization), so hardened runtime buys zero trust
+    # — but it makes a quarantined launch a hard SIGKILL (exit 137, ZERO
+    # output) instead of the softer, user-bypassable Gatekeeper path. That
+    # silent-kill-on-quarantine is exactly the #203 "non-functional release
+    # binary" symptom. Keep the identifier fix; drop hardened runtime.
     hooks:
       post:
-        - cmd: sh -c 'if [ "{{ .Os }}" = "darwin" ]; then codesign -s - -i com.mikkoparkkola.trvl -f -o runtime "{{ .Path }}"; fi'
+        - cmd: sh -c 'if [ "{{ .Os }}" = "darwin" ]; then codesign -s - -i com.mikkoparkkola.trvl -f "{{ .Path }}"; fi'
 
 archives:
   - id: trvl
