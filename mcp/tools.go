@@ -85,6 +85,7 @@ func registerTools(s *Server) {
 		searchHiddenCityTool(),
 		searchAwardsTool(),
 		nestedRTTool(),
+		arbitrageReportTool(),
 	}
 	s.toolDefs = make(map[string]ToolDef, len(legacyTools)+1)
 	for _, tool := range legacyTools {
@@ -171,6 +172,7 @@ func registerTools(s *Server) {
 	s.handlers["search_hidden_city"] = s.wrapHandler("search_hidden_city", handleSearchHiddenCity)
 	s.handlers["search_awards"] = s.wrapHandler("search_awards", handleSearchAwards)
 	s.handlers["optimize_nested_rt"] = s.wrapHandler("optimize_nested_rt", handleOptimizeNestedRT)
+	s.handlers["arbitrage_report"] = s.wrapHandler("arbitrage_report", handleArbitrageReport)
 }
 
 // wrapHandler returns a ToolHandler that delegates to the inner handler and

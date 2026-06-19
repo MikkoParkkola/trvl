@@ -17,7 +17,8 @@ func TestRootCmd_SubcommandCount(t *testing.T) {
 	// 58 -> 61 with `air`, `sun`, `bikes` (free unauthenticated enrichment sources).
 	// 61 -> 62 with `pricetrends` (opt-in Travelpayouts price-signal source).
 	// 64 -> 65 when rental car search (`trvl cars`) landed.
-	const want = 65
+	// 65 -> 66 with `arbitrage-report` (innovation #8 unified arbitrage report).
+	const want = 66
 	got := len(rootCmd.Commands())
 	if got != want {
 		names := make([]string, 0, got)

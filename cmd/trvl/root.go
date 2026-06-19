@@ -104,6 +104,7 @@ func init() {
 	rootCmd.AddCommand(opportunitiesCmd())
 	rootCmd.AddCommand(awardsCmd())
 	rootCmd.AddCommand(cabinArbCmd())
+	rootCmd.AddCommand(arbitrageReportCmd())
 	rootCmd.AddCommand(multidestCmd())
 	rootCmd.AddCommand(losCmd())
 	rootCmd.AddCommand(railPassCmd())
