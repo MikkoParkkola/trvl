@@ -66,6 +66,12 @@ type SearchOptions struct {
 	// Client-side post-filters (applied after server response).
 	RequireCheckedBag bool // Only show flights with ≥1 free checked bag
 	FirstResult       bool // Return only the first flight with Price > 0 after sorting
+
+	// NoHacks opts out of the auto-composed travel-hacks savings engine. The
+	// engine is ON by default: a normal search also surfaces the single best
+	// cheaper synthesized option (hidden-city, positioning, split, multimodal,
+	// …) in result.HackSaving. Set NoHacks to run a pure naive search.
+	NoHacks bool
 }
 
 // defaults fills in zero-value fields with sensible defaults.
@@ -277,14 +283,19 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 	}
 
 	if googleSucceeded || kiwiSucceeded || skiplaggedSucceeded || ryanairSucceeded || wizzairSucceeded || transaviaSucceeded || easyjetSucceeded {
-		return &models.FlightSearchResult{
+		result := &models.FlightSearchResult{
 			Success:          true,
 			Count:            len(mergedFlights),
 			TripType:         tripTypeForSearch(opts),
 			Flights:          mergedFlights,
 			ProviderStatuses: statuses,
 			Completeness:     models.ComputeCompleteness(statuses),
-		}, nil
+		}
+		// Auto-compose the savings engine: surface the single best cheaper
+		// synthesized option (hidden-city, positioning, split, …) alongside the
+		// naive flights, unless opted out or this is a nested detector search.
+		attachFlightHackSaving(ctx, result, origin, destination, date, opts)
+		return result, nil
 	}
 
 	errs := []error{}

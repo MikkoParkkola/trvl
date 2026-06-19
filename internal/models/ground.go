@@ -5,7 +5,13 @@ type GroundSearchResult struct {
 	Success bool          `json:"success"`
 	Count   int           `json:"count"`
 	Routes  []GroundRoute `json:"routes"`
-	Error   string        `json:"error,omitempty"`
+	// HackSaving, when non-nil, is the single best money-saving option the
+	// travel-hacks savings engine auto-composed from this naive search (e.g. a
+	// multimodal or cross-border-rail option cheaper than the naive cheapest
+	// route). Additive — the naive Routes are never replaced — and only
+	// populated when a real, lower-priced option exists.
+	HackSaving *HackSaving `json:"hack_saving,omitempty"`
+	Error      string      `json:"error,omitempty"`
 }
 
 // GroundRoute represents a single bus or train connection.
