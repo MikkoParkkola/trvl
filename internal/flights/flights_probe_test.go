@@ -21,10 +21,18 @@ func TestFlightsProbe(t *testing.T) {
 	defer cancel()
 
 	result, err := SearchFlights(ctx, "HEL", "BCN", date, SearchOptions{})
+	// Google throttles no-key batchexecute calls from datacenter IPs (HTTP 429,
+	// retried with backoff until the context deadline). That is transient noise,
+	// not a regression: skip rather than red the nightly. A real format/shape
+	// change ("unexpected flight data format") is non-transient and still fails.
+	testutil.SkipIfTransient(t, err)
 	if err != nil {
 		t.Fatalf("SearchFlights: %v", err)
 	}
 	if !result.Success {
+		if testutil.IsTransientMsg(result.Error) {
+			t.Skipf("skipping: transient provider noise (not a regression): %s", result.Error)
+		}
 		t.Fatalf("search unsuccessful: %s", result.Error)
 	}
 	if result.Count == 0 || len(result.Flights) == 0 {

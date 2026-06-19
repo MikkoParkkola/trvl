@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/MikkoParkkola/trvl/internal/testutil"
 	"github.com/MikkoParkkola/trvl/internal/watch"
 )
 
@@ -24,6 +25,11 @@ func TestChecker_LiveFlightProbe(t *testing.T) {
 		DepartDate:  "2026-09-15",
 		Currency:    "EUR",
 	})
+	// A throttled night (Google 429 from the CI datacenter IP) is transient
+	// noise, not the re-stubbed-checker regression this guard exists for: skip
+	// rather than red the nightly. A stubbed checker returns price 0 with no
+	// error and still fails the assertion below.
+	testutil.SkipIfTransient(t, err)
 	if err != nil {
 		t.Fatalf("live flight check failed: %v", err)
 	}

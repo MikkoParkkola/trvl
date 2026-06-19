@@ -67,7 +67,12 @@ var ErrWizzVersionRotated = errors.New("wizzair API version path rotated")
 // package comment: the segment rotates, so this is a fallback, not a contract.
 // No runtime auto-discovery exists by design (JS-gated, undiscoverable
 // server-side); WIZZAIR_API_VERSION is the operator's authoritative override.
-const wizzDefaultVersion = "10.1.0"
+//
+// 2026-06-19: rotated "10.1.0" -> "29.3.0". Verified against the web app's own
+// config (wizzair.com/en-gb embeds apiUrl:"https://be.wizzair.com/29.3.0/Api")
+// and confirmed live: POST be.wizzair.com/29.3.0/Api/search/timetable -> 200,
+// while the prior 10.1.0 path -> 404 (the rotation signature). (GH #115)
+const wizzDefaultVersion = "29.3.0"
 
 // wizzVersion is the active API version. Overridable in tests; the env var
 // WIZZAIR_API_VERSION takes precedence at request time via wizzResolvedVersion.
