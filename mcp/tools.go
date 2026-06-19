@@ -98,6 +98,13 @@ func registerTools(s *Server) {
 	// not a legacy compatibility alias — registered as a handler but kept out of
 	// the advertised legacyTools surface (see registeredMCPCompatibilityAliasCount).
 	s.handlers["plan_journey"] = s.wrapHandler("plan_journey", handleJourney)
+	// plan_natural (innovation #7 NL supertool) is a smart capability reachable
+	// via the travel router intent and by direct tools/call. Its schema lives in
+	// toolDefs for discoverability/validation but it is deliberately kept out of
+	// the advertised legacyTools surface so the compatibility-alias count is
+	// unchanged.
+	s.toolDefs[nlSupertoolName] = nlSupertoolTool()
+	s.handlers[nlSupertoolName] = s.wrapHandler(nlSupertoolName, handleNLSupertool)
 	s.handlers["search_flights"] = s.wrapHandler("search_flights", handleSearchFlights)
 	s.handlers["plan_flight_bundle"] = s.wrapHandler("plan_flight_bundle", handlePlanFlightBundle)
 	s.handlers["find_interactive"] = s.wrapHandler("find_interactive", handleFindInteractive)
