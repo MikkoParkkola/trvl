@@ -97,15 +97,31 @@ func buildBookingSearchURL(location, checkIn, checkOut, currency string, adults,
 	return bookingBaseURL + "/searchresults.html?" + q.Encode()
 }
 
+// bookingAcquireTokenFn and bookingGetFn are indirection seams for tests so the
+// 202/403/503 re-harvest-and-retry logic can be exercised deterministically
+// without a live WAF token or HTTP round-trip. Production wiring is the real
+// acquireBookingWAFToken / bookingGet.
+var (
+	bookingAcquireTokenFn = acquireBookingWAFToken
+	bookingGetFn          = bookingGet
+)
+
+// bookingWAFChallenged reports whether an HTTP status indicates the Booking.com
+// WAF rejected the request (challenge / stale token) and a token re-harvest is
+// warranted.
+func bookingWAFChallenged(status int) bool {
+	return status == 202 || status == 403 || status == 503
+}
+
 // fetchBookingSearch performs the token-seeded GET against Booking.com. On a
 // 202 (WAF challenge / stale token) it re-harvests the token once and retries.
 func fetchBookingSearch(ctx context.Context, searchURL string) (string, error) {
-	token, err := acquireBookingWAFToken(ctx, searchURL, false)
+	token, err := bookingAcquireTokenFn(ctx, searchURL, false)
 	if err != nil {
 		return "", fmt.Errorf("acquire aws-waf-token: %w", err)
 	}
 
-	status, body, err := bookingGet(ctx, searchURL, token)
+	status, body, err := bookingGetFn(ctx, searchURL, token)
 	if err != nil {
 		return "", err
 	}
@@ -114,13 +130,13 @@ func fetchBookingSearch(ctx context.Context, searchURL string) (string, error) {
 	}
 
 	// 202 (and 403/503) mean the WAF rejected the token. Re-harvest once.
-	if status == 202 || status == 403 || status == 503 {
+	if bookingWAFChallenged(status) {
 		slog.Debug("booking search: WAF challenge, re-harvesting token", "status", status)
-		token, err = acquireBookingWAFToken(ctx, searchURL, true)
+		token, err = bookingAcquireTokenFn(ctx, searchURL, true)
 		if err != nil {
 			return "", fmt.Errorf("re-harvest aws-waf-token after status %d: %w", status, err)
 		}
-		status, body, err = bookingGet(ctx, searchURL, token)
+		status, body, err = bookingGetFn(ctx, searchURL, token)
 		if err != nil {
 			return "", err
 		}
