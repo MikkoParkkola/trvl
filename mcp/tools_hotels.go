@@ -613,13 +613,14 @@ func hotelRoomsTool() ToolDef {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"hotel_name":  {Type: "string", Description: "Hotel name and optional city, e.g. 'Beverly Hills Heights, Tenerife'"},
+				"hotel_id":    {Type: "string", Description: "Google Hotels property ID from search_hotels results. When provided, used directly — skips the hotel-name lookup and avoids resolving to the wrong property."},
+				"hotel_name":  {Type: "string", Description: "Hotel name and optional city, e.g. 'Beverly Hills Heights, Tenerife'. Required only when hotel_id is absent; also used as a location hint."},
 				"check_in":    {Type: "string", Description: "Check-in date in YYYY-MM-DD format"},
 				"check_out":   {Type: "string", Description: "Check-out date in YYYY-MM-DD format"},
 				"currency":    {Type: "string", Description: "Currency code (e.g. USD, EUR). Default: USD"},
 				"booking_url": {Type: "string", Description: "Booking.com hotel URL from search_hotels results (enables rich room data: descriptions, bed types, sizes, amenities, cancellation, board, and price metadata)"},
 			},
-			Required: []string{"hotel_name", "check_in", "check_out"},
+			Required: []string{"check_in", "check_out"},
 		},
 		OutputSchema: hotelRoomsOutputSchema(),
 		Annotations: &ToolAnnotations{
@@ -648,6 +649,7 @@ func hotelRoomsOutputSchema() interface{} {
 }
 
 func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
+	hotelID := argString(args, "hotel_id")
 	hotelName := argString(args, "hotel_name")
 	checkIn := argString(args, "check_in")
 	checkOut := argString(args, "check_out")
@@ -657,34 +659,40 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		currency = "USD"
 	}
 
-	if hotelName == "" || checkIn == "" || checkOut == "" {
-		return nil, nil, fmt.Errorf("hotel_name, check_in, and check_out are required")
+	if (hotelID == "" && hotelName == "") || checkIn == "" || checkOut == "" {
+		return nil, nil, fmt.Errorf("hotel_id or hotel_name, plus check_in and check_out, are required")
 	}
 
 	if err := models.ValidateDateRange(checkIn, checkOut); err != nil {
 		return nil, nil, err
 	}
 
-	// Resolve hotel name to a Google ID.
-	hotel, err := hotels.SearchHotelByName(ctx, hotelName, checkIn, checkOut, currency)
-	if err != nil {
-		return nil, nil, fmt.Errorf("hotel lookup for %q: %w", hotelName, err)
-	}
-
-	if hotel.HotelID == "" {
-		return nil, nil, fmt.Errorf("hotel %q found (%s) but has no Google ID", hotelName, hotel.Name)
-	}
-
-	// Use the booking URL from the search result if the caller didn't provide one.
-	if bookingURL == "" && hotel.BookingURL != "" {
-		bookingURL = hotel.BookingURL
+	// Resolved property identity. When the caller supplies a hotel_id (from
+	// search_hotels), use it directly — re-running the fuzzy name search can
+	// resolve to a different property and fetch room data for the wrong hotel.
+	resolvedID := hotelID
+	resolvedName := hotelName
+	if resolvedID == "" {
+		hotel, err := searchHotelByNameFunc(ctx, hotelName, checkIn, checkOut, currency)
+		if err != nil {
+			return nil, nil, fmt.Errorf("hotel lookup for %q: %w", hotelName, err)
+		}
+		if hotel.HotelID == "" {
+			return nil, nil, fmt.Errorf("hotel %q found (%s) but has no Google ID", hotelName, hotel.Name)
+		}
+		resolvedID = hotel.HotelID
+		resolvedName = hotel.Name
+		// Use the booking URL from the search result if the caller didn't provide one.
+		if bookingURL == "" && hotel.BookingURL != "" {
+			bookingURL = hotel.BookingURL
+		}
 	}
 
 	// Fetch room availability with optional Booking.com enrichment.
 	// Pass the hotel name as a location hint for the search-page fallback
 	// (entity pages now use deferred data loading).
-	availability, err := hotels.GetRoomAvailabilityWithOpts(ctx, hotels.RoomSearchOptions{
-		HotelID:    hotel.HotelID,
+	availability, err := getRoomAvailabilityWithOptsFunc(ctx, hotels.RoomSearchOptions{
+		HotelID:    resolvedID,
 		CheckIn:    checkIn,
 		CheckOut:   checkOut,
 		Currency:   currency,
@@ -692,11 +700,11 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		Location:   hotelName,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("room availability for %s: %w", hotel.Name, err)
+		return nil, nil, fmt.Errorf("room availability for %s: %w", resolvedName, err)
 	}
 
 	if availability.Name == "" {
-		availability.Name = hotel.Name
+		availability.Name = resolvedName
 	}
 
 	summary := fmt.Sprintf("Found %d room types at %s (%s to %s).",

@@ -12,6 +12,7 @@ import (
 
 var fetchHotelAmenitiesFunc = hotels.FetchHotelAmenities
 var getRoomAvailabilityWithOptsFunc = hotels.GetRoomAvailabilityWithOpts
+var searchHotelByNameFunc = hotels.SearchHotelByName
 
 type hotelWithDetails struct {
 	models.HotelResult
