@@ -48,6 +48,17 @@ type Watch struct {
 	// payload is POSTed to this URL (fire-and-forget, 10s timeout).
 	WebhookURL string `json:"webhook_url,omitempty"`
 
+	// Proactive price-drop alerting (innovation #6: pull -> push).
+	// AlertDropPct / AlertDropAbs configure how far the fare must fall below the
+	// captured baseline before trvl proactively alerts. Either limb qualifies;
+	// when both are zero a sane default (10%) applies. BaselinePrice is the
+	// reference fare (captured on first observation, tracks the running peak) and
+	// LastAlertedPrice is dedup state so a single drop alerts exactly once.
+	AlertDropPct     float64 `json:"alert_drop_pct,omitempty"`
+	AlertDropAbs     float64 `json:"alert_drop_abs,omitempty"`
+	BaselinePrice    float64 `json:"baseline_price,omitempty"`
+	LastAlertedPrice float64 `json:"last_alerted_price,omitempty"`
+
 	// Room watch fields (Type == "room").
 	HotelName    string   `json:"hotel_name,omitempty"`    // hotel name for room availability lookups
 	RoomKeywords []string `json:"room_keywords,omitempty"` // all keywords must match room name+description
