@@ -107,7 +107,13 @@ type FlightSearchResult struct {
 	// ProviderStatuses. When State != "complete", callers MUST NOT claim
 	// "no flights found" — some providers timed out or failed.
 	Completeness Completeness `json:"completeness,omitempty"`
-	Error        string       `json:"error,omitempty"`
+	// HackSaving, when non-nil, is the single best money-saving option the
+	// travel-hacks savings engine auto-composed from this naive search (e.g. a
+	// hidden-city or positioning fare cheaper than the naive cheapest flight).
+	// It is additive — the naive Flights are never replaced — and is only
+	// populated when a real, lower-priced option exists.
+	HackSaving *HackSaving `json:"hack_saving,omitempty"`
+	Error      string      `json:"error,omitempty"`
 }
 
 // DatePriceResult represents the cheapest price for a single departure date.

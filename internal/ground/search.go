@@ -80,6 +80,12 @@ type SearchOptions struct {
 	Type                  string   // "bus", "train", or empty for all
 	NoCache               bool     // bypass response cache
 	AllowBrowserFallbacks bool     // opt in to browser/curl/cookie-assisted providers
+
+	// NoHacks opts out of the auto-composed travel-hacks savings engine. The
+	// engine is ON by default: a normal search also surfaces the single best
+	// cheaper synthesized option (multimodal, cross-border rail, …) in
+	// result.HackSaving. Set NoHacks to run a pure naive search.
+	NoHacks bool
 }
 
 // SearchByName searches all providers for ground transport between two cities
@@ -434,6 +440,11 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	if len(allRoutes) == 0 && len(errors) > 0 {
 		result.Error = strings.Join(errors, "; ")
 	}
+
+	// Auto-compose the savings engine: surface the single best cheaper
+	// synthesized option alongside the naive routes (before caching so cache
+	// hits carry it too), unless opted out or this is a nested detector search.
+	attachGroundHackSaving(ctx, result, from, to, date, opts)
 
 	// Cache successful results.
 	if result.Success && !opts.NoCache {

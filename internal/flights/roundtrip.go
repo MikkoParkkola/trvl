@@ -48,8 +48,12 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 	legOpts.ReturnDate = ""
 	legOpts.FirstResult = false
 
-	outbound, outErr := SearchFlightsWithClient(ctx, client, origin, destination, date, legOpts)
-	inbound, inErr := SearchFlightsWithClient(ctx, client, destination, origin, returnDate, legOpts)
+	// Leg sub-searches run with auto-compose disabled: a single round-trip-level
+	// savings pass is attached to the composed result below, so the two one-way
+	// legs do not each spawn their own (discarded) hack fan-out.
+	legCtx := disableHacksCompose(ctx)
+	outbound, outErr := SearchFlightsWithClient(legCtx, client, origin, destination, date, legOpts)
+	inbound, inErr := SearchFlightsWithClient(legCtx, client, destination, origin, returnDate, legOpts)
 
 	statuses := make([]models.ProviderStatus, 0, 8)
 	var outFlights, inFlights []models.FlightResult
@@ -80,14 +84,19 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 		}
 	}
 
-	return &models.FlightSearchResult{
+	result := &models.FlightSearchResult{
 		Success:          true,
 		Count:            len(composed),
 		TripType:         "round_trip",
 		Flights:          composed,
 		ProviderStatuses: statuses,
 		Completeness:     models.ComputeCompleteness(statuses),
-	}, nil
+	}
+	// Round-trip-level savings pass (split / throwaway / hidden-city become
+	// applicable once ReturnDate is known). Uses the original ctx so it is not
+	// suppressed by the leg-level disable above.
+	attachFlightHackSaving(ctx, result, origin, destination, date, opts)
+	return result, nil
 }
 
 // composeRoundTrips pairs the cheapest priced outbound options with the cheapest
