@@ -465,6 +465,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	var spotahomeResults []models.HotelResult
 	var flatioResults []models.HotelResult
 	var bluegroundResults []models.HotelResult
+	var agodaResults []models.HotelResult
 	var bookingResults []models.HotelResult
 	var externalResults []models.HotelResult
 	var auxWg sync.WaitGroup
@@ -649,6 +650,25 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		addProviderStatus(hotelProviderStatusFromResults("blueground", "Blueground", len(res)))
 	}()
 
+	// Agoda OTA hotel search (GraphQL citySearch; resolve cityId via public
+	// autocomplete, then a self-constructed x-gate-meta header — no API key,
+	// cookies, or signature). Non-fatal: failures log a warning and contribute
+	// zero results.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchAgoda(providerCtx, location, auxOpts)
+		if err != nil {
+			slog.Warn("agoda search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("agoda", "Agoda", err))
+			return
+		}
+		agodaResults = res
+		addProviderStatus(hotelProviderStatusFromResults("agoda", "Agoda", len(res)))
+	}()
+
 	// Booking.com search — parallel with Google + Trivago + HomeToGo.
 	// Booking.com uses AWS WAF which blocks automated requests. The search
 	// is attempted but failures are expected and handled silently — the
@@ -736,6 +756,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	allBatches = append(allBatches, tagHotelSource(spotahomeResults, "spotahome"))
 	allBatches = append(allBatches, tagHotelSource(flatioResults, "flatio"))
 	allBatches = append(allBatches, tagHotelSource(bluegroundResults, "blueground"))
+	allBatches = append(allBatches, tagHotelSource(agodaResults, "agoda"))
 	allBatches = append(allBatches, bookingResults)
 	allBatches = append(allBatches, externalResults)
 	if len(externalResults) > 0 {
