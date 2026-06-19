@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MikkoParkkola/trvl/internal/testutil"
 	"github.com/MikkoParkkola/trvl/internal/watch"
 )
 
@@ -40,6 +41,13 @@ func TestHandleCheckWatches_LiveProbe(t *testing.T) {
 		t.Fatalf("handleCheckWatches: %v", err)
 	}
 	raw, _ := json.Marshal(structured)
+	// A throttled night (Google 429 from the CI datacenter IP) re-prices to 0
+	// the same way a stubbed checker would, but for a transient reason. If the
+	// structured output carries a rate-limit/transient marker, treat the 0 as
+	// noise and skip rather than red the nightly.
+	if testutil.IsTransientMsg(string(raw)) {
+		t.Skipf("skipping: transient provider noise (not a regression): %s", string(raw))
+	}
 	if strings.Contains(string(raw), `"current_price":0`) {
 		t.Errorf("live probe returned current_price 0 — re-check did not produce a real price: %s", string(raw))
 	}
