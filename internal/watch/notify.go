@@ -81,6 +81,28 @@ func (n *Notifier) Notify(r CheckResult) {
 		return
 	}
 
+	// Proactive price-drop alert (innovation #6: pull -> push). Fires when the
+	// fare falls past the configured threshold below the captured baseline.
+	if r.PriceDropAlert {
+		line := fmt.Sprintf("PRICE DROP  %s  %s (%.1f%% below baseline %.0f %s)",
+			route, priceStr, r.AlertDropPercent, r.AlertBaseline, r.Currency)
+		_, _ = fmt.Fprintln(n.Out, n.green(line))
+
+		if r.Watch.DepartDate != "" {
+			if url := buildBookingURL(r.Watch); url != "" {
+				_, _ = fmt.Fprintf(n.Out, "      Book: %s\n", url)
+			}
+		}
+
+		if n.Desktop {
+			n.desktopNotify(
+				"trvl: Price Drop!",
+				fmt.Sprintf("%s %s — %.1f%% below baseline", route, priceStr, r.AlertDropPercent),
+			)
+		}
+		return
+	}
+
 	// Regular price report with change indicator.
 	var changeStr string
 	if r.PrevPrice > 0 {

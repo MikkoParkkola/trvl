@@ -150,6 +150,17 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 				"below_goal", r.BelowGoal,
 			)
 		}
+		if r.PriceDropAlert {
+			triggered++
+			slog.Info("scheduler: proactive price drop",
+				"watch_id", r.Watch.ID,
+				"route", r.Watch.Origin+"→"+r.Watch.Destination,
+				"price", r.NewPrice,
+				"baseline", r.AlertBaseline,
+				"drop_percent", r.AlertDropPercent,
+				"currency", r.Currency,
+			)
+		}
 		if r.BelowGoal {
 			triggered++
 			slog.Info("scheduler: price below target",

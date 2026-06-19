@@ -53,6 +53,8 @@ func watchAddCmd() *cobra.Command {
 		webhookURL     string
 		lastMinute     bool
 		lastMinuteDrop float64
+		alertDropPct   float64
+		alertDropAbs   float64
 	)
 
 	cmd := &cobra.Command{
@@ -103,6 +105,8 @@ Examples:
 				WebhookURL:        webhookURL,
 				LastMinuteMode:    lastMinute,
 				LastMinuteDropPct: lastMinuteDrop,
+				AlertDropPct:      alertDropPct,
+				AlertDropAbs:      alertDropAbs,
 			}
 
 			id, err := store.Add(w)
@@ -131,6 +135,16 @@ Examples:
 			if w.LastMinuteMode {
 				fmt.Printf(" [last-minute %.0f%% drop]", w.LastMinuteDropPct)
 			}
+			if w.AlertDropPct > 0 || w.AlertDropAbs > 0 {
+				switch {
+				case w.AlertDropPct > 0 && w.AlertDropAbs > 0:
+					fmt.Printf(" [drop alert %.0f%% or %.0f %s]", w.AlertDropPct, w.AlertDropAbs, w.Currency)
+				case w.AlertDropPct > 0:
+					fmt.Printf(" [drop alert %.0f%%]", w.AlertDropPct)
+				default:
+					fmt.Printf(" [drop alert %.0f %s]", w.AlertDropAbs, w.Currency)
+				}
+			}
 			fmt.Println()
 			return nil
 		},
@@ -146,6 +160,8 @@ Examples:
 	cmd.Flags().StringVar(&webhookURL, "webhook", "", "URL to POST JSON payload on price drop")
 	cmd.Flags().BoolVar(&lastMinute, "last-minute", false, "Hotel watches: alert when sub-48h availability is materially below last seen price")
 	cmd.Flags().Float64Var(&lastMinuteDrop, "last-minute-drop", 25, "Hotel watches: percent drop from last seen price required for last-minute alert")
+	cmd.Flags().Float64Var(&alertDropPct, "alert-drop", 0, "Proactively alert when the fare falls this percent below its baseline (default 10% if no threshold set)")
+	cmd.Flags().Float64Var(&alertDropAbs, "alert-drop-abs", 0, "Proactively alert when the fare falls this many currency units below its baseline")
 	// --depart is optional: route watches monitor next 60 days without specific dates
 
 	return cmd

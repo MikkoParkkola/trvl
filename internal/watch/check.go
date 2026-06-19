@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/hotelarb"
+	"github.com/MikkoParkkola/trvl/internal/pricealert"
 )
 
 var webhookHTTPClient = http.DefaultClient
@@ -67,7 +68,13 @@ type CheckResult struct {
 	RoomMatches               []RoomMatch
 	LastMinuteDeal            bool
 	LastMinuteDiscountPercent float64
-	Error                     error
+	// Proactive price-drop alert (innovation #6). PriceDropAlert is true when the
+	// fare fell past the configured threshold below the baseline and this is a
+	// new, deduplicated event. AlertBaseline / AlertDropPercent describe it.
+	PriceDropAlert   bool
+	AlertBaseline    float64
+	AlertDropPercent float64
+	Error            error
 }
 
 // CheckAll checks all watches using the provided price checker and records
@@ -244,6 +251,22 @@ func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Sto
 		}
 		if w.LowestPrice == 0 || price < w.LowestPrice {
 			w.LowestPrice = price
+		}
+
+		// Proactive price-drop alert: capture/track a baseline and fire exactly
+		// one alert when the fare falls past the configured threshold. State is
+		// stored on the watch so it survives daemon restarts and reloads.
+		alertState, alert, alertFired := pricealert.Evaluate(
+			pricealert.State{Baseline: w.BaselinePrice, LastAlertedAt: w.LastAlertedPrice},
+			price,
+			pricealert.Threshold{DropPercent: w.AlertDropPct, DropAbsolute: w.AlertDropAbs},
+		)
+		w.BaselinePrice = alertState.Baseline
+		w.LastAlertedPrice = alertState.LastAlertedAt
+		if alertFired {
+			result.PriceDropAlert = true
+			result.AlertBaseline = alert.Baseline
+			result.AlertDropPercent = alert.DropPercent
 		}
 
 		// Persist updates.
