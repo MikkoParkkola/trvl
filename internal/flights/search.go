@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -166,8 +165,6 @@ func doFlightSearchSingleflight(ctx context.Context, key string, fn func(context
 
 // searchFlightsCore performs the actual flight search without singleflight wrapping.
 func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) (*models.FlightSearchResult, error) {
-	var statuses []models.ProviderStatus
-
 	googleResult, googleErr := searchGoogleFlightsWithClient(ctx, client, origin, destination, date, opts)
 	googleSucceeded := googleErr == nil
 	currency := flightSearchCurrency(googleResult)
@@ -176,236 +173,77 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 	if googleSucceeded && googleResult != nil {
 		googleFlights = googleResult.Flights
 	}
+
+	googleStatus := models.ProviderStatus{ID: "google_flights", Name: "Google Flights"}
 	if googleSucceeded {
-		statuses = append(statuses, models.ProviderStatus{
-			ID:      "google_flights",
-			Name:    "Google Flights",
-			Status:  okOrNoHit(len(googleFlights)),
-			Results: len(googleFlights),
-		})
+		googleStatus.Status = okOrNoHit(len(googleFlights))
+		googleStatus.Results = len(googleFlights)
 	} else {
-		statuses = append(statuses, models.ProviderStatus{
-			ID:     "google_flights",
-			Name:   "Google Flights",
-			Status: models.ClassifyProviderError(googleErr),
-			Error:  googleErr.Error(),
-		})
+		googleStatus.Status = models.ClassifyProviderError(googleErr)
+		googleStatus.Error = googleErr.Error()
 	}
 
-	var kiwiFlights []models.FlightResult
-	var kiwiErr error
-	kiwiSucceeded := false
-	if kiwiSearchEligible(client, opts) {
-		kiwiFlights, kiwiErr = SearchKiwiFlights(ctx, origin, destination, date, currency, opts)
-		if kiwiErr != nil {
-			slog.Warn("kiwi flight search failed", "origin", origin, "destination", destination, "date", date, "error", kiwiErr)
-			statuses = append(statuses, models.ProviderStatus{
-				ID:     "kiwi",
-				Name:   "Kiwi",
-				Status: models.ClassifyProviderError(kiwiErr),
-				Error:  kiwiErr.Error(),
-			})
-		} else {
-			kiwiSucceeded = true
-			statuses = append(statuses, models.ProviderStatus{
-				ID:      "kiwi",
-				Name:    "Kiwi",
-				Status:  okOrNoHit(len(kiwiFlights)),
-				Results: len(kiwiFlights),
-			})
-		}
-	} else {
-		statuses = append(statuses, models.ProviderStatus{
-			ID:      "kiwi",
-			Name:    "Kiwi",
-			Status:  "skipped",
-			Error:   "options not supported by Kiwi (e.g. round-trip, alliance/airline filters, baggage requirements)",
-			FixHint: "drop unsupported options or call Kiwi directly via provider=kiwi (when supported)",
-		})
+	// Secondary providers depend only on the session currency (derived from the
+	// Google result above), so they run concurrently with bounded parallelism,
+	// per-provider timeout, and failure isolation. Outcomes are returned in task
+	// order so the merged status list and downstream merge stay deterministic
+	// regardless of completion order.
+	tasks := []providerTask{
+		{name: "kiwi", run: func(ctx context.Context) providerOutcome {
+			return runKiwiProvider(ctx, client, origin, destination, date, currency, opts)
+		}},
+		{name: "skiplagged", run: func(ctx context.Context) providerOutcome {
+			return runSkiplaggedProvider(ctx, client, origin, destination, date, opts)
+		}},
+		{name: "ryanair", run: func(ctx context.Context) providerOutcome {
+			return runRyanairProvider(ctx, client, origin, destination, date, currency, opts)
+		}},
+		{name: "wizzair", run: func(ctx context.Context) providerOutcome {
+			return runWizzairProvider(ctx, client, origin, destination, date, currency, opts)
+		}},
+		{name: "transavia", run: func(ctx context.Context) providerOutcome {
+			return runTransaviaProvider(ctx, client, origin, destination, date, currency, opts)
+		}},
+		{name: "easyjet", run: func(ctx context.Context) providerOutcome {
+			return runEasyjetProvider(ctx, client, origin, destination, date, currency, opts)
+		}},
+	}
+	outcomes := runProviderTasks(ctx, tasks, providerConcurrencyLimit, perProviderTimeout)
+	kiwiOut := outcomes[0]
+	skiplaggedOut := outcomes[1]
+	ryanairOut := outcomes[2]
+	wizzairOut := outcomes[3]
+	transaviaOut := outcomes[4]
+	easyjetOut := outcomes[5]
+
+	statuses := []models.ProviderStatus{
+		googleStatus,
+		kiwiOut.status,
+		skiplaggedOut.status,
+		ryanairOut.status,
+		wizzairOut.status,
+		transaviaOut.status,
+		easyjetOut.status,
 	}
 
-	var skiplaggedFlights []models.FlightResult
-	var skiplaggedErr error
-	skiplaggedSucceeded := false
-	if skiplaggedSearchEligible(client, opts) {
-		skiplaggedResult, err := SearchSkiplagged(ctx, origin, destination, date, opts)
-		if err != nil {
-			slog.Warn("skiplagged flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
-			skiplaggedErr = err
-			statuses = append(statuses, models.ProviderStatus{
-				ID:     "skiplagged",
-				Name:   "Skiplagged",
-				Status: models.ClassifyProviderError(err),
-				Error:  err.Error(),
-			})
-		} else if skiplaggedResult != nil {
-			skiplaggedFlights = skiplaggedResult.Flights
-			skiplaggedSucceeded = true
-			statuses = append(statuses, models.ProviderStatus{
-				ID:      "skiplagged",
-				Name:    "Skiplagged",
-				Status:  okOrNoHit(len(skiplaggedFlights)),
-				Results: len(skiplaggedFlights),
-			})
-		}
-	} else {
-		statuses = append(statuses, models.ProviderStatus{
-			ID:      "skiplagged",
-			Name:    "Skiplagged",
-			Status:  "skipped",
-			Error:   "options not supported by Skiplagged (alliance/airline filters or baggage requirements set)",
-			FixHint: "drop unsupported options or call Skiplagged directly via provider=skiplagged",
-		})
-	}
-
-	// Ryanair direct (Fare Finder) — recovers the ultra-LCC that Google/GDS omit.
-	var ryanairFlights []models.FlightResult
-	var ryanairErr error
-	ryanairSucceeded := false
-	if ryanairSearchEligible(client, opts) {
-		ryanairFlights, ryanairErr = SearchRyanair(ctx, origin, destination, date, currency, opts)
-		if ryanairErr != nil {
-			slog.Warn("ryanair flight search failed", "origin", origin, "destination", destination, "date", date, "error", ryanairErr)
-			statuses = append(statuses, models.ProviderStatus{
-				ID:     "ryanair",
-				Name:   "Ryanair",
-				Status: models.ClassifyProviderError(ryanairErr),
-				Error:  ryanairErr.Error(),
-			})
-		} else {
-			ryanairSucceeded = true
-			statuses = append(statuses, models.ProviderStatus{
-				ID:      "ryanair",
-				Name:    "Ryanair",
-				Status:  okOrNoHit(len(ryanairFlights)),
-				Results: len(ryanairFlights),
-			})
-		}
-	} else {
-		statuses = append(statuses, models.ProviderStatus{
-			ID:      "ryanair",
-			Name:    "Ryanair",
-			Status:  "skipped",
-			Error:   "options not supported by Ryanair direct (round-trip, non-economy cabin, alliance filter, or a non-FR airline filter)",
-			FixHint: "search one-way economy, or drop the alliance/airline filter",
-		})
-	}
-
-	// Wizz Air direct (timetable) recovers the CEE ultra-LCC that Google/GDS omit.
-	var wizzairFlights []models.FlightResult
-	var wizzairErr error
-	wizzairSucceeded := false
-	if wizzairSearchEligible(client, opts) {
-		wizzairFlights, wizzairErr = SearchWizzair(ctx, origin, destination, date, currency, opts)
-		if wizzairErr != nil {
-			slog.Warn("wizzair flight search failed", "origin", origin, "destination", destination, "date", date, "error", wizzairErr)
-			// wizzairFailureStatus renders a typed, actionable status; a 404
-			// version-rotation gets a WIZZ_VERSION_ROTATED fix hint. The search
-			// continues with the other providers either way.
-			statuses = append(statuses, wizzairFailureStatus(wizzairErr))
-		} else {
-			wizzairSucceeded = true
-			statuses = append(statuses, models.ProviderStatus{
-				ID:      "wizzair",
-				Name:    "Wizz Air",
-				Status:  okOrNoHit(len(wizzairFlights)),
-				Results: len(wizzairFlights),
-			})
-		}
-	} else {
-		statuses = append(statuses, models.ProviderStatus{
-			ID:      "wizzair",
-			Name:    "Wizz Air",
-			Status:  "skipped",
-			Error:   "options not supported by Wizz Air direct (round-trip / non-economy cabin / alliance filter / non-W6 airline filter)",
-			FixHint: "search one-way economy; drop the alliance/airline filter",
-		})
-	}
-
-	// Transavia direct (Flight Offers API) is opt-in, requires TRANSAVIA_API_KEY.
-	// Mirrors the AFKLM opt-in pattern: silently skipped when no key is set.
-	var transaviaFlights []models.FlightResult
-	var transaviaErr error
-	transaviaSucceeded := false
-	if transaviaSearchEligible(client, opts) {
-		transaviaFlights, transaviaErr = SearchTransavia(ctx, origin, destination, date, currency, opts)
-		if transaviaErr != nil {
-			slog.Warn("transavia flight search failed", "origin", origin, "destination", destination, "date", date, "error", transaviaErr)
-			statuses = append(statuses, models.ProviderStatus{
-				ID:     "transavia",
-				Name:   "Transavia",
-				Status: models.ClassifyProviderError(transaviaErr),
-				Error:  transaviaErr.Error(),
-			})
-		} else {
-			transaviaSucceeded = true
-			statuses = append(statuses, models.ProviderStatus{
-				ID:      "transavia",
-				Name:    "Transavia",
-				Status:  okOrNoHit(len(transaviaFlights)),
-				Results: len(transaviaFlights),
-			})
-		}
-	} else {
-		fixHint := "search one-way; drop the alliance/airline filter"
-		reason := "options not supported by Transavia direct (round-trip / alliance filter / non-HV/TO airline filter)"
-		if !transaviaConfigured() {
-			reason = "Transavia is opt-in and requires a free developer API key"
-			fixHint = "set TRANSAVIA_API_KEY (free key from developer.transavia.com)"
-		}
-		statuses = append(statuses, models.ProviderStatus{
-			ID:      "transavia",
-			Name:    "Transavia",
-			Status:  "skipped",
-			Error:   reason,
-			FixHint: fixHint,
-		})
-	}
-
-	// easyJet direct (availability API) is opt-in: the public endpoint is Akamai
-	// bot-defended (HTTP 403), so it only fires when the operator supplies a
-	// reachable base URL via EASYJET_API_BASE. Mirrors the Transavia opt-in
-	// pattern; honest typed status when unavailable (never a fabricated empty).
-	var easyjetFlights []models.FlightResult
-	var easyjetErr error
-	easyjetSucceeded := false
-	if easyjetSearchEligible(client, opts) {
-		easyjetFlights, easyjetErr = SearchEasyjet(ctx, origin, destination, date, currency, opts)
-		if easyjetErr != nil {
-			slog.Warn("easyjet flight search failed", "origin", origin, "destination", destination, "date", date, "error", easyjetErr)
-			statuses = append(statuses, models.ProviderStatus{
-				ID:     "easyjet",
-				Name:   "easyJet",
-				Status: models.ClassifyProviderError(easyjetErr),
-				Error:  easyjetErr.Error(),
-			})
-		} else {
-			easyjetSucceeded = true
-			statuses = append(statuses, models.ProviderStatus{
-				ID:      "easyjet",
-				Name:    "easyJet",
-				Status:  okOrNoHit(len(easyjetFlights)),
-				Results: len(easyjetFlights),
-			})
-		}
-	} else {
-		fixHint := "search one-way economy; drop the alliance/airline filter"
-		reason := "options not supported by easyJet direct (round-trip / non-economy cabin / alliance filter / non-U2 airline filter)"
-		fixHintCode := ""
-		if !easyjetConfigured() {
-			reason = "easyJet's public availability API is Akamai bot-defended (HTTP 403); it is opt-in and requires a reachable endpoint"
-			fixHint = "set EASYJET_API_BASE to an authorised partner endpoint or a self-hosted proxy that returns the JSON availability API"
-			fixHintCode = "AKAMAI_BLOCK"
-		}
-		statuses = append(statuses, models.ProviderStatus{
-			ID:          "easyjet",
-			Name:        "easyJet",
-			Status:      "skipped",
-			Error:       reason,
-			FixHint:     fixHint,
-			FixHintCode: fixHintCode,
-		})
-	}
+	kiwiFlights := kiwiOut.flights
+	kiwiErr := kiwiOut.err
+	kiwiSucceeded := kiwiOut.succeeded
+	skiplaggedFlights := skiplaggedOut.flights
+	skiplaggedErr := skiplaggedOut.err
+	skiplaggedSucceeded := skiplaggedOut.succeeded
+	ryanairFlights := ryanairOut.flights
+	ryanairErr := ryanairOut.err
+	ryanairSucceeded := ryanairOut.succeeded
+	wizzairFlights := wizzairOut.flights
+	wizzairErr := wizzairOut.err
+	wizzairSucceeded := wizzairOut.succeeded
+	transaviaFlights := transaviaOut.flights
+	transaviaErr := transaviaOut.err
+	transaviaSucceeded := transaviaOut.succeeded
+	easyjetFlights := easyjetOut.flights
+	easyjetErr := easyjetOut.err
+	easyjetSucceeded := easyjetOut.succeeded
 
 	// Normalize all provider prices to the session currency so resolution and
 	// ranking compare like with like (Skiplagged returns USD, Kiwi its own).
