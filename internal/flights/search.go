@@ -10,6 +10,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
+	"github.com/MikkoParkkola/trvl/internal/fareintel"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/searchctx"
 	"golang.org/x/sync/singleflight"
@@ -283,6 +284,7 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 	}
 
 	if googleSucceeded || kiwiSucceeded || skiplaggedSucceeded || ryanairSucceeded || wizzairSucceeded || transaviaSucceeded || easyjetSucceeded {
+		annotateFlightConfidence(mergedFlights, time.Now())
 		result := &models.FlightSearchResult{
 			Success:          true,
 			Count:            len(mergedFlights),
@@ -332,6 +334,31 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 		Error:            "unreachable flight search state",
 		ProviderStatuses: statuses,
 	}, fmt.Errorf("unreachable flight search state")
+}
+
+// annotateFlightConfidence attaches an honest bookability Confidence to every
+// flight (innovation #3). Prices are scored from the freshness of the just-
+// fetched quote, provider reliability, and multi-source corroboration via the
+// shared fareintel scorer. Synthetic separate-ticket itineraries are flagged as
+// higher risk. Results with no usable signal are left unrated, never faked.
+func annotateFlightConfidence(flights []models.FlightResult, now time.Time) {
+	for i := range flights {
+		f := &flights[i]
+		provider := f.Provider
+		if provider == "" {
+			provider = f.CheapestSource
+		}
+		c := fareintel.ScoreConfidence(fareintel.ConfidenceInput{
+			Price:           f.PriceForRanking(),
+			Currency:        f.Currency,
+			Provider:        provider,
+			RetrievedAt:     now,
+			Now:             now,
+			Sources:         f.Sources,
+			SeparateTickets: f.BookDirect || f.SelfConnect,
+		})
+		f.Confidence = &c
+	}
 }
 
 func cloneFlightSearchResult(shared *models.FlightSearchResult) *models.FlightSearchResult {

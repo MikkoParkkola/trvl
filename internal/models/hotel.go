@@ -108,6 +108,10 @@ type HotelResult struct {
 	RetrievedAt     time.Time     `json:"retrieved_at,omitempty"`     // checked time for primary Price
 	Freshness       string        `json:"freshness,omitempty"`        // freshness for primary Price
 	PriceWarnings   []string      `json:"price_warnings,omitempty"`   // machine-readable caveats, e.g. mixed_source_currencies
+	// Confidence is an honest bookability assessment of the headline Price
+	// (innovation #3). Nil when not scored; an unrated Confidence means trvl
+	// lacked the signal to judge — it is never a fabricated number.
+	Confidence *Confidence `json:"confidence,omitempty"`
 }
 
 // ProviderStatus reports the outcome of a single external provider query.

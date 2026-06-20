@@ -67,6 +67,11 @@ type FlightResult struct {
 	// BookDirect marks this FlightResult as a synthetic separate-tickets
 	// alternative assembled from SegmentSources, not a single bookable fare.
 	BookDirect bool `json:"book_direct,omitempty"`
+
+	// Confidence is an honest bookability assessment of the headline Price
+	// (innovation #3). Nil when not scored; an unrated Confidence means trvl
+	// lacked the signal to judge — it is never a fabricated number.
+	Confidence *Confidence `json:"confidence,omitempty"`
 }
 
 // PriceForRanking returns ComparablePrice when computed, else the base Price.

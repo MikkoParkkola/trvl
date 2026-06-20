@@ -35,6 +35,10 @@ type GroundRoute struct {
 	Sources        []PriceSource `json:"sources,omitempty"`
 	Savings        float64       `json:"savings,omitempty"`
 	CheapestSource string        `json:"cheapest_source,omitempty"`
+	// Confidence is an honest bookability assessment of the headline Price
+	// (innovation #3). Nil when not scored; an unrated Confidence means trvl
+	// lacked the signal to judge — it is never a fabricated number.
+	Confidence *Confidence `json:"confidence,omitempty"`
 }
 
 // GroundStop represents a departure or arrival point.

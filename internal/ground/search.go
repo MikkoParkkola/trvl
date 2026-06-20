@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/cache"
+	"github.com/MikkoParkkola/trvl/internal/fareintel"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/searchctx"
 	"golang.org/x/sync/singleflight"
@@ -432,6 +433,8 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		return allRoutes[i].Price < allRoutes[j].Price
 	})
 
+	annotateGroundConfidence(allRoutes, time.Now())
+
 	result := &models.GroundSearchResult{
 		Success: len(allRoutes) > 0,
 		Count:   len(allRoutes),
@@ -460,6 +463,26 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 // simply does not serve the requested route (e.g. "no DB station for Helsinki")
 // or that the provider was throttled during a burst of calls. Both are expected
 // during broad multi-provider searches and should be logged at DEBUG level
+// annotateGroundConfidence attaches an honest bookability Confidence to every
+// ground route (innovation #3), scored from the just-fetched quote freshness,
+// provider reliability, and multi-source corroboration via the shared fareintel
+// scorer. Routes with no usable signal are left unrated, never faked.
+func annotateGroundConfidence(routes []models.GroundRoute, now time.Time) {
+	for i := range routes {
+		r := &routes[i]
+		c := fareintel.ScoreConfidence(fareintel.ConfidenceInput{
+			Price:           r.Price,
+			Currency:        r.Currency,
+			Provider:        r.Provider,
+			RetrievedAt:     now,
+			Now:             now,
+			Sources:         r.Sources,
+			SeparateTickets: r.Transfers > 0 && r.Type == "mixed",
+		})
+		r.Confidence = &c
+	}
+}
+
 // rather than WARN to avoid polluting normal operation output.
 func isProviderNotApplicable(err error) bool {
 	if err == nil {
