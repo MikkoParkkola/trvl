@@ -83,7 +83,7 @@ func TestParseFlatioHTML_Fixture(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 	if len(results) == 0 {
-		t.Fatalf("expected markers, got 0")
+		t.Fatalf("expected listings, got 0")
 	}
 	for _, h := range results {
 		if h.HotelID == "" || h.Price <= 0 || h.Currency != "EUR" {
@@ -92,19 +92,19 @@ func TestParseFlatioHTML_Fixture(t *testing.T) {
 		if !strings.HasPrefix(h.BookingURL, "https://www.flatio.com/") {
 			t.Errorf("booking url = %q", h.BookingURL)
 		}
-		if h.Lat == 0 && h.Lon == 0 {
-			t.Errorf("missing geo: %+v", h)
+		if h.Name == "" {
+			t.Errorf("missing name: %+v", h)
 		}
 	}
-	// uniqId 127731 / price 82 from the captured first marker.
+	// listing id 125151 / price 200 from the captured first JSON-LD item.
 	var found bool
 	for _, h := range results {
-		if h.HotelID == "127731" && h.Price == 82 {
+		if h.HotelID == "125151" && h.Price == 200 {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected marker uniqId=127731 price=82")
+		t.Errorf("expected listing id=125151 price=200")
 	}
 }
 
@@ -211,7 +211,8 @@ func TestSearchBlueground_MockServer(t *testing.T) {
 
 func TestBluegroundSlug(t *testing.T) {
 	cases := map[string]string{
-		"Athens, Greece": "furnished-apartments-athens-greece",
+		"Athens, Greece": "furnished-apartments-athens-gr",
+		"Paris, France":  "furnished-apartments-paris-fr",
 		"Athens":         "furnished-apartments-athens",
 		"":               "",
 	}

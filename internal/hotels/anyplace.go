@@ -71,10 +71,17 @@ import (
 )
 
 // anyplaceEnabled controls whether SearchAnyplace makes live HTTP requests.
-// Disabled in the test suite (see testmain_test.go) so deterministic tests never
-// fire real network calls; individual tests flip it on with a mock server
-// injected via anyplaceBaseURL.
-var anyplaceEnabled = true
+//
+// DEPRECATED / OFF BY DEFAULT (2026-06-20): Anyplace restructured its site to
+// client-side rendering. The former city routes (/listings/{city} and
+// /_next/data/<buildId>/listings/{city}.json) now 308 / serve the homepage
+// shell with empty pageProps — listings load via an opaque client-side API with
+// no clean unauthenticated SSR or _next/data endpoint. Rather than ship a flaky
+// scrape, this provider is disabled by default (honest skip, mirroring the
+// easyJet AKAMAI_BLOCK precedent). The parser/resolver code is retained so a
+// future endpoint can re-enable it; tests flip this on against fixtures/mocks.
+// Opt back in by setting anyplaceEnabled=true once a stable data path returns.
+var anyplaceEnabled = false
 
 // anyplaceBaseURL is the root of the Anyplace site. Overridable in tests so an
 // httptest.Server can stand in for the live host.
