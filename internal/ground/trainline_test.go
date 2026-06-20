@@ -275,13 +275,16 @@ func TestSearchTrainline_UsesNabFallbackOn403(t *testing.T) {
 	origFetchViaNab := trainlineFetchViaNab
 	origBrowserCookies := trainlineBrowserCookies
 	origLimiter := trainlineLimiter
+	origTier1Cookies := trainlineTier1Cookies
 	t.Cleanup(func() {
 		trainlineDo = origDo
 		trainlineFetchViaNab = origFetchViaNab
 		trainlineBrowserCookies = origBrowserCookies
 		trainlineLimiter = origLimiter
+		trainlineTier1Cookies = origTier1Cookies
 	})
 	trainlineLimiter = rate.NewLimiter(rate.Inf, 1)
+	trainlineTier1Cookies = func(string) []*http.Cookie { return nil }
 
 	trainlineDo = func(*http.Request) (*http.Response, error) {
 		return &http.Response{

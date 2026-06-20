@@ -461,11 +461,14 @@ func TestSearchTrainline_403_WithBrowserFallbackAllowed(t *testing.T) {
 	// Since nab/curl/browser aren't available, eventually returns 403 error.
 	origDo := trainlineDo
 	origLimiter := trainlineLimiter
+	origTier1Cookies := trainlineTier1Cookies
 	t.Cleanup(func() {
 		trainlineDo = origDo
 		trainlineLimiter = origLimiter
+		trainlineTier1Cookies = origTier1Cookies
 	})
 	trainlineLimiter = rate.NewLimiter(rate.Limit(1000), 1)
+	trainlineTier1Cookies = func(string) []*http.Cookie { return nil }
 
 	callCount := 0
 	trainlineDo = func(req *http.Request) (*http.Response, error) {

@@ -18,9 +18,24 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	trvlnab "github.com/MikkoParkkola/trvl/internal/nab"
+	"github.com/MikkoParkkola/trvl/internal/providers"
 )
 
 const trainlineSearchURL = "https://www.thetrainline.com/api/journey-search/"
+
+// trainlineHomeURL is the origin used to harvest the user's live browser cookies
+// (incl the datadome clearance) for the Tier-1 browser-impersonation fallback.
+const trainlineHomeURL = "https://www.thetrainline.com"
+
+// trainlineChromeUA must match the Chrome JA3 profile providers.NewTier1Client
+// presents (Chrome 146 — the tls-client default). Datadome binds its clearance
+// cookie to the (IP, UA, JA3) triple, so a mismatched UA causes the replayed
+// cookie to be rejected even when it is valid. Mirrors rome2rio.go's rationale
+// for the Cloudflare bypass (#213).
+const trainlineChromeUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+
+// trainlineChromeSecCHUA is the matching Client-Hints brand string for Chrome 146.
+const trainlineChromeSecCHUA = `"Chromium";v="146", "Google Chrome";v="146", "Not(A:Brand";v="99"`
 
 // trainlineLimiter: 5 req/min to be respectful
 var trainlineLimiter = newProviderLimiter(12 * time.Second)
@@ -32,6 +47,13 @@ var (
 	trainlineDo             = func(req *http.Request) (*http.Response, error) { return trainlineClient.Do(req) }
 	trainlineFetchViaNab    = fetchTrainlineViaNab
 	trainlineBrowserCookies = cookies.BrowserCookies
+
+	// trainlineNewTier1 builds a Chrome-impersonating TLS client (browser JA3).
+	// Overridable in tests so the Tier-1 fallback can be pointed at httptest.
+	trainlineNewTier1 = func() (providers.Fetcher, error) { return providers.NewTier1Client() }
+	// trainlineTier1Cookies harvests the user's live browser cookies for a URL
+	// (datadome clearance via kooky). Overridable in tests.
+	trainlineTier1Cookies = providers.BrowserCookiesForURL
 )
 
 type trainlineHeader struct {
@@ -387,6 +409,22 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 			return nil, fmt.Errorf("trainline: HTTP 403: %s", firstBody)
 		}
 
+		// Tier 1 (highest confidence): a Chrome-impersonating TLS client (browser
+		// JA3) carrying the user's LIVE browser cookies (incl the datadome
+		// clearance, harvested via kooky) + a matching Chrome UA. Datadome binds
+		// its clearance to the (IP, UA, JA3) triple, so presenting all three is
+		// what gets accepted — the same bypass proven for Rome2Rio's Cloudflare
+		// wall (#213). Only attempted when live cookies are available; without the
+		// clearance cookie the JA3 alone won't pass, so we skip to cheaper tiers.
+		if cks := trainlineTier1Cookies(trainlineHomeURL); len(cks) > 0 {
+			slog.Debug("retrying trainline via Tier1 (JA3 + live datadome cookie)", "cookies", len(cks))
+			if t1Routes, t1Err := trainlineViaTier1(ctx, body, cks, from, to, date, currency); t1Err == nil && len(t1Routes) > 0 {
+				return t1Routes, nil
+			} else if t1Err != nil {
+				slog.Debug("trainline tier1 fallback failed", "err", t1Err)
+			}
+		}
+
 		// Try 1: extract the datadome cookie that Datadome sets on the 403 response
 		// and immediately retry. Datadome uses this to verify cookie support —
 		// presenting their own seeded cookie on the next request is a positive signal.
@@ -464,6 +502,53 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 	}
 
 	return readAndParseTrainlineResponse(resp.Body, from, to, date, currency)
+}
+
+// trainlineViaTier1 POSTs the journey-search request through a Chrome-impersonating
+// TLS client (browser JA3) carrying the user's live browser cookies and a matching
+// Chrome UA + Client-Hints. This is the highest-confidence Datadome bypass; it
+// mirrors the Rome2Rio Cloudflare path (#213). Returns a typed error (never a
+// silently-empty success) when the wall persists.
+func trainlineViaTier1(ctx context.Context, body []byte, cks []*http.Cookie, from, to, date, currency string) ([]models.GroundRoute, error) {
+	tier1, err := trainlineNewTier1()
+	if err != nil {
+		return nil, fmt.Errorf("trainline tier1 client: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, trainlineSearchURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	applyTrainlineHeaders(req, "")
+	// Override UA + Client-Hints to match the Chrome 146 JA3 the Tier1 client
+	// presents (the default headers carry a Chrome 133 UA, which would mismatch).
+	req.Header.Set("User-Agent", trainlineChromeUA)
+	req.Header.Set("sec-ch-ua", trainlineChromeSecCHUA)
+	for _, ck := range cks {
+		req.AddCookie(ck)
+	}
+
+	resp, err := tier1.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("trainline tier1: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("trainline tier1: bot wall (HTTP %d): %s", resp.StatusCode, b)
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("trainline tier1: HTTP %d: %s", resp.StatusCode, b)
+	}
+
+	routes, perr := readAndParseTrainlineResponse(resp.Body, from, to, date, currency)
+	if perr != nil {
+		return nil, perr
+	}
+	populateTrainlineCities(routes, from, to)
+	return routes, nil
 }
 
 func fetchTrainlineViaNab(
