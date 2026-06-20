@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-06-20
+
+### Changed
+- **`/dashboard` is now browser-native on localhost.** A loopback bind serves the dashboard without a bearer token (read-only, secret-redacted, local-only — the same posture as `/health`), so `trvl mcp --http` then opening <http://127.0.0.1:8080/dashboard> just works. Non-loopback binds (`--host 0.0.0.0`) still require the token.
+
 ## [1.14.0] - 2026-06-20
 
 Operational visibility release.

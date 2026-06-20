@@ -106,12 +106,13 @@ type dashboardData struct {
 // handleDashboard serves a read-only HTML operational dashboard: per-provider
 // health from ~/.trvl/health.jsonl merged with live circuit-breaker state.
 //
-// Auth posture: when authentication is configured (mandatory for any non-
-// loopback bind via requireRemoteAuth), a valid read token is required. An
-// unauthenticated server is, by that same startup invariant, loopback-only —
-// safe to serve without a token.
+// Auth posture: a loopback bind serves the dashboard without a token — it is
+// read-only, secret-redacted, and reachable only from the local machine, the
+// same posture as /health. A non-loopback bind requires a valid read token;
+// requireRemoteAuth guarantees one is configured before such a bind starts, so
+// remote exposure is never unauthenticated.
 func (h *HTTPServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	if h.auth != nil && h.auth.Configured() {
+	if isRemoteBindHost(h.host) {
 		if _, ok := h.authorize(r); !ok {
 			h.audit.denied.Add(1)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)

@@ -65,17 +65,37 @@ func TestHandleDashboard_RendersHTML(t *testing.T) {
 	}
 }
 
-func TestHandleDashboard_RequiresAuthWhenConfigured(t *testing.T) {
+func TestHandleDashboard_LoopbackServesWithoutToken(t *testing.T) {
 	seedDashboardHealthLog(t)
 
-	hs := NewHTTPServerWithOptions(HTTPServerOptions{Port: 0, Token: "secret-token"})
+	// Loopback bind with a token configured: the dashboard is still served
+	// token-free (read-only, secret-redacted, local-only — same as /health),
+	// so it opens in a browser without an Authorization header.
+	hs := NewHTTPServerWithOptions(HTTPServerOptions{Host: "127.0.0.1", Port: 0, Token: "secret-token"})
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	hs.handleDashboard(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("loopback no-token status = %d, want 200", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "trvl status") {
+		t.Error("loopback dashboard body missing title")
+	}
+}
+
+func TestHandleDashboard_RemoteBindRequiresToken(t *testing.T) {
+	seedDashboardHealthLog(t)
+
+	// A non-loopback bind must require a valid read token.
+	hs := NewHTTPServerWithOptions(HTTPServerOptions{Host: "0.0.0.0", Port: 0, Token: "secret-token"})
 
 	// No token => unauthorized.
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	hs.handleDashboard(rr, req)
 	if rr.Code != http.StatusUnauthorized {
-		t.Fatalf("no-token status = %d, want 401", rr.Code)
+		t.Fatalf("remote no-token status = %d, want 401", rr.Code)
 	}
 
 	// Valid token => served.
@@ -84,7 +104,7 @@ func TestHandleDashboard_RequiresAuthWhenConfigured(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer secret-token")
 	hs.handleDashboard(rr, req)
 	if rr.Code != http.StatusOK {
-		t.Fatalf("valid-token status = %d, want 200", rr.Code)
+		t.Fatalf("remote valid-token status = %d, want 200", rr.Code)
 	}
 	if !strings.Contains(rr.Body.String(), "trvl status") {
 		t.Error("authorized dashboard body missing title")
