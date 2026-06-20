@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>trvl — the travel MCP server for AI assistants</title>
+<meta name="description" content="Travel MCP server and CLI for AI assistants: flights, hotels, trains, cars, ferries, and price alerts with no API keys. One smart MCP tool, a single Go binary, works with Claude, Cursor, Windsurf, and Codex.">
+<link rel="canonical" href="https://mikkoparkkola.github.io/trvl/">
+
+<!-- Open Graph / link unfurls -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="trvl — the travel MCP server for AI assistants">
+<meta property="og:description" content="Flights, hotels, trains, cars, ferries, and price alerts for your AI assistant. No API keys. One Go binary. Works with Claude, Cursor, Windsurf, Codex.">
+<meta property="og:url" content="https://mikkoparkkola.github.io/trvl/">
+<meta property="og:image" content="https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="trvl — the travel MCP server for AI assistants">
+<meta name="twitter:description" content="Flights, hotels, trains, cars, ferries, and price alerts for your AI assistant. No API keys. One Go binary.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif">
+
+<!-- JSON-LD: helps search engines and AI crawlers classify the project -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "trvl",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Linux, Windows",
+  "description": "Travel MCP server and CLI for AI assistants: flights, hotels, trains, cars, ferries, and price alerts with no API keys. One smart MCP tool plus 66 compatibility aliases, a single Go binary, works with any MCP client.",
+  "url": "https://mikkoparkkola.github.io/trvl/",
+  "downloadUrl": "https://github.com/MikkoParkkola/trvl/releases",
+  "codeRepository": "https://github.com/MikkoParkkola/trvl",
+  "programmingLanguage": "Go",
+  "license": "https://polyformproject.org/licenses/noncommercial/1.0.0",
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+}
+</script>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --accent: #0d9488;
+    --accent-bright: #14b8a6;
+    --bg: #ffffff;
+    --bg-soft: #f6f8fa;
+    --border: #d8dee4;
+    --text: #1f2328;
+    --muted: #59636e;
+    --code-bg: #f6f8fa;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent: #2dd4bf;
+      --accent-bright: #5eead4;
+      --bg: #0d1117;
+      --bg-soft: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #9198a1;
+      --code-bg: #161b22;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 1.25rem; }
+  code, kbd, pre, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  header { padding: 4.5rem 0 2.5rem; text-align: center; }
+  .logo { font-weight: 800; font-size: 1.15rem; letter-spacing: .02em; }
+  .logo b { color: var(--accent); }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; margin: 1.5rem 0 .75rem; letter-spacing: -0.02em; }
+  .tagline { font-size: 1.2rem; color: var(--muted); max-width: 620px; margin: 0 auto 2rem; }
+  .badges { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; margin-bottom: 2rem; }
+  .badge { font-size: .8rem; padding: .25rem .6rem; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); }
+  .badge b { color: var(--accent); }
+
+  .cmd {
+    display: flex; align-items: center; gap: .75rem; justify-content: space-between;
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: .85rem 1rem; max-width: 560px; margin: 0 auto 1rem; text-align: left;
+  }
+  .cmd code { font-size: .95rem; overflow-x: auto; white-space: nowrap; }
+  .cmd button {
+    flex: none; cursor: pointer; font-size: .78rem; padding: .35rem .7rem; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+  }
+  .cmd button:hover { color: var(--accent); border-color: var(--accent); }
+  .cta { display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap; margin-top: 1.25rem; }
+  .btn { padding: .6rem 1.2rem; border-radius: var(--radius); font-weight: 600; border: 1px solid var(--border); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.primary:hover { background: var(--accent-bright); text-decoration: none; }
+  .btn.ghost:hover { border-color: var(--accent); text-decoration: none; }
+
+  .demo { margin: 3rem 0; text-align: center; }
+  .demo img { max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius); }
+
+  section { padding: 2.5rem 0; border-top: 1px solid var(--border); }
+  h2 { font-size: 1.5rem; margin: 0 0 1.25rem; letter-spacing: -0.01em; }
+  .lead { color: var(--muted); margin-top: -.5rem; margin-bottom: 1.5rem; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .card { border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.2rem; background: var(--bg-soft); }
+  .card h3 { margin: 0 0 .4rem; font-size: 1.02rem; }
+  .card p { margin: 0; color: var(--muted); font-size: .94rem; }
+
+  pre.result {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 1.1rem 1.2rem; overflow-x: auto; font-size: .9rem; line-height: 1.55; color: var(--text);
+  }
+  .install-list code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: .15rem .45rem; font-size: .9rem; }
+  .install-list li { margin: .55rem 0; }
+  ul.tight { padding-left: 1.2rem; }
+  ul.tight li { margin: .3rem 0; }
+
+  footer { padding: 3rem 0 4rem; border-top: 1px solid var(--border); color: var(--muted); font-size: .92rem; }
+  footer a { margin-right: 1rem; }
+  .note { font-size: .85rem; color: var(--muted); margin-top: 1rem; }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <div class="logo"><b>trvl</b></div>
+  <h1>The travel MCP server for AI assistants</h1>
+  <p class="tagline">Flights, hotels, trains, cars, ferries, and price alerts for Claude, Cursor, Windsurf, and Codex. No API keys. One Go binary.</p>
+
+  <div class="badges">
+    <span class="badge">no API keys</span>
+    <span class="badge"><b>1</b> smart tool + 66 aliases</span>
+    <span class="badge"><b>22</b> providers</span>
+    <span class="badge">single Go binary</span>
+    <span class="badge">MCP 2025-11-25</span>
+  </div>
+
+  <div class="cmd">
+    <code id="install-cmd">brew install MikkoParkkola/tap/trvl</code>
+    <button onclick="copyCmd(this,'install-cmd')">Copy</button>
+  </div>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/MikkoParkkola/trvl">View on GitHub</a>
+    <a class="btn ghost" href="#install">All install paths</a>
+  </div>
+</header>
+
+<div class="wrap demo">
+  <img src="https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif" alt="trvl searching flights and hotels from the terminal" loading="lazy">
+</div>
+
+<section class="wrap" id="what">
+  <h2>Ask your assistant. It just works.</h2>
+  <p class="lead">No signup, no key, no per-call billing. One command and your AI can search real travel data.</p>
+  <pre class="result"><strong>You:</strong> I have &euro;300 and a free weekend. Surprise me.
+
+<strong>Claude (with trvl):</strong>
+  Dubrovnik, Croatia
+  Ryanair  HEL&rarr;DBV  Fri 14:25&rarr;17:10 (nonstop)  &euro;167 round-trip
+  Old Town Studios  4.6 stars  &euro;42/night x 2 = &euro;84
+  26&deg;C, sunny, Adriatic swimming
+  Total: &euro;251 (&euro;49 under budget)
+
+  Naive booking &euro;350 &rarr; optimized &euro;251 &rarr; saved &euro;99 (28%)</pre>
+</section>
+
+<section class="wrap" id="trust">
+  <h2>Built to be trusted unsupervised</h2>
+  <p class="lead">An AI agent acts on the output without a human checking each result. That sets a high bar, and trvl is built for it.</p>
+  <div class="grid">
+    <div class="card">
+      <h3>It tells you when it can't</h3>
+      <p>A blocked or rate-limited provider returns a typed status with a fix hint, never an empty result that looks like "nothing found." No fabricated prices, ever.</p>
+    </div>
+    <div class="card">
+      <h3>Tested more than it is written</h3>
+      <p>More test code than source, thousands of tests, race-checked on macOS, Linux, and Windows, with a smoke gate that runs the packaged binary before any release ships.</p>
+    </div>
+    <div class="card">
+      <h3>Degrades gracefully</h3>
+      <p>Providers run concurrently with per-provider timeouts. One source failing returns partial results instead of aborting the search.</p>
+    </div>
+    <div class="card">
+      <h3>Observable</h3>
+      <p>Run <code>trvl status</code> or open the local <code>/dashboard</code> to see per-provider success rate, latency, and circuit-breaker state at a glance.</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap" id="covers">
+  <h2>What it covers</h2>
+  <div class="grid">
+    <div class="card"><h3>Flights</h3><p>Google Flights, Kiwi, Ryanair, Wizz Air, and more. One-way, round-trip, multi-city, hidden-city, award sweet spots.</p></div>
+    <div class="card"><h3>Stays</h3><p>Google Hotels, Booking.com, Airbnb, Trivago, Hostelworld, HomeToGo, with a room-level price verification path.</p></div>
+    <div class="card"><h3>Ground</h3><p>Trains, buses, ferries, rental cars, and airport transfers across European providers.</p></div>
+    <div class="card"><h3>Around the trip</h3><p>Price alerts, baggage rules, airport lounges, weather, air quality, and destination intelligence.</p></div>
+  </div>
+</section>
+
+<section class="wrap" id="install">
+  <h2>Install</h2>
+  <p class="lead">Six paths. Pick the one that fits your setup.</p>
+  <ul class="install-list">
+    <li><strong>Homebrew:</strong> <code>brew install MikkoParkkola/tap/trvl</code></li>
+    <li><strong>npx (any MCP client):</strong> <code>npx -y trvl-mcp</code></li>
+    <li><strong>Go:</strong> <code>go install github.com/MikkoParkkola/trvl/cmd/trvl@latest</code></li>
+    <li><strong>Wire it to your assistant:</strong> <code>trvl mcp install</code> &mdash; auto-configures 10 MCP clients (Claude Desktop, Claude Code, Cursor, Windsurf, Codex, VS Code, Gemini, Amazon Q, Zed, LM Studio), no JSON editing.</li>
+  </ul>
+  <p>Or hand the setup to your assistant directly:</p>
+  <pre class="result">Read https://raw.githubusercontent.com/MikkoParkkola/trvl/main/AGENTS.md and set up trvl</pre>
+</section>
+
+<section class="wrap" id="why">
+  <h2>Why a router tool</h2>
+  <p>trvl advertises one smart <code>travel</code> tool instead of 66 separate ones. That keeps the MCP <code>tools/list</code> payload around 378 tokens instead of roughly 33,500, so your assistant spends its context on your trip rather than on tool schemas. The 66 aliases stay callable through the router's <code>intent</code> field.</p>
+</section>
+
+<footer class="wrap">
+  <a href="https://github.com/MikkoParkkola/trvl">GitHub</a>
+  <a href="https://github.com/MikkoParkkola/trvl/blob/main/AGENTS.md">AI setup guide</a>
+  <a href="https://github.com/MikkoParkkola/trvl/blob/main/docs/COMPARISON.md">Comparison</a>
+  <a href="https://github.com/MikkoParkkola/trvl/releases">Releases</a>
+  <p class="note">Licensed under PolyForm Noncommercial 1.0.0. trvl reads public travel data for personal and non-commercial use; it does not book, hold, or guarantee any rate. If a star saved you a browser tab, the repo is <a href="https://github.com/MikkoParkkola/trvl">here</a>.</p>
+</footer>
+
+<script>
+function copyCmd(btn, id) {
+  var text = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text).then(function () {
+    var old = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(function () { btn.textContent = old; }, 1500);
+  });
+}
+</script>
+</body>
+</html>
