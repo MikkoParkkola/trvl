@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -70,6 +71,48 @@ func TestComputeCompleteness(t *testing.T) {
 	}
 	if c = ComputeCompleteness(blocked); c.State != CompletenessBlocked || c.MayClaimExhaustive() {
 		t.Errorf("all-failed -> %+v, want blocked", c)
+	}
+}
+
+// TestRateLimitClassification covers the typed rate-limit path added for #228:
+// ErrRateLimited (raw or wrapped) classifies to StatusRateLimited and wins over
+// a deadline, and ComputeCompleteness treats a rate-limited provider as Missing
+// (partial coverage), never as a definitive empty result.
+func TestRateLimitClassification(t *testing.T) {
+	if got := ClassifyProviderError(ErrRateLimited); got != StatusRateLimited {
+		t.Errorf("ErrRateLimited -> %q, want rate_limited", got)
+	}
+	wrapped := fmt.Errorf("google flights rate-limited (HTTP 429): %w", ErrRateLimited)
+	if got := ClassifyProviderError(wrapped); got != StatusRateLimited {
+		t.Errorf("wrapped ErrRateLimited -> %q, want rate_limited", got)
+	}
+	if !errors.Is(wrapped, ErrRateLimited) {
+		t.Errorf("wrapped error should satisfy errors.Is(ErrRateLimited)")
+	}
+	// Rate-limit must win over a deadline: a 429 returned just past the budget
+	// is still a retryable rate-limit, not a plain timeout.
+	rlPastDeadline := fmt.Errorf("%w (after %w)", ErrRateLimited, context.DeadlineExceeded)
+	if got := ClassifyProviderError(rlPastDeadline); got != StatusRateLimited {
+		t.Errorf("rate-limit+deadline -> %q, want rate_limited (rate-limit wins)", got)
+	}
+
+	// A rate-limited provider is Missing -> coverage is partial, not exhaustive.
+	statuses := []ProviderStatus{
+		{ID: "google_flights", Status: StatusOK, Results: 2},
+		{ID: "kiwi", Status: StatusRateLimited},
+	}
+	c := ComputeCompleteness(statuses)
+	if c.State != CompletenessPartial || c.MayClaimExhaustive() {
+		t.Errorf("rate-limited -> %+v, want partial + not-exhaustive", c)
+	}
+	if len(c.Missing) != 1 || c.Missing[0] != "kiwi" {
+		t.Errorf("Missing = %v, want [kiwi]", c.Missing)
+	}
+
+	// When the ONLY provider is rate-limited, nothing definitive came back ->
+	// blocked, and exhaustive claims are forbidden.
+	if c = ComputeCompleteness([]ProviderStatus{{ID: "kiwi", Status: StatusRateLimited}}); c.State != CompletenessBlocked || c.MayClaimExhaustive() {
+		t.Errorf("only-rate-limited -> %+v, want blocked", c)
 	}
 }
 
