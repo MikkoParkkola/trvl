@@ -141,6 +141,7 @@ func registeredMCPCompatibilityAliasCount(t *testing.T) int {
 	nonAliasCapabilities := map[string]bool{
 		"travel":       true, // the smart router itself
 		"plan_journey": true, // Leave-By Scheduler capability (MIK-5734 B)
+		"plan_natural": true, // NL travel-planner supertool (innovation #7)
 	}
 	count := 0
 	for _, key := range handlers.MapKeys() {

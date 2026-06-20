@@ -142,6 +142,17 @@ func ensureCityIATAIndex() {
 			"riga":          "RIX",
 			"tallinn":       "TLL",
 			"vilnius":       "VNO",
+			// Nordic / Arctic destinations frequently asked for by name but
+			// absent (or ambiguous) in the bundled AirportNames table.
+			"tromso":    "TOS",
+			"tromsø":    "TOS",
+			"reykjavik": "KEF",
+			"bergen":    "BGO",
+			"bodo":      "BOO",
+			"bodø":      "BOO",
+			"kiruna":    "KRN",
+			"rovaniemi": "RVN",
+			"trondheim": "TRD",
 		}
 		for k, v := range manual {
 			cityIATAIndex[k] = v
@@ -339,6 +350,9 @@ var commonEnglishUppercase = map[string]bool{
 	"ITS": true, "LET": true, "PUT": true, "SAY": true, "SHE": true,
 	"TOO": true, "USE": true, "DAD": true, "MOM": true, "MAY": true,
 	"USA": true, // ambiguous: could be a country code, not an airport
+	// Currency codes and travel-jargon fragments that uppercase into apparent
+	// IATA codes ("under EUR 120" → EUR, "red-eye" → RED, "via X" → VIA).
+	"EUR": true, "USD": true, "GBP": true, "RED": true, "VIA": true,
 }
 
 func filterFalsePositiveIATA(codes []string) []string {
