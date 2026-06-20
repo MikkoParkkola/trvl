@@ -1,0 +1,60 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#10171f"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2dd4bf"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <!-- top accent rule -->
+  <rect x="0" y="0" width="1280" height="6" fill="url(#teal)"/>
+
+  <!-- wordmark -->
+  <text x="96" y="150" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="58" font-weight="700" fill="#e6edf3">
+    <tspan fill="#2dd4bf">trvl</tspan><tspan fill="#59636e" font-size="34" dx="14">— travel MCP server</tspan>
+  </text>
+
+  <!-- headline -->
+  <text x="94" y="280" font-family="Helvetica, Arial, sans-serif" font-size="76" font-weight="800" fill="#e6edf3">Travel for your</text>
+  <text x="94" y="368" font-family="Helvetica, Arial, sans-serif" font-size="76" font-weight="800" fill="#e6edf3">AI assistant.</text>
+
+  <!-- subline -->
+  <text x="96" y="438" font-family="Helvetica, Arial, sans-serif" font-size="34" fill="#9198a1">Flights · hotels · trains · cars · ferries · price alerts</text>
+
+  <!-- chips -->
+  <g font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="26" fill="#2dd4bf">
+    <g>
+      <rect x="96" y="486" width="232" height="56" rx="28" fill="#14b8a622" stroke="#14b8a655"/>
+      <text x="124" y="523">no API keys</text>
+    </g>
+    <g>
+      <rect x="346" y="486" width="300" height="56" rx="28" fill="#14b8a622" stroke="#14b8a655"/>
+      <text x="374" y="523">1 tool + 66 aliases</text>
+    </g>
+    <g>
+      <rect x="664" y="486" width="278" height="56" rx="28" fill="#14b8a622" stroke="#14b8a655"/>
+      <text x="692" y="523">single Go binary</text>
+    </g>
+  </g>
+
+  <!-- footer client line -->
+  <text x="96" y="596" font-family="Helvetica, Arial, sans-serif" font-size="24" fill="#59636e">Works with Claude · Cursor · Windsurf · Codex</text>
+
+  <!-- right-side terminal motif -->
+  <g opacity="0.9">
+    <rect x="980" y="150" width="216" height="260" rx="14" fill="#161b22" stroke="#30363d"/>
+    <circle cx="1004" cy="178" r="6" fill="#ff5f56"/>
+    <circle cx="1026" cy="178" r="6" fill="#ffbd2e"/>
+    <circle cx="1048" cy="178" r="6" fill="#27c93f"/>
+    <text x="1000" y="232" font-family="SFMono-Regular, Menlo, monospace" font-size="20" fill="#2dd4bf">$ trvl</text>
+    <text x="1000" y="262" font-family="SFMono-Regular, Menlo, monospace" font-size="20" fill="#9198a1">flights</text>
+    <text x="1000" y="292" font-family="SFMono-Regular, Menlo, monospace" font-size="20" fill="#9198a1">HEL CDG</text>
+    <text x="1000" y="340" font-family="SFMono-Regular, Menlo, monospace" font-size="20" fill="#e6edf3">€87 ✈ 3h</text>
+    <text x="1000" y="370" font-family="SFMono-Regular, Menlo, monospace" font-size="20" fill="#e6edf3">nonstop</text>
+  </g>
+</svg>
