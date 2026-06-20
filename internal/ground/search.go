@@ -35,6 +35,135 @@ const groundCacheTTL = 10 * time.Minute
 
 const sharedGroundSearchTimeout = 30 * time.Second
 
+// --- Negative-result cache + speculative prefetch (innovation #4) ---------
+
+// groundNegCacheTTL bounds how long a clean "no ground service" for a route+month
+// suppresses re-running the full provider fan-out for that route.
+const groundNegCacheTTL = 30 * time.Minute
+
+// groundNegCache records routes for which the whole provider fan-out returned no
+// routes CLEANLY (every provider that ran was not-applicable or definitively
+// empty — no hard errors, timeouts, rate-limits). That is a genuine "nothing
+// runs here", safe to cache briefly. A run with any error is never cached, so
+// transient failures always retry. On by default; set TRVL_NEGCACHE=0 to disable.
+var groundNegCache = cache.NewNegativeCache(groundNegCacheTTL)
+
+func negCacheEnabled() bool {
+	return groundEnvBool("TRVL_NEGCACHE", true)
+}
+
+// groundPrefetchEnabled gates speculative prefetch. Off by default: prefetch adds
+// provider load (extra background searches), so it is opt-in via TRVL_PREFETCH=1.
+func groundPrefetchEnabled() bool {
+	return groundEnvBool("TRVL_PREFETCH", false)
+}
+
+func groundEnvBool(name string, def bool) bool {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return def
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+// groundNegKey returns the negative-cache key for a search and whether the search
+// is eligible for negative caching. Only unfiltered searches qualify: a MaxPrice
+// or Type filter can make a served route look empty, which is NOT a "no service"
+// fact and must never be negative-cached. The provider set is folded into the key
+// so restricting providers cannot poison the all-providers result.
+func groundNegKey(from, to, date string, opts SearchOptions, providerKey string) (string, bool) {
+	if opts.MaxPrice > 0 || opts.Type != "" {
+		return "", false
+	}
+	return cache.NegativeKey("ground|"+providerKey, from, to, date), true
+}
+
+// groundPrefetchCtxKey marks a context as a prefetch (or nested) search so
+// speculative prefetch does not recurse.
+type groundPrefetchCtxKey struct{}
+
+func groundPrefetchDisabled(ctx context.Context) bool {
+	return ctx.Value(groundPrefetchCtxKey{}) != nil
+}
+
+// groundPrefetchTarget is one likely-next search to warm.
+type groundPrefetchTarget struct {
+	from string
+	to   string
+	date string
+}
+
+// groundPrefetchTargets computes the likely-next searches to warm: the return
+// leg (reverse route, +7 days) plus the two adjacent days. Pure and
+// deterministic; an unparseable date yields no targets.
+func groundPrefetchTargets(from, to, date string) []groundPrefetchTarget {
+	t, err := models.ParseDate(date)
+	if err != nil {
+		return nil
+	}
+	plus1 := t.AddDate(0, 0, 1).Format("2006-01-02")
+	minus1 := t.AddDate(0, 0, -1).Format("2006-01-02")
+	ret := t.AddDate(0, 0, 7).Format("2006-01-02")
+	return []groundPrefetchTarget{
+		{from: to, to: from, date: ret}, // return leg
+		{from: from, to: to, date: plus1},
+		{from: from, to: to, date: minus1},
+	}
+}
+
+// groundPrefetchConcurrency bounds simultaneous prefetch searches.
+const groundPrefetchConcurrency = 2
+
+// groundPrefetchFn warms a single target. Seam for tests; the default calls the
+// normal search with prefetch disabled to prevent recursion.
+var groundPrefetchFn func(ctx context.Context, t groundPrefetchTarget, opts SearchOptions)
+
+func init() {
+	groundPrefetchFn = func(ctx context.Context, t groundPrefetchTarget, opts SearchOptions) {
+		_, _ = SearchByName(ctx, t.from, t.to, t.date, opts)
+	}
+}
+
+// maybePrefetchGround dispatches best-effort speculative prefetch. It returns
+// immediately; a prefetch failure (panic included) can never affect the primary
+// search.
+func maybePrefetchGround(ctx context.Context, from, to, date string, opts SearchOptions) {
+	if !groundPrefetchEnabled() || groundPrefetchDisabled(ctx) {
+		return
+	}
+	targets := groundPrefetchTargets(from, to, date)
+	if len(targets) == 0 {
+		return
+	}
+	go runGroundPrefetch(ctx, targets, opts)
+}
+
+// runGroundPrefetch warms targets with bounded concurrency. Each warm is
+// isolated; a panic in one never affects its peers nor the caller.
+func runGroundPrefetch(parent context.Context, targets []groundPrefetchTarget, opts SearchOptions) {
+	detached, cancel := searchctx.DetachedWithin(parent, sharedGroundSearchTimeout)
+	defer cancel()
+	prefetchCtx := context.WithValue(detached, groundPrefetchCtxKey{}, struct{}{})
+
+	sem := make(chan struct{}, groundPrefetchConcurrency)
+	var wg sync.WaitGroup
+	for _, t := range targets {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(t groundPrefetchTarget) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			defer func() { _ = recover() }()
+			groundPrefetchFn(prefetchCtx, t, opts)
+		}(t)
+	}
+	wg.Wait()
+}
+
 // httpClient is a shared HTTP client with sensible timeouts for FlixBus/RegioJet.
 var httpClient = &http.Client{
 	Timeout: 30 * time.Second,
@@ -98,14 +227,10 @@ func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions
 	allowBrowserFallbacks := browserFallbacksEnabled(opts)
 
 	// Build cache key from search parameters.
-	providerKey := "all"
-	if len(opts.Providers) > 0 {
-		sorted := make([]string, len(opts.Providers))
-		copy(sorted, opts.Providers)
-		sort.Strings(sorted)
-		providerKey = strings.Join(sorted, ",")
-	}
+	providerKey := groundProviderKey(opts)
 	cacheKey := cache.Key("ground", fmt.Sprintf("%s|%s|%s|%s|%s|%.2f|%s|%t", from, to, date, opts.Currency, providerKey, opts.MaxPrice, opts.Type, allowBrowserFallbacks))
+
+	negKey, negEligible := groundNegKey(from, to, date, opts, providerKey)
 
 	// Check cache unless bypassed.
 	if !opts.NoCache {
@@ -113,17 +238,33 @@ func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions
 			var cached models.GroundSearchResult
 			if err := json.Unmarshal(data, &cached); err == nil {
 				slog.Debug("ground cache hit", "from", from, "to", to, "date", date)
+				maybePrefetchGround(ctx, from, to, date, opts)
 				return &cached, nil
 			}
+		}
+
+		// Negative-result cache: a recent CLEAN "no service" short-circuits the
+		// whole provider fan-out for this route+month. Only unfiltered searches
+		// participate (negEligible).
+		if negEligible && negCacheEnabled() && groundNegCache.Seen(negKey) {
+			slog.Debug("ground negative cache hit", "from", from, "to", to, "date", date)
+			maybePrefetchGround(ctx, from, to, date, opts)
+			return &models.GroundSearchResult{Success: false, Count: 0}, nil
 		}
 	}
 
 	// Deduplicate concurrent identical in-flight searches. The cache check above
 	// already handles TTL-based reuse; singleflight only coalesces truly concurrent
 	// requests that both missed the cache.
-	return doGroundSearchSingleflight(ctx, cacheKey, func(sharedCtx context.Context) (*models.GroundSearchResult, error) {
+	result, err := doGroundSearchSingleflight(ctx, cacheKey, func(sharedCtx context.Context) (*models.GroundSearchResult, error) {
 		return searchByNameCore(sharedCtx, from, to, date, opts, cacheKey, allowBrowserFallbacks)
 	})
+
+	// Speculative prefetch: warm the cache for the likely next query. Best-effort
+	// and non-blocking.
+	maybePrefetchGround(ctx, from, to, date, opts)
+
+	return result, err
 }
 
 func doGroundSearchSingleflight(ctx context.Context, key string, fn func(context.Context) (*models.GroundSearchResult, error)) (*models.GroundSearchResult, error) {
@@ -456,7 +597,28 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		}
 	}
 
+	// Negative-result cache: mark a route as "no service" only on a CLEAN empty —
+	// zero routes AND no provider errors/timeouts. A run with any error is left
+	// uncached so it retries. Filtered searches are excluded by groundNegKey.
+	if !opts.NoCache && len(allRoutes) == 0 && len(errors) == 0 && negCacheEnabled() {
+		if negKey, ok := groundNegKey(from, to, date, opts, groundProviderKey(opts)); ok {
+			groundNegCache.Mark(negKey)
+		}
+	}
+
 	return result, nil
+}
+
+// groundProviderKey returns the canonical provider-set component of the cache
+// key (sorted provider list, or "all").
+func groundProviderKey(opts SearchOptions) string {
+	if len(opts.Providers) == 0 {
+		return "all"
+	}
+	sorted := make([]string, len(opts.Providers))
+	copy(sorted, opts.Providers)
+	sort.Strings(sorted)
+	return strings.Join(sorted, ",")
 }
 
 // isProviderNotApplicable returns true when the error indicates that a provider
