@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/providers"
 	"golang.org/x/time/rate"
 )
 
@@ -372,6 +373,189 @@ func TestExtractDatadomeCookie(t *testing.T) {
 func TestTrainlineRateLimiterConfiguration(t *testing.T) {
 	assertLimiterConfiguration(t, trainlineLimiter, 12*time.Second, 1)
 }
+
+// resetTrainlineSeams stubs every fallback tier ahead of the headless escalation
+// so SearchTrainline's 403 path reaches the headless step deterministically and
+// offline. Callers override trainlineResolveChallenge / trainlineOpenBrowser /
+// trainlineDo as needed for the specific scenario under test.
+func resetTrainlineSeams(t *testing.T) {
+	t.Helper()
+	origDo := trainlineDo
+	origNab := trainlineFetchViaNab
+	origCookies := trainlineBrowserCookies
+	origCurl := trainlineViaCurlFn
+	origTier1Cookies := trainlineTier1Cookies
+	origResolve := trainlineResolveChallenge
+	origOpen := trainlineOpenBrowser
+	origLimiter := trainlineLimiter
+	t.Cleanup(func() {
+		trainlineDo = origDo
+		trainlineFetchViaNab = origNab
+		trainlineBrowserCookies = origCookies
+		trainlineViaCurlFn = origCurl
+		trainlineTier1Cookies = origTier1Cookies
+		trainlineResolveChallenge = origResolve
+		trainlineOpenBrowser = origOpen
+		trainlineLimiter = origLimiter
+	})
+	trainlineLimiter = rate.NewLimiter(rate.Inf, 1)
+	trainlineBrowserCookies = func(string) string { return "" }
+	trainlineTier1Cookies = func(string) []*http.Cookie { return nil }
+	trainlineFetchViaNab = func(context.Context, []byte, string, string, string, string) ([]models.GroundRoute, error) {
+		return nil, errStubbedFallback
+	}
+	trainlineViaCurlFn = func(context.Context, string, string, string, string) ([]models.GroundRoute, error) {
+		return nil, errStubbedFallback
+	}
+	// Default: no browser window, no challenge resolution. Scenario tests override.
+	trainlineResolveChallenge = func(context.Context, string) (*providers.ChallengeResult, error) {
+		return nil, errStubbedFallback
+	}
+	trainlineOpenBrowser = func(string) error { return nil }
+	// Neutralise the Playwright scraper last-resort so it cannot shell out.
+	t.Setenv("TRVL_SCRAPER_PATH", "/nonexistent/trvl-test-scraper.py")
+}
+
+// TestSearchTrainline_HeadlessClearedRetriesSilently verifies that when the
+// HEADLESS challenge resolution reports ChallengeCleared, SearchTrainline retries
+// with the harvested cookies and NEVER opens a visible browser window.
+func TestSearchTrainline_HeadlessClearedRetriesSilently(t *testing.T) {
+	resetTrainlineSeams(t)
+
+	var calls int
+	trainlineDo = func(*http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Body:       io.NopCloser(strings.NewReader("blocked")),
+				Header:     make(http.Header),
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(mockTrainlineResponse)),
+			Header:     make(http.Header),
+		}, nil
+	}
+
+	var resolveCalled bool
+	trainlineResolveChallenge = func(context.Context, string) (*providers.ChallengeResult, error) {
+		resolveCalled = true
+		return &providers.ChallengeResult{
+			Status:  providers.ChallengeCleared,
+			Cookies: []*http.Cookie{{Name: "datadome", Value: "cleared"}},
+		}, nil
+	}
+
+	var openCalled bool
+	trainlineOpenBrowser = func(string) error { openCalled = true; return nil }
+
+	routes, err := SearchTrainline(context.Background(), "Paris", "Amsterdam", "2026-06-15", "EUR", true)
+	if err != nil {
+		t.Fatalf("SearchTrainline returned error: %v", err)
+	}
+	if !resolveCalled {
+		t.Error("expected headless challenge resolution to be attempted")
+	}
+	if openCalled {
+		t.Error("visible browser window must NOT open when challenge cleared headlessly")
+	}
+	if len(routes) == 0 {
+		t.Fatal("expected routes from silent headless-cleared retry")
+	}
+	if calls != 2 {
+		t.Errorf("expected exactly 2 HTTP attempts (initial 403 + silent retry), got %d", calls)
+	}
+}
+
+// TestSearchTrainline_NeedsHumanOpensVisibleWindow verifies that an interactive
+// captcha (ChallengeNeedsHuman) escalates to the VISIBLE browser path.
+func TestSearchTrainline_NeedsHumanOpensVisibleWindow(t *testing.T) {
+	resetTrainlineSeams(t)
+
+	trainlineDo = func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusForbidden,
+			Body:       io.NopCloser(strings.NewReader("blocked")),
+			Header:     make(http.Header),
+		}, nil
+	}
+	trainlineResolveChallenge = func(context.Context, string) (*providers.ChallengeResult, error) {
+		return &providers.ChallengeResult{Status: providers.ChallengeNeedsHuman, Marker: "datadome"}, nil
+	}
+	var openCalled bool
+	trainlineOpenBrowser = func(string) error { openCalled = true; return nil }
+
+	_, err := SearchTrainline(context.Background(), "Paris", "Amsterdam", "2026-06-15", "EUR", true)
+	if err == nil {
+		t.Fatal("expected an error after needs-human fallback exhausts")
+	}
+	if !openCalled {
+		t.Error("expected the visible browser window to open on ChallengeNeedsHuman")
+	}
+}
+
+// TestSearchTrainline_NoFallbackHonest403 verifies that without browser fallbacks
+// the headless escalation is never attempted and an honest typed 403 is returned.
+func TestSearchTrainline_NoFallbackHonest403(t *testing.T) {
+	resetTrainlineSeams(t)
+
+	trainlineDo = func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusForbidden,
+			Body:       io.NopCloser(strings.NewReader("blocked")),
+			Header:     make(http.Header),
+		}, nil
+	}
+	var resolveCalled, openCalled bool
+	trainlineResolveChallenge = func(context.Context, string) (*providers.ChallengeResult, error) {
+		resolveCalled = true
+		return nil, errStubbedFallback
+	}
+	trainlineOpenBrowser = func(string) error { openCalled = true; return nil }
+
+	_, err := SearchTrainline(context.Background(), "Paris", "Amsterdam", "2026-06-15", "EUR", false)
+	if err == nil {
+		t.Fatal("expected honest 403 error when browser fallbacks are disallowed")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Errorf("expected a 403 error, got %v", err)
+	}
+	if resolveCalled {
+		t.Error("headless challenge resolution must NOT run without browser fallbacks")
+	}
+	if openCalled {
+		t.Error("visible browser window must NOT open without browser fallbacks")
+	}
+}
+
+func TestCookieSliceToHeader(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []*http.Cookie
+		want string
+	}{
+		{"nil", nil, ""},
+		{"single", []*http.Cookie{{Name: "datadome", Value: "x"}}, "datadome=x"},
+		{"multiple", []*http.Cookie{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}}, "a=1; b=2"},
+		{"skips empty", []*http.Cookie{{Name: "", Value: "1"}, {Name: "b", Value: ""}, {Name: "c", Value: "3"}}, "c=3"},
+		{"skips nil entry", []*http.Cookie{nil, {Name: "ok", Value: "v"}}, "ok=v"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cookieSliceToHeader(tt.in); got != tt.want {
+				t.Errorf("cookieSliceToHeader() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+var errStubbedFallback = stubErr("stubbed fallback unavailable")
+
+type stubErr string
+
+func (e stubErr) Error() string { return string(e) }
 
 func TestParseTrainlineResults_BusOnlyLegs(t *testing.T) {
 	resp := trainlineJourneySearchResponse{

@@ -18,6 +18,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	trvlnab "github.com/MikkoParkkola/trvl/internal/nab"
+	"github.com/MikkoParkkola/trvl/internal/providers"
 )
 
 // SNCF calendar prices endpoint (public, no auth).
@@ -25,6 +26,10 @@ import (
 // (oui.sncf/proposition/rest/search-travels/outward) now requires Cloudflare
 // JS challenge, but the calendar API may still work for price lookups.
 const sncfCalendarEndpoint = "https://www.sncf-connect.com/calendar/cdp/api/public/calendar/v4/outward"
+
+// sncfHomeURL is the origin used to harvest cookies via a headless challenge
+// resolution before any visible browser window is opened.
+const sncfHomeURL = "https://www.sncf-connect.com/en-en"
 
 // sncfLimiter enforces a conservative rate limit: 10 req/min.
 var sncfLimiter = newProviderLimiter(6 * time.Second)
@@ -37,6 +42,18 @@ var (
 	sncfDo             = func(req *http.Request) (*http.Response, error) { return sncfClient.Do(req) }
 	sncfFetchViaNab    = fetchSNCFViaNab
 	sncfBrowserCookies = cookies.BrowserCookies
+	// sncfViaCurlFn shells out to the system curl binary for the curl-assisted BFF
+	// fallback. Overridable in tests so the browser-fallback chain runs offline.
+	sncfViaCurlFn = sncfViaCurl
+
+	// sncfResolveChallenge escalates SNCF's anti-bot wall HEADLESS-first (no
+	// window, no focus steal) via providers.ResolveChallenge. Overridable in tests.
+	sncfResolveChallenge = func(ctx context.Context, targetURL string) (*providers.ChallengeResult, error) {
+		return providers.ResolveChallenge(ctx, targetURL, providers.WithTier2Force())
+	}
+	// sncfOpenBrowser opens a VISIBLE browser window so a human can solve an
+	// interactive captcha. Only invoked on ChallengeNeedsHuman. Overridable in tests.
+	sncfOpenBrowser = cookies.OpenBrowserForAuth
 )
 
 type sncfHeader struct {
@@ -479,7 +496,7 @@ func SearchSNCF(ctx context.Context, from, to, date, currency string, allowBrows
 	}
 
 	// Optional browser/curl-assisted API fallback.
-	if cRoutes, cErr := sncfViaCurl(ctx, fromStation.Code, toStation.Code, date, currency); cErr == nil && len(cRoutes) > 0 {
+	if cRoutes, cErr := sncfViaCurlFn(ctx, fromStation.Code, toStation.Code, date, currency); cErr == nil && len(cRoutes) > 0 {
 		// Populate city/station names that parseSNCFBFFResponse cannot fill in.
 		for i := range cRoutes {
 			if cRoutes[i].Departure.City == "" {
@@ -496,8 +513,27 @@ func SearchSNCF(ctx context.Context, from, to, date, currency string, allowBrows
 		slog.Debug("sncf curl fallback failed", "err", cErr)
 	}
 
-	_, _ = fmt.Fprintf(os.Stderr, "⚠️  SNCF browser fallbacks enabled. Opening browser — complete verification, then retry.\n")
-	_ = cookies.OpenBrowserForAuth("https://www.sncf-connect.com/en-en")
+	// Headless-first challenge escalation (MIK-6218): try to clear SNCF's
+	// Cloudflare/Datadome wall in a HEADLESS browser (no window, no focus steal).
+	// If it clears, retry the calendar API silently with the harvested cookies.
+	// Only an interactive captcha that a headless browser cannot solve falls
+	// through to a VISIBLE window for the user.
+	if res, rErr := sncfResolveChallenge(ctx, sncfHomeURL); rErr != nil {
+		slog.Debug("sncf headless challenge resolve failed", "err", rErr)
+	} else if res != nil && res.Status == providers.ChallengeCleared {
+		if ch := cookieSliceToHeader(res.Cookies); ch != "" {
+			slog.Debug("sncf challenge cleared headlessly — retrying calendar with harvested cookies")
+			if hRoutes, hErr := sncfCalendarWithCookies(ctx, fromStation, toStation, date, currency, ch); hErr == nil && len(hRoutes) > 0 {
+				return hRoutes, nil
+			} else if hErr != nil {
+				slog.Debug("sncf headless-cleared retry failed", "err", hErr)
+			}
+		}
+	} else if res != nil && res.Status == providers.ChallengeNeedsHuman {
+		slog.Warn("sncf requires human verification — opening browser", "vendor", res.Marker)
+		_, _ = fmt.Fprintf(os.Stderr, "⚠️  SNCF requires verification. Opening browser — complete verification, then retry.\n")
+		_ = sncfOpenBrowser(sncfHomeURL)
+	}
 
 	if bRoutes, bErr := BrowserScrapeRoutes(ctx, "sncf", from, to, date, currency); bErr == nil && len(bRoutes) > 0 {
 		return bRoutes, nil
@@ -583,6 +619,37 @@ func searchSNCFCalendar(ctx context.Context, fromStation, toStation SNCFStation,
 		return nil, fmt.Errorf("sncf calendar api: HTTP %d: %s", resp.StatusCode, respBody)
 	}
 
+	return parseSNCFResponse(resp.Body, fromStation, toStation, date, currency)
+}
+
+// sncfCalendarWithCookies issues a single calendar-API GET carrying the cookie
+// header harvested by a HEADLESS challenge resolution (MIK-6218). It is the
+// silent retry after providers.ResolveChallenge reports ChallengeCleared — no
+// visible window is involved. Returns a typed error when the wall persists.
+func sncfCalendarWithCookies(ctx context.Context, fromStation, toStation SNCFStation, date, currency, cookieHeader string) ([]models.GroundRoute, error) {
+	apiURL := fmt.Sprintf("%s/%s/%s/%s/26-NO_CARD/2/en?onlyDirectTrains=false&currency=%s",
+		sncfCalendarEndpoint,
+		fromStation.Code,
+		toStation.Code,
+		date,
+		url.QueryEscape(strings.ToUpper(currency)),
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	applySNCFHeaders(req, cookieHeader)
+
+	resp, err := sncfDo(req)
+	if err != nil {
+		return nil, fmt.Errorf("sncf calendar retry: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("sncf calendar retry: HTTP %d", resp.StatusCode)
+	}
 	return parseSNCFResponse(resp.Body, fromStation, toStation, date, currency)
 }
 

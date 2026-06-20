@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/providers"
 	"github.com/MikkoParkkola/trvl/internal/testutil"
 	"golang.org/x/time/rate"
 )
@@ -239,5 +240,152 @@ func TestSearchSNCFCalendar_UsesNabFallbackOn403(t *testing.T) {
 	}
 	if routes[0].Departure.City != "Paris" || routes[0].Arrival.City != "Lyon" {
 		t.Fatalf("unexpected route cities: %+v", routes[0])
+	}
+}
+
+// sncfCalendarOKBody is a minimal calendar-API JSON body for date 2026-04-10.
+const sncfCalendarOKBody = `[{"date":"2026-04-10","price":4500}]`
+
+// resetSNCFSeams stubs the calendar/curl/nab tiers ahead of the headless
+// escalation so SearchSNCF reaches the headless step deterministically offline.
+func resetSNCFSeams(t *testing.T) {
+	t.Helper()
+	origDo := sncfDo
+	origNab := sncfFetchViaNab
+	origCookies := sncfBrowserCookies
+	origCurl := sncfViaCurlFn
+	origResolve := sncfResolveChallenge
+	origOpen := sncfOpenBrowser
+	origLimiter := sncfLimiter
+	t.Cleanup(func() {
+		sncfDo = origDo
+		sncfFetchViaNab = origNab
+		sncfBrowserCookies = origCookies
+		sncfViaCurlFn = origCurl
+		sncfResolveChallenge = origResolve
+		sncfOpenBrowser = origOpen
+		sncfLimiter = origLimiter
+	})
+	sncfLimiter = rate.NewLimiter(rate.Inf, 1)
+	sncfBrowserCookies = func(string) string { return "" }
+	sncfFetchViaNab = func(context.Context, string, SNCFStation, SNCFStation, string, string) ([]models.GroundRoute, error) {
+		return nil, errStubbedFallback
+	}
+	sncfViaCurlFn = func(context.Context, string, string, string, string) ([]models.GroundRoute, error) {
+		return nil, errStubbedFallback
+	}
+	sncfResolveChallenge = func(context.Context, string) (*providers.ChallengeResult, error) {
+		return nil, errStubbedFallback
+	}
+	sncfOpenBrowser = func(string) error { return nil }
+	t.Setenv("TRVL_SCRAPER_PATH", "/nonexistent/trvl-test-scraper.py")
+}
+
+// TestSearchSNCF_HeadlessClearedRetriesSilently verifies a ChallengeCleared
+// headless resolution triggers a silent calendar retry with the harvested
+// cookies and opens NO visible window.
+func TestSearchSNCF_HeadlessClearedRetriesSilently(t *testing.T) {
+	resetSNCFSeams(t)
+
+	var calls int
+	sncfDo = func(*http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Body:       io.NopCloser(strings.NewReader("blocked")),
+				Header:     make(http.Header),
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(sncfCalendarOKBody)),
+			Header:     make(http.Header),
+		}, nil
+	}
+	var resolveCalled bool
+	sncfResolveChallenge = func(context.Context, string) (*providers.ChallengeResult, error) {
+		resolveCalled = true
+		return &providers.ChallengeResult{
+			Status:  providers.ChallengeCleared,
+			Cookies: []*http.Cookie{{Name: "datadome", Value: "cleared"}},
+		}, nil
+	}
+	var openCalled bool
+	sncfOpenBrowser = func(string) error { openCalled = true; return nil }
+
+	routes, err := SearchSNCF(context.Background(), "Paris", "Lyon", "2026-04-10", "EUR", true)
+	if err != nil {
+		t.Fatalf("SearchSNCF returned error: %v", err)
+	}
+	if !resolveCalled {
+		t.Error("expected headless challenge resolution to be attempted")
+	}
+	if openCalled {
+		t.Error("visible browser window must NOT open when challenge cleared headlessly")
+	}
+	if len(routes) != 1 {
+		t.Fatalf("expected 1 route from silent retry, got %d", len(routes))
+	}
+	if routes[0].Price != 45.0 {
+		t.Errorf("price = %v, want 45.0", routes[0].Price)
+	}
+}
+
+// TestSearchSNCF_NeedsHumanOpensVisibleWindow verifies an interactive captcha
+// escalates to the VISIBLE browser path.
+func TestSearchSNCF_NeedsHumanOpensVisibleWindow(t *testing.T) {
+	resetSNCFSeams(t)
+
+	sncfDo = func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusForbidden,
+			Body:       io.NopCloser(strings.NewReader("blocked")),
+			Header:     make(http.Header),
+		}, nil
+	}
+	sncfResolveChallenge = func(context.Context, string) (*providers.ChallengeResult, error) {
+		return &providers.ChallengeResult{Status: providers.ChallengeNeedsHuman, Marker: "datadome"}, nil
+	}
+	var openCalled bool
+	sncfOpenBrowser = func(string) error { openCalled = true; return nil }
+
+	_, err := SearchSNCF(context.Background(), "Paris", "Lyon", "2026-04-10", "EUR", true)
+	if err == nil {
+		t.Fatal("expected an error after needs-human fallback exhausts")
+	}
+	if !openCalled {
+		t.Error("expected the visible browser window to open on ChallengeNeedsHuman")
+	}
+}
+
+// TestSearchSNCF_NoFallbackHonestError verifies that without browser fallbacks
+// the headless escalation never runs and the typed API error is returned.
+func TestSearchSNCF_NoFallbackHonestError(t *testing.T) {
+	resetSNCFSeams(t)
+
+	sncfDo = func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusForbidden,
+			Body:       io.NopCloser(strings.NewReader("blocked")),
+			Header:     make(http.Header),
+		}, nil
+	}
+	var resolveCalled, openCalled bool
+	sncfResolveChallenge = func(context.Context, string) (*providers.ChallengeResult, error) {
+		resolveCalled = true
+		return nil, errStubbedFallback
+	}
+	sncfOpenBrowser = func(string) error { openCalled = true; return nil }
+
+	_, err := SearchSNCF(context.Background(), "Paris", "Lyon", "2026-04-10", "EUR", false)
+	if err == nil {
+		t.Fatal("expected an error when browser fallbacks are disallowed")
+	}
+	if resolveCalled {
+		t.Error("headless challenge resolution must NOT run without browser fallbacks")
+	}
+	if openCalled {
+		t.Error("visible browser window must NOT open without browser fallbacks")
 	}
 }
