@@ -100,10 +100,21 @@ func SearchPriceGrid(ctx context.Context, origin, dest string, opts GridOptions)
 	}
 
 	cells, err := parsePriceGridResponse(body)
-	if err != nil || len(cells) == 0 {
+	if err != nil {
 		return &models.PriceGrid{
 			Error: fmt.Sprintf("parse grid response: %v", err),
 		}, fmt.Errorf("parse grid response: %w", err)
+	}
+	if len(cells) == 0 {
+		// Google returned a parseable but empty grid (no priced cells for the
+		// requested ranges — common when the departure×return window is wide).
+		// Return a clear, descriptive error rather than fmt.Errorf("...: %w", nil),
+		// which renders as the bogus "%!w(<nil>)".
+		return &models.PriceGrid{
+				Error: fmt.Sprintf("no priced grid cells for departure %s..%s / return %s..%s (try a narrower date range)",
+					opts.DepartFrom, opts.DepartTo, opts.ReturnFrom, opts.ReturnTo),
+			}, fmt.Errorf("grid: no priced cells for departure %s..%s return %s..%s",
+				opts.DepartFrom, opts.DepartTo, opts.ReturnFrom, opts.ReturnTo)
 	}
 
 	// Detect the actual API currency and stamp all cells.
