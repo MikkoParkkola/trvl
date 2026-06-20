@@ -1,8 +1,17 @@
+# Smithery configuration for trvl — the travel MCP server.
+# Docs: https://smithery.ai/docs/build/project-config
+#
+# trvl requires no API keys, so the config schema is empty and the server
+# starts over stdio via the published `trvl-mcp` npm wrapper.
 startCommand:
   type: stdio
   configSchema:
     type: object
     properties: {}
-  commandFunction:
-    - trvl
-    - mcp
+    additionalProperties: false
+  commandFunction: |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', 'trvl-mcp']
+    })
+  exampleConfig: {}

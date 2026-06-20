@@ -5,7 +5,7 @@
 
 ## What To Do
 
-You are setting up `trvl` — a travel MCP server that gives you real-time Google Flights and Google Hotels data. No API keys needed. Run these steps in order:
+You are setting up `trvl` — a travel MCP server + CLI for flights, hotels, trains, cars, and ferries, with no API keys required. It reads real-time Google Flights and Google Hotels directly, ships as a single Go binary, and works with any MCP client. Run these steps in order:
 
 ### Step 1: Install
 

@@ -412,6 +412,12 @@ Two providers (NS, Digitransit/VR) use public API keys that are embedded in the 
 
 ## How trvl Compares
 
+**Why trvl:** Most travel MCP servers wrap a single provider and require you to bring your own paid API key. trvl is different on three axes that matter for AI assistants:
+
+- **No API keys required** — Google Flights and Google Hotels are read directly, so it works the moment it's installed. No signup, no billing, no key rotation.
+- **Multi-modal in one place** — flights, hotels, trains, buses, ferries, and rental cars behind one `travel` tool, not five separate integrations.
+- **Single Go binary, any MCP client** — one static binary runs as a stdio MCP server for Claude, Cursor, Windsurf, Codex, or any MCP-compatible assistant, and doubles as a standalone CLI. No runtime, no container required.
+
 For the agent-focused comparison against Google Flights, KAYAK, ChatGPT search, and other travel MCPs, see [`docs/COMPARISON.md`](docs/COMPARISON.md).
 
 | Feature | trvl | fli | Google Flights | Skyscanner | Kiwi |
