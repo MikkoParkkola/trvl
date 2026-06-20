@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/fareintel"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
 	"github.com/MikkoParkkola/trvl/internal/searchctx"
@@ -849,6 +850,8 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 
 	providerStatuses = coalesceProviderStatuses(providerStatuses)
 
+	annotateHotelConfidence(hotels, time.Now())
+
 	return &models.HotelSearchResult{
 		Success:          true,
 		Count:            len(hotels),
@@ -859,11 +862,39 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	}, nil
 }
 
+// annotateHotelConfidence attaches an honest bookability Confidence to every
+// hotel (innovation #3), scored via the shared fareintel scorer from the
+// property's price freshness, provider reliability, multi-source corroboration,
+// and price-basis verification. Hotels with no usable signal are left unrated,
+// never faked.
+func annotateHotelConfidence(hotels []models.HotelResult, now time.Time) {
+	for i := range hotels {
+		h := &hotels[i]
+		provider := h.CheapestSource
+		if provider == "" && len(h.Sources) > 0 {
+			provider = h.Sources[0].Provider
+		}
+		retrievedAt := h.RetrievedAt
+		if retrievedAt.IsZero() {
+			retrievedAt = now
+		}
+		c := fareintel.ScoreConfidence(fareintel.ConfidenceInput{
+			Price:             h.Price,
+			Currency:          h.Currency,
+			Provider:          provider,
+			RetrievedAt:       retrievedAt,
+			Now:               now,
+			Sources:           h.Sources,
+			PriceVerification: h.PriceConfidence,
+		})
+		h.Confidence = &c
+	}
+}
+
 func cloneHotelSearchResult(shared *models.HotelSearchResult) *models.HotelSearchResult {
 	if shared == nil {
 		return nil
 	}
-
 	// singleflight.Do shares the winner's *HotelSearchResult pointer across all
 	// callers. Trip planning and preference filters rewrite Count / Hotels and may
 	// mutate nested hotel slices, so each caller needs an independent deep copy.

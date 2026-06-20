@@ -41,7 +41,7 @@ func TestHandleSearchDeals_Success(t *testing.T) {
 	testutil.RequireLiveProbe(t)
 	content, structured, err := handleSearchDeals(context.Background(), map[string]any{
 		"origins": "HEL",
-		"type": "deal",
+		"type":    "deal",
 	}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
