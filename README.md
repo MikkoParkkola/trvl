@@ -57,6 +57,15 @@ Listed across the MCP ecosystem: [Glama](https://glama.ai/mcp/servers/MikkoParkk
 > ```
 > Want me to check nearby restaurants or events that weekend?
 
+## Why trust it
+
+An AI agent acts on trvl's output without a human checking every result, so the bar is correctness, not just coverage. trvl is built for that:
+
+- **It tells you when it can't.** A blocked or rate-limited provider returns a typed status (`AKAMAI_BLOCK`, `RATE_LIMITED`, `BOOKING_COOKIES_MISSING`) with a fix hint, instead of an empty result that looks like "nothing found." Estimated or composed values are labelled; currency-mismatched totals are skipped rather than faked.
+- **Tested more than it is written.** There is more test code than source, thousands of tests, race-checked on macOS, Linux, and Windows. A smoke gate runs the packaged binary before any release publishes, so a build that doesn't run can't ship.
+- **It degrades gracefully.** Providers run concurrently with per-provider timeouts. One source failing returns partial results instead of aborting the whole search.
+- **It's observable.** Run `trvl status` (or open the local `/dashboard` when running `trvl mcp --http`) to see per-provider success rate, latency, freshness, and circuit-breaker state.
+
 ## First 5 prompts to try
 
 Copy these into Claude, Cursor, Windsurf, Codex, or any MCP client after `trvl mcp install`:
@@ -458,7 +467,7 @@ See [Quick Setup step 3](#3-optional-teach-your-ai-about-trvl) above for AGENTS.
 
 ## CLI Usage
 
-trvl also works as a standalone CLI tool with 50 commands:
+trvl also works as a standalone CLI tool with 56 commands:
 
 All search commands accept `--currency <CODE>` (e.g. `--currency EUR`) to convert displayed prices. trvl detects the actual API currency and converts at the display layer — no hardcoded currencies.
 
@@ -836,6 +845,10 @@ trvl mcp --http --host 127.0.0.1 --port 8000 \
 Use `trvl:read` for read-only tools and `trvl:write` for tools that mutate
 local trips, preferences, watches, providers, or traveller workspace data.
 Write scope implies read scope.
+
+## Star it
+
+If trvl saved you a browser tab or an API subscription, a star helps other travellers (and their AI assistants) find it. That's the whole ask.
 
 ## Troubleshooting
 
