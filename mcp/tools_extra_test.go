@@ -322,6 +322,7 @@ func TestToolRegistration_AllTools(t *testing.T) {
 		"search_awards",
 		"optimize_nested_rt",
 		"arbitrage_report",
+		"coalesce_trip",
 	}
 
 	if len(s.tools) != len(expectedTools) {

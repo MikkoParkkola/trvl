@@ -19,7 +19,8 @@ func TestRootCmd_SubcommandCount(t *testing.T) {
 	// 64 -> 65 when rental car search (`trvl cars`) landed.
 	// 65 -> 66 with `arbitrage-report` (innovation #8 unified arbitrage report).
 	// 66 -> 67 with `multimodal` (innovation #2 multimodal composer).
-	const want = 67
+	// 67 -> 68 with `plan-all` (innovation #5 unified trip coalescer).
+	const want = 68
 	got := len(rootCmd.Commands())
 	if got != want {
 		names := make([]string, 0, got)
