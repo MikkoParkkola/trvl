@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/cache"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/fareintel"
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -142,9 +146,182 @@ func SearchFlightsWithClient(ctx context.Context, client *batchexec.Client, orig
 	}
 
 	key := flightSearchKey(origin, destination, date, opts)
-	return doFlightSearchSingleflight(ctx, key, func(sharedCtx context.Context) (*models.FlightSearchResult, error) {
+	result, err := doFlightSearchSingleflight(ctx, key, func(sharedCtx context.Context) (*models.FlightSearchResult, error) {
 		return searchFlightsCore(sharedCtx, client, origin, destination, date, opts)
 	})
+
+	// Speculative prefetch: warm the cache for the likely next query (return leg
+	// and +/-1 day around this date). Best-effort and non-blocking — it never
+	// affects the result we just computed. Disabled inside prefetch-spawned and
+	// round-trip leg calls so it cannot recurse.
+	maybePrefetchFlights(ctx, client, origin, destination, date, opts)
+
+	return result, err
+}
+
+// --- Negative-result cache + speculative prefetch (innovation #4) ---------
+
+// flightNegCacheTTL bounds how long a clean "no service" from a point-to-point
+// carrier suppresses re-querying that carrier for the same route+month. Short
+// enough that a newly opened route surfaces within half an hour.
+const flightNegCacheTTL = 30 * time.Minute
+
+// flightNegCache records (carrier, origin, destination, month) tuples that a
+// direct point-to-point carrier reported as genuinely unserved. Only the direct
+// carriers (Ryanair, Wizz Air, Transavia, easyJet) participate: a clean empty
+// from them is a route-structural fact (they don't fly A->B), unlike an
+// aggregator's empty result which is usually date-specific (sold out). On by
+// default; set TRVL_NEGCACHE=0 to disable.
+var flightNegCache = cache.NewNegativeCache(flightNegCacheTTL)
+
+func negCacheEnabled() bool {
+	return envBool("TRVL_NEGCACHE", true)
+}
+
+// flightPrefetchEnabled gates speculative prefetch. Off by default: prefetch
+// adds provider load (extra background searches), so it is opt-in via
+// TRVL_PREFETCH=1.
+func flightPrefetchEnabled() bool {
+	return envBool("TRVL_PREFETCH", false)
+}
+
+// envBool parses a boolean env var, returning def when unset / unparseable.
+func envBool(name string, def bool) bool {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return def
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+// withFlightNegCache wraps a point-to-point carrier's run function with the
+// negative-result cache. On a recent clean "no service" it returns a synthetic
+// checked_no_hit outcome without re-querying. Otherwise it runs the provider and
+// marks the route negative only on a CLEAN no-result (succeeded with zero
+// flights). An error / timeout / rate-limit / skip is never marked.
+func withFlightNegCache(provider, origin, destination, date string, run func(context.Context) providerOutcome) func(context.Context) providerOutcome {
+	key := cache.NegativeKey(provider, origin, destination, date)
+	return func(ctx context.Context) providerOutcome {
+		if negCacheEnabled() && flightNegCache.Seen(key) {
+			return providerOutcome{
+				succeeded: true,
+				status: models.ProviderStatus{
+					ID:      provider,
+					Name:    provider,
+					Status:  models.StatusCheckedNoHit,
+					Results: 0,
+				},
+			}
+		}
+		out := run(ctx)
+		if negCacheEnabled() && out.succeeded && len(out.flights) == 0 {
+			flightNegCache.Mark(key)
+		}
+		return out
+	}
+}
+
+// prefetchCtxKey marks a context as belonging to a prefetch (also any nested)
+// search so speculative prefetch does not recurse.
+type prefetchCtxKey struct{}
+
+func prefetchDisabled(ctx context.Context) bool {
+	return ctx.Value(prefetchCtxKey{}) != nil
+}
+
+// flightPrefetchTarget is one likely-next one-way search to warm.
+type flightPrefetchTarget struct {
+	origin      string
+	destination string
+	date        string
+}
+
+// flightPrefetchTargets computes the likely-next one-way searches to warm given
+// a just-completed one-way search: the return leg (reverse route, +7 days) plus
+// the two adjacent days (date plus one, date minus one) on the same route. Pure
+// and deterministic; targets that cannot be derived (unparseable date) are
+// omitted.
+func flightPrefetchTargets(origin, destination, date string) []flightPrefetchTarget {
+	var targets []flightPrefetchTarget
+	t, err := models.ParseDate(date)
+	if err != nil {
+		return targets
+	}
+	plus1 := t.AddDate(0, 0, 1).Format("2006-01-02")
+	minus1 := t.AddDate(0, 0, -1).Format("2006-01-02")
+	ret := t.AddDate(0, 0, 7).Format("2006-01-02")
+	targets = append(targets,
+		flightPrefetchTarget{origin: destination, destination: origin, date: ret}, // return leg
+		flightPrefetchTarget{origin: origin, destination: destination, date: plus1},
+		flightPrefetchTarget{origin: origin, destination: destination, date: minus1},
+	)
+	return targets
+}
+
+// flightPrefetchConcurrency bounds simultaneous prefetch searches so warming
+// never opens an unbounded number of upstream connections.
+const flightPrefetchConcurrency = 2
+
+// flightPrefetchFn performs a single warm search. It is a seam so tests can
+// observe prefetch without hitting the network. The default warms the shared
+// client cache via the normal one-way search path, with prefetch disabled on the
+// detached context to prevent recursion. Assigned in init to break the static
+// initialization cycle with SearchFlightsWithClient.
+var flightPrefetchFn func(ctx context.Context, client *batchexec.Client, t flightPrefetchTarget, opts SearchOptions)
+
+func init() {
+	flightPrefetchFn = func(ctx context.Context, client *batchexec.Client, t flightPrefetchTarget, opts SearchOptions) {
+		_, _ = SearchFlightsWithClient(ctx, client, t.origin, t.destination, t.date, opts)
+	}
+}
+
+// maybePrefetchFlights dispatches best-effort speculative prefetch. It returns
+// immediately; warming runs in the background where a prefetch failure (panic
+// included) can never affect the primary search.
+func maybePrefetchFlights(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) {
+	if !flightPrefetchEnabled() || prefetchDisabled(ctx) || opts.ReturnDate != "" {
+		return
+	}
+	targets := flightPrefetchTargets(origin, destination, date)
+	if len(targets) == 0 {
+		return
+	}
+
+	// Warm one-way legs only, without the heavy hacks engine: prefetch fills the
+	// cache, it does not need to compute savings.
+	warmOpts := opts
+	warmOpts.ReturnDate = ""
+	warmOpts.NoHacks = true
+
+	go runFlightPrefetch(ctx, client, targets, warmOpts)
+}
+
+// runFlightPrefetch warms the given targets with bounded concurrency. Each warm
+// is isolated: a panic in one never affects its peers nor the caller. Kept as a
+// single unexported function so tests can drive it directly with a fake
+// flightPrefetchFn.
+func runFlightPrefetch(parent context.Context, client *batchexec.Client, targets []flightPrefetchTarget, opts SearchOptions) {
+	detached, cancel := searchctx.DetachedWithin(parent, sharedFlightSearchTimeout)
+	defer cancel()
+	prefetchCtx := context.WithValue(detached, prefetchCtxKey{}, struct{}{})
+
+	sem := make(chan struct{}, flightPrefetchConcurrency)
+	var wg sync.WaitGroup
+	for _, t := range targets {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(t flightPrefetchTarget) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			defer func() { _ = recover() }() // best-effort: never propagate
+			flightPrefetchFn(prefetchCtx, client, t, opts)
+		}(t)
+	}
+	wg.Wait()
 }
 
 func doFlightSearchSingleflight(ctx context.Context, key string, fn func(context.Context) (*models.FlightSearchResult, error)) (*models.FlightSearchResult, error) {
@@ -202,18 +379,18 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 		{name: "skiplagged", run: func(ctx context.Context) providerOutcome {
 			return runSkiplaggedProvider(ctx, client, origin, destination, date, opts)
 		}},
-		{name: "ryanair", run: func(ctx context.Context) providerOutcome {
+		{name: "ryanair", run: withFlightNegCache("ryanair", origin, destination, date, func(ctx context.Context) providerOutcome {
 			return runRyanairProvider(ctx, client, origin, destination, date, currency, opts)
-		}},
-		{name: "wizzair", run: func(ctx context.Context) providerOutcome {
+		})},
+		{name: "wizzair", run: withFlightNegCache("wizzair", origin, destination, date, func(ctx context.Context) providerOutcome {
 			return runWizzairProvider(ctx, client, origin, destination, date, currency, opts)
-		}},
-		{name: "transavia", run: func(ctx context.Context) providerOutcome {
+		})},
+		{name: "transavia", run: withFlightNegCache("transavia", origin, destination, date, func(ctx context.Context) providerOutcome {
 			return runTransaviaProvider(ctx, client, origin, destination, date, currency, opts)
-		}},
-		{name: "easyjet", run: func(ctx context.Context) providerOutcome {
+		})},
+		{name: "easyjet", run: withFlightNegCache("easyjet", origin, destination, date, func(ctx context.Context) providerOutcome {
 			return runEasyjetProvider(ctx, client, origin, destination, date, currency, opts)
-		}},
+		})},
 	}
 	outcomes := runProviderTasks(ctx, tasks, providerConcurrencyLimit, perProviderTimeout)
 	kiwiOut := outcomes[0]
