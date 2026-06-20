@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-06-20
+
+Operational visibility release.
+
+### Added
+- **`trvl status`** — a holistic operational snapshot of every data provider that has been called: success rate, average latency, freshness, circuit-breaker state, and rate-limit pressure, aggregated from the local health log (`~/.trvl/health.jsonl`). Table by default, `--format json` for tooling. Reads only local files — no network, no credentials.
+- **`/dashboard` HTTP route** — the same view as a read-only, dependency-free, auto-refreshing HTML page on the MCP HTTP server (`trvl mcp --http`). Auth-gated when a bearer token is configured; an unauthenticated server is loopback-only by design, so the dashboard is safe to open locally.
+
+### Fixed
+- **Flight price grid** — a parseable Google response with zero priced cells (common for wide departure×return windows) no longer surfaces the bogus `%!w(<nil>)` string; it now returns a clear "no priced grid cells … try a narrower date range" message.
+
 ## [1.10.0] - 2026-06-14
 
 Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Travel Pipeline" blog series, made native.
