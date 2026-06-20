@@ -471,7 +471,7 @@ trvl status                 # table: every provider that has been called
 trvl status --format json   # machine-readable, same data
 ```
 
-When running as an HTTP server (`trvl mcp --http`), the same view is served as a read-only HTML dashboard at `/dashboard` (auto-refreshing). It honors the server's bearer token when one is configured; an unauthenticated server is loopback-only by design, so the dashboard is safe to open locally. AI assistants get the identical data via the `provider_health` MCP tool.
+When running as an HTTP server (`trvl mcp --http`), the same view is served as a read-only, auto-refreshing HTML dashboard at `/dashboard`. On a local (loopback) bind it needs no token — just open <http://127.0.0.1:8080/dashboard> in a browser. A non-loopback bind (`--host 0.0.0.0`) requires the server's bearer token, like every other remote route. AI assistants get the identical data via the `provider_health` MCP tool.
 
 ### Flights
 
