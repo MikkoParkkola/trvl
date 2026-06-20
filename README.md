@@ -462,6 +462,17 @@ trvl also works as a standalone CLI tool with 50 commands:
 
 All search commands accept `--currency <CODE>` (e.g. `--currency EUR`) to convert displayed prices. trvl detects the actual API currency and converts at the display layer — no hardcoded currencies.
 
+### Operational status
+
+See which data providers are healthy, degraded, rate-limited, or circuit-broken at a glance. `trvl status` aggregates the local health log (`~/.trvl/health.jsonl`) into per-provider success rate, latency, and freshness, then overlays live circuit-breaker state. It reads only local files — no network calls, no credentials touched.
+
+```bash
+trvl status                 # table: every provider that has been called
+trvl status --format json   # machine-readable, same data
+```
+
+When running as an HTTP server (`trvl mcp --http`), the same view is served as a read-only HTML dashboard at `/dashboard` (auto-refreshing). It honors the server's bearer token when one is configured; an unauthenticated server is loopback-only by design, so the dashboard is safe to open locally. AI assistants get the identical data via the `provider_health` MCP tool.
+
 ### Flights
 
 ```bash
