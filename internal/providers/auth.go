@@ -224,6 +224,27 @@ func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthCo
 	targetURL := auth.PreflightURL
 	browserPref := pc.config.Cookies.Browser
 
+	// Headless-first (MIK-6218): try to clear the challenge SILENTLY by driving
+	// the user's installed browser headless (no window, no focus steal). Only if
+	// an interactive captcha remains do we fall through to the visible-window
+	// path below. A cleared challenge means the user never sees a popup.
+	if res, err := headlessFirstResolve(ctx, targetURL); err == nil && res != nil {
+		switch res.Status {
+		case ChallengeCleared:
+			if finishEscapeHatch(ctx, pc, auth, res.Cookies) {
+				slog.Info("browser escape hatch: cleared headlessly, no window shown",
+					"provider", pc.config.ID)
+				return true
+			}
+			// Headless cleared the page but the preflight retry still failed —
+			// fall through to the visible window as a last resort.
+		case ChallengeNeedsHuman:
+			slog.Info("browser escape hatch: interactive captcha detected, opening visible window",
+				"provider", pc.config.ID, "captcha", res.Marker)
+			// fall through to the visible-window path
+		}
+	}
+
 	// If elicitation is available, ask the user to confirm before opening
 	// the browser. This turns a silent 15s timeout into an explicit user
 	// action that actually succeeds.
@@ -277,11 +298,29 @@ func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthCo
 	if pc.client == nil || pc.client.Jar == nil {
 		return false
 	}
-	u, err := url.Parse(targetURL)
+	if !finishEscapeHatch(ctx, pc, auth, fresh) {
+		return false
+	}
+	slog.Info("browser escape hatch: preflight recovered", "provider", pc.config.ID)
+	return true
+}
+
+// finishEscapeHatch seeds the recovered cookies into the client jar, retries the
+// preflight, and (on a clean 2xx that is not another challenge page) refreshes
+// the provider's auth values. It is the shared tail of the Tier-4 escape hatch,
+// used by both the silent headless-first path and the visible-window fallback.
+// Returns true when the preflight retry succeeds and yields usable auth state.
+func finishEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig, fresh []*http.Cookie) bool {
+	if pc.client == nil || pc.client.Jar == nil {
+		return false
+	}
+	u, err := url.Parse(auth.PreflightURL)
 	if err != nil {
 		return false
 	}
-	pc.client.Jar.SetCookies(u, fresh)
+	if len(fresh) > 0 {
+		pc.client.Jar.SetCookies(u, fresh)
+	}
 
 	resp2, body2, err2 := doPreflightRequest(ctx, pc.client, auth)
 	if err2 != nil || resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
@@ -300,7 +339,6 @@ func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthCo
 	}
 	applyExtractions(auth.Extractions, resp2, body2, pc.authValues)
 	applyURLExtractions(ctx, pc.client, auth.Extractions, pc.authValues)
-	slog.Info("browser escape hatch: preflight recovered", "provider", pc.config.ID)
 	return true
 }
 
