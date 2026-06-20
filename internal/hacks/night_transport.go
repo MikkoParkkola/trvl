@@ -14,8 +14,6 @@ import (
 // Used when no hotel price data is available.
 const averageHotelCost = 60.0
 
-var nightTransportTitleCaser = cases.Title(language.English)
-
 // detectNightTransport searches ground transport for overnight routes, then
 // adds the notional hotel saving to the total benefit.
 func detectNightTransport(ctx context.Context, in DetectorInput) []Hack {
@@ -53,8 +51,12 @@ func buildNightHack(in DetectorInput, r models.GroundRoute, hotelSaving float64)
 		currency = r.Currency
 	}
 
-	providerStr := nightTransportTitleCaser.String(r.Provider)
-	typeStr := nightTransportTitleCaser.String(r.Type)
+	// cases.Caser is stateful and NOT safe for concurrent use; construct a
+	// per-call caser so concurrent hack detection (DetectAll fans out across
+	// detectors) never races on a shared instance.
+	titleCaser := cases.Title(language.English)
+	providerStr := titleCaser.String(r.Provider)
+	typeStr := titleCaser.String(r.Type)
 
 	depTime := r.Departure.Time
 	arrTime := r.Arrival.Time
