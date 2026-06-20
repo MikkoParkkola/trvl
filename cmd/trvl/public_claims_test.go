@@ -139,9 +139,10 @@ func registeredMCPCompatibilityAliasCount(t *testing.T) int {
 	// router intent but are NOT legacy compatibility aliases, so they must not
 	// inflate the marketed "compatibility aliases" count.
 	nonAliasCapabilities := map[string]bool{
-		"travel":       true, // the smart router itself
-		"plan_journey": true, // Leave-By Scheduler capability (MIK-5734 B)
-		"plan_natural": true, // NL travel-planner supertool (innovation #7)
+		"travel":           true, // the smart router itself
+		"plan_journey":     true, // Leave-By Scheduler capability (MIK-5734 B)
+		"plan_natural":     true, // NL travel-planner supertool (innovation #7)
+		"arbitrage_report": true, // unified arbitrage aggregator (innovation #8) — new capability, not a legacy alias
 	}
 	count := 0
 	for _, key := range handlers.MapKeys() {
