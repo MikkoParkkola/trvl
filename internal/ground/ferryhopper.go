@@ -35,8 +35,9 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-// ferryhopperMCPURL is the Ferryhopper MCP endpoint.
-const ferryhopperMCPURL = "https://mcp.ferryhopper.com/mcp"
+// ferryhopperMCPURL is the Ferryhopper MCP endpoint. It is a var (not a const)
+// so tests can point the full SearchFerryhopper path at a local httptest server.
+var ferryhopperMCPURL = "https://mcp.ferryhopper.com/mcp"
 
 // ferryhopperLimiter: 2 req/s — conservative to avoid overloading the free MCP endpoint.
 var ferryhopperLimiter = newProviderLimiter(500 * time.Millisecond)
@@ -68,12 +69,24 @@ type ferryhopperRPCResult struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
-		IsError bool `json:"isError"`
+		// StructuredContent is the current Ferryhopper MCP response shape: the
+		// trip data lives here (not embedded as a JSON string in content[0].text,
+		// which is now only a human-readable summary like "Found 8 trips ...").
+		StructuredContent *ferryhopperStructuredContent `json:"structuredContent"`
+		IsError           bool                          `json:"isError"`
 	} `json:"result"`
 	Error *struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+// ferryhopperStructuredContent is the typed trip payload in result.structuredContent.
+// The current API key is foundDirectItinerariesForTrip; Itineraries is kept as a
+// defensive fallback for the older/legacy shape.
+type ferryhopperStructuredContent struct {
+	FoundDirectItinerariesForTrip []ferryhopperItinerary `json:"foundDirectItinerariesForTrip"`
+	Itineraries                   []ferryhopperItinerary `json:"itineraries"`
 }
 
 // ferryhopperTripResult is the top-level structure in result.content[0].text.
@@ -87,15 +100,39 @@ type ferryhopperItinerary struct {
 	DeepLink string               `json:"deepLink"`
 }
 
-// ferryhopperSegment is a single ferry leg within an itinerary.
+// ferryhopperSegment is a single ferry leg within an itinerary. It carries both
+// the legacy and current field names so a fixture/response in either shape parses:
+//   - operator (legacy)  / ownerCompany.name (current)
+//   - vesselName (legacy) / vessel.name (current)
 type ferryhopperSegment struct {
 	DeparturePort     ferryhopperPort            `json:"departurePort"`
 	ArrivalPort       ferryhopperPort            `json:"arrivalPort"`
 	DepartureDateTime string                     `json:"departureDateTime"` // ISO 8601
 	ArrivalDateTime   string                     `json:"arrivalDateTime"`   // ISO 8601
-	Operator          string                     `json:"operator"`
-	VesselName        string                     `json:"vesselName"`
+	Operator          string                     `json:"operator"`          // legacy
+	OwnerCompany      ferryhopperCompany         `json:"ownerCompany"`      // current
+	VesselName        string                     `json:"vesselName"`        // legacy
+	Vessel            ferryhopperVessel          `json:"vessel"`            // current
 	Accommodations    []ferryhopperAccommodation `json:"accommodations"`
+}
+
+// operatorName returns the carrier name, preferring the legacy operator field and
+// falling back to the current ownerCompany.name.
+func (s ferryhopperSegment) operatorName() string {
+	if strings.TrimSpace(s.Operator) != "" {
+		return s.Operator
+	}
+	return s.OwnerCompany.Name
+}
+
+// ferryhopperCompany is the current carrier object (result...ownerCompany).
+type ferryhopperCompany struct {
+	Name string `json:"name"`
+}
+
+// ferryhopperVessel is the current vessel object (result...vessel).
+type ferryhopperVessel struct {
+	Name string `json:"name"`
 }
 
 // ferryhopperPort holds port name details.
@@ -104,10 +141,23 @@ type ferryhopperPort struct {
 	ID   string `json:"id"`
 }
 
-// ferryhopperAccommodation holds a fare class with a price in cents.
+// ferryhopperAccommodation holds a fare class with a price in cents. It supports
+// both the legacy price field and the current expectedPrice.totalPriceInCents.
 type ferryhopperAccommodation struct {
-	Name       string `json:"name"`
-	PriceCents int    `json:"price"` // EUR cents
+	Name          string `json:"name"`
+	PriceCents    int    `json:"price"` // legacy: EUR cents
+	ExpectedPrice struct {
+		TotalPriceInCents int `json:"totalPriceInCents"` // current: EUR cents
+	} `json:"expectedPrice"`
+}
+
+// cents returns the fare in EUR cents, preferring the legacy price field and
+// falling back to the current expectedPrice.totalPriceInCents.
+func (a ferryhopperAccommodation) cents() int {
+	if a.PriceCents > 0 {
+		return a.PriceCents
+	}
+	return a.ExpectedPrice.TotalPriceInCents
 }
 
 // ferryhopperCallSearchTrips sends a search_trips JSON-RPC call to the
@@ -181,8 +231,8 @@ func ferryhopperParseSSE(r io.Reader) (*ferryhopperRPCResult, error) {
 			continue
 		}
 
-		// Accept frames that carry either result or error.
-		if rpcResult.Result.Content != nil || rpcResult.Error != nil {
+		// Accept frames that carry a result (content or structuredContent) or error.
+		if rpcResult.Result.Content != nil || rpcResult.Result.StructuredContent != nil || rpcResult.Error != nil {
 			lastResult = &rpcResult
 		}
 	}
@@ -203,10 +253,11 @@ func ferryhopperParseSSE(r io.Reader) (*ferryhopperRPCResult, error) {
 func ferryhopperCheapestPrice(accommodations []ferryhopperAccommodation) float64 {
 	var cheapest float64
 	for _, a := range accommodations {
-		if a.PriceCents <= 0 {
+		c := a.cents()
+		if c <= 0 {
 			continue
 		}
-		price := float64(a.PriceCents) / 100.0
+		price := float64(c) / 100.0
 		if cheapest == 0 || price < cheapest {
 			cheapest = price
 		}
@@ -241,6 +292,40 @@ func SearchFerryhopper(ctx context.Context, from, to, date, currency string) ([]
 		return nil, fmt.Errorf("ferryhopper: tool returned error")
 	}
 
+	// Resolve the itinerary list. The current API returns trips in
+	// result.structuredContent.foundDirectItinerariesForTrip; content[0].text is
+	// now only a human-readable summary. Fall back to the legacy shape (trip JSON
+	// embedded as a string in content[0].text -> {"itineraries":[...]}).
+	itineraries, err := ferryhopperResolveItineraries(rpcResult)
+	if err != nil {
+		return nil, err
+	}
+	if len(itineraries) == 0 {
+		slog.Debug("ferryhopper: no itineraries")
+		return nil, nil
+	}
+
+	routes := ferryhopperBuildRoutes(itineraries)
+	slog.Debug("ferryhopper results", "routes", len(routes))
+	return routes, nil
+}
+
+// ferryhopperResolveItineraries extracts the itinerary list from a JSON-RPC
+// result, preferring the current structuredContent shape and falling back to the
+// legacy content[0].text JSON string. A plain-text content (e.g. "Found no
+// itineraries") resolves to an empty list with no error.
+func ferryhopperResolveItineraries(rpcResult *ferryhopperRPCResult) ([]ferryhopperItinerary, error) {
+	if sc := rpcResult.Result.StructuredContent; sc != nil {
+		if len(sc.FoundDirectItinerariesForTrip) > 0 {
+			return sc.FoundDirectItinerariesForTrip, nil
+		}
+		if len(sc.Itineraries) > 0 {
+			return sc.Itineraries, nil
+		}
+		// structuredContent present but empty -> a valid "no results".
+		return nil, nil
+	}
+
 	if len(rpcResult.Result.Content) == 0 {
 		slog.Debug("ferryhopper: empty content")
 		return nil, nil
@@ -255,11 +340,11 @@ func SearchFerryhopper(ctx context.Context, from, to, date, currency string) ([]
 		return nil, fmt.Errorf("ferryhopper: content text too large (%d bytes)", len(contentText))
 	}
 
-	// The MCP server sometimes returns plain text instead of JSON (e.g.
-	// "Ferry routes not available" or "Found no itineraries"). Only attempt
-	// JSON parse when the content looks like a JSON object or array.
+	// content[0].text is only JSON in the legacy shape. The current API puts a
+	// plain summary here ("Found 8 trips ...") with the data in structuredContent,
+	// so a non-JSON text with no structuredContent is a no-results signal.
 	if len(contentText) == 0 || (contentText[0] != '{' && contentText[0] != '[') {
-		slog.Debug("ferryhopper: content is not JSON, treating as no results",
+		slog.Debug("ferryhopper: content is not JSON and no structuredContent, treating as no results",
 			"preview", contentText[:min(len(contentText), 80)])
 		return nil, nil
 	}
@@ -268,9 +353,14 @@ func SearchFerryhopper(ctx context.Context, from, to, date, currency string) ([]
 	if err := json.Unmarshal([]byte(contentText), &tripResult); err != nil {
 		return nil, fmt.Errorf("ferryhopper: decode trip result: %w", err)
 	}
+	return tripResult.Itineraries, nil
+}
 
-	routes := make([]models.GroundRoute, 0, len(tripResult.Itineraries))
-	for _, itin := range tripResult.Itineraries {
+// ferryhopperBuildRoutes maps Ferryhopper itineraries to GroundRoutes. It is pure
+// (no network) so it is exercised by offline fixture tests.
+func ferryhopperBuildRoutes(itineraries []ferryhopperItinerary) []models.GroundRoute {
+	routes := make([]models.GroundRoute, 0, len(itineraries))
+	for _, itin := range itineraries {
 		if len(itin.Segments) == 0 {
 			continue
 		}
@@ -288,10 +378,10 @@ func SearchFerryhopper(ctx context.Context, from, to, date, currency string) ([]
 			totalPrice += ferryhopperCheapestPrice(seg.Accommodations)
 		}
 
-		// Determine the provider name from the first segment's operator.
+		// Determine the provider name from the first segment's carrier.
 		provider := "ferryhopper"
-		if first.Operator != "" {
-			provider = strings.ToLower(first.Operator)
+		if op := first.operatorName(); op != "" {
+			provider = strings.ToLower(op)
 		}
 
 		route := models.GroundRoute{
@@ -316,9 +406,7 @@ func SearchFerryhopper(ctx context.Context, from, to, date, currency string) ([]
 
 		routes = append(routes, route)
 	}
-
-	slog.Debug("ferryhopper results", "routes", len(routes))
-	return routes, nil
+	return routes
 }
 
 // ferryhopperSanitizeURL returns rawURL if it has an http or https scheme,

@@ -678,13 +678,16 @@ func TestSearchTrainline_403_DatadomeSeedRetry(t *testing.T) {
 	origBrowserCookies := trainlineBrowserCookies
 	origFetchViaNab := trainlineFetchViaNab
 	origLimiter := trainlineLimiter
+	origTier1Cookies := trainlineTier1Cookies
 	t.Cleanup(func() {
 		trainlineDo = origDo
 		trainlineBrowserCookies = origBrowserCookies
 		trainlineFetchViaNab = origFetchViaNab
 		trainlineLimiter = origLimiter
+		trainlineTier1Cookies = origTier1Cookies
 	})
 	trainlineLimiter = rate.NewLimiter(rate.Inf, 1)
+	trainlineTier1Cookies = func(string) []*http.Cookie { return nil }
 
 	callCount := 0
 	trainlineDo = func(req *http.Request) (*http.Response, error) {
