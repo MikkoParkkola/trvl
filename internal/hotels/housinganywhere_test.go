@@ -73,6 +73,43 @@ func TestParseAlgoliaCredsMissingKey(t *testing.T) {
 	}
 }
 
+// TestParseAlgoliaCreds_IgnoresDecoyTokens reproduces the drift where the
+// harvest grabbed an unrelated 15-digit numeric `applicationId` and a stray
+// 32-hex token (producing a dead `410300212483493-dsn.algolia.net` host)
+// instead of Algolia's own credentials. The real creds live in the inline
+// `"algolia":{...}` object and must win regardless of decoy ordering.
+func TestParseAlgoliaCreds_IgnoresDecoyTokens(t *testing.T) {
+	realKey := "170cf5d8f85035f219107d6fb900e3dd"
+	page := `<!DOCTYPE html><html><body>
+<script>window.__ENV__={"applicationId":"410300212483493","branchKey":"03101295309c5e5b981583ce6e65ab7d"};</script>
+<script>window.__APP_CONFIG__={"search":{"algolia":{"appId":"Y8L112MIBF","apiKey":"` + realKey + `","index":"production_listings_rank_withOrpheus"}}};</script>
+</body></html>`
+	creds, err := parseAlgoliaCreds([]byte(page))
+	if err != nil {
+		t.Fatalf("parseAlgoliaCreds: %v", err)
+	}
+	if creds.appID != "Y8L112MIBF" {
+		t.Errorf("appID = %q, want Y8L112MIBF (decoy numeric id leaked)", creds.appID)
+	}
+	if creds.apiKey != realKey {
+		t.Errorf("apiKey = %q, want %q (decoy hex leaked)", creds.apiKey, realKey)
+	}
+}
+
+// TestParseAlgoliaCreds_RejectsNumericAppIDFallback ensures the global fallback
+// path never returns a pure-numeric app-id (which would build a dead DSN host);
+// it falls back to the known subdomain instead.
+func TestParseAlgoliaCreds_RejectsNumericAppIDFallback(t *testing.T) {
+	page := `applicationId:"410300212483493" x-algolia-api-key:"` + haTestAPIKey + `"`
+	creds, err := parseAlgoliaCreds([]byte(page))
+	if err != nil {
+		t.Fatalf("parseAlgoliaCreds: %v", err)
+	}
+	if creds.appID != haKnownAppID {
+		t.Errorf("appID = %q, want fallback %q (numeric id leaked)", creds.appID, haKnownAppID)
+	}
+}
+
 func TestNoKeyLiteralInSource(t *testing.T) {
 	// Guards the "runtime-harvest, never hardcode" contract: the provider source
 	// must not embed an Algolia search key literal.

@@ -5,24 +5,23 @@ package hotels
 // Flatio (https://www.flatio.com) lists furnished apartments for monthly stays —
 // the relocation / remote-work segment nightly-rate providers miss.
 //
-// Unauthenticated feasibility (recon-verified live 2026-06-18, Tier-B):
+// Unauthenticated feasibility (recon-verified live 2026-06-20, Tier-B):
 //   - Plain Go HTTP with a desktop Chrome UA; no cookie, browser nor CAPTCHA.
 //     Routed through providers.Tier1Client for TLS-fingerprint resilience.
-//   - The listing page is SSR HTML:
-//       GET /i/apartments-for-rent-{city}/monthly  ->  200 text/html
-//     embedding a <script type="application/json" id="markerData"> whose body is
-//     a JSON array of map markers. Pagination is ?page=N.
+//   - The search page is SSR HTML at the city route:
+//       GET /s/{City}  ->  200 text/html
+//     where {City} is Title_Case with underscores for spaces (e.g. /s/Paris,
+//     /s/Abu_Dhabi). The page embeds a schema.org JSON-LD block:
+//       <script type="application/ld+json"> { "@graph": [ { "@type":"ItemList",
+//         "itemListElement": [ { "@type":"ListItem", "item": {
+//           "@type":["Apartment","Product"], "name", "url", "image",
+//           "offers": { "price", "priceCurrency", ... } } } ] } ] }
 //
-// Marker -> models.HotelResult (verified field names):
-//   lat / lng   -> Lat / Lon
-//   priceHtml   -> Price (nightly; "<span class=number>82</span> … €" -> 82, EUR)
-//   uniqId      -> HotelID
-//   link        -> BookingURL (absolute https://www.flatio.com/search/detail/…)
-//
-// CONTRACT NOTE: monthly-total, m² and title are NOT in the marker JSON — they
-// live in per-card HTML blocks that are not reliably machine-parseable without a
-// brittle DOM walk. They are intentionally omitted (price here is the nightly
-// figure Flatio surfaces on the marker). Name falls back to the city + id.
+// NOTE (drift fix): the prior `/i/apartments-for-rent-{city}/monthly` +
+// <script id="markerData"> path 404s as of 2026-06; the live page no longer
+// emits markerData. We now parse the stable schema.org JSON-LD ItemList. The
+// JSON-LD carries no lat/lng, so Lat/Lon are left zero (Flatio surfaces the
+// nightly price; monthly total / m² are not in the structured block).
 
 import (
 	"context"
@@ -32,7 +31,6 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -71,20 +69,39 @@ func flatioFetcher() providers.Fetcher {
 	return flatioClient
 }
 
-// flatioMarkerDataRe extracts the markerData JSON array from the SSR HTML.
-var flatioMarkerDataRe = regexp.MustCompile(
-	`(?s)<script[^>]*id="markerData"[^>]*>\s*(\[.*?\])\s*</script>`)
+// flatioLDJSONRe extracts each schema.org JSON-LD block from the SSR HTML.
+var flatioLDJSONRe = regexp.MustCompile(
+	`(?s)<script[^>]*type="application/ld\+json"[^>]*>\s*(\{.*?\})\s*</script>`)
 
-// flatioNumberRe extracts the integer price from priceHtml's number span.
-var flatioNumberRe = regexp.MustCompile(`<span class="number">\s*([0-9.,]+)\s*</span>`)
+// flatioIDRe pulls the numeric listing id from a Flatio apartment URL such as
+// https://www.flatio.com/rent/apartment/125151-paris -> 125151.
+var flatioIDRe = regexp.MustCompile(`/apartment/(\d+)`)
 
-type flatioMarker struct {
-	Lat       float64         `json:"lat"`
-	Lng       float64         `json:"lng"`
-	Marker    string          `json:"marker"`
-	PriceHTML string          `json:"priceHtml"`
-	UniqID    json.RawMessage `json:"uniqId"`
-	Link      string          `json:"link"`
+// flatioLDDoc models the subset of the JSON-LD graph we consume.
+type flatioLDDoc struct {
+	Graph []flatioLDNode `json:"@graph"`
+}
+
+type flatioLDNode struct {
+	Type        string             `json:"@type"`
+	ItemListEle []flatioLDListItem `json:"itemListElement"`
+}
+
+type flatioLDListItem struct {
+	Item flatioLDItem `json:"item"`
+}
+
+type flatioLDItem struct {
+	Name   string         `json:"name"`
+	URL    string         `json:"url"`
+	Image  string         `json:"image"`
+	Offers flatioLDOffers `json:"offers"`
+}
+
+type flatioLDOffers struct {
+	Price         json.Number `json:"price"`
+	PriceCurrency string      `json:"priceCurrency"`
+	URL           string      `json:"url"`
 }
 
 // SearchFlatio searches Flatio for monthly furnished apartments in a city. It is
@@ -96,13 +113,13 @@ func SearchFlatio(ctx context.Context, location string, opts HotelSearchOptions)
 	if strings.TrimSpace(location) == "" {
 		return nil, fmt.Errorf("flatio: location is required")
 	}
-	city := flatioCitySlug(location)
+	city := flatioLocationToken(location)
 	if city == "" {
-		return nil, fmt.Errorf("flatio: could not derive city slug from %q", location)
+		return nil, fmt.Errorf("flatio: could not derive city token from %q", location)
 	}
 
 	slog.Debug("flatio search", "location", location, "city", city)
-	body, err := flatioGet(ctx, flatioBaseURL+"/i/apartments-for-rent-"+city+"/monthly")
+	body, err := flatioGet(ctx, flatioBaseURL+"/s/"+city)
 	if err != nil {
 		return nil, fmt.Errorf("flatio fetch: %w", err)
 	}
@@ -115,10 +132,27 @@ func SearchFlatio(ctx context.Context, location string, opts HotelSearchOptions)
 	return hotels, nil
 }
 
-// flatioCitySlug reduces a free-text location to the single-token city slug
-// Flatio uses (lowercase, first segment before any comma).
-func flatioCitySlug(location string) string {
-	return spotahomeCitySlug(location) // identical slug rules
+// flatioLocationToken converts a free-text location to the Title_Case
+// underscore-joined city token Flatio's /s/ route uses: "lisbon" -> "Lisbon",
+// "abu dhabi, uae" -> "Abu_Dhabi".
+func flatioLocationToken(location string) string {
+	city := location
+	if i := strings.IndexByte(location, ','); i >= 0 {
+		city = location[:i]
+	}
+	city = strings.TrimSpace(city)
+	if city == "" {
+		return ""
+	}
+	fields := strings.Fields(city)
+	for i, w := range fields {
+		runes := []rune(strings.ToLower(w))
+		if len(runes) > 0 {
+			runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
+		}
+		fields[i] = string(runes)
+	}
+	return strings.Join(fields, "_")
 }
 
 func flatioGet(ctx context.Context, url string) ([]byte, error) {
@@ -147,77 +181,84 @@ func flatioGet(ctx context.Context, url string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 }
 
-// parseFlatioHTML extracts the markerData array and maps each apartment marker
-// to a HotelResult. Markers without a positive price are skipped.
+// parseFlatioHTML finds the schema.org JSON-LD ItemList and maps each apartment
+// to a HotelResult. Items without a positive price are skipped. It returns an
+// error only when no ItemList block is present at all.
 func parseFlatioHTML(html []byte, fallbackCurrency string) ([]models.HotelResult, error) {
-	m := flatioMarkerDataRe.FindSubmatch(html)
-	if m == nil {
-		return nil, fmt.Errorf("no markerData script found")
+	matches := flatioLDJSONRe.FindAllSubmatch(html, -1)
+	if matches == nil {
+		return nil, fmt.Errorf("no ld+json script found")
 	}
-	var markers []flatioMarker
-	if err := json.Unmarshal(m[1], &markers); err != nil {
-		return nil, fmt.Errorf("decode markerData: %w", err)
-	}
-	currency := "EUR"
+	defCurrency := "EUR"
 	if fallbackCurrency != "" {
-		currency = strings.ToUpper(fallbackCurrency)
+		defCurrency = strings.ToUpper(fallbackCurrency)
 	}
-	results := make([]models.HotelResult, 0, len(markers))
-	for _, mk := range markers {
-		if strings.TrimSpace(mk.Marker) != "apartment" {
+	var results []models.HotelResult
+	foundList := false
+	for _, m := range matches {
+		var doc flatioLDDoc
+		if err := json.Unmarshal(m[1], &doc); err != nil {
 			continue
 		}
-		price := flatioParsePrice(mk.PriceHTML)
-		if price <= 0 {
-			continue
+		for _, node := range doc.Graph {
+			if node.Type != "ItemList" {
+				continue
+			}
+			foundList = true
+			for _, li := range node.ItemListEle {
+				h, ok := flatioItemToHotel(li.Item, defCurrency)
+				if ok {
+					results = append(results, h)
+				}
+			}
 		}
-		id := flatioID(mk.UniqID)
-		if id == "" {
-			continue
-		}
-		h := models.HotelResult{
-			Name:         "Flatio apartment " + id,
-			HotelID:      id,
-			Price:        price,
-			Currency:     currency,
-			Lat:          mk.Lat,
-			Lon:          mk.Lng,
-			BookingURL:   strings.TrimSpace(mk.Link),
-			PropertyType: "apartment",
-			Description:  "Furnished apartment · monthly stay",
-		}
-		h.Sources = []models.PriceSource{{
-			Provider:   "flatio",
-			Price:      price,
-			Currency:   currency,
-			BookingURL: h.BookingURL,
-		}}
-		results = append(results, h)
+	}
+	if !foundList {
+		return nil, fmt.Errorf("no ItemList in ld+json")
 	}
 	return results, nil
 }
 
-// flatioParsePrice strips priceHtml to its numeric value.
-func flatioParsePrice(priceHTML string) float64 {
-	m := flatioNumberRe.FindStringSubmatch(priceHTML)
-	if m == nil {
-		return 0
+// flatioItemToHotel maps a single JSON-LD apartment item to a HotelResult.
+func flatioItemToHotel(item flatioLDItem, defCurrency string) (models.HotelResult, bool) {
+	price := parseDecimal(item.Offers.Price.String())
+	if price <= 0 {
+		return models.HotelResult{}, false
 	}
-	return parseDecimal(m[1])
-}
-
-// flatioID coerces the uniqId (number or string) to a string.
-func flatioID(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
+	url := strings.TrimSpace(item.URL)
+	if url == "" {
+		url = strings.TrimSpace(item.Offers.URL)
 	}
-	var n int64
-	if err := json.Unmarshal(raw, &n); err == nil {
-		return strconv.FormatInt(n, 10)
+	id := ""
+	if m := flatioIDRe.FindStringSubmatch(url); m != nil {
+		id = m[1]
 	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		return strings.TrimSpace(s)
+	if id == "" {
+		return models.HotelResult{}, false
 	}
-	return ""
+	currency := strings.ToUpper(strings.TrimSpace(item.Offers.PriceCurrency))
+	if currency == "" {
+		currency = defCurrency
+	}
+	name := strings.TrimSpace(item.Name)
+	if name == "" {
+		name = "Flatio apartment " + id
+	}
+	h := models.HotelResult{
+		Name:         name,
+		HotelID:      id,
+		Price:        price,
+		Currency:     currency,
+		BookingURL:   url,
+		PropertyType: "apartment",
+		Description:  "Furnished apartment · monthly stay",
+		ImageURL:     strings.TrimSpace(item.Image),
+	}
+	h.Sources = []models.PriceSource{{
+		Provider:   "flatio",
+		Price:      price,
+		Currency:   currency,
+		BookingURL: url,
+	}}
+	return h, true
 }

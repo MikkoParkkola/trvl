@@ -97,6 +97,40 @@ var haLimiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 2)
 
 var haHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
+// haAlgoliaObjRe isolates the inline `"algolia":{...}` SSR config object so the
+// credential extraction is scoped to Algolia's own block rather than the first
+// matching token anywhere on the (multi-megabyte) page. This is the canonical
+// shape the live site ships, e.g.
+//
+//	"algolia":{"appId":"Y8L112MIBF","apiKey":"170cf5d8...","index":"production_..."}
+//
+// Scoping is what fixes the historical drift where an unrelated numeric
+// `applicationId` (a 15-digit third-party id) and an unrelated 32-hex token were
+// harvested instead, producing a dead `<digits>-dsn.algolia.net` host.
+var haAlgoliaObjRe = regexp.MustCompile(`(?is)algolia["']?\s*:\s*\{(.{0,600}?)\}`)
+
+// Scoped (within the algolia object) credential extractors. The app-id allows
+// letters so a real Algolia id (always alphanumeric, never pure-numeric) wins
+// over a stray numeric token.
+var (
+	haScopedAppIDRe = regexp.MustCompile(
+		`(?i)(?:x-algolia-application-id|app(?:lication)?[_-]?id)["'\s:]+["']?([A-Za-z0-9]{6,24})`)
+	haScopedAPIKeyRe = regexp.MustCompile(
+		`(?i)(?:x-algolia-api-key|api[_-]?key|search[_-]?key)["'\s:]+["']?([a-f0-9]{20,64})`)
+)
+
+// haHasLetter reports whether s contains at least one ASCII letter. Real Algolia
+// app-ids always do; this rejects pure-numeric false positives in the global
+// fallback path.
+func haHasLetter(s string) bool {
+	for _, r := range s {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+			return true
+		}
+	}
+	return false
+}
+
 // Credential-harvest regexes. Order is tried until a non-empty match is found.
 // They tolerate single/double quotes and arbitrary whitespace, matching either
 // HTTP-header-style keys (x-algolia-*) or inline JS config (appId/apiKey).
@@ -167,12 +201,33 @@ func harvestAlgoliaCreds(ctx context.Context) (haCreds, error) {
 // body. The api key is required (harvest-only); the app-id falls back to the
 // known DSN subdomain when the page does not expose it explicitly.
 func parseAlgoliaCreds(body []byte) (haCreds, error) {
+	// Primary: scope to the inline "algolia":{...} object so we read Algolia's
+	// own appId/apiKey rather than the first lookalike token on the page.
+	if obj := haAlgoliaObjRe.FindSubmatch(body); obj != nil {
+		inner := obj[1]
+		var apiKey, appID string
+		if m := haScopedAPIKeyRe.FindSubmatch(inner); m != nil {
+			apiKey = string(m[1])
+		}
+		if m := haScopedAppIDRe.FindSubmatch(inner); m != nil && haHasLetter(string(m[1])) {
+			appID = string(m[1])
+		}
+		if apiKey != "" {
+			if appID == "" {
+				appID = haKnownAppID
+			}
+			return haCreds{appID: appID, apiKey: apiKey}, nil
+		}
+	}
+
+	// Fallback: global scan. Reject a pure-numeric app-id (a stray third-party
+	// id) and fall back to the known DSN subdomain instead.
 	apiKey := firstSubmatch(body, haAPIKeyRes)
 	if apiKey == "" {
 		return haCreds{}, fmt.Errorf("housinganywhere: no algolia api key in search page")
 	}
 	appID := firstSubmatch(body, haAppIDRes)
-	if appID == "" {
+	if appID == "" || !haHasLetter(appID) {
 		appID = haKnownAppID
 	}
 	return haCreds{appID: appID, apiKey: apiKey}, nil

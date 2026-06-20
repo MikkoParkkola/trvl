@@ -172,11 +172,60 @@ func SearchBlueground(ctx context.Context, location string, opts HotelSearchOpti
 	return results, nil
 }
 
+// bluegroundCountryISO2 maps full country names (the trailing token of a
+// "City, Country" location) to the ISO 3166-1 alpha-2 code Blueground now uses
+// in its listing slugs. As of 2026-06 the live pattern is
+// "furnished-apartments-{city}-{iso2}" (e.g. "...-paris-fr"); the older
+// full-country form ("...-paris-france") 404s. Covers Blueground's served
+// markets; unmapped countries fall through to the verbatim token.
+var bluegroundCountryISO2 = map[string]string{
+	"usa": "us", "united states": "us", "united states of america": "us",
+	"uk": "gb", "united kingdom": "gb", "england": "gb",
+	"france": "fr", "germany": "de", "austria": "at", "luxembourg": "lu",
+	"switzerland": "ch", "belgium": "be", "italy": "it", "netherlands": "nl",
+	"norway": "no", "sweden": "se", "croatia": "hr", "poland": "pl",
+	"denmark": "dk", "cyprus": "cy", "malta": "mt", "romania": "ro",
+	"hungary": "hu", "iceland": "is", "ireland": "ie", "latvia": "lv",
+	"algeria": "dz", "greece": "gr", "portugal": "pt", "spain": "es",
+	"turkey": "tr", "türkiye": "tr", "mexico": "mx", "czechia": "cz",
+	"czech republic": "cz", "uae": "ae", "united arab emirates": "ae",
+	"saudi arabia": "sa", "egypt": "eg",
+}
+
 // bluegroundSlug builds the listing slug from a "City, Country" location:
-// "Athens, Greece" -> "furnished-apartments-athens-greece". A bare city (no
-// country) yields a country-less slug that may 404 (handled non-fatally).
+// "Athens, Greece" -> "furnished-apartments-athens-gr". The country is mapped to
+// its ISO-3166 alpha-2 code (the form Blueground's listing pages now use);
+// unmapped countries keep their verbatim slug token. A bare city (no country)
+// yields a country-less slug that may 404 (handled non-fatally).
 func bluegroundSlug(location string) string {
-	s := strings.ToLower(strings.TrimSpace(location))
+	loc := strings.TrimSpace(location)
+	city := loc
+	country := ""
+	if i := strings.LastIndex(loc, ","); i >= 0 {
+		city = strings.TrimSpace(loc[:i])
+		country = strings.TrimSpace(loc[i+1:])
+	}
+	citySlug := bluegroundToken(city)
+	if citySlug == "" {
+		return ""
+	}
+	if country == "" {
+		return "furnished-apartments-" + citySlug
+	}
+	countrySlug := bluegroundToken(country)
+	if iso, ok := bluegroundCountryISO2[strings.ToLower(country)]; ok {
+		countrySlug = iso
+	}
+	if countrySlug == "" {
+		return "furnished-apartments-" + citySlug
+	}
+	return "furnished-apartments-" + citySlug + "-" + countrySlug
+}
+
+// bluegroundToken slugifies a single free-text token to lowercase hyphenated
+// ASCII (dropping accents/punctuation).
+func bluegroundToken(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
 	var b strings.Builder
 	prevHyphen := false
 	for _, r := range s {
@@ -191,11 +240,7 @@ func bluegroundSlug(location string) string {
 			}
 		}
 	}
-	tail := strings.Trim(b.String(), "-")
-	if tail == "" {
-		return ""
-	}
-	return "furnished-apartments-" + tail
+	return strings.Trim(b.String(), "-")
 }
 
 func bluegroundDetailURL(path string) string {
