@@ -102,6 +102,9 @@ func TestResolveChallenge_RunnerError(t *testing.T) {
 
 func TestResolveChallenge_ClearedPersistsCookies(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	// os.UserHomeDir reads USERPROFILE on Windows, not HOME — isolate both so
+	// the ~/.trvl cookie cache is per-test on every OS.
+	t.Setenv("USERPROFILE", t.TempDir())
 
 	prevExists := fileExists
 	fileExists = func(string) bool { return true }
@@ -140,6 +143,9 @@ func TestResolveChallenge_ClearedPersistsCookies(t *testing.T) {
 
 func TestResolveChallenge_NeedsHumanDoesNotPersist(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	// os.UserHomeDir reads USERPROFILE on Windows, not HOME — isolate both so a
+	// prior test's persisted cookies cannot leak into this absence assertion.
+	t.Setenv("USERPROFILE", t.TempDir())
 
 	prevExists := fileExists
 	fileExists = func(string) bool { return true }
