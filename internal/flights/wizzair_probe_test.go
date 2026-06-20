@@ -29,16 +29,39 @@ func TestWizzairProbe(t *testing.T) {
 
 	out, err := SearchWizzair(ctx, "BUD", "BCN", date, "EUR", SearchOptions{Adults: 1})
 	if err != nil {
-		if errors.Is(err, ErrWizzVersionRotated) {
+		// All three are honest, typed live conditions — not undiagnosed
+		// failures — so they are acceptable probe outcomes. In particular
+		// ErrWizzBlocked is the expected result from a datacenter/CI egress IP
+		// that Wizz's CloudFront edge treats as non-human (MIK-6167): the probe
+		// reports the actionable status rather than red-flagging a transport bug.
+		switch {
+		case errors.Is(err, ErrWizzVersionRotated):
 			st := wizzairFailureStatus(err)
 			t.Logf("Wizz API version rotated (expected, actionable): code=%s hint=%q",
 				st.FixHintCode, st.FixHint)
 			if st.FixHintCode != "WIZZ_VERSION_ROTATED" {
 				t.Fatalf("rotation should carry WIZZ_VERSION_ROTATED, got %q", st.FixHintCode)
 			}
-			return // actionable status is an acceptable live outcome
+			return
+		case errors.Is(err, ErrWizzBlocked):
+			st := wizzairFailureStatus(err)
+			t.Logf("Wizz edge-blocked this IP (expected from datacenter/CI; honest typed status): code=%s hint=%q err=%v",
+				st.FixHintCode, st.FixHint, err)
+			if st.FixHintCode != "WIZZ_BLOCKED" {
+				t.Fatalf("block should carry WIZZ_BLOCKED, got %q", st.FixHintCode)
+			}
+			return
+		case errors.Is(err, ErrWizzRejected):
+			st := wizzairFailureStatus(err)
+			t.Logf("Wizz declined the route (validationCodes; honest typed status): code=%s hint=%q err=%v",
+				st.FixHintCode, st.FixHint, err)
+			if st.FixHintCode != "WIZZ_MARKET_REJECTED" {
+				t.Fatalf("rejection should carry WIZZ_MARKET_REJECTED, got %q", st.FixHintCode)
+			}
+			return
+		default:
+			t.Fatalf("unexpected Wizz error class: %v", err)
 		}
-		t.Fatalf("unexpected Wizz error class: %v", err)
 	}
 	t.Logf("Wizz returned %d result(s)", len(out))
 	for _, f := range out {

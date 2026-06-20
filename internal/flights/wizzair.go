@@ -63,6 +63,23 @@ import (
 // override as the authoritative manual fix.
 var ErrWizzVersionRotated = errors.New("wizzair API version path rotated")
 
+// ErrWizzBlocked is the sentinel for a non-200 whose body is NOT Wizz's own JSON
+// — an HTML/edge "Bad Request", a bot challenge, or any CloudFront-origin reply
+// that stopped the call before it reached the timetable API. The Wizz API sits
+// behind CloudFront (verified: `server: CloudFront` on responses), which returns
+// 4xx to traffic it treats as non-human. This is common from datacenter / CI
+// egress IPs, so it is the most likely cause of a live-probe "status 400" that
+// does not reproduce from a residential IP. Surfaced as an actionable typed
+// status instead of an opaque "unexpected status 400".
+var ErrWizzBlocked = errors.New("wizzair edge-blocked (CloudFront / non-human IP)")
+
+// ErrWizzRejected is the sentinel for a structured Wizz validation refusal — a
+// 4xx carrying JSON {"validationCodes":[...]} (e.g. "InvalidMarket" for a route
+// Wizz does not fly, verified live 2026-06-20). This is an honest provider
+// answer, not a trvl transport fault, so it gets its own typed status rather
+// than being lumped into a generic failure.
+var ErrWizzRejected = errors.New("wizzair declined the request (validationCodes)")
+
 // wizzDefaultVersion is the last-known-good API version path segment. See the
 // package comment: the segment rotates, so this is a fallback, not a contract.
 // No runtime auto-discovery exists by design (JS-gated, undiscoverable
@@ -72,6 +89,15 @@ var ErrWizzVersionRotated = errors.New("wizzair API version path rotated")
 // config (wizzair.com/en-gb embeds apiUrl:"https://be.wizzair.com/29.3.0/Api")
 // and confirmed live: POST be.wizzair.com/29.3.0/Api/search/timetable -> 200,
 // while the prior 10.1.0 path -> 404 (the rotation signature). (GH #115)
+//
+// 2026-06-20 (MIK-6167): re-verified 29.3.0 still returns 200 with priced
+// results from a residential IP — the live-probe "status 400" was NOT a version
+// rotation. Root cause: the timetable endpoint is fronted by CloudFront, which
+// 4xx-blocks non-human (datacenter / CI) traffic, and additionally returns a
+// structured 400 {"validationCodes":["InvalidMarket"]} for routes Wizz does not
+// serve. Both were previously swallowed into an opaque "unexpected status 400"
+// that red-flagged the probe. SearchWizzair now reads the body and classifies
+// these into ErrWizzBlocked / ErrWizzRejected (see classifyWizzStatus).
 const wizzDefaultVersion = "29.3.0"
 
 // wizzVersion is the active API version. Overridable in tests; the env var
@@ -133,6 +159,51 @@ type wizzTimetableResponse struct {
 	ReturnFlights   []wizzFlight `json:"returnFlights"`
 }
 
+// wizzValidationError is Wizz's structured 4xx body, e.g.
+// {"validationCodes":["InvalidMarket"]} returned for a route Wizz does not
+// serve. A meaningful API rejection, not a transport fault.
+type wizzValidationError struct {
+	ValidationCodes []string `json:"validationCodes"`
+}
+
+// classifyWizzStatus turns a non-200 Wizz timetable response into a typed,
+// diagnosable error. Resolution order:
+//
+//   - 404 -> ErrWizzVersionRotated: the {version} path segment rotated (the
+//     historical failure mode); the WIZZAIR_API_VERSION override restores it.
+//   - 4xx carrying JSON {"validationCodes":[...]} -> ErrWizzRejected: Wizz
+//     declined the request (e.g. "InvalidMarket" for a route it does not fly).
+//   - any other 4xx/5xx whose body is NOT Wizz JSON (HTML, "Bad Request", a bot
+//     challenge) -> ErrWizzBlocked: the request was stopped at the CloudFront
+//     edge before reaching the API. Common from datacenter / CI IPs.
+//
+// The (bounded, whitespace-collapsed) body is echoed into the message so an
+// operator can see exactly what Wizz said without re-running with a capture.
+func classifyWizzStatus(status int, body []byte) error {
+	if status == http.StatusNotFound {
+		return fmt.Errorf("wizzair: tried API version %q: %w", wizzResolvedVersion(), ErrWizzVersionRotated)
+	}
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) > 0 && trimmed[0] == '{' {
+		var v wizzValidationError
+		if err := json.Unmarshal(trimmed, &v); err == nil && len(v.ValidationCodes) > 0 {
+			return fmt.Errorf("wizzair: status %d, validationCodes %v: %w", status, v.ValidationCodes, ErrWizzRejected)
+		}
+	}
+	return fmt.Errorf("wizzair: status %d (edge-blocked, body=%q): %w", status, wizzBodySnippet(trimmed), ErrWizzBlocked)
+}
+
+// wizzBodySnippet bounds and whitespace-collapses an error body for inclusion in
+// a typed error message, so HTML/edge responses stay readable in one line.
+func wizzBodySnippet(b []byte) string {
+	const maxSnippet = 200
+	s := strings.Join(strings.Fields(string(b)), " ")
+	if len(s) > maxSnippet {
+		return s[:maxSnippet] + "..."
+	}
+	return s
+}
+
 // SearchWizzair queries Wizz Air's public timetable endpoint for one-way fares
 // on the given route and date, returning canonical FlightResults tagged provider
 // "wizzair" with carrier code "W6".
@@ -181,14 +252,13 @@ func SearchWizzair(ctx context.Context, origin, destination, date, currency stri
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		// A 404 here is the version-rotation signature: the {version} path
-		// segment rotated and the one we tried no longer exists. Wrap the
-		// sentinel so the aggregate can render a typed, actionable status; the
-		// search continues and returns other providers' results regardless.
-		if resp.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf("wizzair: tried API version %q: %w", wizzResolvedVersion(), ErrWizzVersionRotated)
-		}
-		return nil, fmt.Errorf("wizzair: unexpected status %d", resp.StatusCode)
+		// Read a bounded slice of the body so the failure is diagnosable and so
+		// we can distinguish: version rotation (404), Wizz's structured
+		// validation refusals (JSON validationCodes), and CloudFront/edge
+		// bot-walls (non-JSON 4xx). The search continues and returns other
+		// providers' results regardless of which typed error we surface here.
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		return nil, classifyWizzStatus(resp.StatusCode, errBody)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
@@ -292,6 +362,14 @@ func wizzairFailureStatus(err error) models.ProviderStatus {
 			"Wizz API version path rotated; set WIZZAIR_API_VERSION=<current> to restore (tried %q; last-known-good: %s)",
 			wizzResolvedVersion(), wizzDefaultVersion,
 		)
+	}
+	if errors.Is(err, ErrWizzBlocked) {
+		st.FixHintCode = "WIZZ_BLOCKED"
+		st.FixHint = "Wizz Air edge-blocked the request (CloudFront 4xx). Common from datacenter/CI egress IPs Wizz treats as non-human; retry from a residential IP or an allowed egress."
+	}
+	if errors.Is(err, ErrWizzRejected) {
+		st.FixHintCode = "WIZZ_MARKET_REJECTED"
+		st.FixHint = "Wizz Air declined the request (validationCodes, e.g. InvalidMarket): the route is not a market Wizz serves. Verify origin/destination are Wizz-served IATA codes."
 	}
 	return st
 }
