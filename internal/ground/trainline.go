@@ -47,6 +47,9 @@ var (
 	trainlineDo             = func(req *http.Request) (*http.Response, error) { return trainlineClient.Do(req) }
 	trainlineFetchViaNab    = fetchTrainlineViaNab
 	trainlineBrowserCookies = cookies.BrowserCookies
+	// trainlineViaCurlFn shells out to the system curl binary for the curl-assisted
+	// fallback. Overridable in tests so the 403 escalation chain runs offline.
+	trainlineViaCurlFn = trainlineViaCurl
 
 	// trainlineNewTier1 builds a Chrome-impersonating TLS client (browser JA3).
 	// Overridable in tests so the Tier-1 fallback can be pointed at httptest.
@@ -54,6 +57,18 @@ var (
 	// trainlineTier1Cookies harvests the user's live browser cookies for a URL
 	// (datadome clearance via kooky). Overridable in tests.
 	trainlineTier1Cookies = providers.BrowserCookiesForURL
+
+	// trainlineResolveChallenge escalates an anti-bot challenge HEADLESS-first
+	// (no visible window, no focus steal) via providers.ResolveChallenge. It runs
+	// above the visible-window fallback: only if it reports ChallengeNeedsHuman
+	// do we open a real window. Overridable in tests so the orchestration is
+	// exercised offline without spawning a browser.
+	trainlineResolveChallenge = func(ctx context.Context, targetURL string) (*providers.ChallengeResult, error) {
+		return providers.ResolveChallenge(ctx, targetURL, providers.WithTier2Force())
+	}
+	// trainlineOpenBrowser opens a VISIBLE browser window so a human can solve an
+	// interactive captcha. Only invoked on ChallengeNeedsHuman. Overridable in tests.
+	trainlineOpenBrowser = cookies.OpenBrowserForAuth
 )
 
 type trainlineHeader struct {
@@ -471,18 +486,37 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 			slog.Debug("trainline nab fallback failed", "err", nErr)
 		}
 
-		if cRoutes, cErr := trainlineViaCurl(ctx, fromID, toID, date, currency); cErr == nil && len(cRoutes) > 0 {
+		if cRoutes, cErr := trainlineViaCurlFn(ctx, fromID, toID, date, currency); cErr == nil && len(cRoutes) > 0 {
 			populateTrainlineCities(cRoutes, from, to)
 			return cRoutes, nil
 		} else if cErr != nil {
 			slog.Debug("trainline curl fallback failed", "err", cErr)
 		}
 
-		isCaptcha, captchaURL := cookies.IsCaptchaResponse(http.StatusForbidden, firstBody)
-		if isCaptcha {
-			slog.Warn("trainline requires browser verification — opening browser", "captcha_url", captchaURL)
+		// Headless-first challenge escalation (MIK-6218): drive the user's
+		// installed browser HEADLESS (no window, no focus steal) to let the
+		// anti-bot challenge resolve. If it clears silently, retry with the
+		// harvested cookies — NO window. Only an interactive captcha that a
+		// headless browser cannot solve falls through to a VISIBLE window.
+		if res, rErr := trainlineResolveChallenge(ctx, trainlineHomeURL); rErr != nil {
+			slog.Debug("trainline headless challenge resolve failed", "err", rErr)
+		} else if res != nil && res.Status == providers.ChallengeCleared {
+			if ch := cookieSliceToHeader(res.Cookies); ch != "" {
+				slog.Debug("trainline challenge cleared headlessly — retrying with harvested cookies")
+				if reqC, errC := newTrainlineRequest(ch); errC == nil {
+					if respC, errC := trainlineDo(reqC); errC == nil {
+						defer func() { _ = respC.Body.Close() }()
+						if respC.StatusCode == http.StatusOK {
+							return readAndParseTrainlineResponse(respC.Body, from, to, date, currency)
+						}
+						slog.Debug("trainline headless-cleared retry still blocked", "status", respC.StatusCode)
+					}
+				}
+			}
+		} else if res != nil && res.Status == providers.ChallengeNeedsHuman {
+			slog.Warn("trainline requires human verification — opening browser", "vendor", res.Marker)
 			_, _ = fmt.Fprintf(os.Stderr, "⚠️  Trainline requires verification. Opening browser — please solve the challenge, then retry.\n")
-			_ = cookies.OpenBrowserForAuth("https://www.thetrainline.com/")
+			_ = trainlineOpenBrowser(trainlineHomeURL)
 		}
 
 		// Last resort: browser scraper via Playwright.
@@ -684,4 +718,25 @@ func extractDatadomeCookie(cookies []*http.Cookie) string {
 		}
 	}
 	return ""
+}
+
+// cookieSliceToHeader renders a slice of cookies into a single Cookie request
+// header value ("name=value; name2=value2"). Empty-named/valued cookies are
+// skipped. Returns "" when no usable cookies are present. Used to replay the
+// cookies harvested by a HEADLESS challenge resolution (MIK-6218) on a silent
+// retry — no visible window required.
+func cookieSliceToHeader(cks []*http.Cookie) string {
+	var b strings.Builder
+	for _, c := range cks {
+		if c == nil || c.Name == "" || c.Value == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("; ")
+		}
+		b.WriteString(c.Name)
+		b.WriteString("=")
+		b.WriteString(c.Value)
+	}
+	return b.String()
 }
