@@ -22,6 +22,8 @@ curl -fsSL https://github.com/MikkoParkkola/trvl/releases/latest/download/trvl_$
 
 ### Step 2: Register as MCP server
 
+One command auto-configures any of 10 MCP clients (Claude Desktop, Cursor, Claude Code, Windsurf, Codex, VS Code Copilot, Gemini CLI, Amazon Q, Zed, LM Studio) — no JSON hand-editing. Add `--dry-run` to preview the change first.
+
 ```bash
 trvl mcp install                       # Claude Desktop (default)
 trvl mcp install --client cursor       # Cursor / Windsurf

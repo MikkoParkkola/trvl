@@ -417,6 +417,7 @@ Two providers (NS, Digitransit/VR) use public API keys that are embedded in the 
 - **No API keys required** — Google Flights and Google Hotels are read directly, so it works the moment it's installed. No signup, no billing, no key rotation.
 - **Multi-modal in one place** — flights, hotels, trains, buses, ferries, and rental cars behind one `travel` tool, not five separate integrations.
 - **Single Go binary, any MCP client** — one static binary runs as a stdio MCP server for Claude, Cursor, Windsurf, Codex, or any MCP-compatible assistant, and doubles as a standalone CLI. No runtime, no container required.
+- **One-command setup** — `trvl mcp install` auto-configures 10 MCP clients (Claude Desktop, Cursor, Claude Code, Windsurf, Codex, VS Code Copilot, Gemini CLI, Amazon Q, Zed, LM Studio) with no JSON hand-editing; add `--dry-run` to preview the change first.
 
 For the agent-focused comparison against Google Flights, KAYAK, ChatGPT search, and other travel MCPs, see [`docs/COMPARISON.md`](docs/COMPARISON.md).
 
