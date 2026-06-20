@@ -79,6 +79,7 @@ func (h *HTTPServer) ListenAndServe() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mcp", h.handleMCP)
 	mux.HandleFunc("/health", h.handleHealth)
+	mux.HandleFunc("/dashboard", h.handleDashboard)
 
 	addr := net.JoinHostPort(h.host, strconv.Itoa(h.port))
 	log.Printf("trvl MCP server listening on http://%s/mcp", addr)

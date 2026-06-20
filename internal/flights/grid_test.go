@@ -2,6 +2,7 @@ package flights
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -105,6 +106,31 @@ func TestParsePriceGridResponse_TooSmall(t *testing.T) {
 	_, err := parsePriceGridResponse(body)
 	if err == nil {
 		t.Error("expected error for small response")
+	}
+}
+
+// TestParsePriceGridResponse_ValidButEmpty guards the empty-grid contract:
+// a parseable response carrying no priced offers must return (empty, nil),
+// NOT an error. Google returns this for wide departure×return windows.
+// The (empty, nil) result is what made the old SearchPriceGrid path render
+// the bogus "%!w(<nil>)" via fmt.Errorf("...: %w", nil); the parser must keep
+// returning a nil error here so the caller can emit a clear "no priced cells"
+// message instead. Regression guard for the grid.go empty-cells fix.
+func TestParsePriceGridResponse_ValidButEmpty(t *testing.T) {
+	innerJSON := `[null,[]]` // valid grid section with zero offers
+	// Pad the outer line past the 200-byte floor with an element the parser
+	// ignores (only entry[2] is read for offers).
+	pad := strings.Repeat("x", 240)
+	entry := []any{[]any{"wrb.fr", nil, innerJSON, pad}}
+	entryJSON, _ := json.Marshal(entry)
+	body := []byte(")]}'\n" + string(entryJSON))
+
+	cells, err := parsePriceGridResponse(body)
+	if err != nil {
+		t.Fatalf("valid-but-empty grid must not error, got: %v", err)
+	}
+	if len(cells) != 0 {
+		t.Fatalf("expected 0 cells for offerless grid, got %d", len(cells))
 	}
 }
 
