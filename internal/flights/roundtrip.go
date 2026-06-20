@@ -2,6 +2,7 @@ package flights
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -72,16 +73,36 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 
 	// If neither leg produced any priced option, surface the underlying errors
 	// rather than an empty "success".
-	if len(composed) == 0 {
-		if outErr != nil || inErr != nil {
-			err := joinLegErrors(outErr, inErr)
+	if len(composed) == 0 && (outErr != nil || inErr != nil) {
+		// When a leg failed because providers were rate-limited / blocked /
+		// unavailable (a typed, retryable upstream condition), report a
+		// rate_limited status and a retryable, user-facing message — NEVER the
+		// legacy "unexpected flight data format" string (#198 + #228). A genuine
+		// parse bug or other hard failure still falls through to joinLegErrors.
+		if legErrorsRateLimited(outErr, inErr) {
+			const msg = "flight providers are rate-limiting or temporarily unavailable; retry in ~60s"
+			statuses = append(statuses, models.ProviderStatus{
+				ID:      "roundtrip_composer_upstream",
+				Name:    "Round-trip composer (upstream)",
+				Status:  models.StatusRateLimited,
+				Error:   msg,
+				FixHint: "retry in ~60s, or search each direction one-way",
+			})
+			err := fmt.Errorf("%s: %w", msg, models.ErrRateLimited)
 			return &models.FlightSearchResult{
-				Error:            err.Error(),
+				Error:            msg,
 				TripType:         "round_trip",
 				ProviderStatuses: statuses,
 				Completeness:     models.ComputeCompleteness(statuses),
 			}, err
 		}
+		err := joinLegErrors(outErr, inErr)
+		return &models.FlightSearchResult{
+			Error:            err.Error(),
+			TripType:         "round_trip",
+			ProviderStatuses: statuses,
+			Completeness:     models.ComputeCompleteness(statuses),
+		}, err
 	}
 
 	result := &models.FlightSearchResult{
@@ -223,6 +244,27 @@ func roundTripComposerStatus(outCount, inCount, composedCount int, truncated boo
 		status.FixHint = fmt.Sprintf("showing cheapest %d composed round-trips; more pairings exist (search one-way for the full per-direction list)", roundTripMaxResults)
 	}
 	return status
+}
+
+// legErrorsRateLimited reports whether the round-trip leg failures were caused by
+// a typed, retryable upstream rate-limit/block/unavailable condition
+// (models.ErrRateLimited) rather than a genuine parse bug or hard error. It
+// returns true when at least one present leg error carries the rate-limit signal
+// and none of the present leg errors is a non-rate-limit failure — i.e. the legs
+// failed ONLY because providers were rate-limited. This is the gate that lets the
+// composer emit a soft, retryable status instead of a hard failure.
+func legErrorsRateLimited(outErr, inErr error) bool {
+	sawRateLimit := false
+	for _, e := range []error{outErr, inErr} {
+		if e == nil {
+			continue
+		}
+		if !errors.Is(e, models.ErrRateLimited) {
+			return false
+		}
+		sawRateLimit = true
+	}
+	return sawRateLimit
 }
 
 // joinLegErrors combines outbound/inbound errors into one, labelling each side.

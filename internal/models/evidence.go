@@ -27,14 +27,29 @@ const (
 	StatusNotAuthorized = "not_authorized" // caller lacks scope
 	StatusStale         = "stale"          // results exist but older than freshness threshold
 	StatusCircuitBroken = "circuit_broken" // provider skipped because recent failures tripped breaker
+	StatusRateLimited   = "rate_limited"   // upstream rate-limited / blocked / challenge — RETRYABLE, not empty
 )
 
-// ClassifyProviderError maps an error to StatusTimeout when it is a deadline /
-// timeout, otherwise StatusFailed. This is the distinction that prevents a
-// timeout from being presented to the user as "nothing found".
+// ErrRateLimited is the typed sentinel for an upstream provider that rate-limited
+// us, blocked the request, or returned a challenge / error payload (e.g. HTTP
+// 429/403/503, or a Google travel.frontend.flights.ErrorResponse body) instead of
+// real data. It exists so callers can distinguish a RETRYABLE upstream condition
+// from a genuine parse bug — the distinction issue #228 (and #198 before it)
+// turned on. Wrap it with %w to preserve a clean, user-facing message while still
+// letting errors.Is(err, ErrRateLimited) classify the outcome as rate_limited.
+var ErrRateLimited = errors.New("upstream provider rate-limited or temporarily unavailable")
+
+// ClassifyProviderError maps an error to a provider status. A typed rate-limit
+// (ErrRateLimited) wins first so a 429/challenge never renders as a hard parse
+// failure; deadlines map to StatusTimeout; everything else is StatusFailed. This
+// is the distinction that prevents a timeout/rate-limit from being presented to
+// the user as "nothing found".
 func ClassifyProviderError(err error) string {
 	if err == nil {
 		return StatusOK
+	}
+	if errors.Is(err, ErrRateLimited) {
+		return StatusRateLimited
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return StatusTimeout
@@ -94,7 +109,7 @@ func ComputeCompleteness(statuses []ProviderStatus) Completeness {
 			c.Succeeded++
 			continue
 		}
-		if s.Status == StatusTimeout || s.Status == StatusFailed || s.Status == StatusError || s.Status == StatusCircuitBroken {
+		if s.Status == StatusTimeout || s.Status == StatusFailed || s.Status == StatusError || s.Status == StatusCircuitBroken || s.Status == StatusRateLimited {
 			c.Missing = append(c.Missing, s.ID)
 		}
 	}

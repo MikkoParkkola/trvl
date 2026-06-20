@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"strconv"
@@ -588,6 +589,33 @@ func sharedFlightResult(v any, err error) (*models.FlightSearchResult, error) {
 	return cloneFlightSearchResult(v.(*models.FlightSearchResult)), nil
 }
 
+// isFlightPayload reports whether a decoded Google Flights `inner` payload is a
+// genuine flight response. Real responses are JSON arrays (parseFlights walks
+// indices [2]/[3]); error/challenge payloads (ErrorResponse objects, "sorry"
+// interstitials) decode to objects or scalars. This is the reliable, conservative
+// signal that separates an upstream error from malformed-but-real flight data.
+func isFlightPayload(inner any) bool {
+	_, ok := inner.([]any)
+	return ok
+}
+
+// googleUpstreamStatusError maps an HTTP status to a typed, retryable rate-limit
+// error when Google signals it is rate-limiting, blocking, or overloaded
+// (429/403/503). It returns nil for every other status so the normal parse path
+// (including the generic non-200 branch) is untouched. The message is clean and
+// never contains the legacy "unexpected flight data format" string.
+func googleUpstreamStatusError(status int) error {
+	switch status {
+	case 429:
+		return fmt.Errorf("google flights rate-limited (HTTP 429): %w", models.ErrRateLimited)
+	case 403:
+		return fmt.Errorf("google flights blocked the request (HTTP 403): %w", models.ErrRateLimited)
+	case 503:
+		return fmt.Errorf("google flights temporarily unavailable (HTTP 503): %w", models.ErrRateLimited)
+	}
+	return nil
+}
+
 func searchGoogleFlightsWithClient(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) (*models.FlightSearchResult, error) {
 	filters := buildFilters(origin, destination, date, opts)
 
@@ -606,10 +634,13 @@ func searchGoogleFlightsWithClient(ctx context.Context, client *batchexec.Client
 		}, fmt.Errorf("request failed: %w", err)
 	}
 
-	if status == 403 {
-		return &models.FlightSearchResult{
-			Error: "blocked by Google (403)",
-		}, batchexec.ErrBlocked
+	// Classify rate-limit / block / challenge by HTTP status BEFORE parsing.
+	// Google serves 429 (rate limit), 403 (block), and 503 (overload) with a
+	// non-flight body; surfacing these as a typed, retryable rate-limit (rather
+	// than a generic "unexpected status" or hard block) is what lets the round-trip
+	// composer degrade to a soft WARN instead of hard-failing the search (#228).
+	if rlErr := googleUpstreamStatusError(status); rlErr != nil {
+		return &models.FlightSearchResult{Error: rlErr.Error()}, rlErr
 	}
 	if status != 200 {
 		return &models.FlightSearchResult{
@@ -622,6 +653,21 @@ func searchGoogleFlightsWithClient(ctx context.Context, client *batchexec.Client
 		return &models.FlightSearchResult{
 			Error: fmt.Sprintf("decode response: %v", err),
 		}, fmt.Errorf("decode response: %w", err)
+	}
+
+	// A genuine Google Flights response decodes `inner` to a JSON ARRAY (parseFlights
+	// walks indices [2]/[3]). Google's travel.frontend.flights.ErrorResponse — and the
+	// interstitial challenge / "sorry" pages served when soft-rate-limited at HTTP 200 —
+	// decode to a JSON OBJECT (or scalar), never the flight array. A non-array inner is
+	// therefore an upstream error/challenge payload, NOT a malformed-but-real flight
+	// response (which is still an array, just with empty buckets -> a distinct no-hit).
+	// Classifying it as a typed rate-limit here keeps the legacy "unexpected flight data
+	// format" string out of every user/agent-facing field (#198 + #228); the raw detail
+	// survives only in a debug log.
+	if !isFlightPayload(inner) {
+		slog.Debug("google flights returned non-flight payload", "detail", "unexpected flight data format")
+		rlErr := fmt.Errorf("google flights returned a non-flight error/challenge payload: %w", models.ErrRateLimited)
+		return &models.FlightSearchResult{Error: rlErr.Error()}, rlErr
 	}
 
 	rawFlights, err := batchexec.ExtractFlightData(inner)
