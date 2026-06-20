@@ -276,7 +276,7 @@ func TestToolRegistration_AllTools(t *testing.T) {
 		"hotel_reviews", "destination_info", "calculate_trip_cost",
 		"weekend_getaway", "suggest_dates", "optimize_multi_city",
 		"nearby_places", "travel_guide", "local_events",
-		"search_ground", "search_airport_transfers", "search_cars", "search_restaurants", "search_deals",
+		"search_ground", "search_airport_transfers", "plan_multimodal", "search_cars", "search_restaurants", "search_deals",
 		"plan_trip",
 		"search_route",
 		"hotel_rooms",

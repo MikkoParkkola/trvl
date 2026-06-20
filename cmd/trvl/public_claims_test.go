@@ -143,6 +143,7 @@ func registeredMCPCompatibilityAliasCount(t *testing.T) int {
 		"plan_journey":     true, // Leave-By Scheduler capability (MIK-5734 B)
 		"plan_natural":     true, // NL travel-planner supertool (innovation #7)
 		"arbitrage_report": true, // unified arbitrage aggregator (innovation #8) — new capability, not a legacy alias
+		"plan_multimodal":  true, // Multimodal composer capability (innovation #2)
 	}
 	count := 0
 	for _, key := range handlers.MapKeys() {

@@ -39,6 +39,7 @@ func registerTools(s *Server) {
 		localEventsTool(),
 		searchGroundTool(),
 		searchAirportTransfersTool(),
+		planMultimodalTool(),
 		searchCarsTool(),
 		searchRestaurantsTool(),
 		searchDealsTool(),
@@ -126,6 +127,7 @@ func registerTools(s *Server) {
 	s.handlers["local_events"] = s.wrapHandler("local_events", handleLocalEvents)
 	s.handlers["search_ground"] = s.wrapHandler("search_ground", handleSearchGround)
 	s.handlers["search_airport_transfers"] = s.wrapHandler("search_airport_transfers", handleSearchAirportTransfers)
+	s.handlers["plan_multimodal"] = s.wrapHandler("plan_multimodal", handlePlanMultimodal)
 	s.handlers["search_cars"] = s.wrapHandler("search_cars", handleSearchCars)
 	s.handlers["search_restaurants"] = s.wrapHandler("search_restaurants", handleSearchRestaurants)
 	s.handlers["search_deals"] = s.wrapHandler("search_deals", handleSearchDeals)

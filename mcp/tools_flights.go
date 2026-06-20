@@ -493,14 +493,15 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 
 	// Build structured response.
 	type enrichedFlightSearchResult struct {
-		Success        bool             `json:"success"`
-		Count          int              `json:"count"`
-		TripType       string           `json:"trip_type"`
-		Flights        []enrichedFlight `json:"flights"`
-		Error          string           `json:"error,omitempty"`
-		Suggestions    []Suggestion     `json:"suggestions,omitempty"`
-		Hacks          []hacks.Hack     `json:"hacks,omitempty"`
-		BookingContext *bookingContext  `json:"booking_context,omitempty"`
+		Success        bool               `json:"success"`
+		Count          int                `json:"count"`
+		TripType       string             `json:"trip_type"`
+		Flights        []enrichedFlight   `json:"flights"`
+		Error          string             `json:"error,omitempty"`
+		Suggestions    []Suggestion       `json:"suggestions,omitempty"`
+		Hacks          []hacks.Hack       `json:"hacks,omitempty"`
+		HackSaving     *models.HackSaving `json:"hack_saving,omitempty"`
+		BookingContext *bookingContext    `json:"booking_context,omitempty"`
 	}
 	resp := enrichedFlightSearchResult{
 		Success:        result.Success,
@@ -510,6 +511,7 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		Error:          result.Error,
 		Suggestions:    suggestions,
 		Hacks:          flightHacks,
+		HackSaving:     result.HackSaving,
 		BookingContext: buildBookingContext(date, primaryOrigin, originSource),
 	}
 
