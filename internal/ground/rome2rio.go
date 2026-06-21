@@ -206,7 +206,6 @@ func parseRome2Rio(body, from, to string) ([]models.GroundRoute, error) {
 // into a discovery GroundRoute. Returns ok=false when the option has neither a
 // duration nor a price (i.e. not a real travel option).
 func buildRome2RioRoute(routeName, text, href, from, to string) (models.GroundRoute, bool) {
-	modes := rome2rioModes(routeName)
 	dur := rome2rioDuration(text)
 	lo, hi, cur := rome2rioPrice(text)
 
@@ -214,18 +213,28 @@ func buildRome2RioRoute(routeName, text, href, from, to string) (models.GroundRo
 		return models.GroundRoute{}, false
 	}
 
+	// Prefer the rich per-segment breakdown parsed from the anchor text (real
+	// modes AND endpoints). Fall back to the lossy route= name chain (modes
+	// only, no stops) when the prose carries no recognizable segments.
+	legs := parseRome2RioSegments(text)
+	var modes []string
+	if len(legs) > 0 {
+		modes = distinctSegmentModes(legs)
+	} else {
+		modes = rome2rioModes(routeName)
+		legs = make([]models.GroundLeg, 0, len(modes))
+		for _, m := range modes {
+			legs = append(legs, models.GroundLeg{Type: m, Provider: "rome2rio"})
+		}
+	}
+
 	typ := "mixed"
 	if len(modes) == 1 {
 		typ = modes[0]
 	}
 	transfers := 0
-	if len(modes) > 1 {
-		transfers = len(modes) - 1
-	}
-
-	legs := make([]models.GroundLeg, 0, len(modes))
-	for _, m := range modes {
-		legs = append(legs, models.GroundLeg{Type: m, Provider: "rome2rio"})
+	if len(legs) > 1 {
+		transfers = len(legs) - 1
 	}
 
 	return models.GroundRoute{
