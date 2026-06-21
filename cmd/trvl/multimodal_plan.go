@@ -98,6 +98,7 @@ func printMultimodalPlan(plan *multimodal.Plan) {
 			}
 			fmt.Println(line)
 		}
+		printDoorToDoor(os.Stdout, it)
 		if it.HackSaving != nil {
 			fmt.Printf("     %s %s: save %s %.2f (%s)\n",
 				"💡", it.HackSaving.Title, it.Currency, it.HackSaving.Savings, it.HackSaving.Type)

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/booking"
 	"github.com/MikkoParkkola/trvl/internal/hotelarb"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -83,12 +84,28 @@ func runPrices(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// MIK-6232: compose a booking-readiness verdict from the signals this
+	// endpoint actually has. Refundability is not known here (prices lacks it),
+	// which conservatively keeps the verdict below "ready" by design.
+	var readiness *booking.Verdict
+	if result != nil && len(result.Providers) > 0 {
+		v := bookingReadinessForPrices(hotelID, result.Providers)
+		readiness = &v
+	}
+
 	if format == "json" {
-		if pricePos != nil {
-			return models.FormatJSON(os.Stdout, struct {
+		if pricePos != nil || readiness != nil {
+			out := struct {
 				*models.HotelPriceResult
-				PricePosition *pricesignal.Position `json:"price_position,omitempty"`
-			}{result, pricePos})
+				PricePosition    *pricesignal.Position `json:"price_position,omitempty"`
+				BookingReadiness string                `json:"booking_readiness,omitempty"`
+				ReadinessReasons []string              `json:"booking_readiness_reasons,omitempty"`
+			}{HotelPriceResult: result, PricePosition: pricePos}
+			if readiness != nil {
+				out.BookingReadiness = string(readiness.Readiness)
+				out.ReadinessReasons = readiness.Reasons
+			}
+			return models.FormatJSON(os.Stdout, out)
 		}
 		return models.FormatJSON(os.Stdout, result)
 	}
@@ -97,18 +114,52 @@ func runPrices(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	printPricePosition(os.Stdout, pricePos)
+	if readiness != nil {
+		fmt.Printf("\nBooking readiness: %s — %s\n", readiness.Label(), readiness.Summary())
+	}
 	return nil
+}
+
+// bookingReadinessForPrices maps the signals available on the prices endpoint
+// into a readiness verdict. A nil Signal means "not known", which the contract
+// treats conservatively. LinkStable and Verified come from the cheapest
+// provider; identity is confirmed because the caller supplied a place ID;
+// refundability is left nil here.
+func bookingReadinessForPrices(hotelID string, providers []models.ProviderPrice) booking.Verdict {
+	cheapest := cheapestProvider(providers)
+	var in booking.Input // all signals default to nil = not known
+	if hotelID != "" {
+		in.IdentityConfirmed = booking.True()
+	}
+	switch cheapest.LinkDurability {
+	case "stable":
+		in.LinkStable = booking.True()
+	case "expiring":
+		in.LinkStable = booking.False()
+	}
+	switch cheapest.PriceConfidence {
+	case models.PriceConfidenceVerified, models.PriceConfidenceRoomLevel:
+		in.Verified = booking.True()
+	case models.PriceConfidenceUnverified:
+		in.Verified = booking.False()
+	}
+	return booking.Evaluate(in)
+}
+
+// cheapestProvider returns the lowest positive-priced provider, or a zero value.
+func cheapestProvider(providers []models.ProviderPrice) models.ProviderPrice {
+	var best models.ProviderPrice
+	for _, p := range providers {
+		if p.Price > 0 && (best.Price == 0 || p.Price < best.Price) {
+			best = p
+		}
+	}
+	return best
 }
 
 // cheapestProviderPrice returns the lowest positive provider price, or 0.
 func cheapestProviderPrice(providers []models.ProviderPrice) float64 {
-	var best float64
-	for _, p := range providers {
-		if p.Price > 0 && (best == 0 || p.Price < best) {
-			best = p.Price
-		}
-	}
-	return best
+	return cheapestProvider(providers).Price
 }
 
 func formatPricesTable(result *models.HotelPriceResult) error {
