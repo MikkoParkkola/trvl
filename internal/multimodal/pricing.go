@@ -100,17 +100,25 @@ func priceFlightLeg(ctx context.Context, spec LegSpec) (PricedLeg, bool) {
 
 // priceGroundLeg prices the cheapest ground option for the leg via the existing
 // ground search (hacks disabled to avoid a nested savings fan-out).
+//
+// The search is constrained to the discovered mode (bus/train/ferry) so a ferry
+// crossing is priced as a ferry rather than silently relabeled as the cheapest
+// bus that happens to serve the same city pair. A concrete discovered mode is
+// authoritative for the leg label; when the priced route itself decomposes into
+// several modes (e.g. a coach that boards a ferry), that chain is disclosed in
+// Detail so an embedded ferry is never hidden.
 func priceGroundLeg(ctx context.Context, spec LegSpec, allowBrowser bool) (PricedLeg, bool) {
 	if strings.TrimSpace(spec.From) == "" || strings.TrimSpace(spec.To) == "" {
 		return PricedLeg{}, false
 	}
+	disc := normalizeMode(spec.Mode)
 	opts := ground.SearchOptions{
 		NoHacks:               true,
 		AllowBrowserFallbacks: allowBrowser,
 	}
-	switch normalizeMode(spec.Mode) {
-	case "bus", "train":
-		opts.Type = normalizeMode(spec.Mode)
+	switch disc {
+	case "bus", "train", "ferry":
+		opts.Type = disc
 	}
 	res, err := ground.SearchByName(ctx, spec.From, spec.To, spec.Date, opts)
 	if err != nil || res == nil || !res.Success {
@@ -120,10 +128,7 @@ func priceGroundLeg(ctx context.Context, spec LegSpec, allowBrowser bool) (Price
 	if !ok {
 		return PricedLeg{}, false
 	}
-	mode := best.Type
-	if mode == "" {
-		mode = normalizeMode(spec.Mode)
-	}
+	mode, detail := resolveLegMode(disc, best)
 	return PricedLeg{
 		Mode:        mode,
 		From:        spec.From,
@@ -133,7 +138,48 @@ func priceGroundLeg(ctx context.Context, spec LegSpec, allowBrowser bool) (Price
 		DurationMin: best.Duration,
 		Provider:    best.Provider,
 		BookingURL:  best.BookingURL,
+		Detail:      detail,
 	}, true
+}
+
+// resolveLegMode decides a priced ground leg's display mode and any intermodal
+// disclosure. A concrete discovered mode (bus/train/ferry) is authoritative —
+// the ground search is constrained to it, so a ferry is never relabeled as a
+// bus. When the priced route decomposes into multiple modes (e.g. a coach that
+// boards a ferry), the full chain is returned as a "via ..." detail so the
+// embedded ferry is disclosed rather than hidden. Nothing is fabricated: the
+// disclosure comes only from the route's own leg breakdown.
+func resolveLegMode(disc string, best models.GroundRoute) (mode, detail string) {
+	mode = normalizeMode(disc)
+	chain := distinctLegModes(best.Legs)
+	if mode == "" || mode == "mixed" {
+		switch {
+		case len(chain) >= 1:
+			mode = chain[0]
+		case strings.TrimSpace(best.Type) != "":
+			mode = normalizeMode(best.Type)
+		}
+	}
+	if len(chain) > 1 {
+		return mode, "via " + strings.Join(chain, " + ")
+	}
+	return mode, ""
+}
+
+// distinctLegModes returns the ordered, de-duplicated normalized modes of a
+// route's leg breakdown (empty when the route carries no per-leg detail).
+func distinctLegModes(legs []models.GroundLeg) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, l := range legs {
+		m := normalizeMode(l.Type)
+		if m == "" || seen[m] {
+			continue
+		}
+		seen[m] = true
+		out = append(out, m)
+	}
+	return out
 }
 
 // resolveAirport turns a place name into a bookable IATA code: an explicit IATA
