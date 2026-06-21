@@ -219,6 +219,26 @@ type SearchOptions struct {
 	NoHacks bool
 }
 
+// providerEnabled reports whether a provider should run given an optional
+// allow-list (include; empty means all) and a deny-list (exclude, which always
+// wins). Pure and case-insensitive so it is unit-tested without the network.
+func providerEnabled(name string, include, exclude []string) bool {
+	for _, p := range exclude {
+		if strings.EqualFold(p, name) {
+			return false
+		}
+	}
+	if len(include) == 0 {
+		return true
+	}
+	for _, p := range include {
+		if strings.EqualFold(p, name) {
+			return true
+		}
+	}
+	return false
+}
+
 // SearchByName searches all providers for ground transport between two cities
 // given by name. Resolves city names to provider-specific IDs automatically.
 func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions) (*models.GroundSearchResult, error) {
@@ -343,20 +363,7 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	results := make(chan providerResult, searchResultBufferCapacity())
 
 	useProvider := func(name string) bool {
-		for _, p := range opts.ExcludeProviders {
-			if strings.EqualFold(p, name) {
-				return false
-			}
-		}
-		if len(opts.Providers) == 0 {
-			return true
-		}
-		for _, p := range opts.Providers {
-			if strings.EqualFold(p, name) {
-				return true
-			}
-		}
-		return false
+		return providerEnabled(name, opts.Providers, opts.ExcludeProviders)
 	}
 
 	// Distribusion — ground transport GDS covering bus, ferry, train, airport transfers.
