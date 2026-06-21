@@ -57,7 +57,18 @@ func runRooms(cmd *cobra.Command, args []string) error {
 
 	result, err := resolveRoomAvailability(ctx, hotelQuery, checkIn, checkOut, currency, location)
 	if err != nil {
-		return fmt.Errorf("hotel rooms: %w", err)
+		// Smaller and island properties often have no Google Hotel ID in the
+		// index, so room-level lookup can't resolve them. Don't fail silently —
+		// point the traveller at the verification paths that do work there.
+		area := location
+		if area == "" {
+			area = hotelQuery
+		}
+		return fmt.Errorf("hotel rooms: %w\n\n"+
+			"No room-level data is available for %q. Smaller or island properties are often not in Google's hotel index. Try instead:\n"+
+			"  trvl serpapi %q --checkin %s --checkout %s --currency %s   (detail-verified provider prices; needs SERPAPI_KEY)\n"+
+			"  trvl hotels %q --checkin %s --checkout %s --format json    (find a Google place ID, then: trvl prices <id> ...)",
+			err, hotelQuery, area, checkIn, checkOut, currency, area, checkIn, checkOut)
 	}
 
 	if format == "json" {

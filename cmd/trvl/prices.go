@@ -83,17 +83,37 @@ func formatPricesTable(result *models.HotelPriceResult) error {
 		fmt.Printf("Notice: %s\n\n", result.Notice)
 	}
 
-	headers := []string{"Provider", "Price", "Currency"}
+	headers := []string{"Provider", "Price", "Currency", "Link"}
 	rows := make([][]string, 0, len(result.Providers))
+	anyExpiring := false
 	for _, p := range result.Providers {
+		link := "-"
+		switch p.LinkDurability {
+		case "expiring":
+			link = "⚠ expiring"
+			anyExpiring = true
+		case "stable":
+			link = "stable"
+		}
 		rows = append(rows, []string{
 			p.Provider,
 			fmt.Sprintf("%.2f", p.Price),
 			p.Currency,
+			link,
 		})
 	}
 
 	models.FormatTable(os.Stdout, headers, rows)
+
+	if anyExpiring {
+		fmt.Printf("\n⚠ \"expiring\" links are Google ad-click redirects that work now but can die within a day or two — book promptly, or use the durable link below.\n")
+	}
+	if result.BookingFallbackURL != "" {
+		fmt.Printf("\nDurable link (lands on the right property + dates, won't 404): %s\n", result.BookingFallbackURL)
+	}
+	if result.TouristTaxNote != "" {
+		fmt.Printf("\nNote: %s\n", result.TouristTaxNote)
+	}
 	return nil
 }
 

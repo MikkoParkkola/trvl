@@ -184,7 +184,7 @@ func runSerpapi(cmd *cobra.Command, args []string) error {
 	models.Banner(os.Stdout, "🏨", "Hotels", fmt.Sprintf("%s · %s to %s", location, checkIn, checkOut))
 	fmt.Println()
 
-	headers := []string{"Hotel", "Class", "Rating", "€/nt", "Totale", "Provider", "Status"}
+	headers := []string{"Hotel", "Class", "Rating", "€/nt", "Total", "Provider", "Status"}
 	rows := make([][]string, 0, len(allHotels))
 	unverifiedCount := 0
 	for _, h := range allHotels {
