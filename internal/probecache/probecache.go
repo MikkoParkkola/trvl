@@ -10,12 +10,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/atomicjson"
 	"github.com/MikkoParkkola/trvl/internal/counterfactual"
 )
 
@@ -131,9 +131,6 @@ func (s *Store) evictLocked() {
 }
 
 func (s *Store) saveLocked() error {
-	if err := os.MkdirAll(s.dir, 0o700); err != nil {
-		return err
-	}
 	keys := make([]string, 0, len(s.entries))
 	for k := range s.entries {
 		keys = append(keys, k)
@@ -143,43 +140,5 @@ func (s *Store) saveLocked() error {
 	for _, k := range keys {
 		list = append(list, s.entries[k])
 	}
-	b, err := json.MarshalIndent(list, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	tmp, err := os.CreateTemp(s.dir, "probe-cache.json.tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(b); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, s.path()); err != nil {
-		if runtime.GOOS == "windows" {
-			_ = os.Remove(s.path())
-			if err2 := os.Rename(tmpPath, s.path()); err2 == nil {
-				cleanup = false
-				return nil
-			}
-		}
-		return err
-	}
-	cleanup = false
-	return nil
+	return atomicjson.Write(s.path(), list)
 }
