@@ -14,6 +14,7 @@ func TestPrintSavings_SplitsCallFreeFromProbed(t *testing.T) {
 	savings := []counterfactual.Saving{
 		{Kind: counterfactual.KindSameDay, Description: "cheapest saves 70", Amount: 70, CallFree: true, AsOf: now},
 		{Kind: counterfactual.KindProbe, Description: "nearby airport saves 40", Amount: 40, CallFree: false, AsOf: now},
+		{Kind: counterfactual.KindProbe, Description: "split ticket saves 25 precomputed", Amount: 25, CallFree: true, AsOf: now},
 	}
 	var b bytes.Buffer
 	printSavings(&b, savings, now)
@@ -24,23 +25,29 @@ func TestPrintSavings_SplitsCallFreeFromProbed(t *testing.T) {
 	if !strings.Contains(out, "deeper search") {
 		t.Fatalf("probed section header missing: %q", out)
 	}
-	// Honesty: the probed saving must appear under the deeper-search header, not
-	// the call-free one.
-	free, probed := splitSections(out)
-	if !strings.Contains(free, "cheapest saves 70") {
-		t.Fatalf("call-free saving misplaced: %q", free)
+	if !strings.Contains(out, "watch monitor") {
+		t.Fatalf("precomputed section header missing: %q", out)
 	}
-	if !strings.Contains(probed, "nearby airport saves 40") {
-		t.Fatalf("probed saving misplaced: %q", probed)
+	// Honesty: a probe-derived saving (even when free to read now) must NOT sit
+	// under the pure by-product "no extra searches" Tier-0 header.
+	tier0, rest := cut(out, "Pre-computed")
+	if strings.Contains(tier0, "nearby airport") || strings.Contains(tier0, "precomputed") {
+		t.Fatalf("probe-derived saving leaked into the Tier-0 by-product section: %q", tier0)
+	}
+	if !strings.Contains(rest, "split ticket saves 25 precomputed") {
+		t.Fatalf("precomputed saving misplaced: %q", rest)
+	}
+	if !strings.Contains(tier0, "cheapest saves 70") {
+		t.Fatalf("genuine by-product saving misplaced: %q", tier0)
 	}
 }
 
-func splitSections(out string) (free, probed string) {
-	idx := strings.Index(out, "deeper search")
+func cut(s, sep string) (before, after string) {
+	idx := strings.Index(s, sep)
 	if idx < 0 {
-		return out, ""
+		return s, ""
 	}
-	return out[:idx], out[idx:]
+	return s[:idx], s[idx:]
 }
 
 func TestPrintSavings_Empty(t *testing.T) {

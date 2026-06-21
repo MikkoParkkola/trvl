@@ -60,35 +60,45 @@ func tier1CachedSavings(origin, destination string, now time.Time) []counterfact
 	return e.Savings
 }
 
-// printSavings renders counterfactual savings, split by whether they were free.
-// Call-free savings (MIK-6234 Tier 0) carry the explicit "no extra searches"
-// guarantee; probed savings (Tier 2) are labelled as found by a deeper search so
-// the output never implies a fan-out that did not happen, or hides one that did.
+// printSavings renders counterfactual savings in three honest buckets:
+//   - Tier 0 (call-free, not probe-derived): genuine by-products of data already
+//     in hand — "no extra searches".
+//   - Tier 1 (call-free but probe-derived): pre-computed by the background watch
+//     monitor — free to read now, but they DID cost provider calls earlier, so
+//     they are labelled as such rather than hidden among the true by-products.
+//   - Tier 2 (not call-free): a deeper search that issued extra provider calls
+//     just now.
+//
 // Each line carries an "as of" age when its data is not from this moment
-// (TRVL.CF.5 honesty).
+// (TRVL.CF.5 honesty). The point is to never imply a fan-out that did not happen
+// nor hide one that did — including one that happened in the background.
 func printSavings(w io.Writer, savings []counterfactual.Saving, now time.Time) {
 	if len(savings) == 0 {
 		return
 	}
-	var free, probed []counterfactual.Saving
+	var free, precomputed, probed []counterfactual.Saving
 	for _, s := range savings {
-		if s.CallFree {
+		switch {
+		case s.CallFree && s.Kind == counterfactual.KindProbe:
+			precomputed = append(precomputed, s)
+		case s.CallFree:
 			free = append(free, s)
-		} else {
+		default:
 			probed = append(probed, s)
 		}
 	}
-	if len(free) > 0 {
-		fmt.Fprintln(w, "\nSavings you could capture (no extra searches):")
-		for _, s := range free {
-			fmt.Fprintf(w, "  • %s%s\n", s.Description, asOfSuffix(s.AsOf, now))
-		}
+	printSavingsSection(w, "\nSavings you could capture (no extra searches):", free, now)
+	printSavingsSection(w, "\nPre-computed by your watch monitor (no extra searches now):", precomputed, now)
+	printSavingsSection(w, "\nFound by a deeper search (extra provider calls):", probed, now)
+}
+
+func printSavingsSection(w io.Writer, header string, savings []counterfactual.Saving, now time.Time) {
+	if len(savings) == 0 {
+		return
 	}
-	if len(probed) > 0 {
-		fmt.Fprintln(w, "\nFound by a deeper search (extra provider calls):")
-		for _, s := range probed {
-			fmt.Fprintf(w, "  • %s%s\n", s.Description, asOfSuffix(s.AsOf, now))
-		}
+	fmt.Fprintln(w, header)
+	for _, s := range savings {
+		fmt.Fprintf(w, "  • %s%s\n", s.Description, asOfSuffix(s.AsOf, now))
 	}
 }
 
