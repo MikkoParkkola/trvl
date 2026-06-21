@@ -36,10 +36,11 @@ nothing is shown.`,
 			}
 			ws := store.List()
 
-			var history []watch.PricePoint
-			for _, w := range ws {
-				history = append(history, store.History(w.ID)...)
-			}
+			// AllHistory returns every price point — both watch-keyed (from the
+			// watch scheduler) and route-keyed (from ad-hoc searches, MIK-6229).
+			// Build feeds both into the graph so historicLowNudge evaluates the
+			// full corpus, not just the watch-scoped history.
+			history := store.AllHistory()
 
 			prefs, err := preferences.Load()
 			if err != nil {

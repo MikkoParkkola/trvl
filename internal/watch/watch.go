@@ -540,6 +540,22 @@ func (s *Store) pruneRouteLocked(routeKey string) {
 	s.history = kept
 }
 
+// AllHistory returns a snapshot of every price point in the store — both
+// watch-keyed (WatchID set) and route-keyed (RouteKey set) — ordered by
+// insertion time. The returned slice is a copy; mutations do not affect the
+// store. Callers that need the full corpus for graph construction (e.g. the
+// travelgraph nudge engine) should prefer this over per-watch History calls so
+// that ad-hoc route observations (MIK-6229) are included alongside the
+// watch-scoped history.
+func (s *Store) AllHistory() []PricePoint {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]PricePoint, len(s.history))
+	copy(out, s.history)
+	return out
+}
+
 // RouteHistory returns all price points recorded for a given route key, ordered
 // by insertion (chronological) time.
 func (s *Store) RouteHistory(routeKey string) []PricePoint {

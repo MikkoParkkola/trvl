@@ -28,6 +28,9 @@ const (
 	KindSameDay Kind = "same_day_alternative"
 	// KindVsHistory: the current price relative to this route's own history.
 	KindVsHistory Kind = "vs_history"
+	// KindProbe: a saving found by an explicit, budgeted fan-out probe (Tier 2).
+	// Unlike the other kinds this is NOT call-free; CallFree is false on these.
+	KindProbe Kind = "probe"
 )
 
 // Saving is one call-free counterfactual finding. Amount is the money saved

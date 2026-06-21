@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/baggage"
+	"github.com/MikkoParkkola/trvl/internal/cfprobe"
 	"github.com/MikkoParkkola/trvl/internal/counterfactual"
 	"github.com/MikkoParkkola/trvl/internal/deals"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
@@ -45,6 +46,7 @@ func flightsCmd() *cobra.Command {
 		awardCookies   string
 		provider       string
 		flightRailFly  bool
+		deep           bool
 	)
 
 	cmd := &cobra.Command{
@@ -204,12 +206,47 @@ Examples:
 			// multi-airport search has no single route key, so we skip it
 			// rather than mis-key the corpus. Never breaks a search.
 			var pricePos *pricesignal.Position
+			var savings []counterfactual.Saving
 			if len(origins) == 1 && len(destinations) == 1 && result != nil && len(result.Flights) > 0 {
+				now := time.Now()
 				if store, serr := watch.DefaultStore(); serr == nil && store.Load() == nil {
 					_ = obslog.FlightSearch(store, origins[0], destinations[0], date, result)
 					key := watch.RouteKey("flight", origins[0], destinations[0], date)
 					p := pricesignal.Compute(store.RoutePrices(key, result.Flights[0].Currency), result.Flights[0].Price, 0)
 					pricePos = &p
+				}
+				// MIK-6234 Tier 0: call-free counterfactual savings from data
+				// already in hand — same-day spread, vs-history, and shift-day
+				// read from a persisted price grid (no new provider calls).
+				if s := counterfactual.SameDayAlternative(result.Flights, 10, now); s != nil {
+					savings = append(savings, *s)
+				}
+				if s := counterfactual.VsHistory(pricePos, result.Flights[0].Currency, now); s != nil {
+					savings = append(savings, *s)
+				}
+				savings = append(savings, shiftDaySavings(origins[0], destinations[0], date, now)...)
+
+				// MIK-6234 Tier 2: opt-in, budget-gated cold-route fan-out. The
+				// probe lane is separate from interactive traffic; if exhausted
+				// it refuses rather than issuing a silent fan-out.
+				if deep {
+					cheapest := cheapestFlightPrice(result.Flights)
+					in := hacks.DetectorInput{
+						Origin:      origins[0],
+						Destination: destinations[0],
+						Date:        date,
+						ReturnDate:  returnDate,
+						Currency:    result.Flights[0].Currency,
+						NaivePrice:  cheapest * float64(adults),
+						Passengers:  adults,
+					}
+					probed, st := cfprobe.Default().Probe(now, func() []hacks.Hack {
+						return hacks.DetectAll(cmd.Context(), in)
+					})
+					savings = append(savings, probed...)
+					if st == cfprobe.StatusBudgetExhausted {
+						fmt.Fprintln(os.Stderr, "Note: deep counterfactual budget exhausted; showing call-free results only.")
+					}
 				}
 			}
 
@@ -236,11 +273,12 @@ Examples:
 			}
 
 			if format == "json" {
-				if pricePos != nil {
+				if pricePos != nil || len(savings) > 0 {
 					return models.FormatJSON(os.Stdout, struct {
 						*models.FlightSearchResult
-						PricePosition *pricesignal.Position `json:"price_position,omitempty"`
-					}{result, pricePos})
+						PricePosition *pricesignal.Position   `json:"price_position,omitempty"`
+						Savings       []counterfactual.Saving `json:"savings,omitempty"`
+					}{result, pricePos, savings})
 				}
 				return models.FormatJSON(os.Stdout, result)
 			}
@@ -249,21 +287,7 @@ Examples:
 				return err
 			}
 			printPricePosition(os.Stdout, pricePos)
-
-			// MIK-6234 Tier 0: surface call-free counterfactual savings derived
-			// from data already fetched (same-day spread + vs-history). No new
-			// provider calls are issued.
-			if len(result.Flights) > 0 {
-				now := time.Now()
-				var savings []counterfactual.Saving
-				if s := counterfactual.SameDayAlternative(result.Flights, 10, now); s != nil {
-					savings = append(savings, *s)
-				}
-				if s := counterfactual.VsHistory(pricePos, result.Flights[0].Currency, now); s != nil {
-					savings = append(savings, *s)
-				}
-				printSavings(os.Stdout, savings)
-			}
+			printSavings(os.Stdout, savings, time.Now())
 
 			// Auto-trigger: run applicable hack detectors and print tips
 			// below the flight results.
@@ -290,6 +314,7 @@ Examples:
 	cmd.Flags().StringVar(&awardCookies, "award-cookies", "", "KLM/Flying Blue Cookie header for --award (or set AFKL_KLM_COOKIES)")
 	cmd.Flags().StringVar(&provider, "provider", "", "Flight provider: empty = default (Google Flights + Kiwi + Skiplagged merge), skiplagged = Skiplagged MCP only (hidden-city + virtual-interlining defaults)")
 	cmd.Flags().BoolVar(&flightRailFly, "rail-fly", false, "Expand the search to rail-connected origins (KL/AF Air&Rail), surfacing cheaper rail+fly bundles even when the origin is outside the default hub list")
+	cmd.Flags().BoolVar(&deep, "deep", false, "Run a budget-gated counterfactual fan-out (nearby airports, split tickets, hidden city). Issues extra provider calls, capped by a best-effort budget that never delays the primary search")
 	cmd.Flags().BoolVar(&noGeo, "no-geo", false, "Disable geo-IP origin detection (also honored via TRVL_NO_GEO=1). Origin then resolves only from an explicit code or your saved home airport.")
 
 	cmd.ValidArgsFunction = airportCompletion

@@ -8,6 +8,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
+	"github.com/MikkoParkkola/trvl/internal/pricesignal"
 	"github.com/MikkoParkkola/trvl/internal/profile"
 )
 
@@ -422,6 +423,24 @@ func handleHotelPrices(ctx context.Context, args map[string]any, elicit ElicitFu
 		return nil, nil, err
 	}
 
+	// MIK-6229/6232: log price history + compute price-position signal and
+	// booking-readiness verdict. Best-effort: errors are silently discarded so
+	// a store failure never breaks the tool response.
+	pricePos, readiness := hotelPriceSignals(hotelID, checkIn, result)
+
+	// Build enriched response with price_position and booking_readiness.
+	type enrichedHotelPriceResult struct {
+		*models.HotelPriceResult
+		PricePosition           *pricesignal.Position `json:"price_position,omitempty"`
+		BookingReadiness        string                `json:"booking_readiness,omitempty"`
+		BookingReadinessReasons []string              `json:"booking_readiness_reasons,omitempty"`
+	}
+	enriched := enrichedHotelPriceResult{HotelPriceResult: result, PricePosition: pricePos}
+	if readiness != nil {
+		enriched.BookingReadiness = string(readiness.Readiness)
+		enriched.BookingReadinessReasons = readiness.Reasons
+	}
+
 	summary := fmt.Sprintf("Found %d booking providers for hotel %s (%s to %s).",
 		len(result.Providers), hotelID, checkIn, checkOut)
 	if len(result.Providers) > 0 {
@@ -434,12 +453,12 @@ func handleHotelPrices(ctx context.Context, args map[string]any, elicit ElicitFu
 		summary += fmt.Sprintf(" Cheapest: %s %.0f via %s.", cheapest.Currency, cheapest.Price, cheapest.Provider)
 	}
 
-	content, err := buildAnnotatedContentBlocks(summary, result)
+	content, err := buildAnnotatedContentBlocks(summary, enriched)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return content, result, nil
+	return content, enriched, nil
 }
 
 // --- Summary builders ---

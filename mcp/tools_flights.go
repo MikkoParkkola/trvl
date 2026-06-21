@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/baggage"
+	"github.com/MikkoParkkola/trvl/internal/counterfactual"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/hacks"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/points"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
+	"github.com/MikkoParkkola/trvl/internal/pricesignal"
 	"github.com/MikkoParkkola/trvl/internal/profile"
 	"github.com/MikkoParkkola/trvl/internal/travelctx"
 )
@@ -491,17 +493,25 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		}
 	}
 
+	// MIK-6229/6234: log price history + compute price-position signal and
+	// call-free counterfactual savings. Best-effort: errors are silently
+	// discarded so a store failure never breaks the search.
+	// Single O/D only — multi-airport searches are skipped inside the helper.
+	pricePos, cfSavings := flightPriceSignals(primaryOrigin, primaryDest, date, result)
+
 	// Build structured response.
 	type enrichedFlightSearchResult struct {
-		Success        bool               `json:"success"`
-		Count          int                `json:"count"`
-		TripType       string             `json:"trip_type"`
-		Flights        []enrichedFlight   `json:"flights"`
-		Error          string             `json:"error,omitempty"`
-		Suggestions    []Suggestion       `json:"suggestions,omitempty"`
-		Hacks          []hacks.Hack       `json:"hacks,omitempty"`
-		HackSaving     *models.HackSaving `json:"hack_saving,omitempty"`
-		BookingContext *bookingContext    `json:"booking_context,omitempty"`
+		Success        bool                    `json:"success"`
+		Count          int                     `json:"count"`
+		TripType       string                  `json:"trip_type"`
+		Flights        []enrichedFlight        `json:"flights"`
+		Error          string                  `json:"error,omitempty"`
+		Suggestions    []Suggestion            `json:"suggestions,omitempty"`
+		Hacks          []hacks.Hack            `json:"hacks,omitempty"`
+		HackSaving     *models.HackSaving      `json:"hack_saving,omitempty"`
+		BookingContext *bookingContext         `json:"booking_context,omitempty"`
+		PricePosition  *pricesignal.Position   `json:"price_position,omitempty"`
+		Savings        []counterfactual.Saving `json:"savings,omitempty"`
 	}
 	resp := enrichedFlightSearchResult{
 		Success:        result.Success,
@@ -513,6 +523,8 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		Hacks:          flightHacks,
 		HackSaving:     result.HackSaving,
 		BookingContext: buildBookingContext(date, primaryOrigin, originSource),
+		PricePosition:  pricePos,
+		Savings:        cfSavings,
 	}
 
 	content, err := buildAnnotatedContentBlocks(flightSummary(result, origin, dest), resp)
