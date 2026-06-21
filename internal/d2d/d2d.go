@@ -11,8 +11,10 @@
 //   - Mixed currencies are flagged: if legs disagree on currency the total is not
 //     silently summed. MixedCurrency is set and ConfirmedTotal reflects only the
 //     legs in the headline currency.
-//   - The confidence band widens whenever any non-confirmed leg exists. A single
-//     figure is only produced for all-confirmed, single-currency trips.
+//   - The confidence band widens whenever any non-confirmed leg exists, and is
+//     always expressed in the headline currency — magnitudes in other currencies
+//     are never summed into it. A single figure is only produced for
+//     all-confirmed, single-currency trips.
 //
 // This package is pure (no network I/O, no new dependencies beyond stdlib).
 package d2d
@@ -66,8 +68,8 @@ const (
 // Leg is a single segment of a door-to-door journey.
 //
 // Callers that have already determined the verification status should set it
-// explicitly. When Verification is left empty, ResolveVerification maps the
-// Source to a default (e.g. "rome2rio" → Indicative).
+// explicitly. When Verification is left empty, DefaultVerification maps the
+// Source to a default (e.g. "rome2rio" -> Indicative).
 type Leg struct {
 	// Mode is the transport or accommodation type: "air", "train", "bus",
 	// "ferry", "hotel", "taxi", etc. Free-form; used for display only.
@@ -145,9 +147,9 @@ type Total struct {
 	// Equal to ConfirmedTotal when Band == BandExact.
 	BandLow float64
 
-	// BandHigh is the upper bound of the estimated total range.
-	// Equal to ConfirmedTotal when Band == BandExact; inflated by indicative
-	// and unverified leg prices when available, else left as ConfirmedTotal.
+	// BandHigh is the upper bound of the estimated total range, in the headline
+	// currency. Equal to ConfirmedTotal when Band == BandExact; inflated by
+	// indicative and unverified legs that are in the headline currency.
 	BandHigh float64
 }
 
@@ -160,8 +162,8 @@ var indicativeSources = map[string]bool{
 }
 
 // DefaultVerification returns the default Verification for a given source name.
-// rome2rio → Indicative; any unknown or empty source → Unverified; all other
-// known transactional providers → Confirmed.
+// rome2rio -> Indicative; any unknown or empty source -> Unverified; all other
+// known transactional providers -> Confirmed.
 func DefaultVerification(source string) Verification {
 	s := strings.ToLower(strings.TrimSpace(source))
 	if s == "" {
@@ -189,7 +191,7 @@ func Compute(legs []Leg) Total {
 	mixedCurrency := hasMixedCurrencies(legs)
 
 	confirmedTotal := sumPrices(confirmed)
-	band, low, high := computeBand(confirmedTotal, indicative, unverified, excluded, mixedCurrency)
+	band, low, high := computeBand(confirmedTotal, currency, indicative, unverified, len(excluded) > 0, mixedCurrency)
 
 	return Total{
 		ConfirmedTotal:       round2(confirmedTotal),
@@ -281,38 +283,47 @@ func sumPrices(legs []Leg) float64 {
 	return total
 }
 
-// computeBand derives the confidence band and [low, high] range. The band
-// widens whenever non-confirmed legs or mixed-currency exclusions exist.
-func computeBand(confirmed float64, indicative, unverified, excluded []Leg, mixed bool) (BandKind, float64, float64) {
+// sumPricesInCurrency totals only legs priced in the given currency, so a
+// confidence band never adds magnitudes from a different currency (which would
+// be a fabricated, meaningless number).
+func sumPricesInCurrency(legs []Leg, currency string) float64 {
+	var total float64
+	for _, l := range legs {
+		if l.Price > 0 && l.Currency == currency {
+			total += l.Price
+		}
+	}
+	return total
+}
+
+// computeBand derives the confidence band and [low, high] range, all in the
+// headline currency. The band widens whenever non-confirmed legs exist.
+// Indicative and unverified legs inflate the upper bound ONLY when priced in the
+// headline currency; foreign-currency legs (including all excluded legs) are
+// never summed into the band — they are surfaced via the MixedCurrency flag and
+// the ExcludedCurrencyLegs bucket instead.
+func computeBand(confirmed float64, currency string, indicative, unverified []Leg, hasExcluded, mixed bool) (BandKind, float64, float64) {
 	hasIndicative := len(indicative) > 0
 	hasUnverified := len(unverified) > 0
-	hasExcluded := len(excluded) > 0
 
 	switch {
 	case hasUnverified:
-		high := confirmed + sumPrices(indicative) + sumPrices(unverified) + sumPrices(excluded)
-		if high < confirmed {
-			high = confirmed
-		}
+		high := confirmed + sumPricesInCurrency(indicative, currency) + sumPricesInCurrency(unverified, currency)
 		return BandUnknown, confirmed, high
 	case hasIndicative:
-		high := confirmed + sumPrices(indicative) + sumPrices(excluded)
-		if high < confirmed {
-			high = confirmed
-		}
+		high := confirmed + sumPricesInCurrency(indicative, currency)
 		return BandWide, confirmed, high
 	case hasExcluded || mixed:
-		high := confirmed + sumPrices(excluded)
-		if high < confirmed {
-			high = confirmed
-		}
-		return BandNarrow, confirmed, high
+		// Confirmed subtotal is reliable; foreign-currency legs exist but cannot
+		// be summed into a single-currency bound, so the band stays at the subtotal.
+		return BandNarrow, confirmed, confirmed
 	default:
 		return BandExact, confirmed, confirmed
 	}
 }
 
-// round2 rounds a float to 2 decimal places (matches multimodal/assemble.go).
+// round2 rounds a non-negative float to 2 decimal places (matches
+// multimodal/assemble.go). Prices in this package are never negative.
 func round2(v float64) float64 {
 	return float64(int64(v*100+0.5)) / 100
 }
