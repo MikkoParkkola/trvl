@@ -295,3 +295,139 @@ func filterKind(nudges []travelgraph.Nudge, kind travelgraph.NudgeKind) []travel
 
 // Compile-time check: Nudge, NudgeKind, Build, Nudges are exported.
 var _ = fmt.Sprintf("%T", travelgraph.Nudge{})
+
+// ptRoute builds a route-keyed PricePoint (MIK-6229 ad-hoc corpus).
+func ptRoute(routeKey string, price float64, currency string, hoursAgo float64) watch.PricePoint {
+	return watch.PricePoint{
+		RouteKey:  routeKey,
+		Price:     price,
+		Currency:  currency,
+		Timestamp: now.Add(-time.Duration(hoursAgo * float64(time.Hour))),
+	}
+}
+
+// historyRouteKeyed builds n route-keyed points for a given route key, spread
+// around basePrice with ±spread, oldest first.
+func historyRouteKeyed(routeKey, currency string, n int, basePrice, spread float64) []watch.PricePoint {
+	pts := make([]watch.PricePoint, n)
+	for i := range pts {
+		delta := spread * float64(i-n/2) / float64(n)
+		pts[i] = watch.PricePoint{
+			RouteKey:  routeKey,
+			Price:     basePrice + delta,
+			Currency:  currency,
+			Timestamp: now.Add(-time.Duration((n - i) * int(time.Hour))),
+		}
+	}
+	return pts
+}
+
+// --- MIK-6229 / MIK-6233: route-keyed corpus drives historic-low nudges ---
+
+// TestRouteKeyedCorpus_FiresHistoricLowWithNoWatch verifies that >= 10
+// route-keyed observations with the current price well below the median
+// produce a KindHistoricLow nudge even when NO watch exists for that route.
+// This is the core contract of MIK-6229/MIK-6233: the ad-hoc corpus must
+// actually drive nudges.
+func TestRouteKeyedCorpus_FiresHistoricLowWithNoWatch(t *testing.T) {
+	// GIVEN: 10 route-keyed history points at ~500 EUR median, plus a current
+	// point at 390 EUR (22% below median → fareintel "buy" + "high" confidence).
+	rk := "FLIGHT|AMS|VLC|2026-07-15"
+	history := historyRouteKeyed(rk, "EUR", 10, 500.0, 60.0)
+	history = append(history, ptRoute(rk, 390.0, "EUR", 0.5))
+
+	// WHEN: no watches at all — the route corpus is the only input
+	g := travelgraph.Build(nil, history, nil, nil)
+	nudges := travelgraph.Nudges(g)
+
+	// THEN: exactly one KindHistoricLow nudge citing the route key "AMS-VLC"
+	lowNudges := filterKind(nudges, travelgraph.KindHistoricLow)
+	if len(lowNudges) == 0 {
+		t.Fatalf("expected a KindHistoricLow nudge from route-keyed corpus, got %d nudge(s): %v", len(nudges), nudges)
+	}
+	n := lowNudges[0]
+	const expectedRouteKey = "AMS-VLC"
+	if !containsSource(n.Sources, expectedRouteKey) {
+		t.Errorf("expected Sources to contain %q, got %v", expectedRouteKey, n.Sources)
+	}
+}
+
+// TestRouteKeyedCorpus_MalformedKey_Skipped ensures that a route-keyed point
+// with a malformed key (fewer than 3 pipe-separated segments) does not panic
+// and is silently skipped.
+func TestRouteKeyedCorpus_MalformedKey_Skipped(t *testing.T) {
+	history := []watch.PricePoint{
+		{RouteKey: "BADKEY", Price: 100.0, Currency: "EUR", Timestamp: now},
+		{RouteKey: "FLIGHT|AMS", Price: 200.0, Currency: "EUR", Timestamp: now},
+		{RouteKey: "", Price: 0, Currency: "EUR", Timestamp: now},
+	}
+	g := travelgraph.Build(nil, history, nil, nil)
+	nudges := travelgraph.Nudges(g)
+	if len(nudges) != 0 {
+		t.Errorf("expected 0 nudges for malformed route keys, got %d: %v", len(nudges), nudges)
+	}
+}
+
+// TestRouteKeyedCorpus_HotelKey_Skipped verifies that hotel-shaped route keys
+// (non-FLIGHT kind) are silently skipped without panic.
+func TestRouteKeyedCorpus_HotelKey_Skipped(t *testing.T) {
+	// Hotel keys have a different shape; they must not be misrouted as flights.
+	history := []watch.PricePoint{
+		{RouteKey: "HOTEL|AMS|MARRIOTT|2026-07-15", Price: 250.0, Currency: "EUR", Timestamp: now},
+	}
+	g := travelgraph.Build(nil, history, nil, nil)
+	nudges := travelgraph.Nudges(g)
+	if len(nudges) != 0 {
+		t.Errorf("expected 0 nudges for hotel-kind route key, got %d: %v", len(nudges), nudges)
+	}
+}
+
+// TestRouteKeyedCorpus_MergesWithWatchHistory verifies that route-keyed points
+// and watch-keyed points for the same route are merged into a single history
+// bucket. The combined corpus should reach the confidence threshold that
+// neither source alone might satisfy.
+func TestRouteKeyedCorpus_MergesWithWatchHistory(t *testing.T) {
+	// GIVEN: 5 watch-keyed + 5 route-keyed points on HEL-NYC, totalling 10
+	// (confidence="high" threshold); current price 22% below median.
+	w := watch.Watch{
+		ID:          "w-merge",
+		Origin:      "HEL",
+		Destination: "NYC",
+		BelowPrice:  0,
+		LastPrice:   400.0,
+		Currency:    "EUR",
+	}
+	rk := "FLIGHT|HEL|NYC|2026-08-01"
+	watchPts := historyWithSpread("w-merge", "EUR", 5, 520.0, 40.0)
+	routePts := historyRouteKeyed(rk, "EUR", 5, 520.0, 40.0)
+	currentPt := ptRoute(rk, 400.0, "EUR", 0.5)
+	history := append(append(watchPts, routePts...), currentPt)
+
+	// WHEN
+	g := travelgraph.Build([]watch.Watch{w}, history, nil, nil)
+	nudges := travelgraph.Nudges(g)
+
+	// THEN: merged corpus reaches high-confidence → historic-low nudge fires
+	lowNudges := filterKind(nudges, travelgraph.KindHistoricLow)
+	if len(lowNudges) == 0 {
+		t.Fatalf("expected KindHistoricLow from merged watch+route corpus, got %d nudge(s): %v", len(nudges), nudges)
+	}
+}
+
+// TestNoGroundedTrigger_RouteKeyed_ZeroNudges confirms the anti-speculation
+// guarantee holds for route-keyed points: flat history (price near median)
+// must not emit a nudge.
+func TestNoGroundedTrigger_RouteKeyed_ZeroNudges(t *testing.T) {
+	// GIVEN: 10 route-keyed points all at ~300 EUR — no material dip
+	rk := "FLIGHT|FRA|LHR|2026-09-10"
+	history := historyRouteKeyed(rk, "EUR", 10, 300.0, 5.0) // tiny spread, price near median
+	// Current price at median — not a "buy"
+	history = append(history, ptRoute(rk, 300.0, "EUR", 0.5))
+
+	g := travelgraph.Build(nil, history, nil, nil)
+	nudges := travelgraph.Nudges(g)
+
+	if len(nudges) != 0 {
+		t.Errorf("expected 0 nudges (flat route-keyed history), got %d: %v", len(nudges), nudges)
+	}
+}

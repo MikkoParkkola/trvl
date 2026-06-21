@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/booking"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/spf13/cobra"
@@ -71,11 +72,122 @@ func runRooms(cmd *cobra.Command, args []string) error {
 			err, hotelQuery, area, checkIn, checkOut, currency, area, checkIn, checkOut)
 	}
 
+	verdict := bookingReadinessForRooms(result)
+
 	if format == "json" {
-		return models.FormatJSON(os.Stdout, result)
+		out := struct {
+			*hotels.RoomAvailability
+			BookingReadiness string   `json:"booking_readiness,omitempty"`
+			ReadinessReasons []string `json:"booking_readiness_reasons,omitempty"`
+		}{
+			RoomAvailability: result,
+			BookingReadiness: string(verdict.Readiness),
+			ReadinessReasons: verdict.Reasons,
+		}
+		return models.FormatJSON(os.Stdout, out)
 	}
 
-	return formatRoomsTable(result)
+	if err := formatRoomsTable(result); err != nil {
+		return err
+	}
+	fmt.Printf("\nBooking readiness: %s — %s\n", verdict.Label(), verdict.Summary())
+	return nil
+}
+
+// bookingReadinessForRooms maps the signals available in a RoomAvailability
+// result into a booking readiness verdict.
+//
+// Signal mapping:
+//   - IdentityConfirmed: true when result.HotelID is non-empty (caller resolved
+//     a Google place ID before fetching rooms).
+//   - RefundabilityKnown: true when ANY room carries Refundable, FreeCancellation,
+//     or CancellationPolicy evidence; nil (not known) when none do.
+//   - Verified: true when any room PriceConfidence is "verified" or "room_level";
+//     false when all rooms are explicitly "unverified"; nil when no confidence
+//     signal is present.
+//   - LinkStable: classified from a room's ProviderURL via
+//     hotels.ClassifyLinkDurability — "stable" -> true, "expiring" -> false,
+//     none present -> nil. With a stable booking link, "ready" is reachable
+//     from rooms when refundability, identity, and verification also hold.
+func bookingReadinessForRooms(result *hotels.RoomAvailability) booking.Verdict {
+	var in booking.Input // all signals default to nil = not known
+
+	if result.HotelID != "" {
+		in.IdentityConfirmed = booking.True()
+	}
+
+	in.RefundabilityKnown = refundabilitySignal(result.Rooms)
+	in.Verified = priceConfidenceSignal(result.Rooms)
+	in.LinkStable = linkStableSignal(result.Rooms)
+
+	return booking.Evaluate(in)
+}
+
+// linkStableSignal classifies the durability of room booking links: True when
+// any room has a stable link, False when links exist but all are expiring/dead,
+// nil when no link is present. A stable link is what lets "ready" be reached.
+func linkStableSignal(rooms []hotels.RoomType) booking.Signal {
+	sawExpiring := false
+	for _, r := range rooms {
+		urls := []string{r.ProviderURL}
+		for _, opt := range r.InventoryOptions {
+			urls = append(urls, opt.ProviderURL)
+		}
+		for _, u := range urls {
+			switch hotels.ClassifyLinkDurability(u) {
+			case "stable":
+				return booking.True()
+			case "expiring":
+				sawExpiring = true
+			}
+		}
+	}
+	if sawExpiring {
+		return booking.False()
+	}
+	return nil
+}
+
+// refundabilitySignal returns True when any room exposes a refundability
+// signal, nil when none do. False is never returned: "known non-refundable"
+// is still "known" per the booking.Input contract.
+func refundabilitySignal(rooms []hotels.RoomType) booking.Signal {
+	for _, r := range rooms {
+		if r.Refundable != nil || r.FreeCancellation != nil || r.CancellationPolicy != "" {
+			return booking.True()
+		}
+	}
+	return nil
+}
+
+// priceConfidenceSignal returns True when any InventoryOption across all rooms
+// carries "verified" or "room_level" PriceConfidence, False when all
+// InventoryOptions are explicitly "unverified", or nil when no confidence
+// signal is present. PriceConfidence lives on RoomInventoryQuote (inside
+// room.InventoryOptions), not on RoomType itself.
+func priceConfidenceSignal(rooms []hotels.RoomType) booking.Signal {
+	hasAny := false
+	allUnverified := true
+	for _, r := range rooms {
+		for _, opt := range r.InventoryOptions {
+			switch opt.PriceConfidence {
+			case models.PriceConfidenceVerified, models.PriceConfidenceRoomLevel:
+				return booking.True()
+			case models.PriceConfidenceUnverified:
+				hasAny = true
+				// allUnverified stays true
+			default:
+				if opt.PriceConfidence != "" {
+					hasAny = true
+					allUnverified = false
+				}
+			}
+		}
+	}
+	if hasAny && allUnverified {
+		return booking.False()
+	}
+	return nil
 }
 
 func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut, currency, location string) (*hotels.RoomAvailability, error) {

@@ -75,9 +75,16 @@ type Graph struct {
 // required to be non-nil; missing slices are silently treated as empty.
 //
 //   - ws: active watches from watch.Store.List()
-//   - history: all price points, typically from watch.Store's full history
+//   - history: all price points — pass watch.Store.AllHistory() so that both
+//     watch-keyed and route-keyed (MIK-6229 ad-hoc corpus) points are included.
 //   - prefs: user preferences (pass nil to use defaults)
 //   - ts: planned or booked trips
+//
+// Route-keyed points (RouteKey != "") are bucketed by parsing the key
+// ("FLIGHT|ORIG|DEST|date") to extract origin+destination. Non-flight keys and
+// malformed keys are silently skipped. Watch-keyed points continue to map via
+// the watch index as before, so both sources merge into the same per-route
+// history that historicLowNudge evaluates.
 func Build(
 	ws []watch.Watch,
 	history []watch.PricePoint,
@@ -106,14 +113,25 @@ func Build(
 		rh.watches = append(rh.watches, w)
 	}
 
-	// Index price history. Points may carry a WatchID; map them to the route key
-	// via the watch index we just built.
+	// Build watch-ID → route-key lookup for watch-keyed history points.
 	watchToRoute := make(map[string]string, len(ws))
 	for _, w := range ws {
 		watchToRoute[w.ID] = routeKey(w.Origin, w.Destination)
 	}
 
+	// Index price history. Two sources are handled:
+	//   1. Route-keyed points (RouteKey != "") from the ad-hoc search corpus
+	//      (MIK-6229). Parse origin+destination from the key and bucket directly.
+	//   2. Watch-keyed points (WatchID set). Map to the route via watchToRoute.
 	for _, p := range history {
+		if p.RouteKey != "" {
+			if key, ok := parseFlightRouteKey(p.RouteKey); ok {
+				rh := g.routeFor(key)
+				rh.points = append(rh.points, p)
+			}
+			// Malformed or non-flight keys are silently skipped.
+			continue
+		}
 		key, ok := watchToRoute[p.WatchID]
 		if !ok {
 			continue // point belongs to a deleted or unknown watch; skip
@@ -123,6 +141,29 @@ func Build(
 	}
 
 	return g
+}
+
+// parseFlightRouteKey extracts the canonical "ORIGIN-DESTINATION" graph key
+// from a watch.RouteKey string (format "KIND|ORIGIN|DESTINATION|DATE").
+// Returns ("", false) for malformed keys or non-flight kinds so that
+// hotel-shaped keys are silently skipped rather than misrouted.
+//
+// Only "FLIGHT" kind is handled for now; hotel keys use a different shape and
+// will gain their own bucketing path when hotel nudges are added.
+func parseFlightRouteKey(rk string) (string, bool) {
+	parts := strings.SplitN(rk, "|", 4)
+	if len(parts) < 3 {
+		return "", false
+	}
+	if strings.ToUpper(parts[0]) != "FLIGHT" {
+		return "", false
+	}
+	origin := strings.ToUpper(strings.TrimSpace(parts[1]))
+	dest := strings.ToUpper(strings.TrimSpace(parts[2]))
+	if origin == "" || dest == "" {
+		return "", false
+	}
+	return routeKey(origin, dest), true
 }
 
 // routeFor returns the routeHistory for a key, creating it on first access.

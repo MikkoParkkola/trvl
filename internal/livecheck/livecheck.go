@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/dategrid"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
+	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/watch"
 )
 
@@ -82,6 +84,11 @@ func checkFlightRange(ctx context.Context, w watch.Watch) (float64, string, stri
 		return 0, "", "", nil
 	}
 
+	// MIK-6234 CF.1: persist the full grid the scheduler just fetched so a
+	// later single-date flight search can compute shift-day counterfactuals
+	// with zero new provider calls. Best-effort: never affect the check result.
+	persistDateGrid(w.Origin, w.Destination, result.Dates)
+
 	cheapest := result.Dates[0]
 	for _, d := range result.Dates[1:] {
 		if d.Price > 0 && (cheapest.Price == 0 || d.Price < cheapest.Price) {
@@ -89,6 +96,35 @@ func checkFlightRange(ctx context.Context, w watch.Watch) (float64, string, stri
 		}
 	}
 	return cheapest.Price, cheapest.Currency, cheapest.Date, nil
+}
+
+// persistDateGrid stores a route's price calendar for later call-free shift-day
+// analysis. Any failure is swallowed: persistence is a bonus, not a guarantee.
+func persistDateGrid(origin, destination string, dates []models.DatePriceResult) {
+	store, err := dategrid.DefaultStore()
+	if err != nil {
+		return
+	}
+	if err := store.Load(); err != nil {
+		return
+	}
+	pts := make([]dategrid.Point, 0, len(dates))
+	currency := ""
+	for _, d := range dates {
+		if d.Price <= 0 {
+			continue
+		}
+		if currency == "" {
+			currency = d.Currency
+		}
+		pts = append(pts, dategrid.Point{
+			Date:       d.Date,
+			ReturnDate: d.ReturnDate,
+			Price:      d.Price,
+			Currency:   d.Currency,
+		})
+	}
+	_ = store.Put(dategrid.RouteKey(origin, destination), currency, pts, time.Now())
 }
 
 func checkHotel(ctx context.Context, w watch.Watch) (float64, string, string, error) {

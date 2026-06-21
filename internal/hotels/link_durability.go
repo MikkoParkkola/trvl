@@ -52,6 +52,20 @@ func isExpiringAdRedirect(rawURL string) bool {
 	return strings.Contains(low, "google.com/aclk") || strings.Contains(low, "/aclk?")
 }
 
+// ClassifyLinkDurability classifies a single booking URL for callers outside the
+// price path (e.g. room-level booking-readiness). Returns "stable" for a durable
+// link, "expiring" for an ad-click or dead rental redirect that may not survive
+// to booking time, and "" for an empty URL.
+func ClassifyLinkDurability(rawURL string) string {
+	if strings.TrimSpace(rawURL) == "" {
+		return ""
+	}
+	if isDeadRentalRedirect(rawURL) || isExpiringAdRedirect(rawURL) {
+		return linkExpiring
+	}
+	return linkStable
+}
+
 // durableBookingURL builds a Booking.com search deep-link for a property and
 // date range. It lands on a bookable page for the right property and never
 // 404s, unlike an expiring ad-click redirect. Returns "" when there is not
