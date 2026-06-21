@@ -22,6 +22,11 @@ const (
 	// maxObservationsPerRoute caps retained points per route key, bounding the
 	// price-history file to cap x number-of-routes.
 	maxObservationsPerRoute = 1000
+	// maxRouteObservations caps the TOTAL number of ad-hoc route-keyed points
+	// across all routes, evicting the oldest first. Watch-keyed points (which
+	// back the existing sparkline/fareintel features) are NEVER evicted here, so
+	// this bounds the new ad-hoc corpus without touching the watch corpus.
+	maxRouteObservations = 20000
 	// observationThrottle suppresses near-identical repeat observations for the
 	// same route+currency within this window.
 	observationThrottle = 15 * time.Minute
@@ -496,7 +501,35 @@ func (s *Store) RecordObservation(routeKey string, price float64, currency strin
 		Timestamp: time.Now(),
 	})
 	s.pruneRouteLocked(routeKey)
+	s.pruneGlobalRouteLocked()
 	return s.saveLocked()
+}
+
+// pruneGlobalRouteLocked evicts the oldest ad-hoc route-keyed observations once
+// their total exceeds maxRouteObservations, bounding the file regardless of how
+// many distinct routes are searched. Watch-keyed points (WatchID set) are never
+// touched. Caller holds s.mu.
+func (s *Store) pruneGlobalRouteLocked() {
+	var routeIdx []int
+	for i, p := range s.history {
+		if p.RouteKey != "" && p.WatchID == "" {
+			routeIdx = append(routeIdx, i)
+		}
+	}
+	if len(routeIdx) <= maxRouteObservations {
+		return
+	}
+	drop := make(map[int]bool, len(routeIdx)-maxRouteObservations)
+	for _, i := range routeIdx[:len(routeIdx)-maxRouteObservations] {
+		drop[i] = true
+	}
+	kept := s.history[:0:0]
+	for i, p := range s.history {
+		if !drop[i] {
+			kept = append(kept, p)
+		}
+	}
+	s.history = kept
 }
 
 // lastObservationLocked returns the most recent price point for a route key,

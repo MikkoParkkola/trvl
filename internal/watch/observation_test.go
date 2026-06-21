@@ -127,3 +127,38 @@ func TestRecordObservationCapsPerRoute(t *testing.T) {
 		t.Fatalf("oldest 50 should be pruned; first kept = %v", got[0])
 	}
 }
+
+// improve pass: the global route-keyed cap bounds total ad-hoc points across
+// many routes while never evicting watch-keyed history.
+func TestGlobalRouteCapPreservesWatchHistory(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+	// Watch-keyed history that must survive eviction.
+	for i := 0; i < 5; i++ {
+		_ = s.RecordPrice("watch-1", float64(100+i), "EUR")
+	}
+	// Route-keyed points seeded well past the global cap.
+	base := time.Now().Add(-time.Hour)
+	for i := 0; i < maxRouteObservations+100; i++ {
+		s.history = append(s.history, PricePoint{
+			RouteKey:  "FLIGHT|AMS|VLC|2026-07-15",
+			Price:     float64(100 + i),
+			Currency:  "EUR",
+			Timestamp: base.Add(time.Duration(i) * time.Second),
+		})
+	}
+	s.pruneGlobalRouteLocked()
+
+	routeCount := 0
+	for _, p := range s.history {
+		if p.RouteKey != "" && p.WatchID == "" {
+			routeCount++
+		}
+	}
+	if routeCount != maxRouteObservations {
+		t.Fatalf("route-keyed points = %d, want cap %d", routeCount, maxRouteObservations)
+	}
+	if got := len(s.History("watch-1")); got != 5 {
+		t.Fatalf("watch history must be preserved, got %d want 5", got)
+	}
+}
