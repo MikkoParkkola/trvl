@@ -206,6 +206,7 @@ func launchProvider(wg *sync.WaitGroup, results chan<- providerResult, name stri
 type SearchOptions struct {
 	Currency              string   // Default: EUR
 	Providers             []string // Filter to specific providers; empty = all
+	ExcludeProviders      []string // Skip these providers even when otherwise enabled
 	MaxPrice              float64  // 0 = no limit
 	Type                  string   // "bus", "train", or empty for all
 	NoCache               bool     // bypass response cache
@@ -342,6 +343,11 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	results := make(chan providerResult, searchResultBufferCapacity())
 
 	useProvider := func(name string) bool {
+		for _, p := range opts.ExcludeProviders {
+			if strings.EqualFold(p, name) {
+				return false
+			}
+		}
 		if len(opts.Providers) == 0 {
 			return true
 		}

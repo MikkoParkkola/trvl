@@ -115,6 +115,12 @@ func priceGroundLeg(ctx context.Context, spec LegSpec, allowBrowser bool) (Price
 	opts := ground.SearchOptions{
 		NoHacks:               true,
 		AllowBrowserFallbacks: allowBrowser,
+		// Rome2Rio is the DISCOVERY source; its prices are indicative ranges, not
+		// confirmed fares. Excluding it from per-leg pricing keeps a "real" leg
+		// price honest (a bookable provider only) and avoids a redundant Cloudflare
+		// fetch per leg. When no bookable provider covers the leg, the composer
+		// falls back to the route's indicative range, clearly labelled as an estimate.
+		ExcludeProviders: []string{"rome2rio"},
 	}
 	switch disc {
 	case "bus", "train", "ferry":
