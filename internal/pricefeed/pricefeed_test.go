@@ -5,11 +5,62 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/booking"
+	"github.com/MikkoParkkola/trvl/internal/counterfactual"
+	"github.com/MikkoParkkola/trvl/internal/dategrid"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/probecache"
 )
 
 var now = time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+
+// Regression for the coupling fix: shift-day and Tier-1 savings come from the
+// grid and probe caches, NOT the watch store. With an empty watch store (no
+// price_position), those cache-backed savings must still be served — proving the
+// savings are independent of the watch store.
+func TestFlightServesCacheSavingsIndependentOfWatchStore(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	gs, err := dategrid.DefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = gs.Load()
+	_ = gs.Put(dategrid.RouteKey("AMS", "VLC"), "EUR", []dategrid.Point{
+		{Date: "2026-07-14", Price: 90, Currency: "EUR"},
+		{Date: "2026-07-15", Price: 150, Currency: "EUR"},
+	}, now)
+
+	ps, err := probecache.DefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ps.Load()
+	_ = ps.Put(probecache.RouteKey("AMS", "VLC"), []counterfactual.Saving{
+		{Kind: counterfactual.KindProbe, Description: "Fly from BGY", Amount: 40, Currency: "EUR", CallFree: true, AsOf: now},
+	}, now)
+
+	res := &models.FlightSearchResult{Success: true, Flights: []models.FlightResult{{Price: 150, Currency: "EUR"}}}
+	out := Flight("AMS", "VLC", "2026-07-15", res, now)
+
+	var hasShift, hasProbe bool
+	for _, s := range out.Savings {
+		switch s.Kind {
+		case counterfactual.KindShiftDay:
+			hasShift = true
+		case counterfactual.KindProbe:
+			hasProbe = true
+		}
+	}
+	if !hasShift {
+		t.Errorf("shift-day must be served from the grid regardless of the watch store; got %+v", out.Savings)
+	}
+	if !hasProbe {
+		t.Errorf("Tier-1 must be served from the probe cache regardless of the watch store; got %+v", out.Savings)
+	}
+}
 
 func TestFlightMultiAirportReturnsEmpty(t *testing.T) {
 	res := &models.FlightSearchResult{Success: true, Flights: []models.FlightResult{{Price: 100, Currency: "EUR"}}}
