@@ -57,11 +57,16 @@ var flatioLimiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 2)
 var flatioClient providers.Fetcher
 var flatioClientOnce sync.Once
 
+// flatioFetcher returns the Fetcher for Flatio requests, building a Tier1Client
+// once on first use. All access goes through flatioClientOnce so concurrent
+// callers (e.g. via singleflight) never race on the flatioClient interface
+// value — an earlier unsynchronized fast-path read could tear the interface and
+// crash. Tests inject a client by setting flatioClient before the first call.
 func flatioFetcher() providers.Fetcher {
-	if flatioClient != nil {
-		return flatioClient
-	}
 	flatioClientOnce.Do(func() {
+		if flatioClient != nil {
+			return // already injected (typically by a test)
+		}
 		if c, err := providers.NewTier1Client(); err == nil {
 			flatioClient = c
 		}
