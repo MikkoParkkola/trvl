@@ -21,7 +21,8 @@ func TestRootCmd_SubcommandCount(t *testing.T) {
 	// 66 -> 67 with `multimodal` (innovation #2 multimodal composer).
 	// 67 -> 68 with `plan-all` (innovation #5 unified trip coalescer).
 	// 68 -> 69 with `status` (operational health/circuit/rate-limit snapshot).
-	const want = 69
+	// 69 -> 70 with `nudges` (MIK-6233 personal travel graph nudges).
+	const want = 70
 	got := len(rootCmd.Commands())
 	if got != want {
 		names := make([]string, 0, got)

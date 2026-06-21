@@ -12,15 +12,19 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/baggage"
+	"github.com/MikkoParkkola/trvl/internal/counterfactual"
 	"github.com/MikkoParkkola/trvl/internal/deals"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/hacks"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/obslog"
 	"github.com/MikkoParkkola/trvl/internal/points"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
+	"github.com/MikkoParkkola/trvl/internal/pricesignal"
 	"github.com/MikkoParkkola/trvl/internal/scoring"
 	"github.com/MikkoParkkola/trvl/internal/travelctx"
+	"github.com/MikkoParkkola/trvl/internal/watch"
 	"github.com/spf13/cobra"
 )
 
@@ -195,6 +199,20 @@ Examples:
 				return err
 			}
 
+			// MIK-6229: log this search into price history and compute a
+			// price-position signal. Best-effort and single-O/D only — a
+			// multi-airport search has no single route key, so we skip it
+			// rather than mis-key the corpus. Never breaks a search.
+			var pricePos *pricesignal.Position
+			if len(origins) == 1 && len(destinations) == 1 && result != nil && len(result.Flights) > 0 {
+				if store, serr := watch.DefaultStore(); serr == nil && store.Load() == nil {
+					_ = obslog.FlightSearch(store, origins[0], destinations[0], date, result)
+					key := watch.RouteKey("flight", origins[0], destinations[0], date)
+					p := pricesignal.Compute(store.RoutePrices(key, result.Flights[0].Currency), result.Flights[0].Price, 0)
+					pricePos = &p
+				}
+			}
+
 			// Cache best result for `trvl share --last`.
 			if result != nil && result.Success && len(result.Flights) > 0 {
 				f := result.Flights[0]
@@ -218,11 +236,33 @@ Examples:
 			}
 
 			if format == "json" {
+				if pricePos != nil {
+					return models.FormatJSON(os.Stdout, struct {
+						*models.FlightSearchResult
+						PricePosition *pricesignal.Position `json:"price_position,omitempty"`
+					}{result, pricePos})
+				}
 				return models.FormatJSON(os.Stdout, result)
 			}
 
 			if err := printFlightsTable(cmd.Context(), strings.Join(origins, ","), strings.Join(destinations, ","), targetCurrency, result, explain); err != nil {
 				return err
+			}
+			printPricePosition(os.Stdout, pricePos)
+
+			// MIK-6234 Tier 0: surface call-free counterfactual savings derived
+			// from data already fetched (same-day spread + vs-history). No new
+			// provider calls are issued.
+			if len(result.Flights) > 0 {
+				now := time.Now()
+				var savings []counterfactual.Saving
+				if s := counterfactual.SameDayAlternative(result.Flights, 10, now); s != nil {
+					savings = append(savings, *s)
+				}
+				if s := counterfactual.VsHistory(pricePos, result.Flights[0].Currency, now); s != nil {
+					savings = append(savings, *s)
+				}
+				printSavings(os.Stdout, savings)
 			}
 
 			// Auto-trigger: run applicable hack detectors and print tips
