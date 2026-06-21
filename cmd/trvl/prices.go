@@ -10,6 +10,9 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/hotelarb"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/obslog"
+	"github.com/MikkoParkkola/trvl/internal/pricesignal"
+	"github.com/MikkoParkkola/trvl/internal/watch"
 	"github.com/spf13/cobra"
 )
 
@@ -65,11 +68,47 @@ func runPrices(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("hotel prices: %w", err)
 	}
 
+	// MIK-6229: log the cheapest provider price into history and compute a
+	// price-position signal for this hotel + check-in. Best-effort.
+	var pricePos *pricesignal.Position
+	if result != nil && len(result.Providers) > 0 {
+		if store, serr := watch.DefaultStore(); serr == nil && store.Load() == nil {
+			_ = obslog.HotelPrices(store, hotelID, checkin, result)
+			key := watch.RouteKey("hotel", hotelID, "", checkin)
+			cheapest := cheapestProviderPrice(result.Providers)
+			if cheapest > 0 {
+				p := pricesignal.Compute(store.RoutePrices(key), cheapest, 0)
+				pricePos = &p
+			}
+		}
+	}
+
 	if format == "json" {
+		if pricePos != nil {
+			return models.FormatJSON(os.Stdout, struct {
+				*models.HotelPriceResult
+				PricePosition *pricesignal.Position `json:"price_position,omitempty"`
+			}{result, pricePos})
+		}
 		return models.FormatJSON(os.Stdout, result)
 	}
 
-	return formatPricesTable(result)
+	if err := formatPricesTable(result); err != nil {
+		return err
+	}
+	printPricePosition(os.Stdout, pricePos)
+	return nil
+}
+
+// cheapestProviderPrice returns the lowest positive provider price, or 0.
+func cheapestProviderPrice(providers []models.ProviderPrice) float64 {
+	var best float64
+	for _, p := range providers {
+		if p.Price > 0 && (best == 0 || p.Price < best) {
+			best = p.Price
+		}
+	}
+	return best
 }
 
 func formatPricesTable(result *models.HotelPriceResult) error {
