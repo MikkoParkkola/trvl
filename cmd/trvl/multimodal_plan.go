@@ -92,7 +92,11 @@ func printMultimodalPlan(plan *multimodal.Plan) {
 			if leg.Estimated {
 				label = models.Red("estimate")
 			}
-			fmt.Printf("     • %-6s %-18s %s via %s\n", leg.Mode, leg.From+"→"+leg.To, price, label)
+			line := fmt.Sprintf("     • %-6s %-18s %s via %s", leg.Mode, leg.From+"→"+leg.To, price, label)
+			if leg.Detail != "" {
+				line += " " + leg.Detail
+			}
+			fmt.Println(line)
 		}
 		if it.HackSaving != nil {
 			fmt.Printf("     %s %s: save %s %.2f (%s)\n",
