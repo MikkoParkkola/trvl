@@ -15,6 +15,13 @@ import (
 // pings while a 15-30s travel search is in flight; if the read loop were serial
 // the ping would queue behind the search and the probe would time out.
 func TestServeStdio_PingNotBlockedBySlowToolCall(t *testing.T) {
+	// Isolate HOME/USERPROFILE so the scheduler ServeStdio starts writes to a
+	// throwaway ~/.trvl, not the shared one — on Windows the real watches.json
+	// is exclusively locked and collides with other tests.
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
+
 	s := NewServer()
 
 	started := make(chan struct{})
