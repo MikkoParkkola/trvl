@@ -1,22 +1,51 @@
 {
   "name": "trvl-mcp",
+  "mcpName": "io.github.MikkoParkkola/trvl",
   "version": "1.10.0",
-  "description": "Travel MCP server + CLI for flights, hotels, trains, cars, and ferries — no API keys required, single Go binary, works with any MCP client (Claude, Cursor, Windsurf, Codex). 1 smart MCP tool plus 66 compatibility aliases.",
+  "description": "Travel MCP server + CLI for flights, hotels, trains, cars, and ferries \u2014 no API keys required, single Go binary, works with any MCP client (Claude, Cursor, Windsurf, Codex). 1 smart MCP tool plus 66 compatibility aliases.",
   "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/MikkoParkkola/trvl"
   },
   "homepage": "https://github.com/MikkoParkkola/trvl",
-  "keywords": ["mcp", "mcp-server", "travel", "flights", "flight-search", "hotels", "hotel-search", "trains", "rail", "ferries", "ground-transport", "no-api-key", "travel-agent", "google-flights", "google-hotels", "price-alerts", "ai", "claude", "cli", "model-context-protocol"],
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "travel",
+    "flights",
+    "flight-search",
+    "hotels",
+    "hotel-search",
+    "trains",
+    "rail",
+    "ferries",
+    "ground-transport",
+    "no-api-key",
+    "travel-agent",
+    "google-flights",
+    "google-hotels",
+    "price-alerts",
+    "ai",
+    "claude",
+    "cli",
+    "model-context-protocol"
+  ],
   "bin": {
     "trvl-mcp": "bin/trvl-mcp.js"
   },
   "scripts": {
     "postinstall": "node bin/install.js"
   },
-  "os": ["darwin", "linux", "win32"],
-  "cpu": ["x64", "arm64"],
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
   "engines": {
     "node": ">=16"
   }
