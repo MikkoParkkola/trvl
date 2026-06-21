@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/atomicjson"
 )
 
 const historyLayout = "2006-01-02"
@@ -214,10 +215,6 @@ func (s *Store) historyPath() string {
 	return filepath.Join(s.dir, "deal-history.json")
 }
 
-func (s *Store) ensureDir() error {
-	return os.MkdirAll(s.dir, 0o700)
-}
-
 // Load reads samples from disk. If the file does not exist, the store starts empty.
 func (s *Store) Load() error {
 	s.mu.Lock()
@@ -241,56 +238,7 @@ func (s *Store) loadLocked() error {
 }
 
 func (s *Store) saveLocked() error {
-	if err := s.ensureDir(); err != nil {
-		return fmt.Errorf("create storage dir: %w", err)
-	}
-	b, err := json.MarshalIndent(s.samples, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal deal history: %w", err)
-	}
-
-	dir := filepath.Dir(s.historyPath())
-	tmp, err := os.CreateTemp(dir, "deal-history.json.tmp-*")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(b); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-
-	if err := os.Rename(tmpPath, s.historyPath()); err != nil {
-		if runtime.GOOS == "windows" {
-			_ = os.Remove(s.historyPath())
-			if err2 := os.Rename(tmpPath, s.historyPath()); err2 == nil {
-				cleanup = false
-				return nil
-			}
-		}
-		return err
-	}
-
-	cleanup = false
-	return nil
+	return atomicjson.Write(s.historyPath(), s.samples)
 }
 
 // Append adds a sample, deduplicating exact (Route,Kind,Date,Price) matches
