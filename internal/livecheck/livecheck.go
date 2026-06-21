@@ -108,6 +108,14 @@ func persistDateGrid(origin, destination string, dates []models.DatePriceResult)
 	if err := store.Load(); err != nil {
 		return
 	}
+	persistDateGridTo(store, origin, destination, dates, time.Now())
+}
+
+// persistDateGridTo is the testable core of persistDateGrid. It builds the
+// points slice from dates (skipping non-positive prices), picks the currency
+// from the first positive entry, and writes to store. Errors are silently
+// discarded: grid persistence is best-effort.
+func persistDateGridTo(store *dategrid.Store, origin, destination string, dates []models.DatePriceResult, now time.Time) {
 	pts := make([]dategrid.Point, 0, len(dates))
 	currency := ""
 	for _, d := range dates {
@@ -124,7 +132,7 @@ func persistDateGrid(origin, destination string, dates []models.DatePriceResult)
 			Currency:   d.Currency,
 		})
 	}
-	_ = store.Put(dategrid.RouteKey(origin, destination), currency, pts, time.Now())
+	_ = store.Put(dategrid.RouteKey(origin, destination), currency, pts, now)
 }
 
 func checkHotel(ctx context.Context, w watch.Watch) (float64, string, string, error) {
