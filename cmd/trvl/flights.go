@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/baggage"
+	"github.com/MikkoParkkola/trvl/internal/counterfactual"
 	"github.com/MikkoParkkola/trvl/internal/deals"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
@@ -248,6 +249,21 @@ Examples:
 				return err
 			}
 			printPricePosition(os.Stdout, pricePos)
+
+			// MIK-6234 Tier 0: surface call-free counterfactual savings derived
+			// from data already fetched (same-day spread + vs-history). No new
+			// provider calls are issued.
+			if len(result.Flights) > 0 {
+				now := time.Now()
+				var savings []counterfactual.Saving
+				if s := counterfactual.SameDayAlternative(result.Flights, 10, now); s != nil {
+					savings = append(savings, *s)
+				}
+				if s := counterfactual.VsHistory(pricePos, result.Flights[0].Currency, now); s != nil {
+					savings = append(savings, *s)
+				}
+				printSavings(os.Stdout, savings)
+			}
 
 			// Auto-trigger: run applicable hack detectors and print tips
 			// below the flight results.
