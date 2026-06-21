@@ -862,6 +862,14 @@ If trvl saved you a browser tab or an API subscription, a star helps other trave
 
 **MCP server crashes on startup?** Run `trvl mcp` directly in your terminal to see the error. Common cause: port conflict when using `--http`. Try a different port with `--port 8081`. HTTP mode listens on `127.0.0.1` by default and requires `Authorization: Bearer <token>`; set `TRVL_MCP_TOKEN`, scoped `TRVL_MCP_READ_TOKEN` / `TRVL_MCP_WRITE_TOKEN`, OAuth introspection env vars, or use the generated startup token.
 
+## Related projects
+
+Independent, no-API-key tools for AI agents — each useful alone:
+
+- [mcp-gateway](https://github.com/MikkoParkkola/mcp-gateway) — one endpoint that multiplexes many MCP servers
+- [nab](https://github.com/MikkoParkkola/nab) — token-lean web fetch (any URL → clean markdown) for agents
+- [axterminator](https://github.com/MikkoParkkola/axterminator) — macOS desktop automation over the Accessibility API
+
 ## License
 
 [PolyForm Noncommercial 1.0.0](LICENSE) — free for personal and noncommercial use.
