@@ -1,6 +1,6 @@
 # trvl
 
-> AI travel MCP server and CLI for Google Flights, Google Hotels, Booking.com, Trivago, Airbnb, Hostelworld, HomeToGo, trains, buses, ferries, price alerts, award travel, and travel-hack detection.
+> AI travel MCP server and CLI for Google Flights, Google Hotels, Booking.com, Trivago, Airbnb, Hostelworld, HomeToGo, trains, buses, ferries, door-to-door multimodal itineraries, price alerts, award travel, and travel-hack detection.
 
 trvl is a single Go binary for AI assistants and terminal users. It searches flights, hotels, ground transport, destinations, airport transfers, price watches, and trip plans with a 1-tool MCP router plus compatibility aliases. Default use needs no personal API keys. Most providers use public HTTP/JSON endpoints; a few protected providers use explicit browser/cookie/curl fallbacks when enabled.
 

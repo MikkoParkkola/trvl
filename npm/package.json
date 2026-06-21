@@ -2,7 +2,7 @@
   "name": "trvl-mcp",
   "mcpName": "io.github.MikkoParkkola/trvl",
   "version": "1.10.0",
-  "description": "Travel MCP server + CLI for flights, hotels, trains, cars, and ferries \u2014 no API keys required, single Go binary, works with any MCP client (Claude, Cursor, Windsurf, Codex). 1 smart MCP tool plus 66 compatibility aliases.",
+  "description": "Travel MCP server + CLI for flights, hotels, trains, cars, ferries, and door-to-door multimodal trips \u2014 no API keys required, single Go binary, works with any MCP client (Claude, Cursor, Windsurf, Codex). 1 smart MCP tool plus 66 compatibility aliases.",
   "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",
@@ -21,6 +21,7 @@
     "rail",
     "ferries",
     "ground-transport",
+    "multimodal",
     "no-api-key",
     "travel-agent",
     "google-flights",
