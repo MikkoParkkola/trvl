@@ -199,6 +199,7 @@ func (p *Planner) Plan(ctx context.Context, from, to, date string) (*Plan, error
 	plan.Priced = len(itineraries)
 
 	rankItineraries(itineraries)
+	itineraries = dedupeItineraries(itineraries)
 	if len(itineraries) > p.maxItineraries() {
 		itineraries = itineraries[:p.maxItineraries()]
 	}

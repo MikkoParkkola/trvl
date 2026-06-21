@@ -206,6 +206,7 @@ func launchProvider(wg *sync.WaitGroup, results chan<- providerResult, name stri
 type SearchOptions struct {
 	Currency              string   // Default: EUR
 	Providers             []string // Filter to specific providers; empty = all
+	ExcludeProviders      []string // Skip these providers even when otherwise enabled
 	MaxPrice              float64  // 0 = no limit
 	Type                  string   // "bus", "train", or empty for all
 	NoCache               bool     // bypass response cache
@@ -216,6 +217,26 @@ type SearchOptions struct {
 	// cheaper synthesized option (multimodal, cross-border rail, …) in
 	// result.HackSaving. Set NoHacks to run a pure naive search.
 	NoHacks bool
+}
+
+// providerEnabled reports whether a provider should run given an optional
+// allow-list (include; empty means all) and a deny-list (exclude, which always
+// wins). Pure and case-insensitive so it is unit-tested without the network.
+func providerEnabled(name string, include, exclude []string) bool {
+	for _, p := range exclude {
+		if strings.EqualFold(p, name) {
+			return false
+		}
+	}
+	if len(include) == 0 {
+		return true
+	}
+	for _, p := range include {
+		if strings.EqualFold(p, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // SearchByName searches all providers for ground transport between two cities
@@ -342,15 +363,7 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	results := make(chan providerResult, searchResultBufferCapacity())
 
 	useProvider := func(name string) bool {
-		if len(opts.Providers) == 0 {
-			return true
-		}
-		for _, p := range opts.Providers {
-			if strings.EqualFold(p, name) {
-				return true
-			}
-		}
-		return false
+		return providerEnabled(name, opts.Providers, opts.ExcludeProviders)
 	}
 
 	// Distribusion — ground transport GDS covering bus, ferry, train, airport transfers.

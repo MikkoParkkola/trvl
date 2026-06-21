@@ -2,6 +2,7 @@ package multimodal
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -222,4 +223,25 @@ func rankItineraries(its []Itinerary) {
 
 func round2(v float64) float64 {
 	return float64(int64(v*100+0.5)) / 100
+}
+
+// dedupeItineraries collapses itineraries that present identically — same mode
+// chain, total, currency and duration — keeping the first (rank order already
+// puts the cheapest, fully-priced option first). Two discovered chains that
+// resolve to the same journey at the same price would otherwise render as
+// duplicate rows. Must run after rankItineraries.
+func dedupeItineraries(its []Itinerary) []Itinerary {
+	seen := make(map[string]bool, len(its))
+	out := its[:0]
+	for _, it := range its {
+		key := it.ModeChain + "|" + it.Currency + "|" +
+			strconv.FormatFloat(it.TotalPrice, 'f', 2, 64) + "|" +
+			strconv.Itoa(it.DurationMin)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, it)
+	}
+	return out
 }
