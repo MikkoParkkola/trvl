@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<!--
+  Social card source. Rendered to docs/social-preview.png at 1280x640 via:
+    "Google Chrome" --headless --screenshot=docs/social-preview.png \
+       --window-size=1280,640 --default-background-color=00000000 \
+       --hide-scrollbars docs/social-card.html
+  Chips are padding-sized (flexbox), so text can never overflow its frame.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1280px; height: 640px; }
+  body {
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    background: linear-gradient(135deg, #0d1117 0%, #101820 100%);
+    color: #e6edf3;
+    position: relative;
+    overflow: hidden;
+  }
+  .accent { position: absolute; top: 0; left: 0; right: 0; height: 8px;
+            background: linear-gradient(90deg, #2dd4bf, #14b8a6); }
+  .card {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 56px;
+    padding: 76px 88px;
+  }
+  .left { max-width: 720px; }
+  .wordmark { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 30px; font-weight: 600; letter-spacing: .01em; }
+  .wordmark b { color: #2dd4bf; }
+  .wordmark span { color: #59636e; }
+  h1 { font-size: 78px; font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; margin: 26px 0 22px; }
+  .sub { font-size: 31px; color: #9198a1; margin-bottom: 34px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 30px; }
+  .chip {
+    display: inline-flex; align-items: center;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 24px;
+    color: #2dd4bf; background: rgba(20,184,166,0.13);
+    border: 1px solid rgba(20,184,166,0.4); border-radius: 999px;
+    padding: 11px 22px; white-space: nowrap;
+  }
+  .clients { font-size: 23px; color: #59636e; }
+  .term {
+    flex: none; width: 300px; background: #161b22; border: 1px solid #30363d;
+    border-radius: 16px; padding: 22px 24px;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 21px; line-height: 1.7;
+  }
+  .dots { display: flex; gap: 9px; margin-bottom: 18px; }
+  .dots i { width: 13px; height: 13px; border-radius: 50%; display: block; }
+  .teal { color: #2dd4bf; } .grey { color: #9198a1; } .white { color: #e6edf3; }
+</style>
+</head>
+<body>
+  <div class="accent"></div>
+  <div class="card">
+    <div class="left">
+      <div class="wordmark"><b>trvl</b> <span>— travel MCP server</span></div>
+      <h1>Travel for your<br>AI assistant.</h1>
+      <div class="sub">Flights · hotels · trains · cars · ferries · price alerts</div>
+      <div class="chips">
+        <span class="chip">no API keys</span>
+        <span class="chip">1 smart tool + 66 aliases</span>
+        <span class="chip">single Go binary</span>
+      </div>
+      <div class="clients">Works with Claude · Cursor · Windsurf · Codex</div>
+    </div>
+    <div class="term">
+      <div class="dots"><i style="background:#ff5f56"></i><i style="background:#ffbd2e"></i><i style="background:#27c93f"></i></div>
+      <div><span class="teal">$</span> <span class="white">trvl flights</span></div>
+      <div class="grey">&nbsp;&nbsp;HEL CDG</div>
+      <div class="white">€87 ✈ 3h</div>
+      <div class="grey">nonstop</div>
+      <div class="teal" style="margin-top:10px">136 flights · 25s</div>
+    </div>
+  </div>
+</body>
+</html>
