@@ -12,11 +12,11 @@
 <meta property="og:title" content="trvl — the travel MCP server for AI assistants">
 <meta property="og:description" content="Flights, hotels, trains, cars, ferries, and price alerts for your AI assistant. No API keys. One Go binary. Works with Claude, Cursor, Windsurf, Codex.">
 <meta property="og:url" content="https://mikkoparkkola.github.io/trvl/">
-<meta property="og:image" content="https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif">
+<meta property="og:image" content="https://raw.githubusercontent.com/MikkoParkkola/trvl/main/docs/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="trvl — the travel MCP server for AI assistants">
 <meta name="twitter:description" content="Flights, hotels, trains, cars, ferries, and price alerts for your AI assistant. No API keys. One Go binary.">
-<meta name="twitter:image" content="https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/MikkoParkkola/trvl/main/docs/social-preview.png">
 
 <!-- JSON-LD: helps search engines and AI crawlers classify the project -->
 <script type="application/ld+json">
@@ -101,14 +101,16 @@
   .btn.primary:hover { background: var(--accent-bright); text-decoration: none; }
   .btn.ghost:hover { border-color: var(--accent); text-decoration: none; }
 
-  .demo { margin: 3rem 0; text-align: center; }
-  .demo img { max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius); }
+  .demo { margin: 3rem auto; text-align: center; }
+  .demo img { display: block; max-width: 100%; margin: 0 auto; border: 1px solid var(--border); border-radius: var(--radius); }
+  .demo .caption { margin-top: .9rem; font-size: .9rem; color: var(--muted); }
 
   section { padding: 2.5rem 0; border-top: 1px solid var(--border); }
   h2 { font-size: 1.5rem; margin: 0 0 1.25rem; letter-spacing: -0.01em; }
   .lead { color: var(--muted); margin-top: -.5rem; margin-bottom: 1.5rem; }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+  @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
   .card { border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.2rem; background: var(--bg-soft); }
   .card h3 { margin: 0 0 .4rem; font-size: 1.02rem; }
   .card p { margin: 0; color: var(--muted); font-size: .94rem; }
@@ -148,12 +150,14 @@
   </div>
   <div class="cta">
     <a class="btn primary" href="https://github.com/MikkoParkkola/trvl">View on GitHub</a>
-    <a class="btn ghost" href="#install">All install paths</a>
+    <a class="btn ghost" href="https://socialistic.ai/en/skill/trvl-travel-mcp-4f7aa7">Try it live</a>
+    <a class="btn ghost" href="#install">Install</a>
   </div>
 </header>
 
 <div class="wrap demo">
   <img src="https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif" alt="trvl searching flights and hotels from the terminal" loading="lazy">
+  <p class="caption">Try it live in your browser (no install) at <a href="https://socialistic.ai/en/skill/trvl-travel-mcp-4f7aa7">socialistic.ai</a> · Independent review: Roberto Reale's <a href="https://blog-roberto-reale.vercel.app">Budget Travel Pipeline</a> series</p>
 </div>
 
 <section class="wrap" id="what">
@@ -206,7 +210,7 @@
 
 <section class="wrap" id="install">
   <h2>Install</h2>
-  <p class="lead">Six paths. Pick the one that fits your setup.</p>
+  <p class="lead">Pick the path that fits your setup.</p>
   <ul class="install-list">
     <li><strong>Homebrew:</strong> <code>brew install MikkoParkkola/tap/trvl</code></li>
     <li><strong>npx (any MCP client):</strong> <code>npx -y trvl-mcp</code></li>
@@ -224,6 +228,8 @@
 
 <footer class="wrap">
   <a href="https://github.com/MikkoParkkola/trvl">GitHub</a>
+  <a href="https://socialistic.ai/en/skill/trvl-travel-mcp-4f7aa7">Try it live</a>
+  <a href="https://blog-roberto-reale.vercel.app">Reviews</a>
   <a href="https://github.com/MikkoParkkola/trvl/blob/main/AGENTS.md">AI setup guide</a>
   <a href="https://github.com/MikkoParkkola/trvl/blob/main/docs/COMPARISON.md">Comparison</a>
   <a href="https://github.com/MikkoParkkola/trvl/releases">Releases</a>
