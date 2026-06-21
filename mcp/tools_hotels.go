@@ -132,8 +132,25 @@ func hotelPricesOutputSchema() interface{} {
 			}),
 			"booking_fallback_url": schemaStringDesc("Durable Booking.com property+date deep-link that never 404s, used when a provider link expires."),
 			"tourist_tax_note":     schemaStringDesc("Descriptive caveat that a local tourist or city tax may be payable in cash at the property and is not in any online total. Never a numeric estimate; never affects ranking."),
-			"notice":               schemaString(),
-			"error":                schemaString(),
+			"price_position": map[string]interface{}{
+				"type":        "object",
+				"description": "Where this stay's cheapest price sits in its own history (MIK-6229). Only assert a verdict when confident=true.",
+				"properties": map[string]interface{}{
+					"band":          schemaStringDesc("one of: low, typical, high (plus a not-confident marker when history is too sparse)"),
+					"verdict":       schemaStringDesc("one of: buy, wait, neutral (plus a not-confident marker when history is too sparse)"),
+					"current":       schemaNum(),
+					"low":           schemaNum(),
+					"high":          schemaNum(),
+					"median":        schemaNum(),
+					"vs_median_pct": schemaNum(),
+					"observations":  schemaInt(),
+					"confident":     schemaBool(),
+				},
+			},
+			"booking_readiness":         schemaStringDesc("Composite booking-readiness verdict (MIK-6232), one of: ready, caution, unverified. 'ready' requires verified price AND stable link AND confirmed identity AND known refundability; any missing signal downgrades it. Treat anything below ready as 'verify before booking' and tell the user why via booking_readiness_reasons."),
+			"booking_readiness_reasons": schemaStringArrayDesc("Which signals drove the readiness verdict down (e.g. 'refundability not known')."),
+			"notice":                    schemaString(),
+			"error":                     schemaString(),
 		},
 		"required": []string{"success"},
 	}
@@ -203,7 +220,7 @@ func hotelPricesTool() ToolDef {
 	return ToolDef{
 		Name:        "hotel_prices",
 		Title:       "Hotel Prices Comparison",
-		Description: "Get exposed booking-provider prices for a specific Google Hotels property. Use as a provider comparison, not a rate guarantee; for booking decisions prefer room-level totals from hotel_rooms or search_hotels_with_details when available.",
+		Description: "Get exposed booking-provider prices for a specific Google Hotels property. Use as a provider comparison, not a rate guarantee; for booking decisions prefer room-level totals from hotel_rooms or search_hotels_with_details when available. EXTRA SIGNALS (use them when present): `price_position` shows where this price sits in the property's own history (only trust the verdict when `confident` is true); `booking_readiness` is a composite verdict (ready, caution, unverified) — anything below `ready` means verify before booking, and `booking_readiness_reasons` explains why. Note: from this endpoint readiness usually stays at caution because refundability is not known here; call hotel_rooms for a property where 'ready' can be reached.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
@@ -655,13 +672,15 @@ func hotelRoomsOutputSchema() interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"success":   schemaBool(),
-			"hotel_id":  schemaString(),
-			"name":      schemaString(),
-			"check_in":  schemaString(),
-			"check_out": schemaString(),
-			"rooms":     schemaArray(hotelRoomTypeSchema()),
-			"error":     schemaString(),
+			"success":                   schemaBool(),
+			"hotel_id":                  schemaString(),
+			"name":                      schemaString(),
+			"check_in":                  schemaString(),
+			"check_out":                 schemaString(),
+			"rooms":                     schemaArray(hotelRoomTypeSchema()),
+			"booking_readiness":         schemaStringDesc("Composite booking-readiness verdict (MIK-6232), one of: ready, caution, unverified. Reachable to 'ready' here because rooms carry refundability and a classifiable link. Anything below ready means verify before booking."),
+			"booking_readiness_reasons": schemaStringArrayDesc("Which signals drove the readiness verdict down."),
+			"error":                     schemaString(),
 		},
 		"required": []string{"success"},
 	}
@@ -759,5 +778,18 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		return nil, nil, err
 	}
 
-	return content, availability, nil
+	// MIK-6232: attach a booking-readiness verdict. Rooms carry refundability +
+	// a classifiable link, so "ready" is reachable here (unlike hotel_prices).
+	readiness := roomsBookingReadiness(availability)
+	enriched := struct {
+		*hotels.RoomAvailability
+		BookingReadiness        string   `json:"booking_readiness,omitempty"`
+		BookingReadinessReasons []string `json:"booking_readiness_reasons,omitempty"`
+	}{
+		RoomAvailability:        availability,
+		BookingReadiness:        string(readiness.Readiness),
+		BookingReadinessReasons: readiness.Reasons,
+	}
+
+	return content, enriched, nil
 }

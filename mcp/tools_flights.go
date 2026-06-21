@@ -109,6 +109,32 @@ func flightSearchOutputSchema() interface{} {
 					"fix_hint_code": schemaString(),
 				},
 			}),
+			"price_position": map[string]interface{}{
+				"type":        "object",
+				"description": "Where today's cheapest fare sits in this route's own price history (MIK-6229). Only assert a verdict when confident=true; otherwise tell the user there is not enough history yet.",
+				"properties": map[string]interface{}{
+					"band":          schemaStringDesc("low, typical, or high (a not-confident marker when history is too sparse)"),
+					"verdict":       schemaStringDesc("buy, wait, or neutral (a not-confident marker when history is too sparse)"),
+					"current":       schemaNum(),
+					"low":           schemaNum(),
+					"high":          schemaNum(),
+					"median":        schemaNum(),
+					"vs_median_pct": schemaNum(),
+					"observations":  schemaInt(),
+					"confident":     schemaBool(),
+				},
+			},
+			"savings": schemaArrayDesc("Call-free money-saving options (MIK-6234): cheaper same-day fare, vs-history, depart-a-nearby-date shift-day, and routes pre-computed by the watch monitor. No extra searches were made to produce these. Surface them; respect as_of staleness and never present stale data as a live quote.", map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"kind":        schemaStringDesc("shift_day, same_day_alternative, vs_history, or probe"),
+					"description": schemaString(),
+					"amount":      schemaNum(),
+					"currency":    schemaString(),
+					"as_of":       schemaStringDesc("RFC3339 time the underlying data was observed"),
+					"call_free":   schemaBool(),
+				},
+			}),
 			"error": schemaString(),
 		},
 		"required": []string{"success", "count"},
@@ -146,7 +172,7 @@ func searchFlightsTool() ToolDef {
 	return ToolDef{
 		Name:        "search_flights",
 		Title:       "Search Flights",
-		Description: "Search flights via Google Flights, and on compatible one-way searches also include Kiwi virtual-interlining results with explicit self-connect warnings. Returns real-time pricing, durations, stops, and leg details for a given route and date. IMPORTANT: call get_preferences before your first search in a conversation to load the user's home airport and flight preferences. If the profile is empty, interview the user first — get_preferences returns instructions. Use home_airports as default origin when the user doesn't specify where from.",
+		Description: "Search flights via Google Flights, and on compatible one-way searches also include Kiwi virtual-interlining results with explicit self-connect warnings. Returns real-time pricing, durations, stops, and leg details for a given route and date. IMPORTANT: call get_preferences before your first search in a conversation to load the user's home airport and flight preferences. If the profile is empty, interview the user first — get_preferences returns instructions. Use home_airports as default origin when the user doesn't specify where from. EXTRA SIGNALS (use them when present): the response may include `price_position` — where today's fare sits in this route's own history (band low/typical/high + a buy/wait verdict, only when `confident` is true; otherwise say there is not enough history and do not assert a trend); and `savings` — call-free money-saving options (cheaper same-day fares, vs-history, depart-a-nearby-date shift-day, and routes pre-computed by the user's watch monitor). Each saving has `call_free` and an `as_of` time; surface them to the user but never present a stale `as_of` as a live quote. These cost no extra searches; you do not need to (and cannot) request a deeper fan-out from this tool.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{

@@ -10,10 +10,19 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/booking"
 	"github.com/MikkoParkkola/trvl/internal/counterfactual"
+	"github.com/MikkoParkkola/trvl/internal/dategrid"
+	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/obslog"
 	"github.com/MikkoParkkola/trvl/internal/pricesignal"
+	"github.com/MikkoParkkola/trvl/internal/probecache"
 	"github.com/MikkoParkkola/trvl/internal/watch"
+)
+
+// Freshness windows for cached, call-free savings served on the MCP path.
+const (
+	mcpGridFreshness  = 24 * time.Hour
+	mcpProbeFreshness = 12 * time.Hour
 )
 
 // flightPriceSignals logs the cheapest fare from a flight search into the
@@ -71,7 +80,44 @@ func flightPriceSignals(
 	if s := counterfactual.VsHistory(pos, cheapestCurrency, now); s != nil {
 		savings = append(savings, *s)
 	}
+	// Shift-day from the persisted price grid + Tier-1 probes pre-computed by the
+	// watch monitor — both served call-free from cache (no provider calls here).
+	savings = append(savings, shiftDaySavingsMCP(origin, dest, date, now)...)
+	savings = append(savings, tier1CachedSavingsMCP(origin, dest, now)...)
 	return pos, savings
+}
+
+// shiftDaySavingsMCP reads the persisted price grid for a route and returns
+// call-free shift-day counterfactuals. No provider calls; nothing when no fresh
+// grid covers the route.
+func shiftDaySavingsMCP(origin, destination, date string, now time.Time) []counterfactual.Saving {
+	store, err := dategrid.DefaultStore()
+	if err != nil || store.Load() != nil {
+		return nil
+	}
+	g, ok := store.Get(dategrid.RouteKey(origin, destination))
+	if !ok || !g.Fresh(now, mcpGridFreshness) {
+		return nil
+	}
+	grid := make([]models.DatePriceResult, 0, len(g.Points))
+	for _, p := range g.Points {
+		grid = append(grid, models.DatePriceResult{Date: p.Date, ReturnDate: p.ReturnDate, Price: p.Price, Currency: p.Currency})
+	}
+	return counterfactual.ShiftDay(grid, date, 10, g.UpdatedAt)
+}
+
+// tier1CachedSavingsMCP returns Tier-1 savings the watch monitor pre-computed
+// for this route, served call-free from the probe cache.
+func tier1CachedSavingsMCP(origin, destination string, now time.Time) []counterfactual.Saving {
+	store, err := probecache.DefaultStore()
+	if err != nil || store.Load() != nil {
+		return nil
+	}
+	e, ok := store.Get(probecache.RouteKey(origin, destination))
+	if !ok || !e.Fresh(now, mcpProbeFreshness) {
+		return nil
+	}
+	return e.Savings
 }
 
 // hotelPriceSignals logs the cheapest provider price from a hotel price lookup
@@ -157,4 +203,62 @@ func cheapestProviderPrice(providers []models.ProviderPrice) models.ProviderPric
 		}
 	}
 	return best
+}
+
+// roomsBookingReadiness maps the richer signals on the hotel_rooms endpoint into
+// a booking.Verdict. Unlike hotel_prices, rooms carry refundability and a
+// classifiable link, so "ready" is reachable here. Mirrors the CLI
+// bookingReadinessForRooms without importing package main.
+func roomsBookingReadiness(result *hotels.RoomAvailability) booking.Verdict {
+	var in booking.Input
+	if result.HotelID != "" {
+		in.IdentityConfirmed = booking.True()
+	}
+	// Refundability: known when any room exposes a refund/cancellation signal.
+	for _, r := range result.Rooms {
+		if r.Refundable != nil || r.FreeCancellation != nil || r.CancellationPolicy != "" {
+			in.RefundabilityKnown = booking.True()
+			break
+		}
+	}
+	// Verified: any room inventory option with verified/room-level confidence.
+	for _, r := range result.Rooms {
+		done := false
+		for _, opt := range r.InventoryOptions {
+			switch opt.PriceConfidence {
+			case models.PriceConfidenceVerified, models.PriceConfidenceRoomLevel:
+				in.Verified = booking.True()
+				done = true
+			}
+			if done {
+				break
+			}
+		}
+		if done {
+			break
+		}
+	}
+	// LinkStable: classify any room booking URL; a stable link unlocks "ready".
+	sawExpiring := false
+	for _, r := range result.Rooms {
+		urls := []string{r.ProviderURL}
+		for _, opt := range r.InventoryOptions {
+			urls = append(urls, opt.ProviderURL)
+		}
+		for _, u := range urls {
+			switch hotels.ClassifyLinkDurability(u) {
+			case "stable":
+				in.LinkStable = booking.True()
+			case "expiring":
+				sawExpiring = true
+			}
+		}
+		if in.LinkStable != nil {
+			break
+		}
+	}
+	if in.LinkStable == nil && sawExpiring {
+		in.LinkStable = booking.False()
+	}
+	return booking.Evaluate(in)
 }
