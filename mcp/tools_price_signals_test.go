@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/booking"
+	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/pricesignal"
 )
@@ -466,3 +467,43 @@ func TestErrors_NewCompiles(t *testing.T) {
 
 // Ensure time import is used.
 var _ = time.Now
+
+// --- roomsBookingReadiness (MCP hotel_rooms readiness, MIK-6232) ---
+
+func TestRoomsBookingReadiness_ReadyReachable(t *testing.T) {
+	refundable := true
+	avail := &hotels.RoomAvailability{
+		HotelID: "/g/abc",
+		Rooms: []hotels.RoomType{
+			{
+				Refundable:  &refundable,
+				ProviderURL: "https://www.booking.com/hotel/x.html",
+				InventoryOptions: []models.RoomInventoryQuote{
+					{PriceConfidence: models.PriceConfidenceVerified},
+				},
+			},
+		},
+	}
+	if v := roomsBookingReadiness(avail); v.Readiness != booking.Ready {
+		t.Fatalf("want ready, got %s (reasons %v)", v.Readiness, v.Reasons)
+	}
+}
+
+func TestRoomsBookingReadiness_ExpiringLinkDowngrades(t *testing.T) {
+	refundable := true
+	avail := &hotels.RoomAvailability{
+		HotelID: "/g/abc",
+		Rooms: []hotels.RoomType{
+			{
+				Refundable:  &refundable,
+				ProviderURL: "https://www.google.com/aclk?adurl=x",
+				InventoryOptions: []models.RoomInventoryQuote{
+					{PriceConfidence: models.PriceConfidenceVerified},
+				},
+			},
+		},
+	}
+	if v := roomsBookingReadiness(avail); v.Readiness == booking.Ready {
+		t.Fatalf("expiring link must downgrade below ready")
+	}
+}

@@ -158,11 +158,12 @@ func NewServer() *Server {
 		// actually re-prices watches; NoopChecker here meant the scheduler ran
 		// every 30 minutes but never updated any price.
 		s.scheduler = watch.NewScheduler(watchDir, 30*time.Minute, livecheck.Checker{})
-		// MIK-6234 Tier-1 (env-gated, default OFF): the scheduler pre-computes
-		// counterfactual probes for one watched route per tick, budget-gated, so
-		// a later flight search serves them call-free. Off by default to keep the
-		// daemon's provider-call footprint unchanged unless explicitly enabled.
-		if os.Getenv("TRVL_TIER1_PROBE") == "1" {
+		// MIK-6234 Tier-1: the scheduler pre-computes counterfactual probes for
+		// one watched route per tick, budget-gated, so a later flight search
+		// serves them call-free. ON by default; set TRVL_TIER1_PROBE=0 to disable.
+		// The probe lane is a separate best-effort budget that can never starve
+		// interactive traffic, so default-on is safe.
+		if os.Getenv("TRVL_TIER1_PROBE") != "0" {
 			installTier1Probe(s.scheduler, watchDir)
 		}
 	}
