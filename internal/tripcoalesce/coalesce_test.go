@@ -87,7 +87,12 @@ func TestPlanConcurrentFanOut(t *testing.T) {
 	var current int64
 
 	enter := func() {
-		started.Done()
+		// Increment current BEFORE signalling the barrier so the release
+		// goroutine can only close the channel once all three domains are
+		// provably counted in current. Under -race the scheduler overhead is
+		// large enough that calling started.Done() first lets the barrier fire
+		// and other goroutines drain through <-release before this one even
+		// reaches atomic.AddInt64, making maxConcurrent never reach 3.
 		n := atomic.AddInt64(&current, 1)
 		for {
 			old := atomic.LoadInt64(&maxConcurrent)
@@ -95,6 +100,7 @@ func TestPlanConcurrentFanOut(t *testing.T) {
 				break
 			}
 		}
+		started.Done()
 		<-release
 		atomic.AddInt64(&current, -1)
 	}

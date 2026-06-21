@@ -308,6 +308,11 @@ Optional parameters:
 - `exclude_basic`: true/false — exclude basic economy fares — server-side
 - `airlines`: comma-separated IATA codes to restrict results (e.g. "AY,LH")
 - `provider`: empty (default) merges Google Flights + Kiwi + Skiplagged into one sorted list; `"skiplagged"` queries Skiplagged solo for hidden-city / virtual-interlining cross-validation
+- `deep`: true/false — opt-in budget-gated counterfactual fan-out. Probes nearby departure airports, split-ticket options, and hidden-city routes via extra provider calls. Capped by a best-effort budget; never delays the primary result. When the budget is spent the tool returns what it has and notes the shortfall.
+
+Response extras (single-airport, single-destination searches only):
+- `price_position`: where the current fare sits in the route's observed history (low / typical / high) with a buy-or-wait verdict. Omitted when there is not enough history or below the data floor.
+- `savings`: call-free savings opportunities read from the persisted price calendar — same-day cheaper fares, vs-history comparison, shift-day options. Each entry carries an `as_of` age when the data is not live.
 
 ### search_dates — Find the cheapest day to fly
 ```json
@@ -374,6 +379,13 @@ Use `hotel_prices` as a provider comparison when Google exposes booking partners
 not as a standalone guarantee. For final hotel recommendations, prefer
 `search_hotels_with_details` or `hotel_rooms` totals because they can include
 room-level cancellation, board, and tax/fee fields.
+
+Response extras:
+- `price_position`: where the current rate sits in the property's observed price history (low / typical / high). Omitted when there is not enough data.
+- `booking_readiness`: a verdict string — `"ready"`, `"caution"`, or `"unverified"` — composed from verified price, stable link, confirmed property identity, and known refundability. Any unknown signal downgrades the verdict conservatively.
+- `booking_readiness_reasons`: list of strings explaining what contributed to the verdict.
+
+`hotel_rooms` returns the same `booking_readiness` and `booking_readiness_reasons` fields.
 
 CLI re-book flow for existing refundable reservations:
 ```bash
@@ -538,6 +550,17 @@ Searches 20+ providers in parallel including FlixBus, RegioJet, Eurostar, DB, NS
 {"type": "flight", "origin": "HEL", "destination": "BCN", "date": "2026-07-01", "target_price": 89, "currency": "EUR"}
 ```
 Stores watch in `~/.trvl/watches.json`. Use `check_watches` to re-check prices, `list_watches` to see all active watches. Hotel watches can set `last_minute: true` and `last_minute_drop_pct` (default 25) to alert when sub-48h availability drops materially below the last seen price.
+
+### nudges — Grounded proactive travel nudges (CLI)
+
+`trvl nudges` reads watches, price history, preferences, and trips from `~/.trvl` and surfaces nudges when a real trigger fires. Triggers are: a watch crossing its target price, or a route sitting at a confident historic low. When nothing has triggered, the command outputs nothing. Each nudge cites its source record. No network calls are made.
+
+```bash
+trvl nudges                   # Show grounded nudges (silent when nothing triggered)
+trvl nudges --format json     # Machine-readable
+```
+
+This command has no MCP equivalent — use `watch_price` + `check_watches` for watch management and `search_flights` for on-demand price signals.
 
 ### provider_health — Provider status dashboard
 ```json

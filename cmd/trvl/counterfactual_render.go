@@ -8,7 +8,12 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/counterfactual"
 	"github.com/MikkoParkkola/trvl/internal/dategrid"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/probecache"
 )
+
+// probeCacheFreshness bounds how recent a Tier-1 cached probe must be to be
+// served. Beyond it the cached fan-out result is treated as stale and skipped.
+const probeCacheFreshness = 12 * time.Hour
 
 // gridFreshness is how recent a persisted price grid must be to drive a
 // call-free shift-day counterfactual. Beyond this it is treated as stale and
@@ -38,6 +43,21 @@ func shiftDaySavings(origin, destination, date string, now time.Time) []counterf
 		})
 	}
 	return counterfactual.ShiftDay(grid, date, 10, g.UpdatedAt)
+}
+
+// tier1CachedSavings returns Tier-1 counterfactual savings pre-computed by the
+// watch scheduler for this route (MIK-6234). Served call-free from the probe
+// cache; nothing is returned when no fresh entry exists. No provider calls.
+func tier1CachedSavings(origin, destination string, now time.Time) []counterfactual.Saving {
+	store, err := probecache.DefaultStore()
+	if err != nil || store.Load() != nil {
+		return nil
+	}
+	e, ok := store.Get(probecache.RouteKey(origin, destination))
+	if !ok || !e.Fresh(now, probeCacheFreshness) {
+		return nil
+	}
+	return e.Savings
 }
 
 // printSavings renders counterfactual savings, split by whether they were free.

@@ -501,7 +501,14 @@ trvl flights JFK LHR 2026-07-01 --cabin business --stops nonstop
 trvl flights AMS,EIN,ANR HEL,TKU,TLL 2026-06-15     # Multi-airport search
 trvl flights HEL BCN 2026-07-01 --return 2026-07-08
 trvl flights HEL NRT 2026-06-15 --format json       # JSON output
+trvl flights HEL BCN 2026-07-01 --deep              # Budget-gated counterfactual fan-out
 ```
+
+**`--deep` flag:** runs a budget-gated counterfactual fan-out after the primary search. It probes nearby departure airports, split-ticket options, and hidden-city routes via extra provider calls. The budget is best-effort and caps the total call count; if the budget runs out before all probes complete, the primary result is returned with a note. The flag never delays the primary search output.
+
+**Price position:** when a route has enough price history, each result includes where the current fare sits in that route's observed range (low / typical / high) and a buy-or-wait verdict. Below the data floor the output says so and makes no trend claim. Available in `--format json` as `price_position` and in the MCP `search_flights` response.
+
+**Call-free savings:** results include a "Savings you could capture" panel showing same-day cheaper fares, a vs-history comparison, and a shift-day option (departing a nearby date). These read from the persisted price calendar — no extra provider calls. Each carries an age label when the data is not live.
 
 ### Cheapest Dates
 
@@ -530,6 +537,10 @@ trvl prices hold "<hotel_id>" --name "Hotel Lutetia Paris" --checkin 2026-06-15 
 trvl prices rebook <hold_id> --min-savings 25
 trvl rooms "Hotel Lutetia Paris" --checkin 2026-06-15 --checkout 2026-06-18
 ```
+
+**Price position:** `trvl prices` shows where the current rate sits in that property's observed price history (low / typical / high). Available in `--format json` as `price_position`.
+
+**Booking readiness:** `trvl prices` and `trvl rooms` show a readiness verdict (ready / caution / unverified) composed from verified price, stable link, confirmed property identity, and known refundability. Any unknown signal downgrades the verdict conservatively. In `--format json` the fields are `booking_readiness` and `booking_readiness_reasons`.
 
 ### Explore Destinations
 
@@ -645,6 +656,15 @@ trvl deals                                            # All recent deals
 trvl deals --from HEL,AMS --max-price 400             # From my airports, under €400
 trvl deals --from Helsinki,Amsterdam,Prague            # City names also accepted
 trvl deals --type error_fare                           # Error fares only
+```
+
+### Proactive Nudges
+
+`trvl nudges` reads your watches, price history, preferences, and trips and surfaces a list of grounded nudges. A nudge fires only when a real trigger exists: a price watch crossing its target, or a route sitting at a confident historic low. When nothing has triggered, the command prints nothing. Every nudge cites the record it came from. The command reads only `~/.trvl` and makes no network calls.
+
+```bash
+trvl nudges                   # Show grounded nudges (quiet when nothing triggered)
+trvl nudges --format json     # Machine-readable output
 ```
 
 ### Travel Hacks

@@ -23,6 +23,21 @@ type Scheduler struct {
 	stopped   bool
 	cancel    context.CancelFunc
 	done      chan struct{}
+
+	// probeHook, when set, runs after each check round with the active watches.
+	// It is the injection seam for the MIK-6234 Tier-1 scheduler-amortized
+	// counterfactual probe: the daemon wires a budget-gated probe here (the
+	// watch package never imports the hacks/probe engines, avoiding a cycle).
+	// Nil by default, so standard scheduler behaviour is unchanged.
+	probeHook func(ctx context.Context, active []Watch)
+}
+
+// SetProbeHook installs an optional per-round hook invoked with the active
+// watches after each check. Safe to call before Start. Pass nil to disable.
+func (s *Scheduler) SetProbeHook(hook func(ctx context.Context, active []Watch)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.probeHook = hook
 }
 
 // NoopChecker is a PriceChecker that always returns zero price.
@@ -177,6 +192,19 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 		"checked", len(results),
 		"triggered", triggered,
 	)
+
+	// MIK-6234 Tier-1: run the optional, budget-gated counterfactual probe over
+	// the active routes. Best-effort and panic-isolated — it must never affect
+	// the check round.
+	s.mu.Lock()
+	hook := s.probeHook
+	s.mu.Unlock()
+	if hook != nil {
+		func() {
+			defer func() { _ = recover() }()
+			hook(ctx, active)
+		}()
+	}
 }
 
 func (s *Scheduler) closeDone() {

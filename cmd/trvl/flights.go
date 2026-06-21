@@ -225,6 +225,9 @@ Examples:
 					savings = append(savings, *s)
 				}
 				savings = append(savings, shiftDaySavings(origins[0], destinations[0], date, now)...)
+				// MIK-6234 Tier 1: serve scheduler-precomputed probe savings for
+				// this route, call-free from the cache (no provider calls now).
+				savings = append(savings, tier1CachedSavings(origins[0], destinations[0], now)...)
 
 				// MIK-6234 Tier 2: opt-in, budget-gated cold-route fan-out. The
 				// probe lane is separate from interactive traffic; if exhausted
