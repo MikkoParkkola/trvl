@@ -150,15 +150,17 @@ func TestMakeElicitFunc_CapabilityButNoWriter(t *testing.T) {
 	}
 }
 
-func TestMakeElicitFunc_CapabilityAndWriterButNoReader(t *testing.T) {
+func TestMakeElicitFunc_CapabilityAndWriterReturnsFunc(t *testing.T) {
 	t.Parallel()
 	s := NewServer()
 	s.clientCapabilities.Elicitation = &ElicitationCapability{}
 	s.notifyMu.Lock()
 	s.notifyWriter = &bytes.Buffer{}
 	s.notifyMu.Unlock()
-	if s.makeElicitFunc() != nil {
-		t.Error("expected nil ElicitFunc when no elicitReader")
+	// Elicitation responses are routed by the stdio read loop (no separate
+	// reader needed), so capability + writer is sufficient to return a func.
+	if s.makeElicitFunc() == nil {
+		t.Error("expected a non-nil ElicitFunc when capability + writer are present")
 	}
 }
 

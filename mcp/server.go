@@ -53,6 +53,11 @@ const (
 	maxConcurrentTools = 4
 )
 
+// elicitationTimeout bounds how long a tool handler waits for the client's
+// response to a server->client elicitation request before giving up, so a
+// non-responding client can never leak a blocked handler goroutine.
+const elicitationTimeout = 5 * time.Minute
+
 // serverVersion is set at link time for release builds.
 var serverVersion = "dev"
 
@@ -82,13 +87,20 @@ type Server struct {
 	prompts            []PromptDef
 	resources          []ResourceDef
 	clientCapabilities ClientCapabilities
+	capsMu             sync.RWMutex // guards clientCapabilities (set at initialize, read by handlers)
 
 	// Notification writer, set during ServeStdio for server-to-client messages.
+	// notifyMu also serializes all writes to the stdio output so concurrent
+	// request handlers never interleave JSON-RPC lines.
 	notifyWriter io.Writer
 	notifyMu     sync.Mutex
 
-	// For elicitation: reader set during ServeStdio.
-	elicitReader *bufio.Scanner
+	// Pending server->client elicitation requests, keyed by request id. The
+	// concurrent stdio read loop routes incoming client responses to the waiting
+	// handler via these channels (the read loop owns the only reader, so handlers
+	// must not read the transport directly).
+	elicitMu      sync.Mutex
+	pendingElicit map[string]chan json.RawMessage
 
 	// Session state for trip planning.
 	tripState  TripState
@@ -248,7 +260,10 @@ func (s *Server) SendLog(level, message string) {
 // elicit reader (for receiving responses). Returns nil otherwise, which means
 // tool handlers must fall back to CLI instructions.
 func (s *Server) makeElicitFunc() ElicitFunc {
-	if s.clientCapabilities.Elicitation == nil {
+	s.capsMu.RLock()
+	elicitationSupported := s.clientCapabilities.Elicitation != nil
+	s.capsMu.RUnlock()
+	if !elicitationSupported {
 		return nil
 	}
 	s.notifyMu.Lock()
@@ -257,12 +272,22 @@ func (s *Server) makeElicitFunc() ElicitFunc {
 	if !hasWriter {
 		return nil
 	}
-	if s.elicitReader == nil {
-		return nil
-	}
 
 	return func(message string, schema map[string]interface{}) (map[string]interface{}, error) {
 		id := fmt.Sprintf("elicit-%d", time.Now().UnixNano())
+
+		ch := make(chan json.RawMessage, 1)
+		s.elicitMu.Lock()
+		if s.pendingElicit == nil {
+			s.pendingElicit = make(map[string]chan json.RawMessage)
+		}
+		s.pendingElicit[id] = ch
+		s.elicitMu.Unlock()
+		defer func() {
+			s.elicitMu.Lock()
+			delete(s.pendingElicit, id)
+			s.elicitMu.Unlock()
+		}()
 
 		req := ElicitationRequest{
 			JSONRPC: "2.0",
@@ -276,31 +301,30 @@ func (s *Server) makeElicitFunc() ElicitFunc {
 
 		s.notifyMu.Lock()
 		data, err := json.Marshal(req)
-		if err != nil {
-			s.notifyMu.Unlock()
-			return nil, fmt.Errorf("elicitation: marshal request: %w", err)
+		if err == nil {
+			_, err = fmt.Fprintf(s.notifyWriter, "%s\n", data)
 		}
-		_, err = fmt.Fprintf(s.notifyWriter, "%s\n", data)
 		s.notifyMu.Unlock()
 		if err != nil {
 			return nil, fmt.Errorf("elicitation: send request: %w", err)
 		}
 
-		if !s.elicitReader.Scan() {
-			return nil, fmt.Errorf("elicitation: no response from client")
+		select {
+		case raw := <-ch:
+			var resp ElicitationResponse
+			if err := json.Unmarshal(raw, &resp); err != nil {
+				return nil, fmt.Errorf("elicitation: parse response: %w", err)
+			}
+			if resp.Error != nil {
+				return nil, fmt.Errorf("elicitation: client error: %s", resp.Error.Message)
+			}
+			if resp.Result.Action != "accept" {
+				return nil, nil
+			}
+			return resp.Result.Content, nil
+		case <-time.After(elicitationTimeout):
+			return nil, fmt.Errorf("elicitation: timed out waiting for client response")
 		}
-
-		var resp ElicitationResponse
-		if err := json.Unmarshal(s.elicitReader.Bytes(), &resp); err != nil {
-			return nil, fmt.Errorf("elicitation: parse response: %w", err)
-		}
-		if resp.Error != nil {
-			return nil, fmt.Errorf("elicitation: client error: %s", resp.Error.Message)
-		}
-		if resp.Result.Action != "accept" {
-			return nil, nil
-		}
-		return resp.Result.Content, nil
 	}
 }
 
@@ -373,7 +397,9 @@ func (s *Server) handleInitialize(req *Request) *Response {
 	if req.Params != nil {
 		var params InitializeParams
 		if err := json.Unmarshal(req.Params, &params); err == nil {
+			s.capsMu.Lock()
 			s.clientCapabilities = params.Capabilities
+			s.capsMu.Unlock()
 			if params.Capabilities.Sampling != nil {
 				s.SendLog("info", "Client supports sampling/createMessage; trvl currently keeps transport-level sampling disabled")
 			}
@@ -769,42 +795,111 @@ func (s *Server) ServeStdio(in io.Reader, out io.Writer) error {
 	// Allow up to 1MB per line for large tool call results.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
-	// Set up notification writer and elicitation reader for server->client.
+	// Set up the notification writer for server->client messages. The read loop
+	// below owns the only reader; handlers receive client responses (elicitation)
+	// via routed channels rather than reading the transport directly.
+	s.notifyMu.Lock()
 	s.notifyWriter = out
-	s.elicitReader = scanner
+	s.notifyMu.Unlock()
 
+	// Each request is handled in its own goroutine so a long-running tool call
+	// (a 15-30s travel search) never blocks the read loop — control messages like
+	// `ping` stay snappy, which keeps health-probing transports (e.g. an MCP
+	// gateway) from tearing down a backend that is merely busy. Concurrency is
+	// already bounded per-tool by toolSem; stdout writes are serialized by
+	// notifyMu so responses never interleave. A WaitGroup ensures every dispatched
+	// handler has flushed its response before ServeStdio returns (clean shutdown;
+	// deterministic for buffered callers and tests).
+	var handlers sync.WaitGroup
 	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
+		b := scanner.Bytes()
+		if len(b) == 0 {
+			continue
+		}
+		// scanner reuses its buffer on the next Scan; copy before handing to a
+		// goroutine that may outlive this iteration.
+		line := make([]byte, len(b))
+		copy(line, b)
+
+		// A response to a server->client request (elicitation) carries no method;
+		// route it to the waiting handler instead of treating it as a request.
+		if s.routeClientResponse(line) {
 			continue
 		}
 
-		var req Request
-		if err := json.Unmarshal(line, &req); err != nil {
-			resp := Response{
-				JSONRPC: "2.0",
-				Error:   &Error{Code: -32700, Message: fmt.Sprintf("parse error: %v", err)},
+		handlers.Add(1)
+		go func(line []byte) {
+			defer handlers.Done()
+			var req Request
+			if err := json.Unmarshal(line, &req); err != nil {
+				s.writeMessage(out, Response{
+					JSONRPC: "2.0",
+					Error:   &Error{Code: -32700, Message: fmt.Sprintf("parse error: %v", err)},
+				})
+				return
 			}
-			if writeErr := writeJSON(out, resp); writeErr != nil {
-				return writeErr
-			}
-			continue
-		}
 
-		resp := s.HandleRequest(&req)
-		if resp == nil {
-			// Notification -- no response.
-			continue
-		}
-		if err := writeJSON(out, resp); err != nil {
-			return err
-		}
+			resp := s.HandleRequest(&req)
+			if resp == nil {
+				// Notification -- no response.
+				return
+			}
+			s.writeMessage(out, resp)
+		}(line)
 	}
 
+	handlers.Wait()
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read stdin: %w", err)
 	}
 	return nil
+}
+
+// writeMessage serializes a JSON-RPC message to the stdio output. notifyMu
+// guards the writer so concurrent request handlers (and notifications) never
+// interleave lines.
+func (s *Server) writeMessage(out io.Writer, v any) {
+	s.notifyMu.Lock()
+	defer s.notifyMu.Unlock()
+	if err := writeJSON(out, v); err != nil {
+		slog.Warn("mcp_stdio_write_failed", "error", err)
+	}
+}
+
+// routeClientResponse delivers a client's response to a pending server->client
+// request (elicitation) to the waiting handler. It returns true when the line
+// was a routed response; false when it is a request/notification the read loop
+// should dispatch normally. A JSON-RPC response has an id and no method.
+func (s *Server) routeClientResponse(line []byte) bool {
+	var probe struct {
+		Method string          `json:"method"`
+		ID     json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(line, &probe); err != nil {
+		return false
+	}
+	if probe.Method != "" || len(probe.ID) == 0 {
+		return false // has a method => request; no id => notification
+	}
+	var id string
+	if err := json.Unmarshal(probe.ID, &id); err != nil {
+		return false // elicitation ids are strings
+	}
+
+	s.elicitMu.Lock()
+	ch, ok := s.pendingElicit[id]
+	if ok {
+		delete(s.pendingElicit, id)
+	}
+	s.elicitMu.Unlock()
+	if !ok {
+		return false
+	}
+
+	msg := make([]byte, len(line))
+	copy(msg, line)
+	ch <- msg
+	return true
 }
 
 // writeJSON marshals v as a single JSON line to w.
