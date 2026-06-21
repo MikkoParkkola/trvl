@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
 // ============================================================
@@ -12,6 +14,7 @@ import (
 // ============================================================
 
 func TestFind_BudgetFilter(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	t.Parallel()
 	// With an impossibly low budget, all candidates should be filtered out
 	// (or returned with 0 cost since the searches will fail for fake cities).
@@ -40,6 +43,7 @@ func TestFind_BudgetFilter(t *testing.T) {
 // ============================================================
 
 func TestFind_SingleNightWindow(t *testing.T) {
+	testutil.RequireLiveIntegration(t)
 	t.Parallel()
 	candidates, err := Find(context.Background(), Input{
 		Origin:      "HEL",
