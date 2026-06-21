@@ -10,17 +10,15 @@ import (
 // an unsynchronized fast path while sync.Once.Do wrote it, racing on the
 // interface value (caught here under `go test -race`; it crashed Windows CI).
 // All access now flows through the Once, so this is race-free.
+//
+// The Once is intentionally not reset (copying a sync.Once is a vet error and a
+// bug). Nulling flatioClient exercises the cold build path when this test runs
+// before any other caller warms the Once; otherwise it exercises concurrent
+// reads. Both are race-free under the fix.
 func TestFlatioFetcher_ConcurrentNoRace(t *testing.T) {
-	// Reset the lazy-init state so this test exercises the build path, not a
-	// value a prior test injected. Save and restore to avoid cross-test leakage.
 	prevClient := flatioClient
-	prevOnce := flatioClientOnce
+	t.Cleanup(func() { flatioClient = prevClient })
 	flatioClient = nil
-	flatioClientOnce = sync.Once{}
-	t.Cleanup(func() {
-		flatioClient = prevClient
-		flatioClientOnce = prevOnce
-	})
 
 	const n = 64
 	var wg sync.WaitGroup
