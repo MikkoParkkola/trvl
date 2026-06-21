@@ -19,13 +19,12 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/hacks"
 	"github.com/MikkoParkkola/trvl/internal/models"
-	"github.com/MikkoParkkola/trvl/internal/obslog"
 	"github.com/MikkoParkkola/trvl/internal/points"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
+	"github.com/MikkoParkkola/trvl/internal/pricefeed"
 	"github.com/MikkoParkkola/trvl/internal/pricesignal"
 	"github.com/MikkoParkkola/trvl/internal/scoring"
 	"github.com/MikkoParkkola/trvl/internal/travelctx"
-	"github.com/MikkoParkkola/trvl/internal/watch"
 	"github.com/spf13/cobra"
 )
 
@@ -201,33 +200,17 @@ Examples:
 				return err
 			}
 
-			// MIK-6229: log this search into price history and compute a
-			// price-position signal. Best-effort and single-O/D only — a
-			// multi-airport search has no single route key, so we skip it
-			// rather than mis-key the corpus. Never breaks a search.
+			// MIK-6229/6234: log the search and compute price-position + all
+			// call-free savings via the shared pricefeed (single source shared
+			// with the MCP path). Single-O/D only — a multi-airport search has no
+			// canonical route key. Never breaks a search.
 			var pricePos *pricesignal.Position
 			var savings []counterfactual.Saving
 			if len(origins) == 1 && len(destinations) == 1 && result != nil && len(result.Flights) > 0 {
 				now := time.Now()
-				if store, serr := watch.DefaultStore(); serr == nil && store.Load() == nil {
-					_ = obslog.FlightSearch(store, origins[0], destinations[0], date, result)
-					key := watch.RouteKey("flight", origins[0], destinations[0], date)
-					p := pricesignal.Compute(store.RoutePrices(key, result.Flights[0].Currency), result.Flights[0].Price, 0)
-					pricePos = &p
-				}
-				// MIK-6234 Tier 0: call-free counterfactual savings from data
-				// already in hand — same-day spread, vs-history, and shift-day
-				// read from a persisted price grid (no new provider calls).
-				if s := counterfactual.SameDayAlternative(result.Flights, 10, now); s != nil {
-					savings = append(savings, *s)
-				}
-				if s := counterfactual.VsHistory(pricePos, result.Flights[0].Currency, now); s != nil {
-					savings = append(savings, *s)
-				}
-				savings = append(savings, shiftDaySavings(origins[0], destinations[0], date, now)...)
-				// MIK-6234 Tier 1: serve scheduler-precomputed probe savings for
-				// this route, call-free from the cache (no provider calls now).
-				savings = append(savings, tier1CachedSavings(origins[0], destinations[0], now)...)
+				fr := pricefeed.Flight(origins[0], destinations[0], date, result, now)
+				pricePos = fr.Position
+				savings = fr.Savings
 
 				// MIK-6234 Tier 2: opt-in, budget-gated cold-route fan-out. The
 				// probe lane is separate from interactive traffic; if exhausted

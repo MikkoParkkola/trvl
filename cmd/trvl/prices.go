@@ -11,9 +11,8 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/hotelarb"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
-	"github.com/MikkoParkkola/trvl/internal/obslog"
+	"github.com/MikkoParkkola/trvl/internal/pricefeed"
 	"github.com/MikkoParkkola/trvl/internal/pricesignal"
-	"github.com/MikkoParkkola/trvl/internal/watch"
 	"github.com/spf13/cobra"
 )
 
@@ -69,27 +68,13 @@ func runPrices(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("hotel prices: %w", err)
 	}
 
-	// MIK-6229: log the cheapest provider price into history and compute a
-	// price-position signal for this hotel + check-in. Best-effort.
+	// MIK-6229/6232: price-position + booking-readiness via the shared pricefeed
+	// (single source shared with the MCP path). Best-effort; never breaks a search.
 	var pricePos *pricesignal.Position
-	if result != nil && len(result.Providers) > 0 {
-		if store, serr := watch.DefaultStore(); serr == nil && store.Load() == nil {
-			_ = obslog.HotelPrices(store, hotelID, checkin, result)
-			key := watch.RouteKey("hotel", hotelID, "", checkin)
-			cheapest := cheapestProvider(result.Providers)
-			if cheapest.Price > 0 {
-				p := pricesignal.Compute(store.RoutePrices(key, cheapest.Currency), cheapest.Price, 0)
-				pricePos = &p
-			}
-		}
-	}
-
-	// MIK-6232: compose a booking-readiness verdict from the signals this
-	// endpoint actually has. Refundability is not known here (prices lacks it),
-	// which conservatively keeps the verdict below "ready" by design.
 	var readiness *booking.Verdict
 	if result != nil && len(result.Providers) > 0 {
-		v := bookingReadinessForPrices(hotelID, result.Providers)
+		pricePos = pricefeed.HotelPosition(hotelID, checkin, result)
+		v := pricefeed.HotelPricesReadiness(hotelID, result.Providers)
 		readiness = &v
 	}
 
@@ -118,43 +103,6 @@ func runPrices(cmd *cobra.Command, args []string) error {
 		fmt.Printf("\nBooking readiness: %s — %s\n", readiness.Label(), readiness.Summary())
 	}
 	return nil
-}
-
-// bookingReadinessForPrices maps the signals available on the prices endpoint
-// into a readiness verdict. A nil Signal means "not known", which the contract
-// treats conservatively. LinkStable and Verified come from the cheapest
-// provider; identity is confirmed because the caller supplied a place ID;
-// refundability is left nil here.
-func bookingReadinessForPrices(hotelID string, providers []models.ProviderPrice) booking.Verdict {
-	cheapest := cheapestProvider(providers)
-	var in booking.Input // all signals default to nil = not known
-	if hotelID != "" {
-		in.IdentityConfirmed = booking.True()
-	}
-	switch cheapest.LinkDurability {
-	case "stable":
-		in.LinkStable = booking.True()
-	case "expiring":
-		in.LinkStable = booking.False()
-	}
-	switch cheapest.PriceConfidence {
-	case models.PriceConfidenceVerified, models.PriceConfidenceRoomLevel:
-		in.Verified = booking.True()
-	case models.PriceConfidenceUnverified:
-		in.Verified = booking.False()
-	}
-	return booking.Evaluate(in)
-}
-
-// cheapestProvider returns the lowest positive-priced provider, or a zero value.
-func cheapestProvider(providers []models.ProviderPrice) models.ProviderPrice {
-	var best models.ProviderPrice
-	for _, p := range providers {
-		if p.Price > 0 && (best.Price == 0 || p.Price < best.Price) {
-			best = p
-		}
-	}
-	return best
 }
 
 func formatPricesTable(result *models.HotelPriceResult) error {

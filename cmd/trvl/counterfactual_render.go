@@ -6,59 +6,8 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/counterfactual"
-	"github.com/MikkoParkkola/trvl/internal/dategrid"
 	"github.com/MikkoParkkola/trvl/internal/models"
-	"github.com/MikkoParkkola/trvl/internal/probecache"
 )
-
-// probeCacheFreshness bounds how recent a Tier-1 cached probe must be to be
-// served. Beyond it the cached fan-out result is treated as stale and skipped.
-const probeCacheFreshness = 12 * time.Hour
-
-// gridFreshness is how recent a persisted price grid must be to drive a
-// call-free shift-day counterfactual. Beyond this it is treated as stale and
-// not surfaced (TRVL.CF.5: never present stale data as live).
-const gridFreshness = 24 * time.Hour
-
-// shiftDaySavings computes call-free shift-day counterfactuals for a single-date
-// flight search by reading a PERSISTED price grid (written by the watch
-// scheduler). It issues no provider calls and returns nothing when no fresh grid
-// covers the route — honest silence over a fabricated or stale claim.
-func shiftDaySavings(origin, destination, date string, now time.Time) []counterfactual.Saving {
-	store, err := dategrid.DefaultStore()
-	if err != nil || store.Load() != nil {
-		return nil
-	}
-	g, ok := store.Get(dategrid.RouteKey(origin, destination))
-	if !ok || !g.Fresh(now, gridFreshness) {
-		return nil
-	}
-	grid := make([]models.DatePriceResult, 0, len(g.Points))
-	for _, p := range g.Points {
-		grid = append(grid, models.DatePriceResult{
-			Date:       p.Date,
-			ReturnDate: p.ReturnDate,
-			Price:      p.Price,
-			Currency:   p.Currency,
-		})
-	}
-	return counterfactual.ShiftDay(grid, date, 10, g.UpdatedAt)
-}
-
-// tier1CachedSavings returns Tier-1 counterfactual savings pre-computed by the
-// watch scheduler for this route (MIK-6234). Served call-free from the probe
-// cache; nothing is returned when no fresh entry exists. No provider calls.
-func tier1CachedSavings(origin, destination string, now time.Time) []counterfactual.Saving {
-	store, err := probecache.DefaultStore()
-	if err != nil || store.Load() != nil {
-		return nil
-	}
-	e, ok := store.Get(probecache.RouteKey(origin, destination))
-	if !ok || !e.Fresh(now, probeCacheFreshness) {
-		return nil
-	}
-	return e.Savings
-}
 
 // printSavings renders counterfactual savings in three honest buckets:
 //   - Tier 0 (call-free, not probe-derived): genuine by-products of data already
