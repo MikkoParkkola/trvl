@@ -76,9 +76,9 @@ func runPrices(cmd *cobra.Command, args []string) error {
 		if store, serr := watch.DefaultStore(); serr == nil && store.Load() == nil {
 			_ = obslog.HotelPrices(store, hotelID, checkin, result)
 			key := watch.RouteKey("hotel", hotelID, "", checkin)
-			cheapest := cheapestProviderPrice(result.Providers)
-			if cheapest > 0 {
-				p := pricesignal.Compute(store.RoutePrices(key), cheapest, 0)
+			cheapest := cheapestProvider(result.Providers)
+			if cheapest.Price > 0 {
+				p := pricesignal.Compute(store.RoutePrices(key, cheapest.Currency), cheapest.Price, 0)
 				pricePos = &p
 			}
 		}
@@ -155,11 +155,6 @@ func cheapestProvider(providers []models.ProviderPrice) models.ProviderPrice {
 		}
 	}
 	return best
-}
-
-// cheapestProviderPrice returns the lowest positive provider price, or 0.
-func cheapestProviderPrice(providers []models.ProviderPrice) float64 {
-	return cheapestProvider(providers).Price
 }
 
 func formatPricesTable(result *models.HotelPriceResult) error {

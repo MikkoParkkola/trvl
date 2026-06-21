@@ -8,12 +8,26 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+)
+
+// Scaling guards for ad-hoc route observations (MIK-6229 improve pass).
+const (
+	// maxObservationsPerRoute caps retained points per route key, bounding the
+	// price-history file to cap x number-of-routes.
+	maxObservationsPerRoute = 1000
+	// observationThrottle suppresses near-identical repeat observations for the
+	// same route+currency within this window.
+	observationThrottle = 15 * time.Minute
+	// observationEpsilonPct is the relative price delta below which a throttled
+	// observation is treated as a duplicate.
+	observationEpsilonPct = 0.005
 )
 
 // Watch represents a price tracking rule for a flight or hotel route.
@@ -452,6 +466,14 @@ func (s *Store) History(watchID string) []PricePoint {
 // persists. This is the MIK-6229 enabler: every flight/hotel search can log its
 // observed price so the history corpus compounds across all searched routes,
 // not only watched ones. A non-positive price is ignored (never a real fare).
+//
+// Two scaling guards (added in the MIK-6229 improve pass) keep the corpus
+// bounded and the per-search write cheap:
+//   - Throttle: a near-identical observation for the same route+currency within
+//     observationThrottle is skipped entirely (no write), so rapid repeat
+//     searches of the same route do not each rewrite the history file.
+//   - Cap: at most maxObservationsPerRoute points are retained per route key;
+//     the oldest are pruned, bounding file growth to cap x number-of-routes.
 func (s *Store) RecordObservation(routeKey string, price float64, currency string) error {
 	if routeKey == "" || price <= 0 {
 		return nil
@@ -459,13 +481,63 @@ func (s *Store) RecordObservation(routeKey string, price float64, currency strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	cur := strings.ToUpper(strings.TrimSpace(currency))
+	if last, ok := s.lastObservationLocked(routeKey, cur); ok && last.Price > 0 {
+		if time.Since(last.Timestamp) < observationThrottle &&
+			math.Abs(price-last.Price)/last.Price <= observationEpsilonPct {
+			return nil // redundant near-duplicate; skip the write entirely
+		}
+	}
+
 	s.history = append(s.history, PricePoint{
 		RouteKey:  routeKey,
 		Price:     price,
-		Currency:  currency,
+		Currency:  cur,
 		Timestamp: time.Now(),
 	})
+	s.pruneRouteLocked(routeKey)
 	return s.saveLocked()
+}
+
+// lastObservationLocked returns the most recent price point for a route key,
+// optionally filtered to a currency (empty currency matches any). Caller holds s.mu.
+func (s *Store) lastObservationLocked(routeKey, currency string) (PricePoint, bool) {
+	for i := len(s.history) - 1; i >= 0; i-- {
+		p := s.history[i]
+		if p.RouteKey != routeKey {
+			continue
+		}
+		if currency != "" && strings.ToUpper(p.Currency) != currency {
+			continue
+		}
+		return p, true
+	}
+	return PricePoint{}, false
+}
+
+// pruneRouteLocked drops the oldest observations for routeKey beyond the cap,
+// preserving order. Caller holds s.mu.
+func (s *Store) pruneRouteLocked(routeKey string) {
+	var idx []int
+	for i, p := range s.history {
+		if p.RouteKey == routeKey {
+			idx = append(idx, i)
+		}
+	}
+	if len(idx) <= maxObservationsPerRoute {
+		return
+	}
+	drop := make(map[int]bool, len(idx)-maxObservationsPerRoute)
+	for _, i := range idx[:len(idx)-maxObservationsPerRoute] {
+		drop[i] = true
+	}
+	kept := s.history[:0:0]
+	for i, p := range s.history {
+		if !drop[i] {
+			kept = append(kept, p)
+		}
+	}
+	s.history = kept
 }
 
 // RouteHistory returns all price points recorded for a given route key, ordered
@@ -483,17 +555,23 @@ func (s *Store) RouteHistory(routeKey string) []PricePoint {
 	return out
 }
 
-// RoutePrices returns just the price values for a route key, for direct use
-// with the pricesignal package.
-func (s *Store) RoutePrices(routeKey string) []float64 {
+// RoutePrices returns the price values for a route key, filtered to a currency
+// so callers never mix currencies into a single price-position computation.
+// An empty currency returns every recorded price for the key.
+func (s *Store) RoutePrices(routeKey, currency string) []float64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	cur := strings.ToUpper(strings.TrimSpace(currency))
 	var out []float64
 	for _, p := range s.history {
-		if p.RouteKey == routeKey {
-			out = append(out, p.Price)
+		if p.RouteKey != routeKey {
+			continue
 		}
+		if cur != "" && strings.ToUpper(p.Currency) != cur {
+			continue
+		}
+		out = append(out, p.Price)
 	}
 	return out
 }

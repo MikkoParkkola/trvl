@@ -208,7 +208,7 @@ Examples:
 				if store, serr := watch.DefaultStore(); serr == nil && store.Load() == nil {
 					_ = obslog.FlightSearch(store, origins[0], destinations[0], date, result)
 					key := watch.RouteKey("flight", origins[0], destinations[0], date)
-					p := pricesignal.Compute(store.RoutePrices(key), result.Flights[0].Price, 0)
+					p := pricesignal.Compute(store.RoutePrices(key, result.Flights[0].Currency), result.Flights[0].Price, 0)
 					pricePos = &p
 				}
 			}

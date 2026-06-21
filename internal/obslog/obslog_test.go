@@ -97,7 +97,7 @@ func TestEndToEndThroughStore(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	prices := s.RoutePrices(watch.RouteKey("flight", "AMS", "VLC", "2026-07-15"))
+	prices := s.RoutePrices(watch.RouteKey("flight", "AMS", "VLC", "2026-07-15"), "EUR")
 	if len(prices) != 5 {
 		t.Fatalf("want 5 logged prices, got %d", len(prices))
 	}

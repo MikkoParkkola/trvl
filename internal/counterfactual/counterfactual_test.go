@@ -43,21 +43,34 @@ func TestShiftDayNoCurrentDate(t *testing.T) {
 }
 
 func TestSameDayAlternative(t *testing.T) {
+	// Headline (first) is pricier than a later, cheaper fare -> real saving.
+	// Mimics a duration/time-sorted list where the fastest is not the cheapest.
 	flights := []models.FlightResult{
-		{Price: 150, Currency: "EUR"},
-		{Price: 220, Currency: "EUR"},
+		{Price: 220, Currency: "EUR"}, // headline (e.g. fastest)
+		{Price: 150, Currency: "EUR"}, // cheapest
 		{Price: 180, Currency: "EUR"},
 	}
 	s := SameDayAlternative(flights, 10, asOf)
 	if s == nil || s.Amount != 70 {
-		t.Fatalf("want spread saving 70, got %+v", s)
+		t.Fatalf("want headline-vs-cheapest saving 70, got %+v", s)
 	}
-	// Single flight or tiny spread -> nil.
+
+	// Already cheapest-first -> headline IS cheapest -> no illusory saving.
+	sorted := []models.FlightResult{
+		{Price: 150, Currency: "EUR"},
+		{Price: 180, Currency: "EUR"},
+		{Price: 220, Currency: "EUR"},
+	}
+	if SameDayAlternative(sorted, 10, asOf) != nil {
+		t.Fatalf("cheapest-first list must yield no saving (honesty)")
+	}
+
+	// Single flight or sub-minDelta -> nil.
 	if SameDayAlternative(flights[:1], 10, asOf) != nil {
 		t.Fatalf("single flight must yield nil")
 	}
-	if SameDayAlternative([]models.FlightResult{{Price: 150}, {Price: 155}}, 10, asOf) != nil {
-		t.Fatalf("spread below minDelta must yield nil")
+	if SameDayAlternative([]models.FlightResult{{Price: 155}, {Price: 150}}, 10, asOf) != nil {
+		t.Fatalf("delta below minDelta must yield nil")
 	}
 }
 

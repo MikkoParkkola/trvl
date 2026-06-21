@@ -87,42 +87,38 @@ func ShiftDay(grid []models.DatePriceResult, currentDate string, minDelta float6
 	return out
 }
 
-// SameDayAlternative finds itineraries in an already-returned flight list that
-// are cheaper than the headline (cheapest is the reference) by at least
-// minDelta. Because a single flight search already returns every same-day
-// carrier/time, this is pure spread analysis with zero new calls.
+// SameDayAlternative finds a genuine, actionable saving within an
+// already-returned flight list: when the headline result (flights[0], i.e. what
+// the current sort puts first — by duration, departure time, etc.) is pricier
+// than the cheapest same-day fare, choosing the cheapest captures a real saving.
 //
-// In practice the cheapest is usually the headline, so this surfaces the case
-// where a non-headline option trades a small premium for a better time/carrier
-// the renderer wants to mention — here we report genuine savings vs the most
-// expensive shown option, framed honestly as the spread available on the day.
+// This is honest by construction: when the list is already sorted cheapest-first
+// the headline IS the cheapest, the delta is zero, and nil is returned — no
+// illusory "saving" is fabricated. Zero new provider calls (pure spread of data
+// the search already returned).
 func SameDayAlternative(flights []models.FlightResult, minDelta float64, asOf time.Time) *Saving {
 	if len(flights) < 2 {
 		return nil
 	}
-	var lo, hi float64
-	var currency string
-	for _, f := range flights {
-		if f.Price <= 0 {
-			continue
-		}
-		if lo == 0 || f.Price < lo {
-			lo = f.Price
-			currency = f.Currency
-		}
-		if f.Price > hi {
-			hi = f.Price
+	headline := flights[0]
+	if headline.Price <= 0 {
+		return nil
+	}
+	cheapest := headline
+	for _, f := range flights[1:] {
+		if f.Price > 0 && f.Price < cheapest.Price {
+			cheapest = f
 		}
 	}
-	delta := hi - lo
-	if lo <= 0 || delta < minDelta {
-		return nil
+	delta := headline.Price - cheapest.Price
+	if delta < minDelta {
+		return nil // headline already is (within minDelta of) the cheapest
 	}
 	return &Saving{
 		Kind:        KindSameDay,
-		Description: fmt.Sprintf("Same-day fares range %.0f–%.0f %s; the cheapest saves %.0f %s over the dearest shown", lo, hi, currency, delta, currency),
+		Description: fmt.Sprintf("The cheapest same-day fare (%.0f %s) saves %.0f %s over the top-listed result (%.0f %s)", cheapest.Price, cheapest.Currency, delta, headline.Currency, headline.Price, headline.Currency),
 		Amount:      delta,
-		Currency:    currency,
+		Currency:    cheapest.Currency,
 		AsOf:        asOf,
 		CallFree:    true,
 	}
