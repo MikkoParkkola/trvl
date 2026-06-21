@@ -292,3 +292,30 @@ func TestCompute_explicitVerificationOverridesSource(t *testing.T) {
 		t.Error("IndicativeLegs should be empty when leg is explicitly Confirmed")
 	}
 }
+
+// improve pass: the confidence band must never add a foreign-currency magnitude
+// into its upper bound (that would be a fabricated cross-currency number).
+func TestComputeBandExcludesForeignCurrency(t *testing.T) {
+	// Confirmed EUR 100 + indicative in USD: band-high must stay at 100, NOT
+	// 100+50 (EUR and USD cannot be summed).
+	foreign := d2d.Compute([]d2d.Leg{
+		{Mode: "air", Price: 100, Currency: "EUR", Verification: d2d.Confirmed},
+		{Mode: "train", Price: 50, Currency: "USD", Verification: d2d.Indicative},
+	})
+	if foreign.BandHigh != 100 {
+		t.Fatalf("foreign-currency indicative leg must not inflate band-high; got %.2f want 100", foreign.BandHigh)
+	}
+
+	// Confirmed EUR 100 + indicative EUR 50: same-currency indicative DOES
+	// inflate the band to 150.
+	same := d2d.Compute([]d2d.Leg{
+		{Mode: "air", Price: 100, Currency: "EUR", Verification: d2d.Confirmed},
+		{Mode: "train", Price: 50, Currency: "EUR", Verification: d2d.Indicative},
+	})
+	if same.BandHigh != 150 {
+		t.Fatalf("same-currency indicative leg must inflate band-high; got %.2f want 150", same.BandHigh)
+	}
+	if same.BandLow != 100 {
+		t.Fatalf("band-low must equal the confirmed subtotal; got %.2f want 100", same.BandLow)
+	}
+}
