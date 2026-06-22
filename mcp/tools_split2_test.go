@@ -362,6 +362,35 @@ func TestHandleSearchDates_InvalidDateRange(t *testing.T) {
 	}
 }
 
+func TestHandleSearchDates_RoundTripRequiresDuration(t *testing.T) {
+	t.Parallel()
+	_, _, err := handleSearchDates(context.Background(), map[string]any{
+		"origin":        "HEL",
+		"destination":   "NRT",
+		"start_date":    "2026-06-01",
+		"end_date":      "2026-06-30",
+		"is_round_trip": true,
+		// trip_duration deliberately omitted
+	}, nil, nil, nil)
+	if err == nil {
+		t.Error("expected error for round-trip search without trip_duration")
+	}
+}
+
+func TestHandleSearchDates_NegativeDurationRejected(t *testing.T) {
+	t.Parallel()
+	_, _, err := handleSearchDates(context.Background(), map[string]any{
+		"origin":        "HEL",
+		"destination":   "NRT",
+		"start_date":    "2026-06-01",
+		"end_date":      "2026-06-30",
+		"trip_duration": -3,
+	}, nil, nil, nil)
+	if err == nil {
+		t.Error("expected error for negative trip_duration")
+	}
+}
+
 // --- handleSearchHotels validation ---
 
 func TestHandleSearchHotels_MissingParams(t *testing.T) {

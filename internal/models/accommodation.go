@@ -291,7 +291,11 @@ func EvaluateAccommodationOffer(need AccommodationNeed, offer AccommodationOffer
 		missing = appendUniqueString(missing, "budget")
 	}
 
+	// Multi-provider-mixed means some sources gave room-level inventory and
+	// others only property-level pricing, so the room match is not fully
+	// trustworthy and must be surfaced as undetermined for honesty.
 	if offer.InventoryCompleteness == RoomInventoryCompletenessPropertyLevelOnly ||
+		offer.InventoryCompleteness == RoomInventoryCompletenessMultiProviderMixed ||
 		offer.PriceBasis == PriceBasisLeadIn ||
 		offer.PriceConfidence == PriceConfidenceUnverified {
 		unknown = appendUniqueString(unknown, "room_inventory")
@@ -386,7 +390,12 @@ func normalizeAccommodationOffer(offer AccommodationOffer, now time.Time) Accomm
 	if offer.PriceConfidence == "" {
 		offer.PriceConfidence = PriceConfidenceUnverified
 	}
-	if offer.CheckedAt.IsZero() && comparableAccommodationPrice(offer) > 0 {
+	// Only stamp a check time when the price was actually verified this pass.
+	// Stamping `now` for a lead-in / unverified price would fabricate freshness
+	// the provider never gave us. Such offers already fail BookingReady on
+	// confidence, so this changes only the (otherwise misleading) Freshness label.
+	if offer.CheckedAt.IsZero() && comparableAccommodationPrice(offer) > 0 &&
+		(offer.PriceConfidence == PriceConfidenceRoomLevel || offer.PriceConfidence == PriceConfidenceVerified) {
 		offer.CheckedAt = now
 	}
 	if offer.Freshness == "" && !offer.CheckedAt.IsZero() {

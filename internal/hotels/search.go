@@ -27,6 +27,10 @@ var HotelRateManager = NewRateManager()
 // SearchBooking searches hotels on Booking.com. Overridable in tests.
 var SearchBooking = defaultSearchBooking
 
+// fetchHotelPageFullFn is the seam for fetching one Google Hotels page. Tests
+// override it to exercise the degrade-gracefully path when Google is blocked.
+var fetchHotelPageFullFn = fetchHotelPageFull
+
 // hotelGroup deduplicates concurrent in-flight searches with identical parameters.
 var hotelGroup singleflight.Group
 
@@ -227,6 +231,10 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	}
 
 	var totalAvailable int
+	// googlePrimaryErr holds a failure of Google's primary-sort fetch. It is not
+	// fatal on its own: auxiliary providers run in parallel and may still return
+	// hotels. It is surfaced only if every provider comes back empty.
+	var googlePrimaryErr error
 	// Accumulate raw results per-page; MergeHotelResults deduplicates at the end.
 	var rawBatches [][]models.HotelResult
 	var providerStatuses []models.ProviderStatus
@@ -262,11 +270,18 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		}
 
 		// Fetch first page for this sort order (with metadata on the primary sort).
-		firstPage, err := fetchHotelPageFull(ctx, client, location, opts, 0, googleSort)
+		firstPage, err := fetchHotelPageFullFn(ctx, client, location, opts, 0, googleSort)
 		if err != nil {
 			if sortIdx == 0 {
-				// Primary sort failed — fatal.
-				return nil, err
+				// Primary Google sort failed. Don't abort the whole search:
+				// auxiliary providers (Booking, Trivago, HomeToGo, Agoda, …)
+				// run in parallel and may still return real hotels. Capture
+				// the error and surface it only if every provider comes back
+				// empty (see the post-merge check below). A single bot-blocked
+				// provider must never discard results the others found.
+				googlePrimaryErr = err
+				HotelRateManager.Record429("google")
+				break
 			}
 			// Secondary sort failed — non-fatal, keep what we have.
 			HotelRateManager.Record429("google")
@@ -609,6 +624,14 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		slog.Info("external providers contributed results", "count", len(externalResults))
 	}
 	hotels := models.MergeHotelResults(allBatches...)
+
+	// If Google's primary fetch failed AND no other provider returned anything,
+	// surface the Google error — there is genuinely nothing to show. Otherwise
+	// the search degrades gracefully to whatever providers did succeed.
+	if len(hotels) == 0 && googlePrimaryErr != nil {
+		return nil, googlePrimaryErr
+	}
+
 	models.FinalizeHotelPriceTrust(hotels, opts.Currency, time.Now())
 
 	// Resolve city center coordinates. Used for distance filter/sort and

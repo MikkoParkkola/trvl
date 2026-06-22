@@ -188,6 +188,14 @@ func completeRoomInventoryQuote(quote models.RoomInventoryQuote, room hotels.Roo
 	if quote.TotalPrice == 0 {
 		quote.TotalPrice = room.TotalPrice
 	}
+	// Property-level rooms expose only a lead-in figure in room.Price, which is
+	// not a nightly rate (roomNightlyPrice returns 0 for them). Preserve that
+	// figure as a property-level total so the quote retains a price without
+	// claiming a fabricated nightly rate; PriceBasis stays lead_in/unverified.
+	if quote.TotalPrice == 0 && quote.NightlyPrice == 0 && room.Price > 0 &&
+		roomMatchConfidence(room) == models.RoomInventoryMatchPropertyLevelOnly {
+		quote.TotalPrice = room.Price
+	}
 	if quote.TaxesAndFees == 0 {
 		quote.TaxesAndFees = room.TaxesAndFees
 	}
@@ -464,6 +472,13 @@ func roomPriceTrust(room hotels.RoomType) (string, string) {
 func roomNightlyPrice(room hotels.RoomType) float64 {
 	if room.NightlyPrice > 0 {
 		return room.NightlyPrice
+	}
+	// Property-level lead-in prices are NOT nightly rates — e.g. a HousingAnywhere
+	// mid-term rental's room.Price is monthly rent (issue #277). Presenting it as a
+	// per-night figure fabricated a ~30x inflated nightly rate. Return 0 (no nightly
+	// claim) for property-level rooms; the lead-in figure stays in TotalPrice.
+	if roomMatchConfidence(room) == models.RoomInventoryMatchPropertyLevelOnly {
+		return 0
 	}
 	return room.Price
 }

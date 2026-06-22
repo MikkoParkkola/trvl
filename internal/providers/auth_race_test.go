@@ -106,3 +106,55 @@ func TestRunPreflight_SnapshotIsCityBound(t *testing.T) {
 		t.Error(m)
 	}
 }
+
+// TestReplaceAuthValuesLocked_ConcurrentReadersNoRace (MIK-3070 follow-up).
+//
+// The Tier-3/3b/4 recovery paths used to clear+repopulate pc.authValues in
+// place with no lock, racing concurrent readers that hold pc.authMu.RLock. The
+// fix builds the fresh map off-lock and swaps it in under pc.authMu.Lock. This
+// test hammers replaceAuthValuesLocked from many writers while readers take the
+// RLock snapshot path; run under -race it fails if the lock window regresses.
+func TestReplaceAuthValuesLocked_ConcurrentReadersNoRace(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `<html>csrf_token=FRESH_TOK</html>`)
+	}))
+	defer srv.Close()
+
+	auth := &AuthConfig{
+		Extractions: map[string]Extraction{
+			"csrf_token": {Pattern: `csrf_token=(\w+)`},
+		},
+	}
+	pc := &providerClient{
+		config:     &ProviderConfig{ID: "swap-prov"},
+		client:     srv.Client(),
+		authValues: map[string]string{"csrf_token": "INITIAL"},
+	}
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("seed request: %v", err)
+	}
+	body := []byte(`<html>csrf_token=FRESH_TOK</html>`)
+	_ = resp.Body.Close()
+
+	const iterations = 50
+	var wg sync.WaitGroup
+	wg.Add(2 * iterations)
+	for i := 0; i < iterations; i++ {
+		go func() {
+			defer wg.Done()
+			replaceAuthValuesLocked(context.Background(), pc, auth, resp, body)
+		}()
+		go func() {
+			defer wg.Done()
+			snap := snapshotAuthValuesLocked(pc)
+			_ = snap["csrf_token"]
+		}()
+	}
+	wg.Wait()
+
+	if got := snapshotAuthValuesLocked(pc)["csrf_token"]; got != "FRESH_TOK" {
+		t.Errorf("final csrf_token = %q, want FRESH_TOK", got)
+	}
+}

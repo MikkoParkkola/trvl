@@ -676,11 +676,25 @@ func handleSearchDates(ctx context.Context, args map[string]any, elicit ElicitFu
 		return nil, nil, err
 	}
 
+	tripLength := argInt(args, "trip_duration", 0)
+	roundTrip := argBool(args, "is_round_trip", false)
+	if tripLength < 0 {
+		return nil, nil, fmt.Errorf("trip_duration must be zero or positive (got %d)", tripLength)
+	}
+	if roundTrip && tripLength <= 0 {
+		return nil, nil, fmt.Errorf("round-trip date search requires a positive trip_duration (days between outbound and return)")
+	}
+	// A trip_duration only has meaning for round-trips; honor the intent
+	// rather than silently ignoring it on a one-way search.
+	if tripLength > 0 {
+		roundTrip = true
+	}
+
 	opts := flights.CalendarOptions{
 		FromDate:   startDate,
 		ToDate:     endDate,
-		TripLength: argInt(args, "trip_duration", 0),
-		RoundTrip:  argBool(args, "is_round_trip", false),
+		TripLength: tripLength,
+		RoundTrip:  roundTrip,
 	}
 
 	// Use SearchCalendar (1 API call via GetCalendarGraph) instead of the
