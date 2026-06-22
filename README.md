@@ -30,6 +30,20 @@ Asciinema source: [`demo.cast`](demo.cast) · Demo script and claims: [`docs/DEM
 
 → Full positioning: [`docs/POSITIONING.md`](docs/POSITIONING.md) · Comparison: [`docs/COMPARISON.md`](docs/COMPARISON.md) · Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · Traveller Workspace: [`docs/traveller-workspace.md`](docs/traveller-workspace.md) · Tools: [`AGENTS.md`](AGENTS.md)
 
+## Is this for you?
+
+**Yes, if** you already plan trips with an AI assistant (Claude, Cursor, Windsurf, Codex, any MCP client) and want it to search real flights, hotels, trains, buses, ferries, and transfers instead of guessing. Also yes if you are building an app that needs travel intent without signing up for a paid travel API.
+
+**Probably not, if** you just want to book on a website — use Google Flights. And not if you want a hosted travel product with an account and a dashboard; trvl is a tool you run, not a service you log into.
+
+## Why trvl, not the alternatives
+
+- **Whole-journey, door to door.** trvl plans the entire trip across modes (home to the airport, the flight, the arrival transfer, the hotel, the onward train) and prices each leg in its real mode. Most tools stop at one flight, one hotel.
+- **No API keys, no signup, no bill.** It works the moment you install it. There is no Amadeus key to apply for, no hosted subscription, no per-call cost.
+- **Your assistant, your machine.** One binary that runs locally and plugs into any MCP client, so you are not locked to one vendor and your trips and preferences never leave your computer.
+- **It optimises, it does not just list.** Shift-day pricing, split-airline routing, hidden-city checks, award sweet spots, return and round-trip fares. It hands back the cheaper option and shows what it saved.
+- **It is honest when a source fails.** Typed statuses and labelled estimates instead of an empty result dressed up as "nothing found" (see [Why trust it](#why-trust-it) below).
+
 ## Available on
 
 Listed across the MCP ecosystem: [Glama](https://glama.ai/mcp/servers/MikkoParkkola/trvl) · [LobeHub](https://lobehub.com/mcp/mikkoparkkola-trvl) · [Smithery](https://smithery.ai/server/@MikkoParkkola/trvl) · [MCPHub](https://www.mcphub.com/mcp-servers/MikkoParkkola/trvl) · [Cursor Directory](https://cursor.directory/mcp/trvl) · [PulseMCP](https://www.pulsemcp.com/servers/mikkoparkkola-trvl) · [Agent Index](https://agentindex.app/en/tool/mikkoparkkola-trvl) · [MCP Market](https://mcpmarket.com/server/trvl) · [Fleur](https://fleurmcp.com/mcp/trvl) · [MagicSlides](https://www.magicslides.app/mcps/mikkoparkkola-trvl) · [pkg.go.dev](https://pkg.go.dev/github.com/MikkoParkkola/trvl)
