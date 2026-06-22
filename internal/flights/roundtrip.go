@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -49,10 +50,12 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 	legOpts.ReturnDate = ""
 	legOpts.FirstResult = false
 
-	// Leg sub-searches run with auto-compose disabled: a single round-trip-level
-	// savings pass is attached to the composed result below, so the two one-way
-	// legs do not each spawn their own (discarded) hack fan-out.
-	legCtx := disableHacksCompose(ctx)
+	// Leg sub-searches run with auto-compose disabled (a single round-trip-level
+	// savings pass is attached below) and with the one-way Skiplagged provider
+	// suppressed: Skiplagged is queried once as a native round-trip instead (see
+	// searchNativeRoundTrip), so two redundant one-way Skiplagged calls would
+	// only waste its rate budget.
+	legCtx := disableSkiplaggedOneWay(disableHacksCompose(ctx))
 	outbound, outErr := SearchFlightsWithClient(legCtx, client, origin, destination, date, legOpts)
 	inbound, inErr := SearchFlightsWithClient(legCtx, client, destination, origin, returnDate, legOpts)
 
@@ -68,6 +71,27 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 	}
 
 	composed, truncated := composeRoundTrips(outFlights, inFlights, opts)
+
+	// Native round-trip pass: providers that price a return as a single fare can
+	// beat the sum of two one-ways (a real return discount) and are one bookable
+	// ticket. Query them WITH ReturnDate intact (the legs above clear it) and
+	// merge their genuine round-trip itineraries into the candidate pool. The
+	// cheapest sorts first, so a discounted native fare naturally outranks a more
+	// expensive composed pair; FareType keeps the two honestly distinguishable.
+	nativeRT, nativeStatuses := searchNativeRoundTrip(legCtx, client, origin, destination, date, returnDate, opts, nativeRoundTripCurrency(opts, composed, outFlights))
+	statuses = append(statuses, nativeStatuses...)
+
+	if len(nativeRT) > 0 {
+		merged := make([]models.FlightResult, 0, len(nativeRT)+len(composed))
+		merged = append(merged, nativeRT...)
+		merged = append(merged, composed...)
+		sortFlightResults(merged, opts.SortBy)
+		if len(merged) > roundTripMaxResults {
+			merged = merged[:roundTripMaxResults]
+			truncated = true
+		}
+		composed = merged
+	}
 
 	statuses = append(statuses, roundTripComposerStatus(len(outFlights), len(inFlights), len(composed), truncated))
 
@@ -206,6 +230,73 @@ func composedProviderLabel(outbound, inbound string) string {
 		inbound = "unknown"
 	}
 	return fmt.Sprintf("composed (%s + %s)", outbound, inbound)
+}
+
+// searchNativeRoundTrip queries providers that price a return trip as a single
+// native fare (Skiplagged today) and returns only genuine round-trip itineraries
+// (FareRoundTrip, both legs present). It is rate-conscious: the composer has
+// already suppressed the one-way Skiplagged leg searches via the passed-in ctx,
+// so this is the *only* Skiplagged call for the whole round-trip search. Prices
+// are normalised to target so they sort against the composed pairs like-for-like.
+// A disabled or ineligible provider yields no results and no status, leaving the
+// composition-only behaviour byte-unchanged.
+func searchNativeRoundTrip(ctx context.Context, client *batchexec.Client, origin, destination, date, returnDate string, opts SearchOptions, target string) ([]models.FlightResult, []models.ProviderStatus) {
+	if !skiplaggedSearchEligible(client, opts) {
+		return nil, nil
+	}
+
+	rtOpts := opts
+	rtOpts.ReturnDate = returnDate // request the native return fare (legs cleared it)
+
+	result, err := SearchSkiplagged(ctx, origin, destination, date, rtOpts)
+	if err != nil {
+		return nil, []models.ProviderStatus{{
+			ID:     "native_roundtrip:skiplagged",
+			Name:   "Skiplagged (native round-trip)",
+			Status: models.ClassifyProviderError(err),
+			Error:  err.Error(),
+		}}
+	}
+
+	var native []models.FlightResult
+	if result != nil {
+		for _, f := range result.Flights {
+			// Keep only true round-trips. A one-way result here would duplicate
+			// the outbound leg already covered by composition.
+			if f.FareType == models.FareRoundTrip {
+				native = append(native, f)
+			}
+		}
+	}
+	normalizeFlightCurrencies(ctx, native, target, destinations.ConvertCurrency)
+
+	status := models.ProviderStatus{
+		ID:      "native_roundtrip:skiplagged",
+		Name:    "Skiplagged (native round-trip)",
+		Status:  okOrNoHit(len(native)),
+		Results: len(native),
+	}
+	if len(native) == 0 {
+		status.FixHint = "no native round-trip fare returned; composed pairs used instead"
+	}
+	return native, []models.ProviderStatus{status}
+}
+
+// nativeRoundTripCurrency picks the currency to normalise native round-trip fares
+// to, so they rank against the composed pairs in one currency: the caller's
+// explicit currency if set, else the currency the composed pairs are already in,
+// else the outbound legs' currency. Empty (no signal) lets normalisation no-op.
+func nativeRoundTripCurrency(opts SearchOptions, composed, outbound []models.FlightResult) string {
+	if opts.Currency != "" {
+		return opts.Currency
+	}
+	if len(composed) > 0 && composed[0].Currency != "" {
+		return composed[0].Currency
+	}
+	if len(outbound) > 0 {
+		return outbound[0].Currency
+	}
+	return ""
 }
 
 // topPricedFlights returns up to n cheapest flights that carry a usable price
