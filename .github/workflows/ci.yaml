@@ -29,15 +29,21 @@ jobs:
         run: go build ./...
       - name: Vet
         run: go vet ./...
+      # Pin lint/vuln tool versions instead of @latest: every GitHub Action in
+      # this workflow is SHA-pinned, so an unpinned `go install ...@latest` was
+      # the one remaining non-reproducible, supply-chain-exposed step — a new
+      # upstream release could silently change findings or pull a compromised
+      # version into CI. These pins match the latest release at time of writing;
+      # bump them deliberately (Dependabot tracks the Go modules separately).
       - name: Install staticcheck
         if: runner.os != 'Windows'
-        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
       - name: Staticcheck
         if: runner.os != 'Windows'
         run: staticcheck ./...
       - name: Install govulncheck
         if: runner.os != 'Windows'
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.4.0
       - name: Vulnerability check
         if: runner.os != 'Windows'
         run: govulncheck ./...
