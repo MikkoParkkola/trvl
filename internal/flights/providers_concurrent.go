@@ -46,6 +46,19 @@ func runKiwiProvider(ctx context.Context, client *batchexec.Client, origin, dest
 }
 
 func runSkiplaggedProvider(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) providerOutcome {
+	// The round-trip composer suppresses the one-way Skiplagged leg searches
+	// because it queries Skiplagged once as a native round-trip instead (see
+	// disableSkiplaggedOneWay). Report a transparent skip rather than a silent
+	// no-op so the provider-status list explains the absence.
+	if skiplaggedOneWayDisabled(ctx) {
+		return providerOutcome{status: models.ProviderStatus{
+			ID:      "skiplagged",
+			Name:    "Skiplagged",
+			Status:  "skipped",
+			Error:   "one-way Skiplagged skipped; queried once as a native round-trip instead",
+			FixHint: "search one-way for the per-direction Skiplagged list",
+		}}
+	}
 	if !skiplaggedSearchEligible(client, opts) {
 		return providerOutcome{status: models.ProviderStatus{
 			ID:      "skiplagged",

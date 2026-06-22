@@ -48,6 +48,23 @@ const skiplaggedMCPProtocolVersion = "2025-06-18"
 // unintended real-network calls.
 var skiplaggedEnabled = true
 
+// skiplaggedDisabledKey marks a context in which the one-way Skiplagged
+// provider should be skipped. The round-trip composer sets it on its
+// per-leg searches so Skiplagged is queried exactly once — as a native
+// round-trip (both legs, single discounted fare) — instead of twice as
+// two redundant one-way legs. This nets *fewer* Skiplagged calls per
+// round-trip search, not more, keeping the rate-limited origin happy.
+type skiplaggedDisabledKey struct{}
+
+func disableSkiplaggedOneWay(ctx context.Context) context.Context {
+	return context.WithValue(ctx, skiplaggedDisabledKey{}, true)
+}
+
+func skiplaggedOneWayDisabled(ctx context.Context) bool {
+	v, _ := ctx.Value(skiplaggedDisabledKey{}).(bool)
+	return v
+}
+
 // skiplaggedEndpoint is the resolved endpoint URL. Tests can override
 // it via skiplaggedSetEndpointForTest to point at a httptest server.
 var skiplaggedEndpoint = skiplaggedMCPEndpointDefault
@@ -531,6 +548,26 @@ func parseSkiplaggedFlights(raw json.RawMessage) ([]models.FlightResult, error) 
 				ArrivalTime:      f.Arrival.DateTime,
 				Airline:          f.Airlines,
 			}},
+		}
+		// When Skiplagged priced a round-trip, f.Return carries the inbound
+		// flight and f.Price.Amount is the single native round-trip fare, which
+		// can be discounted below the sum of two one-ways. Materialise the
+		// inbound leg, tag both directions, and flag the result as a native
+		// round-trip fare so a consumer never mistakes it for two separate
+		// tickets. A one-way result (f.Return == nil) is byte-unchanged.
+		if f.Return != nil {
+			fr.FareType = models.FareRoundTrip
+			fr.Legs[0].Direction = "outbound"
+			fr.Legs = append(fr.Legs, models.FlightLeg{
+				Direction:        "inbound",
+				DepartureAirport: models.AirportInfo{Code: f.Return.Departure.Airport},
+				ArrivalAirport:   models.AirportInfo{Code: f.Return.Arrival.Airport},
+				DepartureTime:    f.Return.Departure.DateTime,
+				ArrivalTime:      f.Return.Arrival.DateTime,
+				Airline:          f.Airlines,
+			})
+			fr.Stops += int(f.Return.Layovers)
+			fr.Duration += parseSkiplaggedDuration(f.Return.Duration)
 		}
 		// Map Skiplagged's attribute flags into Warnings so the
 		// caller can detect "this is a hidden-city ticket; the

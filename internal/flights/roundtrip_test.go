@@ -94,6 +94,42 @@ func TestComposeRoundTrips_ExcludesUnpriced(t *testing.T) {
 	}
 }
 
+func TestNativeRoundTripCurrency_Priority(t *testing.T) {
+	eur := []models.FlightResult{{Currency: "EUR"}}
+	usd := []models.FlightResult{{Currency: "USD"}}
+
+	// Explicit opts.Currency wins over everything.
+	if got := nativeRoundTripCurrency(SearchOptions{Currency: "GBP"}, eur, usd); got != "GBP" {
+		t.Errorf("explicit currency: got %q want GBP", got)
+	}
+	// Else fall back to the composed pairs' currency.
+	if got := nativeRoundTripCurrency(SearchOptions{}, eur, usd); got != "EUR" {
+		t.Errorf("composed currency: got %q want EUR", got)
+	}
+	// Else fall back to the outbound legs' currency.
+	if got := nativeRoundTripCurrency(SearchOptions{}, nil, usd); got != "USD" {
+		t.Errorf("outbound currency: got %q want USD", got)
+	}
+	// No signal at all -> empty (normalisation no-ops).
+	if got := nativeRoundTripCurrency(SearchOptions{}, nil, nil); got != "" {
+		t.Errorf("no signal: got %q want empty", got)
+	}
+}
+
+func TestComposeRoundTrips_MarksSplitTicketsFareType(t *testing.T) {
+	out := []models.FlightResult{owFlight("Google Flights", "EUR", 100, "HEL", "BCN")}
+	in := []models.FlightResult{owFlight("Ryanair", "EUR", 60, "BCN", "HEL")}
+
+	composed, _ := composeRoundTrips(out, in, SearchOptions{})
+	if len(composed) != 1 {
+		t.Fatalf("composed count: got %d, want 1", len(composed))
+	}
+	// A composed pair is two separate tickets — never a native round-trip fare.
+	if composed[0].FareType != models.FareSplitTickets {
+		t.Errorf("FareType: got %q, want %q", composed[0].FareType, models.FareSplitTickets)
+	}
+}
+
 func TestComposeRoundTrips_TagsLegDirection(t *testing.T) {
 	out := []models.FlightResult{owFlight("Google Flights", "EUR", 100, "HEL", "BCN")}
 	in := []models.FlightResult{owFlight("Ryanair", "EUR", 60, "BCN", "HEL")}
