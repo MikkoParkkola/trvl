@@ -175,19 +175,13 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 		forbidden []string
 	}{
 		{
+			// README is now the lean 5-minute storefront; the full reference
+			// claims moved to docs/ (see the three checks below). README only
+			// needs to keep its headline numbers honest.
 			path: filepath.Join("..", "..", "README.md"),
 			required: []string{
 				fmt.Sprintf("https://img.shields.io/badge/providers-%d-brightgreen", totalProviderCount),
-				fmt.Sprintf("%d smart MCP tool for your AI assistant", toolCount),
 				fmt.Sprintf("%d compatibility aliases", compatAliasCount),
-				fmt.Sprintf("standalone CLI with %d commands", cliCommandCount),
-				fmt.Sprintf("%d smart travel tool available", toolCount),
-				fmt.Sprintf("Full v2025-11-25 — %d smart MCP tool, %d compatibility aliases", toolCount, compatAliasCount),
-				fmt.Sprintf("%d commands (+ %d watch subcommands)", cliCommandCount, watchSubcommandCount),
-				fmt.Sprintf("Full JSON Schema validation for the `travel` smart router and all %d compatibility tool responses", compatAliasCount),
-				"install the bundled skill that teaches Claude how to use trvl",
-				fmt.Sprintf("trvl searches %d ground transport providers in parallel, covering most of Europe. Airport transfers add taxi estimates and rental cars add optional Skyscanner Car Hire, so trvl exposes %d transport providers overall:", groundProviderCount, totalProviderCount),
-				fmt.Sprintf("Searches %d providers in parallel:", groundProviderCount),
 			},
 			forbidden: []string{
 				"https://img.shields.io/badge/providers-16-brightgreen",
@@ -208,6 +202,34 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 				"29 commands (+ 6 watch subcommands)",
 				"Full JSON Schema validation for all 29 tool responses",
 				"The repo includes 4 skill files",
+			},
+		},
+		{
+			// MCP surface reference (extracted from README): smart router,
+			// compatibility aliases, output-schema coverage, and the tool table
+			// (per-tool marker uniqueness is asserted below for this file).
+			path: filepath.Join("..", "..", "docs", "MCP-TOOLS-REFERENCE.md"),
+			required: []string{
+				fmt.Sprintf("%d compatibility aliases", compatAliasCount),
+				fmt.Sprintf("Full JSON Schema validation for the `travel` smart router and all %d compatibility tool responses", compatAliasCount),
+			},
+		},
+		{
+			// CLI reference (extracted from README): command count, watch
+			// subcommands, and the at-a-glance capability table.
+			path: filepath.Join("..", "..", "docs", "CLI.md"),
+			required: []string{
+				fmt.Sprintf("Full v2025-11-25 — %d smart MCP tool, %d compatibility aliases", toolCount, compatAliasCount),
+				fmt.Sprintf("%d commands (+ %d watch subcommands)", cliCommandCount, watchSubcommandCount),
+				fmt.Sprintf("Searches %d providers in parallel:", groundProviderCount),
+			},
+		},
+		{
+			// Providers reference (extracted from README): ground transport
+			// roster and total transport provider count.
+			path: filepath.Join("..", "..", "docs", "PROVIDERS.md"),
+			required: []string{
+				fmt.Sprintf("trvl searches %d ground transport providers in parallel, covering most of Europe. Airport transfers add taxi estimates and rental cars add optional Skyscanner Car Hire, so trvl exposes %d transport providers overall:", groundProviderCount, totalProviderCount),
 			},
 		},
 		{
@@ -375,7 +397,7 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 				}
 			}
 
-			if filepath.Base(check.path) == "README.md" {
+			if filepath.Base(check.path) == "MCP-TOOLS-REFERENCE.md" {
 				for _, tool := range readmeToolMarkers {
 					marker := fmt.Sprintf("**%s**", tool)
 					if count := strings.Count(text, marker); count != 1 {
