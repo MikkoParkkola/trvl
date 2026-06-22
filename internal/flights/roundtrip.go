@@ -178,6 +178,7 @@ func composeItinerary(out, in models.FlightResult) models.FlightResult {
 		Duration: out.Duration + in.Duration,
 		Stops:    out.Stops + in.Stops,
 		Provider: composedProviderLabel(out.Provider, in.Provider),
+		FareType: models.FareSplitTickets,
 		Legs:     legs,
 		Warnings: warnings,
 	}

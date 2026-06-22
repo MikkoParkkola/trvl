@@ -94,6 +94,20 @@ func TestComposeRoundTrips_ExcludesUnpriced(t *testing.T) {
 	}
 }
 
+func TestComposeRoundTrips_MarksSplitTicketsFareType(t *testing.T) {
+	out := []models.FlightResult{owFlight("Google Flights", "EUR", 100, "HEL", "BCN")}
+	in := []models.FlightResult{owFlight("Ryanair", "EUR", 60, "BCN", "HEL")}
+
+	composed, _ := composeRoundTrips(out, in, SearchOptions{})
+	if len(composed) != 1 {
+		t.Fatalf("composed count: got %d, want 1", len(composed))
+	}
+	// A composed pair is two separate tickets — never a native round-trip fare.
+	if composed[0].FareType != models.FareSplitTickets {
+		t.Errorf("FareType: got %q, want %q", composed[0].FareType, models.FareSplitTickets)
+	}
+}
+
 func TestComposeRoundTrips_TagsLegDirection(t *testing.T) {
 	out := []models.FlightResult{owFlight("Google Flights", "EUR", 100, "HEL", "BCN")}
 	in := []models.FlightResult{owFlight("Ryanair", "EUR", 60, "BCN", "HEL")}

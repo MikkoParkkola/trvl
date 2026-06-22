@@ -31,6 +31,16 @@ type FlightLeg struct {
 	Direction string `json:"direction,omitempty"`
 }
 
+// FareType classifies how a round-trip price was assembled. See FlightResult.FareType.
+type FareType string
+
+const (
+	// FareRoundTrip is a single native round-trip fare from one provider.
+	FareRoundTrip FareType = "round_trip"
+	// FareSplitTickets is two independent one-way tickets paired by the composer.
+	FareSplitTickets FareType = "split_tickets"
+)
+
 // FlightResult represents a single flight option with price and routing.
 type FlightResult struct {
 	Price               float64     `json:"price"`
@@ -39,6 +49,16 @@ type FlightResult struct {
 	Stops               int         `json:"stops"`
 	Provider            string      `json:"provider,omitempty"`
 	SelfConnect         bool        `json:"self_connect,omitempty"`
+	// FareType distinguishes how a round-trip Price was obtained, so a consumer
+	// never mistakes the expensive case for the cheap one:
+	//   FareRoundTrip   — a single native round-trip fare from one provider; may
+	//                     carry a return discount and round-trip-only fare rules.
+	//   FareSplitTickets — two independent one-way tickets paired by trvl's
+	//                     composer; the sum of two fares, booked separately, with
+	//                     no return discount and no through-protection.
+	// Empty for a one-way result. A composed itinerary is always FareSplitTickets;
+	// it is NOT a substitute for a native round-trip fare, which can be cheaper.
+	FareType            FareType    `json:"fare_type,omitempty"`
 	Warnings            []string    `json:"warnings,omitempty"`
 	Legs                []FlightLeg `json:"legs"`
 	BookingURL          string      `json:"booking_url,omitempty"`
