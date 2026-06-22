@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/atomicjson"
 )
 
 // Registry stores and manages provider configurations on disk.
@@ -144,7 +146,7 @@ func (r *Registry) saveLocked(config *ProviderConfig) error {
 	if err != nil {
 		return err
 	}
-	if err := writeProviderFile(path, r.dir, data); err != nil {
+	if err := writeProviderFile(path, data); err != nil {
 		return fmt.Errorf("providers: write %s: %w", config.ID, err)
 	}
 	r.configs[config.ID] = config
@@ -299,31 +301,8 @@ func (r *Registry) configPath(id string) (string, error) {
 	return path, nil
 }
 
-func writeProviderFile(path, dir string, data []byte) error {
-	tmp, err := os.CreateTemp(dir, ".provider-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer func() {
-		_ = os.Remove(tmpName)
-	}()
-
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return err
-	}
-	return os.Chmod(path, 0o600)
+func writeProviderFile(path string, data []byte) error {
+	return atomicjson.WriteBytes(path, data)
 }
 
 // BreakerState holds breaker fields copied under the registry lock.
