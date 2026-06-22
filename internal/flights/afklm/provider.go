@@ -176,6 +176,7 @@ func mapRecommendations(resp *AvailableOffersResponse, origin, dest string) []mo
 			var legs []models.FlightLeg
 			totalDuration := 0
 			outboundStops := 0
+			bounds := 0
 
 			for boundIdx, pc := range fp.Connections {
 				if boundIdx >= len(lookup) {
@@ -185,12 +186,15 @@ func mapRecommendations(resp *AvailableOffersResponse, origin, dest string) []mo
 				if !ok {
 					continue
 				}
+				bounds++
 				totalDuration += bc.Duration
 				if boundIdx == 0 && len(bc.Segments) > 1 {
 					outboundStops = len(bc.Segments) - 1
 				}
+				direction := boundDirection(boundIdx)
 				for i, s := range bc.Segments {
 					leg := mapSegment(s)
+					leg.Direction = direction
 					// Layover = gap between prev arrival and this departure within the same bound.
 					if i > 0 {
 						if prev, cur, ok := parseLayover(bc.Segments[i-1].ArrivalDateTime, s.DepartureDateTime); ok {
@@ -209,6 +213,16 @@ func mapRecommendations(resp *AvailableOffersResponse, origin, dest string) []mo
 				currency = fp.Price.Currency
 			}
 
+			// A real return offer (outbound + inbound bound) is a genuine
+			// round-trip ticket — both legs are materialised above, so unlike
+			// the Google/Kiwi native fares this needs no "return at booking"
+			// caveat. Tag it FareRoundTrip so it ranks honestly against split
+			// pairs; a single-bound (one-way) offer keeps the default type.
+			var fareType models.FareType
+			if bounds > 1 {
+				fareType = models.FareRoundTrip
+			}
+
 			results = append(results, models.FlightResult{
 				Price:    price,
 				Currency: currency,
@@ -216,10 +230,25 @@ func mapRecommendations(resp *AvailableOffersResponse, origin, dest string) []mo
 				Stops:    outboundStops,
 				Provider: "afklm",
 				Legs:     legs,
+				FareType: fareType,
 			})
 		}
 	}
 	return results
+}
+
+// boundDirection maps an AF-KLM bound index to a leg direction tag. Bound 0 is
+// always the outbound; bound 1 (present only on round-trip requests) is the
+// inbound/return. Any further bounds (open-jaw multi-city) are left untagged.
+func boundDirection(boundIdx int) string {
+	switch boundIdx {
+	case 0:
+		return "outbound"
+	case 1:
+		return "inbound"
+	default:
+		return ""
+	}
 }
 
 // mapSegment converts a top-level BoundConnection Segment to a FlightLeg.

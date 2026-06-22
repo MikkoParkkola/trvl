@@ -187,6 +187,11 @@ Examples:
 					return fmt.Errorf("--provider skiplagged supports exactly one origin and one destination")
 				}
 				result, err = flights.SearchSkiplagged(cmd.Context(), origins[0], destinations[0], date, opts)
+			case "afklm", "af-klm", "airfranceklm":
+				if len(origins) != 1 || len(destinations) != 1 {
+					return fmt.Errorf("--provider afklm supports exactly one origin and one destination")
+				}
+				result, err = flights.SearchAFKLM(cmd.Context(), origins[0], destinations[0], date, opts)
 			case "", "default", "google", "google_flights", "kiwi":
 				if len(origins) > 1 || len(destinations) > 1 {
 					result, err = flights.SearchMultiAirport(cmd.Context(), origins, destinations, date, opts)
@@ -194,7 +199,7 @@ Examples:
 					result, err = flights.SearchFlights(cmd.Context(), origins[0], destinations[0], date, opts)
 				}
 			default:
-				return fmt.Errorf("unsupported --provider %q (valid: skiplagged, or empty for default Google+Kiwi+Skiplagged merge)", provider)
+				return fmt.Errorf("unsupported --provider %q (valid: skiplagged, afklm, or empty for default Google+Kiwi+Skiplagged merge)", provider)
 			}
 			if err != nil {
 				return err
@@ -298,7 +303,7 @@ Examples:
 	cmd.Flags().BoolVar(&explain, "explain", false, "Show per-factor profile match breakdown for each result")
 	cmd.Flags().BoolVar(&award, "award", false, "Search Flying Blue award availability instead of cash fares")
 	cmd.Flags().StringVar(&awardCookies, "award-cookies", "", "KLM/Flying Blue Cookie header for --award (or set AFKL_KLM_COOKIES)")
-	cmd.Flags().StringVar(&provider, "provider", "", "Flight provider: empty = default (Google Flights + Kiwi + Skiplagged merge), skiplagged = Skiplagged MCP only (hidden-city + virtual-interlining defaults)")
+	cmd.Flags().StringVar(&provider, "provider", "", "Flight provider: empty = default (Google Flights + Kiwi + Skiplagged merge), skiplagged = Skiplagged MCP only (hidden-city + virtual-interlining defaults), afklm = Air France-KLM Offers API only (opt-in, native round-trip fares; requires credential)")
 	cmd.Flags().BoolVar(&flightRailFly, "rail-fly", false, "Expand the search to rail-connected origins (KL/AF Air&Rail), surfacing cheaper rail+fly bundles even when the origin is outside the default hub list")
 	cmd.Flags().BoolVar(&deep, "deep", false, "Run a budget-gated counterfactual fan-out (nearby airports, split tickets, hidden city). Issues extra provider calls, capped by a best-effort budget that never delays the primary search")
 	cmd.Flags().BoolVar(&noGeo, "no-geo", false, "Disable geo-IP origin detection (also honored via TRVL_NO_GEO=1). Origin then resolves only from an explicit code or your saved home airport.")

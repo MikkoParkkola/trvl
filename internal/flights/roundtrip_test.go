@@ -23,6 +23,80 @@ func owFlight(provider, currency string, price float64, dep, arr string) models.
 	}
 }
 
+func TestTagGoogleNativeRoundTrip(t *testing.T) {
+	src := []models.FlightResult{owFlight("Google Flights", "EUR", 314, "HEL", "BCN")}
+
+	got := tagGoogleNativeRoundTrip(src, "HEL", "BCN", "2026-07-01", "2026-07-08", "EUR")
+	if len(got) != 1 {
+		t.Fatalf("count: got %d, want 1", len(got))
+	}
+	f := got[0]
+
+	// A native Google fare is a true round-trip ticket, not a split pair.
+	if f.FareType != models.FareRoundTrip {
+		t.Errorf("FareType: got %q, want %q", f.FareType, models.FareRoundTrip)
+	}
+	// Price is the full round-trip total (never summed legs) — carried verbatim.
+	if f.Price != 314 {
+		t.Errorf("Price: got %.2f, want 314 (round-trip total preserved)", f.Price)
+	}
+	// Stage 1 returns the outbound itinerary; the return leg is chosen at booking.
+	if len(f.Legs) != 1 || f.Legs[0].Direction != "outbound" {
+		t.Errorf("legs: got %+v, want one outbound-tagged leg", f.Legs)
+	}
+	// A warning must make the booking-time return selection explicit.
+	if len(f.Warnings) == 0 || !strings.Contains(f.Warnings[0], "round-trip") {
+		t.Errorf("Warnings: got %v, want a round-trip clarification first", f.Warnings)
+	}
+	// Booking URL must encode the return date so the user lands on the round-trip.
+	if !strings.Contains(f.BookingURL, "2026-07-08") {
+		t.Errorf("BookingURL: got %q, want it to include the return date", f.BookingURL)
+	}
+
+	// The source flight's legs must stay untagged — Google one-way responses are
+	// cached/shared, and a leaked round-trip tag would corrupt a later one-way.
+	if src[0].Legs[0].Direction != "" {
+		t.Errorf("source leg mutated: Direction=%q", src[0].Legs[0].Direction)
+	}
+	if src[0].FareType != "" {
+		t.Errorf("source FareType mutated: %q", src[0].FareType)
+	}
+}
+
+func TestTagGoogleNativeRoundTrip_Empty(t *testing.T) {
+	if got := tagGoogleNativeRoundTrip(nil, "HEL", "BCN", "2026-07-01", "2026-07-08", "EUR"); got != nil {
+		t.Errorf("empty input should yield nil, got %v", got)
+	}
+}
+
+func TestTagNativeRoundTrip_KeepsProviderDeepLink(t *testing.T) {
+	src := owFlight("kiwi", "EUR", 296, "HEL", "BCN")
+	src.BookingURL = "https://kiwi.com/deep/link?return=2026-07-08"
+
+	got := tagNativeRoundTrip([]models.FlightResult{src}, kiwiNativeRoundTripWarning, "")
+	if len(got) != 1 {
+		t.Fatalf("count: got %d, want 1", len(got))
+	}
+	f := got[0]
+	if f.FareType != models.FareRoundTrip {
+		t.Errorf("FareType: got %q, want %q", f.FareType, models.FareRoundTrip)
+	}
+	// Empty bookingURL must preserve the provider's own deep link (it encodes the return).
+	if f.BookingURL != "https://kiwi.com/deep/link?return=2026-07-08" {
+		t.Errorf("BookingURL overwritten: got %q, want the Kiwi deep link kept", f.BookingURL)
+	}
+	if f.Legs[0].Direction != "outbound" {
+		t.Errorf("leg Direction: got %q, want outbound", f.Legs[0].Direction)
+	}
+	if len(f.Warnings) == 0 || f.Warnings[0] != kiwiNativeRoundTripWarning {
+		t.Errorf("Warnings: got %v, want kiwi round-trip warning first", f.Warnings)
+	}
+	// Source must stay untouched (cached/shared upstream).
+	if src.Legs[0].Direction != "" || src.FareType != "" {
+		t.Errorf("source mutated: dir=%q fare=%q", src.Legs[0].Direction, src.FareType)
+	}
+}
+
 func TestComposeRoundTrips_SumsAndConcatenates(t *testing.T) {
 	out := []models.FlightResult{owFlight("Google Flights", "EUR", 100, "HEL", "BCN")}
 	in := []models.FlightResult{owFlight("Ryanair", "EUR", 60, "BCN", "HEL")}

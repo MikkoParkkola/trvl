@@ -378,7 +378,7 @@ trvl ships with **Google Flights** (hand-rolled protobuf) on the default code pa
 |----------|----------|----------|------------|------|
 | **Google Flights** | hand-rolled protobuf | Broadest coverage, server-side filters | default | None |
 | **Kiwi** | REST | Virtual-interlining + self-connect candidates | default (one-way merge) | None |
-| **AFKLM Flying Blue** | Offers API v3 + Award API | Cash + miles cabin search on KL/AF metal | `--award` (CLI) / built-in opt-in | KLM/Flying Blue session cookie |
+| **AFKLM Flying Blue** | Offers API v3 + Award API | Cash + miles cabin search on KL/AF metal; native round-trip fares (both legs, one ticket) | `--provider afklm` (cash) / `--award` (miles), both opt-in | API credential (cash) / Flying Blue session cookie (award) |
 | **Skiplagged** | Streamable HTTP MCP (`@skiplagged/mcp` v0.0.4, protocol 2025-06-18) | Genre-defining hidden-city + virtual-interlining defaults | default (one-way merge) / `--provider skiplagged` for solo | None |
 
 The default flight search merges results from Google Flights, Kiwi, and Skiplagged into a single sorted list, so plain `trvl flights HEL BCN 2026-07-01` already includes hidden-city / virtual-interlining options. Use `--provider skiplagged` to query Skiplagged on its own when you want to cross-validate or see only the hidden-city candidates.
@@ -392,6 +392,9 @@ trvl flights HEL BCN 2026-07-01 --provider skiplagged
 
 # AFKLM Flying Blue award availability:
 trvl flights AMS NRT 2026-09-15 --award
+
+# AFKLM cash fares only, with native round-trip tickets (both legs, one fare):
+trvl flights AMS BCN 2026-07-01 --return 2026-07-08 --provider afklm
 ```
 
 ## Ground Transport Providers
