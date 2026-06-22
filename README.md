@@ -19,7 +19,7 @@ Asciinema source: [`demo.cast`](demo.cast) · Demo script and claims: [`docs/DEM
 
 **▶ Try it live in your browser** — run trvl as a hosted MCP demo, no install (sign in to run): **[socialistic.ai/trvl-travel-mcp](https://socialistic.ai/en/skill/trvl-travel-mcp-4f7aa7)** (community-hosted by [@shesl-tinkerland](https://github.com/shesl-tinkerland)).
 
-**Ask your AI assistant to plan a real trip, and it actually can.** trvl gives Claude, Cursor, Windsurf, Codex, or any MCP-compatible assistant live access to flights, hotels, rental cars, trains, buses, ferries, price alerts, award sweet spots, weather, baggage rules, lounges, and destination intel. Free, no API keys, no signup. One binary.
+**Ask your AI assistant to plan a real trip, and it actually can.** trvl hands Claude, Cursor, Windsurf, Codex, or any MCP-compatible client 1 smart MCP tool for your AI assistant — the `travel` router — with live access to flights, hotels, rental cars, trains, buses, ferries, price alerts, award sweet spots, weather, baggage rules, lounges, and destination intel. Free, no API keys, no signup. One binary.
 
 Just ask in plain language. "Find me a cheap weekend somewhere warm." "Cheapest return flight Helsinki to Tokyo in March." "Train from Paris to Amsterdam next Friday, plus a hotel near the station." trvl searches 22 real providers across flights, hotels, trains, buses, ferries, and rental cars and hands your assistant live options with real prices, so it can compare, optimise across airlines and dates, and tee them up for booking. Prefer a terminal? The same engine runs as a standalone CLI with 56 commands.
 
