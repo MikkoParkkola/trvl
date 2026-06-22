@@ -117,6 +117,7 @@ That's it. Your AI will install the binary, wire the MCP server, install the ski
 **Or install manually:**
 
 ```bash
+brew trust --tap MikkoParkkola/tap   # Homebrew 6.0+
 brew install MikkoParkkola/tap/trvl   # install
 trvl mcp install                       # wire to Claude Desktop (default)
 ```
