@@ -95,3 +95,27 @@ func TestWriteMarshalError(t *testing.T) {
 		t.Fatal("no file should be written on marshal error")
 	}
 }
+
+// TestWriteNoTempLeftover verifies that a successful write leaves exactly the
+// target file behind — no ".tmp-*" artifacts from the O_EXCL temp file.
+func TestWriteNoTempLeftover(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "x.json")
+	if err := Write(path, sample{Name: "a", Value: 1}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := Write(path, sample{Name: "b", Value: 2}); err != nil {
+		t.Fatalf("overwrite: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "x.json" {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Fatalf("expected only x.json, got %v", names)
+	}
+}
