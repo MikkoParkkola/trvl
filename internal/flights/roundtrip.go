@@ -160,11 +160,13 @@ func composeRoundTrips(outbound, inbound []models.FlightResult, opts SearchOptio
 // composeItinerary combines one outbound and one inbound one-way option into a
 // single round-trip FlightResult: legs concatenated outbound-then-inbound, price
 // and duration summed, stops summed. The result is flagged as two separate
-// tickets via a warning and a composed provider label.
+// tickets via a warning and a composed provider label. Each leg is tagged with
+// its Direction ("outbound"/"inbound") so consumers can tell the return legs
+// apart in the otherwise-flat Legs slice (return-ticket data, not just one-way).
 func composeItinerary(out, in models.FlightResult) models.FlightResult {
 	legs := make([]models.FlightLeg, 0, len(out.Legs)+len(in.Legs))
-	legs = append(legs, out.Legs...)
-	legs = append(legs, in.Legs...)
+	legs = append(legs, taggedLegs(out.Legs, "outbound")...)
+	legs = append(legs, taggedLegs(in.Legs, "inbound")...)
 
 	warnings := []string{"composed round-trip: outbound and inbound are two separate one-way tickets, booked independently"}
 	warnings = append(warnings, out.Warnings...)
@@ -179,6 +181,18 @@ func composeItinerary(out, in models.FlightResult) models.FlightResult {
 		Legs:     legs,
 		Warnings: warnings,
 	}
+}
+
+// taggedLegs returns a copy of legs with each leg's Direction set, leaving the
+// source slice untouched (the one-way leg results are cached/shared upstream, so
+// mutating them in place would leak the round-trip tag into a one-way response).
+func taggedLegs(legs []models.FlightLeg, direction string) []models.FlightLeg {
+	out := make([]models.FlightLeg, len(legs))
+	for i, leg := range legs {
+		leg.Direction = direction
+		out[i] = leg
+	}
+	return out
 }
 
 // composedProviderLabel builds a transparent provider label for a composed
