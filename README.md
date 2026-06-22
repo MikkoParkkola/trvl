@@ -11,7 +11,7 @@
 [![Install in Cursor](https://img.shields.io/badge/Cursor-Install_MCP-black?logo=cursor)](cursor://anysphere.cursor-deeplink/mcp/install?name=trvl&config=%7B%22command%22%3A%22trvl%22%2C%22args%22%3A%5B%22mcp%22%5D%7D)
 [![Live Demo](https://img.shields.io/badge/Live_Demo-Try_in_browser-14b8a6?logo=googlechrome&logoColor=white)](https://socialistic.ai/en/skill/trvl-travel-mcp-4f7aa7)
 
-# trvl — The Travel MCP Server
+# trvl — Real travel search for your AI assistant
 
 ![trvl demo](https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif?v=1.10.0)
 
@@ -19,9 +19,9 @@ Asciinema source: [`demo.cast`](demo.cast) · Demo script and claims: [`docs/DEM
 
 **▶ Try it live in your browser** — run trvl as a hosted MCP demo, no install (sign in to run): **[socialistic.ai/trvl-travel-mcp](https://socialistic.ai/en/skill/trvl-travel-mcp-4f7aa7)** (community-hosted by [@shesl-tinkerland](https://github.com/shesl-tinkerland)).
 
-> **The canonical travel MCP for AI assistants. 1 smart tool. 66 compatibility aliases. 22 providers. Zero API keys. One binary.**
+> **Ask your AI assistant to plan a real trip, and it actually can.** trvl gives Claude, Cursor, Windsurf, Codex, or any MCP-compatible assistant live access to flights, hotels, rental cars, trains, buses, ferries, price alerts, award sweet spots, weather, baggage rules, lounges, and destination intel. Free, no API keys, no signup. One binary.
 >
-> Gives Claude, Cursor, Windsurf, Codex, and any MCP-compatible AI 1 smart MCP tool for your AI assistant — the `travel` router — with 66 compatibility aliases for flights, hotels, rental cars, trains, buses, ferries, price alerts, award sweet spots, weather, baggage, lounges, and destination intel. Free. API-first. Also works as a standalone CLI with 56 commands.
+> Just ask in plain language. "Find me a cheap weekend somewhere warm." "Cheapest return flight Helsinki to Tokyo in March." "Train from Paris to Amsterdam next Friday, plus a hotel near the station." trvl searches 22 real providers across flights, hotels, trains, buses, ferries, and rental cars and hands your assistant live options with real prices, so it can compare, optimise across airlines and dates, and tee them up for booking. Prefer a terminal? The same engine runs as a standalone CLI with 56 commands.
 >
 > **Token-efficient by design:** advertising 1 smart tool instead of 66 keeps the `tools/list` payload at ~378 tokens instead of ~33,500 — a **98.9% smaller context footprint**, ~33K tokens handed back to your assistant. The 66 aliases stay callable via the `intent` field (set `TRVL_MCP_TOOL_MODE=legacy` to advertise all 66).
 
