@@ -126,6 +126,99 @@ func newSkiplaggedTestServer(t *testing.T, sessionID string, body string) (*http
 	return srv, closer
 }
 
+// fixedSkiplaggedRoundTripBody is a single native round-trip fare: one
+// FlightCard carrying a returnFlight (the inbound) and a single total price.
+const fixedSkiplaggedRoundTripBody = `{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "structuredContent": {
+      "searchUrl": "https://example.test/search?from=AMS&to=HEL&rt=1",
+      "flights": [
+        {
+          "type": "FlightCard",
+          "id": "rt1",
+          "airlines": "AY",
+          "departure": {"airport": "AMS", "dateTime": "2026-05-15T07:30"},
+          "arrival": {"airport": "HEL", "dateTime": "2026-05-15T11:15"},
+          "duration": "2h 45m",
+          "layovers": 0,
+          "price": {"amount": 210.00, "currency": "EUR"},
+          "deepLink": "https://example.test/book/rt1",
+          "attributes": [],
+          "returnFlight": {
+            "departure": {"airport": "HEL", "dateTime": "2026-05-22T18:00"},
+            "arrival": {"airport": "AMS", "dateTime": "2026-05-22T21:00"},
+            "duration": "3h 00m",
+            "layovers": 1
+          }
+        }
+      ]
+    },
+    "content": [{"type": "text", "text": "{\"flights\":[]}"}]
+  }
+}`
+
+func TestSearchSkiplagged_NativeRoundTrip(t *testing.T) {
+	srv, closer := newSkiplaggedTestServer(t, "test-sess-rt", fixedSkiplaggedRoundTripBody)
+	defer closer()
+	defer skiplaggedSetEndpointForTest(srv.URL)()
+
+	skiplaggedEnabled = true
+	defer func() { skiplaggedEnabled = true }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	res, err := SearchSkiplagged(ctx, "AMS", "HEL", "2026-05-15", SearchOptions{ReturnDate: "2026-05-22"})
+	if err != nil {
+		t.Fatalf("SearchSkiplagged: %v", err)
+	}
+	if res == nil || len(res.Flights) != 1 {
+		t.Fatalf("expected 1 round-trip itinerary, got %+v", res)
+	}
+	f := res.Flights[0]
+	if f.FareType != models.FareRoundTrip {
+		t.Errorf("FareType=%q want %q (native round-trip)", f.FareType, models.FareRoundTrip)
+	}
+	if len(f.Legs) != 2 {
+		t.Fatalf("legs=%d want 2 (outbound + inbound)", len(f.Legs))
+	}
+	if f.Legs[0].Direction != "outbound" || f.Legs[1].Direction != "inbound" {
+		t.Errorf("leg directions: %q then %q want outbound then inbound", f.Legs[0].Direction, f.Legs[1].Direction)
+	}
+	if f.Legs[0].DepartureAirport.Code != "AMS" || f.Legs[1].DepartureAirport.Code != "HEL" {
+		t.Errorf("leg routing: %q then %q want AMS then HEL", f.Legs[0].DepartureAirport.Code, f.Legs[1].DepartureAirport.Code)
+	}
+	// Single native fare for the whole trip — not a sum of two one-ways.
+	if f.Price != 210.00 {
+		t.Errorf("price=%v want 210.00 (single native fare)", f.Price)
+	}
+	if f.Stops != 1 {
+		t.Errorf("stops=%d want 1 (0 outbound + 1 inbound)", f.Stops)
+	}
+	if f.Duration != 165+180 {
+		t.Errorf("duration=%d want 345 (165 + 180)", f.Duration)
+	}
+}
+
+func TestRunSkiplaggedProvider_OneWaySuppressed(t *testing.T) {
+	// When the round-trip composer suppresses the one-way Skiplagged legs, the
+	// provider must report a transparent skip and make NO HTTP call (no endpoint
+	// is configured here, so a call would error rather than skip).
+	ctx := disableSkiplaggedOneWay(context.Background())
+	out := runSkiplaggedProvider(ctx, nil, "AMS", "HEL", "2026-05-15", SearchOptions{})
+	if out.err != nil {
+		t.Fatalf("expected no error (call suppressed), got %v", out.err)
+	}
+	if out.status.Status != "skipped" {
+		t.Errorf("status=%q want skipped", out.status.Status)
+	}
+	if len(out.flights) != 0 {
+		t.Errorf("flights=%d want 0 (no call made)", len(out.flights))
+	}
+}
+
 func TestSearchSkiplagged_Success(t *testing.T) {
 	srv, closer := newSkiplaggedTestServer(t, "test-sess-001", fixedSkiplaggedFlightsBody)
 	defer closer()

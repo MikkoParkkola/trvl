@@ -584,6 +584,37 @@ func TestFlightRoute_AnnotatesLayover(t *testing.T) {
 	}
 }
 
+func TestFlightRoute_RoundTripSplitsByDirection(t *testing.T) {
+	// A composed round-trip carries inbound-tagged legs; the route must render
+	// each direction separately so the return is visible and the turnaround is
+	// never disguised as a connection.
+	f := models.FlightResult{
+		Legs: []models.FlightLeg{
+			{DepartureAirport: models.AirportInfo{Code: "HEL"}, ArrivalAirport: models.AirportInfo{Code: "BCN"}, Direction: "outbound"},
+			{DepartureAirport: models.AirportInfo{Code: "BCN"}, ArrivalAirport: models.AirportInfo{Code: "HEL"}, Direction: "inbound"},
+		},
+	}
+	want := "HEL -> BCN  ||  BCN -> HEL"
+	if got := flightRoute(f); got != want {
+		t.Errorf("flightRoute() = %q, want %q", got, want)
+	}
+}
+
+func TestFlightRoute_RoundTripWithConnections(t *testing.T) {
+	// Each direction keeps its own layover annotation independently.
+	f := models.FlightResult{
+		Legs: []models.FlightLeg{
+			{DepartureAirport: models.AirportInfo{Code: "HEL"}, ArrivalAirport: models.AirportInfo{Code: "FRA"}, Direction: "outbound"},
+			{DepartureAirport: models.AirportInfo{Code: "FRA"}, ArrivalAirport: models.AirportInfo{Code: "BCN"}, Direction: "outbound", LayoverMinutes: 90},
+			{DepartureAirport: models.AirportInfo{Code: "BCN"}, ArrivalAirport: models.AirportInfo{Code: "HEL"}, Direction: "inbound"},
+		},
+	}
+	want := "HEL -> FRA (1h 30m) -> BCN  ||  BCN -> HEL"
+	if got := flightRoute(f); got != want {
+		t.Errorf("flightRoute() = %q, want %q", got, want)
+	}
+}
+
 func TestFlightAirlinesDisplay(t *testing.T) {
 	tests := []struct {
 		name string

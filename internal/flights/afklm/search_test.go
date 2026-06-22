@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 func TestAvailableOffersHappyPath(t *testing.T) {
@@ -223,6 +225,18 @@ func TestMapRecommendationsSynthetic(t *testing.T) {
 	}
 	if r.Duration != 185 {
 		t.Errorf("expected total duration 185, got %d", r.Duration)
+	}
+	// A two-bound offer is a genuine return ticket: tag it FareRoundTrip and
+	// mark each leg's direction so downstream ranking and rendering can tell
+	// the outbound from the inbound.
+	if r.FareType != models.FareRoundTrip {
+		t.Errorf("expected FareType=%q for two-bound offer, got %q", models.FareRoundTrip, r.FareType)
+	}
+	if r.Legs[0].Direction != "outbound" {
+		t.Errorf("leg 0 direction: want outbound, got %q", r.Legs[0].Direction)
+	}
+	if r.Legs[1].Direction != "inbound" {
+		t.Errorf("leg 1 direction: want inbound, got %q", r.Legs[1].Direction)
 	}
 }
 

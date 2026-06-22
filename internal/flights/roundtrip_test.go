@@ -23,6 +23,80 @@ func owFlight(provider, currency string, price float64, dep, arr string) models.
 	}
 }
 
+func TestTagGoogleNativeRoundTrip(t *testing.T) {
+	src := []models.FlightResult{owFlight("Google Flights", "EUR", 314, "HEL", "BCN")}
+
+	got := tagGoogleNativeRoundTrip(src, "HEL", "BCN", "2026-07-01", "2026-07-08", "EUR")
+	if len(got) != 1 {
+		t.Fatalf("count: got %d, want 1", len(got))
+	}
+	f := got[0]
+
+	// A native Google fare is a true round-trip ticket, not a split pair.
+	if f.FareType != models.FareRoundTrip {
+		t.Errorf("FareType: got %q, want %q", f.FareType, models.FareRoundTrip)
+	}
+	// Price is the full round-trip total (never summed legs) — carried verbatim.
+	if f.Price != 314 {
+		t.Errorf("Price: got %.2f, want 314 (round-trip total preserved)", f.Price)
+	}
+	// Stage 1 returns the outbound itinerary; the return leg is chosen at booking.
+	if len(f.Legs) != 1 || f.Legs[0].Direction != "outbound" {
+		t.Errorf("legs: got %+v, want one outbound-tagged leg", f.Legs)
+	}
+	// A warning must make the booking-time return selection explicit.
+	if len(f.Warnings) == 0 || !strings.Contains(f.Warnings[0], "round-trip") {
+		t.Errorf("Warnings: got %v, want a round-trip clarification first", f.Warnings)
+	}
+	// Booking URL must encode the return date so the user lands on the round-trip.
+	if !strings.Contains(f.BookingURL, "2026-07-08") {
+		t.Errorf("BookingURL: got %q, want it to include the return date", f.BookingURL)
+	}
+
+	// The source flight's legs must stay untagged — Google one-way responses are
+	// cached/shared, and a leaked round-trip tag would corrupt a later one-way.
+	if src[0].Legs[0].Direction != "" {
+		t.Errorf("source leg mutated: Direction=%q", src[0].Legs[0].Direction)
+	}
+	if src[0].FareType != "" {
+		t.Errorf("source FareType mutated: %q", src[0].FareType)
+	}
+}
+
+func TestTagGoogleNativeRoundTrip_Empty(t *testing.T) {
+	if got := tagGoogleNativeRoundTrip(nil, "HEL", "BCN", "2026-07-01", "2026-07-08", "EUR"); got != nil {
+		t.Errorf("empty input should yield nil, got %v", got)
+	}
+}
+
+func TestTagNativeRoundTrip_KeepsProviderDeepLink(t *testing.T) {
+	src := owFlight("kiwi", "EUR", 296, "HEL", "BCN")
+	src.BookingURL = "https://kiwi.com/deep/link?return=2026-07-08"
+
+	got := tagNativeRoundTrip([]models.FlightResult{src}, kiwiNativeRoundTripWarning, "")
+	if len(got) != 1 {
+		t.Fatalf("count: got %d, want 1", len(got))
+	}
+	f := got[0]
+	if f.FareType != models.FareRoundTrip {
+		t.Errorf("FareType: got %q, want %q", f.FareType, models.FareRoundTrip)
+	}
+	// Empty bookingURL must preserve the provider's own deep link (it encodes the return).
+	if f.BookingURL != "https://kiwi.com/deep/link?return=2026-07-08" {
+		t.Errorf("BookingURL overwritten: got %q, want the Kiwi deep link kept", f.BookingURL)
+	}
+	if f.Legs[0].Direction != "outbound" {
+		t.Errorf("leg Direction: got %q, want outbound", f.Legs[0].Direction)
+	}
+	if len(f.Warnings) == 0 || f.Warnings[0] != kiwiNativeRoundTripWarning {
+		t.Errorf("Warnings: got %v, want kiwi round-trip warning first", f.Warnings)
+	}
+	// Source must stay untouched (cached/shared upstream).
+	if src.Legs[0].Direction != "" || src.FareType != "" {
+		t.Errorf("source mutated: dir=%q fare=%q", src.Legs[0].Direction, src.FareType)
+	}
+}
+
 func TestComposeRoundTrips_SumsAndConcatenates(t *testing.T) {
 	out := []models.FlightResult{owFlight("Google Flights", "EUR", 100, "HEL", "BCN")}
 	in := []models.FlightResult{owFlight("Ryanair", "EUR", 60, "BCN", "HEL")}
@@ -91,6 +165,71 @@ func TestComposeRoundTrips_ExcludesUnpriced(t *testing.T) {
 	}
 	if composed[0].Price != 150 {
 		t.Errorf("price: got %v, want 150", composed[0].Price)
+	}
+}
+
+func TestNativeRoundTripCurrency_Priority(t *testing.T) {
+	eur := []models.FlightResult{{Currency: "EUR"}}
+	usd := []models.FlightResult{{Currency: "USD"}}
+
+	// Explicit opts.Currency wins over everything.
+	if got := nativeRoundTripCurrency(SearchOptions{Currency: "GBP"}, eur, usd); got != "GBP" {
+		t.Errorf("explicit currency: got %q want GBP", got)
+	}
+	// Else fall back to the composed pairs' currency.
+	if got := nativeRoundTripCurrency(SearchOptions{}, eur, usd); got != "EUR" {
+		t.Errorf("composed currency: got %q want EUR", got)
+	}
+	// Else fall back to the outbound legs' currency.
+	if got := nativeRoundTripCurrency(SearchOptions{}, nil, usd); got != "USD" {
+		t.Errorf("outbound currency: got %q want USD", got)
+	}
+	// No signal at all -> empty (normalisation no-ops).
+	if got := nativeRoundTripCurrency(SearchOptions{}, nil, nil); got != "" {
+		t.Errorf("no signal: got %q want empty", got)
+	}
+}
+
+func TestComposeRoundTrips_MarksSplitTicketsFareType(t *testing.T) {
+	out := []models.FlightResult{owFlight("Google Flights", "EUR", 100, "HEL", "BCN")}
+	in := []models.FlightResult{owFlight("Ryanair", "EUR", 60, "BCN", "HEL")}
+
+	composed, _ := composeRoundTrips(out, in, SearchOptions{})
+	if len(composed) != 1 {
+		t.Fatalf("composed count: got %d, want 1", len(composed))
+	}
+	// A composed pair is two separate tickets — never a native round-trip fare.
+	if composed[0].FareType != models.FareSplitTickets {
+		t.Errorf("FareType: got %q, want %q", composed[0].FareType, models.FareSplitTickets)
+	}
+}
+
+func TestComposeRoundTrips_TagsLegDirection(t *testing.T) {
+	out := []models.FlightResult{owFlight("Google Flights", "EUR", 100, "HEL", "BCN")}
+	in := []models.FlightResult{owFlight("Ryanair", "EUR", 60, "BCN", "HEL")}
+
+	composed, _ := composeRoundTrips(out, in, SearchOptions{})
+	if len(composed) != 1 {
+		t.Fatalf("composed count: got %d, want 1", len(composed))
+	}
+	legs := composed[0].Legs
+	if len(legs) != 2 {
+		t.Fatalf("legs: got %d, want 2", len(legs))
+	}
+	if legs[0].Direction != "outbound" {
+		t.Errorf("first leg Direction: got %q, want outbound", legs[0].Direction)
+	}
+	if legs[1].Direction != "inbound" {
+		t.Errorf("second leg Direction: got %q, want inbound", legs[1].Direction)
+	}
+
+	// The source one-way leg slices must stay untagged — they are cached/shared
+	// upstream and a leaked round-trip tag would corrupt a later one-way response.
+	if out[0].Legs[0].Direction != "" {
+		t.Errorf("source outbound leg was mutated: Direction=%q", out[0].Legs[0].Direction)
+	}
+	if in[0].Legs[0].Direction != "" {
+		t.Errorf("source inbound leg was mutated: Direction=%q", in[0].Legs[0].Direction)
 	}
 }
 

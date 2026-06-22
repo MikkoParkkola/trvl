@@ -187,6 +187,11 @@ Examples:
 					return fmt.Errorf("--provider skiplagged supports exactly one origin and one destination")
 				}
 				result, err = flights.SearchSkiplagged(cmd.Context(), origins[0], destinations[0], date, opts)
+			case "afklm", "af-klm", "airfranceklm":
+				if len(origins) != 1 || len(destinations) != 1 {
+					return fmt.Errorf("--provider afklm supports exactly one origin and one destination")
+				}
+				result, err = flights.SearchAFKLM(cmd.Context(), origins[0], destinations[0], date, opts)
 			case "", "default", "google", "google_flights", "kiwi":
 				if len(origins) > 1 || len(destinations) > 1 {
 					result, err = flights.SearchMultiAirport(cmd.Context(), origins, destinations, date, opts)
@@ -194,7 +199,7 @@ Examples:
 					result, err = flights.SearchFlights(cmd.Context(), origins[0], destinations[0], date, opts)
 				}
 			default:
-				return fmt.Errorf("unsupported --provider %q (valid: skiplagged, or empty for default Google+Kiwi+Skiplagged merge)", provider)
+				return fmt.Errorf("unsupported --provider %q (valid: skiplagged, afklm, or empty for default Google+Kiwi+Skiplagged merge)", provider)
 			}
 			if err != nil {
 				return err
@@ -298,7 +303,7 @@ Examples:
 	cmd.Flags().BoolVar(&explain, "explain", false, "Show per-factor profile match breakdown for each result")
 	cmd.Flags().BoolVar(&award, "award", false, "Search Flying Blue award availability instead of cash fares")
 	cmd.Flags().StringVar(&awardCookies, "award-cookies", "", "KLM/Flying Blue Cookie header for --award (or set AFKL_KLM_COOKIES)")
-	cmd.Flags().StringVar(&provider, "provider", "", "Flight provider: empty = default (Google Flights + Kiwi + Skiplagged merge), skiplagged = Skiplagged MCP only (hidden-city + virtual-interlining defaults)")
+	cmd.Flags().StringVar(&provider, "provider", "", "Flight provider: empty = default (Google Flights + Kiwi + Skiplagged merge), skiplagged = Skiplagged MCP only (hidden-city + virtual-interlining defaults), afklm = Air France-KLM Offers API only (opt-in, native round-trip fares; requires credential)")
 	cmd.Flags().BoolVar(&flightRailFly, "rail-fly", false, "Expand the search to rail-connected origins (KL/AF Air&Rail), surfacing cheaper rail+fly bundles even when the origin is outside the default hub list")
 	cmd.Flags().BoolVar(&deep, "deep", false, "Run a budget-gated counterfactual fan-out (nearby airports, split tickets, hidden city). Issues extra provider calls, capped by a best-effort budget that never delays the primary search")
 	cmd.Flags().BoolVar(&noGeo, "no-geo", false, "Disable geo-IP origin detection (also honored via TRVL_NO_GEO=1). Origin then resolves only from an explicit code or your saved home airport.")
@@ -579,18 +584,49 @@ func flightWarnings(f models.FlightResult) string {
 
 // flightRoute builds a route string like "HEL -> FRA -> NRT", annotating
 // connection airports with their layover duration, e.g.
-// "HEL -> FRA (2h00) -> NRT". Nonstop flights render as "AMS -> HEL".
+// "HEL -> FRA (2h00) -> NRT". Nonstop flights render as "AMS -> HEL". A composed
+// round-trip (legs tagged outbound/inbound) renders each direction separately
+// joined by "  ||  " so the return is visible, e.g. "HEL -> BCN  ||  BCN -> HEL"
+// — never a single chain that disguises the turnaround as a connection.
 func flightRoute(f models.FlightResult) string {
 	if len(f.Legs) == 0 {
 		return ""
 	}
+	if out, in := splitLegsByDirection(f.Legs); in != nil {
+		return legRoute(out) + "  ||  " + legRoute(in)
+	}
+	return legRoute(f.Legs)
+}
 
-	parts := []string{f.Legs[0].DepartureAirport.Code}
-	for i, leg := range f.Legs {
+// splitLegsByDirection partitions legs into outbound and inbound when the result
+// is a composed round-trip (legs carry a "inbound" Direction tag). For a one-way
+// result (no inbound legs) it returns (legs, nil) so callers render a single
+// chain unchanged.
+func splitLegsByDirection(legs []models.FlightLeg) (outbound, inbound []models.FlightLeg) {
+	for _, leg := range legs {
+		if leg.Direction == "inbound" {
+			inbound = append(inbound, leg)
+		} else {
+			outbound = append(outbound, leg)
+		}
+	}
+	if len(inbound) == 0 {
+		return legs, nil
+	}
+	return outbound, inbound
+}
+
+// legRoute renders one contiguous set of legs as "A -> B (layover) -> C".
+func legRoute(legs []models.FlightLeg) string {
+	if len(legs) == 0 {
+		return ""
+	}
+	parts := []string{legs[0].DepartureAirport.Code}
+	for i, leg := range legs {
 		// Annotate the connection airport (arrival of a non-final leg) with the
 		// layover before the next leg, when the model carries it.
-		if i < len(f.Legs)-1 {
-			lo := f.Legs[i+1].LayoverMinutes
+		if i < len(legs)-1 {
+			lo := legs[i+1].LayoverMinutes
 			if lo > 0 {
 				parts = append(parts, fmt.Sprintf("%s (%s)", leg.ArrivalAirport.Code, formatDuration(lo)))
 				continue

@@ -138,10 +138,11 @@ func SearchFlightsWithClient(ctx context.Context, client *batchexec.Client, orig
 		}, fmt.Errorf("client is required")
 	}
 
-	// Round-trip is served by composition (two one-way searches paired) rather
-	// than the native Google round-trip request, which Google rejects (issue
-	// #198). The leg sub-searches re-enter this function with ReturnDate cleared,
-	// so they take the one-way path below.
+	// Round-trip fans out to native round-trip fares (Google, Skiplagged — priced
+	// as a single, often discounted return) AND composition (two one-way searches
+	// paired, covering cross-carrier combos), merged cheapest-first. The native
+	// Google path is queried inside searchRoundTripComposed; the composition leg
+	// sub-searches re-enter this function with ReturnDate cleared (one-way path).
 	if opts.ReturnDate != "" {
 		return searchRoundTripComposed(ctx, client, origin, destination, date, opts)
 	}
