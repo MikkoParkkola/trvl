@@ -416,6 +416,7 @@ func accommodationNeedFromHotelSearchRequest(req hotelSearchRequest) models.Acco
 		MinBedrooms:              opts.MinBedrooms,
 		MinBathrooms:             opts.MinBathrooms,
 		MinBeds:                  opts.MinBeds,
+		MinStars:                 opts.Stars,
 		RequiredAmenities:        append([]string(nil), opts.Amenities...),
 		MaxDistanceKm:            opts.MaxDistanceKm,
 		MustHaveKitchen:          opts.MustHaveKitchen,

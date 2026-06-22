@@ -49,6 +49,7 @@ type AccommodationNeed struct {
 	MinBedrooms              int      `json:"min_bedrooms,omitempty"`
 	MinBathrooms             int      `json:"min_bathrooms,omitempty"`
 	MinBeds                  int      `json:"min_beds,omitempty"`
+	MinStars                 int      `json:"min_stars,omitempty"`
 	RequiredAmenities        []string `json:"required_amenities,omitempty"`
 	PreferredAmenities       []string `json:"preferred_amenities,omitempty"`
 	MaxDistanceKm            float64  `json:"max_distance_km,omitempty"`

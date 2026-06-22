@@ -7,6 +7,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/providers"
 )
 
 func accommodationOffersFromRooms(hotel models.HotelResult, rooms []hotels.RoomType, need models.AccommodationNeed, checkedAt time.Time) []models.AccommodationOffer {
@@ -55,9 +56,36 @@ func accommodationOffersFromRooms(hotel models.HotelResult, rooms []hotels.RoomT
 			InventoryCompleteness: inventoryCompleteness(group.quotes),
 			InventoryOptions:      group.quotes,
 		}
+		offer = normalizeOfferCurrency(offer, need.Currency)
 		offers = append(offers, models.EvaluateAccommodationOffer(need, offer, checkedAt))
 	}
 	return offers
+}
+
+// normalizeOfferCurrency converts an offer's price fields into the requested
+// currency using live FX rates (ECB via Frankfurter, with hardcoded
+// fallbacks). Providers such as HousingAnywhere occasionally return a foreign
+// currency (USD) even when the request asked for EUR; without this the
+// criteria evaluator rejects the offer for missing_criteria:["currency"] even
+// though the price is otherwise usable. Conversion only happens when a rate is
+// available — if none is, the offer keeps its original currency and the
+// evaluator still flags it, so we never relabel a price we could not convert.
+func normalizeOfferCurrency(offer models.AccommodationOffer, want string) models.AccommodationOffer {
+	want = strings.ToUpper(strings.TrimSpace(want))
+	have := strings.ToUpper(strings.TrimSpace(offer.Currency))
+	if want == "" || have == "" || have == want {
+		return offer
+	}
+	rate, ok := providers.ConvertRate(have, want)
+	if !ok {
+		return offer
+	}
+	offer.NightlyPrice *= rate
+	offer.TotalPrice *= rate
+	offer.TaxesAndFees *= rate
+	offer.Currency = want
+	offer.Warnings = appendUniqueStringMCP(offer.Warnings, "currency_normalized")
+	return offer
 }
 
 type roomInventoryGroup struct {
