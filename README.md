@@ -395,6 +395,11 @@ trvl flights AMS NRT 2026-09-15 --award
 
 # AFKLM cash fares only, with native round-trip tickets (both legs, one fare):
 trvl flights AMS BCN 2026-07-01 --return 2026-07-08 --provider afklm
+
+# A single low-cost carrier only (Ryanair, Wizz Air, Transavia, or easyJet).
+# Low-cost carriers have no discounted return fare, so a --return request is
+# composed honestly as two one-way tickets (both legs, booked separately):
+trvl flights STN DUB 2026-07-01 --return 2026-07-08 --provider ryanair
 ```
 
 ## Ground Transport Providers
