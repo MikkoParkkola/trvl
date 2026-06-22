@@ -3,11 +3,13 @@ package hotels
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -526,5 +528,47 @@ func TestSearchHotels_IncludesBookingResults(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected Booking Test Hotel in merged results")
+	}
+}
+
+// TestSearchHotels_GoogleBlockedDegradesGracefully is the regression guard for
+// the CI flake where a bot-blocked Google scrape made the whole multi-provider
+// search fatal, discarding every other provider's hotels. With Google's primary
+// fetch failing, an auxiliary provider's results must still come through and the
+// search must NOT return an error.
+func TestSearchHotels_GoogleBlockedDegradesGracefully(t *testing.T) {
+	origFetch := fetchHotelPageFullFn
+	fetchHotelPageFullFn = func(_ context.Context, _ *batchexec.Client, _ string, _ HotelSearchOptions, _ int, _ string) (parseResult, error) {
+		return parseResult{}, errors.New("parse hotel results: no hotels found in response payload")
+	}
+	defer func() { fetchHotelPageFullFn = origFetch }()
+
+	origSearch := SearchBooking
+	SearchBooking = func(_ context.Context, _ string, _ HotelSearchOptions) ([]models.HotelResult, error) {
+		return []models.HotelResult{{
+			Name:       "Booking Test Hotel",
+			Price:      99,
+			Currency:   "EUR",
+			BookingURL: "https://www.booking.com/hotel/test",
+		}}, nil
+	}
+	defer func() { SearchBooking = origSearch }()
+
+	results, err := SearchHotels(context.Background(), "Corfu", HotelSearchOptions{
+		CheckIn: "2026-08-10", CheckOut: "2026-08-17", Currency: "EUR", MaxPages: 1,
+	})
+	if err != nil {
+		t.Fatalf("SearchHotels returned error despite a working auxiliary provider: %v", err)
+	}
+
+	found := false
+	for _, h := range results.Hotels {
+		if h.Name == "Booking Test Hotel" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected Booking Test Hotel to survive a blocked Google fetch")
 	}
 }
