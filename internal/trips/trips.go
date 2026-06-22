@@ -9,9 +9,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/atomicjson"
 )
 
 // Trip represents a planned or booked travel itinerary.
@@ -415,51 +416,5 @@ func loadJSON(path string, dst interface{}) error {
 
 // saveJSON writes data as pretty-printed JSON to path using an atomic rename.
 func saveJSON(path string, data interface{}) error {
-	b, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(b); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		if runtime.GOOS == "windows" {
-			_ = os.Remove(path)
-			if err2 := os.Rename(tmpPath, path); err2 == nil {
-				cleanup = false
-				return nil
-			}
-		}
-		return err
-	}
-
-	cleanup = false
-	return nil
+	return atomicjson.Write(path, data)
 }
