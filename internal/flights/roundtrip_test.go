@@ -73,7 +73,7 @@ func TestTagNativeRoundTrip_KeepsProviderDeepLink(t *testing.T) {
 	src := owFlight("kiwi", "EUR", 296, "HEL", "BCN")
 	src.BookingURL = "https://kiwi.com/deep/link?return=2026-07-08"
 
-	got := tagNativeRoundTrip([]models.FlightResult{src}, kiwiNativeRoundTripWarning, "")
+	got := tagNativeRoundTrip([]models.FlightResult{src}, kiwiNativeRoundTripWarning, "", "2026-07-01", "2026-07-08")
 	if len(got) != 1 {
 		t.Fatalf("count: got %d, want 1", len(got))
 	}
@@ -94,6 +94,41 @@ func TestTagNativeRoundTrip_KeepsProviderDeepLink(t *testing.T) {
 	// Source must stay untouched (cached/shared upstream).
 	if src.Legs[0].Direction != "" || src.FareType != "" {
 		t.Errorf("source mutated: dir=%q fare=%q", src.Legs[0].Direction, src.FareType)
+	}
+}
+
+func TestTagNativeRoundTrip_TagsInboundByDate(t *testing.T) {
+	// A native round-trip fare whose payload carries BOTH halves: outbound on
+	// the departure date, the return leg on returnDate. Verified live: Google
+	// returns inbound legs for some itineraries (HEL->LON 2026-07-15/07-22), so
+	// they must be tagged "inbound" and the booking-time warning suppressed.
+	src := models.FlightResult{
+		Price: 280, Currency: "EUR", Provider: "Google Flights",
+		Legs: []models.FlightLeg{
+			{DepartureAirport: models.AirportInfo{Code: "HEL"}, ArrivalAirport: models.AirportInfo{Code: "LON"}, DepartureTime: "2026-07-15T08:05"},
+			{DepartureAirport: models.AirportInfo{Code: "LON"}, ArrivalAirport: models.AirportInfo{Code: "HEL"}, DepartureTime: "2026-07-22T18:40"},
+		},
+	}
+	got := tagNativeRoundTrip([]models.FlightResult{src}, googleNativeRoundTripWarning, "https://book", "2026-07-15", "2026-07-22")
+	if len(got) != 1 {
+		t.Fatalf("count: got %d, want 1", len(got))
+	}
+	f := got[0]
+	if f.Legs[0].Direction != "outbound" {
+		t.Errorf("leg 0 direction: got %q, want outbound", f.Legs[0].Direction)
+	}
+	if f.Legs[1].Direction != "inbound" {
+		t.Errorf("leg 1 (07-22) direction: got %q, want inbound", f.Legs[1].Direction)
+	}
+	// Inbound legs present -> the "return selected at booking" warning is false and must NOT appear.
+	for _, w := range f.Warnings {
+		if w == googleNativeRoundTripWarning {
+			t.Errorf("booking-time warning must be suppressed when inbound legs are present: %v", f.Warnings)
+		}
+	}
+	// Source must stay untouched.
+	if src.Legs[1].Direction != "" {
+		t.Errorf("source leg mutated: %q", src.Legs[1].Direction)
 	}
 }
 
