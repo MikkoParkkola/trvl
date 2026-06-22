@@ -363,7 +363,7 @@ func searchGoogleNativeRoundTrip(ctx context.Context, client *batchexec.Client, 
 // mutates the source legs (taggedLegs copies) so cached one-way responses stay
 // untouched. Pure and deterministic so it can be unit-tested without the network.
 func tagGoogleNativeRoundTrip(flights []models.FlightResult, origin, destination, date, returnDate, currency string) []models.FlightResult {
-	return tagNativeRoundTrip(flights, googleNativeRoundTripWarning, buildFlightBookingURL(origin, destination, date, returnDate, currency))
+	return tagNativeRoundTrip(flights, googleNativeRoundTripWarning, buildFlightBookingURL(origin, destination, date, returnDate, currency), date, returnDate)
 }
 
 const (
@@ -371,30 +371,74 @@ const (
 	kiwiNativeRoundTripWarning   = "native Kiwi round-trip fare: the price is the full round-trip total; the matching return flight is selected at booking (open the booking link)"
 )
 
-// tagNativeRoundTrip converts raw outbound itineraries from a provider's native
+// tagNativeRoundTrip converts raw itineraries from a provider's native
 // round-trip request into honest FareRoundTrip results. Each flight keeps its
-// price (the full round-trip total the provider quoted), gets its leg(s) tagged
-// "outbound" — the matching return flight is chosen at booking, since these
-// providers expose only the outbound itinerary plus the return total — the given
-// warning prepended, and, when bookingURL is non-empty, that round-trip booking
-// URL (empty keeps the provider's own deep link). It never mutates the source
-// legs (taggedLegs copies) so cached one-way responses stay untouched. Pure and
-// deterministic so it can be unit-tested without the network.
-func tagNativeRoundTrip(flights []models.FlightResult, warning, bookingURL string) []models.FlightResult {
+// price (the full round-trip total the provider quoted) and gets that
+// round-trip booking URL (empty keeps the provider's own deep link).
+//
+// Leg directions are tagged by date: a native round-trip response is
+// inconsistent — sometimes it carries the full round-trip (both halves),
+// sometimes only the outbound itinerary with the return chosen at booking.
+// directionTaggedLegs labels legs departing on/after returnDate as "inbound"
+// using the real data the provider returned, never a fabricated leg. Only when
+// no inbound leg is present do we prepend the "return selected at booking"
+// warning — when the inbound legs ARE present, the tagged legs speak for
+// themselves and that warning would be false. Never mutates the source legs
+// (directionTaggedLegs copies) so cached one-way responses stay untouched.
+// Pure and deterministic so it can be unit-tested without the network.
+func tagNativeRoundTrip(flights []models.FlightResult, warning, bookingURL, departDate, returnDate string) []models.FlightResult {
 	if len(flights) == 0 {
 		return nil
 	}
 	out := make([]models.FlightResult, 0, len(flights))
 	for _, f := range flights {
 		f.FareType = models.FareRoundTrip
-		f.Legs = taggedLegs(f.Legs, "outbound")
+		legs, hasInbound := directionTaggedLegs(f.Legs, departDate, returnDate)
+		f.Legs = legs
 		if bookingURL != "" {
 			f.BookingURL = bookingURL
 		}
-		f.Warnings = append([]string{warning}, f.Warnings...)
+		if !hasInbound && warning != "" {
+			f.Warnings = append([]string{warning}, f.Warnings...)
+		}
 		out = append(out, f)
 	}
 	return out
+}
+
+// directionTaggedLegs returns a copy of legs with each leg's Direction set to
+// "outbound" or "inbound" by comparing its departure date to returnDate: a leg
+// departing on or after returnDate is the return half. When returnDate is empty
+// or equals departDate (a same-day turn we cannot split by date), or a leg's
+// departure time is unparseable, the leg stays "outbound" — the safe,
+// non-fabricating default. hasInbound reports whether any inbound leg was found.
+func directionTaggedLegs(legs []models.FlightLeg, departDate, returnDate string) (tagged []models.FlightLeg, hasInbound bool) {
+	out := make([]models.FlightLeg, len(legs))
+	copy(out, legs)
+	splittable := returnDate != "" && returnDate != departDate
+	for i := range out {
+		dir := "outbound"
+		if splittable {
+			// ISO calendar dates compare correctly as plain strings.
+			if d, ok := legDepartDate(out[i]); ok && d >= returnDate {
+				dir = "inbound"
+				hasInbound = true
+			}
+		}
+		out[i].Direction = dir
+	}
+	return out, hasInbound
+}
+
+// legDepartDate extracts the date prefix of a leg's departure time
+// ("2026-07-22T18:40" -> "2026-07-22"), reporting false when the value is too
+// short or not date-shaped so the caller falls back to the safe default.
+func legDepartDate(leg models.FlightLeg) (string, bool) {
+	t := leg.DepartureTime
+	if len(t) < 10 || t[4] != '-' || t[7] != '-' {
+		return "", false
+	}
+	return t[:10], true
 }
 
 // searchKiwiNativeRoundTrip queries Kiwi for a native round-trip fare (returnDate
@@ -433,7 +477,7 @@ func searchKiwiNativeRoundTrip(ctx context.Context, client *batchexec.Client, or
 	}
 
 	// Keep Kiwi's own deep link (bookingURL=="") — it already encodes the return.
-	native := tagNativeRoundTrip(flights, kiwiNativeRoundTripWarning, "")
+	native := tagNativeRoundTrip(flights, kiwiNativeRoundTripWarning, "", date, returnDate)
 	normalizeFlightCurrencies(ctx, native, target, destinations.ConvertCurrency)
 
 	status := models.ProviderStatus{
