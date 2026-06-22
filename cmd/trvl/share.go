@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/atomicjson"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/trips"
 	"github.com/spf13/cobra"
@@ -342,6 +343,9 @@ func lastSearchPath() string {
 }
 
 // saveLastSearch marshals the search result and writes to the cache file.
+// Best-effort: persistence failures are intentionally ignored. The atomic
+// temp-file + fsync + 0600 + rename mechanics live once in internal/atomicjson,
+// which also creates the parent dir (0700) if absent.
 func saveLastSearch(ls *LastSearch) {
 	ls.Timestamp = time.Now()
 
@@ -349,28 +353,7 @@ func saveLastSearch(ls *LastSearch) {
 	if err != nil {
 		return // best-effort
 	}
-
-	path := lastSearchPath()
-	dir := filepath.Dir(path)
-	_ = os.MkdirAll(dir, 0o700)
-
-	// Write atomically via temp file.
-	tmp, err := os.CreateTemp(dir, "last_search.json.tmp-*")
-	if err != nil {
-		return
-	}
-	tmpPath := tmp.Name()
-
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-		return
-	}
-	_ = tmp.Close()
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		_ = os.Remove(tmpPath)
-	}
+	_ = atomicjson.WriteBytes(lastSearchPath(), data)
 }
 
 func loadLastSearch() (*LastSearch, error) {
