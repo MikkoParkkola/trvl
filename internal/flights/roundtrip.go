@@ -96,6 +96,14 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 	statuses = append(statuses, googleStatuses...)
 	nativeRT = append(nativeRT, googleRT...)
 
+	// Kiwi likewise prices a round-trip as one native fare (outbound leg at the
+	// full return total, return chosen at booking). kiwiEligibleOptions wrongly
+	// excluded ReturnDate as unsupported — verified live it is supported — so
+	// query it natively too; its discounted returns then compete in the merge.
+	kiwiRT, kiwiStatuses := searchKiwiNativeRoundTrip(ctx, client, origin, destination, date, returnDate, opts, nativeRoundTripCurrency(opts, composed, outFlights))
+	statuses = append(statuses, kiwiStatuses...)
+	nativeRT = append(nativeRT, kiwiRT...)
+
 	if len(nativeRT) > 0 {
 		merged := make([]models.FlightResult, 0, len(nativeRT)+len(composed))
 		merged = append(merged, nativeRT...)
@@ -355,6 +363,24 @@ func searchGoogleNativeRoundTrip(ctx context.Context, client *batchexec.Client, 
 // mutates the source legs (taggedLegs copies) so cached one-way responses stay
 // untouched. Pure and deterministic so it can be unit-tested without the network.
 func tagGoogleNativeRoundTrip(flights []models.FlightResult, origin, destination, date, returnDate, currency string) []models.FlightResult {
+	return tagNativeRoundTrip(flights, googleNativeRoundTripWarning, buildFlightBookingURL(origin, destination, date, returnDate, currency))
+}
+
+const (
+	googleNativeRoundTripWarning = "native Google round-trip fare: the price is the full round-trip total; the matching return flight is selected at booking"
+	kiwiNativeRoundTripWarning   = "native Kiwi round-trip fare: the price is the full round-trip total; the matching return flight is selected at booking (open the booking link)"
+)
+
+// tagNativeRoundTrip converts raw outbound itineraries from a provider's native
+// round-trip request into honest FareRoundTrip results. Each flight keeps its
+// price (the full round-trip total the provider quoted), gets its leg(s) tagged
+// "outbound" — the matching return flight is chosen at booking, since these
+// providers expose only the outbound itinerary plus the return total — the given
+// warning prepended, and, when bookingURL is non-empty, that round-trip booking
+// URL (empty keeps the provider's own deep link). It never mutates the source
+// legs (taggedLegs copies) so cached one-way responses stay untouched. Pure and
+// deterministic so it can be unit-tested without the network.
+func tagNativeRoundTrip(flights []models.FlightResult, warning, bookingURL string) []models.FlightResult {
 	if len(flights) == 0 {
 		return nil
 	}
@@ -362,13 +388,64 @@ func tagGoogleNativeRoundTrip(flights []models.FlightResult, origin, destination
 	for _, f := range flights {
 		f.FareType = models.FareRoundTrip
 		f.Legs = taggedLegs(f.Legs, "outbound")
-		f.BookingURL = buildFlightBookingURL(origin, destination, date, returnDate, currency)
-		f.Warnings = append([]string{
-			"native Google round-trip fare: the price is the full round-trip total; the matching return flight is selected at booking",
-		}, f.Warnings...)
+		if bookingURL != "" {
+			f.BookingURL = bookingURL
+		}
+		f.Warnings = append([]string{warning}, f.Warnings...)
 		out = append(out, f)
 	}
 	return out
+}
+
+// searchKiwiNativeRoundTrip queries Kiwi for a native round-trip fare (returnDate
+// set) and returns honest FareRoundTrip itineraries. Verified live
+// (TestProbeKiwiRoundTrip / TestProbeKiwiOneWayPrice): Kiwi returns the outbound
+// leg priced at the full round-trip total — HEL->BCN one-way is ~102 EUR, the
+// round-trip request's cheapest is ~296 EUR — with the matching return chosen at
+// booking via the Kiwi deep link. kiwiEligibleOptions wrongly rejects ReturnDate
+// as "unsupported" (the same false premise that hid Google's native round-trip),
+// so this bypasses that one check while still honouring Kiwi's real option limits
+// (airline/alliance/baggage filters) and the production shared-client guard.
+func searchKiwiNativeRoundTrip(ctx context.Context, client *batchexec.Client, origin, destination, date, returnDate string, opts SearchOptions, target string) ([]models.FlightResult, []models.ProviderStatus) {
+	// Eligibility minus the (incorrect) ReturnDate exclusion: respect Kiwi's
+	// genuine filter limits and the shared-client guard, but allow round-trips.
+	probe := opts
+	probe.ReturnDate = ""
+	if !kiwiSearchEligible(client, probe) {
+		return nil, nil // unsupported filters / non-shared client — composition covers it
+	}
+
+	rtOpts := opts
+	rtOpts.ReturnDate = returnDate
+	currency := opts.Currency
+	if currency == "" {
+		currency = "EUR"
+	}
+
+	flights, err := SearchKiwiFlights(ctx, origin, destination, date, currency, rtOpts)
+	if err != nil {
+		return nil, []models.ProviderStatus{{
+			ID:     "native_roundtrip:kiwi",
+			Name:   "Kiwi (native round-trip)",
+			Status: models.ClassifyProviderError(err),
+			Error:  err.Error(),
+		}}
+	}
+
+	// Keep Kiwi's own deep link (bookingURL=="") — it already encodes the return.
+	native := tagNativeRoundTrip(flights, kiwiNativeRoundTripWarning, "")
+	normalizeFlightCurrencies(ctx, native, target, destinations.ConvertCurrency)
+
+	status := models.ProviderStatus{
+		ID:      "native_roundtrip:kiwi",
+		Name:    "Kiwi (native round-trip)",
+		Status:  okOrNoHit(len(native)),
+		Results: len(native),
+	}
+	if len(native) == 0 {
+		status.FixHint = "no native round-trip fare returned; composed pairs used instead"
+	}
+	return native, []models.ProviderStatus{status}
 }
 
 // nativeRoundTripCurrency picks the currency to normalise native round-trip fares

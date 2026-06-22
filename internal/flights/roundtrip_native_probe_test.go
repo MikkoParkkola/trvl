@@ -145,7 +145,10 @@ func TestProbeRoundTripOrchestrator(t *testing.T) {
 		}
 		t.Logf("  [%d] %.2f %s fare=%s provider=%q legs=%d", i, f.Price, f.Currency, f.FareType, f.Provider, len(f.Legs))
 	}
+	for _, s := range res.ProviderStatuses {
+		t.Logf("  status %s: %s results=%d", s.ID, s.Status, s.Results)
+	}
 	if native == 0 {
-		t.Errorf("expected at least one native Google round-trip fare in merged results")
+		t.Errorf("expected at least one native round-trip fare (Google/Kiwi) in merged results")
 	}
 }
