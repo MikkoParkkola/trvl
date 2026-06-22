@@ -294,6 +294,9 @@ func enrichAccommodationNeedFromArgs(need models.AccommodationNeed, args map[str
 	if maxTotal := argFloat(args, "max_total_price", 0); maxTotal > 0 {
 		need.MaxTotalPrice = maxTotal
 	}
+	if stars := argInt(args, "min_stars", argInt(args, "stars", 0)); stars > 0 {
+		need.MinStars = stars
+	}
 	if argBool(args, "must_have_washing_machine", false) {
 		need.RequiredAmenities = appendUniqueStringMCP(need.RequiredAmenities, "washing machine")
 	}
@@ -383,7 +386,21 @@ func selectAccommodationCandidateHotels(hotels []models.HotelResult, limit int, 
 	if limit <= 0 || len(hotels) == 0 {
 		return nil
 	}
-	candidates := append([]models.HotelResult(nil), hotels...)
+	candidates := make([]models.HotelResult, 0, len(hotels))
+	for _, hotel := range hotels {
+		// Enforce min_stars in stage-2 selection. Only drop properties whose
+		// star rating is known AND below the minimum; properties with an
+		// unrated stars value (0) are kept because we cannot prove they fail
+		// the filter — over-pruning would silently hide valid candidates such
+		// as apartments that legitimately carry no star rating.
+		if need.MinStars > 0 && hotel.Stars > 0 && hotel.Stars < need.MinStars {
+			continue
+		}
+		candidates = append(candidates, hotel)
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
 	sort.SliceStable(candidates, func(i, j int) bool {
 		leftScore := accommodationVerificationCandidateScore(candidates[i], need)
 		rightScore := accommodationVerificationCandidateScore(candidates[j], need)

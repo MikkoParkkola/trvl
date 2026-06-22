@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -38,6 +39,28 @@ var fallbackRates = map[string]map[string]float64{
 
 // defaultFXCache is the package-level singleton used by normalizePrice.
 var defaultFXCache = newFXCache()
+
+// ConvertRate returns the FX conversion rate from→to and whether a rate is
+// available. Callers that need to convert several price fields with the same
+// pair (and want to know whether conversion actually happened, so they can
+// rewrite the currency label only on success) should use this instead of
+// normalizePrice. from/to are matched case-insensitively against ISO codes.
+// Identical currencies return (1, true); a pair with no known rate returns
+// (0, false) so the caller can leave the price — and its currency — untouched.
+func ConvertRate(from, to string) (float64, bool) {
+	from = strings.ToUpper(strings.TrimSpace(from))
+	to = strings.ToUpper(strings.TrimSpace(to))
+	if from == "" || to == "" {
+		return 0, false
+	}
+	if from == to {
+		return 1, true
+	}
+	if r := defaultFXCache.getRate(from, to); r > 0 {
+		return r, true
+	}
+	return 0, false
+}
 
 func newFXCache() *fxCache {
 	return &fxCache{
