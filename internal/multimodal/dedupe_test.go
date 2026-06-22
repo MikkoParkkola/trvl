@@ -5,10 +5,10 @@ import "testing"
 func TestDedupeItineraries(t *testing.T) {
 	in := []Itinerary{
 		{ModeChain: "ferry", Currency: "EUR", TotalPrice: 12, DurationMin: 120, Source: "a"},
-		{ModeChain: "ferry", Currency: "EUR", TotalPrice: 12, DurationMin: 120, Source: "b"}, // dup of first
-		{ModeChain: "ferry", Currency: "EUR", TotalPrice: 14, DurationMin: 120, Source: "c"}, // different price
+		{ModeChain: "ferry", Currency: "EUR", TotalPrice: 12, DurationMin: 120, Source: "b"},       // dup of first
+		{ModeChain: "ferry", Currency: "EUR", TotalPrice: 14, DurationMin: 120, Source: "c"},       // different price
 		{ModeChain: "ferry → fly", Currency: "EUR", TotalPrice: 12, DurationMin: 120, Source: "d"}, // different chain
-		{ModeChain: "ferry", Currency: "EUR", TotalPrice: 12, DurationMin: 159, Source: "e"}, // different duration
+		{ModeChain: "ferry", Currency: "EUR", TotalPrice: 12, DurationMin: 159, Source: "e"},       // different duration
 	}
 	out := dedupeItineraries(in)
 	if len(out) != 4 {

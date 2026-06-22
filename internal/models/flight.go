@@ -43,12 +43,12 @@ const (
 
 // FlightResult represents a single flight option with price and routing.
 type FlightResult struct {
-	Price               float64     `json:"price"`
-	Currency            string      `json:"currency"`
-	Duration            int         `json:"duration"` // total minutes
-	Stops               int         `json:"stops"`
-	Provider            string      `json:"provider,omitempty"`
-	SelfConnect         bool        `json:"self_connect,omitempty"`
+	Price       float64 `json:"price"`
+	Currency    string  `json:"currency"`
+	Duration    int     `json:"duration"` // total minutes
+	Stops       int     `json:"stops"`
+	Provider    string  `json:"provider,omitempty"`
+	SelfConnect bool    `json:"self_connect,omitempty"`
 	// FareType distinguishes how a round-trip Price was obtained, so a consumer
 	// never mistakes the expensive case for the cheap one:
 	//   FareRoundTrip   — a single native round-trip fare from one provider; may
