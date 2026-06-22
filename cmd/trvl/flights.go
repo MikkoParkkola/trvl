@@ -579,18 +579,49 @@ func flightWarnings(f models.FlightResult) string {
 
 // flightRoute builds a route string like "HEL -> FRA -> NRT", annotating
 // connection airports with their layover duration, e.g.
-// "HEL -> FRA (2h00) -> NRT". Nonstop flights render as "AMS -> HEL".
+// "HEL -> FRA (2h00) -> NRT". Nonstop flights render as "AMS -> HEL". A composed
+// round-trip (legs tagged outbound/inbound) renders each direction separately
+// joined by "  ||  " so the return is visible, e.g. "HEL -> BCN  ||  BCN -> HEL"
+// — never a single chain that disguises the turnaround as a connection.
 func flightRoute(f models.FlightResult) string {
 	if len(f.Legs) == 0 {
 		return ""
 	}
+	if out, in := splitLegsByDirection(f.Legs); in != nil {
+		return legRoute(out) + "  ||  " + legRoute(in)
+	}
+	return legRoute(f.Legs)
+}
 
-	parts := []string{f.Legs[0].DepartureAirport.Code}
-	for i, leg := range f.Legs {
+// splitLegsByDirection partitions legs into outbound and inbound when the result
+// is a composed round-trip (legs carry a "inbound" Direction tag). For a one-way
+// result (no inbound legs) it returns (legs, nil) so callers render a single
+// chain unchanged.
+func splitLegsByDirection(legs []models.FlightLeg) (outbound, inbound []models.FlightLeg) {
+	for _, leg := range legs {
+		if leg.Direction == "inbound" {
+			inbound = append(inbound, leg)
+		} else {
+			outbound = append(outbound, leg)
+		}
+	}
+	if len(inbound) == 0 {
+		return legs, nil
+	}
+	return outbound, inbound
+}
+
+// legRoute renders one contiguous set of legs as "A -> B (layover) -> C".
+func legRoute(legs []models.FlightLeg) string {
+	if len(legs) == 0 {
+		return ""
+	}
+	parts := []string{legs[0].DepartureAirport.Code}
+	for i, leg := range legs {
 		// Annotate the connection airport (arrival of a non-final leg) with the
 		// layover before the next leg, when the model carries it.
-		if i < len(f.Legs)-1 {
-			lo := f.Legs[i+1].LayoverMinutes
+		if i < len(legs)-1 {
+			lo := legs[i+1].LayoverMinutes
 			if lo > 0 {
 				parts = append(parts, fmt.Sprintf("%s (%s)", leg.ArrivalAirport.Code, formatDuration(lo)))
 				continue

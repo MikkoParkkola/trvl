@@ -94,6 +94,35 @@ func TestComposeRoundTrips_ExcludesUnpriced(t *testing.T) {
 	}
 }
 
+func TestComposeRoundTrips_TagsLegDirection(t *testing.T) {
+	out := []models.FlightResult{owFlight("Google Flights", "EUR", 100, "HEL", "BCN")}
+	in := []models.FlightResult{owFlight("Ryanair", "EUR", 60, "BCN", "HEL")}
+
+	composed, _ := composeRoundTrips(out, in, SearchOptions{})
+	if len(composed) != 1 {
+		t.Fatalf("composed count: got %d, want 1", len(composed))
+	}
+	legs := composed[0].Legs
+	if len(legs) != 2 {
+		t.Fatalf("legs: got %d, want 2", len(legs))
+	}
+	if legs[0].Direction != "outbound" {
+		t.Errorf("first leg Direction: got %q, want outbound", legs[0].Direction)
+	}
+	if legs[1].Direction != "inbound" {
+		t.Errorf("second leg Direction: got %q, want inbound", legs[1].Direction)
+	}
+
+	// The source one-way leg slices must stay untagged — they are cached/shared
+	// upstream and a leaked round-trip tag would corrupt a later one-way response.
+	if out[0].Legs[0].Direction != "" {
+		t.Errorf("source outbound leg was mutated: Direction=%q", out[0].Legs[0].Direction)
+	}
+	if in[0].Legs[0].Direction != "" {
+		t.Errorf("source inbound leg was mutated: Direction=%q", in[0].Legs[0].Direction)
+	}
+}
+
 func TestComposeRoundTrips_SkipsCurrencyMismatch(t *testing.T) {
 	out := []models.FlightResult{owFlight("A", "USD", 100, "HEL", "BCN")}
 	in := []models.FlightResult{owFlight("C", "EUR", 50, "BCN", "HEL")}

@@ -23,6 +23,12 @@ type FlightLeg struct {
 	FlightNumber     string      `json:"flight_number"`
 	Aircraft         string      `json:"aircraft,omitempty"`        // e.g. "Airbus A350"
 	LayoverMinutes   int         `json:"layover_minutes,omitempty"` // time between arrival of previous leg and this departure (0 for first leg)
+	// Direction marks which half of a round-trip this leg belongs to:
+	// "outbound" (origin->destination) or "inbound" (the return leg). Empty for
+	// a one-way search, so single-direction results are byte-unchanged. Set by
+	// the round-trip composer so consumers can distinguish the return legs from
+	// the outbound legs in the otherwise-flat Legs slice.
+	Direction string `json:"direction,omitempty"`
 }
 
 // FlightResult represents a single flight option with price and routing.
