@@ -108,3 +108,59 @@ func containsString(values []string, want string) bool {
 	}
 	return false
 }
+
+func TestEvaluateAccommodationOfferFlagsMultiProviderMixedInventory(t *testing.T) {
+	need := AccommodationNeed{Adults: 2, Currency: "EUR"}
+	checkedAt := time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC)
+	offer := EvaluateAccommodationOffer(need, AccommodationOffer{
+		PropertyName:          "Mixed Inn",
+		OccupancyAdults:       2,
+		TotalPrice:            420,
+		Currency:              "EUR",
+		PriceBasis:            PriceBasisRoomTotal,
+		PriceConfidence:       PriceConfidenceRoomLevel,
+		InventoryCompleteness: RoomInventoryCompletenessMultiProviderMixed,
+		CheckedAt:             checkedAt,
+	}, checkedAt)
+	if !containsString(offer.UnknownCriteria, "room_inventory") {
+		t.Fatalf("UnknownCriteria = %v, want room_inventory for multi_provider_mixed", offer.UnknownCriteria)
+	}
+}
+
+func TestEvaluateAccommodationOfferDoesNotFabricateFreshnessForUnverified(t *testing.T) {
+	need := AccommodationNeed{Adults: 2, Currency: "EUR"}
+	now := time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC)
+	offer := EvaluateAccommodationOffer(need, AccommodationOffer{
+		PropertyName:    "Lead-In Lodge",
+		OccupancyAdults: 2,
+		TotalPrice:      300,
+		Currency:        "EUR",
+		PriceBasis:      PriceBasisLeadIn,
+		PriceConfidence: PriceConfidenceUnverified,
+	}, now)
+	if !offer.CheckedAt.IsZero() {
+		t.Fatalf("CheckedAt = %v, want zero (no fabricated freshness for unverified price)", offer.CheckedAt)
+	}
+	if offer.Freshness != "" {
+		t.Fatalf("Freshness = %q, want empty for an unverified price with no check time", offer.Freshness)
+	}
+	if offer.BookingReady() {
+		t.Fatal("BookingReady = true, want false for unverified price")
+	}
+}
+
+func TestEvaluateAccommodationOfferStampsVerifiedPrice(t *testing.T) {
+	need := AccommodationNeed{Adults: 2, Currency: "EUR"}
+	now := time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC)
+	offer := EvaluateAccommodationOffer(need, AccommodationOffer{
+		PropertyName:    "Verified Villa",
+		OccupancyAdults: 2,
+		TotalPrice:      300,
+		Currency:        "EUR",
+		PriceBasis:      PriceBasisRoomTotal,
+		PriceConfidence: PriceConfidenceVerified,
+	}, now)
+	if offer.CheckedAt.IsZero() {
+		t.Fatal("CheckedAt = zero, want stamped for a verified price")
+	}
+}

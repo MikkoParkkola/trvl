@@ -142,6 +142,25 @@ func snapshotAuthValuesLocked(pc *providerClient) map[string]string {
 	return copyAuthValues(pc.authValues)
 }
 
+// replaceAuthValuesLocked refreshes pc.authValues from a recovered response. It
+// runs the extractions off-lock (applyURLExtractions performs network I/O) and
+// then clears+swaps the results in under pc.authMu.Lock. Readers hold
+// pc.authMu.RLock, so the older unsynchronized clear+write here raced concurrent
+// searches sharing the providerClient.
+func replaceAuthValuesLocked(ctx context.Context, pc *providerClient, auth *AuthConfig, resp *http.Response, body []byte) {
+	fresh := map[string]string{}
+	applyExtractions(auth.Extractions, resp, body, fresh)
+	applyURLExtractions(ctx, pc.client, auth.Extractions, fresh)
+	pc.authMu.Lock()
+	defer pc.authMu.Unlock()
+	for k := range pc.authValues {
+		delete(pc.authValues, k)
+	}
+	for k, v := range fresh {
+		pc.authValues[k] = v
+	}
+}
+
 // tryBrowserCookieRetry is Tier 3: read cookies from the user's disk-backed
 // browser stores, seed them into the client jar, and retry preflight. Returns
 // true on HTTP 2xx + successful extraction. The auth parameter carries the
@@ -159,11 +178,7 @@ func tryBrowserCookieRetry(ctx context.Context, pc *providerClient, auth *AuthCo
 	if isAkamaiChallenge(resp2.StatusCode, body2) {
 		return false
 	}
-	for k := range pc.authValues {
-		delete(pc.authValues, k)
-	}
-	applyExtractions(auth.Extractions, resp2, body2, pc.authValues)
-	applyURLExtractions(ctx, pc.client, auth.Extractions, pc.authValues)
+	replaceAuthValuesLocked(ctx, pc, auth, resp2, body2)
 	return true
 }
 
@@ -202,11 +217,7 @@ func tryWAFSolve(ctx context.Context, pc *providerClient, auth *AuthConfig, stat
 	if isAkamaiChallenge(resp2.StatusCode, body2) {
 		return false
 	}
-	for k := range pc.authValues {
-		delete(pc.authValues, k)
-	}
-	applyExtractions(auth.Extractions, resp2, body2, pc.authValues)
-	applyURLExtractions(ctx, pc.client, auth.Extractions, pc.authValues)
+	replaceAuthValuesLocked(ctx, pc, auth, resp2, body2)
 	return true
 }
 
@@ -334,11 +345,7 @@ func finishEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig
 			"provider", pc.config.ID)
 		return false
 	}
-	for k := range pc.authValues {
-		delete(pc.authValues, k)
-	}
-	applyExtractions(auth.Extractions, resp2, body2, pc.authValues)
-	applyURLExtractions(ctx, pc.client, auth.Extractions, pc.authValues)
+	replaceAuthValuesLocked(ctx, pc, auth, resp2, body2)
 	return true
 }
 

@@ -132,6 +132,43 @@ func TestTagNativeRoundTrip_TagsInboundByDate(t *testing.T) {
 	}
 }
 
+func TestDirectionTaggedLegs_SameDayReturn(t *testing.T) {
+	// returnDate == departDate cannot be split by date: every leg stays outbound
+	// and hasInbound is false (we never fabricate a return half).
+	legs := []models.FlightLeg{
+		{DepartureTime: "2026-07-15T08:05"},
+		{DepartureTime: "2026-07-15T20:40"},
+	}
+	tagged, hasInbound := directionTaggedLegs(legs, "2026-07-15", "2026-07-15")
+	if hasInbound {
+		t.Errorf("same-day return must not produce an inbound leg")
+	}
+	for i, leg := range tagged {
+		if leg.Direction != "outbound" {
+			t.Errorf("leg %d: got %q, want outbound", i, leg.Direction)
+		}
+	}
+}
+
+func TestDirectionTaggedLegs_InvertedDates(t *testing.T) {
+	// returnDate before departDate is invalid/inverted input. The split must be
+	// suppressed so a leg on the departure date is NOT mislabeled inbound just
+	// because its date string sorts after the (earlier) returnDate.
+	legs := []models.FlightLeg{
+		{DepartureTime: "2026-07-22T08:05"}, // departure-date leg
+		{DepartureTime: "2026-07-22T20:40"},
+	}
+	tagged, hasInbound := directionTaggedLegs(legs, "2026-07-22", "2026-07-15")
+	if hasInbound {
+		t.Errorf("inverted dates must not produce an inbound leg")
+	}
+	for i, leg := range tagged {
+		if leg.Direction != "outbound" {
+			t.Errorf("leg %d: got %q, want outbound (inverted dates -> safe default)", i, leg.Direction)
+		}
+	}
+}
+
 func TestComposeRoundTrips_SumsAndConcatenates(t *testing.T) {
 	out := []models.FlightResult{owFlight("Google Flights", "EUR", 100, "HEL", "BCN")}
 	in := []models.FlightResult{owFlight("Ryanair", "EUR", 60, "BCN", "HEL")}

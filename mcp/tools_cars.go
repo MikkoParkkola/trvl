@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/cars"
@@ -106,7 +107,10 @@ func carEndpointSchema() map[string]interface{} {
 }
 
 func handleSearchCars(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
-	prefs, _ := preferences.Load()
+	prefs, prefsErr := preferences.Load()
+	if prefsErr != nil {
+		slog.Warn("search_cars: preferences load failed, continuing without prefs", "err", prefsErr)
+	}
 	currency := strings.ToUpper(argString(args, "currency"))
 	if currency == "" && prefs != nil {
 		currency = strings.ToUpper(prefs.DisplayCurrency)

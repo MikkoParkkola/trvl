@@ -407,15 +407,19 @@ func tagNativeRoundTrip(flights []models.FlightResult, warning, bookingURL, depa
 }
 
 // directionTaggedLegs returns a copy of legs with each leg's Direction set to
-// "outbound" or "inbound" by comparing its departure date to returnDate: a leg
-// departing on or after returnDate is the return half. When returnDate is empty
-// or equals departDate (a same-day turn we cannot split by date), or a leg's
-// departure time is unparseable, the leg stays "outbound" — the safe,
-// non-fabricating default. hasInbound reports whether any inbound leg was found.
+// "outbound"/"inbound" by comparing its departure date to returnDate: a leg
+// departing on or after returnDate is the return half. The split only applies
+// when returnDate is strictly after departDate. Empty returnDate, a same-day
+// turn (returnDate==departDate, not splittable by date), inverted input
+// (returnDate<departDate), and unparseable leg times all keep the leg
+// "outbound" — the safe, non-fabricating default. hasInbound reports whether
+// any inbound leg was found.
 func directionTaggedLegs(legs []models.FlightLeg, departDate, returnDate string) (tagged []models.FlightLeg, hasInbound bool) {
 	out := make([]models.FlightLeg, len(legs))
 	copy(out, legs)
-	splittable := returnDate != "" && returnDate != departDate
+	// ISO calendar dates compare correctly as plain strings, so a strict
+	// ">" rejects both same-day (==) and inverted (<) date pairs in one check.
+	splittable := returnDate != "" && returnDate > departDate
 	for i := range out {
 		dir := "outbound"
 		if splittable {
