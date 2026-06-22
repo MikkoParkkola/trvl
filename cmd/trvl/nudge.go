@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"golang.org/x/term"
+
+	"github.com/MikkoParkkola/trvl/internal/atomicjson"
 )
 
 // nudgeState tracks star-nudge state across sessions.
@@ -57,24 +59,9 @@ func loadNudgeState(path string) nudgeState {
 	return s
 }
 
-// saveNudgeState writes the nudge state to disk atomically.
+// saveNudgeState writes the nudge state to disk atomically (best-effort).
 func saveNudgeState(path string, s nudgeState) {
-	dir := filepath.Dir(path)
-	_ = os.MkdirAll(dir, 0o700)
-
-	data, err := json.Marshal(s)
-	if err != nil {
-		return
-	}
-
-	tmp, err := os.CreateTemp(dir, "nudge-*.tmp")
-	if err != nil {
-		return
-	}
-	tmpName := tmp.Name()
-	_, _ = tmp.Write(data)
-	_ = tmp.Close()
-	_ = os.Rename(tmpName, path)
+	_ = atomicjson.Write(path, s)
 }
 
 // shouldShowNudge decides whether to display the star nudge.
