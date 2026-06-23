@@ -16,8 +16,14 @@ type GroundSearchResult struct {
 
 // GroundRoute represents a single bus or train connection.
 type GroundRoute struct {
-	Provider   string      `json:"provider"` // "flixbus", "regiojet"
-	Type       string      `json:"type"`     // "bus", "train", "mixed"
+	Provider string `json:"provider"` // "flixbus", "regiojet"
+	Type     string `json:"type"`     // "bus", "train", "mixed"
+	// Direction marks which half of a round-trip this route belongs to:
+	// "outbound" (origin->destination on the departure date) or "inbound"
+	// (destination->origin on the return date). Empty for one-way searches.
+	// Mirrors models.FlightLeg.Direction so round-trip ground results are
+	// honestly labelled rather than silently flattening the return leg away.
+	Direction  string      `json:"direction,omitempty"`
 	Price      float64     `json:"price"`
 	PriceMax   float64     `json:"price_max,omitempty"` // RegioJet gives price ranges
 	Currency   string      `json:"currency"`

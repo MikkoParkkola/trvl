@@ -22,6 +22,7 @@ func searchGroundTool() ToolDef {
 			Properties: map[string]Property{
 				"from":                    {Type: "string", Description: "Departure city name (e.g. Prague, Helsinki, Vienna)"},
 				"to":                      {Type: "string", Description: "Arrival city name"},
+				"return_date":             {Type: "string", Description: "Return date for a round-trip (ISO calendar date, same format as date); omit for one-way. Outbound and inbound routes are tagged with a direction field."},
 				"date":                    {Type: "string", Description: "Departure date (YYYY-MM-DD)"},
 				"currency":                {Type: "string", Description: "Price currency (default: EUR)"},
 				"type":                    {Type: "string", Description: "Filter: bus, train, ferry, or empty for all"},
@@ -60,6 +61,7 @@ func groundRoutesOutputSchema() interface{} {
 		"properties": map[string]interface{}{
 			"provider":         schemaString(),
 			"type":             schemaString(),
+			"direction":        schemaString(),
 			"price":            schemaNum(),
 			"price_max":        schemaNum(),
 			"currency":         schemaString(),
@@ -134,6 +136,7 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 
 	opts := ground.SearchOptions{
 		Currency:              argString(args, "currency"),
+		ReturnDate:            argString(args, "return_date"),
 		MaxPrice:              argFloat(args, "max_price", 0),
 		Type:                  argString(args, "type"),
 		AllowBrowserFallbacks: argBool(args, "allow_browser_fallbacks", false),
