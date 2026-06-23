@@ -45,6 +45,42 @@ func TestSearchPagePriceReachesRoomLevel(t *testing.T) {
 	}
 }
 
+func TestHasVerifiedRoom(t *testing.T) {
+	// Nightly-only "similar" match -> room-level but NOT verified, so SerpAPI
+	// should still be consulted to try to upgrade it.
+	weak := []RoomType{{
+		Name:            "Standard Room",
+		Price:           514,
+		NightlyPrice:    514,
+		Currency:        "EUR",
+		Provider:        "Google Hotels",
+		MatchConfidence: models.RoomInventoryMatchSimilar,
+	}}
+	if hasVerifiedRoom(weak) {
+		t.Fatal("nightly-only similar match must not count as verified (SerpAPI upgrade should fire)")
+	}
+
+	taxIncluded := true
+	// Tax-inclusive total on a real room match -> verified, so SerpAPI quota
+	// should be conserved.
+	strong := []RoomType{{
+		Name:              "Deluxe Room",
+		Price:             600,
+		TotalPrice:        600,
+		TaxesFeesIncluded: &taxIncluded,
+		Currency:          "EUR",
+		Provider:          "Booking.com",
+		MatchConfidence:   models.RoomInventoryMatchExact,
+	}}
+	if !hasVerifiedRoom(strong) {
+		t.Fatal("tax-inclusive total on an exact match must count as verified (skip SerpAPI)")
+	}
+
+	if hasVerifiedRoom(nil) {
+		t.Fatal("empty room set is not verified")
+	}
+}
+
 func TestGetRoomAvailability_ParallelBookingFetch(t *testing.T) {
 	origFetch := FetchBookingRooms
 	FetchBookingRooms = func(ctx context.Context, url, checkIn, checkOut, currency string) ([]RoomType, error) {

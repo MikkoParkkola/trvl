@@ -521,3 +521,49 @@ func containsString(values []string, want string) bool {
 	}
 	return false
 }
+
+// TestSearchHotelsWithOptions_PaginationToken pins the page-2 pagination
+// contract used to page google_hotels past page 1 until a named property is
+// found: a prior response's next_page_token is forwarded as a query param on
+// the follow-up request, and the serpapi_pagination.next_page_token field of
+// the response is parsed back so the caller can keep paging. Fails-before /
+// passes-after the SerpapiPagination struct field + the next_page_token query
+// wiring.
+func TestSearchHotelsWithOptions_PaginationToken(t *testing.T) {
+	t.Setenv("SERPAPI_KEY", "test_key")
+	var gotToken string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.URL.Query().Get("next_page_token")
+		resp := Response{
+			SearchMetadata: struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			}{Status: "Success"},
+			Properties: []Hotel{{Name: "Paged Hotel"}},
+		}
+		resp.SerpapiPagination.NextPageToken = "NEXT_PAGE_3"
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	origSearch := searchURL
+	searchURL = srv.URL + "/search"
+	defer func() { searchURL = origSearch }()
+
+	resp, err := SearchHotelsWithOptions(context.Background(), SearchOptions{
+		Query:         "Test",
+		CheckIn:       "2026-01-01",
+		CheckOut:      "2026-01-08",
+		Currency:      "EUR",
+		NextPageToken: "PAGE_2",
+	})
+	if err != nil {
+		t.Fatalf("SearchHotelsWithOptions failed: %v", err)
+	}
+	if gotToken != "PAGE_2" {
+		t.Fatalf("outgoing next_page_token = %q, want PAGE_2 (token not forwarded for page-2 fetch)", gotToken)
+	}
+	if resp.SerpapiPagination.NextPageToken != "NEXT_PAGE_3" {
+		t.Fatalf("parsed next_page_token = %q, want NEXT_PAGE_3 (pagination field not parsed)", resp.SerpapiPagination.NextPageToken)
+	}
+}

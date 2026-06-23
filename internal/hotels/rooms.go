@@ -144,11 +144,27 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		rooms, hotelName = trySearchPageFallback(ctx, opts)
 	}
 	notice := ""
-	if len(rooms) == 0 {
-		var serpName string
-		rooms, serpName, notice = trySerpAPIRoomFallback(ctx, opts)
-		if hotelName == "" {
-			hotelName = serpName
+	// SerpAPI is the richest room source we have (named rooms, verified
+	// tax-inclusive prices, refundability) but every lookup spends metered
+	// quota. Consult it only when the free Google paths could not produce a
+	// verified room-level price -- i.e. nothing at all, or only sub-verified
+	// lead-ins / "similar" matches. This upgrades a weak Google result (e.g. a
+	// nightly-only "similar" price that downgrades to caution) into a
+	// booking-ready offer, without burning a search when Google already
+	// returned a verified room.
+	if len(rooms) == 0 || !hasVerifiedRoom(rooms) {
+		serpRooms, serpName, serpNotice := trySerpAPIRoomFallback(ctx, opts)
+		if len(serpRooms) > 0 {
+			if len(rooms) == 0 {
+				rooms = serpRooms
+			} else {
+				// Keep Google's lead-ins, add SerpAPI's verified rooms.
+				rooms = mergeRoomTypes(rooms, serpRooms)
+			}
+			notice = serpNotice
+			if hotelName == "" {
+				hotelName = serpName
+			}
 		}
 	}
 
@@ -610,6 +626,19 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 	}
 
 	return merged
+}
+
+// hasVerifiedRoom reports whether any room already carries a verified,
+// tax-inclusive room-level price -- the bar SerpAPI would otherwise be
+// consulted to reach. Used to spend SerpAPI quota only when it can upgrade an
+// otherwise sub-verified result.
+func hasVerifiedRoom(rooms []RoomType) bool {
+	for _, r := range rooms {
+		if roomInventoryQuote(r).PriceConfidence == models.PriceConfidenceVerified {
+			return true
+		}
+	}
+	return false
 }
 
 func roomInventoryQuote(room RoomType) models.RoomInventoryQuote {

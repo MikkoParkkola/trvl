@@ -363,6 +363,71 @@ func TestSerpAPIPriceFallbackMatchesRequestedPropertyByName(t *testing.T) {
 	}
 }
 
+// TestSerpAPIRoomFallbackPaginatesToFindRequestedHotel locks the page-forward
+// behaviour: when the requested property is not on page 1 but a next-page token
+// exists, the fallback issues a second search with that token and resolves the
+// match from the later page.
+func TestSerpAPIRoomFallbackPaginatesToFindRequestedHotel(t *testing.T) {
+	origKey := serpapiAPIKeyFunc
+	origResolve := serpapiResolveGoogleMapsPlaceFunc
+	origSearch := serpapiSearchHotelsFunc
+	origDetails := serpapiGetPropertyDetailsFunc
+	t.Cleanup(func() {
+		serpapiAPIKeyFunc = origKey
+		serpapiResolveGoogleMapsPlaceFunc = origResolve
+		serpapiSearchHotelsFunc = origSearch
+		serpapiGetPropertyDetailsFunc = origDetails
+	})
+
+	target := serpapi.Hotel{
+		Name:      "Target Hotel",
+		TotalRate: serpapi.Rate{Extracted: 500},
+		Prices:    []serpapi.PriceOption{{Source: "Booking.com", TotalRate: serpapi.Rate{Extracted: 500}}},
+	}
+	serpapiAPIKeyFunc = func() string { return "test-key" }
+	serpapiResolveGoogleMapsPlaceFunc = func(_ context.Context, _ string) (*serpapi.MapsPlace, error) {
+		return &serpapi.MapsPlace{Title: "Target Hotel", Address: "Carrer X, 08001 Barcelona, Spain"}, nil
+	}
+	var searchCalls int
+	var page2Token string
+	serpapiSearchHotelsFunc = func(_ context.Context, opts serpapi.SearchOptions) (*serpapi.Response, error) {
+		searchCalls++
+		if searchCalls == 1 {
+			resp := &serpapi.Response{Properties: []serpapi.Hotel{{Name: "Some Other Hotel"}}}
+			resp.SerpapiPagination.NextPageToken = "PAGE2"
+			return resp, nil
+		}
+		page2Token = opts.NextPageToken
+		return &serpapi.Response{Properties: []serpapi.Hotel{target}}, nil
+	}
+	serpapiGetPropertyDetailsFunc = func(_ context.Context, _ serpapi.SearchOptions, _ string) (*serpapi.Hotel, error) {
+		return &target, nil
+	}
+
+	rooms, name, notice := trySerpAPIRoomFallback(context.Background(), RoomSearchOptions{
+		HotelID:  "/g/xyz",
+		Location: "Target Hotel, Barcelona",
+		CheckIn:  "2026-07-15",
+		CheckOut: "2026-07-18",
+		Currency: "EUR",
+	})
+	if searchCalls != 2 {
+		t.Fatalf("search calls = %d, want 2 (page 1 missed, page 2 found)", searchCalls)
+	}
+	if page2Token != "PAGE2" {
+		t.Fatalf("page-2 search token = %q, want PAGE2", page2Token)
+	}
+	if len(rooms) == 0 {
+		t.Fatal("rooms = 0, want the paginated match to yield rooms")
+	}
+	if name != "Target Hotel" {
+		t.Fatalf("name = %q, want Target Hotel", name)
+	}
+	if notice == "" {
+		t.Fatal("notice empty, want serpapi fallback notice")
+	}
+}
+
 func stubSerpAPIFallback(t *testing.T, place *serpapi.MapsPlace, response *serpapi.Response) func() {
 	return stubSerpAPIFallbackWithDetail(t, place, response, nil, 0)
 }
