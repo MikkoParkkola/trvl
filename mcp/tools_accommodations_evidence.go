@@ -435,9 +435,16 @@ func accommodationVerificationCandidateScore(hotel models.HotelResult, need mode
 	} else if strings.TrimSpace(hotel.HotelID) != "" {
 		score += 10
 	}
-	if accommodationBookingURLSupportsRoomLookup(hotel.BookingURL) {
+	// Score the URL that the room lookup will actually use, not the user-facing
+	// primary. selectPrimaryHotelSource overwrites hotel.BookingURL with the
+	// cheapest source (often Agoda/Google), which would under-score a hotel that
+	// genuinely carries a Booking.com source among hotel.Sources — the only
+	// source that yields exact room matches. Under-scoring drops it below the
+	// top-N candidate pool, so the room lookup never runs on it (defect 2, #277).
+	roomLookupURL := accommodationRoomLookupBookingURL(hotel)
+	if accommodationBookingURLSupportsRoomLookup(roomLookupURL) {
 		score += 60
-	} else if strings.TrimSpace(hotel.BookingURL) != "" {
+	} else if strings.TrimSpace(roomLookupURL) != "" {
 		score += 15
 	}
 	bestRoomScore := 0
@@ -482,6 +489,26 @@ func accommodationHotelIDSupportsRoomLookup(hotel models.HotelResult) bool {
 func accommodationBookingURLSupportsRoomLookup(rawURL string) bool {
 	value := strings.ToLower(strings.TrimSpace(rawURL))
 	return strings.Contains(value, "booking.com/")
+}
+
+// accommodationRoomLookupBookingURL returns the best Booking.com property URL
+// to drive a room-level lookup. The user-facing hotel.BookingURL is set to the
+// cheapest primary source (often Agoda/Google), which fails the booking.com/
+// gate and skips Booking.com — the only source that yields exact room matches.
+// When a Booking.com source exists among the hotel's other sources, recover its
+// URL so the room fetch can actually run. Falls back to hotel.BookingURL
+// unchanged when no Booking.com source is present, preserving behaviour for
+// non-Booking hotels (defect 2, #277).
+func accommodationRoomLookupBookingURL(hotel models.HotelResult) string {
+	if accommodationBookingURLSupportsRoomLookup(hotel.BookingURL) {
+		return hotel.BookingURL
+	}
+	for _, s := range hotel.Sources {
+		if accommodationBookingURLSupportsRoomLookup(s.BookingURL) {
+			return s.BookingURL
+		}
+	}
+	return hotel.BookingURL
 }
 
 func accommodationSearchRoomTrustScore(room models.Room) int {
