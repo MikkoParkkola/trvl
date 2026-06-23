@@ -435,6 +435,15 @@ func accommodationVerificationCandidateScore(hotel models.HotelResult, need mode
 	} else if strings.TrimSpace(hotel.HotelID) != "" {
 		score += 10
 	}
+	// Reward a genuine Google place ID. The Google price/detail RPCs only
+	// resolve IDs shaped "/g/..." or "ChIJ..." into an exact-room partner
+	// matrix; apartment/OTA candidates (Flatio numeric, Airbnb base64,
+	// Wunderflats hex) carry IDs Google cannot resolve. Without this bonus those
+	// out-rank resolvable Google hotels, so the now-wired room-price RPC never
+	// fires on a property it could actually price (#277 room-data follow-up).
+	if accommodationHotelIDIsGooglePlaceID(hotel) {
+		score += 50
+	}
 	// Score the URL that the room lookup will actually use, not the user-facing
 	// primary. selectPrimaryHotelSource overwrites hotel.BookingURL with the
 	// cheapest source (often Agoda/Google), which would under-score a hotel that
@@ -473,6 +482,14 @@ func accommodationVerificationCandidateScore(hotel models.HotelResult, need mode
 		score -= 15
 	}
 	return score
+}
+
+// accommodationHotelIDIsGooglePlaceID reports whether the hotel carries a
+// Google place ID ("/g/..." or "ChIJ..."), the only ID shape the Google
+// price/detail RPCs can resolve into an exact-room partner matrix.
+func accommodationHotelIDIsGooglePlaceID(hotel models.HotelResult) bool {
+	id := strings.TrimSpace(hotel.HotelID)
+	return strings.HasPrefix(id, "/g/") || strings.HasPrefix(id, "ChIJ")
 }
 
 func accommodationHotelIDSupportsRoomLookup(hotel models.HotelResult) bool {

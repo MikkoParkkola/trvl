@@ -218,3 +218,31 @@ func TestSelectAccommodationCandidateHotelsRanksBookingBacked(t *testing.T) {
 		t.Fatalf("booking-backed hotel must rank into the top candidate, got %q", got[0].Name)
 	}
 }
+
+// TestSelectAccommodationCandidateHotelsRanksGooglePlaceID covers the #277
+// room-data follow-up: a hotel carrying a genuine Google place ID ("/g/..." or
+// "ChIJ...") must out-rank apartment/OTA candidates whose IDs Google cannot
+// resolve, so the wired room-price RPC actually fires on a priceable property.
+func TestSelectAccommodationCandidateHotelsRanksGooglePlaceID(t *testing.T) {
+	googleHotel := models.HotelResult{Name: "Google Hotel", HotelID: "/g/11b6d4_v_4"}
+	flatioApt := models.HotelResult{Name: "Flatio Apartment", HotelID: "125151", Sources: []models.PriceSource{{Provider: "flatio"}}}
+	airbnbApt := models.HotelResult{Name: "Airbnb Loft", HotelID: "QWlyYm5iSUQ=", Sources: []models.PriceSource{{Provider: "airbnb"}}}
+
+	// Apartments listed first to prove ranking, not input order, decides.
+	got := selectAccommodationCandidateHotels([]models.HotelResult{flatioApt, airbnbApt, googleHotel}, 1, models.AccommodationNeed{})
+	if len(got) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(got))
+	}
+	if got[0].Name != "Google Hotel" {
+		t.Fatalf("Google place-ID hotel must rank into the top candidate over apartments, got %q", got[0].Name)
+	}
+
+	// A ChIJ-shaped place ID is treated identically.
+	chij := models.HotelResult{Name: "ChIJ Hotel", HotelID: "ChIJN1t_tDeuEmsRUsoyG83frY4"}
+	if !accommodationHotelIDIsGooglePlaceID(chij) {
+		t.Fatal("ChIJ-prefixed ID must be recognised as a Google place ID")
+	}
+	if accommodationHotelIDIsGooglePlaceID(flatioApt) {
+		t.Fatal("apartment numeric ID must not be recognised as a Google place ID")
+	}
+}
