@@ -418,6 +418,8 @@ func accommodationTypeFromHotelOptions(opts hotels.HotelSearchOptions) string {
 
 func accommodationTypeFromString(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "hotel", "hotel_room", "hotel room":
+		return models.AccommodationTypeHotelRoom
 	case "apartment", "entire_home", "entire home", "entire_apartment", "vacation_rental":
 		return models.AccommodationTypeEntireApartment
 	case "private", "private_room", "private room":
@@ -429,7 +431,10 @@ func accommodationTypeFromString(value string) string {
 	case "villa":
 		return models.AccommodationTypeVilla
 	default:
-		return models.AccommodationTypeHotelRoom
+		// Honest default: an unrecognized or missing type string maps to ""
+		// (not evidenced), never a guessed "hotel_room". Callers decide what an
+		// empty type means; none of them fabricate a match from it.
+		return ""
 	}
 }
 
@@ -440,7 +445,12 @@ func offerAccommodationType(hotel models.HotelResult, need models.AccommodationN
 	if need.AccommodationType != "" {
 		return need.AccommodationType
 	}
-	return models.AccommodationTypeHotelRoom
+	// No property-type evidence and the caller stated no preference: leave the
+	// type empty rather than guessing "hotel_room". An unspecified field means
+	// all types are allowed, and a missing value must read as missing.
+	// EvaluateAccommodationOffer reports "" honestly as a not-evidenced field
+	// instead of a fabricated match.
+	return ""
 }
 
 func hotelAccommodationEvidenceType(hotel models.HotelResult) string {
