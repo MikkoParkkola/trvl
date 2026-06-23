@@ -16,7 +16,7 @@ trvl is for agent workflows: repeated tool calls, structured inputs and outputs,
 - ❌ No public evidence of that capability in the linked product surface, or the linked source describes a different human-facing surface.
 - 🟡 Conservative inference from current public docs or directory listings; not a benchmark.
 
-## Named Competitors
+## Named Alternatives
 
 | Alternative | Source | What it is good at | Where trvl is stronger | trvl gap or limitation |
 |---|---|---|---|---|
