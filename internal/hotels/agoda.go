@@ -530,6 +530,25 @@ func parseAgodaSearch(resp *agodaSearchResponse, opts HotelSearchOptions) []mode
 				BookingURL: hr.BookingURL,
 				PriceBasis: "room_nightly",
 			}}
+			// Agoda's per-room-per-night exclusive price is a genuine room rate,
+			// not a property lead-in, so surface it as room-level inventory and
+			// let it reach the booking-ready gate instead of collapsing to a
+			// property-level source. Tagged "similar" (not "exact") because the
+			// citySearch response gives a room rate without a nameable room
+			// identity. One room only: emitting the whole price ladder of
+			// identity-less rooms would trip the multi-provider-mixed
+			// completeness flag and re-block the offer.
+			hr.RoomTypes = []models.Room{{
+				Name:            "Agoda room rate",
+				Price:           price,
+				NightlyPrice:    price,
+				Currency:        currency,
+				Provider:        "agoda",
+				ProviderURL:     hr.BookingURL,
+				MatchConfidence: models.RoomInventoryMatchSimilar,
+				PriceBasis:      models.PriceBasisRoomNightly,
+				PriceConfidence: models.PriceConfidenceRoomLevel,
+			}}
 		}
 
 		out = append(out, hr)

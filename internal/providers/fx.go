@@ -37,6 +37,14 @@ var fallbackRates = map[string]map[string]float64{
 	"GBP": {"EUR": 1.16, "USD": 1.38},
 }
 
+// peggedToEUR holds irrevocable fixed conversion rates for currencies that
+// adopted the euro: the value is "legacy units per 1 EUR". The ECB/Frankfurter
+// feed stops publishing these after adoption, so without this a still-quoted
+// HRK price (Croatia, euro from 2023) is rejected as unconvertible and its
+// offer dropped for currency mismatch. These rates are legally fixed forever.
+// ponytail: HRK only — the one observed leaking; add another when it shows up.
+var peggedToEUR = map[string]float64{"HRK": 7.53450}
+
 // defaultFXCache is the package-level singleton used by normalizePrice.
 var defaultFXCache = newFXCache()
 
@@ -59,7 +67,45 @@ func ConvertRate(from, to string) (float64, bool) {
 	if r := defaultFXCache.getRate(from, to); r > 0 {
 		return r, true
 	}
+	if r, ok := convertViaPeg(from, to); ok {
+		return r, true
+	}
 	return 0, false
+}
+
+// convertViaPeg handles currencies with a legally fixed euro peg that the live
+// FX feed no longer carries. It triangulates through EUR: the peg supplies the
+// fixed leg and the cache supplies the other. Returns (0,false) when neither
+// side is pegged or the non-pegged leg has no rate.
+func convertViaPeg(from, to string) (float64, bool) {
+	fromPeg, fromPegged := peggedToEUR[from]
+	toPeg, toPegged := peggedToEUR[to]
+	if !fromPegged && !toPegged {
+		return 0, false
+	}
+	// from→EUR
+	fromToEUR := 1.0
+	if fromPegged {
+		fromToEUR = 1 / fromPeg
+	} else if from != "EUR" {
+		if r := defaultFXCache.getRate(from, "EUR"); r > 0 {
+			fromToEUR = r
+		} else {
+			return 0, false
+		}
+	}
+	// EUR→to
+	eurToTo := 1.0
+	if toPegged {
+		eurToTo = toPeg
+	} else if to != "EUR" {
+		if r := defaultFXCache.getRate("EUR", to); r > 0 {
+			eurToTo = r
+		} else {
+			return 0, false
+		}
+	}
+	return fromToEUR * eurToTo, true
 }
 
 func newFXCache() *fxCache {
