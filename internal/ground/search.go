@@ -79,6 +79,12 @@ type SearchOptions struct {
 	NoCache               bool     // bypass response cache
 	AllowBrowserFallbacks bool     // opt in to browser/curl/cookie-assisted providers
 
+	// ReturnDate, when non-empty (ISO calendar date), turns the search into a
+	// round-trip: the outbound leg (origin->destination on the departure date)
+	// is composed with an inbound leg (destination->origin on the return date).
+	// Empty = one-way. Mirrors flights.SearchOptions.ReturnDate.
+	ReturnDate string
+
 	// NoHacks opts out of the auto-composed travel-hacks savings engine. The
 	// engine is ON by default: a normal search also surfaces the single best
 	// cheaper synthesized option (multimodal, cross-border rail, …) in
@@ -112,6 +118,15 @@ func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions
 	if opts.Currency == "" {
 		opts.Currency = "EUR"
 	}
+
+	// Round-trip: compose an outbound search with a swapped-endpoint inbound
+	// search on the return date. Each direction reuses the full one-way path
+	// (cache, singleflight, hacks) by recursing with ReturnDate cleared, so the
+	// composition adds no new network code — it only pairs and direction-tags.
+	if rd := strings.TrimSpace(opts.ReturnDate); rd != "" && rd != date {
+		return searchRoundTripByName(ctx, from, to, date, rd, opts)
+	}
+
 	allowBrowserFallbacks := browserFallbacksEnabled(opts)
 
 	// Build cache key from search parameters.
@@ -153,6 +168,47 @@ func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions
 	maybePrefetchGround(ctx, from, to, date, opts)
 
 	return result, err
+}
+
+// searchRoundTripByName composes a round-trip ground itinerary from two one-way
+// searches: the outbound (from->to on date) and the inbound (to->from on
+// returnDate). Each direction recurses through SearchByName with ReturnDate
+// cleared, so it inherits the full one-way pipeline (cache, singleflight,
+// travel-hacks). Routes are direction-tagged and concatenated; the combined
+// result is honest about partial success — if only one direction has service,
+// it still surfaces with Success=true so the traveller sees the half that runs.
+func searchRoundTripByName(ctx context.Context, from, to, date, returnDate string, opts SearchOptions) (*models.GroundSearchResult, error) {
+	oneWay := opts
+	oneWay.ReturnDate = ""
+
+	outbound, outErr := SearchByName(ctx, from, to, date, oneWay)
+	inbound, inErr := SearchByName(ctx, to, from, returnDate, oneWay)
+
+	// Propagate an error only when BOTH directions fail; a single working
+	// direction is still useful and must not be masked by the other's failure.
+	if outErr != nil && inErr != nil {
+		return nil, outErr
+	}
+
+	combined := &models.GroundSearchResult{}
+	tagDirection := func(res *models.GroundSearchResult, dir string) {
+		if res == nil {
+			return
+		}
+		for i := range res.Routes {
+			res.Routes[i].Direction = dir
+			combined.Routes = append(combined.Routes, res.Routes[i])
+		}
+		if res.HackSaving != nil && combined.HackSaving == nil {
+			combined.HackSaving = res.HackSaving
+		}
+	}
+	tagDirection(outbound, "outbound")
+	tagDirection(inbound, "inbound")
+
+	combined.Count = len(combined.Routes)
+	combined.Success = combined.Count > 0
+	return combined, nil
 }
 
 func doGroundSearchSingleflight(ctx context.Context, key string, fn func(context.Context) (*models.GroundSearchResult, error)) (*models.GroundSearchResult, error) {
