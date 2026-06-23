@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,13 +71,16 @@ func trySerpAPIPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.H
 
 func trySerpAPIRoomFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string, string) {
 	if strings.TrimSpace(serpapiAPIKeyFunc()) == "" {
+		log.Printf("DEBUG serpapi room fallback skipped: no SERPAPI_KEY")
 		return nil, "", ""
 	}
 
 	query, place := serpapiFallbackQuery(ctx, opts.HotelID, opts.Location)
 	if query == "" {
+		log.Printf("DEBUG serpapi room fallback aborted: empty query (hotelID=%q location=%q place=%v)", opts.HotelID, opts.Location, place != nil)
 		return nil, "", ""
 	}
+	log.Printf("DEBUG serpapi room fallback: query=%q placeResolved=%v", query, place != nil)
 
 	guests := opts.Guests
 	if guests <= 0 {
@@ -92,18 +96,22 @@ func trySerpAPIRoomFallback(ctx context.Context, opts RoomSearchOptions) ([]Room
 	)
 	result, err := serpapiSearchHotelsFunc(ctx, searchOpts)
 	if err != nil || result == nil {
+		log.Printf("DEBUG serpapi room fallback: search failed query=%q err=%v", query, err)
 		return nil, "", ""
 	}
 
 	hotel := findSerpAPIHotel(result, place, opts.Location, opts.HotelID)
 	if hotel == nil {
+		log.Printf("DEBUG serpapi room fallback: no hotel matched in %d properties (query=%q name=%q)", len(result.Properties), query, opts.Location)
 		return nil, "", ""
 	}
 	hotel = selectedSerpAPIPropertyDetails(ctx, hotel, searchOpts)
 	rooms := roomTypesFromSerpAPIHotel(hotel, opts.Currency)
 	if len(rooms) == 0 {
+		log.Printf("DEBUG serpapi room fallback: matched hotel %q but extracted 0 rooms", hotel.Name)
 		return nil, "", ""
 	}
+	log.Printf("DEBUG serpapi room fallback: matched %q, extracted %d rooms", hotel.Name, len(rooms))
 
 	name := hotel.Name
 	if name == "" && place != nil {
@@ -124,18 +132,22 @@ func serpapiFallbackQuery(ctx context.Context, hotelID, location string) (string
 }
 
 func mapsPlaceQuery(place *serpapi.MapsPlace, fallback string) string {
-	if place == nil {
-		return strings.TrimSpace(fallback)
+	fallback = strings.TrimSpace(fallback)
+	// google_hotels is a destination engine: a hotel-name query returns zero
+	// properties. The caller's location hint may carry the hotel name (it
+	// doubles as a search-page hint upstream), so derive a clean locality from
+	// the resolved place address first; findSerpAPIHotel then name-matches the
+	// specific property out of the city results.
+	if place != nil {
+		if locality := mapsPlaceLocality(place.Address); locality != "" {
+			return locality
+		}
 	}
-	if fallback = strings.TrimSpace(fallback); fallback != "" {
+	if fallback != "" {
 		return fallback
 	}
-	if locality := mapsPlaceLocality(place.Address); locality != "" {
-		return locality
-	}
-	title := strings.TrimSpace(place.Title)
-	if title != "" {
-		return title
+	if place != nil {
+		return strings.TrimSpace(place.Title)
 	}
 	return ""
 }
