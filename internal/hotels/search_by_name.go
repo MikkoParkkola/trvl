@@ -364,12 +364,12 @@ func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelR
 		return nil
 	}
 
-	var best *models.HotelResult
+	bestIdx := -1
 	bestScore := 0
+	bestIDRank := -1
 
 	for i := range hotels {
-		h := &hotels[i]
-		nameLower := strings.ToLower(h.Name)
+		nameLower := strings.ToLower(hotels[i].Name)
 
 		score := 0
 		// Exact contains match scores highest.
@@ -383,21 +383,78 @@ func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelR
 			}
 		}
 
-		if score > bestScore {
-			bestScore = score
-			best = h
+		// Require at least a meaningful match (≥10 points from actual hotel name
+		// words, not just "hotel" or other generic terms).
+		if score < 10 {
+			continue
+		}
+
+		// Tie-break by ID usability so selection is deterministic and the rooms
+		// flow gets a resolvable target. The same query previously returned a
+		// usable Google place ID or an empty-ID OTA entry depending on the
+		// arbitrary order of equally-named results, intermittently aborting the
+		// upstream rooms lookup ("found but has no Google ID"). Prefer, in order:
+		// higher name score, then a genuine Google place ID over any other ID
+		// over no ID at all (mirrors the #288 candidate-ranking doctrine), then a
+		// stable lexical key so two equally-usable results resolve identically
+		// regardless of input ordering.
+		idRank := hotelIDRank(hotels[i].HotelID)
+		if bestIdx == -1 || nameMatchBetter(
+			score, idRank, hotels[i],
+			bestScore, bestIDRank, hotels[bestIdx],
+		) {
+			bestIdx, bestScore, bestIDRank = i, score, idRank
 		}
 	}
 
-	if bestScore == 0 {
+	if bestIdx == -1 {
 		return nil
 	}
-	// Require at least a meaningful match (≥10 points from actual hotel name
-	// words, not just "hotel" or other generic terms).
-	if bestScore < 10 {
-		return nil
+	return &hotels[bestIdx]
+}
+
+// nameMatchBetter reports whether candidate (cScore, cIDRank, c) is a strictly
+// better name-match selection than the incumbent (bScore, bIDRank, b). Ordering
+// is total and order-independent: name score, then ID usability rank, then a
+// lexical tie-break on HotelID and Name so the winner is deterministic.
+func nameMatchBetter(
+	cScore, cIDRank int, c models.HotelResult,
+	bScore, bIDRank int, b models.HotelResult,
+) bool {
+	if cScore != bScore {
+		return cScore > bScore
 	}
-	return best
+	if cIDRank != bIDRank {
+		return cIDRank > bIDRank
+	}
+	if c.HotelID != b.HotelID {
+		return c.HotelID < b.HotelID
+	}
+	return c.Name < b.Name
+}
+
+// hotelIDRank ranks a HotelID by how usable it is as a Google rooms-RPC target:
+// 2 = genuine Google place ID, 1 = some other non-empty ID, 0 = no ID at all.
+// The rooms flow can only resolve Google place IDs, so a result carrying one
+// must outrank an equally-named OTA/apartment entry whose ID (or absence of one)
+// would dead-end the lookup.
+func hotelIDRank(id string) int {
+	switch {
+	case hotelIDIsGooglePlaceID(id):
+		return 2
+	case strings.TrimSpace(id) != "":
+		return 1
+	default:
+		return 0
+	}
+}
+
+// hotelIDIsGooglePlaceID reports whether a HotelID is a genuine Google place ID
+// (prefixed "/g/" or "ChIJ") that the rooms RPC can resolve. Mirrors
+// looksLikeGoogleHotelID / accommodationHotelIDIsGooglePlaceID used elsewhere.
+func hotelIDIsGooglePlaceID(id string) bool {
+	id = strings.TrimSpace(id)
+	return strings.HasPrefix(id, "/g/") || strings.HasPrefix(strings.ToUpper(id), "CHIJ")
 }
 
 // enrichHotelAmenities fetches detail pages for the top N hotels to get full

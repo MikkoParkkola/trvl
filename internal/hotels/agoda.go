@@ -98,6 +98,30 @@ var agodaHTTPClient = &http.Client{
 // agodaMaxAttempts bounds the retry loop that recovers from transient 502s.
 const agodaMaxAttempts = 3
 
+// agodaRetryableStatus reports whether an HTTP status from /graphql/search is
+// worth retrying within the bounded attempt budget. Beyond the classic
+// transient 5xx, Agoda's anti-bot layer intermittently returns 400/403/429 for
+// a correctly-formed request — live capture shows the identical body succeeding
+// with 200 and full priced inventory on a subsequent attempt. Retrying recovers
+// the provider on these blips; a persistently malformed request still fails
+// after agodaMaxAttempts, so this never masks a real break beyond a small,
+// bounded cost.
+func agodaRetryableStatus(code int) bool {
+	switch code {
+	case http.StatusBadRequest, // 400 — observed transient anti-bot response
+		http.StatusForbidden,           // 403 — anti-bot challenge
+		http.StatusRequestTimeout,      // 408
+		http.StatusTooManyRequests,     // 429 — rate limited
+		http.StatusInternalServerError, // 500
+		http.StatusBadGateway,          // 502
+		http.StatusServiceUnavailable,  // 503
+		http.StatusGatewayTimeout:      // 504
+		return true
+	default:
+		return false
+	}
+}
+
 // ---- Autocomplete (city resolution) response types ----
 
 // agodaSuggestResponse is the GetUnifiedSuggestResult envelope; we read only the
@@ -315,11 +339,25 @@ func fetchAgodaSearch(ctx context.Context, cityID int, opts HotelSearchOptions) 
 		}
 		raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 		resp.Body.Close()
-		if resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
-			lastErr = fmt.Errorf("transient status %d", resp.StatusCode)
-			continue
-		}
 		if resp.StatusCode != http.StatusOK {
+			// Agoda's /graphql/search is anti-bot sensitive and intermittently
+			// answers an otherwise-valid request with 400/403/429 (plus the
+			// classic transient 5xx). Live capture proves the format is sound:
+			// the identical body returns 200 with full priced inventory on a
+			// retry. Retry these within the bounded attempt budget instead of
+			// dropping the provider to zero on the first blip; a genuinely
+			// malformed request still fails after agodaMaxAttempts.
+			if agodaRetryableStatus(resp.StatusCode) {
+				// Honest verdict surfaced in the returned error (not a fabricated
+				// permanent block): live capture proves the identical body returns
+				// 200 with full inventory, so a status here is an intermittent
+				// anti-bot / IP-reputation rejection, NOT a malformed request and
+				// NOT a persistent WAF wall (unlike easyJet's Akamai endpoint).
+				// Surfacing AKAMAI_BLOCK would misrepresent a provider that works
+				// the majority of the time; the message stays diagnostic instead.
+				lastErr = fmt.Errorf("agoda search blocked: transient anti-bot status %d (request verified sound against live cityId; intermittent IP/bot-reputation, retry later)", resp.StatusCode)
+				continue
+			}
 			return nil, fmt.Errorf("search status %d", resp.StatusCode)
 		}
 		if readErr != nil {

@@ -150,3 +150,121 @@ func names(hotels []models.HotelResult) []string {
 	}
 	return out
 }
+
+// --- findBestNameMatch: deterministic ID-preferring selection (BUG 2) ---
+
+// TestFindBestNameMatchPrefersGoogleID asserts that among equally name-matching
+// results, selection deterministically prefers one carrying a usable Google
+// place ID over an empty-ID OTA entry — and that the choice is independent of
+// input ordering. This is the root-cause fix for the intermittent
+// "found but has no Google ID" abort in the rooms flow.
+func TestFindBestNameMatchPrefersGoogleID(t *testing.T) {
+	const query = "Hotel Best Front Maritim Barcelona"
+
+	noID := models.HotelResult{Name: "Hotel Best Front Maritim Barcelona"}
+	googleID := models.HotelResult{Name: "Hotel Best Front Maritim Barcelona", HotelID: "/g/11abcd1234"}
+	otaID := models.HotelResult{Name: "Hotel Best Front Maritim Barcelona", HotelID: "flatio:98765"}
+
+	tests := []struct {
+		name    string
+		hotels  []models.HotelResult
+		wantID  string
+		wantNil bool
+	}{
+		{
+			name:   "google id wins over no id (google first)",
+			hotels: []models.HotelResult{googleID, noID},
+			wantID: "/g/11abcd1234",
+		},
+		{
+			name:   "google id wins over no id (no id first)",
+			hotels: []models.HotelResult{noID, googleID},
+			wantID: "/g/11abcd1234",
+		},
+		{
+			name:   "google id wins over ota id regardless of order",
+			hotels: []models.HotelResult{otaID, googleID, noID},
+			wantID: "/g/11abcd1234",
+		},
+		{
+			name:   "non-empty ota id preferred over empty id",
+			hotels: []models.HotelResult{noID, otaID},
+			wantID: "flatio:98765",
+		},
+		{
+			name:   "all empty ids still returns a match",
+			hotels: []models.HotelResult{noID},
+			wantID: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := findBestNameMatch(tt.hotels, query)
+			if tt.wantNil {
+				if got != nil {
+					t.Fatalf("expected nil, got %+v", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("expected a match, got nil")
+			}
+			if got.HotelID != tt.wantID {
+				t.Errorf("selected HotelID = %q, want %q", got.HotelID, tt.wantID)
+			}
+		})
+	}
+}
+
+// TestFindBestNameMatchStableOrdering asserts the selection is identical across
+// all permutations of an input set that mixes ID usability and name score, so
+// the result never depends on arbitrary provider-merge ordering.
+func TestFindBestNameMatchStableOrdering(t *testing.T) {
+	const query = "Hotel Best Front Maritim Barcelona"
+	base := []models.HotelResult{
+		{Name: "Hotel Best Front Maritim Barcelona", HotelID: "/g/11zzz"},
+		{Name: "Hotel Best Front Maritim Barcelona", HotelID: "/g/11aaa"},
+		{Name: "Hotel Best Front Maritim Barcelona", HotelID: ""},
+		{Name: "Best Front Maritim", HotelID: "/g/11partial"},
+	}
+
+	// Lexically-smallest Google place ID among the full-score matches wins
+	// ("/g/11aaa" < "/g/11zzz"); the partial-name match scores lower and loses.
+	const wantID = "/g/11aaa"
+
+	perms := [][]int{
+		{0, 1, 2, 3}, {3, 2, 1, 0}, {2, 0, 3, 1}, {1, 3, 0, 2},
+	}
+	for _, p := range perms {
+		shuffled := make([]models.HotelResult, len(p))
+		for i, idx := range p {
+			shuffled[i] = base[idx]
+		}
+		got := findBestNameMatch(shuffled, query)
+		if got == nil {
+			t.Fatalf("perm %v: expected a match, got nil", p)
+		}
+		if got.HotelID != wantID {
+			t.Errorf("perm %v: selected HotelID = %q, want %q", p, got.HotelID, wantID)
+		}
+	}
+}
+
+// TestHotelIDRank covers the usability ranking of HotelIDs.
+func TestHotelIDRank(t *testing.T) {
+	cases := map[string]int{
+		"/g/11abcd":   2, // genuine Google place ID
+		"ChIJabc123":  2, // genuine Google place ID
+		"chijLower":   2, // case-insensitive ChIJ prefix
+		"flatio:9876": 1, // non-empty OTA id
+		"12345":       1, // non-empty numeric id
+		"":            0, // no id
+		"   ":         0, // whitespace-only id
+	}
+	for id, want := range cases {
+		if got := hotelIDRank(id); got != want {
+			t.Errorf("hotelIDRank(%q) = %d, want %d", id, got, want)
+		}
+	}
+}
