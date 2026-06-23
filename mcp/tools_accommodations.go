@@ -53,7 +53,19 @@ type accommodationCandidate struct {
 }
 
 var (
-	accommodationRoomLookupTimeout         = 20 * time.Second
+	// accommodationRoomLookupTimeout bounds one candidate's room-level fetch
+	// during stage-2 selection. The Booking.com path is the only source of
+	// exact_room_match prices, and behind Booking's WAF it needs >=2 HTTP
+	// round-trips (initial 202 challenge + cookie re-harvest retry). The old
+	// 20s budget equalled a single batchexec request timeout, so it could
+	// never complete the WAF dance — every WAF-gated hotel degraded to
+	// property_level_only and booking_ready_count stayed 0 (issue #277
+	// defect 2). Match the reverify budget so the first pass can also reach a
+	// room-level price. Per-candidate lookups run concurrently (worker pool),
+	// so this lifts wall-clock by ~one timeout, not N, and the outer tool
+	// deadline (toolTimeout / caller ctx) still clips it when the budget is
+	// already spent on search.
+	accommodationRoomLookupTimeout         = 45 * time.Second
 	accommodationReverifyRoomLookupTimeout = 45 * time.Second
 )
 

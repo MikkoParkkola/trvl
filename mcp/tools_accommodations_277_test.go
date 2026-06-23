@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"testing"
+	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -71,5 +73,85 @@ func TestSelectAccommodationCandidateHotelsMinStars(t *testing.T) {
 	// No min_stars: every candidate is kept.
 	if all := selectAccommodationCandidateHotels(hotels, 10, models.AccommodationNeed{}); len(all) != 3 {
 		t.Fatalf("no min_stars filter should keep all 3, got %d", len(all))
+	}
+}
+
+// TestDefect2RoomLevelOfferIsBookingReady covers issue #277 defect 2: when the
+// Booking.com room path yields an exact-match, room-level, tax-inclusive price,
+// the offer MUST surface as booking_ready. This is the success criterion the
+// timeout fix unblocks — if the fetch completes, the wiring already produces a
+// bookable verdict. A lead-in property-level price MUST NOT (the honesty
+// invariant: never fake booking_ready on a property-level figure).
+func TestDefect2RoomLevelOfferIsBookingReady(t *testing.T) {
+	checkedAt := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
+	hotel := models.HotelResult{Name: "Hotel Central", HotelID: "h1", BookingURL: "https://www.booking.com/hotel/fr/central.html"}
+	need := models.AccommodationNeed{Adults: 2, Rooms: 1, Currency: "EUR"}
+	taxIncluded := true
+
+	// Booking.com exact-match room: room-level nightly + tax-inclusive total.
+	bookingRoom := hotels.RoomType{
+		Name:              "Deluxe Double",
+		NightlyPrice:      120,
+		TotalPrice:        240,
+		TaxesFeesIncluded: &taxIncluded,
+		Currency:          "EUR",
+		Provider:          "Booking.com",
+		MatchConfidence:   models.RoomInventoryMatchExact,
+		MaxGuests:         2,
+	}
+	offers := accommodationOffersFromRooms(hotel, []hotels.RoomType{bookingRoom}, need, checkedAt)
+	if len(offers) != 1 {
+		t.Fatalf("expected 1 offer from booking room, got %d", len(offers))
+	}
+	got := offers[0]
+	if !got.BookingReadyStatus {
+		t.Fatalf("exact-match room-level offer must be booking_ready: matched=%v occ=%v conf=%q missing=%v",
+			got.CriteriaMatched, got.OccupancyMatched, got.PriceConfidence, got.MissingCriteria)
+	}
+	if got.InventoryCompleteness == models.RoomInventoryCompletenessPropertyLevelOnly {
+		t.Fatalf("room-level offer must not be property_level_only, got %q", got.InventoryCompleteness)
+	}
+
+	// Honesty invariant: a property-level lead-in price is NOT booking_ready.
+	leadInRoom := hotels.RoomType{
+		Name:            "Standard Room",
+		Price:           99,
+		Currency:        "EUR",
+		Provider:        "Google",
+		MatchConfidence: models.RoomInventoryMatchPropertyLevelOnly,
+	}
+	leadOffers := accommodationOffersFromRooms(hotel, []hotels.RoomType{leadInRoom}, need, checkedAt)
+	if len(leadOffers) != 1 {
+		t.Fatalf("expected 1 lead-in offer, got %d", len(leadOffers))
+	}
+	if leadOffers[0].BookingReadyStatus {
+		t.Fatalf("property-level lead-in must never be booking_ready: %+v", leadOffers[0])
+	}
+}
+
+// TestDefect2BookingRoomSurvivesMergeWithSearchLeadIn proves the Booking.com
+// exact-match room is not dropped when merged with a property-level search
+// lead-in for the same hotel (rooms.go merge + mergeDetailAndSearchInventoryRooms),
+// so the booking_ready offer reaches the result set.
+func TestDefect2BookingRoomSurvivesMergeWithSearchLeadIn(t *testing.T) {
+	checkedAt := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
+	hotel := models.HotelResult{Name: "Hotel Central", HotelID: "h1"}
+	need := models.AccommodationNeed{Adults: 2, Rooms: 1, Currency: "EUR"}
+	taxIncluded := true
+
+	searchLeadIn := hotels.RoomType{Name: "Standard Room", Price: 99, Currency: "EUR", Provider: "Google", MatchConfidence: models.RoomInventoryMatchPropertyLevelOnly}
+	bookingRoom := hotels.RoomType{Name: "Deluxe Double", NightlyPrice: 120, TotalPrice: 240, TaxesFeesIncluded: &taxIncluded, Currency: "EUR", Provider: "Booking.com", MatchConfidence: models.RoomInventoryMatchExact, MaxGuests: 2}
+
+	merged := mergeDetailAndSearchInventoryRooms([]hotels.RoomType{bookingRoom}, []hotels.RoomType{searchLeadIn})
+	offers := accommodationOffersFromRooms(hotel, merged, need, checkedAt)
+
+	bookingReady := false
+	for _, o := range offers {
+		if o.BookingReadyStatus {
+			bookingReady = true
+		}
+	}
+	if !bookingReady {
+		t.Fatalf("merged rooms must still yield a booking_ready offer, got %d offers none ready", len(offers))
 	}
 }
