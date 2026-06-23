@@ -104,6 +104,18 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 	statuses = append(statuses, kiwiStatuses...)
 	nativeRT = append(nativeRT, kiwiRT...)
 
+	// One hop further: native fares that priced the return "at booking" carry
+	// only an outbound leg, so there is nothing for a return-leg condition filter
+	// (carrier, stops, times) to act on. Enrich them with REAL return-leg detail
+	// reused from the inbound one-ways already fetched above (no extra network),
+	// bounded to the cheapest few and reported in status so nothing is silently
+	// dropped. Native fares that already carry both legs are left untouched.
+	if len(nativeRT) > 0 {
+		var enrichStatus models.ProviderStatus
+		nativeRT, enrichStatus = enrichNativeReturnLegs(nativeRT, inFlights, roundTripNativeReturnCandidates)
+		statuses = append(statuses, enrichStatus)
+	}
+
 	if len(nativeRT) > 0 {
 		merged := make([]models.FlightResult, 0, len(nativeRT)+len(composed))
 		merged = append(merged, nativeRT...)
@@ -511,6 +523,133 @@ func nativeRoundTripCurrency(opts SearchOptions, composed, outbound []models.Fli
 		return outbound[0].Currency
 	}
 	return ""
+}
+
+// roundTripNativeReturnCandidates bounds how many native round-trip fares get
+// their return leg enriched with real inbound detail. Native fares that come
+// back outbound-only ("return selected at booking") are enriched cheapest-first
+// and only the top N; the rest keep their honest booking-time note. The cap is
+// reported in provider status so coverage is never silently dropped.
+const roundTripNativeReturnCandidates = 3
+
+// flightHasInboundLeg reports whether a result already carries a tagged return
+// leg, so enrichment skips native fares that genuinely returned both halves.
+func flightHasInboundLeg(f models.FlightResult) bool {
+	for _, leg := range f.Legs {
+		if leg.Direction == "inbound" {
+			return true
+		}
+	}
+	return false
+}
+
+// enrichNativeReturnLegs fills in real return-leg detail for native round-trip
+// fares that came back outbound-only (the "return selected at booking" case).
+// It REUSES the inbound one-way results the composer already fetched (D->O on
+// the return date) — no extra network — attaching a real inbound itinerary's
+// legs to each of the top-N cheapest such native fares so downstream per-leg
+// condition filters (carrier, stops, times, aircraft) apply to the return half
+// instead of an empty outbound-only result.
+//
+// The native round-trip TOTAL stays the headline price: it is the single
+// bookable fare and already includes the return, so the inbound one-way price
+// is NOT summed in (that would double-count). Each enriched fare gets an honest
+// warning naming the real return shown and its indicative standalone price, and
+// noting the confirmed return is chosen at booking and may differ; the
+// booking-time-only warning is dropped once a real return is shown.
+//
+// Bounded + logged: only n fares are enriched; the returned status reports how
+// many were enriched vs left capped. With no inbound one-ways fetched this is a
+// no-op and native fares keep their existing warning (the provider could not
+// price the return per-leg without a booking session; composition covers
+// per-leg detail when it found inbound options). Never mutates inbound source
+// legs (taggedLegs copies), and one-way searches never reach this path.
+func enrichNativeReturnLegs(native, inbound []models.FlightResult, n int) ([]models.FlightResult, models.ProviderStatus) {
+	status := models.ProviderStatus{
+		ID:   "native_roundtrip_return_enrich",
+		Name: "Native round-trip return enrichment",
+	}
+
+	returns := topPricedFlights(inbound, n)
+	if len(returns) == 0 {
+		status.Status = models.StatusCheckedNoHit
+		status.FixHint = "no inbound one-way option fetched; native fares keep 'return selected at booking'"
+		return native, status
+	}
+
+	// Index native fares cheapest-first so the top-N enriched are the most
+	// likely to surface; pair each enriched fare with a distinct real return
+	// where available (clamped to the cheapest when fewer returns than fares).
+	order := make([]int, 0, len(native))
+	for i := range native {
+		order = append(order, i)
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		return compareFlightPrices(native[order[a]].PriceForRanking(), native[order[b]].PriceForRanking()) < 0
+	})
+
+	out := make([]models.FlightResult, len(native))
+	copy(out, native)
+
+	enriched, eligible := 0, 0
+	for _, idx := range order {
+		f := out[idx]
+		if f.FareType != models.FareRoundTrip || flightHasInboundLeg(f) {
+			continue // already two-legged, or not a native single fare
+		}
+		eligible++
+		if enriched >= n {
+			continue // capped — reported below, never silently dropped
+		}
+		out[idx] = attachReturnLeg(f, returns[min(enriched, len(returns)-1)])
+		enriched++
+	}
+
+	status.Status = okOrNoHit(enriched)
+	status.Results = enriched
+	switch {
+	case eligible == 0:
+		status.FixHint = "no outbound-only native fare to enrich (all carried both legs)"
+	case eligible > enriched:
+		status.FixHint = fmt.Sprintf("enriched cheapest %d of %d outbound-only native fares with real return-leg detail; the rest keep 'return selected at booking' (search one-way D->O for the full return list)", enriched, eligible)
+	default:
+		status.FixHint = fmt.Sprintf("enriched all %d outbound-only native fares with real return-leg detail", enriched)
+	}
+	return out, status
+}
+
+// attachReturnLeg returns a copy of an outbound-only native round-trip fare with
+// the real inbound itinerary's legs appended (tagged "inbound"), the now-false
+// booking-time warning removed, and an honest warning recording the indicative
+// return shown. The native TOTAL price is unchanged. Inbound source legs are
+// copied (taggedLegs), never mutated.
+func attachReturnLeg(f, ret models.FlightResult) models.FlightResult {
+	legs := make([]models.FlightLeg, 0, len(f.Legs)+len(ret.Legs))
+	legs = append(legs, f.Legs...)
+	legs = append(legs, taggedLegs(ret.Legs, "inbound")...)
+	f.Legs = legs
+
+	provider := ret.Provider
+	if provider == "" {
+		provider = "unspecified carrier"
+	}
+	price := ""
+	if ret.Price > 0 && ret.Currency != "" {
+		price = fmt.Sprintf(", ~%.0f %s one-way", ret.Price, ret.Currency)
+	}
+	warn := fmt.Sprintf("return leg shown is a real return option via %s%s; the native fare's confirmed return is selected at booking and may differ", provider, price)
+
+	warnings := make([]string, 0, len(f.Warnings)+1)
+	warnings = append(warnings, warn)
+	for _, w := range f.Warnings {
+		// A real return is now shown, so the booking-time-only note is misleading.
+		if w == googleNativeRoundTripWarning || w == kiwiNativeRoundTripWarning {
+			continue
+		}
+		warnings = append(warnings, w)
+	}
+	f.Warnings = warnings
+	return f
 }
 
 // topPricedFlights returns up to n cheapest flights that carry a usable price
