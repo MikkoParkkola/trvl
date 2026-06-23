@@ -330,7 +330,7 @@ func handleSearchAccommodations(ctx context.Context, args map[string]any, elicit
 						Guests:       req.Options.Guests,
 						ChildrenAges: req.Options.ChildrenAges,
 						Rooms:        req.Options.Rooms,
-						BookingURL:   hotel.BookingURL,
+						BookingURL:   accommodationRoomLookupBookingURL(hotel),
 						Location:     req.Location,
 					})
 					cancelRoomLookup()
@@ -463,7 +463,7 @@ func handleReverifyAccommodation(ctx context.Context, req hotelSearchRequest, ne
 		Guests:       req.Options.Guests,
 		ChildrenAges: req.Options.ChildrenAges,
 		Rooms:        req.Options.Rooms,
-		BookingURL:   hotel.BookingURL,
+		BookingURL:   accommodationRoomLookupBookingURL(hotel),
 		Location:     req.Location,
 	})
 	cancelRoomLookup()

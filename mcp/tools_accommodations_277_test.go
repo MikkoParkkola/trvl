@@ -155,3 +155,66 @@ func TestDefect2BookingRoomSurvivesMergeWithSearchLeadIn(t *testing.T) {
 		t.Fatalf("merged rooms must still yield a booking_ready offer, got %d offers none ready", len(offers))
 	}
 }
+
+// TestAccommodationRoomLookupBookingURLRecoversFromSources covers issue #277
+// defect 2: selectPrimaryHotelSource overwrites HotelResult.BookingURL with the
+// cheapest source (e.g. Agoda), which fails the booking.com/ gate. When a
+// Booking.com source still exists among hotel.Sources, the room lookup must
+// recover its URL so the only exact-room-match provider can run.
+func TestAccommodationRoomLookupBookingURLRecoversFromSources(t *testing.T) {
+	agoda := "https://www.agoda.com/hotel/fr/central.html"
+	booking := "https://www.booking.com/hotel/fr/central.html"
+
+	// Primary is Agoda (cheapest source clobbered it) but a Booking source exists.
+	hotel := models.HotelResult{
+		BookingURL: agoda,
+		Sources: []models.PriceSource{
+			{Provider: "agoda", BookingURL: agoda},
+			{Provider: "booking", BookingURL: booking},
+		},
+	}
+	if got := accommodationRoomLookupBookingURL(hotel); got != booking {
+		t.Fatalf("must recover booking.com source URL for room lookup, got %q", got)
+	}
+
+	// No Booking source: leave the primary URL untouched.
+	noBooking := models.HotelResult{BookingURL: agoda, Sources: []models.PriceSource{{Provider: "agoda", BookingURL: agoda}}}
+	if got := accommodationRoomLookupBookingURL(noBooking); got != agoda {
+		t.Fatalf("must preserve primary URL when no booking.com source, got %q", got)
+	}
+
+	// Primary already booking.com: returned as-is without scanning sources.
+	primaryBooking := models.HotelResult{BookingURL: booking}
+	if got := accommodationRoomLookupBookingURL(primaryBooking); got != booking {
+		t.Fatalf("booking.com primary must be returned unchanged, got %q", got)
+	}
+}
+
+// TestSelectAccommodationCandidateHotelsRanksBookingBacked covers issue #277
+// defect 2 L3: a hotel whose Booking.com source is hidden behind a cheaper
+// primary URL must still rank into the candidate pool, otherwise the room
+// lookup never runs on it. Before the fix it scored +15 (any URL) instead of
+// +60 (booking.com URL) and lost to non-bookable properties.
+func TestSelectAccommodationCandidateHotelsRanksBookingBacked(t *testing.T) {
+	agoda := "https://www.agoda.com/hotel/fr/central.html"
+	booking := "https://www.booking.com/hotel/fr/central.html"
+
+	bookingBacked := models.HotelResult{
+		Name:       "Booking Backed",
+		BookingURL: agoda, // primary clobbered to cheapest source
+		Sources: []models.PriceSource{
+			{Provider: "agoda", BookingURL: agoda},
+			{Provider: "booking", BookingURL: booking},
+		},
+	}
+	nonBookable := models.HotelResult{Name: "No Booking Source", BookingURL: agoda}
+
+	// nonBookable listed first to prove ranking, not input order, decides.
+	got := selectAccommodationCandidateHotels([]models.HotelResult{nonBookable, bookingBacked}, 1, models.AccommodationNeed{})
+	if len(got) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(got))
+	}
+	if got[0].Name != "Booking Backed" {
+		t.Fatalf("booking-backed hotel must rank into the top candidate, got %q", got[0].Name)
+	}
+}
