@@ -170,6 +170,10 @@ type Response struct {
 
 	Properties []Hotel `json:"properties"`
 	Ads        []Hotel `json:"ads"`
+
+	SerpapiPagination struct {
+		NextPageToken string `json:"next_page_token"`
+	} `json:"serpapi_pagination"`
 }
 
 type propertyDetailsResponse struct {

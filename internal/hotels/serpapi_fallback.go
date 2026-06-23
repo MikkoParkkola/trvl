@@ -94,17 +94,35 @@ func trySerpAPIRoomFallback(ctx context.Context, opts RoomSearchOptions) ([]Room
 		guests,
 		opts.ChildrenAges,
 	)
-	result, err := serpapiSearchHotelsFunc(ctx, searchOpts)
-	if err != nil || result == nil {
-		log.Printf("DEBUG serpapi room fallback: search failed query=%q err=%v", query, err)
-		return nil, "", ""
+	// google_hotels returns ~20 properties per page. A specific requested
+	// property may rank below page 1, so page forward (capped) until the name
+	// matches. findSerpAPIHotel returns the first priced hotel for pure-locality
+	// searches, so this loop only spends extra quota when a specific property
+	// was requested and missed.
+	const serpapiFallbackMaxPages = 3
+	var hotel *serpapi.Hotel
+	scanned := 0
+	for page := 0; page < serpapiFallbackMaxPages; page++ {
+		result, err := serpapiSearchHotelsFunc(ctx, searchOpts)
+		if err != nil || result == nil {
+			log.Printf("DEBUG serpapi room fallback: search failed page=%d query=%q err=%v", page, query, err)
+			break
+		}
+		scanned += len(result.Properties)
+		if hotel = findSerpAPIHotel(result, place, opts.Location, opts.HotelID); hotel != nil {
+			break
+		}
+		token := strings.TrimSpace(result.SerpapiPagination.NextPageToken)
+		if token == "" {
+			break
+		}
+		searchOpts.NextPageToken = token
 	}
-
-	hotel := findSerpAPIHotel(result, place, opts.Location, opts.HotelID)
 	if hotel == nil {
-		log.Printf("DEBUG serpapi room fallback: no hotel matched in %d properties (query=%q name=%q)", len(result.Properties), query, opts.Location)
+		log.Printf("DEBUG serpapi room fallback: no hotel matched in %d properties across pages (query=%q name=%q)", scanned, query, opts.Location)
 		return nil, "", ""
 	}
+	searchOpts.NextPageToken = "" // detail fetch is by property token; drop stale page cursor
 	hotel = selectedSerpAPIPropertyDetails(ctx, hotel, searchOpts)
 	rooms := roomTypesFromSerpAPIHotel(hotel, opts.Currency)
 	if len(rooms) == 0 {
