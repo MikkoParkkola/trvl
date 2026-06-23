@@ -3,6 +3,8 @@ package hotels
 import (
 	"context"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 func TestGetRoomAvailability_ParallelBookingFetch(t *testing.T) {
@@ -104,5 +106,27 @@ func TestRoomFallbackSearchOptionsDefaultsGuests(t *testing.T) {
 	})
 	if got.Guests != 2 {
 		t.Fatalf("fallback Guests = %d, want default guests 2", got.Guests)
+	}
+}
+
+// TestRoomMatchFromPriceBasis pins the honesty mapping used when converting
+// Google's yY52ce partner-price matrix into room entries: only an explicit
+// room-level basis earns an exact match; lead-in / unset bases stay
+// property_level_only so a property lead-in is never promoted to booking-ready.
+func TestRoomMatchFromPriceBasis(t *testing.T) {
+	exact := map[string]bool{
+		models.PriceBasisRoomTotal:         true,
+		models.PriceBasisTaxInclusiveTotal: true,
+		models.PriceBasisRoomNightly:       true,
+	}
+	for basis := range exact {
+		if got := roomMatchFromPriceBasis(basis); got != models.RoomInventoryMatchExact {
+			t.Fatalf("basis %q must map to exact_room_match, got %q", basis, got)
+		}
+	}
+	for _, basis := range []string{models.PriceBasisLeadIn, "", "weird_unseen_basis"} {
+		if got := roomMatchFromPriceBasis(basis); got != models.RoomInventoryMatchPropertyLevelOnly {
+			t.Fatalf("basis %q must map to property_level_only, got %q", basis, got)
+		}
 	}
 }

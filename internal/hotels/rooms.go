@@ -121,6 +121,22 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		}
 	}
 
+	// Google's entity-page inline room data is dead, but the yY52ce
+	// batchexecute RPC still returns the live booking-partner price matrix for
+	// the hotel. Pull it and convert each partner price into a property-level
+	// room entry. This surfaces the full OTA matrix — including any Booking.com
+	// partner URL, which the downstream exact-room Booking.com fetch needs to
+	// produce a booking-ready offer.
+	if len(rooms) == 0 {
+		rpcRooms, rpcName := tryBatchExecutePrices(ctx, opts)
+		if len(rpcRooms) > 0 {
+			rooms = rpcRooms
+			if hotelName == "" {
+				hotelName = rpcName
+			}
+		}
+	}
+
 	// Fallback: search for the hotel on the search page by location extracted
 	// from the hotel ID's geocoded area. The search page still has inline
 	// AF_initDataCallback data.
@@ -177,6 +193,65 @@ func tryEntityPage(ctx context.Context, opts RoomSearchOptions) ([]RoomType, str
 	location := extractLocationFromPage(page)
 
 	return rooms, hotelName, location
+}
+
+// tryBatchExecutePrices fetches Google's live booking-partner price matrix via
+// the yY52ce batchexecute RPC (the entity page's inline data is dead since
+// mid-2026) and converts each partner price into a room entry. The prices are
+// property-level OTA lead-ins, classified honestly as property_level_only
+// unless the partner reports a room-total basis — so they never fake a
+// booking-ready verdict. Their value is exposing the partner URLs (notably
+// Booking.com) so the downstream exact-room fetch can run.
+func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string) {
+	res, err := GetHotelPricesWithOpts(ctx, HotelPriceOpts{
+		HotelID:  opts.HotelID,
+		CheckIn:  opts.CheckIn,
+		CheckOut: opts.CheckOut,
+		Currency: opts.Currency,
+		Location: opts.Location,
+	})
+	if err != nil || res == nil || len(res.Providers) == 0 {
+		return nil, ""
+	}
+
+	rooms := make([]RoomType, 0, len(res.Providers))
+	for _, p := range res.Providers {
+		price := p.Price
+		if price <= 0 {
+			price = p.NightlyPrice
+		}
+		if price <= 0 {
+			continue
+		}
+		currency := p.Currency
+		if currency == "" {
+			currency = opts.Currency
+		}
+		rooms = append(rooms, RoomType{
+			Name:            "Standard Room",
+			Price:           price,
+			NightlyPrice:    p.NightlyPrice,
+			TotalPrice:      p.TotalPrice,
+			Currency:        currency,
+			Provider:        p.Provider,
+			ProviderURL:     p.ProviderURL,
+			MatchConfidence: roomMatchFromPriceBasis(p.PriceBasis),
+		})
+	}
+	return rooms, res.Name
+}
+
+// roomMatchFromPriceBasis maps a provider PriceBasis to a room match
+// confidence. Only an explicit room-total / tax-inclusive / room-nightly basis
+// earns an exact match; every other basis is treated as property_level_only so
+// the honesty model never promotes a property lead-in to booking-ready.
+func roomMatchFromPriceBasis(basis string) string {
+	switch basis {
+	case models.PriceBasisRoomTotal, models.PriceBasisTaxInclusiveTotal, models.PriceBasisRoomNightly:
+		return models.RoomInventoryMatchExact
+	default:
+		return models.RoomInventoryMatchPropertyLevelOnly
+	}
 }
 
 // trySearchPageFallback searches for the hotel on the Google Hotels search
