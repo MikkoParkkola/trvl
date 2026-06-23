@@ -7,6 +7,44 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
+// TestSearchPagePriceReachesRoomLevel locks the Google room-level fix: the
+// headline search-page price (tagged "similar" by trySearchPageFallback) must
+// resolve to a room-level / room-nightly quote so it can pass the booking-ready
+// gate, while alternate provider prices (still property-level) stay lead-in.
+func TestSearchPagePriceReachesRoomLevel(t *testing.T) {
+	headline := roomInventoryQuote(RoomType{
+		Name:            "Standard Room",
+		Price:           140,
+		NightlyPrice:    140,
+		Currency:        "EUR",
+		Provider:        "Google Hotels",
+		MatchConfidence: models.RoomInventoryMatchSimilar,
+	})
+	if headline.PriceConfidence != models.PriceConfidenceRoomLevel {
+		t.Fatalf("headline price confidence = %q, want room_level", headline.PriceConfidence)
+	}
+	if headline.PriceBasis != models.PriceBasisRoomNightly {
+		t.Fatalf("headline price basis = %q, want room_nightly", headline.PriceBasis)
+	}
+	if headline.NightlyPrice != 140 {
+		t.Fatalf("headline nightly price = %v, want 140", headline.NightlyPrice)
+	}
+
+	alt := roomInventoryQuote(RoomType{
+		Name:            "Standard Room",
+		Price:           150,
+		Currency:        "EUR",
+		Provider:        "Expedia",
+		MatchConfidence: models.RoomInventoryMatchPropertyLevelOnly,
+	})
+	if alt.PriceConfidence != models.PriceConfidenceUnverified {
+		t.Fatalf("alternate provider confidence = %q, want unverified", alt.PriceConfidence)
+	}
+	if alt.PriceBasis != models.PriceBasisLeadIn {
+		t.Fatalf("alternate provider basis = %q, want lead_in", alt.PriceBasis)
+	}
+}
+
 func TestGetRoomAvailability_ParallelBookingFetch(t *testing.T) {
 	origFetch := FetchBookingRooms
 	FetchBookingRooms = func(ctx context.Context, url, checkIn, checkOut, currency string) ([]RoomType, error) {

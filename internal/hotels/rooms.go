@@ -197,11 +197,11 @@ func tryEntityPage(ctx context.Context, opts RoomSearchOptions) ([]RoomType, str
 
 // tryBatchExecutePrices fetches Google's live booking-partner price matrix via
 // the yY52ce batchexecute RPC (the entity page's inline data is dead since
-// mid-2026) and converts each partner price into a room entry. The prices are
-// property-level OTA lead-ins, classified honestly as property_level_only
-// unless the partner reports a room-total basis — so they never fake a
-// booking-ready verdict. Their value is exposing the partner URLs (notably
-// Booking.com) so the downstream exact-room fetch can run.
+// mid-2026) and converts each partner price into a room entry. The matrix is a
+// dated, occupancy-specific quote, so the cheapest partner price is promoted to
+// room-level "similar" (a real bookable rate without a nameable room identity);
+// the remaining prices keep their basis-derived confidence and expose the
+// partner URLs (notably Booking.com) so the downstream exact-room fetch can run.
 func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string) {
 	res, err := GetHotelPricesWithOpts(ctx, HotelPriceOpts{
 		HotelID:  opts.HotelID,
@@ -215,7 +215,29 @@ func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 	}
 
 	rooms := make([]RoomType, 0, len(res.Providers))
-	for _, p := range res.Providers {
+	// The yY52ce partner matrix is a dated, occupancy-specific quote, so the
+	// cheapest partner price is a real bookable rate for the stay, not a
+	// property lead-in. Promote it to room-level "similar" (no nameable room
+	// identity) so it reaches the booking-ready gate — mirroring the Agoda fix
+	// (PR #289) and the search-page fallback. Only the cheapest is promoted:
+	// the rest keep their basis-derived confidence (an explicit room basis
+	// still earns "exact"; everything else stays property-level), because
+	// promoting the whole identity-less ladder trips the multi-provider-mixed
+	// completeness flag and re-blocks the offer.
+	cheapestIdx, cheapestPrice := -1, 0.0
+	for i, p := range res.Providers {
+		price := p.Price
+		if price <= 0 {
+			price = p.NightlyPrice
+		}
+		if price <= 0 {
+			continue
+		}
+		if cheapestIdx == -1 || price < cheapestPrice {
+			cheapestIdx, cheapestPrice = i, price
+		}
+	}
+	for i, p := range res.Providers {
 		price := p.Price
 		if price <= 0 {
 			price = p.NightlyPrice
@@ -227,15 +249,23 @@ func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		if currency == "" {
 			currency = opts.Currency
 		}
+		match := roomMatchFromPriceBasis(p.PriceBasis)
+		nightly := p.NightlyPrice
+		if i == cheapestIdx && match == models.RoomInventoryMatchPropertyLevelOnly {
+			match = models.RoomInventoryMatchSimilar
+			if nightly == 0 && p.TotalPrice == 0 {
+				nightly = price
+			}
+		}
 		rooms = append(rooms, RoomType{
 			Name:            "Standard Room",
 			Price:           price,
-			NightlyPrice:    p.NightlyPrice,
+			NightlyPrice:    nightly,
 			TotalPrice:      p.TotalPrice,
 			Currency:        currency,
 			Provider:        p.Provider,
 			ProviderURL:     p.ProviderURL,
-			MatchConfidence: roomMatchFromPriceBasis(p.PriceBasis),
+			MatchConfidence: match,
 		})
 	}
 	return rooms, res.Name
@@ -306,6 +336,17 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 	}
 
 	var rooms []RoomType
+	// Exactly one bookable price is promoted to room-level: the dated,
+	// occupancy-specific search price (roomFallbackSearchOptions carries
+	// CheckIn/CheckOut/Guests) is the real nightly rate for the requested
+	// stay, not a property lead-in. Tagged "similar" (not "exact") because the
+	// search response gives a rate without a nameable room identity — mirroring
+	// the Agoda fix (PR #289). Only one entry is promoted: emitting the whole
+	// identity-less price ladder as room-level would trip the multi-provider-
+	// mixed completeness flag and re-block the offer. The headline price is
+	// preferred when present; otherwise the cheapest partner price (which is
+	// where the real search-page price usually lives) is promoted instead.
+	roomLevelEmitted := false
 	if hotel.Price > 0 {
 		currency := hotel.Currency
 		if currency == "" {
@@ -314,27 +355,51 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		rooms = append(rooms, RoomType{
 			Name:            "Standard Room",
 			Price:           hotel.Price,
+			NightlyPrice:    hotel.Price,
 			Currency:        currency,
 			Provider:        providerFromSources(hotel),
 			ProviderURL:     hotel.BookingURL,
-			MatchConfidence: models.RoomInventoryMatchPropertyLevelOnly,
+			MatchConfidence: models.RoomInventoryMatchSimilar,
 		})
+		roomLevelEmitted = true
 	}
 
-	// Add additional provider prices as separate "room" entries.
-	for _, src := range hotel.Sources {
+	// Find the cheapest priced partner source to promote when there is no
+	// headline price, so the real Google search-page rate still reaches the
+	// booking-ready gate.
+	cheapestIdx := -1
+	if !roomLevelEmitted {
+		for i, src := range hotel.Sources {
+			if src.Price > 0 && (cheapestIdx == -1 || src.Price < hotel.Sources[cheapestIdx].Price) {
+				cheapestIdx = i
+			}
+		}
+	}
+
+	// Add provider prices as separate "room" entries. The promoted entry is
+	// room-level "similar"; the rest stay property-level (their value is the
+	// partner URL, and promoting more than one identity-less price trips the
+	// completeness re-block).
+	for i, src := range hotel.Sources {
 		if src.Price > 0 && src.Price != hotel.Price {
 			currency := src.Currency
 			if currency == "" {
 				currency = opts.Currency
 			}
+			match := models.RoomInventoryMatchPropertyLevelOnly
+			nightly := 0.0
+			if i == cheapestIdx {
+				match = models.RoomInventoryMatchSimilar
+				nightly = src.Price
+			}
 			rooms = append(rooms, RoomType{
 				Name:            "Standard Room",
 				Price:           src.Price,
+				NightlyPrice:    nightly,
 				Currency:        currency,
 				Provider:        src.Provider,
 				ProviderURL:     src.BookingURL,
-				MatchConfidence: models.RoomInventoryMatchPropertyLevelOnly,
+				MatchConfidence: match,
 			})
 		}
 	}
