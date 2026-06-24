@@ -135,7 +135,11 @@ type HotelSearchResult struct {
 	Hotels           []HotelResult    `json:"hotels"`
 	ProviderStatuses []ProviderStatus `json:"provider_statuses,omitempty"`
 	Completeness     Completeness     `json:"completeness,omitempty"`
-	Error            string           `json:"error,omitempty"`
+	// Destination carries best-effort destination intelligence (weather, safety,
+	// holidays, currency, country facts) for the searched location. Additive and
+	// silently degrading — absent when the lookup fails; never blocks the search.
+	Destination *DestinationInfo `json:"destination,omitempty"`
+	Error       string           `json:"error,omitempty"`
 }
 
 // ProviderPrice represents a single booking provider's price for a hotel.

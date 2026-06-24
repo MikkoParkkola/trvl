@@ -78,6 +78,11 @@ Examples:
 			}
 
 			if format == "json" {
+				// JSON parity with the text path: attach best-effort
+				// destination intelligence for the arrival city.
+				if result != nil {
+					result.Destination = enrichArrival(cmd.Context(), to, models.DateRange{CheckIn: date, CheckOut: opts.ReturnDate})
+				}
 				return models.FormatJSON(os.Stdout, result)
 			}
 

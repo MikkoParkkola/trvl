@@ -265,6 +265,12 @@ Examples:
 			}
 
 			if format == "json" {
+				// JSON parity with the text path: attach best-effort
+				// destination intelligence. The wrapper embeds *result, so
+				// setting it once covers both the wrapped and bare branches.
+				if result != nil {
+					result.Destination = enrichArrival(cmd.Context(), destArg, models.DateRange{CheckIn: date, CheckOut: returnDate})
+				}
 				if pricePos != nil || len(savings) > 0 {
 					return models.FormatJSON(os.Stdout, struct {
 						*models.FlightSearchResult
