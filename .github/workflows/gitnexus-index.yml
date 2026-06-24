@@ -1,0 +1,56 @@
+name: gitnexus-index
+
+# Build and share the GitNexus code-intelligence index across agents/CI.
+#
+# Why this exists: branch protection on main has enforce_admins=true, so NOTHING
+# can push directly to main — the index counts in AGENTS.md/CLAUDE.md therefore
+# cannot be auto-committed on a cadence (and a 222MB binary index has no business
+# in git history anyway). Instead we share the real payload through the Actions
+# cache, keyed by commit SHA. Any downstream job restores the exact index for a
+# given commit with the same key; the warm-start restore-keys fallback makes the
+# analyze step incremental (GitNexus diffs file hashes in meta.json).
+#
+# Local machines stay fresh via scripts/gitnexus/install-hooks.sh (post-merge),
+# which reads meta.json:lastCommit — the authoritative staleness signal — and
+# re-analyzes only when it differs from HEAD.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitnexus-index
+  cancel-in-progress: true
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Restore/seed index cache
+        uses: actions/cache@v4
+        with:
+          path: .gitnexus
+          key: gitnexus-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            gitnexus-${{ runner.os }}-
+
+      - name: Analyze (incremental)
+        run: npx --yes gitnexus analyze
+
+      - name: Publish index metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitnexus-meta
+          path: .gitnexus/meta.json
+          retention-days: 14
+          if-no-files-found: error

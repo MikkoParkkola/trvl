@@ -1,0 +1,61 @@
+# GitNexus index sharing
+
+GitNexus indexes this repo into `.gitnexus/` (~222 MB: a binary symbol graph plus
+`meta.json`). That directory is **gitignored** and never committed — it is fully
+derived from source, and a binary that changes on every commit does not belong in
+git history.
+
+## What is shared, and how
+
+| Thing | Where it lives | Why |
+| --- | --- | --- |
+| The index payload (`.gitnexus/`) | **Actions cache**, keyed by commit SHA (`gitnexus-index.yml`) | Lets any CI job restore the exact index for a commit without re-analyzing. Never in git history (would bloat the repo ~150 MB per commit). |
+| Staleness signal (`lastCommit`) | `.gitnexus/meta.json` on disk | The authoritative "is the index current?" check: compare `meta.json:lastCommit` to `git HEAD`. |
+| Symbol counts | the `<!-- gitnexus:start -->` block in `AGENTS.md` / `CLAUDE.md` | Cosmetic only. Not a staleness signal and not auto-committed (branch protection `enforce_admins=true` blocks direct pushes to main). |
+
+## Why not just commit the counts on a cadence
+
+Three reasons, in order of severity:
+
+1. **`main` is protected with `enforce_admins=true`** — no actor can push the
+   refreshed counts directly; they would each need a PR passing the required
+   checks. Auto-committing on a timer is simply not possible without weakening
+   that protection.
+2. **A count is not actionable** — another agent cannot navigate code with
+   "62826 relationships". It needs the index (shared via cache) or the ability to
+   rebuild it from source.
+3. **It manufactures merge conflicts** — if every feature branch re-indexed and
+   committed the count, every PR would collide on `AGENTS.md` + `CLAUDE.md`.
+
+## Local setup (keep your machine's index fresh)
+
+```sh
+scripts/gitnexus/install-hooks.sh    # one-time: install the post-merge hook
+```
+
+After that, every `git pull`/merge triggers a **background, lazy** refresh:
+`scripts/gitnexus/refresh.sh` re-analyzes only when `meta.json:lastCommit` differs
+from HEAD, and discards the cosmetic count churn so your tree stays clean.
+
+Manual controls:
+
+```sh
+scripts/gitnexus/check-staleness.sh  # exit 0 = fresh, 1 = stale
+scripts/gitnexus/refresh.sh          # refresh if stale (tree stays clean)
+scripts/gitnexus/refresh.sh --force  # refresh regardless
+scripts/gitnexus/refresh.sh --commit # refresh AND keep the count edits (for a deliberate PR)
+```
+
+## Consuming the cached index in another CI job
+
+Restore with the same key prefix; the SHA-exact entry hits first, the prefix
+fallback warm-starts from the latest index:
+
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: .gitnexus
+    key: gitnexus-${{ runner.os }}-${{ github.sha }}
+    restore-keys: |
+      gitnexus-${{ runner.os }}-
+```
