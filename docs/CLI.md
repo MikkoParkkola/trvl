@@ -79,6 +79,46 @@ trvl rooms "Hotel Lutetia Paris" --checkin 2026-06-15 --checkout 2026-06-18
 
 **Booking readiness:** `trvl prices` and `trvl rooms` show a readiness verdict (ready / caution / unverified) composed from verified price, stable link, confirmed property identity, and known refundability. Any unknown signal downgrades the verdict conservatively. In `--format json` the fields are `booking_readiness` and `booking_readiness_reasons`.
 
+### Islands and unindexed destinations
+
+Small islands and out-of-the-way towns often have properties that Google Hotels never assigns a stable hotel ID. The usual `trvl rooms <name>` path needs that ID to resolve room-level data, so it can come up empty for exactly the places where a verified price matters most. Roberto Reale tested this on Ischia and reported the gap; the sequence below is what works there.
+
+1. Discover what exists in the area:
+
+   ```bash
+   trvl hotels "Ischia, Italy" --checkin 2026-07-30 --checkout 2026-08-04 --format json
+   ```
+
+   This lists properties and, where Google exposes one, a place ID you can feed to `trvl prices`.
+
+2. Try room-level data for a named property:
+
+   ```bash
+   trvl rooms "Hotel Continental Mare" --checkin 2026-07-30 --checkout 2026-08-04
+   ```
+
+   If the property has no Google Hotel ID, this no longer fails silently. It tells you so and points you at the paths that do resolve island stays, including the `trvl serpapi` command below.
+
+3. Use `trvl serpapi` as the first tool for islands, not a last resort:
+
+   ```bash
+   trvl serpapi "Ischia, Italy" --checkin 2026-07-30 --checkout 2026-08-04 --currency EUR --adults 2
+   ```
+
+   For unindexed areas this is the most reliable verified-price path. It searches Google Hotels through SerpAPI, then fetches each top property's detail endpoint by `property_token` so the total is a per-provider quote rather than the list-level lead-in price. Each property carries a `price_verification` status, so verified and unverified results stay distinguishable. It needs a free `SERPAPI_KEY`; without one, trvl behaves exactly as before and this path stays off.
+
+   Detail lookups cost one API call per property, so trvl bounds them with `--max-details` (default 8). Properties past that limit, and properties whose `property_token` returns no provider rows, are labelled unverified instead of being shown as a verified total.
+
+4. Compare providers for a property that does have a Google place ID:
+
+   ```bash
+   trvl prices "PLACE_ID" --checkin 2026-07-30 --checkout 2026-08-04 --currency EUR
+   ```
+
+   When `SERPAPI_KEY` is set, this fetches the selected property's detail matrix and returns each OTA/provider row with a durable link, so the comparison survives the teaser price expiring at checkout.
+
+Sequence tested and contributed by Roberto Reale. See `docs/PUBLIC_ARTICLE_FEEDBACK.md` for the underlying feedback and retest history.
+
 ### Explore Destinations
 
 ```bash

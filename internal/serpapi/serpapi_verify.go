@@ -113,6 +113,19 @@ func mergePropertyDetails(hotel *Hotel, detail Hotel, currency string, checkedAt
 	hotel.RatePerNight = best.RatePerNight
 	hotel.TotalRate = best.TotalRate
 
+	// SerpAPI's property-details endpoint sometimes returns the provider
+	// breakdown only under featured_prices, leaving prices null. The total still
+	// promotes (LowestProviderOption spans both lists), but the inspectable
+	// Prices array would stay null and read as unverified. Mirror the verified
+	// provider rows into Prices so a detail-verified property always exposes its
+	// per-provider breakdown. (Reported by Roberto Reale: about half of Ischia
+	// properties showed prices: null despite being detail-checked.)
+	if len(hotel.Prices) == 0 {
+		if options := hotel.ProviderOptions(); len(options) > 0 {
+			hotel.Prices = options
+		}
+	}
+
 	delta := best.TotalRate.Extracted - listTotal.Extracted
 	deltaPct := 0.0
 	if listTotal.Extracted > 0 {
@@ -181,9 +194,29 @@ func (h *Hotel) ProviderOptions() []PriceOption {
 		return nil
 	}
 	options := make([]PriceOption, 0, len(h.FeaturedPrices)+len(h.Prices))
-	options = append(options, h.FeaturedPrices...)
-	options = append(options, h.Prices...)
+	seen := make(map[string]struct{}, len(h.FeaturedPrices)+len(h.Prices))
+	add := func(list []PriceOption) {
+		for _, opt := range list {
+			key := providerOptionKey(opt)
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			seen[key] = struct{}{}
+			options = append(options, opt)
+		}
+	}
+	add(h.FeaturedPrices)
+	add(h.Prices)
 	return options
+}
+
+// providerOptionKey identifies a provider quote so the same offer appearing in
+// both featured_prices and prices (or mirrored across them) is not counted
+// twice.
+func providerOptionKey(opt PriceOption) string {
+	return strings.ToLower(strings.TrimSpace(opt.Source)) + "|" +
+		strconv.FormatFloat(opt.TotalRate.Extracted, 'f', 2, 64) + "|" +
+		strconv.FormatFloat(opt.RatePerNight.Extracted, 'f', 2, 64)
 }
 
 func (h *Hotel) ProviderPrices(currency string) string {
