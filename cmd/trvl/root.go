@@ -115,6 +115,8 @@ func init() {
 	rootCmd.AddCommand(multimodalPlanCmd())
 	rootCmd.AddCommand(planAllCmd())
 	rootCmd.AddCommand(nudgesCmd())
+	rootCmd.AddCommand(importInboxCmd())
+	rootCmd.AddCommand(planDaysCmd())
 }
 
 // airportCompletion provides IATA code completion for cobra commands.
