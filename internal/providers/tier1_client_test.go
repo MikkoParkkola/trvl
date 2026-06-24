@@ -6,6 +6,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 )
@@ -136,6 +137,12 @@ func TestIsChallengePage(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "datadome interstitial body (no server header)",
+			resp: &http.Response{StatusCode: 403, Header: http.Header{}},
+			body: `<script>var dd={'rt':'c','t':'bv','host':'geo.captcha-delivery.com'}</script>`,
+			want: true,
+		},
+		{
 			name: "normal 200 page",
 			resp: &http.Response{StatusCode: 200, Header: http.Header{}},
 			body: "<html>real content</html>",
@@ -153,6 +160,34 @@ func TestIsChallengePage(t *testing.T) {
 				t.Fatalf("IsChallengePage = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestIsChallengePage_TheForkDataDomeFixture asserts the DataDome detection
+// against the REAL captured interstitial frozen at
+// testdata/thefork_datadome_interstitial.html. The fixture is the verbatim 403
+// body served by www.thefork.com on 2026-06-24 (MIK-2949), with per-session
+// tokens redacted. It is the proof that IsChallengePage now escalates DataDome
+// rather than treating its 403 as a hard failure.
+func TestIsChallengePage_TheForkDataDomeFixture(t *testing.T) {
+	raw, err := os.ReadFile("testdata/thefork_datadome_interstitial.html")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	body := raw
+	// The fixture's first line is "HTTP 403"; the body follows. Strip it so we
+	// feed IsChallengePage exactly what the HTTP body reader would yield.
+	if i := strings.IndexByte(string(raw), '\n'); i >= 0 {
+		body = raw[i+1:]
+	}
+	resp := &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{}}
+	if !IsChallengePage(resp, body) {
+		t.Fatal("IsChallengePage(thefork datadome fixture) = false, want true")
+	}
+	// And it must be classified NEEDS_HUMAN (behavioural CAPTCHA), not clearable.
+	gotHuman, vendor := DetectInteractiveCaptcha(body)
+	if !gotHuman || vendor != "datadome" {
+		t.Fatalf("DetectInteractiveCaptcha = (%v,%q), want (true,\"datadome\")", gotHuman, vendor)
 	}
 }
 

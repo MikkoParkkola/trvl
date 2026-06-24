@@ -205,8 +205,17 @@ func cachedCookiesForURL(targetURL string) []*http.Cookie {
 
 // challengeMarkers are case-insensitive substrings that appear in interactive
 // anti-bot challenge pages (Cloudflare "Just a moment…", managed challenge,
-// PerimeterX/Akamai interstitials). Their presence on a 403/503 response means
-// Tier-1 was fingerprinted and the caller should escalate to Tier-2.
+// PerimeterX/Akamai/DataDome interstitials). Their presence on a 403/503 response
+// means Tier-1 was fingerprinted and the caller should escalate to Tier-2.
+//
+// DataDome note: the DataDome interstitial is served as the response *body* of a
+// 403 on the protected document itself (no distinctive Server header), so it is
+// detected purely by these body markers. A DataDome challenge that escalates to
+// its behavioural CAPTCHA (the bootstrap carries 't':'bv') cannot be cleared by a
+// headless browser — DetectInteractiveCaptcha classifies it as NEEDS_HUMAN — but
+// IsChallengePage must still report it as a challenge so callers escalate rather
+// than treat the 403 as a hard failure. Observed live on www.thefork.com
+// (MIK-2949); see internal/providers/testdata/thefork_datadome_interstitial.html.
 var challengeMarkers = []string{
 	"just a moment",
 	"cf-chl",
@@ -217,6 +226,9 @@ var challengeMarkers = []string{
 	"_cf_chl_opt",
 	"px-captcha",
 	"/_incapsula_",
+	// DataDome device-check / CAPTCHA interstitial signatures.
+	"captcha-delivery.com",
+	"var dd={",
 }
 
 // IsChallengePage reports whether an HTTP response looks like an interactive
