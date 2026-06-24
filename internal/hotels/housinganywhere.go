@@ -508,7 +508,14 @@ func mapHAHit(h algoliaHit, fallbackCurrency string) (models.HotelResult, bool) 
 		Price:      h.PriceEUR,
 		Currency:   currency,
 		BookingURL: out.BookingURL,
-		PriceBasis: "room_total", // monthly mid-term rent, not a nightly rate
+		// HousingAnywhere prices are monthly mid-term rents, never per-stay
+		// room totals. Tagging this "monthly" (matching the Landing provider)
+		// routes it to property_level_only in roomMatchFromPriceBasis, so the
+		// monthly figure is never promoted to a booking-ready nightly rate and
+		// roomNightlyPrice returns 0 instead of fabricating a ~30x-inflated
+		// per-night price (issue #277 defect 4: the "$11.33/night Standard Room"
+		// leak was a monthly rent mislabelled as room_total).
+		PriceBasis: "monthly",
 	}}
 	return out, true
 }
