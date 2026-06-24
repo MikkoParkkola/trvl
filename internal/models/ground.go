@@ -45,6 +45,23 @@ type GroundRoute struct {
 	// (innovation #3). Nil when not scored; an unrated Confidence means trvl
 	// lacked the signal to judge — it is never a fabricated number.
 	Confidence *Confidence `json:"confidence,omitempty"`
+	// SeaState is an optional, free Open-Meteo Marine sea-state enrichment for
+	// ferry legs (wave height + a coarse calm/moderate/rough label). Nil unless
+	// the route is a ferry and the lookup succeeded — it is never blocking and
+	// never fabricated.
+	SeaState *SeaState `json:"sea_state,omitempty"`
+}
+
+// SeaState is a coarse sea-state forecast for a ferry leg, sourced from the
+// keyless Open-Meteo Marine API. It is a "nice to have" enrichment: absent when
+// coordinates are unavailable or the lookup fails.
+type SeaState struct {
+	// WaveHeight is the maximum significant wave height in metres.
+	WaveHeight float64 `json:"wave_height_m"`
+	// SwellHeight is the maximum swell wave height in metres (0 if unavailable).
+	SwellHeight float64 `json:"swell_height_m,omitempty"`
+	// Label is a coarse human-readable state: "calm", "moderate", or "rough".
+	Label string `json:"label"`
 }
 
 // GroundStop represents a departure or arrival point.

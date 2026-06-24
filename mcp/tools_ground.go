@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/profile"
 	"github.com/MikkoParkkola/trvl/internal/transfer"
 	"github.com/MikkoParkkola/trvl/internal/trip"
+	"github.com/MikkoParkkola/trvl/internal/weather"
 )
 
 func searchGroundTool() ToolDef {
@@ -166,6 +168,10 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 		return []ContentBlock{{Type: "text", Text: msg}}, result, nil
 	}
 
+	// Best-effort, free sea-state enrichment for ferry legs only. Never blocks
+	// the core result: failures and missing coordinates leave routes unchanged.
+	enrichFerrySeaState(ctx, result.Routes)
+
 	summary := buildGroundRouteSummary(
 		fmt.Sprintf("Found %d ground routes from %s to %s on %s", result.Count, from, to, date),
 		result.Routes,
@@ -244,6 +250,44 @@ func handleSearchAirportTransfers(ctx context.Context, args map[string]any, elic
 type airportTransferResponse struct {
 	*trip.AirportTransferResult
 	Comparison models.TransferComparison `json:"comparison"`
+}
+
+// enrichFerrySeaState attaches a coarse Open-Meteo Marine sea-state forecast to
+// ferry routes only. It is context-gated and silent-failure: non-ferry routes
+// are skipped, and a missing departure port or a failed/timed-out marine lookup
+// leaves the route unchanged. Ports are geocoded at most once per call.
+func enrichFerrySeaState(ctx context.Context, routes []models.GroundRoute) {
+	// Short, bounded budget so the enrichment can never stall the response.
+	enrichCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+
+	cache := make(map[string]*models.SeaState)
+	for i := range routes {
+		if routes[i].Type != "ferry" {
+			continue
+		}
+		port := strings.TrimSpace(routes[i].Departure.City)
+		if port == "" {
+			port = strings.TrimSpace(routes[i].Departure.Station)
+		}
+		if port == "" {
+			continue
+		}
+
+		if cached, ok := cache[port]; ok {
+			routes[i].SeaState = cached
+			continue
+		}
+
+		state, err := weather.SeaStateForCity(enrichCtx, port)
+		if err != nil {
+			cache[port] = nil // negative-cache so we don't retry the same port
+			continue
+		}
+		s := state
+		cache[port] = &s
+		routes[i].SeaState = &s
+	}
 }
 
 func groundRoutesHaveProvider(routes []models.GroundRoute, provider string) bool {
