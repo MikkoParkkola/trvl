@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -350,5 +351,47 @@ func TestSortRoomsByBookability(t *testing.T) {
 			}
 			t.Fatalf("order[%d] = %q, want %q (full: %v)", i, rooms[i].Name, name, got)
 		}
+	}
+}
+
+// TestBookingRateLimitNotice locks the rate-limited-vs-failed distinction for
+// the Booking room drill-down: a retryable bot-wall / 429 must surface a
+// caution (so a withheld price is not mistaken for "no rooms"), while a hard
+// parse failure or no error stays silent (a retry would not help).
+func TestBookingRateLimitNotice(t *testing.T) {
+	// Retryable conditions -> caution surfaced.
+	for _, brErr := range []error{
+		models.ErrRateLimited,
+		fmt.Errorf("request blocked by DataDome challenge"),
+		fmt.Errorf("HTTP 429: too many requests"),
+		fmt.Errorf("503 service unavailable"),
+	} {
+		if got := bookingRateLimitNotice(brErr); got == "" {
+			t.Errorf("retryable %v -> empty notice, want caution", brErr)
+		}
+	}
+	// Hard failure / nil -> silent.
+	for _, brErr := range []error{
+		nil,
+		fmt.Errorf("no room offers found on booking detail page"),
+		fmt.Errorf("unexpected JSON-LD shape"),
+	} {
+		if got := bookingRateLimitNotice(brErr); got != "" {
+			t.Errorf("non-retryable %v -> %q, want empty", brErr, got)
+		}
+	}
+}
+
+// TestAppendNotice covers the notice-join helper: clauses accumulate
+// space-separated and an empty operand never adds a stray separator.
+func TestAppendNotice(t *testing.T) {
+	if got := appendNotice("", "a"); got != "a" {
+		t.Errorf("empty+a = %q, want a", got)
+	}
+	if got := appendNotice("a", ""); got != "a" {
+		t.Errorf("a+empty = %q, want a", got)
+	}
+	if got := appendNotice("a", "b"); got != "a b" {
+		t.Errorf("a+b = %q, want 'a b'", got)
 	}
 }
