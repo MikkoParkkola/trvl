@@ -42,6 +42,7 @@ func flightsCmd() *cobra.Command {
 		provider       string
 		flightRailFly  bool
 		deep           bool
+		stealth        bool
 	)
 
 	cmd := &cobra.Command{
@@ -169,6 +170,7 @@ Examples:
 				SortBy:     sort,
 				Airlines:   airlines,
 				Adults:     adults,
+				Stealth:    stealth,
 			}
 
 			// --compare-cabins: search all cabin classes in parallel.
@@ -319,6 +321,7 @@ Examples:
 	cmd.Flags().BoolVar(&flightRailFly, "rail-fly", false, "Expand the search to rail-connected origins (KL/AF Air&Rail), surfacing cheaper rail+fly bundles even when the origin is outside the default hub list")
 	cmd.Flags().BoolVar(&deep, "deep", false, "Run a budget-gated counterfactual fan-out (nearby airports, split tickets, hidden city). Issues extra provider calls, capped by a best-effort budget that never delays the primary search")
 	cmd.Flags().BoolVar(&noGeo, "no-geo", false, "Disable geo-IP origin detection (also honored via TRVL_NO_GEO=1). Origin then resolves only from an explicit code or your saved home airport.")
+	cmd.Flags().BoolVar(&stealth, "stealth", false, "Opt in to authorized first-party stealth access (Chrome HTTP/2 fingerprint) for the flight fetch. Default off. Scope-fenced: activates ONLY for hosts on the operator allowlist TRVL_STEALTH_ALLOWLIST (comma-separated; empty = never). Fail-safe: a non-allowlisted host runs the normal path. Using stealth against sites that prohibit automated access is the operator's responsibility.")
 
 	cmd.ValidArgsFunction = airportCompletion
 

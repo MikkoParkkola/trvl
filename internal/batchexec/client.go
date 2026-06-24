@@ -16,10 +16,13 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/cache"
+	"github.com/MikkoParkkola/trvl/internal/stealth"
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/http2"
 	"golang.org/x/time/rate"
@@ -61,6 +64,15 @@ type Client struct {
 	limiter *rate.Limiter
 	cache   *cache.Cache
 	noCache bool
+
+	// stealthHTTP is the opt-in, operator-authorized stealth transport. It is
+	// the full Chrome 146 HTTP/2 fingerprint client (ChromeHTTPClient), which
+	// advertises native ALPN ["h2","http/1.1"] and speaks HTTP/2 — the profile
+	// that clears Datadome-class bot detection. It is built lazily on first
+	// authorized use so the default (non-stealth) path is unaffected, and it is
+	// reused thereafter for connection pooling. Access is guarded by stealthOnce.
+	stealthHTTP *http.Client
+	stealthOnce sync.Once
 }
 
 // NewClient creates a Client that impersonates Chrome's TLS fingerprint.
@@ -207,7 +219,17 @@ func dialTLSChromeHTTP1WithConfig(ctx context.Context, network, addr string, tls
 // Get performs a GET request with Chrome headers.
 // The request is subject to rate limiting and automatic retry on 429/5xx.
 func (c *Client) Get(ctx context.Context, url string) (int, []byte, error) {
-	return c.doWithRetry(ctx, func() (*http.Request, error) {
+	return c.GetStealth(ctx, url, false)
+}
+
+// GetStealth is Get with an explicit, operator-authorized stealth toggle. When
+// stealthRequested is true AND the request host is on the operator allowlist,
+// the request uses the Chrome HTTP/2 stealth transport; otherwise it runs the
+// normal path (with a single refusal log line for a requested-but-unauthorized
+// host). stealthRequested=false is byte-identical to Get.
+func (c *Client) GetStealth(ctx context.Context, url string, stealthRequested bool) (int, []byte, error) {
+	httpClient, _ := c.transportForStealth(stealthRequested, url)
+	return c.doWithRetryVia(ctx, httpClient, func() (*http.Request, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return nil, err
@@ -258,7 +280,18 @@ func (c *Client) GetWithHeaders(ctx context.Context, url string, headers map[str
 // Content-Type to application/x-www-form-urlencoded and uses a Chrome User-Agent.
 // The request is subject to rate limiting and automatic retry on 429/5xx.
 func (c *Client) PostForm(ctx context.Context, url, formBody string) (int, []byte, error) {
-	return c.doWithRetry(ctx, func() (*http.Request, error) {
+	return c.PostFormStealth(ctx, url, formBody, false)
+}
+
+// PostFormStealth is PostForm with an explicit, operator-authorized stealth
+// toggle. When stealthRequested is true AND the request host is on the operator
+// allowlist (TRVL_STEALTH_ALLOWLIST), the request uses the Chrome HTTP/2 stealth
+// transport; otherwise it runs the normal path (logging a single refusal line
+// for a requested-but-unauthorized host). stealthRequested=false is
+// byte-identical to PostForm — stealth is strictly opt-in and scope-fenced.
+func (c *Client) PostFormStealth(ctx context.Context, url, formBody string, stealthRequested bool) (int, []byte, error) {
+	httpClient, _ := c.transportForStealth(stealthRequested, url)
+	return c.doWithRetryVia(ctx, httpClient, func() (*http.Request, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(formBody))
 		if err != nil {
 			return nil, err
@@ -278,6 +311,15 @@ func (c *Client) PostForm(ctx context.Context, url, formBody string) (int, []byt
 // with exponential backoff (1s, 2s, 4s) plus jitter (+-25%).
 // Client errors (4xx except 429) are not retried.
 func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request, error)) (int, []byte, error) {
+	return c.doWithRetryVia(ctx, c.http, buildReq)
+}
+
+// doWithRetryVia is doWithRetry parameterized by the underlying *http.Client to
+// use for the round-trip. The default fetch path passes c.http (Chrome HTTP/1.1
+// fingerprint); the authorized stealth path passes the lazily-built HTTP/2
+// Chrome 146 client. Rate limiting, retry, and logging are identical regardless
+// of transport so behavior is observable and consistent.
+func (c *Client) doWithRetryVia(ctx context.Context, httpClient *http.Client, buildReq func() (*http.Request, error)) (int, []byte, error) {
 	var lastStatus int
 	var lastBody []byte
 	var lastErr error
@@ -297,7 +339,7 @@ func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request
 		slog.Debug("request", "method", req.Method, "url", req.URL.String(), "payload_len", req.ContentLength)
 		start := time.Now()
 
-		resp, err := c.http.Do(req)
+		resp, err := httpClient.Do(req)
 		if err != nil {
 			lastErr = err
 			if attempt < defaultMaxRetries {
@@ -403,8 +445,25 @@ func (c *Client) SearchFlightsGL(ctx context.Context, encodedFilters, gl string)
 	return c.SearchFlightsGLCurr(ctx, encodedFilters, gl, "")
 }
 
+// SearchFlightsGLStealth is SearchFlightsGL with an explicit, operator-authorized
+// stealth toggle. The flight search path passes opts.Stealth here; the gate
+// (host allowlist) is enforced inside the POST. stealthRequested=false is
+// byte-identical to SearchFlightsGL.
+func (c *Client) SearchFlightsGLStealth(ctx context.Context, encodedFilters, gl string, stealthRequested bool) (int, []byte, error) {
+	return c.SearchFlightsGLCurrStealth(ctx, encodedFilters, gl, "", stealthRequested)
+}
+
 // SearchFlightsGLCurr is the full variant with both gl= and curr= parameters.
 func (c *Client) SearchFlightsGLCurr(ctx context.Context, encodedFilters, gl, curr string) (int, []byte, error) {
+	return c.SearchFlightsGLCurrStealth(ctx, encodedFilters, gl, curr, false)
+}
+
+// SearchFlightsGLCurrStealth is SearchFlightsGLCurr with an explicit,
+// operator-authorized stealth toggle threaded through to the underlying POST.
+// The response cache is shared with the non-stealth path (the transport does not
+// change the response body), so a cached entry is returned regardless of the
+// stealth flag. stealthRequested=false is byte-identical to SearchFlightsGLCurr.
+func (c *Client) SearchFlightsGLCurrStealth(ctx context.Context, encodedFilters, gl, curr string, stealthRequested bool) (int, []byte, error) {
 	url := FlightsURL
 	if gl != "" {
 		url += "&gl=" + gl
@@ -416,7 +475,7 @@ func (c *Client) SearchFlightsGLCurr(ctx context.Context, encodedFilters, gl, cu
 	if data, ok := c.getCached(url, payload); ok {
 		return 200, data, nil
 	}
-	status, body, err := c.PostForm(ctx, url, payload)
+	status, body, err := c.PostFormStealth(ctx, url, payload, stealthRequested)
 	if err == nil && status == 200 {
 		c.setCached(url, payload, body, FlightCacheTTL)
 	}
@@ -597,3 +656,56 @@ func dialTLSChromeH2(ctx context.Context, network, addr string) (net.Conn, error
 
 // ErrBlocked is returned when Google responds with 403 Forbidden.
 var ErrBlocked = errors.New("request blocked (403)")
+
+// transportForStealth selects the *http.Client to use for a request to url when
+// the caller has requested stealth.
+//
+// It enforces the operator-authorized scope fence: stealth activates ONLY when
+//  1. stealthRequested is true (the operator passed --stealth), AND
+//  2. the request host is on the operator-authorized allowlist
+//     (stealth.Authorized, backed by TRVL_STEALTH_ALLOWLIST).
+//
+// When stealth is requested for a non-allowlisted host, it logs exactly one
+// clear line and returns the normal transport (stealth no-op, never an error or
+// abort). When stealth is not requested at all, it returns the normal transport
+// silently. The fail-safe default — empty/unset allowlist — means stealth never
+// activates. Returns the *http.Client to use and whether stealth was engaged.
+func (c *Client) transportForStealth(stealthRequested bool, url string) (*http.Client, bool) {
+	if !stealthRequested {
+		return c.http, false
+	}
+	host := hostFromURL(url)
+	if !stealth.Authorized(host) {
+		slog.Info("stealth not authorized for host " + host)
+		return c.http, false
+	}
+	return c.stealthClient(), true
+}
+
+// stealthClient lazily builds and caches the operator-authorized stealth
+// transport (Chrome 146 HTTP/2 fingerprint). It is only ever reached after the
+// allowlist gate has authorized the host, so building it is itself gated.
+func (c *Client) stealthClient() *http.Client {
+	c.stealthOnce.Do(func() {
+		// Test clients route through a redirect transport; reusing it keeps
+		// stealth-engaged tests deterministic and offline. Production clients
+		// build the real Chrome HTTP/2 fingerprint client.
+		if _, ok := c.http.Transport.(*testRedirectTransport); ok {
+			c.stealthHTTP = c.http
+			return
+		}
+		c.stealthHTTP = ChromeHTTPClient()
+	})
+	return c.stealthHTTP
+}
+
+// hostFromURL extracts the lowercase host (no port) from a request URL. It
+// returns an empty string when the URL cannot be parsed, which the allowlist
+// treats as unauthorized (fail-safe).
+func hostFromURL(rawURL string) string {
+	u, err := neturl.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
