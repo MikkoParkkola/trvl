@@ -73,6 +73,7 @@ func init() {
 	rootCmd.AddCommand(carsCmd())
 	rootCmd.AddCommand(tripCmd())
 	rootCmd.AddCommand(dealsCmd())
+	rootCmd.AddCommand(digestCmd())
 	rootCmd.AddCommand(routeCmd())
 	rootCmd.AddCommand(watchCmd())
 	rootCmd.AddCommand(roomsCmd())
