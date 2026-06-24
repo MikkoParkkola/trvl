@@ -183,3 +183,32 @@ func TestDefaultStore(t *testing.T) {
 		t.Fatal("DefaultStore returned nil")
 	}
 }
+
+// TestDesktopNotifyDispatch_NonDarwinNoPanic asserts the dispatch helper degrades
+// gracefully on non-darwin platforms: it must not panic regardless of whether the
+// native channel (notify-send, PowerShell) is present. Best-effort by contract.
+func TestDesktopNotifyDispatch_NoPanic(t *testing.T) {
+	for _, goos := range []string{"linux", "windows", "plan9", "freebsd", ""} {
+		goos := goos
+		t.Run(goos, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("desktopNotifyDispatch(%q) panicked: %v", goos, r)
+				}
+			}()
+			desktopNotifyDispatch(goos, "trvl: test", "graceful degradation")
+		})
+	}
+}
+
+// TestDesktopNotify_NoPanic exercises the Notifier method wrapper end-to-end on
+// the host OS; it must never panic since callers ignore failures.
+func TestDesktopNotify_NoPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("desktopNotify panicked: %v", r)
+		}
+	}()
+	n := &Notifier{}
+	n.desktopNotify("trvl: test", "no panic")
+}

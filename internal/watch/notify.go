@@ -3,6 +3,7 @@ package watch
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -240,11 +241,42 @@ func (n *Notifier) yellow(s string) string {
 	return "\033[33m" + s + "\033[0m"
 }
 
-// desktopNotify sends a macOS notification via osascript. Best-effort; errors are ignored.
+// desktopNotify sends a native desktop notification. Best-effort by contract:
+// callers ignore failures, so it never returns an error or blocks. When the
+// platform's native channel is unavailable it logs at debug level rather than
+// failing silently, so the degradation is observable in logs.
 func (n *Notifier) desktopNotify(title, message string) {
-	if runtime.GOOS != "darwin" {
-		return
+	desktopNotifyDispatch(runtime.GOOS, title, message)
+}
+
+// desktopNotifyDispatch routes a desktop notification to the platform-native
+// channel. It is factored out (taking goos explicitly) so the dispatch logic is
+// testable without depending on the host OS, mirroring providers.defaultOpenURL.
+func desktopNotifyDispatch(goos, title, message string) {
+	switch goos {
+	case "darwin":
+		script := fmt.Sprintf(`display notification %q with title %q`, message, title)
+		if err := exec.Command("osascript", "-e", script).Run(); err != nil {
+			slog.Debug("desktop notification unavailable", "goos", goos, "channel", "osascript", "err", err)
+		}
+	case "linux":
+		// notify-send is the standard libnotify CLI on Linux desktops.
+		if err := exec.Command("notify-send", title, message).Run(); err != nil {
+			slog.Debug("desktop notification unavailable", "goos", goos, "channel", "notify-send", "err", err)
+		}
+	case "windows":
+		// Best-effort balloon via PowerShell, no third-party module required.
+		ps := fmt.Sprintf(
+			`[reflection.assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null; `+
+				`$n = New-Object System.Windows.Forms.NotifyIcon; `+
+				`$n.Icon = [System.Drawing.SystemIcons]::Information; `+
+				`$n.BalloonTipTitle = %q; $n.BalloonTipText = %q; `+
+				`$n.Visible = $true; $n.ShowBalloonTip(5000)`,
+			title, message)
+		if err := exec.Command("powershell", "-NoProfile", "-Command", ps).Run(); err != nil {
+			slog.Debug("desktop notification unavailable", "goos", goos, "channel", "powershell", "err", err)
+		}
+	default:
+		slog.Debug("desktop notification unavailable", "goos", goos, "channel", "none")
 	}
-	script := fmt.Sprintf(`display notification %q with title %q`, message, title)
-	_ = exec.Command("osascript", "-e", script).Run()
 }
