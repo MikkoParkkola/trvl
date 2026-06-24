@@ -22,7 +22,8 @@ func TestRootCmd_SubcommandCount(t *testing.T) {
 	// 67 -> 68 with `plan-all` (innovation #5 unified trip coalescer).
 	// 68 -> 69 with `status` (operational health/circuit/rate-limit snapshot).
 	// 69 -> 70 with `nudges` (MIK-6233 personal travel graph nudges).
-	const want = 70
+	// 70 -> 71 with `digest` (MIK-3067 daily Gmail deal-radar digest).
+	const want = 71
 	got := len(rootCmd.Commands())
 	if got != want {
 		names := make([]string, 0, got)
