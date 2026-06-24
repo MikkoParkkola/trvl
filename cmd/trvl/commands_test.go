@@ -23,7 +23,9 @@ func TestRootCmd_SubcommandCount(t *testing.T) {
 	// 68 -> 69 with `status` (operational health/circuit/rate-limit snapshot).
 	// 69 -> 70 with `nudges` (MIK-6233 personal travel graph nudges).
 	// 70 -> 71 with `digest` (MIK-3067 daily Gmail deal-radar digest).
-	const want = 71
+	// 71 -> 73 with `import-inbox` + `plan-days` (MIK-3088 trip-composition
+	// wiring: inbox confirmation import and day-graph itinerary compose).
+	const want = 73
 	got := len(rootCmd.Commands())
 	if got != want {
 		names := make([]string, 0, got)
