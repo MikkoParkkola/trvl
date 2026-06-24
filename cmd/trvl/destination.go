@@ -65,6 +65,52 @@ func runDestination(cmd *cobra.Command, args []string) error {
 	return formatDestinationCard(info)
 }
 
+// showDestinationFooter enriches the arrival location best-effort and prints a
+// compact destination footer beneath search results. A blank location or a
+// failed lookup prints nothing, so search commands call it unconditionally on
+// their human-readable output path.
+func showDestinationFooter(ctx context.Context, location string, dates models.DateRange) {
+	printDestinationFooter(destinations.EnrichBestEffort(ctx, location, dates))
+}
+
+// printDestinationFooter renders a compact one-block destination summary
+// beneath search results (hotels, flights, ground). Unlike formatDestinationCard
+// — the full card behind `trvl destination` — this is a tight footer: current
+// weather, safety level, holidays falling during the stay, and the currency
+// rate, each printed only when present. A nil info prints nothing, so callers
+// can pass best-effort enrichment straight through without guarding.
+func printDestinationFooter(info *models.DestinationInfo) {
+	if info == nil {
+		return
+	}
+	var lines []string
+	if w := info.Weather.Current; w.Description != "" || w.TempHigh != 0 || w.TempLow != 0 {
+		lines = append(lines, fmt.Sprintf("Weather: %s, %.0f–%.0f°C", w.Description, w.TempLow, w.TempHigh))
+	}
+	if info.Safety.Source != "" {
+		lines = append(lines, fmt.Sprintf("Safety: %.1f/5.0 — %s", info.Safety.Level, info.Safety.Advisory))
+	}
+	if len(info.Holidays) > 0 {
+		names := make([]string, 0, len(info.Holidays))
+		for _, h := range info.Holidays {
+			names = append(names, fmt.Sprintf("%s (%s)", h.Name, h.Date))
+		}
+		lines = append(lines, "Holidays during stay: "+strings.Join(names, ", "))
+	}
+	if info.Currency.LocalCurrency != "" && info.Currency.ExchangeRate > 0 {
+		lines = append(lines, fmt.Sprintf("Currency: 1 %s = %.2f %s",
+			info.Currency.BaseCurrency, info.Currency.ExchangeRate, info.Currency.LocalCurrency))
+	}
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Println()
+	fmt.Printf("  Destination: %s\n", info.Location)
+	for _, l := range lines {
+		fmt.Printf("    %s\n", l)
+	}
+}
+
 func formatDestinationCard(info *models.DestinationInfo) error {
 	// Header
 	fmt.Printf("\n  %s\n", info.Location)

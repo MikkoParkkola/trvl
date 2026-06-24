@@ -281,6 +281,11 @@ Examples:
 			printPricePosition(os.Stdout, pricePos)
 			printSavings(os.Stdout, savings, time.Now())
 
+			// Additive destination intelligence for the arrival city. destArg is
+			// the user's typed destination (city or airport code); Nominatim
+			// resolves either. Best-effort: nil prints nothing.
+			showDestinationFooter(cmd.Context(), destArg, models.DateRange{CheckIn: date, CheckOut: returnDate})
+
 			// Auto-trigger: run applicable hack detectors and print tips
 			// below the flight results.
 			maybeShowFlightHackTips(cmd.Context(), origins, destinations, date, returnDate, adults, result, flightRailFly)
