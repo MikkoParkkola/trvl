@@ -205,7 +205,70 @@ func TestRoomMatchFromPriceBasis(t *testing.T) {
 	}
 }
 
-// TestSortRoomsByBookability locks the room ordering contract: rooms with a
+// TestHotelRoomsToRoomTypes locks the Agoda room-level converter: model rooms
+// (as parseAgodaSearch emits them) map field-for-field into RoomType, the
+// currency falls back to the request default when a room omits it, and the
+// bool->*bool widening only sets the flag when the source said true (a source
+// false stays nil = not-claimed, never a hard "no").
+func TestHotelRoomsToRoomTypes(t *testing.T) {
+	taxIncl := true
+	rooms := []models.Room{
+		{
+			Name:              "Deluxe King",
+			Price:             180,
+			NightlyPrice:      90,
+			TotalPrice:        180,
+			TaxesAndFees:      20,
+			TaxesFeesIncluded: &taxIncl,
+			Currency:          "USD",
+			Provider:          "Agoda",
+			MatchConfidence:   models.RoomInventoryMatchExact,
+			MaxGuests:         2,
+			FreeCancellation:  true,
+			BreakfastIncluded: false,
+		},
+		{
+			Name:     "Standard Twin",
+			Price:    120,
+			Currency: "", // should fall back to default
+			Provider: "Agoda",
+		},
+	}
+
+	got := hotelRoomsToRoomTypes(rooms, "EUR")
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+
+	d := got[0]
+	if d.Name != "Deluxe King" || d.Price != 180 || d.NightlyPrice != 90 || d.TotalPrice != 180 {
+		t.Fatalf("deluxe prices wrong: %+v", d)
+	}
+	if d.Currency != "USD" {
+		t.Fatalf("deluxe currency = %q, want USD (room had its own)", d.Currency)
+	}
+	if d.TaxesFeesIncluded == nil || !*d.TaxesFeesIncluded {
+		t.Fatal("deluxe TaxesFeesIncluded should carry through as true")
+	}
+	if d.FreeCancellation == nil || !*d.FreeCancellation {
+		t.Fatal("source FreeCancellation=true must widen to *bool true")
+	}
+	if d.BreakfastIncluded != nil {
+		t.Fatal("source BreakfastIncluded=false must stay nil (not-claimed), not a hard false")
+	}
+	if d.MatchConfidence != models.RoomInventoryMatchExact {
+		t.Fatalf("deluxe match = %q, want exact", d.MatchConfidence)
+	}
+
+	s := got[1]
+	if s.Currency != "EUR" {
+		t.Fatalf("twin currency = %q, want default EUR fallback", s.Currency)
+	}
+	if s.FreeCancellation != nil {
+		t.Fatal("twin FreeCancellation must stay nil when source false/unset")
+	}
+}
+
 // real, bookable price lead (exact > similar > property-level lead-in), then
 // cheapest-first within a tier, and rooms with no usable price sink to the
 // bottom of their tier. This delivers "lead with the ones that have proper

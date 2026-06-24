@@ -169,6 +169,22 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		}
 	}
 
+	// Consult Agoda for a room-level rate when the free Google paths (and the
+	// optional SerpAPI upgrade) still produced no verified room price. Agoda is
+	// key-free and its search already carries per-room inventory, so this adds a
+	// real second priced provider to the drill-down without burning the hot
+	// path. Merge so any Google lead-ins stay; bookability sort below leads with
+	// whichever provider actually has a bookable price.
+	if len(rooms) == 0 || !hasVerifiedRoom(rooms) {
+		if agodaRooms := tryAgodaRoomLevel(ctx, opts); len(agodaRooms) > 0 {
+			if len(rooms) == 0 {
+				rooms = agodaRooms
+			} else {
+				rooms = mergeRoomTypes(rooms, agodaRooms)
+			}
+		}
+	}
+
 	// Merge Booking.com rooms with Google rooms if both are available.
 	if len(bookingRooms) > 0 {
 		rooms = mergeRoomTypes(rooms, bookingRooms)
@@ -240,6 +256,95 @@ func roomEffectivePrice(r RoomType) float64 {
 		return r.NightlyPrice
 	}
 	return r.TotalPrice
+}
+
+// tryAgodaRoomLevel consults Agoda for the hotel's room-level rate so the
+// drill-into-one-hotel path includes Agoda alongside Google, SerpAPI, and
+// Booking. Agoda's search response already carries per-room-per-night inventory
+// (parseAgodaSearch populates HotelResult.RoomTypes), so we run a location
+// search, match the target property by ID then name, and convert its rooms.
+// Gated on a location hint (same contract as the Google search-page fallback);
+// the caller invokes it only when the free Google paths produced no verified
+// room price, keeping the live Agoda request off the hot path. Agoda is
+// key-free, so this adds a real second priced provider with no credentials.
+func tryAgodaRoomLevel(ctx context.Context, opts RoomSearchOptions) []RoomType {
+	if strings.TrimSpace(opts.Location) == "" {
+		return nil
+	}
+	searchOpts := roomFallbackSearchOptions(opts)
+	var results []models.HotelResult
+	for _, loc := range buildLocationCandidates(opts.Location) {
+		r, err := SearchAgoda(ctx, loc, searchOpts)
+		if err == nil && len(r) > 0 {
+			results = r
+			break
+		}
+	}
+	if len(results) == 0 {
+		return nil
+	}
+	var hotel *models.HotelResult
+	for i := range results {
+		if opts.HotelID != "" && results[i].HotelID == opts.HotelID {
+			hotel = &results[i]
+			break
+		}
+	}
+	if hotel == nil {
+		hotel = findBestNameMatch(results, opts.Location)
+	}
+	if hotel == nil || len(hotel.RoomTypes) == 0 {
+		return nil
+	}
+	return hotelRoomsToRoomTypes(hotel.RoomTypes, opts.Currency)
+}
+
+// hotelRoomsToRoomTypes converts provider-search model rooms into
+// room-availability RoomType entries, defaulting the currency when a room omits
+// it. The bool to *bool widening preserves the not-yet-known state for the
+// cancellation and breakfast flags a search response did not populate (a bare
+// false would wrongly claim "no free cancellation" when the rate simply did not
+// say either way).
+func hotelRoomsToRoomTypes(rooms []models.Room, defaultCurrency string) []RoomType {
+	out := make([]RoomType, 0, len(rooms))
+	for _, r := range rooms {
+		currency := r.Currency
+		if currency == "" {
+			currency = defaultCurrency
+		}
+		rt := RoomType{
+			Name:               r.Name,
+			Price:              r.Price,
+			NightlyPrice:       r.NightlyPrice,
+			TotalPrice:         r.TotalPrice,
+			TaxesAndFees:       r.TaxesAndFees,
+			TaxesFeesIncluded:  r.TaxesFeesIncluded,
+			Currency:           currency,
+			Provider:           r.Provider,
+			ProviderURL:        r.ProviderURL,
+			RateID:             r.RateID,
+			RatePlanName:       r.RatePlanName,
+			MatchConfidence:    r.MatchConfidence,
+			MaxGuests:          r.MaxGuests,
+			BedType:            r.BedType,
+			SizeM2:             r.SizeM2,
+			Description:        r.Description,
+			Amenities:          r.Amenities,
+			CancellationPolicy: r.CancellationPolicy,
+			Refundable:         r.Refundable,
+			Board:              r.Board,
+		}
+		if r.FreeCancellation {
+			v := true
+			rt.FreeCancellation = &v
+		}
+		if r.BreakfastIncluded {
+			v := true
+			rt.BreakfastIncluded = &v
+		}
+		out = append(out, rt)
+	}
+	return out
 }
 
 // tryEntityPage attempts to extract room data from the Google Hotels entity
