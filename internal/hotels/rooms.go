@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -173,6 +174,14 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		rooms = mergeRoomTypes(rooms, bookingRooms)
 	}
 
+	// Lead with the rooms that carry a real, bookable price. Sources are merged
+	// in fetch order (Google entity, partner matrix, search fallback, SerpAPI,
+	// Booking) so a property-level lead-in can otherwise sit above a verified
+	// room-level rate. Order by bookability (exact > similar > property-level
+	// lead-in), then cheapest-first within a tier, so the most actionable price
+	// surfaces first and unpriced lead-ins sink to the bottom.
+	sortRoomsByBookability(rooms)
+
 	return &RoomAvailability{
 		Success:  true,
 		HotelID:  opts.HotelID,
@@ -182,6 +191,55 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		Rooms:    rooms,
 		Notice:   notice,
 	}, nil
+}
+
+// sortRoomsByBookability orders rooms so the most actionable, real prices lead.
+// Primary key: bookability rank (exact room-level price first, then a real
+// "similar" bookable rate, then property-level-only lead-ins). Secondary key:
+// effective price ascending so the cheapest real offer in each tier surfaces
+// first; rooms with no usable price sink to the bottom of their tier. The sort
+// is stable, preserving provider fetch order among otherwise-equal rooms.
+func sortRoomsByBookability(rooms []RoomType) {
+	sort.SliceStable(rooms, func(i, j int) bool {
+		ri, rj := roomBookabilityRank(rooms[i]), roomBookabilityRank(rooms[j])
+		if ri != rj {
+			return ri < rj
+		}
+		pi, pj := roomEffectivePrice(rooms[i]), roomEffectivePrice(rooms[j])
+		// A usable price (>0) always leads a missing one within the same tier.
+		if (pi > 0) != (pj > 0) {
+			return pi > 0
+		}
+		return pi < pj
+	})
+}
+
+// roomBookabilityRank maps a room's match confidence to a sort rank where a
+// lower value leads. An explicit room-level match is the most bookable; a
+// "similar" rate is a real bookable price without a nameable room identity;
+// everything else (property-level lead-ins, unset) trails.
+func roomBookabilityRank(r RoomType) int {
+	switch strings.TrimSpace(r.MatchConfidence) {
+	case models.RoomInventoryMatchExact:
+		return 0
+	case models.RoomInventoryMatchSimilar:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// roomEffectivePrice returns the room's most representative bookable price,
+// preferring the headline Price, then nightly, then total. Returns 0 when the
+// room carries no usable price.
+func roomEffectivePrice(r RoomType) float64 {
+	if r.Price > 0 {
+		return r.Price
+	}
+	if r.NightlyPrice > 0 {
+		return r.NightlyPrice
+	}
+	return r.TotalPrice
 }
 
 // tryEntityPage attempts to extract room data from the Google Hotels entity
