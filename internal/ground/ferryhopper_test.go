@@ -503,3 +503,34 @@ func TestSearchFerryhopper_Integration(t *testing.T) {
 		t.Error("booking URL should not be empty")
 	}
 }
+
+// TestSearchFerryhopper_ToolErrorEchoesMessage proves the IsError path surfaces
+// the tool's human-readable reason (content[0].text) instead of an opaque
+// "tool returned error". Regression guard: before the fix the message was
+// discarded, leaving callers blind to why Ferryhopper declined.
+func TestSearchFerryhopper_ToolErrorEchoesMessage(t *testing.T) {
+	const reason = "Narnia is not a recognized port"
+	frame := `data: {"jsonrpc":"2.0","id":1,"result":{"isError":true,"content":[{"type":"text","text":"` + reason + `"}]}}` + "\n\n"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, frame)
+	}))
+	defer srv.Close()
+
+	origClient, origURL := ferryhopperClient, ferryhopperMCPURL
+	ferryhopperClient, ferryhopperMCPURL = srv.Client(), srv.URL
+	defer func() { ferryhopperClient, ferryhopperMCPURL = origClient, origURL }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := SearchFerryhopper(ctx, "Narnia", "Santorini", "2026-07-10", "EUR")
+	if err == nil {
+		t.Fatal("expected an error for tool isError, got nil")
+	}
+	if !strings.Contains(err.Error(), reason) {
+		t.Fatalf("error should echo the tool reason %q, got: %v", reason, err)
+	}
+}
