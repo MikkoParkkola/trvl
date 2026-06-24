@@ -220,11 +220,13 @@ func tryEntityPage(ctx context.Context, opts RoomSearchOptions) ([]RoomType, str
 // partner URLs (notably Booking.com) so the downstream exact-room fetch can run.
 func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string) {
 	res, err := GetHotelPricesWithOpts(ctx, HotelPriceOpts{
-		HotelID:  opts.HotelID,
-		CheckIn:  opts.CheckIn,
-		CheckOut: opts.CheckOut,
-		Currency: opts.Currency,
-		Location: opts.Location,
+		HotelID:      opts.HotelID,
+		CheckIn:      opts.CheckIn,
+		CheckOut:     opts.CheckOut,
+		Currency:     opts.Currency,
+		Guests:       opts.Guests,
+		ChildrenAges: opts.ChildrenAges,
+		Location:     opts.Location,
 	})
 	if err != nil || res == nil || len(res.Providers) == 0 {
 		return nil, ""

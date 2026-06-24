@@ -159,14 +159,49 @@ func BuildHotelSearchPayload(location string, checkIn, checkOut [3]int, adults i
 	return EncodeBatchExecute("AtySUc", args)
 }
 
-// BuildHotelPricePayload constructs a batchexecute payload for hotel price lookup.
+// BuildHotelPricePayload constructs a batchexecute payload for hotel price
+// lookup with the default occupancy (2 adults, no children).
+//
+// It preserves the historical request shape. Callers that know the real party
+// size should use BuildHotelPricePayloadWithOccupancy so Google filters the
+// partner-price matrix to the requested occupancy server-side instead of
+// returning the generic two-adult quote.
 //
 // rpcid "yY52ce" looks up prices for a specific hotel ID.
 // Date arrays are [year, month, day].
 func BuildHotelPricePayload(hotelID string, checkIn, checkOut [3]int, currency string) string {
-	args := fmt.Sprintf(`[null,[%d,%d,%d],[%d,%d,%d],[2,[],0],%q,%q]`,
+	return BuildHotelPricePayloadWithOccupancy(hotelID, checkIn, checkOut, currency, 2, nil)
+}
+
+// BuildHotelPricePayloadWithOccupancy is like BuildHotelPricePayload but carries
+// the requested occupancy into the yY52ce RPC, so Google scopes partner prices
+// to that party size at the source rather than after the fetch.
+//
+// The occupancy block is [adults, [childAge...], 0]. adults and the child-age
+// list are the verified fields and are plumbed from the caller. The trailing
+// field's exact meaning is not confirmed upstream, so it is left at its
+// historical 0.
+// ponytail: third occupancy field unverified — left at 0; revisit only if
+// Google starts keying multi-room quotes off it.
+func BuildHotelPricePayloadWithOccupancy(hotelID string, checkIn, checkOut [3]int, currency string, adults int, childAges []int) string {
+	if adults <= 0 {
+		adults = 2
+	}
+	children := "[]"
+	if len(childAges) > 0 {
+		children = "["
+		for i, age := range childAges {
+			if i > 0 {
+				children += ","
+			}
+			children += fmt.Sprintf("%d", age)
+		}
+		children += "]"
+	}
+	args := fmt.Sprintf(`[null,[%d,%d,%d],[%d,%d,%d],[%d,%s,0],%q,%q]`,
 		checkIn[0], checkIn[1], checkIn[2],
 		checkOut[0], checkOut[1], checkOut[2],
+		adults, children,
 		hotelID, currency)
 	return EncodeBatchExecute("yY52ce", args)
 }
