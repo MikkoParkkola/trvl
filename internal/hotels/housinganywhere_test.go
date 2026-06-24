@@ -246,6 +246,30 @@ func TestMapHAHitFixture(t *testing.T) {
 	if len(first.Sources) != 1 || first.Sources[0].Provider != "housinganywhere" {
 		t.Errorf("sources = %+v, want single housinganywhere source", first.Sources)
 	}
+	// Issue #277 defect 4: HousingAnywhere prices are monthly mid-term rents,
+	// so the source must carry PriceBasis "monthly" (not "room_total"). This is
+	// what routes the offer to property_level_only and prevents the monthly
+	// figure leaking out as a fabricated nightly rate.
+	if len(first.Sources) == 1 && first.Sources[0].PriceBasis != "monthly" {
+		t.Errorf("priceBasis = %q, want monthly", first.Sources[0].PriceBasis)
+	}
+}
+
+// TestHousingAnywhereMonthlyBasisNotBookingReady is the load-bearing regression
+// for issue #277 defect 4. A monthly mid-term rent must never be promoted to a
+// room-level (exact) match — if it were, the ~30x-inflated nightly leak from a
+// monthly figure would reach booking-ready. roomMatchFromPriceBasis must route
+// "monthly" to property_level_only, the same bucket as any lead-in price.
+func TestHousingAnywhereMonthlyBasisNotBookingReady(t *testing.T) {
+	if got := roomMatchFromPriceBasis("monthly"); got != models.RoomInventoryMatchPropertyLevelOnly {
+		t.Errorf("roomMatchFromPriceBasis(monthly) = %q, want %q (must not promote monthly rent to a room-level match)",
+			got, models.RoomInventoryMatchPropertyLevelOnly)
+	}
+	// Guard the inverse: a genuine room_total still earns an exact match, so this
+	// gate does not over-reach and suppress real OTA room offers.
+	if got := roomMatchFromPriceBasis(models.PriceBasisRoomTotal); got != models.RoomInventoryMatchExact {
+		t.Errorf("roomMatchFromPriceBasis(room_total) = %q, want %q", got, models.RoomInventoryMatchExact)
+	}
 }
 
 // TestSearchHousingAnywhereEndToEnd wires harvest + Algolia query against mock
