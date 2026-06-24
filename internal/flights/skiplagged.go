@@ -22,10 +22,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -242,29 +244,79 @@ func skiplaggedInitSession(ctx context.Context) (string, error) {
 
 // ---- MCP caller ----
 
+// skiplaggedTransientError marks a provider response that is worth one
+// transparent retry (a Cloudflare 502 origin overload, or a 429 rate
+// limit). after carries the suggested backoff: for a 429 it is parsed
+// from the Retry-After header (the origin telling us when to return);
+// for a 502 it is the fixed default. Zero means "use the default".
+type skiplaggedTransientError struct {
+	msg   string
+	after time.Duration
+}
+
+func (e *skiplaggedTransientError) Error() string { return e.msg }
+
+// skiplaggedDefaultBackoff is used when a transient error carries no
+// explicit Retry-After hint. skiplaggedMaxBackoff caps an honored
+// Retry-After so a hostile or stale header can't park the request for
+// minutes — past the cap we surface the rate limit instead of sleeping.
+const (
+	skiplaggedDefaultBackoff = 1 * time.Second
+	skiplaggedMaxBackoff     = 10 * time.Second
+)
+
+// parseRetryAfter reads an HTTP Retry-After value, which is either
+// delay-seconds (an integer) or an HTTP-date (RFC 7231 §7.1.3). Returns
+// 0 when absent or unparseable, leaving the caller to fall back to the
+// default backoff.
+func parseRetryAfter(h string) time.Duration {
+	h = strings.TrimSpace(h)
+	if h == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(h); err == nil && secs >= 0 {
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(h); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
 // skiplaggedMCPCall sends a single tools/call JSON-RPC request to the
 // Skiplagged MCP endpoint using the Streamable HTTP transport.
 // Returns the structuredContent payload (preferred) or content[0].text
 // fallback as raw JSON.
 //
-// Retries: a single retry with 1s backoff on HTTP 502 (Cloudflare
-// origin overload). Empirically observed during validation as
-// recurring rather than one-off, so a transparent single retry
-// improves caller success rate without disguising persistent
-// outages — the second 502 surfaces as an error.
+// Retries: a single retry on a transient provider response — a 429 rate
+// limit (backing off for the Retry-After the origin asks for, capped)
+// or a Cloudflare 502 origin overload (fixed 1s backoff). Both were
+// empirically observed as recurring rather than one-off, so a single
+// transparent retry improves caller success without disguising a
+// persistent outage — the second failure surfaces as an error.
 func skiplaggedMCPCall(ctx context.Context, sessionID, toolName string, args map[string]any) (json.RawMessage, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		raw, err := skiplaggedMCPCallOnce(ctx, sessionID, toolName, args)
 		if err == nil {
 			return raw, nil
 		}
-		// Only retry the documented transient envelope; everything
-		// else (4xx, timeout, parse errors) bubbles immediately.
-		if attempt == 0 && strings.Contains(err.Error(), "bad gateway") {
+		// Only retry a documented transient envelope; everything else
+		// (other 4xx, timeout, parse errors) bubbles immediately.
+		var te *skiplaggedTransientError
+		if attempt == 0 && errors.As(err, &te) {
+			wait := te.after
+			if wait <= 0 {
+				wait = skiplaggedDefaultBackoff
+			}
+			if wait > skiplaggedMaxBackoff {
+				wait = skiplaggedMaxBackoff
+			}
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
-			case <-time.After(1 * time.Second):
+			case <-time.After(wait):
 			}
 			continue
 		}
@@ -311,13 +363,22 @@ func skiplaggedMCPCallOnce(ctx context.Context, sessionID, toolName string, args
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, fmt.Errorf("skiplagged: rate limited (HTTP 429)")
+		// Rate limited. Honor the Retry-After hint (capped by the
+		// caller) so the single transparent retry returns when the
+		// origin says it is ready, not blindly.
+		return nil, &skiplaggedTransientError{
+			msg:   "skiplagged: rate limited (HTTP 429, transient)",
+			after: parseRetryAfter(resp.Header.Get("Retry-After")),
+		}
 	}
 	if resp.StatusCode == http.StatusBadGateway {
 		// Cloudflare 502 from origin overload. Surface as transient
-		// so downstream callers can retry rather than treat as
+		// so the call is retried once rather than treated as a
 		// permanent provider failure.
-		return nil, fmt.Errorf("skiplagged: origin bad gateway (HTTP 502, transient)")
+		return nil, &skiplaggedTransientError{
+			msg:   "skiplagged: origin bad gateway (HTTP 502, transient)",
+			after: skiplaggedDefaultBackoff,
+		}
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("skiplagged: HTTP %d", resp.StatusCode)
