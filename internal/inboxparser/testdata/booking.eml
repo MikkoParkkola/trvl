@@ -1,0 +1,17 @@
+From: Booking.com <confirmation@booking.com>
+To: traveller@example.com
+Subject: Your booking is confirmed
+Date: Mon, 01 Jun 2026 10:20:00 +0000
+Content-Type: text/plain; charset=UTF-8
+
+Good news! Your reservation is confirmed.
+
+Confirmation number: 1234567890
+Property: Hotel Stary
+City: Krakow
+Check-in: 2026-06-16
+Check-out: 2026-06-19
+
+Enjoy your stay.
+
+The Booking.com team

@@ -1,0 +1,21 @@
+From: KLM Royal Dutch Airlines <noreply@klm.com>
+To: traveller@example.com
+Subject: Booking confirmation - KL your trip is confirmed
+Date: Mon, 01 Jun 2026 09:15:00 +0000
+Content-Type: text/plain; charset=UTF-8
+
+Dear traveller,
+
+Thank you for booking with KLM. Here are your flight details.
+
+Booking reference: ABC123
+Flight: KL1166 Amsterdam to Krakow
+From: Amsterdam
+To: Krakow
+Departure: 2026-06-16T07:30
+Arrival: 2026-06-16T09:05
+
+We look forward to welcoming you on board.
+
+Kind regards,
+KLM Royal Dutch Airlines
