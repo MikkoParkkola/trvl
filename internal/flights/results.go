@@ -207,8 +207,24 @@ func sortFlightResults(flights []models.FlightResult, sortBy models.SortBy) {
 	})
 }
 
+// compareFlightPrices orders two ranking prices ascending (cheapest first),
+// EXCEPT that a non-positive price (<= 0) always sorts AFTER any real positive
+// price. A price-less fare — e.g. a native Google round-trip whose total is only
+// revealed at booking, which arrives with Price 0 — must never be treated as the
+// cheapest (EUR 0) and outrank genuinely-priced results. Such fares are still
+// retained (they carry a "price selected at booking" note); they just rank last
+// among themselves rather than first overall. Two non-positive prices compare
+// equal so the remaining tiebreakers (duration, departure, route) still apply.
 func compareFlightPrices(left, right float64) int {
+	leftReal := left > 0
+	rightReal := right > 0
 	switch {
+	case leftReal && !rightReal:
+		return -1
+	case !leftReal && rightReal:
+		return 1
+	case !leftReal && !rightReal:
+		return 0
 	case left < right:
 		return -1
 	case left > right:

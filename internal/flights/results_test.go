@@ -67,6 +67,77 @@ func TestMergeFlightResults_SortsCheapestAndFiltersStops(t *testing.T) {
 	}
 }
 
+// TestSortFlightResults_ZeroPriceRanksLast proves a price-less native round-trip
+// fare (Google prices the return "at booking", so Price==0) never outranks a
+// real-priced result. A 0/nil ranking price must sort BELOW all positive-priced
+// results instead of being treated as the cheapest (EUR 0). Regression for the
+// operator-visible "#1 is a Price: - round_trip" bug.
+func TestSortFlightResults_ZeroPriceRanksLast(t *testing.T) {
+	leg := func(dep, arr string) []models.FlightLeg {
+		return []models.FlightLeg{{
+			DepartureAirport: models.AirportInfo{Code: dep},
+			ArrivalAirport:   models.AirportInfo{Code: arr},
+			DepartureTime:    "2026-07-10T08:00",
+			ArrivalTime:      "2026-07-10T10:00",
+		}}
+	}
+	cases := []struct {
+		name       string
+		flights    []models.FlightResult
+		wantFirst  string // provider of #1
+		wantLastPx float64
+	}{
+		{
+			name: "priceless native round-trip does not outrank real fares",
+			flights: []models.FlightResult{
+				{Price: 0, Currency: "EUR", Provider: "google_flights", FareType: models.FareRoundTrip, Legs: leg("HEL", "BCN")},
+				{Price: 334, Currency: "EUR", Provider: "kiwi", Legs: leg("HEL", "BCN")},
+				{Price: 330, Currency: "EUR", Provider: "skiplagged", Legs: leg("HEL", "BCN")},
+			},
+			wantFirst:  "skiplagged",
+			wantLastPx: 0,
+		},
+		{
+			name: "all real prices unaffected (cheapest still first)",
+			flights: []models.FlightResult{
+				{Price: 334, Currency: "EUR", Provider: "kiwi", Legs: leg("HEL", "BCN")},
+				{Price: 330, Currency: "EUR", Provider: "skiplagged", Legs: leg("HEL", "BCN")},
+			},
+			wantFirst:  "skiplagged",
+			wantLastPx: 334,
+		},
+		{
+			name: "multiple priceless fares all sink below real ones",
+			flights: []models.FlightResult{
+				{Price: 0, Currency: "EUR", Provider: "google_flights", FareType: models.FareRoundTrip, Legs: leg("HEL", "BCN")},
+				{Price: 0, Currency: "EUR", Provider: "kiwi", FareType: models.FareRoundTrip, Legs: leg("HEL", "BCN")},
+				{Price: 290, Currency: "EUR", Provider: "ryanair", Legs: leg("HEL", "BCN")},
+			},
+			wantFirst:  "ryanair",
+			wantLastPx: 0,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sortFlightResults(tc.flights, models.SortCheapest)
+			if got := tc.flights[0].Provider; got != tc.wantFirst {
+				t.Errorf("#1 provider = %q (price %.0f), want %q", got, tc.flights[0].PriceForRanking(), tc.wantFirst)
+			}
+			if got := tc.flights[len(tc.flights)-1].PriceForRanking(); got != tc.wantLastPx {
+				t.Errorf("last ranking price = %.0f, want %.0f", got, tc.wantLastPx)
+			}
+			// No positive-priced result may sit below a non-positive one.
+			for i := 1; i < len(tc.flights); i++ {
+				prev := tc.flights[i-1].PriceForRanking()
+				cur := tc.flights[i].PriceForRanking()
+				if prev <= 0 && cur > 0 {
+					t.Errorf("priceless result at index %d outranks real-priced result at %d", i-1, i)
+				}
+			}
+		})
+	}
+}
+
 // TestApplyComparableBaseline_LCCBagRanking proves an LCC bare fare ranks by its
 // all-in (fare + carry-on fee) so it no longer unfairly beats an included fare.
 func TestApplyComparableBaseline_LCCBagRanking(t *testing.T) {
