@@ -488,3 +488,28 @@ func stubSerpAPIFallbackWithDetail(t *testing.T, place *serpapi.MapsPlace, respo
 		serpapiGetPropertyDetailsFunc = origDetails
 	}
 }
+
+// TestSerpAPIRoomFallbackSurfacesRateLimit locks the honesty signal: a
+// rate-limited metered search returns no rooms but a Google Hotels caution,
+// so a withheld upgrade is not mistaken for "no better price available".
+func TestSerpAPIRoomFallbackSurfacesRateLimit(t *testing.T) {
+	origKey, origResolve, origSearch := serpapiAPIKeyFunc, serpapiResolveGoogleMapsPlaceFunc, serpapiSearchHotelsFunc
+	t.Cleanup(func() {
+		serpapiAPIKeyFunc, serpapiResolveGoogleMapsPlaceFunc, serpapiSearchHotelsFunc = origKey, origResolve, origSearch
+	})
+	serpapiAPIKeyFunc = func() string { return "test-key" }
+	serpapiResolveGoogleMapsPlaceFunc = func(context.Context, string) (*serpapi.MapsPlace, error) { return nil, nil }
+	serpapiSearchHotelsFunc = func(context.Context, serpapi.SearchOptions) (*serpapi.Response, error) {
+		return nil, models.ErrRateLimited
+	}
+
+	rooms, name, notice := trySerpAPIRoomFallback(context.Background(), RoomSearchOptions{
+		Location: "Madeira", CheckIn: "2026-07-30", CheckOut: "2026-08-04", Currency: "EUR", Guests: 2,
+	})
+	if rooms != nil || name != "" {
+		t.Fatalf("rooms/name = %#v/%q, want empty on rate-limited search", rooms, name)
+	}
+	if notice == "" || !containsSubstr(notice, "Google Hotels") {
+		t.Fatalf("notice = %q, want Google Hotels rate-limit caution", notice)
+	}
+}
