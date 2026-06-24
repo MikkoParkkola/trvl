@@ -204,3 +204,42 @@ func TestRoomMatchFromPriceBasis(t *testing.T) {
 		}
 	}
 }
+
+// TestSortRoomsByBookability locks the room ordering contract: rooms with a
+// real, bookable price lead (exact > similar > property-level lead-in), then
+// cheapest-first within a tier, and rooms with no usable price sink to the
+// bottom of their tier. This delivers "lead with the ones that have proper
+// price available" at the room level.
+func TestSortRoomsByBookability(t *testing.T) {
+	rooms := []RoomType{
+		{Name: "lead-in cheap", Price: 50, MatchConfidence: models.RoomInventoryMatchPropertyLevelOnly},
+		{Name: "exact pricey", Price: 200, MatchConfidence: models.RoomInventoryMatchExact},
+		{Name: "no price", MatchConfidence: models.RoomInventoryMatchSimilar},
+		{Name: "similar mid", Price: 120, MatchConfidence: models.RoomInventoryMatchSimilar},
+		{Name: "exact cheap", Price: 100, MatchConfidence: models.RoomInventoryMatchExact},
+		{Name: "similar nightly", NightlyPrice: 90, MatchConfidence: models.RoomInventoryMatchSimilar},
+	}
+
+	sortRoomsByBookability(rooms)
+
+	want := []string{
+		"exact cheap",     // exact tier, cheapest
+		"exact pricey",    // exact tier
+		"similar nightly", // similar tier, 90 (nightly counts)
+		"similar mid",     // similar tier, 120
+		"no price",        // similar tier, no usable price -> bottom of tier
+		"lead-in cheap",   // property-level lead-in last regardless of price
+	}
+	if len(rooms) != len(want) {
+		t.Fatalf("len = %d, want %d", len(rooms), len(want))
+	}
+	for i, name := range want {
+		if rooms[i].Name != name {
+			got := make([]string, len(rooms))
+			for k, r := range rooms {
+				got[k] = r.Name
+			}
+			t.Fatalf("order[%d] = %q, want %q (full: %v)", i, rooms[i].Name, name, got)
+		}
+	}
+}
