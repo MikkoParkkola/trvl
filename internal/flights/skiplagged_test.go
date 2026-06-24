@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -454,4 +455,69 @@ func containsStr(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// TestParseRetryAfter covers both Retry-After forms (RFC 7231 §7.1.3):
+// delay-seconds and HTTP-date, plus the absent/garbage fallbacks that
+// must yield 0 so the caller uses its default backoff.
+func TestParseRetryAfter(t *testing.T) {
+	if got := parseRetryAfter("5"); got != 5*time.Second {
+		t.Errorf("delay-seconds: got %v, want 5s", got)
+	}
+	if got := parseRetryAfter("0"); got != 0 {
+		t.Errorf("zero seconds: got %v, want 0", got)
+	}
+	if got := parseRetryAfter(""); got != 0 {
+		t.Errorf("empty: got %v, want 0", got)
+	}
+	if got := parseRetryAfter("-3"); got != 0 {
+		t.Errorf("negative: got %v, want 0", got)
+	}
+	if got := parseRetryAfter("not-a-number"); got != 0 {
+		t.Errorf("garbage: got %v, want 0", got)
+	}
+	// An HTTP-date in the past must not produce a negative or non-zero
+	// wait — Until() is <=0, so we fall back to 0 (default backoff).
+	past := time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat)
+	if got := parseRetryAfter(past); got != 0 {
+		t.Errorf("past HTTP-date: got %v, want 0", got)
+	}
+	// An HTTP-date ~30s out should parse to a positive, bounded wait.
+	future := time.Now().Add(30 * time.Second).UTC().Format(http.TimeFormat)
+	if got := parseRetryAfter(future); got <= 0 || got > 31*time.Second {
+		t.Errorf("future HTTP-date: got %v, want (0,31s]", got)
+	}
+}
+
+// TestSkiplaggedMCPCallRetriesOn429 proves the rate-limit recovery path:
+// a first tools/call answered 429 (with a Retry-After hint) is retried
+// once and the second 200 succeeds. Before the transient-retry fix a 429
+// was terminal, so this is the regression guard for that gap.
+func TestSkiplaggedMCPCallRetriesOn429(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch atomic.AddInt32(&calls, 1) {
+		case 1:
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":2,"result":{"structuredContent":{"flights":[]}}}`))
+		}
+	}))
+	defer srv.Close()
+	restore := skiplaggedSetEndpointForTest(srv.URL)
+	defer restore()
+
+	raw, err := skiplaggedMCPCall(context.Background(), "", "sk_flights_search", map[string]any{})
+	if err != nil {
+		t.Fatalf("expected success after 429 retry, got error: %v", err)
+	}
+	if !strings.Contains(string(raw), "flights") {
+		t.Fatalf("expected flights payload after retry, got: %s", raw)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("expected 2 calls (429 then 200), got %d", got)
+	}
 }
