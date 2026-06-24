@@ -144,6 +144,77 @@ func TestSearchHotelsVerifiedFetchesPropertyDetailsAndPromotesProviderTotal(t *t
 	}
 }
 
+func TestSearchHotelsVerifiedPopulatesPricesFromFeaturedOnlyDetail(t *testing.T) {
+	// Roberto Reale's symptom: the detail endpoint returned provider rows only
+	// under featured_prices (prices was null). The verified total promoted
+	// correctly, but the inspectable Prices array stayed null, so the result
+	// looked unverified even though it was detail-checked. After the fix the
+	// verified provider breakdown is mirrored into Prices.
+	t.Setenv("SERPAPI_KEY", "test_key")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("property_token") == "" {
+			json.NewEncoder(w).Encode(Response{
+				SearchMetadata: struct {
+					ID     string `json:"id"`
+					Status string `json:"status"`
+				}{Status: "Success"},
+				Properties: []Hotel{{
+					Name:          "Sorriso Thermae",
+					PropertyToken: "sorriso-token",
+					RatePerNight:  Rate{Extracted: 156, Lowest: "€156"},
+					TotalRate:     Rate{Extracted: 779, Lowest: "€779"},
+					Prices:        nil,
+				}},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(propertyDetailsResponse{
+			SearchMetadata: struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			}{Status: "Success"},
+			Hotel: Hotel{
+				Name:          "Sorriso Thermae",
+				PropertyToken: "sorriso-token",
+				Prices:        nil,
+				FeaturedPrices: []PriceOption{{
+					Source:       "Booking.com",
+					RatePerNight: Rate{Extracted: 205, Lowest: "€205"},
+					TotalRate:    Rate{Extracted: 1024, Lowest: "€1,024"},
+				}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	origSearch := searchURL
+	searchURL = srv.URL + "/search"
+	defer func() { searchURL = origSearch }()
+
+	result, err := SearchHotelsVerified(context.Background(), SearchOptions{
+		Query:      "Ischia",
+		CheckIn:    "2026-07-30",
+		CheckOut:   "2026-08-04",
+		Currency:   "EUR",
+		Adults:     2,
+		MaxDetails: 8,
+	})
+	if err != nil {
+		t.Fatalf("SearchHotelsVerified failed: %v", err)
+	}
+	hotel := result.Properties[0]
+	if hotel.TotalPrice() != 1024 {
+		t.Fatalf("verified total = %.0f, want 1024", hotel.TotalPrice())
+	}
+	if len(hotel.Prices) != 1 || hotel.Prices[0].Source != "Booking.com" {
+		t.Fatalf("prices = %#v, want Booking.com provider row mirrored from featured_prices", hotel.Prices)
+	}
+	if hotel.PriceVerification == nil || hotel.PriceVerification.Status != "detail_verified" {
+		t.Fatalf("verification = %#v, want detail_verified", hotel.PriceVerification)
+	}
+}
+
 func TestSearchHotelsVerifiedMarksPropertiesBeyondDetailLimit(t *testing.T) {
 	t.Setenv("SERPAPI_KEY", "test_key")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

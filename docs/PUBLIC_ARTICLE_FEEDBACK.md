@@ -65,3 +65,34 @@ Follow-up product work:
 - Track provider trust tiers separately from price. A lower Google Hotels matrix
   price from a lesser-known OTA can be real, but users may still prefer a
   mainstream OTA, the official hotel site, or a refundable rate.
+
+## Retest log
+
+### Roberto Reale, v1.15.0 — `trvl serpapi` on Ischia (island / unindexed)
+
+Roberto retested `trvl serpapi` against Ischia (2026-07-30 to 2026-08-04, 2
+adults, 5 nights, EUR) and reported that the per-OTA `prices` breakdown was
+populated for only about half of the properties. For the rest `prices` came
+back null, so the total shown was the list-level Google Hotels minimum (the
+lead-in teaser) rather than a per-provider verified total. He measured this
+understating real cost by up to 24%: Sorriso Thermae showed EUR 779 in trvl
+against a EUR 1,024 reference and a live Booking.com rate of EUR 1,102. The
+root distinction he identified is list-level minimum versus the per-property
+detail-endpoint price reached through `property_token`.
+
+Outcome:
+
+- Detail-verified properties whose provider rows arrived only under
+  `featured_prices` were leaving `prices` null even though the total had
+  already been promoted to the verified figure. The verified provider
+  breakdown is now mirrored into `prices`, so a detail-verified property
+  always exposes its per-provider rows.
+- Provider-row aggregation deduplicates across `featured_prices` and `prices`,
+  so a quote present in both is counted once.
+- The honest limits stand: SerpAPI's detail endpoint genuinely returns no
+  provider rows for some properties, and detail lookups are bounded by
+  `--max-details` (default 8) to respect the quota cost of one call per
+  property. Those properties are labelled unverified via `price_verification`
+  rather than presented as a verified per-provider total.
+- Roberto also contributed an island / unindexed command sequence, now in
+  `docs/CLI.md` under "Islands and unindexed destinations".
