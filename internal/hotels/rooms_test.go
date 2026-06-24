@@ -395,3 +395,28 @@ func TestAppendNotice(t *testing.T) {
 		t.Errorf("a+b = %q, want 'a b'", got)
 	}
 }
+
+// TestProviderRateLimitNotice locks the generalized helper that both Booking
+// and Agoda drill-down paths use: a retryable failure names the provider in a
+// caution; a hard failure or nil stays silent.
+func TestProviderRateLimitNotice(t *testing.T) {
+	got := providerRateLimitNotice("Agoda", fmt.Errorf("akamai bot detection triggered"))
+	if got == "" || !containsSubstr(got, "Agoda") {
+		t.Errorf("retryable Agoda -> %q, want caution naming Agoda", got)
+	}
+	if got := providerRateLimitNotice("Agoda", nil); got != "" {
+		t.Errorf("nil err -> %q, want empty", got)
+	}
+	if got := providerRateLimitNotice("Agoda", fmt.Errorf("no hotel matched")); got != "" {
+		t.Errorf("hard failure -> %q, want empty", got)
+	}
+}
+
+func containsSubstr(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}

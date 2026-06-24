@@ -184,12 +184,15 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// path. Merge so any Google lead-ins stay; bookability sort below leads with
 	// whichever provider actually has a bookable price.
 	if len(rooms) == 0 || !hasVerifiedRoom(rooms) {
-		if agodaRooms := tryAgodaRoomLevel(ctx, opts); len(agodaRooms) > 0 {
+		if agodaRooms, agodaNotice := tryAgodaRoomLevel(ctx, opts); len(agodaRooms) > 0 {
 			if len(rooms) == 0 {
 				rooms = agodaRooms
 			} else {
 				rooms = mergeRoomTypes(rooms, agodaRooms)
 			}
+		} else if agodaNotice != "" {
+			// Agoda room data was withheld by a retryable bot-wall, not absent.
+			notice = appendNotice(notice, agodaNotice)
 		}
 	}
 
@@ -220,15 +223,21 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	}, nil
 }
 
-// bookingRateLimitNotice returns a user-facing caution when a Booking room
+// providerRateLimitNotice returns a user-facing caution when a provider room
 // fetch failed with a retryable condition (bot-wall, 429, transient 5xx) — a
 // retry may surface room-level pricing. It returns "" for a genuine hard
 // failure or no error, where nothing actionable should be surfaced.
-func bookingRateLimitNotice(brErr error) string {
-	if brErr != nil && models.ClassifyProviderError(brErr) == models.StatusRateLimited {
-		return "Booking.com room pricing was temporarily unavailable (rate-limited); a retry may surface more room-level offers."
+func providerRateLimitNotice(provider string, err error) string {
+	if err != nil && models.ClassifyProviderError(err) == models.StatusRateLimited {
+		return provider + " room pricing was temporarily unavailable (rate-limited); a retry may surface more room-level offers."
 	}
 	return ""
+}
+
+// bookingRateLimitNotice is the Booking.com-specific caution; see
+// providerRateLimitNotice for the rate-limited-vs-failed contract.
+func bookingRateLimitNotice(brErr error) string {
+	return providerRateLimitNotice("Booking.com", brErr)
 }
 
 // appendNotice joins a new notice clause onto an existing notice string,
@@ -302,21 +311,29 @@ func roomEffectivePrice(r RoomType) float64 {
 // the caller invokes it only when the free Google paths produced no verified
 // room price, keeping the live Agoda request off the hot path. Agoda is
 // key-free, so this adds a real second priced provider with no credentials.
-func tryAgodaRoomLevel(ctx context.Context, opts RoomSearchOptions) []RoomType {
+func tryAgodaRoomLevel(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string) {
 	if strings.TrimSpace(opts.Location) == "" {
-		return nil
+		return nil, ""
 	}
 	searchOpts := roomFallbackSearchOptions(opts)
 	var results []models.HotelResult
+	var lastErr error
 	for _, loc := range buildLocationCandidates(opts.Location) {
 		r, err := SearchAgoda(ctx, loc, searchOpts)
-		if err == nil && len(r) > 0 {
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if len(r) > 0 {
 			results = r
 			break
 		}
 	}
 	if len(results) == 0 {
-		return nil
+		// No candidate returned rooms. If the last attempt was a retryable
+		// bot-wall rather than a genuine miss, surface it so a withheld Agoda
+		// price is not mistaken for absent inventory.
+		return nil, providerRateLimitNotice("Agoda", lastErr)
 	}
 	var hotel *models.HotelResult
 	for i := range results {
@@ -329,9 +346,9 @@ func tryAgodaRoomLevel(ctx context.Context, opts RoomSearchOptions) []RoomType {
 		hotel = findBestNameMatch(results, opts.Location)
 	}
 	if hotel == nil || len(hotel.RoomTypes) == 0 {
-		return nil
+		return nil, ""
 	}
-	return hotelRoomsToRoomTypes(hotel.RoomTypes, opts.Currency)
+	return hotelRoomsToRoomTypes(hotel.RoomTypes, opts.Currency), ""
 }
 
 // hotelRoomsToRoomTypes converts provider-search model rooms into
