@@ -289,6 +289,17 @@ func SearchFerryhopper(ctx context.Context, from, to, date, currency string) ([]
 	}
 
 	if rpcResult.Result.IsError {
+		// MCP-spec tool error: content[0].text carries the human-readable
+		// reason. Echo it (bounded) so the caller sees what Ferryhopper
+		// actually said instead of an opaque "tool returned error".
+		if c := rpcResult.Result.Content; len(c) > 0 {
+			if msg := strings.TrimSpace(c[0].Text); msg != "" {
+				if len(msg) > 256 {
+					msg = msg[:256]
+				}
+				return nil, fmt.Errorf("ferryhopper: tool error: %s", msg)
+			}
+		}
 		return nil, fmt.Errorf("ferryhopper: tool returned error")
 	}
 
