@@ -102,10 +102,12 @@ func trySerpAPIRoomFallback(ctx context.Context, opts RoomSearchOptions) ([]Room
 	const serpapiFallbackMaxPages = 3
 	var hotel *serpapi.Hotel
 	scanned := 0
+	var lastErr error
 	for page := 0; page < serpapiFallbackMaxPages; page++ {
 		result, err := serpapiSearchHotelsFunc(ctx, searchOpts)
 		if err != nil || result == nil {
 			log.Printf("DEBUG serpapi room fallback: search failed page=%d query=%q err=%v", page, query, err)
+			lastErr = err
 			break
 		}
 		scanned += len(result.Properties)
@@ -120,7 +122,10 @@ func trySerpAPIRoomFallback(ctx context.Context, opts RoomSearchOptions) ([]Room
 	}
 	if hotel == nil {
 		log.Printf("DEBUG serpapi room fallback: no hotel matched in %d properties across pages (query=%q name=%q)", scanned, query, opts.Location)
-		return nil, "", ""
+		// A retryable bot-wall / 429 on the metered search is not a genuine
+		// "no match"; surface it so a withheld Google Hotels price is not read
+		// as absent inventory. Hard failures and plain misses stay silent.
+		return nil, "", providerRateLimitNotice("Google Hotels", lastErr)
 	}
 	searchOpts.NextPageToken = "" // detail fetch is by property token; drop stale page cursor
 	hotel = selectedSerpAPIPropertyDetails(ctx, hotel, searchOpts)

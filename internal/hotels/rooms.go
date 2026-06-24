@@ -174,6 +174,10 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 			if hotelName == "" {
 				hotelName = serpName
 			}
+		} else if serpNotice != "" {
+			// SerpAPI returned no rooms but flagged a retryable rate-limit;
+			// surface it rather than silently degrading to no upgrade.
+			notice = appendNotice(notice, serpNotice)
 		}
 	}
 
