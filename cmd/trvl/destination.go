@@ -70,7 +70,15 @@ func runDestination(cmd *cobra.Command, args []string) error {
 // failed lookup prints nothing, so search commands call it unconditionally on
 // their human-readable output path.
 func showDestinationFooter(ctx context.Context, location string, dates models.DateRange) {
-	printDestinationFooter(destinations.EnrichBestEffort(ctx, location, dates))
+	printDestinationFooter(enrichArrival(ctx, location, dates))
+}
+
+// enrichArrival returns best-effort destination intelligence for an arrival
+// location, or nil when the location is blank and when the lookup fails. It is
+// the shared enricher behind both the human-readable footer and the JSON
+// `destination` field, so text and JSON output stay at parity.
+func enrichArrival(ctx context.Context, location string, dates models.DateRange) *models.DestinationInfo {
+	return destinations.EnrichBestEffort(ctx, location, dates)
 }
 
 // printDestinationFooter renders a compact one-block destination summary

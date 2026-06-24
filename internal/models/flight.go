@@ -144,7 +144,11 @@ type FlightSearchResult struct {
 	// It is additive — the naive Flights are never replaced — and is only
 	// populated when a real, lower-priced option exists.
 	HackSaving *HackSaving `json:"hack_saving,omitempty"`
-	Error      string      `json:"error,omitempty"`
+	// Destination carries best-effort destination intelligence (weather, safety,
+	// holidays, currency, country facts) for the arrival city. Additive and
+	// silently degrading — absent when the lookup fails; never blocks the search.
+	Destination *DestinationInfo `json:"destination,omitempty"`
+	Error       string           `json:"error,omitempty"`
 }
 
 // DatePriceResult represents the cheapest price for a single departure date.

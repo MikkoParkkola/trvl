@@ -216,6 +216,11 @@ func runHotels(cmd *cobra.Command, args []string) error {
 	}
 
 	if format == "json" {
+		// JSON parity with the text path: attach best-effort destination
+		// intelligence so machine consumers get the same enrichment.
+		if result != nil {
+			result.Destination = enrichArrival(ctx, location, models.DateRange{CheckIn: checkin, CheckOut: checkout})
+		}
 		return models.FormatJSON(os.Stdout, result)
 	}
 
