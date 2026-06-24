@@ -223,6 +223,10 @@ func runHotels(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Additive destination intelligence beneath the results — weather, safety,
+	// holidays during the stay, currency. Best-effort: nil prints nothing.
+	showDestinationFooter(ctx, location, models.DateRange{CheckIn: checkin, CheckOut: checkout})
+
 	if openFlag && len(result.Hotels) > 0 && result.Hotels[0].BookingURL != "" {
 		_ = openBrowser(result.Hotels[0].BookingURL)
 	}

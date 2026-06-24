@@ -85,6 +85,10 @@ Examples:
 				return err
 			}
 
+			// Additive destination intelligence for the arrival city. to is
+			// already a resolved city name. Best-effort: nil prints nothing.
+			showDestinationFooter(cmd.Context(), to, models.DateRange{CheckIn: date, CheckOut: opts.ReturnDate})
+
 			if openFlag && result.Success && len(result.Routes) > 0 && result.Routes[0].BookingURL != "" {
 				_ = openBrowser(result.Routes[0].BookingURL)
 			}
