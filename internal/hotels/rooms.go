@@ -394,19 +394,23 @@ func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 	if err != nil || res == nil || len(res.Providers) == 0 {
 		return nil, ""
 	}
+	return partnersToRoomTypes(res.Providers, opts.Currency), res.Name
+}
 
-	rooms := make([]RoomType, 0, len(res.Providers))
-	// The yY52ce partner matrix is a dated, occupancy-specific quote, so the
-	// cheapest partner price is a real bookable rate for the stay, not a
-	// property lead-in. Promote it to room-level "similar" (no nameable room
-	// identity) so it reaches the booking-ready gate — mirroring the Agoda fix
-	// (PR #289) and the search-page fallback. Only the cheapest is promoted:
-	// the rest keep their basis-derived confidence (an explicit room basis
-	// still earns "exact"; everything else stays property-level), because
-	// promoting the whole identity-less ladder trips the multi-provider-mixed
-	// completeness flag and re-blocks the offer.
+// partnersToRoomTypes expands Google's yY52ce partner-price matrix into room
+// entries. The matrix is a dated, occupancy-specific quote, so the cheapest
+// partner price is a real bookable rate for the stay, not a property lead-in:
+// it is promoted to room-level "similar" (no nameable room identity) so it
+// reaches the booking-ready gate — mirroring the Agoda and search-page
+// fallbacks. Only the cheapest is promoted; the rest keep their basis-derived
+// confidence (an explicit room basis still earns "exact"; everything else stays
+// property-level), because promoting the whole identity-less ladder trips the
+// multi-provider-mixed completeness flag and re-blocks the offer. Partners with
+// no usable price are dropped, never emitted as a fabricated room match.
+func partnersToRoomTypes(providers []models.ProviderPrice, defaultCurrency string) []RoomType {
+	rooms := make([]RoomType, 0, len(providers))
 	cheapestIdx, cheapestPrice := -1, 0.0
-	for i, p := range res.Providers {
+	for i, p := range providers {
 		price := p.Price
 		if price <= 0 {
 			price = p.NightlyPrice
@@ -418,7 +422,7 @@ func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 			cheapestIdx, cheapestPrice = i, price
 		}
 	}
-	for i, p := range res.Providers {
+	for i, p := range providers {
 		price := p.Price
 		if price <= 0 {
 			price = p.NightlyPrice
@@ -428,7 +432,7 @@ func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		}
 		currency := p.Currency
 		if currency == "" {
-			currency = opts.Currency
+			currency = defaultCurrency
 		}
 		match := roomMatchFromPriceBasis(p.PriceBasis)
 		nightly := p.NightlyPrice
@@ -449,7 +453,7 @@ func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 			MatchConfidence: match,
 		})
 	}
-	return rooms, res.Name
+	return rooms
 }
 
 // roomMatchFromPriceBasis maps a provider PriceBasis to a room match
