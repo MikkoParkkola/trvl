@@ -28,6 +28,7 @@ type accommodationSearchResponse struct {
 	Completeness            models.Completeness            `json:"completeness,omitempty"`
 	Suggestions             []Suggestion                   `json:"suggestions,omitempty"`
 	Warnings                []string                       `json:"warnings,omitempty"`
+	Destination             *models.DestinationInfo        `json:"destination,omitempty"`
 	Error                   string                         `json:"error,omitempty"`
 }
 
@@ -418,6 +419,10 @@ func handleSearchAccommodations(ctx context.Context, args map[string]any, elicit
 	}
 
 	summary := accommodationSearchSummary(resp)
+	// Best-effort destination intelligence on the default search path: a plain
+	// hotel search returns weather, safety, holidays, currency, and country
+	// facts inline, with no extra switch. Silent degrade — never blocks search.
+	resp.Destination = enrichDestination(ctx, req.Location, models.DateRange{CheckIn: req.CheckIn, CheckOut: req.CheckOut})
 	content, err := buildAnnotatedContentBlocks(summary, resp)
 	if err != nil {
 		return nil, nil, err

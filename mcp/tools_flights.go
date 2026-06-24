@@ -538,6 +538,7 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		BookingContext *bookingContext         `json:"booking_context,omitempty"`
 		PricePosition  *pricesignal.Position   `json:"price_position,omitempty"`
 		Savings        []counterfactual.Saving `json:"savings,omitempty"`
+		Destination    *models.DestinationInfo `json:"destination,omitempty"`
 	}
 	resp := enrichedFlightSearchResult{
 		Success:        result.Success,
@@ -552,6 +553,11 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		PricePosition:  pricePos,
 		Savings:        cfSavings,
 	}
+	// Best-effort destination intelligence for the arrival on the default flight
+	// search path: weather, safety, holidays, currency, country facts inline,
+	// with no extra switch. Geocodes the user-supplied destination (city name or
+	// airport code). Silent degrade — never blocks the search.
+	resp.Destination = enrichDestination(ctx, argString(args, "destination"), models.DateRange{CheckIn: date, CheckOut: opts.ReturnDate})
 
 	content, err := buildAnnotatedContentBlocks(flightSummary(result, origin, dest), resp)
 	if err != nil {
