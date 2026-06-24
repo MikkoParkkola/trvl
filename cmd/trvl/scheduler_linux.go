@@ -93,7 +93,7 @@ func installSystemd(binary string) error {
 // It does not edit the user's crontab automatically (that is a destructive,
 // hard-to-undo edit); instead it gives the exact line to add.
 func installCronFallback(binary string) error {
-	return fmt.Errorf("systemd --user is not available on this system; add this crontab line manually (crontab -e):\n\n    %s\n", manualCronLine(binary))
+	return fmt.Errorf("systemd --user is not available on this system; add this crontab line manually with 'crontab -e': %s", manualCronLine(binary))
 }
 
 func uninstallScheduler() error {
