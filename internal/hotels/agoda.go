@@ -495,6 +495,16 @@ func agodaNights(checkIn, checkOut string) int {
 	return n
 }
 
+// agodaStayTotal derives the stay total from a per-night rate. Returns 0 when
+// either input is non-positive so callers leave TotalPrice unset rather than
+// publish a misleading zero.
+func agodaStayTotal(nightly float64, nights int) float64 {
+	if nightly <= 0 || nights < 1 {
+		return 0
+	}
+	return nightly * float64(nights)
+}
+
 // agodaIntSlice converts an []int to a []any for JSON map embedding, returning a
 // non-nil empty slice so the marshaled field is an empty array, not null.
 func agodaIntSlice(in []int) []any {
@@ -520,6 +530,10 @@ func parseAgodaSearch(resp *agodaSearchResponse, opts HotelSearchOptions) []mode
 		return nil
 	}
 	out := make([]models.HotelResult, 0, len(resp.Data.CitySearch.Properties))
+	// Agoda quotes a per-room-per-night rate; derive the stay total once so
+	// multi-night offers are comparable and displayable alongside providers
+	// that return a room total (Google/Booking). nights is floored at 1.
+	nights := agodaNights(opts.CheckIn, opts.CheckOut)
 	for _, p := range resp.Data.CitySearch.Properties {
 		info := p.Content.InformationSummary
 		if info.DisplayName == "" {
@@ -580,6 +594,7 @@ func parseAgodaSearch(resp *agodaSearchResponse, opts HotelSearchOptions) []mode
 				Name:            "Agoda room rate",
 				Price:           price,
 				NightlyPrice:    price,
+				TotalPrice:      agodaStayTotal(price, nights),
 				Currency:        currency,
 				Provider:        "agoda",
 				ProviderURL:     hr.BookingURL,
