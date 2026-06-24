@@ -635,6 +635,27 @@ func accommodationComparablePrice(offer models.AccommodationOffer) float64 {
 	return offer.NightlyPrice
 }
 
+// accommodationPriceDisplay renders an offer's price for humans, labeling the
+// nightly rate and the stay total so the figure is never ambiguous. Providers
+// disagree on which they quote (Agoda nightly, Google a room total), so an
+// unlabeled number invited apples-to-oranges reading across offers. When both
+// are present and differ it shows the nightly rate with the total in
+// parentheses; when they are equal (a single night) it shows the nightly rate
+// alone; when only one is known it labels that one. Returns "" with no price.
+func accommodationPriceDisplay(offer models.AccommodationOffer) string {
+	cur := offer.Currency
+	switch {
+	case offer.NightlyPrice > 0 && offer.TotalPrice > 0 && offer.NightlyPrice != offer.TotalPrice:
+		return fmt.Sprintf("%s %.0f/night (%s %.0f total)", cur, offer.NightlyPrice, cur, offer.TotalPrice)
+	case offer.NightlyPrice > 0:
+		return fmt.Sprintf("%s %.0f/night", cur, offer.NightlyPrice)
+	case offer.TotalPrice > 0:
+		return fmt.Sprintf("%s %.0f total", cur, offer.TotalPrice)
+	default:
+		return ""
+	}
+}
+
 func accommodationSearchWarnings(result *models.HotelSearchResult, offers, rejected []models.AccommodationOffer, evidence []models.AccommodationEvidence, candidateCount int) []string {
 	warnings := []string{"lead_in_prices_are_candidates_only"}
 	if note := result.Completeness.IncompleteNote(); note != "" {
@@ -703,8 +724,8 @@ func accommodationSearchSummary(resp accommodationSearchResponse) string {
 		summary += fmt.Sprintf(" %d final-trip-cost-ready.", resp.FinalTripCostReadyCount)
 	}
 	best := resp.Offers[0]
-	if price := accommodationComparablePrice(best); price > 0 {
-		summary += fmt.Sprintf(" Best verified match: %s %.0f at %s (%s).", best.Currency, price, best.PropertyName, best.RoomName)
+	if disp := accommodationPriceDisplay(best); disp != "" {
+		summary += fmt.Sprintf(" Best verified match: %s at %s (%s).", disp, best.PropertyName, best.RoomName)
 	}
 	return summary
 }
