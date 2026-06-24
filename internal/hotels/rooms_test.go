@@ -269,6 +269,52 @@ func TestHotelRoomsToRoomTypes(t *testing.T) {
 	}
 }
 
+// TestPartnersToRoomTypes locks the Google partner-matrix expansion (issue
+// #290 AC.3/AC.4): the cheapest priced partner is promoted to room-level
+// "similar" so it reaches the booking-ready gate, an explicit room-basis
+// partner keeps its "exact" confidence, a non-cheapest lead-in stays
+// property-level (never a fabricated match), and a zero-price partner is
+// dropped entirely rather than emitted as a free room.
+func TestPartnersToRoomTypes(t *testing.T) {
+	providers := []models.ProviderPrice{
+		{Provider: "Expedia", Price: 150, Currency: "EUR", PriceBasis: models.PriceBasisLeadIn},
+		{Provider: "Booking.com", Price: 120, Currency: "", PriceBasis: models.PriceBasisLeadIn}, // cheapest -> promote
+		{Provider: "Hotels.com", Price: 200, Currency: "EUR", PriceBasis: models.PriceBasisRoomTotal},
+		{Provider: "Dead", Price: 0, NightlyPrice: 0, Currency: "EUR"}, // no price -> dropped
+	}
+
+	rooms := partnersToRoomTypes(providers, "USD")
+	if len(rooms) != 3 {
+		t.Fatalf("len = %d, want 3 (zero-price partner dropped)", len(rooms))
+	}
+
+	byProvider := map[string]RoomType{}
+	for _, r := range rooms {
+		byProvider[r.Provider] = r
+	}
+
+	cheap := byProvider["Booking.com"]
+	if cheap.MatchConfidence != models.RoomInventoryMatchSimilar {
+		t.Fatalf("cheapest lead-in match = %q, want similar (promoted to booking-ready)", cheap.MatchConfidence)
+	}
+	if cheap.Currency != "USD" {
+		t.Fatalf("cheapest currency = %q, want USD default fallback", cheap.Currency)
+	}
+	if cheap.NightlyPrice != 120 {
+		t.Fatalf("cheapest nightly = %v, want 120 (filled from price when no nightly/total)", cheap.NightlyPrice)
+	}
+
+	if got := byProvider["Hotels.com"].MatchConfidence; got != models.RoomInventoryMatchExact {
+		t.Fatalf("room-total partner match = %q, want exact", got)
+	}
+	if got := byProvider["Expedia"].MatchConfidence; got != models.RoomInventoryMatchPropertyLevelOnly {
+		t.Fatalf("non-cheapest lead-in match = %q, want property_level_only (no fabricated promotion)", got)
+	}
+	if _, dead := byProvider["Dead"]; dead {
+		t.Fatal("zero-price partner must be dropped, not emitted as a free room")
+	}
+}
+
 // real, bookable price lead (exact > similar > property-level lead-in), then
 // cheapest-first within a tier, and rooms with no usable price sink to the
 // bottom of their tier. This delivers "lead with the ones that have proper
