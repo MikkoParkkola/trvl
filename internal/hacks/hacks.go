@@ -190,6 +190,22 @@ type Hack struct {
 	Risks       []string `json:"risks,omitempty"`     // airline ToS, operational risks
 	Steps       []string `json:"steps"`               // how to execute
 	Citations   []string `json:"citations,omitempty"` // booking URLs / provider names
+
+	// RailCost, when non-zero, is the explicit cost (in RailCostCurrency) of the
+	// ground/rail leg a multimodal hack depends on. For airline-bundled rail
+	// (e.g. KLM Air&Rail) this is 0 with RailCostNote explaining it is included.
+	RailCost float64 `json:"rail_cost,omitempty"`
+	// RailCostCurrency is the currency for RailCost (defaults to EUR).
+	RailCostCurrency string `json:"rail_cost_currency,omitempty"`
+	// RailProvider names the operator the RailCost was quoted from (e.g.
+	// "Eurostar", "Deutsche Bahn") or "" when bundled/estimated.
+	RailProvider string `json:"rail_provider,omitempty"`
+	// RailCostEstimated is true when RailCost is a conservative internal estimate
+	// rather than a live provider quote — surfaced so the saving stays honest.
+	RailCostEstimated bool `json:"rail_cost_estimated,omitempty"`
+	// RailCostNote is a short human-readable qualifier for the rail cost
+	// (e.g. "included in airline ticket", "live quote", "estimate").
+	RailCostNote string `json:"rail_cost_note,omitempty"`
 }
 
 // DetectorInput carries all parameters shared across detectors.

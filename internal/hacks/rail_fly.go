@@ -46,7 +46,9 @@ var railFlyStations = []railFlyStation{
 
 // DetectRailFlyArbitrage checks if booking via a rail-connected origin
 // (e.g., Antwerp instead of Amsterdam for KLM) triggers a cheaper fare zone.
-// The train segment is free — included in the airline ticket.
+// For a hub origin the Air&Rail train is bundled free in the ticket; for an
+// alias origin (e.g. ANR/BRU) the rail leg is a real cost subtracted from the
+// reported net saving.
 func DetectRailFlyArbitrage(ctx context.Context, origin, destination, departDate, returnDate string) []Hack {
 	if origin == "" || destination == "" || departDate == "" {
 		return nil
@@ -126,13 +128,28 @@ func DetectRailFlyArbitrage(ctx context.Context, origin, destination, departDate
 		return nil
 	}
 
-	savings := basePrice - bestPrice
-	// Only report if savings exceed 5% AND at least 15 absolute
-	if savings < 15 || savings/basePrice < 0.05 {
+	grossSavings := basePrice - bestPrice
+
+	// Price the rail leg explicitly BEFORE thresholding so reported savings are
+	// honest. For a hub-origin search the Air&Rail train is bundled into the
+	// ticket (cost 0); for an alias origin (e.g. ANR/BRU) the substitute origin
+	// is a different airport, so the rail leg is a real out-of-pocket cost that
+	// must be subtracted from net savings. A ground-provider error degrades
+	// gracefully to a conservative estimate; it never aborts the search.
+	railLeg := resolveRailLegCost(ctx, origin, *bestStation, departDate)
+
+	// Net savings subtract any non-bundled rail cost (railLeg.Cost is 0 when the
+	// train is bundled in the airline ticket).
+	netSavings := grossSavings - railLeg.Cost
+
+	// Only report if net savings exceed 5% AND at least 15 absolute.
+	if netSavings < 15 || netSavings/basePrice < 0.05 {
 		return nil
 	}
 
-	return []Hack{buildRailFlyHack(origin, destination, basePrice, baseCurrency, bestPrice, bestCurrency, savings, *bestStation, returnDate)}
+	hack := buildRailFlyHack(origin, destination, basePrice, baseCurrency, bestPrice, bestCurrency, netSavings, *bestStation, returnDate)
+	attachRailLegCost(&hack, railLeg)
+	return []Hack{hack}
 }
 
 // detectRailFlyArbitrage adapts DetectRailFlyArbitrage to the detectFn signature
@@ -141,13 +158,52 @@ func detectRailFlyArbitrage(ctx context.Context, in DetectorInput) []Hack {
 	return DetectRailFlyArbitrage(ctx, in.Origin, in.Destination, in.Date, in.ReturnDate)
 }
 
-func railFlyStationsForHub(hubIATA string) []railFlyStation {
+// railFlyOriginAliases maps a real departure airport to the rail-station IATAs
+// that offer a rail-fly substitute origin nearby. When a user searches FROM one
+// of these airports, the detector surfaces the rail-connected stations the same
+// way it does when the origin is the airline hub itself.
+//
+// Example: a search from ANR (Antwerp Airport) surfaces ZWE (Antwerp rail
+// station, KLM Air&Rail to AMS); a search from BRU (Brussels Airport) surfaces
+// ZYR (Brussels-Midi) which has both a KLM (AMS) and an Air France (CDG) bundle.
+var railFlyOriginAliases = map[string][]string{
+	"ANR": {"ZWE"}, // Antwerp Airport -> Antwerp rail station (KLM -> AMS)
+	"BRU": {"ZYR"}, // Brussels Airport -> Brussels-Midi (KLM -> AMS, Air France -> CDG)
+}
+
+func railFlyStationsForHub(origin string) []railFlyStation {
 	var result []railFlyStation
+
+	// Primary match: origin is itself an airline hub (e.g. AMS, FRA, CDG, ZRH).
 	for _, st := range railFlyStations {
-		if st.HubIATA == hubIATA {
+		if st.HubIATA == origin {
 			result = append(result, st)
 		}
 	}
+
+	// Alias match: origin is a city airport (e.g. ANR, BRU) with a nearby
+	// rail-fly station that routes through a different hub. Deduplicated against
+	// the primary match by (station IATA, hub IATA).
+	if aliasIATAs, ok := railFlyOriginAliases[origin]; ok {
+		seen := map[string]bool{}
+		for _, st := range result {
+			seen[st.IATA+"|"+st.HubIATA] = true
+		}
+		for _, wantIATA := range aliasIATAs {
+			for _, st := range railFlyStations {
+				if st.IATA != wantIATA {
+					continue
+				}
+				key := st.IATA + "|" + st.HubIATA
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				result = append(result, st)
+			}
+		}
+	}
+
 	return result
 }
 
@@ -157,14 +213,25 @@ func buildRailFlyHack(origin, destination string, basePrice float64, baseCurrenc
 		tripType = "round-trip"
 	}
 
+	// bundled is true when the search origin IS the airline hub, so the Air&Rail
+	// train is included in the ticket. For an alias origin (e.g. ANR/BRU) the
+	// substitute origin flies via a different hub, so the train is a real,
+	// separately-paid leg and the hack text must say so honestly.
+	bundled := origin == station.HubIATA
+
 	// KLM Air&Rail has no enforcement — train boarding is not linked to
 	// flight check-in at Schiphol.  Lufthansa AIRail may enforce outbound.
 	isKLM := station.Airline == "KL"
 
+	trainStep := fmt.Sprintf("Take %s from %s to %s (%d min, included in ticket)", station.TrainProvider, station.City, origin, station.TrainMinutes)
+	if !bundled {
+		trainStep = fmt.Sprintf("Take %s from %s to %s airport (%d min, booked as a separate rail ticket)", station.TrainProvider, station.City, station.HubIATA, station.TrainMinutes)
+	}
+
 	steps := []string{
 		fmt.Sprintf("Direct from %s: %.0f %s (%s)", origin, basePrice, baseCurrency, tripType),
 		fmt.Sprintf("Via %s (%s): %.0f %s (%s) — %.0f %s cheaper", station.City, station.IATA, railPrice, railCurrency, tripType, savings, baseCurrency),
-		fmt.Sprintf("Take %s from %s to %s (%d min, included in ticket)", station.TrainProvider, station.City, origin, station.TrainMinutes),
+		trainStep,
 		"Train ticket appears as a flight segment in the booking — board with your airline booking reference",
 		"On return: you can skip the train leg back to " + station.City + " — nobody checks if you board the return train",
 	}
@@ -187,20 +254,35 @@ func buildRailFlyHack(origin, destination string, basePrice float64, baseCurrenc
 			"Train is flexible within the travel day (any departure, not fixed to one schedule)",
 		}
 	}
+	if !bundled {
+		risks = append(risks, fmt.Sprintf("Rail leg %s→%s is a separate ticket — its cost is already subtracted from the reported net saving", station.City, station.HubIATA))
+	}
+
+	title := fmt.Sprintf("Book via %s — train to %s is free, saves %.0f %s", station.City, station.HubIATA, savings, baseCurrency)
+	description := fmt.Sprintf(
+		"Book %s %s→%s instead of %s→%s. The %s train from %s to %s airport (%d min) is included free in the ticket. "+
+			"Different fare zone (%s) triggers cheaper market pricing — airlines price by origin country/region. "+
+			"Can be combined with hidden-city ticketing (book via rail station to hub, exit at hub, skip onward flight) for maximum savings.",
+		station.AirlineName, station.IATA, destination, origin, destination,
+		station.TrainProvider, station.City, origin, station.TrainMinutes, station.FareZone)
+	if !bundled {
+		title = fmt.Sprintf("Book via %s — net saving %.0f %s after the rail leg", station.City, savings, baseCurrency)
+		description = fmt.Sprintf(
+			"Book %s %s→%s instead of %s→%s. Take the %s train from %s to %s airport (%d min) as a separate rail ticket; "+
+				"its cost is subtracted from the reported net saving. A different fare zone (%s) triggers cheaper market pricing — "+
+				"airlines price by origin country/region.",
+			station.AirlineName, station.IATA, destination, origin, destination,
+			station.TrainProvider, station.City, station.HubIATA, station.TrainMinutes, station.FareZone)
+	}
 
 	return Hack{
-		Type:  "rail_fly_arbitrage",
-		Title: fmt.Sprintf("Book via %s — train to %s is free, saves %.0f %s", station.City, station.HubIATA, savings, baseCurrency),
-		Description: fmt.Sprintf(
-			"Book %s %s→%s instead of %s→%s. The %s train from %s to %s airport (%d min) is included free in the ticket. "+
-				"Different fare zone (%s) triggers cheaper market pricing — airlines price by origin country/region. "+
-				"Can be combined with hidden-city ticketing (book via rail station to hub, exit at hub, skip onward flight) for maximum savings.",
-			station.AirlineName, station.IATA, destination, origin, destination,
-			station.TrainProvider, station.City, origin, station.TrainMinutes, station.FareZone),
-		Savings:  roundSavings(savings),
-		Currency: baseCurrency,
-		Steps:    steps,
-		Risks:    risks,
+		Type:        "rail_fly_arbitrage",
+		Title:       title,
+		Description: description,
+		Savings:     roundSavings(savings),
+		Currency:    baseCurrency,
+		Steps:       steps,
+		Risks:       risks,
 		Citations: []string{
 			fmt.Sprintf("https://www.google.com/travel/flights?q=%s%%20to%%20%s", station.IATA, destination),
 			fmt.Sprintf("https://www.google.com/travel/flights?q=%s%%20to%%20%s", origin, destination),
