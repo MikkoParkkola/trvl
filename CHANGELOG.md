@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Trip composition from confirmation emails (MIK-3088).** A new `internal/inboxparser` package parses raw RFC-822 confirmation emails from KLM, Booking.com, and Airbnb into structured trip artifacts (provider, reference, and trip legs), with unrecognised mail rejected cleanly. `IngestConfirmations` wires parsed records into a trip via `trips.MergeReservationArtifacts`, populating both `Trip.Legs` and `Trip.Bookings` with no manual entry. A new `internal/daygraph` package composes one `DayPlan` per trip day from point-of-interest places, with a deterministic haversine-based route-time estimate; places missing coordinates are surfaced as day warnings rather than dropped. The iCalendar exporter now emits an all-day event per day plan alongside the existing per-leg events.
+
 ## [1.14.1] - 2026-06-20
 
 ### Changed
