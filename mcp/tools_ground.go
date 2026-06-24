@@ -172,6 +172,11 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 	// the core result: failures and missing coordinates leave routes unchanged.
 	enrichFerrySeaState(ctx, result.Routes)
 
+	// Best-effort destination intelligence for the arrival city on the default
+	// ground search path: weather, safety, holidays, currency, country facts
+	// inline, with no extra switch. Silent degrade — never blocks the search.
+	result.Destination = enrichDestination(ctx, to, models.DateRange{CheckIn: date, CheckOut: opts.ReturnDate})
+
 	summary := buildGroundRouteSummary(
 		fmt.Sprintf("Found %d ground routes from %s to %s on %s", result.Count, from, to, date),
 		result.Routes,
