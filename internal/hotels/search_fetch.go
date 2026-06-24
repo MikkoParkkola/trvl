@@ -211,7 +211,7 @@ func fetchHotelPageFull(ctx context.Context, client *batchexec.Client, location 
 		travelURL += "&start=" + strconv.Itoa(offset)
 	}
 
-	status, body, err := client.Get(ctx, travelURL)
+	status, body, err := client.GetStealth(ctx, travelURL, opts.Stealth)
 	if err != nil {
 		return parseResult{}, fmt.Errorf("hotel search request: %w", err)
 	}

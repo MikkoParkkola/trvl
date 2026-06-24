@@ -62,6 +62,7 @@ Examples:
 	cmd.Flags().Bool("meal-plan", false, "Only show properties with breakfast/meals included (Booking)")
 	cmd.Flags().Bool("include-sold-out", false, "Include sold-out properties (Booking)")
 	cmd.Flags().Bool("explain", false, "Show per-factor profile match breakdown for each result")
+	cmd.Flags().Bool("stealth", false, "Opt in to authorized first-party stealth access (Chrome HTTP/2 fingerprint) for the hotel fetch. Default off. Scope-fenced: activates ONLY for hosts on the operator allowlist TRVL_STEALTH_ALLOWLIST (comma-separated; empty = never). Fail-safe: a non-allowlisted host runs the normal path. Using stealth against sites that prohibit automated access is the operator's responsibility.")
 
 	_ = cmd.MarkFlagRequired("checkin")
 	_ = cmd.MarkFlagRequired("checkout")
@@ -115,6 +116,7 @@ func runHotels(cmd *cobra.Command, args []string) error {
 	mealPlan, _ := cmd.Flags().GetBool("meal-plan")
 	includeSoldOut, _ := cmd.Flags().GetBool("include-sold-out")
 	explain, _ := cmd.Flags().GetBool("explain")
+	stealth, _ := cmd.Flags().GetBool("stealth")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -164,6 +166,7 @@ func runHotels(cmd *cobra.Command, args []string) error {
 		Sustainable:      sustainable,
 		MealPlan:         mealPlan,
 		IncludeSoldOut:   includeSoldOut,
+		Stealth:          stealth,
 	}
 
 	// Apply preference-based filters (only when not already set via flags).

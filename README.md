@@ -103,6 +103,25 @@ An AI agent acts on trvl's output without a human checking every result, so the 
 
 Hotel metasearch exposes list-level rates first; some are real, some only firm up after the property detail page reveals the room/tax/cancellation matrix. So trvl separates **discovery** (`search_hotels` — fast, lead-in prices) from **decisions** (`search_accommodations` — verifies room-level offers before ranking) and **drill-down** (`search_hotels_with_details`, `hotel_rooms`). It provides booking links for manual handoff but never books, holds, or guarantees a rate. Detail: [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
+### Stealth: opt-in, authorized first-party access only
+
+`trvl flights` and `trvl hotels` accept an optional `--stealth` flag that routes the fetch through trvl's existing Chrome HTTP/2 fingerprint transport. It is built as a fail-safe scope fence:
+
+- **Default off.** Stealth is inactive unless you explicitly pass `--stealth`.
+- **Authorized hosts only.** Even with `--stealth`, it activates only for hosts on an operator-authorized allowlist read from the `TRVL_STEALTH_ALLOWLIST` environment variable (comma-separated hostnames; case-insensitive; exact match plus leading-dot suffix such as `.google.com`). An empty allowlist means stealth never activates — refuse by default.
+- **No silent evasion.** With `--stealth` set for a host that is not on the allowlist, trvl runs the normal fetch path and logs one line (`stealth not authorized for host <host>`); it does not error, it does not abort.
+- **Scope-fenced.** Only flight and hotel search honour `--stealth`. Other paths never receive it.
+
+Using stealth against sites whose terms prohibit automated access is the operator's responsibility.
+
+Example:
+
+```bash
+export TRVL_STEALTH_ALLOWLIST=".google.com"
+trvl flights HEL NRT 2026-09-01 --stealth
+trvl hotels "Helsinki" --checkin 2026-09-01 --checkout 2026-09-04 --stealth
+```
+
 ## What it can do
 
 | Area | Highlights | Reference |

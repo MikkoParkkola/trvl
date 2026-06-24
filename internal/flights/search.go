@@ -78,6 +78,13 @@ type SearchOptions struct {
 	// cheaper synthesized option (hidden-city, positioning, split, multimodal,
 	// …) in result.HackSaving. Set NoHacks to run a pure naive search.
 	NoHacks bool
+
+	// Stealth opts into the operator-authorized stealth transport for the
+	// Google Flights fetch. It is DEFAULT OFF (zero value). Even when true,
+	// stealth activates ONLY for a request whose host is on the operator
+	// allowlist (TRVL_STEALTH_ALLOWLIST); a requested-but-unauthorized host
+	// runs the normal path and logs a single refusal line. See internal/stealth.
+	Stealth bool
 }
 
 // defaults fills in zero-value fields with sensible defaults.
@@ -628,7 +635,7 @@ func searchGoogleFlightsWithClient(ctx context.Context, client *batchexec.Client
 	}
 
 	gl := CurrencyToGL(opts.Currency)
-	status, body, err := client.SearchFlightsGL(ctx, encoded, gl)
+	status, body, err := client.SearchFlightsGLStealth(ctx, encoded, gl, opts.Stealth)
 	if err != nil {
 		return &models.FlightSearchResult{
 			Error: fmt.Sprintf("request failed: %v", err),

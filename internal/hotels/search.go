@@ -144,6 +144,13 @@ type HotelSearchOptions struct {
 	MustHaveKitchen   bool
 	MustHaveWifi      bool
 	MustHaveWorkspace bool
+
+	// Stealth opts into the operator-authorized stealth transport for the
+	// Google Hotels fetch. It is DEFAULT OFF (zero value). Even when true,
+	// stealth activates ONLY for a request whose host is on the operator
+	// allowlist (TRVL_STEALTH_ALLOWLIST); a requested-but-unauthorized host
+	// runs the normal path and logs a single refusal line. See internal/stealth.
+	Stealth bool
 }
 
 // SearchHotels searches for hotels in the given location.
