@@ -23,11 +23,13 @@ func isNoProviderPricesError(err error) bool {
 // HotelPriceOpts configures a hotel price lookup with optional fallback search
 // for hotels where Google's batchexecute RPC has no booking partner data.
 type HotelPriceOpts struct {
-	HotelID  string // Google place ID
-	CheckIn  string // YYYY-MM-DD
-	CheckOut string // YYYY-MM-DD
-	Currency string // e.g. "EUR", "USD"
-	Location string // optional city/hotel name hint for search-page fallback
+	HotelID      string // Google place ID
+	CheckIn      string // YYYY-MM-DD
+	CheckOut     string // YYYY-MM-DD
+	Currency     string // e.g. "EUR", "USD"
+	Guests       int    // requested adult count; defaults to 2
+	ChildrenAges []int  // requested child ages
+	Location     string // optional city/hotel name hint for search-page fallback
 }
 
 // GetHotelPrices looks up booking provider prices for a specific hotel.
@@ -73,7 +75,7 @@ func GetHotelPricesWithOpts(ctx context.Context, opts HotelPriceOpts) (*models.H
 	}
 
 	client := DefaultClient()
-	encoded := batchexec.BuildHotelPricePayload(opts.HotelID, checkInArr, checkOutArr, opts.Currency)
+	encoded := batchexec.BuildHotelPricePayloadWithOccupancy(opts.HotelID, checkInArr, checkOutArr, opts.Currency, opts.Guests, opts.ChildrenAges)
 
 	status, body, err := client.BatchExecute(ctx, encoded)
 	if err != nil {
