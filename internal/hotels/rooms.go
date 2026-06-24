@@ -113,10 +113,18 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// Runs synchronously before the fallback so Booking data is available
 	// regardless of whether the Google entity page returns room data.
 	var bookingRooms []RoomType
+	var bookingNotice string
 	if opts.BookingURL != "" {
 		br, brErr := FetchBookingRooms(ctx, opts.BookingURL, opts.CheckIn, opts.CheckOut, opts.Currency)
 		if brErr != nil {
 			slog.Debug("booking rooms fetch failed", "error", brErr)
+			// A bot-wall / 429 / transient 5xx is retryable, not a genuine
+			// "no rooms" result. Surface it so the caller knows Booking room
+			// pricing was withheld this time rather than silently absent — the
+			// same rate-limited-vs-failed distinction the completeness model
+			// preserves at the search layer. Hard parse failures stay quiet
+			// (the debug log above) since a retry won't help.
+			bookingNotice = bookingRateLimitNotice(brErr)
 		} else {
 			bookingRooms = br
 		}
@@ -188,6 +196,9 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// Merge Booking.com rooms with Google rooms if both are available.
 	if len(bookingRooms) > 0 {
 		rooms = mergeRoomTypes(rooms, bookingRooms)
+	} else if bookingNotice != "" {
+		// Booking room data was withheld by a retryable bot-wall, not absent.
+		notice = appendNotice(notice, bookingNotice)
 	}
 
 	// Lead with the rooms that carry a real, bookable price. Sources are merged
@@ -207,6 +218,30 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		Rooms:    rooms,
 		Notice:   notice,
 	}, nil
+}
+
+// bookingRateLimitNotice returns a user-facing caution when a Booking room
+// fetch failed with a retryable condition (bot-wall, 429, transient 5xx) — a
+// retry may surface room-level pricing. It returns "" for a genuine hard
+// failure or no error, where nothing actionable should be surfaced.
+func bookingRateLimitNotice(brErr error) string {
+	if brErr != nil && models.ClassifyProviderError(brErr) == models.StatusRateLimited {
+		return "Booking.com room pricing was temporarily unavailable (rate-limited); a retry may surface more room-level offers."
+	}
+	return ""
+}
+
+// appendNotice joins a new notice clause onto an existing notice string,
+// space-separated, so multiple degradation cautions (e.g. SerpAPI plus a
+// rate-limited Booking fetch) can coexist without one clobbering the other.
+func appendNotice(existing, add string) string {
+	if existing == "" {
+		return add
+	}
+	if add == "" {
+		return existing
+	}
+	return existing + " " + add
 }
 
 // sortRoomsByBookability orders rooms so the most actionable, real prices lead.
