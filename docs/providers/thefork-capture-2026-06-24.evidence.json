@@ -1,0 +1,72 @@
+{
+  "capturedAt": "2026-06-24",
+  "note": "agent-browser HAR, headed Chrome, Amsterdam search attempt. Trimmed to status+method+url; no personal/account data (no login attempted).",
+  "entries": [
+    {
+      "status": 403,
+      "method": "GET",
+      "url": "https://www.thefork.com/",
+      "resourceType": "Document"
+    },
+    {
+      "status": 200,
+      "method": "GET",
+      "url": "https://ct.captcha-delivery.com/i.js",
+      "resourceType": "Script"
+    },
+    {
+      "status": 200,
+      "method": "GET",
+      "url": "https://geo.captcha-delivery.com/interstitial/?initialCid=AHrlqAAAAAMA0mVOd5K0PP0AH5faMw%3D%3D&hash=4980A61279181687DE605B235F81B9&cid=JpXKWhheF2IumMAfBfvY6vgPqvK6p9xYgMad~RG9gGaFfB4pI1UNlvhn24F7HNdKr7BWrKXzZ40OLA0M0SmfYTjMaPemSUoebfExB5zkUY0ZItS1vMd2WfUOVU7SQ_YJ&referer=https%3A%2F%2Fwww.thefork.com%2F&s=326&e=692214a5060755336b8ed77825b8c25a8a86d5fbc1fab74e451baf5df298baeaeef6cb376bc445768e8bc66b15a1def7&b=1637&dm=cd",
+      "resourceType": "Document"
+    },
+    {
+      "status": 200,
+      "method": "GET",
+      "url": "https://www.thefork.com/favicon.ico",
+      "resourceType": "Other"
+    },
+    {
+      "status": 0,
+      "method": "GET",
+      "url": "blob:https://geo.captcha-delivery.com/090d14b9-d1ef-4b8d-bd8e-a1397701cce3",
+      "resourceType": "Script"
+    },
+    {
+      "status": 200,
+      "method": "POST",
+      "url": "https://geo.captcha-delivery.com/interstitial/",
+      "resourceType": "XHR"
+    },
+    {
+      "status": 200,
+      "method": "GET",
+      "url": "https://geo.captcha-delivery.com/captcha/?initialCid=AHrlqAAAAAMA0mVOd5K0PP0AH5faMw==&cid=qnTk~9NpY7PkclBzOr8P2MgNsQwnpYvowm1Ee~ciPEcrwCXF~55djEoaz4rXBFLQ6rkGhNeFEapLkk1jJQG9xLG6ULoHu1SUWFy9WbtOoikn7l9LEUCzKDJF2pX0tEce&referer=https%3A%2F%2Fwww.thefork.com%2F&hash=4980A61279181687DE605B235F81B9&t=bv&s=326&e=b2b462b6e430ecff641a27238681e33720f16f5b23c2b436a2d0fb0177160f0ec8744240e049ff6402954a9826c02f5a&ir=40%2C32%2C5%2C29&dm=dc_ir&b=1637",
+      "resourceType": "Document"
+    },
+    {
+      "status": 200,
+      "method": "GET",
+      "url": "https://static.captcha-delivery.com/captcha/assets/tpl/6dc485c0c428c35b53577b146dc6f9179f55ef9ad41b327a2a179998839364bf/index.css",
+      "resourceType": "Stylesheet"
+    },
+    {
+      "status": 200,
+      "method": "GET",
+      "url": "https://static.captcha-delivery.com/common/fonts/roboto/font-face.css",
+      "resourceType": "Stylesheet"
+    },
+    {
+      "status": 200,
+      "method": "GET",
+      "url": "https://static.captcha-delivery.com/captcha/assets/set/f525eef4f03ab81983392564bc44fea01267b8cd/logo.png?update_cache=2458297828603096150",
+      "resourceType": "Image"
+    },
+    {
+      "status": 200,
+      "method": "GET",
+      "url": "https://static.captcha-delivery.com/common/fonts/roboto/roboto.woff2",
+      "resourceType": "Font"
+    }
+  ]
+}
