@@ -41,9 +41,11 @@ var ErrRateLimited = errors.New("upstream provider rate-limited or temporarily u
 
 // ClassifyProviderError maps an error to a provider status. A typed rate-limit
 // (ErrRateLimited) wins first so a 429/challenge never renders as a hard parse
-// failure; deadlines map to StatusTimeout; everything else is StatusFailed. This
-// is the distinction that prevents a timeout/rate-limit from being presented to
-// the user as "nothing found".
+// failure; deadlines map to StatusTimeout; retryable upstream signatures (rate
+// limits, bot-wall blocks, transient 5xx) surfaced as plain strings map to
+// StatusRateLimited; everything else is StatusFailed. This is the distinction
+// that prevents a timeout/rate-limit/block from being presented to the user as
+// "nothing found" or as a permanent failure.
 func ClassifyProviderError(err error) string {
 	if err == nil {
 		return StatusOK
@@ -57,6 +59,24 @@ func ClassifyProviderError(err error) string {
 	msg := strings.ToLower(err.Error())
 	if strings.Contains(msg, "timeout") || strings.Contains(msg, "timed out") || strings.Contains(msg, "deadline") {
 		return StatusTimeout
+	}
+	// Retryable upstream conditions a provider may surface as a plain string
+	// error rather than wrapping ErrRateLimited: rate limits, bot-wall blocks,
+	// challenges, and transient 5xx. These are RETRYABLE (the documented intent
+	// of StatusRateLimited) — classifying them as StatusFailed would tell the
+	// user the provider is permanently broken when retrying (or supplying
+	// cookies) would succeed. Substring match is deliberately broad: in this
+	// domain "forbidden"/"blocked"/"captcha"/"datadome"/"cloudfront"/"akamai"
+	// overwhelmingly mean an anti-bot wall, not a logic bug.
+	for _, sig := range []string{
+		"429", "rate limit", "rate-limit", "ratelimit", "too many requests",
+		"403", "forbidden", "blocked", "captcha", "challenge", "bot detect",
+		"datadome", "cloudfront", "akamai",
+		"503", "service unavailable", "temporarily unavailable",
+	} {
+		if strings.Contains(msg, sig) {
+			return StatusRateLimited
+		}
 	}
 	return StatusFailed
 }

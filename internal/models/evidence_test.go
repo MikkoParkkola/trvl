@@ -17,8 +17,28 @@ func TestClassifyProviderError(t *testing.T) {
 	if got := ClassifyProviderError(fmt.Errorf("request timed out after 30s")); got != StatusTimeout {
 		t.Errorf("timed-out msg -> %q, want timeout", got)
 	}
-	if got := ClassifyProviderError(fmt.Errorf("403 forbidden")); got != StatusFailed {
+	// A genuine hard failure (parse bug, unexpected shape) stays StatusFailed.
+	if got := ClassifyProviderError(fmt.Errorf("unexpected flight data format: missing legs array")); got != StatusFailed {
 		t.Errorf("hard err -> %q, want failed", got)
+	}
+	// Retryable upstream conditions surfaced as plain strings (no ErrRateLimited
+	// wrap) must classify as rate_limited, not a permanent failure: bot-wall
+	// blocks, 429s, and transient 5xx are all retryable (StatusRateLimited's
+	// documented intent). Misclassifying these as failed tells the user the
+	// provider is broken when a retry / cookies would succeed.
+	for _, msg := range []string{
+		"403 forbidden",
+		"HTTP 429: too many requests",
+		"request blocked by DataDome challenge",
+		"akamai bot detection triggered",
+		"CloudFront 403: Request blocked",
+		"503 service unavailable",
+		"upstream temporarily unavailable",
+		"rate limit exceeded",
+	} {
+		if got := ClassifyProviderError(fmt.Errorf("%s", msg)); got != StatusRateLimited {
+			t.Errorf("retryable %q -> %q, want rate_limited", msg, got)
+		}
 	}
 }
 
