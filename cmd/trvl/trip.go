@@ -172,6 +172,27 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 		fmt.Println()
 	}
 
+	// Flight coverage honesty: both legs query the same upstream providers, so
+	// the union (worst status per provider) tells the user whether the flight
+	// prices above can be trusted as a complete sweep. A rate-limited provider
+	// is retryable; a hard failure usually is not. Mirrors the hotel note below.
+	if !result.FlightCoverage.MayClaimExhaustive() {
+		fmt.Printf("  %s %s\n", models.Bold("⚠ Flight coverage:"), result.FlightCoverage.IncompleteNote())
+		for _, s := range result.FlightProviders {
+			switch s.Status {
+			case models.StatusRateLimited:
+				fmt.Printf("    • %s: rate-limited (retryable — try again shortly)\n", s.Name)
+			case models.StatusFailed, models.StatusError, models.StatusTimeout, models.StatusCircuitBroken:
+				line := fmt.Sprintf("    • %s: unavailable this attempt", s.Name)
+				if s.FixHint != "" {
+					line += " — " + s.FixHint
+				}
+				fmt.Println(line)
+			}
+		}
+		fmt.Println()
+	}
+
 	// Hotels.
 	if len(result.Hotels) > 0 {
 		fmt.Printf("  %s Hotels in %s (%d nights)\n\n", models.Bold("🏨"), destName, result.Nights)
