@@ -152,12 +152,43 @@ func degreesToRadians(deg float64) float64 {
 	return deg * math.Pi / 180
 }
 
+// priceConfidenceRank maps a HotelResult.PriceConfidence value to a sort
+// rank, higher rank = more trustworthy headline price. The values mirror the
+// constants in internal/models/hotel_price_trust.go:
+//
+//	verified   (3) — price re-confirmed against a bookable room rate
+//	room_level (2) — a real per-night room rate (Agoda/Booking/Trivago path)
+//	unverified (1) — headline / lead-in teaser (e.g. Google's single price)
+//
+// Empty or unrecognised confidence ranks lowest among priced entries (1) so
+// listings without a trustworthy basis still sort below real room prices while
+// staying ahead of zero-price entries.
+func priceConfidenceRank(confidence string) int {
+	switch confidence {
+	case models.PriceConfidenceVerified:
+		return 3
+	case models.PriceConfidenceRoomLevel:
+		return 2
+	default:
+		return 1
+	}
+}
+
+// lessPrice orders hotels for the "cheapest" sort. Zero-price listings always
+// sink to the end. Among priced listings, those with a higher price-confidence
+// rank lead (a real per-night room price beats a headline teaser even when the
+// teaser is cheaper); within the same confidence tier, the cheaper price wins.
 func lessPrice(a, b models.HotelResult) bool {
 	if a.Price == 0 {
 		return false
 	}
 	if b.Price == 0 {
 		return true
+	}
+	rankA := priceConfidenceRank(a.PriceConfidence)
+	rankB := priceConfidenceRank(b.PriceConfidence)
+	if rankA != rankB {
+		return rankA > rankB
 	}
 	return a.Price < b.Price
 }
