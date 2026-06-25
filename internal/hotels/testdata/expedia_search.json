@@ -1,0 +1,43 @@
+{
+  "_comment": "SCHEMA NOT VERIFIED — representative/assumed Expedia availability shape. The public endpoint is Akamai Bot Manager-defended (HTTP 429 + captcha), so this fixture is a plausible shape, NOT a captured live response. Field tags may need adjustment once an operator supplies a reachable EXPEDIA_API_BASE.",
+  "properties": [
+    {
+      "propertyId": "ex-12345",
+      "name": "Hôtel Le Marais",
+      "address": "12 Rue de Rivoli, 75004 Paris, France",
+      "neighborhood": "Le Marais",
+      "starRating": 4,
+      "guestRating": 8.6,
+      "reviewCount": 1423,
+      "latitude": 48.8566,
+      "longitude": 2.3622,
+      "imageUrl": "https://images.trvl-media.example/ex-12345.jpg",
+      "deepLink": "/Paris-Hotels-Hotel-Le-Marais.h12345.Hotel-Information",
+      "amenities": ["Free WiFi", "Air conditioning", "Bar"],
+      "nightlyRate": { "amount": 189.0, "currencyCode": "EUR" }
+    },
+    {
+      "propertyId": "ex-67890",
+      "name": "Budget Stay Bastille",
+      "address": "5 Rue de la Roquette, 75011 Paris, France",
+      "neighborhood": "Bastille",
+      "starRating": 2,
+      "guestRating": 7.4,
+      "reviewCount": 311,
+      "latitude": 48.8534,
+      "longitude": 2.3719,
+      "imageUrl": "https://images.trvl-media.example/ex-67890.jpg",
+      "deepLink": "https://www.expedia.com/Paris-Hotels-Budget-Stay-Bastille.h67890.Hotel-Information",
+      "amenities": ["Free WiFi"],
+      "leadInPrice": 92.0,
+      "currencyCode": "EUR"
+    },
+    {
+      "propertyId": "ex-00000",
+      "name": "Sold Out Place",
+      "address": "1 Nowhere, Paris",
+      "starRating": 3,
+      "guestRating": 8.0
+    }
+  ]
+}

@@ -25,6 +25,7 @@ func TestMain(m *testing.M) {
 	flatioEnabled = false
 	bluegroundEnabled = false
 	agodaEnabled = false
+	expediaEnabled = false
 	SearchBooking = func(_ context.Context, _ string, _ HotelSearchOptions) ([]models.HotelResult, error) {
 		return nil, nil
 	}
