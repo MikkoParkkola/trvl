@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -570,5 +571,55 @@ func TestSearchHotels_GoogleBlockedDegradesGracefully(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected Booking Test Hotel to survive a blocked Google fetch")
+	}
+}
+
+// TestSearchHotels_GoogleRateLimitedMarksMissingCoverage guards the completeness
+// model: when Google's primary fetch is bot-walled (a retryable rate-limit), its
+// ProviderStatus must classify as rate-limited and coverage must be MISSING
+// Google — never a definitive no-hit. A count-only status would mislabel a
+// blocked primary provider as "checked, found nothing", letting renderers claim
+// exhaustive coverage the search never actually had.
+func TestSearchHotels_GoogleRateLimitedMarksMissingCoverage(t *testing.T) {
+	origFetch := fetchHotelPageFullFn
+	fetchHotelPageFullFn = func(_ context.Context, _ *batchexec.Client, _ string, _ HotelSearchOptions, _ int, _ string) (parseResult, error) {
+		// A bot-wall block: retryable, classifies as StatusRateLimited.
+		return parseResult{}, fmt.Errorf("google hotels blocked: %w", models.ErrRateLimited)
+	}
+	defer func() { fetchHotelPageFullFn = origFetch }()
+
+	origSearch := SearchBooking
+	SearchBooking = func(_ context.Context, _ string, _ HotelSearchOptions) ([]models.HotelResult, error) {
+		return []models.HotelResult{{
+			Name:       "Booking Test Hotel",
+			Price:      99,
+			Currency:   "EUR",
+			BookingURL: "https://www.booking.com/hotel/test",
+		}}, nil
+	}
+	defer func() { SearchBooking = origSearch }()
+
+	results, err := SearchHotels(context.Background(), "Corfu", HotelSearchOptions{
+		CheckIn: "2026-08-10", CheckOut: "2026-08-17", Currency: "EUR", MaxPages: 1,
+	})
+	if err != nil {
+		t.Fatalf("SearchHotels returned error despite a working auxiliary provider: %v", err)
+	}
+
+	var googleStatus *models.ProviderStatus
+	for i := range results.ProviderStatuses {
+		if results.ProviderStatuses[i].ID == "google_hotels" {
+			googleStatus = &results.ProviderStatuses[i]
+			break
+		}
+	}
+	if googleStatus == nil {
+		t.Fatal("expected a google_hotels provider status")
+	}
+	if googleStatus.Status != models.StatusRateLimited {
+		t.Errorf("google_hotels status = %q, want rate_limited (bot-wall must not look like a clean no-hit)", googleStatus.Status)
+	}
+	if results.Completeness.MayClaimExhaustive() {
+		t.Errorf("completeness = %+v, must not claim exhaustive when the primary provider was blocked", results.Completeness)
 	}
 }

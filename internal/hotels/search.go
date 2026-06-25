@@ -317,7 +317,19 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 			rawBatches = append(rawBatches, tagHotelSource(pageHotels, "google_hotels"))
 		}
 	}
-	addProviderStatus(hotelProviderStatusFromResults("google_hotels", "Google Hotels", countHotelBatchResults(rawBatches)))
+	if googlePrimaryErr != nil && countHotelBatchResults(rawBatches) == 0 {
+		// Google's primary-sort fetch was blocked/failed and returned nothing
+		// (a primary failure breaks the sort loop before any batch is kept, so
+		// rawBatches is empty here). Classify the error — rate-limited bot-wall
+		// vs hard failure — so the completeness model marks Google as MISSING
+		// coverage rather than a definitive no-hit. Otherwise a bot-walled
+		// primary provider would let renderers claim exhaustive coverage the
+		// search never actually had. Mirrors the per-provider error handling the
+		// auxiliary providers below already use.
+		addProviderStatus(hotelProviderStatusFromError("google_hotels", "Google Hotels", googlePrimaryErr))
+	} else {
+		addProviderStatus(hotelProviderStatusFromResults("google_hotels", "Google Hotels", countHotelBatchResults(rawBatches)))
+	}
 
 	// Run parallel searches against Trivago, optional Booking.com, and
 	// user-configured external providers. All auxiliary providers are non-fatal:
