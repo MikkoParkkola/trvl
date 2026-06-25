@@ -346,6 +346,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	var flatioResults []models.HotelResult
 	var bluegroundResults []models.HotelResult
 	var agodaResults []models.HotelResult
+	var expediaResults []models.HotelResult
 	var bookingResults []models.HotelResult
 	var externalResults []models.HotelResult
 	var auxWg sync.WaitGroup
@@ -549,6 +550,39 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		addProviderStatus(hotelProviderStatusFromResults("agoda", "Agoda", len(res)))
 	}()
 
+	// Expedia OTA (opt-in, endpoint-gated). Expedia's hotel search surface is
+	// Akamai Bot Manager-defended (HTTP 429 + captcha challenge for plain
+	// clients), so it is never queried by default — the operator opts in by
+	// pointing EXPEDIA_API_BASE at a reachable JSON availability endpoint. When
+	// unconfigured we surface an honest not_configured status (with the
+	// AKAMAI_BLOCK root cause and a fix hint) rather than a silent skip or a
+	// fabricated empty result. Non-fatal in all cases.
+	auxWg.Add(1)
+	go func() {
+		defer auxWg.Done()
+		if !expediaConfigured() {
+			addProviderStatus(models.ProviderStatus{
+				ID:          "expedia",
+				Name:        "Expedia",
+				Status:      models.StatusNotConfigured,
+				Error:       "Expedia's public hotel search is Akamai Bot Manager-defended (HTTP 429 + captcha challenge); it is opt-in and requires a reachable endpoint",
+				FixHint:     "set EXPEDIA_API_BASE to an authorised partner/Rapid API endpoint or a self-hosted proxy that returns the JSON availability API",
+				FixHintCode: "AKAMAI_BLOCK",
+			})
+			return
+		}
+		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+		defer cancel()
+		res, err := SearchExpedia(providerCtx, location, auxOpts)
+		if err != nil {
+			slog.Warn("expedia search failed", "error", err)
+			addProviderStatus(hotelProviderStatusFromError("expedia", "Expedia", err))
+			return
+		}
+		expediaResults = res
+		addProviderStatus(hotelProviderStatusFromResults("expedia", "Expedia", len(res)))
+	}()
+
 	// Booking.com search — parallel with Google + Trivago + HomeToGo.
 	// Booking.com uses AWS WAF which blocks automated requests. The search
 	// is attempted but failures are expected and handled silently — the
@@ -637,6 +671,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	allBatches = append(allBatches, tagHotelSource(flatioResults, "flatio"))
 	allBatches = append(allBatches, tagHotelSource(bluegroundResults, "blueground"))
 	allBatches = append(allBatches, tagHotelSource(agodaResults, "agoda"))
+	allBatches = append(allBatches, tagHotelSource(expediaResults, "expedia"))
 	allBatches = append(allBatches, bookingResults)
 	allBatches = append(allBatches, externalResults)
 	if len(externalResults) > 0 {
