@@ -107,21 +107,28 @@ type PlanSummary struct {
 
 // PlanResult is the full trip plan response.
 type PlanResult struct {
-	Success         bool                    `json:"success"`
-	Origin          string                  `json:"origin"`
-	Destination     string                  `json:"destination"`
-	DepartDate      string                  `json:"depart_date"`
-	ReturnDate      string                  `json:"return_date"`
-	Nights          int                     `json:"nights"`
-	Guests          int                     `json:"guests"`
-	OutboundFlights []PlanFlight            `json:"outbound_flights"`
-	ReturnFlights   []PlanFlight            `json:"return_flights"`
-	Hotels          []PlanHotel             `json:"hotels"`
-	Breakfast       []PlanBreakfast         `json:"breakfast,omitempty"`
-	ReviewSnippets  []PlanReviewSnippet     `json:"review_snippets,omitempty"`
-	Context         *PlanDestinationContext `json:"context,omitempty"`
-	Summary         PlanSummary             `json:"summary"`
-	Error           string                  `json:"error,omitempty"`
+	Success         bool         `json:"success"`
+	Origin          string       `json:"origin"`
+	Destination     string       `json:"destination"`
+	DepartDate      string       `json:"depart_date"`
+	ReturnDate      string       `json:"return_date"`
+	Nights          int          `json:"nights"`
+	Guests          int          `json:"guests"`
+	OutboundFlights []PlanFlight `json:"outbound_flights"`
+	ReturnFlights   []PlanFlight `json:"return_flights"`
+	// RoundTripFares carries native single-ticket round-trip fares — one bookable
+	// ticket per entry covering both directions, whose Price is the full round-trip
+	// total per person (often discounted below the sum of two separate one-ways).
+	// Purely additive: the split OutboundFlights/ReturnFlights view stays populated
+	// exactly as before, so this never weakens the existing two-one-way display. A
+	// native fare is preferred in the cost summary only when it is genuinely cheaper.
+	RoundTripFares []PlanFlight            `json:"round_trip_fares,omitempty"`
+	Hotels         []PlanHotel             `json:"hotels"`
+	Breakfast      []PlanBreakfast         `json:"breakfast,omitempty"`
+	ReviewSnippets []PlanReviewSnippet     `json:"review_snippets,omitempty"`
+	Context        *PlanDestinationContext `json:"context,omitempty"`
+	Summary        PlanSummary             `json:"summary"`
+	Error          string                  `json:"error,omitempty"`
 
 	// HotelCoverage / HotelProviders carry the per-provider evidence so the
 	// renderer can be honest about partial accommodation coverage instead of
@@ -205,14 +212,16 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 	var (
 		outResult   *models.FlightSearchResult
 		retResult   *models.FlightSearchResult
+		rtResult    *models.FlightSearchResult
 		hotelResult *models.HotelSearchResult
 		outErr      error
 		retErr      error
+		rtErr       error
 		hotelErr    error
 		wg          sync.WaitGroup
 	)
 
-	wg.Add(3)
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
 		outResult, outErr = flights.SearchFlightsWithClient(ctx, client, input.Origin, input.Destination, input.DepartDate, flights.SearchOptions{
@@ -225,6 +234,20 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 		retResult, retErr = flights.SearchFlightsWithClient(ctx, client, input.Destination, input.Origin, input.ReturnDate, flights.SearchOptions{
 			SortBy: models.SortCheapest,
 			Adults: input.Guests,
+		})
+	}()
+	go func() {
+		defer wg.Done()
+		// Native single-ticket round-trip fares. Passing ReturnDate routes this
+		// through searchRoundTripComposed, which queries providers' genuine
+		// round-trip fares (FareRoundTrip) alongside composed one-way pairs. The
+		// leg sub-searches share the same singleflight cache keys as the outbound
+		// and return goroutines above, so only the native-RT passes are net-new
+		// network — no extra fan-out beyond this single call.
+		rtResult, rtErr = flights.SearchFlightsWithClient(ctx, client, input.Origin, input.Destination, input.DepartDate, flights.SearchOptions{
+			SortBy:     models.SortCheapest,
+			Adults:     input.Guests,
+			ReturnDate: input.ReturnDate,
 		})
 	}()
 	go func() {
@@ -248,6 +271,15 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 	// Extract top return flights (up to 5).
 	if retErr == nil && retResult != nil && retResult.Success {
 		result.ReturnFlights = extractTopFlights(retResult.Flights, 5)
+	}
+
+	// Extract native single-ticket round-trip fares (up to 5). Keep ONLY
+	// FareRoundTrip results — the composed one-way pairs that searchRoundTripComposed
+	// also returns are already represented by the split outbound/return view above,
+	// so including them here would double-count. Each kept fare is one bookable
+	// ticket whose Price is the full round-trip total per person.
+	if rtErr == nil && rtResult != nil && rtResult.Success {
+		result.RoundTripFares = extractTopRoundTripFares(rtResult.Flights, 5)
 	}
 
 	// Extract top hotels (up to 5).
@@ -351,6 +383,7 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 	if input.Currency != "" {
 		convertPlanFlights(ctx, result.OutboundFlights, input.Currency)
 		convertPlanFlights(ctx, result.ReturnFlights, input.Currency)
+		convertPlanFlights(ctx, result.RoundTripFares, input.Currency)
 		convertPlanHotels(ctx, result.Hotels, input.Currency)
 	}
 
@@ -369,7 +402,17 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 		cheapHotel = convertedPlanAmount(ctx, result.Hotels[0].Total, result.Hotels[0].Currency, cur)
 	}
 
-	flightsTotal := (cheapOut + cheapRet) * float64(input.Guests)
+	// Prefer the cheaper of {two one-ways, native single-ticket round-trip}. The
+	// native RT price is ALREADY a full round-trip per person, so it competes
+	// directly against cheapOut+cheapRet — no doubling. When no native fare was
+	// found (or it is pricier), this is byte-identical to the two-one-way total.
+	var cheapRT float64
+	if len(result.RoundTripFares) > 0 {
+		cheapRT = convertedPlanAmount(ctx, result.RoundTripFares[0].Price, result.RoundTripFares[0].Currency, cur)
+	}
+	perPersonFlights := cheaperPerPersonFlights(cheapOut+cheapRet, cheapRT)
+
+	flightsTotal := perPersonFlights * float64(input.Guests)
 	grandTotal := flightsTotal + cheapHotel
 
 	result.Summary = PlanSummary{
@@ -458,7 +501,83 @@ func extractTopFlights(flts []models.FlightResult, n int) []PlanFlight {
 	return result
 }
 
-// trimReview cuts a review text to n characters at a word boundary.
+// cheaperPerPersonFlights returns the lower per-person flight cost between the
+// summed two-one-way total and a native single-ticket round-trip total. A native
+// fare wins only when it is present (> 0) AND strictly cheaper; otherwise the
+// two-one-way total is returned unchanged, keeping the summary byte-identical to
+// the pre-native behaviour when no cheaper native fare exists. Pure: no I/O.
+func cheaperPerPersonFlights(twoOneWays, nativeRoundTrip float64) float64 {
+	if nativeRoundTrip > 0 && nativeRoundTrip < twoOneWays {
+		return nativeRoundTrip
+	}
+	return twoOneWays
+}
+
+// extractTopRoundTripFares maps native single-ticket round-trip fares to
+// PlanFlights. Only FareRoundTrip results are kept — a single bookable ticket
+// whose Price is the full round-trip total per person. The Route spans both
+// directions (e.g. "HEL -> BCN -> HEL"), built from the Direction-tagged legs so
+// the inbound leg is never silently dropped. Mirrors extractTopFlights' price
+// sort, zero-price filter, and cap.
+func extractTopRoundTripFares(flts []models.FlightResult, n int) []PlanFlight {
+	native := make([]models.FlightResult, 0, len(flts))
+	for _, f := range flts {
+		if f.FareType == models.FareRoundTrip {
+			native = append(native, f)
+		}
+	}
+
+	sort.Slice(native, func(i, j int) bool {
+		return native[i].Price < native[j].Price
+	})
+
+	if len(native) > n {
+		native = native[:n]
+	}
+
+	var result []PlanFlight
+	for _, f := range native {
+		if f.Price <= 0 {
+			continue
+		}
+		pf := PlanFlight{
+			Price:    f.Price,
+			Currency: f.Currency,
+			Stops:    f.Stops,
+			Duration: f.Duration,
+		}
+		if len(f.Legs) > 0 {
+			pf.Airline = f.Legs[0].Airline
+			pf.Flight = f.Legs[0].FlightNumber
+			pf.Departure = f.Legs[0].DepartureTime
+			pf.Arrival = f.Legs[len(f.Legs)-1].ArrivalTime
+			pf.Route = roundTripRoute(f.Legs)
+		}
+		result = append(result, pf)
+	}
+	return result
+}
+
+// roundTripRoute builds a both-directions route string from a native round-trip
+// fare's legs (e.g. "HEL -> BCN -> HEL"). It walks every leg in order so the
+// inbound (return) legs are represented, deduplicating only consecutive repeats
+// where one leg's arrival equals the next leg's departure (the normal chained
+// case). The inbound leg's distinct airports are always surfaced — the return is
+// never silently dropped.
+func roundTripRoute(legs []models.FlightLeg) string {
+	if len(legs) == 0 {
+		return ""
+	}
+	parts := []string{legs[0].DepartureAirport.Code}
+	for _, leg := range legs {
+		dep := leg.DepartureAirport.Code
+		if dep != "" && dep != parts[len(parts)-1] {
+			parts = append(parts, dep)
+		}
+		parts = append(parts, leg.ArrivalAirport.Code)
+	}
+	return joinRoute(parts)
+}
 func trimReview(s string, n int) string {
 	s = strings.TrimSpace(s)
 	if len(s) <= n {
