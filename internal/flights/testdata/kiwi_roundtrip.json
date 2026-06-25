@@ -1,0 +1,27 @@
+[
+  {
+    "arrival": { "local": "2026-07-25T18:50:00.000", "utc": "2026-07-25T16:50:00.000Z" },
+    "cityFrom": "Helsinki", "cityTo": "Barcelona", "currency": "EUR",
+    "deepLink": "https://on.kiwi.com/5pkPcZ",
+    "departure": { "local": "2026-07-25T13:55:00.000", "utc": "2026-07-25T10:55:00.000Z" },
+    "durationInSeconds": 21300, "flyFrom": "HEL", "flyTo": "BCN",
+    "layovers": [
+      { "arrival": { "local": "2026-07-25T15:25:00.000", "utc": "2026-07-25T13:25:00.000Z" },
+        "at": "AMS", "city": "Amsterdam", "cityCode": "AMS",
+        "departure": { "local": "2026-07-25T16:45:00.000", "utc": "2026-07-25T14:45:00.000Z" } }
+    ],
+    "price": 323,
+    "return": {
+      "arrival": { "local": "2026-08-01T14:50:00.000", "utc": "2026-08-01T11:50:00.000Z" },
+      "cityFrom": "Barcelona", "cityTo": "Helsinki",
+      "departure": { "local": "2026-08-01T06:30:00.000", "utc": "2026-08-01T04:30:00.000Z" },
+      "durationInSeconds": 26400, "flyFrom": "BCN", "flyTo": "HEL",
+      "layovers": [
+        { "arrival": { "local": "2026-08-01T07:25:00.000", "utc": "2026-08-01T05:25:00.000Z" },
+          "at": "PMI", "city": "Palma, Majorca", "cityCode": "PMI",
+          "departure": { "local": "2026-08-01T09:50:00.000", "utc": "2026-08-01T07:50:00.000Z" } }
+      ]
+    },
+    "totalDurationInSeconds": 47700
+  }
+]
