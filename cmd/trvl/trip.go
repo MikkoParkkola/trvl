@@ -204,7 +204,27 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 		fmt.Println()
 	}
 
-	// Destination context from Wikivoyage.
+	// Accommodation coverage honesty: if some hotel providers were rate-limited
+	// or failed, say so instead of presenting a thinned list as exhaustive. The
+	// prices shown lead with whichever providers returned real availability;
+	// this note tells the user which sources are missing and whether retrying
+	// is worthwhile (rate-limited is retryable; a hard failure usually is not).
+	if !result.HotelCoverage.MayClaimExhaustive() {
+		fmt.Printf("  %s %s\n", models.Bold("⚠ Hotel coverage:"), result.HotelCoverage.IncompleteNote())
+		for _, s := range result.HotelProviders {
+			switch s.Status {
+			case models.StatusRateLimited:
+				fmt.Printf("    • %s: rate-limited (retryable — try again shortly)\n", s.Name)
+			case models.StatusFailed, models.StatusError, models.StatusTimeout, models.StatusCircuitBroken:
+				line := fmt.Sprintf("    • %s: unavailable this attempt", s.Name)
+				if s.FixHint != "" {
+					line += " — " + s.FixHint
+				}
+				fmt.Println(line)
+			}
+		}
+		fmt.Println()
+	}
 	if result.Context != nil {
 		fmt.Printf("  %s About %s\n\n", models.Bold("📖"), destName)
 		if result.Context.Summary != "" {

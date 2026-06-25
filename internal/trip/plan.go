@@ -113,6 +113,15 @@ type PlanResult struct {
 	Context         *PlanDestinationContext `json:"context,omitempty"`
 	Summary         PlanSummary             `json:"summary"`
 	Error           string                  `json:"error,omitempty"`
+
+	// HotelCoverage / HotelProviders carry the per-provider evidence so the
+	// renderer can be honest about partial accommodation coverage instead of
+	// silently presenting a thinned list as if it were exhaustive. A provider
+	// that was rate-limited (retryable) is distinct from one that genuinely had
+	// no availability — the user needs that distinction to decide whether to
+	// retry or trust the prices shown.
+	HotelCoverage  models.Completeness     `json:"hotel_coverage,omitempty"`
+	HotelProviders []models.ProviderStatus `json:"hotel_providers,omitempty"`
 }
 
 // PlanTrip searches flights and hotels in parallel and returns the top options
@@ -228,6 +237,14 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 	// Extract top hotels (up to 5).
 	if hotelErr == nil && hotelResult != nil && hotelResult.Success {
 		result.Hotels = extractTopHotels(hotelResult.Hotels, nights, 5)
+	}
+
+	// Surface accommodation coverage so the renderer can be honest about a
+	// thinned provider set (rate-limited != no availability). Provider statuses
+	// are populated even on a non-Success search, so read them unconditionally.
+	if hotelResult != nil {
+		result.HotelProviders = hotelResult.ProviderStatuses
+		result.HotelCoverage = hotelResult.Completeness
 	}
 
 	// Find breakfast spots within walking distance.

@@ -666,6 +666,57 @@ func TestFormatTripMarkdown_NoLegs_Extra(t *testing.T) {
 	}
 }
 
+// TestPrintTripPlan_HotelCoverageHonesty proves the headline trip plan surfaces
+// partial accommodation coverage instead of presenting a thinned list as if it
+// were exhaustive — and distinguishes a rate-limited (retryable) provider from a
+// hard failure. This is the user-facing payoff of the per-provider evidence the
+// hotel search already computes (PASS-13..17): without it, a bot-walled Booking
+// or rate-limited Google silently shrinks the results with no signal to the user.
+func TestPrintTripPlan_HotelCoverageHonesty(t *testing.T) {
+	models.UseColor = false
+
+	result := &trip.PlanResult{
+		Success:     true,
+		Origin:      "HEL",
+		Destination: "BCN",
+		DepartDate:  "2026-07-01",
+		ReturnDate:  "2026-07-08",
+		Nights:      7,
+		Guests:      2,
+		Hotels: []trip.PlanHotel{
+			{Name: "Hotel Arts", Rating: 9.1, Reviews: 500, PerNight: 180, Total: 1260, Currency: "EUR"},
+		},
+		HotelProviders: []models.ProviderStatus{
+			{ID: "agoda", Name: "Agoda", Status: models.StatusCheckedHit, Results: 1},
+			{ID: "google_hotels", Name: "Google Hotels", Status: models.StatusRateLimited, Error: "blocked"},
+			{ID: "booking", Name: "Booking.com", Status: models.StatusFailed, Error: "no cookies", FixHint: "sign in to a browser"},
+		},
+		Summary: trip.PlanSummary{GrandTotal: 1260, Currency: "EUR"},
+	}
+	result.HotelCoverage = models.ComputeCompleteness(result.HotelProviders)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	out := captureStdout(t, func() {
+		if err := printTripPlan(ctx, "", result); err != nil {
+			t.Errorf("printTripPlan returned error: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"Hotel coverage",       // the caveat header is shown
+		"Google Hotels",        // the rate-limited provider is named
+		"rate-limited",         // and tagged as retryable
+		"Booking.com",          // the hard-failed provider is named
+		"sign in to a browser", // with its actionable fix hint
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("coverage output missing %q\n--- got ---\n%s", want, out)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Suppress unused import errors
 // ---------------------------------------------------------------------------
