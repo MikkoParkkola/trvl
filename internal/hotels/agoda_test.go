@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // loadAgodaSearchFixture reads the saved citySearch priced payload (Berlin) and
@@ -99,6 +101,50 @@ func TestParseAgodaSearchFixture(t *testing.T) {
 	// Crossed-out price preserved on the source as MaxPrice.
 	if first.Sources[0].MaxPrice != 98.54 {
 		t.Errorf("first source MaxPrice = %v, want 98.54", first.Sources[0].MaxPrice)
+	}
+}
+
+// TestParseAgodaSearchFixtureVerifiedRoomLevel proves the real captured Agoda
+// citySearch payload yields verified, tax-inclusive room-level detail — the
+// inclusive per-room-per-night rate and cancellation terms that were previously
+// discarded. Grounded in the saved Berlin fixture (not synthetic structs), so it
+// asserts against data Agoda genuinely returns. The Hoxton fixture carries
+// exclusive 79.71 / inclusive 99.26 per room per night.
+func TestParseAgodaSearchFixtureVerifiedRoomLevel(t *testing.T) {
+	resp := loadAgodaSearchFixture(t)
+	// 2-night stay so a stay total is derived.
+	hotels := parseAgodaSearch(resp, HotelSearchOptions{CheckIn: "2026-07-10", CheckOut: "2026-07-12"})
+	if len(hotels) == 0 {
+		t.Fatal("no hotels parsed from fixture")
+	}
+	first := hotels[0]
+	if len(first.RoomTypes) != 1 {
+		t.Fatalf("first hotel rooms = %d, want 1", len(first.RoomTypes))
+	}
+	rt := first.RoomTypes[0]
+
+	// Comparable headline stays the pre-tax (exclusive) rate.
+	if rt.NightlyPrice != 79.71 {
+		t.Errorf("NightlyPrice = %v, want 79.71 (pre-tax comparable)", rt.NightlyPrice)
+	}
+	// Tax-inclusive stay total surfaced from the previously-discarded inclusive
+	// rate (99.26 per night x 2 nights).
+	wantTotal := 99.26 * 2
+	if rt.TotalPrice != wantTotal {
+		t.Errorf("TotalPrice = %v, want %v (tax-inclusive)", rt.TotalPrice, wantTotal)
+	}
+	if rt.TaxesFeesIncluded == nil || !*rt.TaxesFeesIncluded {
+		t.Errorf("TaxesFeesIncluded = %v, want true", rt.TaxesFeesIncluded)
+	}
+	if rt.PriceBasis != models.PriceBasisTaxInclusiveTotal {
+		t.Errorf("PriceBasis = %q, want tax_inclusive_total", rt.PriceBasis)
+	}
+	if rt.PriceConfidence != models.PriceConfidenceVerified {
+		t.Errorf("PriceConfidence = %q, want verified", rt.PriceConfidence)
+	}
+	// Booking deep link carried through as the room's provider URL.
+	if !strings.HasPrefix(rt.ProviderURL, "https://www.agoda.com/") {
+		t.Errorf("room ProviderURL = %q, want agoda booking link", rt.ProviderURL)
 	}
 }
 

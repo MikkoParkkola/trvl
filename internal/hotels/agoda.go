@@ -191,6 +191,14 @@ type agodaProperty struct {
 			RoomOffers []struct {
 				Room struct {
 					Pricing []agodaRoomPricing `json:"pricing"`
+					// payment.cancellation.cancellationType carries Agoda's real
+					// refundability signal (e.g. "NonRefundable"). It is already
+					// in the citySearch response; surface it instead of discarding.
+					Payment struct {
+						Cancellation struct {
+							CancellationType string `json:"cancellationType"`
+						} `json:"cancellation"`
+					} `json:"payment"`
 				} `json:"room"`
 			} `json:"roomOffers"`
 		} `json:"offers"`
@@ -205,6 +213,14 @@ type agodaRoomPricing struct {
 				Display         float64 `json:"display"`
 				CrossedOutPrice float64 `json:"crossedOutPrice"`
 			} `json:"exclusive"`
+			// inclusive is the tax-and-fees-inclusive per-room-per-night rate
+			// Agoda returns alongside the exclusive display price. Capturing it
+			// lets the parser emit a verified, all-in room total rather than
+			// discarding the only tax-inclusive number in the response.
+			Inclusive struct {
+				Display         float64 `json:"display"`
+				CrossedOutPrice float64 `json:"crossedOutPrice"`
+			} `json:"inclusive"`
 		} `json:"perRoomPerNight"`
 	} `json:"price"`
 }
@@ -540,7 +556,8 @@ func parseAgodaSearch(resp *agodaSearchResponse, opts HotelSearchOptions) []mode
 			continue
 		}
 
-		price, currency, crossedOut := agodaHeadlinePrice(p)
+		offerDetail := agodaFirstRoomOffer(p)
+		price, currency, crossedOut := offerDetail.exclusive, offerDetail.currency, offerDetail.crossedOut
 
 		// MaxPrice filter (per night). Skip priced properties above the cap;
 		// keep unpriced ones so callers still see availability.
@@ -590,7 +607,7 @@ func parseAgodaSearch(resp *agodaSearchResponse, opts HotelSearchOptions) []mode
 			// identity. One room only: emitting the whole price ladder of
 			// identity-less rooms would trip the multi-provider-mixed
 			// completeness flag and re-block the offer.
-			hr.RoomTypes = []models.Room{{
+			room := models.Room{
 				Name:            "Agoda room rate",
 				Price:           price,
 				NightlyPrice:    price,
@@ -601,7 +618,37 @@ func parseAgodaSearch(resp *agodaSearchResponse, opts HotelSearchOptions) []mode
 				MatchConfidence: models.RoomInventoryMatchSimilar,
 				PriceBasis:      models.PriceBasisRoomNightly,
 				PriceConfidence: models.PriceConfidenceRoomLevel,
-			}}
+			}
+
+			// Agoda also returns a tax-and-fees-inclusive per-room-per-night
+			// rate in the same offer. It was previously discarded. When present
+			// and above the pre-tax rate, surface the all-in stay total: this is
+			// a tax-inclusive room total, which the trust model rates as verified
+			// (the top tier), so the price-trust sort leads with this real all-in
+			// Agoda price over unverified lead-ins from other providers. The
+			// comparable headline Price/NightlyPrice stays the pre-tax rate so
+			// cross-provider comparison is apples-to-apples.
+			if offerDetail.inclusive > price {
+				inclusiveTotal := agodaStayTotal(offerDetail.inclusive, nights)
+				if inclusiveTotal > 0 {
+					room.TotalPrice = inclusiveTotal
+					room.TaxesAndFees = inclusiveTotal - room.NightlyPrice*float64(nights)
+					taxIncluded := true
+					room.TaxesFeesIncluded = &taxIncluded
+					room.PriceBasis = models.PriceBasisTaxInclusiveTotal
+					room.PriceConfidence = models.PriceConfidenceVerified
+				}
+			}
+
+			// Surface the real cancellation terms Agoda returns rather than
+			// discarding them. Only the two unambiguous values are mapped.
+			if refundable, freeCanc, policy := agodaCancellationDetail(offerDetail.cancellationType); policy != "" {
+				room.Refundable = refundable
+				room.FreeCancellation = freeCanc
+				room.CancellationPolicy = policy
+			}
+
+			hr.RoomTypes = []models.Room{room}
 		}
 
 		out = append(out, hr)
@@ -609,21 +656,75 @@ func parseAgodaSearch(resp *agodaSearchResponse, opts HotelSearchOptions) []mode
 	return out
 }
 
-// agodaHeadlinePrice extracts the per-room-per-night exclusive display price
-// (with the crossed-out price as a secondary signal) from the first available
-// room offer.
-func agodaHeadlinePrice(p agodaProperty) (price float64, currency string, crossedOut float64) {
+// agodaRoomOffer is the room-level detail extracted from the first priced room
+// offer in an Agoda citySearch response. The exclusive display is the comparable
+// headline rate (pre-tax, what other providers quote); inclusive is the
+// tax-and-fees-inclusive rate Agoda returns alongside it; cancellationType is
+// the real refundability signal from payment.cancellation. All three come from
+// the SAME room offer so they describe one consistent, bookable rate.
+type agodaRoomOffer struct {
+	exclusive        float64 // per-room-per-night, pre-tax (comparable headline)
+	crossedOut       float64 // crossed-out pre-tax rate (savings signal)
+	inclusive        float64 // per-room-per-night, taxes+fees included
+	currency         string
+	cancellationType string // e.g. "NonRefundable", "FreeCancellation"
+	hasOffer         bool
+}
+
+// agodaFirstRoomOffer walks to the first room offer that carries a positive
+// per-room-per-night exclusive display price and returns its room-level detail.
+// Agoda's citySearch returns one room offer (the cheapest available room) per
+// property, so this is that room's full priced detail — the exclusive and
+// inclusive figures and the cancellation terms were all already in the response
+// and previously discarded.
+func agodaFirstRoomOffer(p agodaProperty) agodaRoomOffer {
 	for _, offer := range p.Pricing.Offers {
 		for _, ro := range offer.RoomOffers {
+			cancellationType := ro.Room.Payment.Cancellation.CancellationType
 			for _, pr := range ro.Room.Pricing {
-				ex := pr.Price.PerRoomPerNight.Exclusive
-				if ex.Display > 0 {
-					return ex.Display, pr.Currency, ex.CrossedOutPrice
+				prpn := pr.Price.PerRoomPerNight
+				if prpn.Exclusive.Display > 0 {
+					return agodaRoomOffer{
+						exclusive:        prpn.Exclusive.Display,
+						crossedOut:       prpn.Exclusive.CrossedOutPrice,
+						inclusive:        prpn.Inclusive.Display,
+						currency:         pr.Currency,
+						cancellationType: cancellationType,
+						hasOffer:         true,
+					}
 				}
 			}
 		}
 	}
-	return 0, "", 0
+	return agodaRoomOffer{}
+}
+
+// agodaHeadlinePrice extracts the per-room-per-night exclusive display price
+// (with the crossed-out price as a secondary signal) from the first available
+// room offer. Retained for the property-level headline; room-level detail uses
+// agodaFirstRoomOffer.
+func agodaHeadlinePrice(p agodaProperty) (price float64, currency string, crossedOut float64) {
+	o := agodaFirstRoomOffer(p)
+	if !o.hasOffer {
+		return 0, "", 0
+	}
+	return o.exclusive, o.currency, o.crossedOut
+}
+
+// agodaCancellationDetail maps Agoda's payment.cancellation.cancellationType to
+// the refundability fields on a Room. Only the two unambiguous values are
+// mapped; anything else (or empty) leaves the fields unset rather than guessing.
+func agodaCancellationDetail(cancellationType string) (refundable *bool, freeCancellation bool, policy string) {
+	switch strings.ToLower(strings.TrimSpace(cancellationType)) {
+	case "nonrefundable", "non-refundable":
+		v := false
+		return &v, false, "Non-refundable"
+	case "freecancellation", "free cancellation":
+		v := true
+		return &v, true, "Free cancellation"
+	default:
+		return nil, false, ""
+	}
 }
 
 func agodaAddress(p agodaProperty) string {
