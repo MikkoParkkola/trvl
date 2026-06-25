@@ -138,6 +138,17 @@ func parseOneProvider(arr []any) models.ProviderPrice {
 			}
 		}
 	}
+	// The yY52ce matrix is a list of booking-partner headline prices, not
+	// specific room rates, so every parsed entry is a property lead-in. Tag it
+	// honestly (lead_in / unverified) rather than leaving the trust fields empty:
+	// partnersToRoomTypes promotes only the cheapest to room-level "similar", and
+	// the price-trust sort must never treat an untagged Google partner price as a
+	// verified room rate. (When Google's public RPC is unwalled it returns a null
+	// payload, so in practice this guards the operator-relay / fixture paths.)
+	if p.Provider != "" && p.Price > 0 {
+		p.PriceBasis = models.PriceBasisLeadIn
+		p.PriceConfidence = models.PriceConfidenceUnverified
+	}
 	return p
 }
 
