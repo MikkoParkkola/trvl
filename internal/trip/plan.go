@@ -55,6 +55,15 @@ type PlanHotel struct {
 	OSMStars   int     `json:"osm_stars,omitempty"`
 	Website    string  `json:"website,omitempty"`
 	Wheelchair string  `json:"wheelchair,omitempty"`
+	// PriceConfidence mirrors models.HotelResult.PriceConfidence for the chosen
+	// headline Price: "verified" / "room_level" are real bookable rates, while
+	// "unverified" (or empty) is an indicative headline lead-in. The renderer
+	// turns this into an honest label so users can see whether a shown price is
+	// a real per-night rate or just a search-result teaser.
+	PriceConfidence string `json:"price_confidence,omitempty"`
+	// PriceSource is the provider name behind the chosen Price (e.g. "Agoda",
+	// "Booking.com"), carried through for display alongside the confidence label.
+	PriceSource string `json:"price_source,omitempty"`
 }
 
 // PlanBreakfast is a breakfast spot within walking distance of the chosen hotel.
@@ -626,15 +635,17 @@ func extractTopHotels(htls []models.HotelResult, nights, n int) []PlanHotel {
 			continue
 		}
 		ph := PlanHotel{
-			Name:     h.Name,
-			HotelID:  h.HotelID,
-			Rating:   h.Rating,
-			Reviews:  h.ReviewCount,
-			PerNight: h.Price,
-			Total:    h.Price * float64(nights),
-			Currency: h.Currency,
-			Lat:      h.Lat,
-			Lon:      h.Lon,
+			Name:            h.Name,
+			HotelID:         h.HotelID,
+			Rating:          h.Rating,
+			Reviews:         h.ReviewCount,
+			PerNight:        h.Price,
+			Total:           h.Price * float64(nights),
+			Currency:        h.Currency,
+			Lat:             h.Lat,
+			Lon:             h.Lon,
+			PriceConfidence: h.PriceConfidence,
+			PriceSource:     h.CheapestSource,
 		}
 		if len(h.Amenities) > 0 {
 			if len(h.Amenities) > 3 {
