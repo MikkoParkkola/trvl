@@ -699,18 +699,6 @@ func agodaFirstRoomOffer(p agodaProperty) agodaRoomOffer {
 	return agodaRoomOffer{}
 }
 
-// agodaHeadlinePrice extracts the per-room-per-night exclusive display price
-// (with the crossed-out price as a secondary signal) from the first available
-// room offer. Retained for the property-level headline; room-level detail uses
-// agodaFirstRoomOffer.
-func agodaHeadlinePrice(p agodaProperty) (price float64, currency string, crossedOut float64) {
-	o := agodaFirstRoomOffer(p)
-	if !o.hasOffer {
-		return 0, "", 0
-	}
-	return o.exclusive, o.currency, o.crossedOut
-}
-
 // agodaCancellationDetail maps Agoda's payment.cancellation.cancellationType to
 // the refundability fields on a Room. Only the two unambiguous values are
 // mapped; anything else (or empty) leaves the fields unset rather than guessing.
