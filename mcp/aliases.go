@@ -16,6 +16,7 @@ var nonAliasCapabilities = map[string]bool{
 	"arbitrage_report": true, // unified arbitrage aggregator (innovation #8)
 	"plan_multimodal":  true, // Multimodal composer capability (innovation #2)
 	"coalesce_trip":    true, // unified trip coalescer (innovation #5)
+	"travel_nudges":    true, // personal travel-graph nudges — new capability via the router intent, not a legacy alias
 }
 
 // AdvertisedToolCount returns the number of tools advertised in tools/list by
