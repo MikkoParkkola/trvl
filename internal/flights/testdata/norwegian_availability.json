@@ -1,0 +1,29 @@
+{
+  "flights": [
+    {
+      "flightNumber": "744",
+      "departureAirport": "OSL",
+      "arrivalAirport": "LGW",
+      "departureDateTime": "2026-07-25T06:55:00",
+      "arrivalDateTime": "2026-07-25T08:20:00",
+      "fare": { "amount": 39.9, "currencyCode": "EUR" }
+    },
+    {
+      "flightNumber": "DY746",
+      "departureAirport": "OSL",
+      "arrivalAirport": "LGW",
+      "departureDateTime": "2026-07-25T17:40:00",
+      "arrivalDateTime": "2026-07-25T19:05:00",
+      "lowestFare": 54.9,
+      "currencyCode": "EUR"
+    },
+    {
+      "flightNumber": "748",
+      "departureAirport": "OSL",
+      "arrivalAirport": "LGW",
+      "departureDateTime": "2026-07-26T06:55:00",
+      "arrivalDateTime": "2026-07-26T08:20:00",
+      "fare": { "amount": 42.9, "currencyCode": "EUR" }
+    }
+  ]
+}

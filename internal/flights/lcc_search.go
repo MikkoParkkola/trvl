@@ -8,7 +8,7 @@ import (
 )
 
 // lccSearcher is the shared signature of the direct low-cost-carrier one-way
-// search functions (Ryanair, Wizz Air, Transavia, easyJet, Vueling). Each returns a flat
+// search functions (Ryanair, Wizz Air, Transavia, easyJet, Vueling, Norwegian). Each returns a flat
 // slice of one-way FlightResults for a single date.
 type lccSearcher func(ctx context.Context, origin, destination, date, currency string, opts SearchOptions) ([]models.FlightResult, error)
 
@@ -25,6 +25,8 @@ var lccRegistry = map[string]struct {
 	"easyjet":   {"easyJet", SearchEasyjet},
 	"vueling":   {"Vueling", SearchVueling},
 	"vy":        {"Vueling", SearchVueling},
+	"norwegian": {"Norwegian", SearchNorwegian},
+	"dy":        {"Norwegian", SearchNorwegian},
 }
 
 // SearchLowCostCarrier runs a single low-cost carrier as an explicitly

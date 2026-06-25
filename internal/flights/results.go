@@ -553,6 +553,50 @@ func vuelingEligibleOptions(opts SearchOptions) bool {
 	return true
 }
 
+// norwegianSearchEligible gates the Norwegian provider. Like easyJet and Vueling
+// it is opt-in: the public site/booking funnel is Cloudflare Bot
+// Management-defended (HTTP 403 `cf-mitigated: challenge`), so it only fires when
+// the operator supplies a reachable endpoint via NORWEGIAN_API_BASE. The
+// shared-client guard keeps it out of injected-client unit tests.
+func norwegianSearchEligible(client *batchexec.Client, opts SearchOptions) bool {
+	if client == nil || client != batchexec.SharedClient() {
+		return false
+	}
+	if !norwegianConfigured() {
+		return false
+	}
+	return norwegianEligibleOptions(opts)
+}
+
+// norwegianEligibleOptions reports whether a search can be served by Norwegian's
+// availability endpoint. Norwegian is non-aligned and the availability search
+// here is one-way nonstop economy; round-trip / non-economy / alliance filters
+// skip it. An airline filter, if present, must include Norwegian (DY).
+func norwegianEligibleOptions(opts SearchOptions) bool {
+	if opts.ReturnDate != "" {
+		return false
+	}
+	if len(opts.Alliances) > 0 {
+		return false
+	}
+	if opts.CabinClass != 0 && opts.CabinClass != models.Economy {
+		return false
+	}
+	if len(opts.Airlines) > 0 {
+		ok := false
+		for _, a := range opts.Airlines {
+			if strings.EqualFold(strings.TrimSpace(a), "DY") {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // okOrNoHit returns StatusCheckedNoHit when a provider succeeded but returned
 // zero results (a definitive "checked, found nothing"), else StatusOK.
 // Distinguishing this from a failure/timeout is the evidence-envelope contract.
