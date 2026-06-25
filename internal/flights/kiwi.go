@@ -92,6 +92,38 @@ type kiwiItinerary struct {
 	DeepLink               string        `json:"deepLink"`
 	Currency               string        `json:"currency"`
 	Layovers               []kiwiLayover `json:"layovers"`
+	// Return carries the inbound journey of a native round-trip fare. Kiwi nests
+	// it in a top-level "return" object with the same routing shape as the
+	// outbound (flyFrom/flyTo, departure/arrival, layovers) but WITHOUT its own
+	// price/currency/deepLink — the parent's Price is the full round-trip total.
+	// Nil for a one-way search, so one-way results stay byte-unchanged.
+	Return *kiwiReturnJourney `json:"return,omitempty"`
+}
+
+// kiwiReturnJourney is the inbound half of a Kiwi native round-trip. It mirrors
+// the outbound routing fields of kiwiItinerary; it deliberately has no
+// price/currency/deepLink because the round-trip total lives on the parent.
+type kiwiReturnJourney struct {
+	FlyFrom           string        `json:"flyFrom"`
+	FlyTo             string        `json:"flyTo"`
+	CityFrom          string        `json:"cityFrom"`
+	CityTo            string        `json:"cityTo"`
+	Departure         kiwiDateTime  `json:"departure"`
+	Arrival           kiwiDateTime  `json:"arrival"`
+	DurationInSeconds int           `json:"durationInSeconds"`
+	Layovers          []kiwiLayover `json:"layovers"`
+}
+
+// kiwiJourney is the common routing shape shared by an itinerary's outbound and
+// its nested return, letting one leg-builder serve both halves.
+type kiwiJourney struct {
+	FlyFrom   string
+	FlyTo     string
+	CityFrom  string
+	CityTo    string
+	Departure kiwiDateTime
+	Arrival   kiwiDateTime
+	Layovers  []kiwiLayover
 }
 
 func SearchKiwiFlights(ctx context.Context, origin, destination, date, currency string, opts SearchOptions) ([]models.FlightResult, error) {
@@ -290,22 +322,59 @@ func extractKiwiContent(rpc kiwiRPCResponse) (json.RawMessage, error) {
 }
 
 func mapKiwiItinerary(itinerary kiwiItinerary, fallbackCurrency string) models.FlightResult {
-	legs := buildKiwiLegs(itinerary)
+	legs := buildKiwiLegs(outboundJourney(itinerary))
+	roundTrip := itinerary.Return != nil
+
+	// Tag legs by direction only for a round-trip. A one-way itinerary leaves
+	// Direction empty so single-direction results stay byte-unchanged.
+	if roundTrip {
+		for i := range legs {
+			legs[i].Direction = "outbound"
+		}
+	}
+
+	// SelfConnect means the OUTBOUND has a layover (self-connect risk on the way
+	// there). It is derived from the outbound layovers only; the return's
+	// layovers must not by themselves flag the outbound as self-connect.
 	selfConnect := len(itinerary.Layovers) > 0
-	durationSeconds := itinerary.DurationInSeconds
+	// Outbound stops = outbound legs minus 1; computed before the inbound legs
+	// are appended so the return's airports are never counted as outbound stops.
+	stops := max(len(legs)-1, 0)
+
+	if roundTrip {
+		inbound := buildKiwiLegs(returnJourney(*itinerary.Return))
+		for i := range inbound {
+			inbound[i].Direction = "inbound"
+		}
+		legs = append(legs, inbound...)
+	}
+
+	// Duration: prefer the provider's total (covers both halves for a round-trip);
+	// fall back to the single-journey duration, then to summing all leg durations.
+	durationSeconds := itinerary.TotalDurationInSeconds
 	if durationSeconds <= 0 {
-		durationSeconds = itinerary.TotalDurationInSeconds
+		durationSeconds = itinerary.DurationInSeconds
+	}
+	durationMinutes := durationSeconds / 60
+	if durationMinutes <= 0 {
+		durationMinutes = sumLegDurations(legs)
 	}
 
 	flight := models.FlightResult{
 		Price:       itinerary.Price,
 		Currency:    firstNonEmpty(itinerary.Currency, fallbackCurrency),
-		Duration:    durationSeconds / 60,
-		Stops:       max(len(legs)-1, 0),
+		Duration:    durationMinutes,
+		Stops:       stops,
 		Provider:    "kiwi",
 		SelfConnect: selfConnect,
 		Legs:        legs,
 		BookingURL:  itinerary.DeepLink,
+	}
+	if roundTrip {
+		// FlightResult carries the per-result round-trip marker via FareType
+		// (matching the roundtrip.go composer convention); the "round_trip"
+		// TripType string lives on the enclosing FlightSearchResult, not here.
+		flight.FareType = models.FareRoundTrip
 	}
 	if selfConnect {
 		flight.Warnings = []string{kiwiSelfConnectWarning}
@@ -313,13 +382,50 @@ func mapKiwiItinerary(itinerary kiwiItinerary, fallbackCurrency string) models.F
 	return flight
 }
 
-func buildKiwiLegs(itinerary kiwiItinerary) []models.FlightLeg {
-	legs := make([]models.FlightLeg, 0, len(itinerary.Layovers)+1)
-	currentCode := itinerary.FlyFrom
-	currentName := firstNonEmpty(itinerary.CityFrom, itinerary.FlyFrom)
-	currentDeparture := itinerary.Departure
+// outboundJourney projects the outbound routing of an itinerary into the shared
+// kiwiJourney shape.
+func outboundJourney(it kiwiItinerary) kiwiJourney {
+	return kiwiJourney{
+		FlyFrom:   it.FlyFrom,
+		FlyTo:     it.FlyTo,
+		CityFrom:  it.CityFrom,
+		CityTo:    it.CityTo,
+		Departure: it.Departure,
+		Arrival:   it.Arrival,
+		Layovers:  it.Layovers,
+	}
+}
 
-	for _, layover := range itinerary.Layovers {
+// returnJourney projects a nested return into the shared kiwiJourney shape.
+func returnJourney(r kiwiReturnJourney) kiwiJourney {
+	return kiwiJourney{
+		FlyFrom:   r.FlyFrom,
+		FlyTo:     r.FlyTo,
+		CityFrom:  r.CityFrom,
+		CityTo:    r.CityTo,
+		Departure: r.Departure,
+		Arrival:   r.Arrival,
+		Layovers:  r.Layovers,
+	}
+}
+
+// sumLegDurations totals each leg's per-segment duration (minutes), used as a
+// last-resort fallback when the provider supplies no usable trip total.
+func sumLegDurations(legs []models.FlightLeg) int {
+	total := 0
+	for _, leg := range legs {
+		total += leg.Duration
+	}
+	return total
+}
+
+func buildKiwiLegs(journey kiwiJourney) []models.FlightLeg {
+	legs := make([]models.FlightLeg, 0, len(journey.Layovers)+1)
+	currentCode := journey.FlyFrom
+	currentName := firstNonEmpty(journey.CityFrom, journey.FlyFrom)
+	currentDeparture := journey.Departure
+
+	for _, layover := range journey.Layovers {
 		legs = append(legs, buildKiwiLeg(
 			currentCode,
 			currentName,
@@ -337,10 +443,12 @@ func buildKiwiLegs(itinerary kiwiItinerary) []models.FlightLeg {
 		currentCode,
 		currentName,
 		currentDeparture,
-		itinerary.FlyTo,
-		firstNonEmpty(itinerary.CityTo, itinerary.FlyTo),
-		itinerary.Arrival,
+		journey.FlyTo,
+		firstNonEmpty(journey.CityTo, journey.FlyTo),
+		journey.Arrival,
 	))
+	// Compute per-journey so the inbound's first leg never inherits a spurious
+	// layover from the outbound's final arrival.
 	computeLayovers(legs)
 	return legs
 }
