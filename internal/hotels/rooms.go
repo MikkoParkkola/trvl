@@ -153,6 +153,33 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 		rooms, hotelName = trySearchPageFallback(ctx, opts)
 	}
 	notice := ""
+
+	// Opt-in Google Hotels room-level detail fetch. Google's public yY52ce RPC
+	// returns a null payload to static clients (probed 2026-06-25 — see
+	// google_room_detail.go), so the per-room matrix is only reachable when an
+	// operator supplies a session-holding relay via GOOGLE_HOTELS_DETAIL_API_BASE.
+	// When configured this surfaces real room-level Google rates (room_level
+	// confidence + ProviderURL); when unconfigured it is a silent no-op. Run it
+	// only when the free Google paths have not already produced a verified room,
+	// and merge so any existing lead-ins stay while the bookability sort leads
+	// with the real room rate.
+	if googleRoomDetailConfigured() && (len(rooms) == 0 || !hasVerifiedRoom(rooms)) {
+		detailRooms, detailName, detailNotice := tryGoogleRoomDetail(ctx, opts)
+		if len(detailRooms) > 0 {
+			if len(rooms) == 0 {
+				rooms = detailRooms
+			} else {
+				rooms = mergeRoomTypes(rooms, detailRooms)
+			}
+			if hotelName == "" {
+				hotelName = detailName
+			}
+		} else if detailNotice != "" {
+			// Room data was withheld by a retryable bot-wall, not absent.
+			notice = appendNotice(notice, detailNotice)
+		}
+	}
+
 	// SerpAPI is the richest room source we have (named rooms, verified
 	// tax-inclusive prices, refundability) but every lookup spends metered
 	// quota. Consult it only when the free Google paths could not produce a

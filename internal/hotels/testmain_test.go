@@ -26,6 +26,7 @@ func TestMain(m *testing.M) {
 	bluegroundEnabled = false
 	agodaEnabled = false
 	expediaEnabled = false
+	googleRoomDetailEnabled = false
 	SearchBooking = func(_ context.Context, _ string, _ HotelSearchOptions) ([]models.HotelResult, error) {
 		return nil, nil
 	}

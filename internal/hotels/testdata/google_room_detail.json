@@ -1,0 +1,41 @@
+{
+  "_comment": "SCHEMA NOT VERIFIED — representative/assumed Google Hotels room-detail shape. Google's public yY52ce batchexecute price RPC returns a NULL payload to static clients (HTTP 200, 108 bytes, [\"wrb.fr\",\"yY52ce\",null,null,null,[3],\"generic\"]; probed 2026-06-25 with a Chrome-impersonating TLS client and a plain curl across full/cid-hex/cid-dec ID encodings). The per-room matrix is gated behind browser session context. This fixture is a plausible shape, NOT a captured live response; field tags may need adjustment once an operator supplies a reachable GOOGLE_HOTELS_DETAIL_API_BASE (an authorised partner endpoint or a session-holding relay).",
+  "hotelName": "Hôtel des Grands Boulevards",
+  "rooms": [
+    {
+      "roomName": "Deluxe Double Room",
+      "ratePlanName": "Flexible rate, breakfast included",
+      "provider": "Booking.com",
+      "bookingUrl": "/travel/clk/bkng?room=deluxe-double",
+      "nightlyRate": { "amount": 214.0, "currencyCode": "EUR" },
+      "totalRate": { "amount": 428.0, "currencyCode": "EUR" },
+      "taxesIncluded": true,
+      "refundable": true,
+      "freeCancellation": true,
+      "board": "Breakfast",
+      "maxOccupancy": 2
+    },
+    {
+      "roomName": "Classic Queen Room",
+      "ratePlanName": "Non-refundable",
+      "provider": "Expedia",
+      "bookingUrl": "https://www.expedia.com/clk/grands-boulevards-queen",
+      "nightlyRate": { "amount": 178.0, "currencyCode": "EUR" },
+      "refundable": false,
+      "freeCancellation": false,
+      "maxOccupancy": 2
+    },
+    {
+      "ratePlanName": "Lowest available (room not specified)",
+      "provider": "Agoda",
+      "bookingUrl": "//agoda.example/clk/grands-boulevards",
+      "leadInPrice": 165.0,
+      "currencyCode": "EUR"
+    },
+    {
+      "roomName": "Sold Out Suite",
+      "provider": "Hotels.com",
+      "maxOccupancy": 4
+    }
+  ]
+}
