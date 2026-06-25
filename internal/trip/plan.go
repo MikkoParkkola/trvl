@@ -122,6 +122,13 @@ type PlanResult struct {
 	// retry or trust the prices shown.
 	HotelCoverage  models.Completeness     `json:"hotel_coverage,omitempty"`
 	HotelProviders []models.ProviderStatus `json:"hotel_providers,omitempty"`
+
+	// FlightCoverage / FlightProviders mirror the hotel fields for air travel.
+	// Both legs query the same upstream providers, so per-leg statuses are merged
+	// into one union (worst status per provider wins): a provider rate-limited or
+	// failed on either leg means the displayed flight prices are not exhaustive.
+	FlightCoverage  models.Completeness     `json:"flight_coverage,omitempty"`
+	FlightProviders []models.ProviderStatus `json:"flight_providers,omitempty"`
 }
 
 // PlanTrip searches flights and hotels in parallel and returns the top options
@@ -246,6 +253,12 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 		result.HotelProviders = hotelResult.ProviderStatuses
 		result.HotelCoverage = hotelResult.Completeness
 	}
+
+	// Surface flight coverage as the union of both legs (worst status per
+	// provider wins), so a provider degraded on either the outbound or return
+	// search flags the flight prices as potentially incomplete.
+	result.FlightProviders = mergeFlightProviders(outResult, retResult)
+	result.FlightCoverage = models.ComputeCompleteness(result.FlightProviders)
 
 	// Find breakfast spots within walking distance.
 	// Searches top hotels in order — the first one with at least 3 spots
@@ -746,4 +759,45 @@ func applyOSMEnrichment(hotel *PlanHotel, extra *destinations.HotelEnrichment) {
 	if extra.Wheelchair != "" {
 		hotel.Wheelchair = extra.Wheelchair
 	}
+}
+
+// provSeverity ranks a provider status for union merging: a hard failure
+// outranks a retryable rate-limit, which outranks a definitive (succeeded or
+// empty) result. Higher wins when the same provider appears on both legs.
+func provSeverity(status string) int {
+	switch status {
+	case models.StatusFailed, models.StatusError, models.StatusTimeout, models.StatusCircuitBroken:
+		return 3
+	case models.StatusRateLimited:
+		return 2
+	default:
+		return 1
+	}
+}
+
+// mergeFlightProviders unions the per-provider statuses from the outbound and
+// return flight searches. Both legs hit the same upstream providers, so a
+// provider is reported once, keeping the worst (most severe) status seen across
+// the two legs — the honest signal for "can we trust these prices as complete".
+func mergeFlightProviders(legs ...*models.FlightSearchResult) []models.ProviderStatus {
+	worst := map[string]models.ProviderStatus{}
+	var order []string
+	for _, leg := range legs {
+		if leg == nil {
+			continue
+		}
+		for _, s := range leg.ProviderStatuses {
+			if cur, ok := worst[s.ID]; !ok {
+				worst[s.ID] = s
+				order = append(order, s.ID)
+			} else if provSeverity(s.Status) > provSeverity(cur.Status) {
+				worst[s.ID] = s
+			}
+		}
+	}
+	out := make([]models.ProviderStatus, 0, len(order))
+	for _, id := range order {
+		out = append(out, worst[id])
+	}
+	return out
 }

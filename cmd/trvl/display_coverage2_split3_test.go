@@ -717,6 +717,59 @@ func TestPrintTripPlan_HotelCoverageHonesty(t *testing.T) {
 	}
 }
 
+// TestPrintTripPlan_FlightCoverageHonesty proves the headline trip plan is just
+// as honest about partial flight coverage as it is about hotels. Both legs hit
+// the same upstream providers, so a provider degraded on either leg means the
+// displayed flight prices are not a complete sweep — the user needs that signal
+// to decide whether to retry (rate-limited) or trust what is shown.
+func TestPrintTripPlan_FlightCoverageHonesty(t *testing.T) {
+	models.UseColor = false
+
+	result := &trip.PlanResult{
+		Success:     true,
+		Origin:      "HEL",
+		Destination: "BCN",
+		DepartDate:  "2026-07-01",
+		ReturnDate:  "2026-07-08",
+		Nights:      7,
+		Guests:      2,
+		OutboundFlights: []trip.PlanFlight{
+			{Price: 120, Currency: "EUR", Airline: "Finnair", Flight: "AY1", Stops: 0, Duration: 240},
+		},
+		ReturnFlights: []trip.PlanFlight{
+			{Price: 130, Currency: "EUR", Airline: "Vueling", Flight: "VY2", Stops: 0, Duration: 250},
+		},
+		FlightProviders: []models.ProviderStatus{
+			{ID: "kiwi", Name: "Kiwi", Status: models.StatusCheckedHit, Results: 2},
+			{ID: "google_flights", Name: "Google Flights", Status: models.StatusRateLimited, Error: "blocked"},
+			{ID: "ryanair", Name: "Ryanair", Status: models.StatusFailed, Error: "timeout", FixHint: "retry later"},
+		},
+		Summary: trip.PlanSummary{GrandTotal: 250, Currency: "EUR"},
+	}
+	result.FlightCoverage = models.ComputeCompleteness(result.FlightProviders)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	out := captureStdout(t, func() {
+		if err := printTripPlan(ctx, "", result); err != nil {
+			t.Errorf("printTripPlan returned error: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"Flight coverage", // the caveat header is shown
+		"Google Flights",  // the rate-limited provider is named
+		"rate-limited",    // and tagged as retryable
+		"Ryanair",         // the hard-failed provider is named
+		"retry later",     // with its actionable fix hint
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("flight coverage output missing %q\n--- got ---\n%s", want, out)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Suppress unused import errors
 // ---------------------------------------------------------------------------
