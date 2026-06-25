@@ -213,3 +213,40 @@ func runEasyjetProvider(ctx context.Context, client *batchexec.Client, origin, d
 		Results: len(flights),
 	}}
 }
+
+func runVuelingProvider(ctx context.Context, client *batchexec.Client, origin, destination, date, currency string, opts SearchOptions) providerOutcome {
+	if !vuelingSearchEligible(client, opts) {
+		fixHint := "search one-way economy; drop the alliance/airline filter"
+		reason := "options not supported by Vueling direct (round-trip / non-economy cabin / alliance filter / non-VY airline filter)"
+		fixHintCode := ""
+		if !vuelingConfigured() {
+			reason = "Vueling's public booking/availability engine is Akamai Bot Manager-defended; it is opt-in and requires a reachable endpoint"
+			fixHint = "set VUELING_API_BASE to an authorised partner endpoint or a self-hosted proxy that returns the JSON availability API"
+			fixHintCode = "AKAMAI_BLOCK"
+		}
+		return providerOutcome{status: models.ProviderStatus{
+			ID:          "vueling",
+			Name:        "Vueling",
+			Status:      "skipped",
+			Error:       reason,
+			FixHint:     fixHint,
+			FixHintCode: fixHintCode,
+		}}
+	}
+	flights, err := SearchVueling(ctx, origin, destination, date, currency, opts)
+	if err != nil {
+		slog.Warn("vueling flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
+		return providerOutcome{err: err, status: models.ProviderStatus{
+			ID:     "vueling",
+			Name:   "Vueling",
+			Status: models.ClassifyProviderError(err),
+			Error:  err.Error(),
+		}}
+	}
+	return providerOutcome{flights: flights, succeeded: true, status: models.ProviderStatus{
+		ID:      "vueling",
+		Name:    "Vueling",
+		Status:  okOrNoHit(len(flights)),
+		Results: len(flights),
+	}}
+}

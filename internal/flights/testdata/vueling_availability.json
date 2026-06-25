@@ -1,0 +1,29 @@
+{
+  "flights": [
+    {
+      "flightNumber": "8301",
+      "departureAirport": "AMS",
+      "arrivalAirport": "BCN",
+      "departureDateTime": "2026-07-07T07:15:00",
+      "arrivalDateTime": "2026-07-07T09:25:00",
+      "fare": { "amount": 44.99, "currencyCode": "EUR" }
+    },
+    {
+      "flightNumber": "VY8303",
+      "departureAirport": "AMS",
+      "arrivalAirport": "BCN",
+      "departureDateTime": "2026-07-07T18:40:00",
+      "arrivalDateTime": "2026-07-07T20:50:00",
+      "lowestFare": 59.99,
+      "currencyCode": "EUR"
+    },
+    {
+      "flightNumber": "8305",
+      "departureAirport": "AMS",
+      "arrivalAirport": "BCN",
+      "departureDateTime": "2026-07-08T07:15:00",
+      "arrivalDateTime": "2026-07-08T09:25:00",
+      "fare": { "amount": 47.99, "currencyCode": "EUR" }
+    }
+  ]
+}
