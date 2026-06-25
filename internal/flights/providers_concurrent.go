@@ -250,3 +250,40 @@ func runVuelingProvider(ctx context.Context, client *batchexec.Client, origin, d
 		Results: len(flights),
 	}}
 }
+
+func runNorwegianProvider(ctx context.Context, client *batchexec.Client, origin, destination, date, currency string, opts SearchOptions) providerOutcome {
+	if !norwegianSearchEligible(client, opts) {
+		fixHint := "search one-way economy; drop the alliance/airline filter"
+		reason := "options not supported by Norwegian direct (round-trip / non-economy cabin / alliance filter / non-DY airline filter)"
+		fixHintCode := ""
+		if !norwegianConfigured() {
+			reason = "Norwegian's public site/booking funnel is Cloudflare Bot Management-defended (HTTP 403 cf-mitigated:challenge); it is opt-in and requires a reachable endpoint"
+			fixHint = "set NORWEGIAN_API_BASE to an authorised partner endpoint or a self-hosted proxy that returns the JSON availability API"
+			fixHintCode = "CLOUDFLARE_BLOCK"
+		}
+		return providerOutcome{status: models.ProviderStatus{
+			ID:          "norwegian",
+			Name:        "Norwegian",
+			Status:      "skipped",
+			Error:       reason,
+			FixHint:     fixHint,
+			FixHintCode: fixHintCode,
+		}}
+	}
+	flights, err := SearchNorwegian(ctx, origin, destination, date, currency, opts)
+	if err != nil {
+		slog.Warn("norwegian flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
+		return providerOutcome{err: err, status: models.ProviderStatus{
+			ID:     "norwegian",
+			Name:   "Norwegian",
+			Status: models.ClassifyProviderError(err),
+			Error:  err.Error(),
+		}}
+	}
+	return providerOutcome{flights: flights, succeeded: true, status: models.ProviderStatus{
+		ID:      "norwegian",
+		Name:    "Norwegian",
+		Status:  okOrNoHit(len(flights)),
+		Results: len(flights),
+	}}
+}
