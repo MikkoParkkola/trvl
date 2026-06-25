@@ -117,6 +117,60 @@ func TestSearchSingleLCC_ErrorSurfacesProviderName(t *testing.T) {
 	}
 }
 
+// TestSearchSingleLCC_RoundTripBothLegsAcrossCarriers proves the round-trip
+// both-legs guarantee holds for EVERY low-cost carrier exposed via the CLI
+// `--provider` switch — including Vueling and Norwegian, which were registered
+// and composition-capable but previously unreachable from the CLI. A round-trip
+// request must return a FareSplitTickets itinerary carrying a real outbound AND
+// a real inbound leg (Direction-tagged), never a bare one-way.
+func TestSearchSingleLCC_RoundTripBothLegsAcrossCarriers(t *testing.T) {
+	for _, name := range []string{"Ryanair", "Wizz Air", "Transavia", "easyJet", "Vueling", "Norwegian"} {
+		t.Run(name, func(t *testing.T) {
+			search := func(_ context.Context, origin, dest, _, _ string, _ SearchOptions) ([]models.FlightResult, error) {
+				return []models.FlightResult{fakeLeg(origin, dest, 60)}, nil
+			}
+			opts := SearchOptions{ReturnDate: "2026-07-08"}
+			res, err := searchSingleLCC(context.Background(), name, search, "BCN", "FCO", "2026-07-01", opts)
+			if err != nil {
+				t.Fatalf("%s round-trip: %v", name, err)
+			}
+			if res.TripType != "round_trip" {
+				t.Fatalf("%s trip type: want round_trip, got %q", name, res.TripType)
+			}
+			if len(res.Flights) == 0 {
+				t.Fatalf("%s: expected a composed round-trip itinerary", name)
+			}
+			rt := res.Flights[0]
+			if rt.FareType != models.FareSplitTickets {
+				t.Errorf("%s fare type: want %q, got %q", name, models.FareSplitTickets, rt.FareType)
+			}
+			if len(rt.Legs) != 2 {
+				t.Fatalf("%s: expected 2 legs (outbound + inbound), got %d", name, len(rt.Legs))
+			}
+			if rt.Legs[0].Direction != "outbound" || rt.Legs[1].Direction != "inbound" {
+				t.Errorf("%s leg directions: want outbound/inbound, got %q/%q", name, rt.Legs[0].Direction, rt.Legs[1].Direction)
+			}
+		})
+	}
+}
+
+// TestSearchLowCostCarrier_VuelingNorwegianRoutable guards that the dispatcher
+// (the public entry the CLI calls) recognises Vueling/Norwegian and their
+// aliases, rather than rejecting them. It asserts routing, not a network result:
+// the real carrier searchers are opt-in and error honestly when unconfigured,
+// so we accept either composed results or a provider-named error — but never the
+// "unrecognised provider" rejection that the missing CLI wiring produced.
+func TestSearchLowCostCarrier_VuelingNorwegianRoutable(t *testing.T) {
+	for _, name := range []string{"vueling", "vy", "norwegian", "dy"} {
+		t.Run(name, func(t *testing.T) {
+			_, err := SearchLowCostCarrier(context.Background(), name, "BCN", "FCO", "2026-07-01", SearchOptions{ReturnDate: "2026-07-08"})
+			if err != nil && strings.Contains(err.Error(), "unrecognised low-cost carrier") {
+				t.Fatalf("%s should be a recognised provider, got: %v", name, err)
+			}
+		})
+	}
+}
+
 // TestSearchLowCostCarrier_UnrecognisedProvider guards the public dispatcher.
 func TestSearchLowCostCarrier_UnrecognisedProvider(t *testing.T) {
 	_, err := SearchLowCostCarrier(context.Background(), "spirit", "JFK", "LAX", "2026-07-01", SearchOptions{})
@@ -129,7 +183,7 @@ func TestSearchLowCostCarrier_UnrecognisedProvider(t *testing.T) {
 // dispatches is registered, so a new CLI case can never reference a missing
 // searcher.
 func TestLCCRegistryCoversCLIProviders(t *testing.T) {
-	for _, name := range []string{"ryanair", "wizzair", "wizz", "transavia", "easyjet", "vueling", "vy"} {
+	for _, name := range []string{"ryanair", "wizzair", "wizz", "transavia", "easyjet", "vueling", "vy", "norwegian", "dy"} {
 		if _, ok := lccRegistry[name]; !ok {
 			t.Errorf("lccRegistry missing CLI provider %q", name)
 		}
