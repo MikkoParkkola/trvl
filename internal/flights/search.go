@@ -400,6 +400,9 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 		{name: "easyjet", run: withFlightNegCache("easyjet", origin, destination, date, func(ctx context.Context) providerOutcome {
 			return runEasyjetProvider(ctx, client, origin, destination, date, currency, opts)
 		})},
+		{name: "vueling", run: withFlightNegCache("vueling", origin, destination, date, func(ctx context.Context) providerOutcome {
+			return runVuelingProvider(ctx, client, origin, destination, date, currency, opts)
+		})},
 	}
 	outcomes := runProviderTasks(ctx, tasks, providerConcurrencyLimit, perProviderTimeout)
 	kiwiOut := outcomes[0]
@@ -408,6 +411,7 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 	wizzairOut := outcomes[3]
 	transaviaOut := outcomes[4]
 	easyjetOut := outcomes[5]
+	vuelingOut := outcomes[6]
 
 	statuses := []models.ProviderStatus{
 		googleStatus,
@@ -417,6 +421,7 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 		wizzairOut.status,
 		transaviaOut.status,
 		easyjetOut.status,
+		vuelingOut.status,
 	}
 
 	kiwiFlights := kiwiOut.flights
@@ -437,6 +442,9 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 	easyjetFlights := easyjetOut.flights
 	easyjetErr := easyjetOut.err
 	easyjetSucceeded := easyjetOut.succeeded
+	vuelingFlights := vuelingOut.flights
+	vuelingErr := vuelingOut.err
+	vuelingSucceeded := vuelingOut.succeeded
 
 	// Normalize all provider prices to the session currency so resolution and
 	// ranking compare like with like (Skiplagged returns USD, Kiwi its own).
@@ -452,8 +460,9 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 	normalizeFlightCurrencies(ctx, wizzairFlights, target, destinations.ConvertCurrency)
 	normalizeFlightCurrencies(ctx, transaviaFlights, target, destinations.ConvertCurrency)
 	normalizeFlightCurrencies(ctx, easyjetFlights, target, destinations.ConvertCurrency)
+	normalizeFlightCurrencies(ctx, vuelingFlights, target, destinations.ConvertCurrency)
 
-	mergedFlights := mergeFlightResults(googleFlights, kiwiFlights, skiplaggedFlights, opts, ryanairFlights, wizzairFlights, transaviaFlights, easyjetFlights)
+	mergedFlights := mergeFlightResults(googleFlights, kiwiFlights, skiplaggedFlights, opts, ryanairFlights, wizzairFlights, transaviaFlights, easyjetFlights, vuelingFlights)
 
 	// Cross-shop re-pricing (MIK-4956 Phase C): re-price each segment of a
 	// Kiwi-discovered self-connect itinerary on Google Flights and append a
@@ -469,7 +478,7 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 		}
 	}
 
-	if googleSucceeded || kiwiSucceeded || skiplaggedSucceeded || ryanairSucceeded || wizzairSucceeded || transaviaSucceeded || easyjetSucceeded {
+	if googleSucceeded || kiwiSucceeded || skiplaggedSucceeded || ryanairSucceeded || wizzairSucceeded || transaviaSucceeded || easyjetSucceeded || vuelingSucceeded {
 		annotateFlightConfidence(mergedFlights, time.Now())
 		result := &models.FlightSearchResult{
 			Success:          true,
@@ -507,6 +516,9 @@ func searchFlightsCore(ctx context.Context, client *batchexec.Client, origin, de
 	}
 	if easyjetErr != nil {
 		errs = append(errs, easyjetErr)
+	}
+	if vuelingErr != nil {
+		errs = append(errs, vuelingErr)
 	}
 	if len(errs) > 0 {
 		err := errors.Join(errs...)

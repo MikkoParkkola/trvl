@@ -129,7 +129,7 @@ func TestSearchLowCostCarrier_UnrecognisedProvider(t *testing.T) {
 // dispatches is registered, so a new CLI case can never reference a missing
 // searcher.
 func TestLCCRegistryCoversCLIProviders(t *testing.T) {
-	for _, name := range []string{"ryanair", "wizzair", "wizz", "transavia", "easyjet"} {
+	for _, name := range []string{"ryanair", "wizzair", "wizz", "transavia", "easyjet", "vueling", "vy"} {
 		if _, ok := lccRegistry[name]; !ok {
 			t.Errorf("lccRegistry missing CLI provider %q", name)
 		}
