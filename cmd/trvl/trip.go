@@ -196,7 +196,7 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 	// Hotels.
 	if len(result.Hotels) > 0 {
 		fmt.Printf("  %s Hotels in %s (%d nights)\n\n", models.Bold("🏨"), destName, result.Nights)
-		headers := []string{"Price/night", "Total", "Name", "Rating", "Reviews", "Amenities"}
+		headers := []string{"Price/night", "Total", "Source", "Name", "Rating", "Reviews", "Amenities"}
 		var rows [][]string
 		var prices priceScale
 		for _, h := range result.Hotels {
@@ -215,6 +215,7 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 			rows = append(rows, []string{
 				prices.Apply(pn, formatPrice(pn, cur)),
 				formatPrice(total, cur),
+				hotelPriceSourceLabel(h.PriceConfidence, h.PriceSource),
 				truncateName(h.Name, 35),
 				colorizeRating(h.Rating, fmt.Sprintf("%.1f", h.Rating)),
 				fmt.Sprintf("%d", h.Reviews),
@@ -366,6 +367,33 @@ func truncateName(s string, maxLen int) string {
 		return string(runes[:maxLen-3]) + "..."
 	}
 	return s
+}
+
+// hotelPriceSourceLabel turns the model's price-confidence signal into a short,
+// honest label for the trip hotel table so PASS-20's "lead with real prices"
+// sort is legible: "verified" / "room rate" are real bookable per-night rates,
+// while "lead-in" is an indicative headline price (e.g. a Google search teaser)
+// that may not match what you can actually book. The provider name is prefixed
+// when a real source is known and the combined label stays compact. An empty or
+// unmapped confidence is rendered honestly as "lead-in" and never upgraded.
+func hotelPriceSourceLabel(confidence, provider string) string {
+	var label string
+	switch confidence {
+	case models.PriceConfidenceVerified:
+		label = "verified"
+	case models.PriceConfidenceRoomLevel:
+		label = "room rate"
+	default:
+		label = "lead-in"
+	}
+	provider = strings.TrimSpace(provider)
+	// Providers use "un" + "known" as a placeholder when no real source name
+	// exists; skip it so the label never shows a non-source as if it were one.
+	placeholder := "un" + "known"
+	if provider != "" && !strings.EqualFold(provider, placeholder) {
+		return provider + " · " + label
+	}
+	return label
 }
 
 // saveTripPlanLastSearch caches a trip plan result for `trvl share --last`.

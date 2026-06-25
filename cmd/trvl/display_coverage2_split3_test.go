@@ -770,6 +770,74 @@ func TestPrintTripPlan_FlightCoverageHonesty(t *testing.T) {
 	}
 }
 
+// TestPrintTripPlan_HotelPriceSourceColumn proves the hotel table makes the
+// price-trust signal legible: a verified/room-level rate shows the real-rate
+// label, an unverified one shows the honest "lead-in" label, and a known
+// provider name is surfaced alongside it. This is the user-visible half of
+// PASS-20's "lead with real prices" sort.
+func TestPrintTripPlan_HotelPriceSourceColumn(t *testing.T) {
+	models.UseColor = false
+
+	result := &trip.PlanResult{
+		Success:     true,
+		Origin:      "HEL",
+		Destination: "BCN",
+		DepartDate:  "2026-07-01",
+		ReturnDate:  "2026-07-08",
+		Nights:      7,
+		Guests:      2,
+		Hotels: []trip.PlanHotel{
+			{
+				Name: "Verified Stay", Rating: 9.0, Reviews: 800,
+				PerNight: 150, Total: 1050, Currency: "EUR",
+				PriceConfidence: models.PriceConfidenceVerified, PriceSource: "Agoda",
+			},
+			{
+				Name: "Room Rate Stay", Rating: 8.5, Reviews: 400,
+				PerNight: 170, Total: 1190, Currency: "EUR",
+				PriceConfidence: models.PriceConfidenceRoomLevel, PriceSource: "Booking.com",
+			},
+			{
+				Name: "Headline Stay", Rating: 8.0, Reviews: 100,
+				PerNight: 120, Total: 840, Currency: "EUR",
+				PriceConfidence: models.PriceConfidenceUnverified,
+			},
+		},
+		Summary: trip.PlanSummary{Currency: "EUR"},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	out := captureStdout(t, func() {
+		if err := printTripPlan(ctx, "", result); err != nil {
+			t.Errorf("printTripPlan returned error: %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"Source",      // the new column header
+		"verified",    // verified confidence -> real-rate label
+		"room rate",   // room_level confidence -> real-rate label
+		"lead-in",     // unverified confidence -> honest teaser label
+		"Agoda",       // provider name surfaced for the verified rate
+		"Booking.com", // provider name surfaced for the room rate
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("hotel price-source output missing %q\n--- got ---\n%s", want, out)
+		}
+	}
+
+	// The honest label must never claim a verified-sounding rate for an
+	// unverified, source-less hotel.
+	if got := hotelPriceSourceLabel(models.PriceConfidenceUnverified, ""); got != "lead-in" {
+		t.Errorf("empty/unverified label = %q, want %q", got, "lead-in")
+	}
+	if got := hotelPriceSourceLabel("", ""); got != "lead-in" {
+		t.Errorf("empty-confidence label = %q, want %q", got, "lead-in")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Suppress unused import errors
 // ---------------------------------------------------------------------------
