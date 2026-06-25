@@ -145,6 +145,7 @@ func registeredMCPCompatibilityAliasCount(t *testing.T) int {
 		"arbitrage_report": true, // unified arbitrage aggregator (innovation #8) — new capability, not a legacy alias
 		"plan_multimodal":  true, // Multimodal composer capability (innovation #2)
 		"coalesce_trip":    true, // unified trip coalescer (innovation #5) — new capability, not a legacy alias
+		"travel_nudges":    true, // personal travel-graph nudges — new capability reachable via the smart router, not a legacy alias
 	}
 	count := 0
 	for _, key := range handlers.MapKeys() {
