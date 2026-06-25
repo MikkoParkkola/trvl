@@ -345,6 +345,26 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 
 	fTotal := (cheapOut + cheapRet) * float64(result.Guests)
 	hTotal := cheapHotel
+
+	// Prefer the cheaper of {two one-ways, native single-ticket round-trip}. A
+	// native round-trip fare is one bookable ticket whose price is already the
+	// full round-trip per person, so it competes directly against cheapOut+cheapRet.
+	// Surface it (and use it in the total) only when it is genuinely cheaper, so
+	// the existing split display stays the headline whenever it wins.
+	if len(result.RoundTripFares) > 0 {
+		rt := result.RoundTripFares[0]
+		cheapRT := rt.Price
+		if targetCurrency != "" && rt.Currency != targetCurrency && cheapRT > 0 {
+			converted, _ := destinations.ConvertCurrency(ctx, cheapRT, rt.Currency, targetCurrency)
+			cheapRT = math.Round(converted)
+		}
+		if cheapRT > 0 && cheapRT < cheapOut+cheapRet {
+			fmt.Printf("  %s Round-trip fare (1 ticket): %s — %s — %s\n\n",
+				models.Bold("🎫"), formatPrice(cheapRT, cur), rt.Airline, rt.Route)
+			fTotal = cheapRT * float64(result.Guests)
+		}
+	}
+
 	gTotal := fTotal + hTotal
 	var pp, pd float64
 	if result.Guests > 0 {
