@@ -71,7 +71,11 @@ func BuildStatusReport(reg *Registry, dir string, now time.Time) []StatusRow {
 	summary := HealthSummary(dir)
 	configs := map[string]*ProviderConfig{}
 	if reg != nil {
-		for _, cfg := range reg.List() {
+		// ListSafe snapshots each config under RLock so the breaker reads in
+		// CircuitBreakerHealth below never race concurrent MarkSuccess/MarkError
+		// from an in-flight search. BuildStatusReport runs on concurrent paths
+		// (MCP provider_health tool, HTTP dashboard) — #144 class; MIK-5858.
+		for _, cfg := range reg.ListSafe() {
 			configs[cfg.ID] = cfg
 		}
 	}

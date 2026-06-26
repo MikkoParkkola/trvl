@@ -330,7 +330,10 @@ func handleProviderHealth(_ context.Context, _ map[string]any, _ ElicitFunc, _ S
 	summary := providers.HealthSummary(dir)
 	configs := map[string]*providers.ProviderConfig{}
 	if reg != nil {
-		for _, cfg := range reg.List() {
+		// ListSafe snapshots each config under RLock so the breaker reads in
+		// CircuitBreakerHealth below never race concurrent MarkSuccess/MarkError
+		// from an in-flight search (#144 class; MIK-5858).
+		for _, cfg := range reg.ListSafe() {
 			configs[cfg.ID] = cfg
 		}
 	}

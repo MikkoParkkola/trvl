@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/providers"
@@ -675,4 +676,72 @@ func containsSubstring(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// TestListProvidersConcurrentWithBreakerMarks is the same-package regression
+// guard for the MIK-5858 fix: the provider-listing MCP handlers must read
+// breaker state through reg.ListSafe() (RLock value-copy snapshot) so a
+// concurrent MarkError/MarkSuccess writer cannot race the reader. Run under
+// -race; if the handlers are reverted to the unsynchronized List() path this
+// fails with a data race. The internal/providers package carries the
+// lower-level race test (TestProviderBreaker_ConcurrentStatusReportAndMark);
+// this one exercises the same invariant at the mcp handler boundary that the
+// fix actually changed.
+func TestListProvidersConcurrentWithBreakerMarks(t *testing.T) {
+	reg := testRegistry(t)
+	config := &providers.ProviderConfig{
+		ID:       "race-list",
+		Name:     "Race List Provider",
+		Category: "hotels",
+		Endpoint: "http://127.0.0.1/search",
+		Method:   "POST",
+		ResponseMapping: providers.ResponseMapping{
+			ResultsPath: "$.results",
+			Fields:      map[string]string{"name": "$.hotel_name"},
+		},
+		Consent: &providers.ConsentRecord{Granted: true, Domain: "127.0.0.1"},
+	}
+	if err := reg.Save(config); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	const iterations = 200
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	// Writer: mutate the breaker fields concurrently.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			if i%2 == 0 {
+				reg.MarkError("race-list", "boom")
+			} else {
+				reg.MarkSuccess("race-list")
+			}
+		}
+	}()
+
+	// Reader 1: list providers via the handler the fix routes through ListSafe.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			if _, _, err := handleListProviders(context.Background(), nil, nil, nil, nil, reg, nil); err != nil {
+				t.Errorf("handleListProviders: %v", err)
+				return
+			}
+		}
+	}()
+
+	// Reader 2: provider health snapshot, also routed through ListSafe.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			if _, _, err := handleProviderHealth(context.Background(), nil, nil, nil, nil, reg, nil); err != nil {
+				t.Errorf("handleProviderHealth: %v", err)
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
 }

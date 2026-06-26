@@ -408,7 +408,10 @@ func listProvidersTool() ToolDef {
 
 // handleListProviders processes a list_providers tool call.
 func handleListProviders(_ context.Context, _ map[string]any, _ ElicitFunc, _ SamplingFunc, _ ProgressFunc, reg *providers.Registry, _ *providers.Runtime) ([]ContentBlock, interface{}, error) {
-	configs := reg.List()
+	// ListSafe returns value copies under RLock so reading the breaker fields
+	// (LastSuccess/ErrorCount) here never races MarkSuccess/MarkError running
+	// concurrently from an in-flight search (#144 class; MIK-5858).
+	configs := reg.ListSafe()
 
 	if len(configs) == 0 {
 		return textContent("No external providers configured. Use configure_provider to add one."), nil, nil
