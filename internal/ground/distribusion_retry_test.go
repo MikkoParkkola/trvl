@@ -47,15 +47,6 @@ func resp200(body string) *http.Response {
 	}
 }
 
-func resp403() *http.Response {
-	h := http.Header{}
-	return &http.Response{
-		StatusCode: http.StatusForbidden,
-		Header:     h,
-		Body:       io.NopCloser(strings.NewReader(`{"err":"forbidden"}`)),
-	}
-}
-
 // installRetryStub swaps the shared client transport, the sleep seam and the
 // limiter for deterministic offline behaviour, restoring them on cleanup.
 func installRetryStub(t *testing.T, rt http.RoundTripper) {
