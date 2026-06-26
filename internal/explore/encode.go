@@ -34,8 +34,15 @@ func EncodeExplorePayload(srcAirport string, opts ExploreOptions) string {
 	// Travelers: [adults, children, infants_on_lap, infants_in_seat]
 	serTravelers := fmt.Sprintf(`[%d,0,0,0]`, adults)
 
+	// Cabin class slot: 1=economy, 2=premium economy, 3=business, 4=first
+	// (matches models.CabinClass). Zero/unset defaults to economy.
+	cabin := int(opts.CabinClass)
+	if cabin <= 0 {
+		cabin = 1
+	}
+
 	rawData := fmt.Sprintf(`%s,null,[null,null,%d,null,[],%d,%s,null,null,null,null,null,null,`,
-		serCoords, tripType, 1, serTravelers) // class=1 (economy)
+		serCoords, tripType, cabin, serTravelers)
 
 	// Outbound leg
 	rawData += fmt.Sprintf(`[[[[%s]],[],null,0,null,null,\"%s\"]`, serSrc, opts.DepartureDate)
