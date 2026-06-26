@@ -398,6 +398,32 @@ func TestHandlePlanTrip_WithAllArgs(t *testing.T) {
 	_ = err
 }
 
+// TestHandlePlanTrip_ReturnDateNotRequired verifies the handler's validation no
+// longer rejects an omitted return_date: with origin, destination and depart_date
+// present (return_date absent), validation passes — the only required date is
+// depart_date. Asserted via the inverse case that still returns before any network:
+// dropping depart_date errors on depart_date, never on return_date. Deterministic.
+func TestHandlePlanTrip_ReturnDateNotRequired(t *testing.T) {
+	// Missing depart_date (return_date also absent) must error specifically on
+	// depart_date — proving depart_date is the sole required date now.
+	_, _, err := handlePlanTrip(context.Background(),
+		map[string]any{
+			"origin":      "HEL",
+			"destination": "BCN",
+			"guests":      float64(1),
+		},
+		nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for missing depart_date")
+	}
+	if !contains(err.Error(), "depart_date") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "depart_date")
+	}
+	if contains(err.Error(), "return_date") {
+		t.Errorf("error = %q must not mention return_date (one-way is valid)", err.Error())
+	}
+}
+
 // --- handleSearchDeals with valid origins ---
 
 func TestHandleSearchDeals_WithMaxPrice(t *testing.T) {
