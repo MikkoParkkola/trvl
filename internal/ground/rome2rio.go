@@ -139,13 +139,13 @@ func SearchRome2Rio(ctx context.Context, from, to string, allowBrowser bool) ([]
 			lastErr = fmt.Errorf("rome2rio: thin/partial render (no route data); attempt %d", attempt+1)
 			continue
 		}
-		routes, perr := parseRome2Rio(body, from, to)
+		routes, matched, perr := parseRome2Rio(body, from, to)
 		if perr != nil {
 			lastErr = perr
 			continue
 		}
 		if len(routes) == 0 {
-			lastErr = fmt.Errorf("rome2rio: page rendered but no route options parsed")
+			lastErr = rome2rioParseFailure(0, matched, from, to)
 			continue
 		}
 		return routes, nil
@@ -225,13 +225,18 @@ func fetchRome2Rio(ctx context.Context, from, to string, allowBrowser bool) (str
 // pure (no network) so it is exercised by offline fixture tests. Each option is
 // an anchor to /map/{O}/{D}?route=<name>; the anchor's text content carries the
 // title, leg descriptions, duration and price range.
-func parseRome2Rio(body, from, to string) ([]models.GroundRoute, error) {
+// parseRome2Rio extracts route options from an SSR body. It also reports how
+// many distinct route-card anchors the selector matched (`matched`), which lets
+// the caller tell a genuine "no route for this pair" (zero anchors) apart from a
+// decode failure (anchors present but none built into a route). It stays a pure
+// extractor — the failure judgment lives in SearchRome2Rio where the page-marker
+// context is known.
+func parseRome2Rio(body, from, to string) (routes []models.GroundRoute, matched int, err error) {
 	doc, err := html.Parse(strings.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("rome2rio: parse html: %w", err)
+		return nil, 0, fmt.Errorf("rome2rio: parse html: %w", err)
 	}
 
-	var routes []models.GroundRoute
 	seen := make(map[string]bool)
 
 	var walk func(*html.Node)
@@ -242,6 +247,7 @@ func parseRome2Rio(body, from, to string) ([]models.GroundRoute, error) {
 				routeName := m[1]
 				if !seen[routeName] {
 					seen[routeName] = true
+					matched++
 					text := normalizeWS(textOf(n))
 					if route, ok := buildRome2RioRoute(routeName, text, href, from, to); ok {
 						routes = append(routes, route)
@@ -254,7 +260,23 @@ func parseRome2Rio(body, from, to string) ([]models.GroundRoute, error) {
 		}
 	}
 	walk(doc)
-	return routes, nil
+	return routes, matched, nil
+}
+
+// rome2rioParseFailure classifies a zero-route render. A genuine "no route for
+// this pair" (the page rendered but the selector matched no route-card anchors)
+// is a healthy not-applicable answer — its message matches isProviderNotApplicable
+// so the breaker treats it as success. Anchors present but none decoded means the
+// route-card markup rotated: a real parse failure, typed with models.ErrParseFailed
+// so ClassifyProviderError maps it to StatusFailed and the breaker counts it.
+func rome2rioParseFailure(decoded, matched int, from, to string) error {
+	if decoded > 0 {
+		return nil
+	}
+	if matched > 0 {
+		return fmt.Errorf("rome2rio: matched %d route anchors but decoded 0: %w", matched, models.ErrParseFailed)
+	}
+	return fmt.Errorf("rome2rio: no route for %s to %s", from, to)
 }
 
 // buildRome2RioRoute turns one route anchor (its encoded name + visible text)
