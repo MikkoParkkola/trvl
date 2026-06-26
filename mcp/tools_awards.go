@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/awards"
+	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
 
 // searchAwardsTool returns the MCP tool definition for cross-program award scanning.
@@ -25,7 +26,7 @@ func searchAwardsTool() ToolDef {
 				"balances": {
 					Type:        "array",
 					Items:       &Property{Type: "object"},
-					Description: "User's loyalty point balances. Each entry: program (e.g. VS, AY, MR, UR, Bilt), balance (int).",
+					Description: "User's loyalty point balances. Each entry: program (e.g. VS, AY, MR, UR, Bilt), balance (int). Omit to seed the program set from the traveller's saved loyalty profile (loyalty_airlines + frequent_flyer_programs); any explicit entry overrides the profile default.",
 				},
 				"transfer_ratios": {
 					Type:        "array",
@@ -49,7 +50,7 @@ func searchAwardsTool() ToolDef {
 					Description: "Filter to specific destination IATA.",
 				},
 			},
-			Required: []string{"seats", "balances"},
+			Required: []string{"seats"},
 		},
 		OutputSchema: awardsOutputSchema(),
 		Annotations: &ToolAnnotations{
@@ -127,6 +128,14 @@ func handleSearchAwards(_ context.Context, args map[string]any, _ ElicitFunc, _ 
 			Program: stringField(m, "program"),
 			Balance: intField(m, "balance"),
 		})
+	}
+
+	// Seed the program/balance set from the traveller's saved loyalty
+	// profile when the caller passed no balances. Explicit balances
+	// always win over the profile default — mirrors the CLI surface.
+	if len(balances) == 0 {
+		prefs, _ := preferences.Load() //nolint:errcheck // default prefs on error
+		balances = awards.SeedBalancesFromProfile(balances, awards.ProfileProgramsFrom(prefs.AwardLoyaltyInput()))
 	}
 
 	// Parse optional transfer_ratios.

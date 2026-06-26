@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/awards"
+	"github.com/MikkoParkkola/trvl/internal/preferences"
 	"github.com/spf13/cobra"
 )
 
@@ -26,6 +27,10 @@ func awardsCmd() *cobra.Command {
 Provide pre-fetched seat fixtures via --seat flags (from seats.aero or known
 availability), your point balances via --balance flags, and get ranked redemption
 paths with miles cost, cash equivalent, cents-per-point, and transfer route.
+
+When no --balance flag is given, the program set is seeded from your saved
+loyalty profile (loyalty_airlines + frequent_flyer_programs in
+~/.trvl/preferences.json). Any explicit --balance overrides the profile default.
 
 Supported programs: FB (Flying Blue), BA (Avios), AC (Aeroplan), VS (Virgin),
 AY (Finnair Plus), plus transfer currencies MR (Amex), UR (Chase), Bilt.
@@ -68,6 +73,15 @@ Examples:
 					return fmt.Errorf("invalid --balance %q: %w", b, err)
 				}
 				balances = append(balances, bal)
+			}
+
+			// Seed the program/balance set from the traveller's saved
+			// loyalty profile when no --balance flag was passed. An
+			// explicit --balance always wins over the profile default,
+			// mirroring the flights command's flag-precedence pattern.
+			if !cmd.Flags().Changed("balance") {
+				prefs, _ := preferences.Load() //nolint:errcheck // default prefs on error
+				balances = awards.SeedBalancesFromProfile(balances, awards.ProfileProgramsFrom(prefs.AwardLoyaltyInput()))
 			}
 
 			// Find sweet spots (nil = use default transfer ratios).
@@ -125,7 +139,7 @@ Examples:
 	cmd.Flags().StringArrayVar(&seatFlags, "seat", nil,
 		"Seat fixture: PROGRAM:MILES:CASH_FEES:CASH_EQUIV:DATE:CABIN (e.g. VS:50000:35.00:650.00:2026-08-15:business)")
 	cmd.Flags().StringArrayVar(&balanceFlags, "balance", nil,
-		"Point balance: PROGRAM:AMOUNT (e.g. MR:80000, VS:20000)")
+		"Point balance: PROGRAM:AMOUNT (e.g. MR:80000, VS:20000). Omit to seed from your saved loyalty profile.")
 	cmd.Flags().Float64Var(&minCPP, "min-cpp", 0.5, "Minimum cents-per-point to show")
 	cmd.Flags().StringVar(&cabin, "cabin", "", "Filter by cabin class (economy/premium_economy/business/first)")
 	cmd.Flags().StringVar(&currency, "currency", "EUR", "Display currency for cash amounts")
