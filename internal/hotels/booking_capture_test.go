@@ -56,7 +56,10 @@ func TestCaptureBookingFixture(t *testing.T) {
 	}
 	t.Logf("wrote apollo fixture, len=%d", len(blob))
 
-	hotels := parseBookingApollo(blob, "EUR")
+	hotels, err := parseBookingApollo(blob, "EUR")
+	if err != nil {
+		t.Fatalf("parse captured apollo: %v", err)
+	}
 	priced := 0
 	for _, h := range hotels {
 		if h.Price > 0 {

@@ -50,7 +50,10 @@ func defaultSearchBooking(ctx context.Context, location string, opts HotelSearch
 	if blob == "" {
 		return nil, fmt.Errorf("booking search: apollo store not found in page")
 	}
-	hotels := parseBookingApollo(blob, opts.Currency)
+	hotels, perr := parseBookingApollo(blob, opts.Currency)
+	if perr != nil {
+		return nil, perr
+	}
 
 	// Apply client-side filters.
 	var filtered []models.HotelResult
@@ -228,18 +231,28 @@ func extractBookingApolloBlob(page string) string {
 // parseBookingApollo parses the Apollo store JSON and returns hotel results.
 // It walks ROOT_QUERY → searchQueries → search(<input>) → results[], resolving
 // Apollo normalized __ref pointers against the top-level cache as needed.
-func parseBookingApollo(blob, currency string) []models.HotelResult {
+func parseBookingApollo(blob, currency string) ([]models.HotelResult, error) {
 	var cache map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(blob), &cache); err != nil {
+		// The apollo store <script> was present but its JSON did not parse — the
+		// page shape rotated underneath us. Surface a typed parse failure so the
+		// caller records it against the circuit breaker instead of a false
+		// healthy-empty result.
 		slog.Debug("booking apollo: top-level unmarshal failed", "error", err)
-		return nil
+		return nil, fmt.Errorf("booking apollo: store JSON could not be parsed: %w", models.ErrParseFailed)
 	}
 
 	resolver := apolloResolver{cache: cache}
 
 	results := resolver.findSearchResults()
 	if len(results) == 0 {
-		return nil
+		// No results array anywhere in the cache. This is ambiguous between a
+		// genuinely empty search and a rotated apollo path, and Booking exposes
+		// no claimed-total to disambiguate, so treat it as an honest no-hit.
+		// ponytail: a total page-shape loss is already caught upstream by the
+		// empty-apollo-blob guard in defaultSearchBooking; only a vanished
+		// results array within an otherwise-valid store reaches here.
+		return nil, nil
 	}
 
 	out := make([]models.HotelResult, 0, len(results))
@@ -260,7 +273,23 @@ func parseBookingApollo(blob, currency string) []models.HotelResult {
 		seen[key] = true
 		out = append(out, h)
 	}
-	return out
+	if perr := bookingParseFailure(len(out), len(results)); perr != nil {
+		return nil, perr
+	}
+	return out, nil
+}
+
+// bookingParseFailure reports a typed parse failure when Booking's Apollo store
+// carried result entries but none decoded into a usable hotel — the per-result
+// node shape rotated underneath bookingResultToHotel. It mirrors the flights
+// parseFailureIfAllDropped discriminator: entries present and zero parsed is a
+// provider-unreliable signal that must count toward the breaker, never a
+// healthy empty result.
+func bookingParseFailure(parsed, rawResults int) error {
+	if rawResults > 0 && parsed == 0 {
+		return fmt.Errorf("booking apollo: decoded 0 of %d result entries: %w", rawResults, models.ErrParseFailed)
+	}
+	return nil
 }
 
 // apolloResolver resolves Apollo normalized references against the flat cache.
