@@ -24,7 +24,9 @@ func (f fixedChecker) CheckPrice(_ context.Context, _ watch.Watch) (float64, str
 // tool response. Before the fix the response always carried current_price 0
 // regardless of the checker. Not parallel: it sets HOME and swaps a package var.
 func TestHandleCheckWatches_ReturnsLivePrice(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	watchHome := t.TempDir()
+	t.Setenv("HOME", watchHome)
+	t.Setenv("USERPROFILE", watchHome) // os.UserHomeDir() reads USERPROFILE on Windows
 
 	store, err := watch.DefaultStore()
 	if err != nil {
@@ -89,7 +91,9 @@ func storedWatch(t *testing.T) watch.Watch {
 // TestHandleWatchPrice_WebhookPersists proves the webhook arg is wired into the
 // stored watch, mirroring the CLI --webhook flag.
 func TestHandleWatchPrice_WebhookPersists(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	watchHome := t.TempDir()
+	t.Setenv("HOME", watchHome)
+	t.Setenv("USERPROFILE", watchHome) // os.UserHomeDir() reads USERPROFILE on Windows
 
 	const hookURL = "https://hooks.invalid/notify"
 	_, _, err := handleWatchPrice(context.Background(), map[string]any{
@@ -114,7 +118,9 @@ func TestHandleWatchPrice_WebhookPersists(t *testing.T) {
 // depart_from/depart_to window (and no single date) is accepted and stored as a
 // date-range watch, mirroring the CLI --from/--to mode.
 func TestHandleWatchPrice_FlightDateRange(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	watchHome := t.TempDir()
+	t.Setenv("HOME", watchHome)
+	t.Setenv("USERPROFILE", watchHome) // os.UserHomeDir() reads USERPROFILE on Windows
 
 	_, _, err := handleWatchPrice(context.Background(), map[string]any{
 		"type":         "flight",
@@ -144,7 +150,9 @@ func TestHandleWatchPrice_FlightDateRange(t *testing.T) {
 // TestHandleWatchPrice_FlightNoDateErrors proves a flight watch with neither a
 // single date nor a depart_from/depart_to range is rejected.
 func TestHandleWatchPrice_FlightNoDateErrors(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	watchHome := t.TempDir()
+	t.Setenv("HOME", watchHome)
+	t.Setenv("USERPROFILE", watchHome) // os.UserHomeDir() reads USERPROFILE on Windows
 
 	_, _, err := handleWatchPrice(context.Background(), map[string]any{
 		"type":         "flight",
@@ -161,7 +169,9 @@ func TestHandleWatchPrice_FlightNoDateErrors(t *testing.T) {
 // persist and that target_price may be omitted when a proactive drop alert is
 // set, mirroring the CLI which allows --alert-drop without --below.
 func TestHandleWatchPrice_AlertDropPersists(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	watchHome := t.TempDir()
+	t.Setenv("HOME", watchHome)
+	t.Setenv("USERPROFILE", watchHome) // os.UserHomeDir() reads USERPROFILE on Windows
 
 	_, _, err := handleWatchPrice(context.Background(), map[string]any{
 		"type":           "flight",
@@ -190,7 +200,9 @@ func TestHandleWatchPrice_AlertDropPersists(t *testing.T) {
 // TestHandleWatchPrice_NoThresholdErrors proves the handler rejects a watch with
 // no target_price and no proactive drop alert (nothing to fire on).
 func TestHandleWatchPrice_NoThresholdErrors(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	watchHome := t.TempDir()
+	t.Setenv("HOME", watchHome)
+	t.Setenv("USERPROFILE", watchHome) // os.UserHomeDir() reads USERPROFILE on Windows
 
 	_, _, err := handleWatchPrice(context.Background(), map[string]any{
 		"type":        "flight",
