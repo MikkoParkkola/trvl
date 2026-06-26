@@ -57,6 +57,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/providers"
 	"golang.org/x/time/rate"
 )
 
@@ -71,6 +72,45 @@ var (
 	norwegianLimiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 1)
 	norwegianClient  = &http.Client{Timeout: 25 * time.Second}
 )
+
+// norwegianMaxRetryDelay bounds how long a single 429 backoff may sleep inside
+// one search call, so a hostile Retry-After can't stall the request past the
+// MCP client deadline.
+const norwegianMaxRetryDelay = 30 * time.Second
+
+// norwegianAfter is the sleep seam for the bounded 429 retry. Tests override it
+// to fire instantly. ponytail: test seam, not configuration.
+var norwegianAfter = time.After
+
+// norwegianDoWithRetry issues req and retries ONCE on HTTP 429, honouring the
+// Retry-After header (bounded by norwegianMaxRetryDelay) before replaying the
+// bodyless GET. A persistent 429 is returned to the caller for its existing
+// rate-limit classification. 403/401 bot-challenge responses are NOT retried —
+// they are returned on the first attempt for the caller to classify.
+func norwegianDoWithRetry(ctx context.Context, req *http.Request) (*http.Response, error) {
+	const maxAttempts = 2
+	for attempt := 1; ; attempt++ {
+		resp, err := norwegianClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusTooManyRequests || attempt == maxAttempts {
+			return resp, nil
+		}
+		delay := providers.RetryAfterOrDefault(resp.Header.Get("Retry-After"), time.Now())
+		if delay > norwegianMaxRetryDelay {
+			delay = norwegianMaxRetryDelay
+		}
+		// Drain and close before replaying the connection.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		_ = resp.Body.Close()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-norwegianAfter(delay):
+		}
+	}
+}
 
 // norwegianAPIBase returns the operator-supplied Norwegian availability base
 // URL, or "". When empty the provider is a no-op (honest skip), because the
@@ -144,7 +184,7 @@ func SearchNorwegian(ctx context.Context, origin, destination, date, currency st
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "trvl/1.0")
 
-	resp, err := norwegianClient.Do(req)
+	resp, err := norwegianDoWithRetry(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("norwegian: request: %w", err)
 	}
