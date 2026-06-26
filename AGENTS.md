@@ -285,7 +285,7 @@ CLI alternative: `trvl prefs init`
 
 ## How To Use (after setup)
 
-You now have one `travel` MCP tool available by default, with 63 legacy tool names still callable as compatibility aliases. Use `travel` for new clients and the aliases when an older workflow names a specific tool:
+You now have one `travel` MCP tool available by default. Older clients that call legacy per-domain tool names still work — 66 of them remain callable as compatibility aliases. Use `travel` for new clients and the aliases when an older workflow names a specific tool:
 
 ### search_flights — Find flights between airports
 ```json
