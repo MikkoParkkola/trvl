@@ -19,9 +19,11 @@ func watchPriceTool() ToolDef {
 		Description: "Create a price watch for a flight route or hotel stay. " +
 			"The watch is stored in ~/.trvl/watches.json and tracks whether the price drops " +
 			"below your target. Call check_watches later to re-check all active watches. " +
-			"For flights: provide origin, destination, and date. " +
+			"For flights: provide origin, destination, and either a single date or a " +
+			"depart_from/depart_to date range to scan. " +
 			"For hotels: provide location, check_in, and check_out. " +
-			"Set target_price to the maximum price you are willing to pay.",
+			"Set target_price to the maximum price you are willing to pay, or use " +
+			"alert_drop/alert_drop_abs for a proactive drop-from-baseline alert with no fixed threshold.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
@@ -33,12 +35,17 @@ func watchPriceTool() ToolDef {
 				"return_date":          {Type: "string", Description: "Return date YYYY-MM-DD for round-trip flights (optional)"},
 				"check_in":             {Type: "string", Description: "Hotel check-in date YYYY-MM-DD (hotels only)"},
 				"check_out":            {Type: "string", Description: "Hotel check-out date YYYY-MM-DD (hotels only)"},
-				"target_price":         {Type: "number", Description: "Alert threshold: notify when price drops below this amount"},
+				"target_price":         {Type: "number", Description: "Alert threshold: notify when price drops below this amount. Optional when alert_drop or alert_drop_abs is set."},
 				"currency":             {Type: "string", Description: "Currency code (e.g. EUR, USD). Default: EUR"},
+				"webhook":              {Type: "string", Description: "URL to POST a JSON payload to on price drop, mirroring CLI --webhook"},
+				"depart_from":          {Type: "string", Description: "Flight date-range start (scan for the cheapest fare across a window, mirrors CLI --from). Use with depart_to instead of a single date."},
+				"depart_to":            {Type: "string", Description: "Flight date-range end (scan for the cheapest fare across a window, mirrors CLI --to). Use with depart_from instead of a single date."},
+				"alert_drop":           {Type: "number", Description: "Proactively alert when the fare falls this percent below its baseline (mirrors CLI --alert-drop)"},
+				"alert_drop_abs":       {Type: "number", Description: "Proactively alert when the fare falls this many currency units below its baseline (mirrors CLI --alert-drop-abs)"},
 				"last_minute":          {Type: "boolean", Description: "Hotel watches only: notify when sub-48h availability is at least 25% below last seen price"},
 				"last_minute_drop_pct": {Type: "number", Description: "Hotel last-minute drop threshold percentage. Default: 25"},
 			},
-			Required: []string{"type", "target_price"},
+			Required: []string{"type"},
 		},
 		OutputSchema: map[string]interface{}{
 			"type": "object",
@@ -72,8 +79,12 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 	}
 
 	targetPrice := argFloat(args, "target_price", 0)
-	if targetPrice <= 0 {
-		return nil, nil, fmt.Errorf("target_price must be a positive number")
+	alertDropPct := argFloat(args, "alert_drop", 0)
+	alertDropAbs := argFloat(args, "alert_drop_abs", 0)
+	// target_price is optional when a proactive drop-from-baseline alert is set,
+	// mirroring the CLI which allows --alert-drop / --alert-drop-abs without --below.
+	if targetPrice <= 0 && alertDropPct <= 0 && alertDropAbs <= 0 {
+		return nil, nil, fmt.Errorf("set target_price, alert_drop, or alert_drop_abs to a positive value")
 	}
 
 	currency := argString(args, "currency")
@@ -85,6 +96,9 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 		Type:              watchType,
 		BelowPrice:        targetPrice,
 		Currency:          currency,
+		WebhookURL:        argString(args, "webhook"),
+		AlertDropPct:      alertDropPct,
+		AlertDropAbs:      alertDropAbs,
 		LastMinuteMode:    argBool(args, "last_minute", false),
 		LastMinuteDropPct: argFloat(args, "last_minute_drop_pct", 25),
 	}
@@ -96,15 +110,31 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 		if w.Origin == "" || w.Destination == "" {
 			return nil, nil, fmt.Errorf("flight watches require origin and destination")
 		}
-		// Accept "date" or "depart_date" for departure.
+		// Two flight date modes, mirroring the CLI:
+		//   - single date  ("date"/"depart_date") -> DepartDate
+		//   - date range   (depart_from + depart_to) -> scan window
+		// The watch validator rejects setting both, so pick exactly one.
 		date := argString(args, "date")
 		if date == "" {
 			date = argString(args, "depart_date")
 		}
-		if date == "" {
-			return nil, nil, fmt.Errorf("flight watches require a departure date (date)")
+		departFrom := argString(args, "depart_from")
+		departTo := argString(args, "depart_to")
+		switch {
+		case departFrom != "" || departTo != "":
+			if departFrom == "" || departTo == "" {
+				return nil, nil, fmt.Errorf("flight date-range watches require both depart_from and depart_to")
+			}
+			if date != "" {
+				return nil, nil, fmt.Errorf("provide either a single date or a depart_from/depart_to range, not both")
+			}
+			w.DepartFrom = departFrom
+			w.DepartTo = departTo
+		case date != "":
+			w.DepartDate = date
+		default:
+			return nil, nil, fmt.Errorf("flight watches require a departure date (date) or a depart_from/depart_to range")
 		}
-		w.DepartDate = date
 		if ret := argString(args, "return_date"); ret != "" {
 			w.ReturnDate = ret
 		}
@@ -164,19 +194,24 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 	}
 
 	var summary string
+	alert := watchAlertClause(w)
 	switch watchType {
 	case "flight":
 		resp.Origin = w.Origin
 		resp.Destination = w.Destination
-		summary = fmt.Sprintf("Flight watch %s created: %s→%s on %s. Alert when below %.0f %s.",
-			id, w.Origin, w.Destination, w.DepartDate, targetPrice, currency)
+		when := "on " + w.DepartDate
+		if w.IsDateRange() {
+			when = fmt.Sprintf("scanning %s to %s", w.DepartFrom, w.DepartTo)
+		}
+		summary = fmt.Sprintf("Flight watch %s created: %s→%s %s. %s",
+			id, w.Origin, w.Destination, when, alert)
 		if w.ReturnDate != "" {
 			summary += fmt.Sprintf(" Return: %s.", w.ReturnDate)
 		}
 	case "hotel":
 		resp.Location = w.Destination
-		summary = fmt.Sprintf("Hotel watch %s created: %s (%s to %s). Alert when below %.0f %s.",
-			id, w.Destination, w.DepartFrom, w.DepartTo, targetPrice, currency)
+		summary = fmt.Sprintf("Hotel watch %s created: %s (%s to %s). %s",
+			id, w.Destination, w.DepartFrom, w.DepartTo, alert)
 		if w.LastMinuteMode {
 			summary += fmt.Sprintf(" Last-minute mode enabled at %.0f%% below last seen price.", w.LastMinuteDropPct)
 		}
@@ -499,6 +534,26 @@ func (m *mcpPriceChecker) CheckPrice(ctx context.Context, w watch.Watch) (float6
 }
 
 // --- helpers ---
+
+// watchAlertClause renders a human-readable description of when a watch fires,
+// covering the fixed below-price threshold and the proactive drop-from-baseline
+// alerts (percent and/or absolute), mirroring the CLI's summary output.
+func watchAlertClause(w watch.Watch) string {
+	var parts []string
+	if w.BelowPrice > 0 {
+		parts = append(parts, fmt.Sprintf("when below %.0f %s", w.BelowPrice, w.Currency))
+	}
+	if w.AlertDropPct > 0 {
+		parts = append(parts, fmt.Sprintf("on a %.0f%% drop from baseline", w.AlertDropPct))
+	}
+	if w.AlertDropAbs > 0 {
+		parts = append(parts, fmt.Sprintf("on a %.0f %s drop from baseline", w.AlertDropAbs, w.Currency))
+	}
+	if len(parts) == 0 {
+		return "Tracking price history."
+	}
+	return "Alert " + strings.Join(parts, " or ") + "."
+}
 
 // watchRoute returns a human-readable route string for a watch.
 func watchRoute(w watch.Watch) string {
