@@ -2,6 +2,7 @@ package ground
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 
@@ -46,6 +48,50 @@ const rome2rioThinRenderRetries = 2
 // as a typed error rather than a silently-empty success.
 const rome2rioMarker = "ways to get from"
 
+// rome2rioMaxRetryDelay caps how long a single 429 backoff waits, even when the
+// server's Retry-After asks for longer. #357 TRVL-RETRY.2.
+const rome2rioMaxRetryDelay = 30 * time.Second
+
+// rome2rioAfter is the sleep seam for the bounded 429 retry; tests swap it for an
+// instant channel so the suite never actually waits out a backoff.
+var rome2rioAfter = time.After
+
+// errRome2RioBlocked marks a server-side refusal — a Cloudflare 403 bot wall or a
+// 429 that persists past the one bounded retry. The outer thin-render retry loop
+// must NOT re-attempt these: a 403 is a bot wall (re-fetching only hammers it) and
+// a 429 has already been honoured once. Thin-render and parse errors stay retryable.
+var errRome2RioBlocked = errors.New("rome2rio: blocked")
+
+// rome2rioDoWithRetry issues req via doer, honouring a SINGLE bounded retry on
+// HTTP 429: it reads Retry-After (capped at rome2rioMaxRetryDelay), drains and
+// closes the throttled response, then replays the request once. The request is a
+// bodyless GET, so the replay simply re-issues it. A 403 is a Cloudflare bot
+// wall, not a transient throttle, so it is returned immediately — never retried.
+// The sleep is context-aware so a cancelled search aborts the backoff.
+func rome2rioDoWithRetry(ctx context.Context, doer func(*http.Request) (*http.Response, error), req *http.Request) (*http.Response, error) {
+	const maxAttempts = 2
+	for attempt := 1; ; attempt++ {
+		resp, err := doer(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusTooManyRequests || attempt >= maxAttempts {
+			return resp, nil
+		}
+		delay := providers.RetryAfterOrDefault(resp.Header.Get("Retry-After"), time.Now())
+		if delay > rome2rioMaxRetryDelay {
+			delay = rome2rioMaxRetryDelay
+		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		_ = resp.Body.Close()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-rome2rioAfter(delay):
+		}
+	}
+}
+
 var (
 	// matches "2h 28m", "23h 28m", "4h 2m"
 	r2rHourMin = regexp.MustCompile(`(\d+)\s*h\s*(\d+)\s*m`)
@@ -81,6 +127,12 @@ func SearchRome2Rio(ctx context.Context, from, to string, allowBrowser bool) ([]
 		body, err := fetchRome2Rio(ctx, from, to, allowBrowser)
 		if err != nil {
 			lastErr = err
+			// A bot wall (403) or persistent 429 won't be cured by re-fetching —
+			// the inner retry already honoured Retry-After once. Fail fast rather
+			// than spend the thin-render retries hammering a server saying no.
+			if errors.Is(err, errRome2RioBlocked) {
+				break
+			}
 			continue
 		}
 		if !strings.Contains(body, rome2rioMarker) {
@@ -147,14 +199,17 @@ func fetchRome2Rio(ctx context.Context, from, to string, allowBrowser bool) (str
 		req.Header.Set("User-Agent", rome2rioChromeUA)
 	}
 
-	resp, err := doer(req)
+	resp, err := rome2rioDoWithRetry(ctx, doer, req)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
-		return "", fmt.Errorf("rome2rio: bot wall / rate limited (HTTP %d)", resp.StatusCode)
+	if resp.StatusCode == http.StatusForbidden {
+		return "", fmt.Errorf("%w: bot wall (HTTP 403)", errRome2RioBlocked)
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return "", fmt.Errorf("%w: rate limited after retry (HTTP 429)", errRome2RioBlocked)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("rome2rio: unexpected status HTTP %d", resp.StatusCode)
