@@ -16,7 +16,19 @@ type GroundSearchResult struct {
 	// location. Additive and silently degrading — absent when the lookup fails
 	// or no destination is known; never blocks the core route search.
 	Destination *DestinationInfo `json:"destination,omitempty"`
-	Error       string           `json:"error,omitempty"`
+	// ProviderStatuses reports the outcome of each ground provider (bus / train
+	// / ferry) that was attempted, mirroring flight and hotel search. It makes
+	// PARTIAL failures honest: when one provider rate-limits or times out but
+	// others return routes, the failure is recorded here instead of being
+	// silently dropped (the legacy Error field is only populated on a total
+	// wipeout). When a provider returns 0 routes without an error its status is
+	// "ok" with Results=0 — distinct from "failed"/"timeout"/"skipped".
+	ProviderStatuses []ProviderStatus `json:"provider_statuses,omitempty"`
+	// Completeness is the composite evidence summary derived from
+	// ProviderStatuses. When State != "complete", callers MUST NOT claim
+	// "no routes found" — some providers timed out or failed.
+	Completeness Completeness `json:"completeness,omitempty"`
+	Error        string       `json:"error,omitempty"`
 }
 
 // GroundRoute represents a single bus or train connection.

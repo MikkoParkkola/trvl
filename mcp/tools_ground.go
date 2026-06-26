@@ -164,7 +164,14 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 		if result.Error != "" {
 			return nil, nil, toolResultError("Ground transport search", result.Error)
 		}
+		// Evidence guard: only claim a definitive "no routes" when every relevant
+		// provider was actually reached. If some timed out / rate-limited / failed,
+		// absence is not established — say so instead of lying (mirrors flights).
 		msg := fmt.Sprintf("No ground routes found from %s to %s on %s", from, to, date)
+		if !result.Completeness.MayClaimExhaustive() {
+			msg = fmt.Sprintf("No ground routes returned from %s to %s on %s yet. %s",
+				from, to, date, result.Completeness.IncompleteNote())
+		}
 		return []ContentBlock{{Type: "text", Text: msg}}, result, nil
 	}
 
@@ -181,6 +188,12 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 		fmt.Sprintf("Found %d ground routes from %s to %s on %s", result.Count, from, to, date),
 		result.Routes,
 	)
+	// Partial-failure caveat: some providers returned routes but others timed
+	// out / failed, so this set is not exhaustive — say so rather than imply the
+	// cheapest shown is the cheapest available.
+	if note := result.Completeness.IncompleteNote(); note != "" {
+		summary += "\n\n" + note
+	}
 
 	content, err := buildAnnotatedContentBlocks(summary, result)
 	if err != nil {
