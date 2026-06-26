@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/breaker"
 	"github.com/MikkoParkkola/trvl/internal/fareintel"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
@@ -23,6 +24,12 @@ var (
 
 // HotelRateManager is the shared rate manager for hotel providers.
 var HotelRateManager = NewRateManager()
+
+// hotelBreaker is the shared circuit breaker for the hand-rolled scraper
+// fan-out. A scraper that fails DefaultThreshold times in a row (dead cookie,
+// blocked endpoint, hard 429) is skipped for DefaultCooldown instead of being
+// hammered on every search, then retried via a half-open probe.
+var hotelBreaker = breaker.New()
 
 // SearchBooking searches hotels on Booking.com. Overridable in tests.
 var SearchBooking = defaultSearchBooking
@@ -356,37 +363,45 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	var externalResults []models.HotelResult
 	var auxWg sync.WaitGroup
 
-	auxWg.Add(1)
-	go func() {
-		defer auxWg.Done()
-		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
-		defer cancel()
-		res, err := SearchTrivago(providerCtx, location, auxOpts)
-		if err != nil {
-			slog.Warn("trivago search failed", "error", err)
-			addProviderStatus(hotelProviderStatusFromError("trivago", "Trivago", err))
-			return
-		}
-		trivagoResults = res
-		addProviderStatus(hotelProviderStatusFromResults("trivago", "Trivago", len(res)))
-	}()
+	// runAux launches one auxiliary scraper under the shared circuit breaker.
+	// A provider whose breaker is tripped is skipped (and surfaces an honest
+	// circuit_broken status) rather than retried; otherwise its result/error is
+	// recorded so the breaker trips after repeated failures and recovers on a
+	// successful probe. Zero results without an error counts as success.
+	runAux := func(id, name string, search func(context.Context, string, HotelSearchOptions) ([]models.HotelResult, error), assign func([]models.HotelResult)) {
+		auxWg.Add(1)
+		go func() {
+			defer auxWg.Done()
+			if hotelBreaker.Tripped(id) {
+				addProviderStatus(models.ProviderStatus{
+					ID:      id,
+					Name:    name,
+					Status:  models.StatusCircuitBroken,
+					Error:   "skipped: recent failures tripped the circuit breaker",
+					FixHint: "wait for the cooldown to elapse, then it retries automatically",
+				})
+				return
+			}
+			providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
+			defer cancel()
+			res, err := search(providerCtx, location, auxOpts)
+			if err != nil {
+				hotelBreaker.RecordFailure(id)
+				slog.Warn(id+" search failed", "error", err)
+				addProviderStatus(hotelProviderStatusFromError(id, name, err))
+				return
+			}
+			hotelBreaker.RecordSuccess(id)
+			assign(res)
+			addProviderStatus(hotelProviderStatusFromResults(id, name, len(res)))
+		}()
+	}
+
+	runAux("trivago", "Trivago", SearchTrivago, func(r []models.HotelResult) { trivagoResults = r })
 
 	// HomeToGo vacation-rental aggregator (Airbnb/Vrbo/Booking + local hosts).
 	// Non-fatal: failures log a warning and contribute zero results.
-	auxWg.Add(1)
-	go func() {
-		defer auxWg.Done()
-		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
-		defer cancel()
-		res, err := SearchHomeToGo(providerCtx, location, auxOpts)
-		if err != nil {
-			slog.Warn("hometogo search failed", "error", err)
-			addProviderStatus(hotelProviderStatusFromError("hometogo", "HomeToGo", err))
-			return
-		}
-		hometogoResults = res
-		addProviderStatus(hotelProviderStatusFromResults("hometogo", "HomeToGo", len(res)))
-	}()
+	runAux("hometogo", "HomeToGo", SearchHomeToGo, func(r []models.HotelResult) { hometogoResults = r })
 
 	// Anyplace mid-term / nomad furnished-apartment provider (monthly-priced
 	// furnished rentals, 30-night minimum — the relocation/nomad segment).
@@ -397,38 +412,12 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// HousingAnywhere mid-term rental marketplace (furnished monthly lettings).
 	// Algolia-backed; credentials are runtime-harvested. Non-fatal: failures log
 	// a warning and contribute zero results.
-	auxWg.Add(1)
-	go func() {
-		defer auxWg.Done()
-		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
-		defer cancel()
-		res, err := SearchAnyplace(providerCtx, location, auxOpts)
-		if err != nil {
-			slog.Warn("anyplace search failed", "error", err)
-			addProviderStatus(hotelProviderStatusFromError("anyplace", "Anyplace", err))
-			return
-		}
-		anyplaceResults = res
-		addProviderStatus(hotelProviderStatusFromResults("anyplace", "Anyplace", len(res)))
-	}()
+	runAux("anyplace", "Anyplace", SearchAnyplace, func(r []models.HotelResult) { anyplaceResults = r })
 
 	// Uniplaces mid-term / student-housing provider (rooms, studios, apartments
 	// for weeks-to-months stays that nightly-rate providers miss). Non-fatal:
 	// failures log a warning and contribute zero results.
-	auxWg.Add(1)
-	go func() {
-		defer auxWg.Done()
-		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
-		defer cancel()
-		res, err := SearchUniplaces(providerCtx, location, auxOpts)
-		if err != nil {
-			slog.Warn("uniplaces search failed", "error", err)
-			addProviderStatus(hotelProviderStatusFromError("uniplaces", "Uniplaces", err))
-			return
-		}
-		uniplacesResults = res
-		addProviderStatus(hotelProviderStatusFromResults("uniplaces", "Uniplaces", len(res)))
-	}()
+	runAux("uniplaces", "Uniplaces", SearchUniplaces, func(r []models.HotelResult) { uniplacesResults = r })
 
 	// Wunderflats mid-term furnished-apartment provider (Germany & Europe,
 	// monthly-priced furnished flats). Non-fatal: failures log a warning and
@@ -436,124 +425,33 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// US month-to-month furnished apartments — fills the monthly-stay gap that
 	// hotel/short-let providers miss. Non-fatal: failures log a warning and
 	// contribute zero results.
-	auxWg.Add(1)
-	go func() {
-		defer auxWg.Done()
-		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
-		defer cancel()
-		res, err := SearchWunderflats(providerCtx, location, auxOpts)
-		if err != nil {
-			slog.Warn("wunderflats search failed", "error", err)
-			addProviderStatus(hotelProviderStatusFromError("wunderflats", "Wunderflats", err))
-			return
-		}
-		wunderflatsResults = res
-		addProviderStatus(hotelProviderStatusFromResults("wunderflats", "Wunderflats", len(res)))
-	}()
+	runAux("wunderflats", "Wunderflats", SearchWunderflats, func(r []models.HotelResult) { wunderflatsResults = r })
 
 	// HousingAnywhere mid-term marketplace (largest EU furnished-rental
 	// inventory, Algolia-backed). Non-fatal: failures log a warning and
 	// contribute zero results.
-	auxWg.Add(1)
-	go func() {
-		defer auxWg.Done()
-		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
-		defer cancel()
-		res, err := SearchHousingAnywhere(providerCtx, location, auxOpts)
-		if err != nil {
-			slog.Warn("housinganywhere search failed", "error", err)
-			addProviderStatus(hotelProviderStatusFromError("housinganywhere", "HousingAnywhere", err))
-			return
-		}
-		housinganywhereResults = res
-		addProviderStatus(hotelProviderStatusFromResults("housinganywhere", "HousingAnywhere", len(res)))
-	}()
+	runAux("housinganywhere", "HousingAnywhere", SearchHousingAnywhere, func(r []models.HotelResult) { housinganywhereResults = r })
 
 	// Landing (hellolanding.com) US furnished month-to-month apartments.
 	// Non-fatal: failures log a warning and contribute zero results.
-	auxWg.Add(1)
-	go func() {
-		defer auxWg.Done()
-		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
-		defer cancel()
-		res, err := SearchLanding(providerCtx, location, auxOpts)
-		if err != nil {
-			slog.Warn("landing search failed", "error", err)
-			addProviderStatus(hotelProviderStatusFromError("landing", "Landing", err))
-			return
-		}
-		landingResults = res
-		addProviderStatus(hotelProviderStatusFromResults("landing", "Landing", len(res)))
-	}()
+	runAux("landing", "Landing", SearchLanding, func(r []models.HotelResult) { landingResults = r })
 
 	// Spotahome mid-term furnished apartments (turbo-stream single-fetch .data).
 	// Non-fatal: failures log a warning and contribute zero results.
-	auxWg.Add(1)
-	go func() {
-		defer auxWg.Done()
-		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
-		defer cancel()
-		res, err := SearchSpotahome(providerCtx, location, auxOpts)
-		if err != nil {
-			slog.Warn("spotahome search failed", "error", err)
-			addProviderStatus(hotelProviderStatusFromError("spotahome", "Spotahome", err))
-			return
-		}
-		spotahomeResults = res
-		addProviderStatus(hotelProviderStatusFromResults("spotahome", "Spotahome", len(res)))
-	}()
+	runAux("spotahome", "Spotahome", SearchSpotahome, func(r []models.HotelResult) { spotahomeResults = r })
 
 	// Flatio monthly furnished apartments (SSR markerData JSON). Non-fatal.
-	auxWg.Add(1)
-	go func() {
-		defer auxWg.Done()
-		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
-		defer cancel()
-		res, err := SearchFlatio(providerCtx, location, auxOpts)
-		if err != nil {
-			slog.Warn("flatio search failed", "error", err)
-			addProviderStatus(hotelProviderStatusFromError("flatio", "Flatio", err))
-			return
-		}
-		flatioResults = res
-		addProviderStatus(hotelProviderStatusFromResults("flatio", "Flatio", len(res)))
-	}()
+	runAux("flatio", "Flatio", SearchFlatio, func(r []models.HotelResult) { flatioResults = r })
 
 	// Blueground monthly furnished apartments (__INITIAL_STATE__ list + detail
 	// hop for price). Non-fatal: failures log a warning and contribute zero.
-	auxWg.Add(1)
-	go func() {
-		defer auxWg.Done()
-		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
-		defer cancel()
-		res, err := SearchBlueground(providerCtx, location, auxOpts)
-		if err != nil {
-			slog.Warn("blueground search failed", "error", err)
-			addProviderStatus(hotelProviderStatusFromError("blueground", "Blueground", err))
-			return
-		}
-		bluegroundResults = res
-		addProviderStatus(hotelProviderStatusFromResults("blueground", "Blueground", len(res)))
-	}()
+	runAux("blueground", "Blueground", SearchBlueground, func(r []models.HotelResult) { bluegroundResults = r })
 
 	// Agoda OTA hotel search (GraphQL citySearch; resolve cityId via public
 	// autocomplete, then a self-constructed x-gate-meta header — no API key,
 	// cookies, or signature). Non-fatal: failures log a warning and contribute
 	// zero results.
-	auxWg.Add(1)
-	go func() {
-		defer auxWg.Done()
-		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
-		defer cancel()
-		res, err := SearchAgoda(providerCtx, location, auxOpts)
-		if err != nil {
-			slog.Warn("agoda search failed", "error", err)
-			addProviderStatus(hotelProviderStatusFromError("agoda", "Agoda", err))
-			return
-		}
-		agodaResults = res
-		addProviderStatus(hotelProviderStatusFromResults("agoda", "Agoda", len(res)))
-	}()
+	runAux("agoda", "Agoda", SearchAgoda, func(r []models.HotelResult) { agodaResults = r })
 
 	// Expedia OTA (opt-in, endpoint-gated). Expedia's hotel search surface is
 	// Akamai Bot Manager-defended (HTTP 429 + captcha challenge for plain
@@ -576,14 +474,26 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 			})
 			return
 		}
+		if hotelBreaker.Tripped("expedia") {
+			addProviderStatus(models.ProviderStatus{
+				ID:      "expedia",
+				Name:    "Expedia",
+				Status:  models.StatusCircuitBroken,
+				Error:   "skipped: recent failures tripped the circuit breaker",
+				FixHint: "wait for the cooldown to elapse, then it retries automatically",
+			})
+			return
+		}
 		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
 		defer cancel()
 		res, err := SearchExpedia(providerCtx, location, auxOpts)
 		if err != nil {
+			hotelBreaker.RecordFailure("expedia")
 			slog.Warn("expedia search failed", "error", err)
 			addProviderStatus(hotelProviderStatusFromError("expedia", "Expedia", err))
 			return
 		}
+		hotelBreaker.RecordSuccess("expedia")
 		expediaResults = res
 		addProviderStatus(hotelProviderStatusFromResults("expedia", "Expedia", len(res)))
 	}()
@@ -592,22 +502,11 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// Booking.com uses AWS WAF which blocks automated requests. The search
 	// is attempted but failures are expected and handled silently — the
 	// function falls back gracefully to Google + Trivago results.
-	auxWg.Add(1)
-	go func() {
-		defer auxWg.Done()
-		providerCtx, cancel := context.WithTimeout(ctx, hotelAuxProviderTimeout)
-		defer cancel()
-		res, err := SearchBooking(providerCtx, location, auxOpts)
-		if err != nil {
-			slog.Debug("booking search failed", "error", err)
-			addProviderStatus(hotelProviderStatusFromError("booking", "Booking.com", err))
-			return
+	runAux("booking", "Booking.com", SearchBooking, func(r []models.HotelResult) {
+		if len(r) > 0 {
+			bookingResults = tagHotelSource(r, "booking.com")
 		}
-		if len(res) > 0 {
-			bookingResults = tagHotelSource(res, "booking.com")
-		}
-		addProviderStatus(hotelProviderStatusFromResults("booking", "Booking.com", len(res)))
-	}()
+	})
 
 	// External providers (user-configured via configure_provider MCP tool).
 	// This includes any provider the user has set up: Booking.com, Airbnb,
