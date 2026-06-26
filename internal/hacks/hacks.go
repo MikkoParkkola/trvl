@@ -206,6 +206,12 @@ type Hack struct {
 	// RailCostNote is a short human-readable qualifier for the rail cost
 	// (e.g. "included in airline ticket", "live quote", "estimate").
 	RailCostNote string `json:"rail_cost_note,omitempty"`
+
+	// Bundle, when set, is the composed multi-leg itinerary (rail leg +
+	// flight leg + return) priced as a single total. It carries per-leg timing
+	// plus the change window and connection-guarantee status so a multimodal
+	// hack is auditable end-to-end. See rail_fly_bundle.go.
+	Bundle *RailFlyBundle `json:"rail_fly_bundle,omitempty"`
 }
 
 // DetectorInput carries all parameters shared across detectors.

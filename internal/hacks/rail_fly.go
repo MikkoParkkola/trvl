@@ -149,7 +149,25 @@ func DetectRailFlyArbitrage(ctx context.Context, origin, destination, departDate
 
 	hack := buildRailFlyHack(origin, destination, basePrice, baseCurrency, bestPrice, bestCurrency, netSavings, *bestStation, returnDate)
 	attachRailLegCost(&hack, railLeg)
-	return []Hack{hack}
+
+	// Attach the single-total rail+fly bundle (rail leg + flight leg + return)
+	// so the hack carries an auditable, one-number itinerary with per-leg timing
+	// and the connection-guarantee status.
+	bundle := composeRailFlyBundle(ctx, origin, destination, departDate, returnDate, *bestStation, bestPrice, basePrice, bestCurrency)
+	hack.Bundle = bundle.Bundle
+
+	out := []Hack{hack}
+
+	// Round-trip searches can also exit by rail from the destination: surface an
+	// open-jaw rail-return variant (fly in, train out) when it still nets a
+	// saving over the direct round-trip fare.
+	if returnDate != "" {
+		oj := composeOpenJawRailReturn(ctx, origin, destination, destination, bestPrice, basePrice, bestCurrency, departDate, returnDate)
+		if oj.Savings > 0 {
+			out = append(out, oj)
+		}
+	}
+	return out
 }
 
 // detectRailFlyArbitrage adapts DetectRailFlyArbitrage to the detectFn signature
@@ -158,17 +176,42 @@ func detectRailFlyArbitrage(ctx context.Context, in DetectorInput) []Hack {
 	return DetectRailFlyArbitrage(ctx, in.Origin, in.Destination, in.Date, in.ReturnDate)
 }
 
-// railFlyOriginAliases maps a real departure airport to the rail-station IATAs
-// that offer a rail-fly substitute origin nearby. When a user searches FROM one
-// of these airports, the detector surfaces the rail-connected stations the same
-// way it does when the origin is the airline hub itself.
+// railFlyOriginAlias maps a real departure airport (the IATA the traveller
+// actually searches from) to the rail-station IATAs that offer a rail-fly
+// substitute origin nearby. When a user searches FROM one of these airports,
+// the detector surfaces the rail-connected stations the same way it does when
+// the origin is the airline hub itself.
+//
+// The departure airport is carried as the typed IATA field (not a bare map key)
+// so the recognised virtual origins are auditable from a single struct table —
+// ANR (Antwerp Airport) and BRU (Brussels Airport) are first-class entries.
+type railFlyOriginAlias struct {
+	// IATA is the departure airport the user searches from (e.g. "ANR", "BRU").
+	IATA string
+	// Stations are the rail-station IATAs this airport surfaces as virtual
+	// origins (e.g. "ZWE" for Antwerp, "ZYR" for Brussels-Midi).
+	Stations []string
+}
+
+// railFlyOriginAliases is the table of airport-style virtual origins.
 //
 // Example: a search from ANR (Antwerp Airport) surfaces ZWE (Antwerp rail
 // station, KLM Air&Rail to AMS); a search from BRU (Brussels Airport) surfaces
 // ZYR (Brussels-Midi) which has both a KLM (AMS) and an Air France (CDG) bundle.
-var railFlyOriginAliases = map[string][]string{
-	"ANR": {"ZWE"}, // Antwerp Airport -> Antwerp rail station (KLM -> AMS)
-	"BRU": {"ZYR"}, // Brussels Airport -> Brussels-Midi (KLM -> AMS, Air France -> CDG)
+var railFlyOriginAliases = []railFlyOriginAlias{
+	{IATA: "ANR", Stations: []string{"ZWE"}}, // Antwerp Airport -> Antwerp rail station (KLM -> AMS)
+	{IATA: "BRU", Stations: []string{"ZYR"}}, // Brussels Airport -> Brussels-Midi (KLM -> AMS, Air France -> CDG)
+}
+
+// aliasStationsFor returns the rail-station IATAs an airport-style virtual
+// origin surfaces, or nil when the origin is not a recognised alias.
+func aliasStationsFor(origin string) []string {
+	for _, a := range railFlyOriginAliases {
+		if a.IATA == origin {
+			return a.Stations
+		}
+	}
+	return nil
 }
 
 func railFlyStationsForHub(origin string) []railFlyStation {
@@ -184,7 +227,7 @@ func railFlyStationsForHub(origin string) []railFlyStation {
 	// Alias match: origin is a city airport (e.g. ANR, BRU) with a nearby
 	// rail-fly station that routes through a different hub. Deduplicated against
 	// the primary match by (station IATA, hub IATA).
-	if aliasIATAs, ok := railFlyOriginAliases[origin]; ok {
+	if aliasIATAs := aliasStationsFor(origin); len(aliasIATAs) > 0 {
 		seen := map[string]bool{}
 		for _, st := range result {
 			seen[st.IATA+"|"+st.HubIATA] = true

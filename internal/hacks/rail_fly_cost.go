@@ -66,7 +66,23 @@ func resolveRailLegCost(ctx context.Context, origin string, st railFlyStation, d
 // search, or empty route list. It never fabricates a price: the estimate path is
 // explicitly labelled with Estimated=true.
 func standaloneRailQuote(ctx context.Context, st railFlyStation, date string) railLegCost {
-	estCost := groundCostBetween(st.IATA, st.HubIATA)
+	leg := railQuoteOrEstimate(ctx, st.City, st.HubIATA, date, st.IATA, st.HubIATA)
+	// On a live quote with no named operator, fall back to the station's known
+	// train operator so the provider is never blank for a real price.
+	if !leg.Estimated && leg.Provider == "" {
+		leg.Provider = st.TrainProvider
+	}
+	return leg
+}
+
+// railQuoteOrEstimate fetches the cheapest live train quote for the
+// searchFrom->searchTo pair, degrading to a conservative, explicitly-labelled
+// estimate (priced via groundCostBetween on the estFrom/estTo codes) on any
+// provider failure, nil result, unsuccessful search, or empty route list. It
+// never fabricates a price and never aborts: a ground-provider outage always
+// yields a usable, honest estimate.
+func railQuoteOrEstimate(ctx context.Context, searchFrom, searchTo, date, estFrom, estTo string) railLegCost {
+	estCost := groundCostBetween(estFrom, estTo)
 	estimate := railLegCost{
 		Cost:      estCost,
 		Currency:  "EUR",
@@ -74,7 +90,7 @@ func standaloneRailQuote(ctx context.Context, st railFlyStation, date string) ra
 		Note:      fmt.Sprintf("estimate ~%.0f EUR", estCost),
 	}
 
-	gr, err := railGroundSearcher(ctx, st.City, st.HubIATA, date, ground.SearchOptions{
+	gr, err := railGroundSearcher(ctx, searchFrom, searchTo, date, ground.SearchOptions{
 		Currency: "EUR",
 		Type:     "train",
 	})
@@ -96,9 +112,6 @@ func standaloneRailQuote(ctx context.Context, st railFlyStation, date string) ra
 	}
 	if currency == "" {
 		currency = "EUR"
-	}
-	if provider == "" {
-		provider = st.TrainProvider
 	}
 	return railLegCost{
 		Cost:      best,
