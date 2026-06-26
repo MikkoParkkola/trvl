@@ -381,7 +381,7 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	// Retry on HTTP 429 honouring the Retry-After header (MIK-3071).
 	const maxRetries429 = 2
 	for attempt := 0; attempt < maxRetries429 && resp.StatusCode == http.StatusTooManyRequests; attempt++ {
-		delay := retryAfterOrDefault(resp.Header.Get("Retry-After"), time.Now())
+		delay := RetryAfterOrDefault(resp.Header.Get("Retry-After"), time.Now())
 		select {
 		case <-time.After(delay):
 		case <-ctx.Done():

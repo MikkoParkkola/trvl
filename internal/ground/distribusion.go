@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/providers"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -44,6 +45,50 @@ var distribusionTitleCaser = cases.Title(language.English)
 // distribusionHTTPClient is a shared HTTP client for Distribusion API calls.
 var distribusionHTTPClient = &http.Client{
 	Timeout: 30 * time.Second,
+}
+
+// distribusionMaxRetryDelay caps how long a single 429 backoff may sleep
+// inside one search call (#357 TRVL-RETRY.2). The shared parser already caps
+// at 60s for the longer hotel/runtime deadline; ground fan-out wants a tighter
+// bound so one rate-limited provider can't stall the whole search.
+const distribusionMaxRetryDelay = 30 * time.Second
+
+// distribusionAfter is the sleep seam for the retry loop, overridable in tests
+// so 429-backoff paths run instantly instead of sleeping the real Retry-After.
+// ponytail: test seam, not configuration — production always uses time.After.
+var distribusionAfter = time.After
+
+// distribusionDoWithRetry performs req, retrying ONCE on HTTP 429 while
+// honouring the Retry-After header (capped at distribusionMaxRetryDelay).
+// The request is a bodyless GET so it is safely replayable. The final
+// response is returned for the caller to classify (a still-429 response on
+// the last attempt surfaces as a rate-limit error upstream).
+func distribusionDoWithRetry(ctx context.Context, req *http.Request) (*http.Response, error) {
+	const maxAttempts = 2
+	var resp *http.Response
+	var err error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		resp, err = distribusionHTTPClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusTooManyRequests || attempt == maxAttempts {
+			return resp, nil
+		}
+		delay := providers.RetryAfterOrDefault(resp.Header.Get("Retry-After"), time.Now())
+		if delay > distribusionMaxRetryDelay {
+			delay = distribusionMaxRetryDelay
+		}
+		// Drain and close before replaying so the connection can be reused.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		_ = resp.Body.Close()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-distribusionAfter(delay):
+		}
+	}
+	return resp, nil
 }
 
 // distribusionStationCodes maps lowercase city name / alias to Distribusion
@@ -299,7 +344,7 @@ func SearchDistribusion(ctx context.Context, from, to, date, currency string) ([
 	slog.Debug("distribusion search", "from", from, "to", to, "date", date,
 		"fromCode", fromCode, "toCode", toCode)
 
-	resp, err := distribusionHTTPClient.Do(req)
+	resp, err := distribusionDoWithRetry(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("distribusion: HTTP request: %w", err)
 	}

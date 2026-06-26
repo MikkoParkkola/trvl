@@ -43,9 +43,13 @@ const (
 	rateLimitFloorRPS = 0.05
 )
 
-// parseRetryAfter inspects the value of an HTTP Retry-After header and
+// ParseRetryAfter inspects the value of an HTTP Retry-After header and
 // returns the duration the caller should sleep before retrying. `now` is
 // injected for deterministic testing of the HTTP-date form.
+//
+// This is the single shared Retry-After parser for the codebase (MIK-3071,
+// #357 TRVL-RETRY.1); providers honour 429 backoff through it rather than
+// re-implementing RFC 7231 §7.1.3 parsing per provider.
 //
 // Behaviour:
 //   - empty or whitespace-only → 0 (caller falls back to default)
@@ -53,7 +57,7 @@ const (
 //   - HTTP-date in the future → time until that date, capped
 //   - HTTP-date in the past → 0
 //   - any other input → 0
-func parseRetryAfter(value string, now time.Time) time.Duration {
+func ParseRetryAfter(value string, now time.Time) time.Duration {
 	v := strings.TrimSpace(value)
 	if v == "" {
 		return 0
@@ -87,11 +91,11 @@ func parseRetryAfter(value string, now time.Time) time.Duration {
 	return d
 }
 
-// retryAfterOrDefault returns parseRetryAfter's result if non-zero,
+// RetryAfterOrDefault returns ParseRetryAfter's result if non-zero,
 // otherwise retryAfterDefaultDelay. Convenience wrapper for the retry
 // loop in the search request path.
-func retryAfterOrDefault(value string, now time.Time) time.Duration {
-	d := parseRetryAfter(value, now)
+func RetryAfterOrDefault(value string, now time.Time) time.Duration {
+	d := ParseRetryAfter(value, now)
 	if d <= 0 {
 		return retryAfterDefaultDelay
 	}
