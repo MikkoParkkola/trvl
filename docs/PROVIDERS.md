@@ -4,7 +4,7 @@
 
 ## Travel Hack Detectors
 
-`detect_travel_hacks` and `trvl hacks` run 37 detectors in parallel. Each one is independent and has a 20-second timeout:
+`detect_travel_hacks` and `trvl hacks` run 36 detectors in parallel. Each one is independent and has a 20-second timeout:
 
 | Detector | What it finds |
 |----------|--------------|

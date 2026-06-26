@@ -52,7 +52,7 @@ The skills at `.claude/skills/trvl.md` and `.claude/skills/providers.md` teach y
 - Use the unified optimizer (`optimize_booking`) for trip planning
 - Show the "Naive -> Optimized -> Saved" comparison after every plan
 - Use all-in pricing with FF benefits (bag fees included, status benefits subtracted)
-- Apply 37 travel hack detectors to find savings opportunities
+- Apply 36 travel hack detectors to find savings opportunities
 - Configure optional hotel/restaurant/ground providers only after verified source-code research and user consent
 
 ### Step 4: Verify
@@ -65,7 +65,7 @@ trvl flights HEL LHR 2026-07-01 --format json | head -5
 # Expected: JSON with flight results
 ```
 
-Tell the user: "trvl is installed with 1 smart MCP tool, 66 compatibility aliases, and 2 bundled Claude skills. It includes 37 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_accommodations`, `search_hotels`, and `watch_price` continue to work as compatibility aliases. I can search flights, accommodations, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
+Tell the user: "trvl is installed with 1 smart MCP tool, 66 compatibility aliases, and 2 bundled Claude skills. It includes 36 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_accommodations`, `search_hotels`, and `watch_price` continue to work as compatibility aliases. I can search flights, accommodations, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
 
 ### Hotel price trust protocol
 
@@ -572,7 +572,7 @@ Shows per-provider success rate, average latency, result-count quality, freshnes
 ```json
 {"origin": "HEL", "destination": "BCN", "date": "2026-07-01"}
 ```
-Runs 37 detectors in parallel: hidden-city, throwaway, positioning, back-to-back, rail competition, ferry cabin, error fare, date flex, and more. Optional: `return_date`, `carry_on_only`.
+Runs 36 detectors in parallel: hidden-city, throwaway, positioning, back-to-back, rail competition, ferry cabin, error fare, date flex, and more. Optional: `return_date`, `carry_on_only`.
 
 ### MCP Prompts (for complex workflows)
 - `plan-trip` — Full trip planning: flights + hotels + budget analysis

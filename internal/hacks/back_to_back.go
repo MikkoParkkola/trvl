@@ -49,10 +49,30 @@ func detectBackToBack(ctx context.Context, in DetectorInput) []Hack {
 
 	// Try live price comparison. Fall back to advisory on failure.
 	if hack, ok := backToBackLivePrices(ctx, in); ok {
-		return hack
+		return withLoyaltyBackToBackNote(hack, in.Loyalty)
 	}
 
-	return backToBackAdvisory(in)
+	return withLoyaltyBackToBackNote(backToBackAdvisory(in), in.Loyalty)
+}
+
+// withLoyaltyBackToBackNote enriches back-to-back hacks with a loyalty-aware
+// risk when the traveller collects miles. The trick discards return legs, which
+// forfeits the qualifying miles/segments those legs would have earned — a cost
+// that matters specifically to status chasers and is invisible to travellers
+// with no programme. With no loyalty signal the hacks are returned unchanged
+// (no regression).
+func withLoyaltyBackToBackNote(hacks []Hack, loyalty LoyaltyProfile) []Hack {
+	if !loyalty.HasLoyalty() {
+		return hacks
+	}
+	note := "Discarded return legs earn no qualifying miles/segments — weigh against your status goals"
+	if loyalty.NearStatus {
+		note = "You are near a status threshold: discarding return legs forfeits the qualifying miles/segments they would earn — a mileage run may serve status better"
+	}
+	for i := range hacks {
+		hacks[i].Risks = append(hacks[i].Risks, note)
+	}
+	return hacks
 }
 
 // backToBackLivePrices performs 4 parallel searches and returns a priced hack

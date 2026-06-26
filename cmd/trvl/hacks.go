@@ -10,6 +10,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/hacks"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/preferences"
 	"github.com/spf13/cobra"
 )
 
@@ -61,6 +62,14 @@ Examples:
 				Currency:    currency,
 				CarryOnOnly: carryOnOnly,
 				NaivePrice:  naivePrice,
+			}
+
+			// Thread the traveller's loyalty profile so loyalty-aware detectors
+			// (mileage run, back-to-back) prefer the user's own alliances/status.
+			// Missing or unreadable preferences leave the zero profile, which
+			// preserves the pre-loyalty behaviour.
+			if prefs, err := preferences.Load(); err == nil {
+				input.Loyalty = hacks.LoyaltyFromPreferences(prefs)
 			}
 
 			detected := hacks.DetectAll(ctx, input)

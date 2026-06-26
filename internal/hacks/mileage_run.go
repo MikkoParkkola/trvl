@@ -3,6 +3,7 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -67,9 +68,34 @@ func detectMileageRun(_ context.Context, in DetectorInput) []Hack {
 		}
 	}
 
+	// Loyalty-aware filtering: when the traveller has declared alliances, only
+	// surface mileage runs in those alliances — a run that earns miles in a
+	// programme the user does not collect is noise. With no loyalty signal we
+	// keep every reachable run (legacy behaviour, no regression).
+	if in.Loyalty.HasLoyalty() {
+		filtered := make([]match, 0, len(matches))
+		for _, m := range matches {
+			if in.Loyalty.hasAlliance(m.route.Alliance) {
+				filtered = append(filtered, m)
+			}
+		}
+		// Only narrow when at least one run matches the user's alliances; if
+		// none match we keep the full list rather than returning nothing, so
+		// the detector still offers the cheapest reachable options.
+		if len(filtered) > 0 {
+			matches = filtered
+		}
+	}
+
 	if len(matches) == 0 {
 		return nil
 	}
+
+	// Prefer the cheapest qualifying miles first (lowest EUR per mile). Stable
+	// so equal-cost routes keep their curated order.
+	sort.SliceStable(matches, func(i, j int) bool {
+		return matches[i].route.CostPerMile < matches[j].route.CostPerMile
+	})
 
 	// Return top 3 cheapest by cost-per-mile.
 	if len(matches) > 3 {

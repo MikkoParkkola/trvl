@@ -246,7 +246,7 @@ trvl nudges --format json     # Machine-readable output
 
 ### Travel Hacks
 
-Runs 37 detectors in parallel and ranks savings opportunities. Pass `--return` for round-trip hacks. Add `--carry-on` to restrict hidden-city results to carry-on only.
+Runs 36 detectors in parallel and ranks savings opportunities. Pass `--return` for round-trip hacks. Add `--carry-on` to restrict hidden-city results to carry-on only.
 
 ```bash
 trvl hacks HEL AMS 2026-04-13                         # One-way hacks
@@ -352,7 +352,7 @@ The AI uses these to give you actionable handoff links. For accommodation decisi
 | **MCP** | Full v2025-11-25 — 1 smart MCP tool, 66 compatibility aliases (incl. 4 profile aliases, 3 price watch aliases, provider health, award sweet-spot scanning), 7 prompts, resources, structured content, progress notifications, resource subscriptions, tool description orchestration |
 | **CLI** | 56 commands (+ 7 watch subcommands) with table/JSON output, color, shell completion |
 | **Booking links** | Flight and hotel results include manual handoff links; hotel search prices must be verified before treating them as final |
-| **Travel hacks** | 37 detectors (throwaway, hidden-city, positioning, ferry, multi-modal, stopover, date-flex, error fare, back-to-back, rail competition, and more) |
+| **Travel hacks** | 36 detectors (throwaway, hidden-city, positioning, ferry, multi-modal, stopover, date-flex, error fare, back-to-back, rail competition, and more) |
 | **Personal profile** | Learns from your booking history (email parsing + LLM). Remembers FF status, luggage needs, favourite properties, departure preferences, travel hacks used, accommodation preferences, family composition. Pre-search interviews skip questions the profile already answers. |
 | **Output** | Pretty tables with color (default) or JSON (`--format json`) |
 | **Platforms** | Linux, macOS (amd64, arm64). Windows CI in progress. |
