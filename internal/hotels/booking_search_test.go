@@ -32,7 +32,10 @@ func TestParseBookingApollo_Fixture(t *testing.T) {
 		t.Fatalf("read fixture: %v", err)
 	}
 
-	hotels := parseBookingApollo(string(blob), "EUR")
+	hotels, err := parseBookingApollo(string(blob), "EUR")
+	if err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
 	if len(hotels) == 0 {
 		t.Fatal("expected >=1 hotel from fixture")
 	}
