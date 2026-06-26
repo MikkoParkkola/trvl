@@ -92,32 +92,13 @@ func TestHandleMarkTripBooked_MissingReference(t *testing.T) {
 }
 
 // ============================================================
-// handleSearchDeals — error paths
+// handleSearchDeals — origins handling
 // ============================================================
-
-func TestHandleSearchDeals_MissingOrigins(t *testing.T) {
-	t.Parallel()
-	_, _, err := handleSearchDeals(context.Background(), map[string]any{}, nil, nil, nil)
-	if err == nil {
-		t.Error("expected error for missing origins")
-	}
-}
-
-func TestHandleSearchDeals_NilArgs(t *testing.T) {
-	t.Parallel()
-	_, _, err := handleSearchDeals(context.Background(), nil, nil, nil, nil)
-	if err == nil {
-		t.Error("expected error for nil args")
-	}
-}
-
-func TestHandleSearchDeals_EmptyOrigins(t *testing.T) {
-	t.Parallel()
-	_, _, err := handleSearchDeals(context.Background(), map[string]any{"origins": ""}, nil, nil, nil)
-	if err == nil {
-		t.Error("expected error for empty origins")
-	}
-}
+//
+// origins is optional: missing/nil/empty origins returns deals from all origins
+// (mirrors the CLI `--from` flag). These behaviors, plus origins filtering and
+// currency conversion, are covered deterministically (and via live probes) in
+// tools_deals_test.go.
 
 // ============================================================
 // handleSearchRoute — error paths
