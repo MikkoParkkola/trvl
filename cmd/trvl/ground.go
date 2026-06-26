@@ -15,6 +15,7 @@ func groundCmd() *cobra.Command {
 	var (
 		currency              string
 		providers             string
+		returnDate            string
 		maxPrice              float64
 		typeFilter            string
 		allowBrowserFallbacks bool
@@ -47,6 +48,7 @@ Examples:
 
 			opts := ground.SearchOptions{
 				Currency:              currency,
+				ReturnDate:            returnDate,
 				MaxPrice:              maxPrice,
 				Type:                  typeFilter,
 				NoCache:               noCache,
@@ -102,7 +104,8 @@ Examples:
 	}
 
 	cmd.Flags().StringVar(&currency, "currency", "", "Convert prices to this currency (e.g. EUR). Empty = provider default")
-	cmd.Flags().StringVar(&providers, "provider", "", "Restrict to providers (e.g. flixbus,regiojet,trainline,sncf,transitous)")
+	cmd.Flags().StringVar(&providers, "provider", "", "Restrict to providers (e.g. flixbus,regiojet,trainline,sncf,transitous,db,oebb,ns,vr,tallink,dfds,vikingline,eckeroline,ferryhopper)")
+	cmd.Flags().StringVar(&returnDate, "return", "", "Return date (YYYY-MM-DD) for a round-trip / return leg")
 	cmd.Flags().Float64Var(&maxPrice, "max-price", 0, "Maximum price filter")
 	cmd.Flags().StringVar(&typeFilter, "type", "", "Filter by type (bus, train, ferry)")
 	cmd.Flags().BoolVar(&allowBrowserFallbacks, "allow-browser-fallbacks", false, "Allow browser/curl/cookie-assisted provider fallbacks")
