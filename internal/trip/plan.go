@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/dailyspend"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
@@ -108,10 +109,18 @@ type PlanSummary struct {
 	// see what bags add. GrandTotal == FlightsTotal + BaggageTotal + HotelTotal.
 	BaggageTotal float64 `json:"baggage_total"`
 	HotelTotal   float64 `json:"hotel_total"`
-	GrandTotal   float64 `json:"grand_total"`
-	PerPerson    float64 `json:"per_person"`
-	PerDay       float64 `json:"per_day"`
-	Currency     string  `json:"currency"`
+	// MealsTotal is the estimated on-the-ground spend (meals, local transport,
+	// incidentals) for the whole party over the stay, from the bundled offline
+	// daily-spend index. It is an ESTIMATE, never a live quote — MealsEstimated
+	// is set whenever it is included so callers can label it. Folding it in is
+	// what makes GrandTotal a no-surprise landed cost, not just flights + hotel.
+	// GrandTotal == FlightsTotal + BaggageTotal + HotelTotal + MealsTotal.
+	MealsTotal     float64 `json:"meals_total"`
+	MealsEstimated bool    `json:"meals_estimated"`
+	GrandTotal     float64 `json:"grand_total"`
+	PerPerson      float64 `json:"per_person"`
+	PerDay         float64 `json:"per_day"`
+	Currency       string  `json:"currency"`
 }
 
 // PlanResult is the full trip plan response.
@@ -463,14 +472,22 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 	if baggageTotal < 0 {
 		baggageTotal = 0 // never let a stale comparable under-report fares
 	}
-	grandTotal := flightsAllIn + cheapHotel
+	// On-the-ground daily spend (meals, local transport, incidentals). This is a
+	// coarse offline estimate, never a live quote, so it is always tagged via
+	// MealsEstimated. Folding it in makes GrandTotal a no-surprise landed cost
+	// rather than just flights + hotel.
+	meals := dailyspend.Lookup(models.ResolveLocationName(input.Destination))
+	mealsTotal := convertedPlanAmount(ctx, meals.Total(input.Guests, nights), meals.Currency, cur)
+	grandTotal := flightsAllIn + cheapHotel + mealsTotal
 
 	result.Summary = PlanSummary{
-		FlightsTotal: flightsHeadline,
-		BaggageTotal: baggageTotal,
-		HotelTotal:   cheapHotel,
-		GrandTotal:   grandTotal,
-		Currency:     cur,
+		FlightsTotal:   flightsHeadline,
+		BaggageTotal:   baggageTotal,
+		HotelTotal:     cheapHotel,
+		MealsTotal:     mealsTotal,
+		MealsEstimated: mealsTotal > 0,
+		GrandTotal:     grandTotal,
+		Currency:       cur,
 	}
 	if input.Guests > 0 {
 		result.Summary.PerPerson = grandTotal / float64(input.Guests)
