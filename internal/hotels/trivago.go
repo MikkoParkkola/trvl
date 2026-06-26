@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/providers"
 	"golang.org/x/time/rate"
 )
 
@@ -46,6 +47,52 @@ var trivagoLimiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 1)
 // trivagoHTTPClient is a dedicated HTTP client for Trivago MCP calls.
 var trivagoHTTPClient = &http.Client{
 	Timeout: 30 * time.Second,
+}
+
+// trivagoMaxRetryDelay caps how long we wait on a 429 Retry-After before giving
+// up; a throttled origin must not stall the whole hotel search.
+const trivagoMaxRetryDelay = 30 * time.Second
+
+// trivagoAfter is the 429 backoff sleep seam (swapped to instant in tests).
+var trivagoAfter = time.After
+
+// trivagoDoWithRetry issues the request and, on a single HTTP 429, honours the
+// Retry-After header (capped at trivagoMaxRetryDelay) and replays the request
+// exactly once. makeReq rebuilds a fresh request per attempt so the JSON-RPC
+// POST body is re-read cleanly. Any non-429 response is returned to the caller
+// as-is.
+func trivagoDoWithRetry(ctx context.Context, makeReq func() (*http.Request, error)) (*http.Response, error) {
+	req, err := makeReq()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := trivagoHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusTooManyRequests {
+		return resp, nil
+	}
+
+	delay := providers.RetryAfterOrDefault(resp.Header.Get("Retry-After"), time.Now())
+	if delay > trivagoMaxRetryDelay {
+		delay = trivagoMaxRetryDelay
+	}
+	// Drain + close the 429 body before replaying so the connection can be reused.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+	_ = resp.Body.Close()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-trivagoAfter(delay):
+	}
+
+	req2, err := makeReq()
+	if err != nil {
+		return nil, err
+	}
+	return trivagoHTTPClient.Do(req2)
 }
 
 // ---- JSON-RPC request/response types ----
@@ -291,17 +338,18 @@ func trivagoMCPCall(ctx context.Context, sessionID string, toolName string, args
 		return nil, fmt.Errorf("trivago: marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, trivagoMCPEndpoint, bytes.NewReader(reqBytes))
-	if err != nil {
-		return nil, fmt.Errorf("trivago: build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/event-stream")
-	if sessionID != "" {
-		req.Header.Set("Mcp-Session-Id", sessionID)
-	}
-
-	resp, err := trivagoHTTPClient.Do(req)
+	resp, err := trivagoDoWithRetry(ctx, func() (*http.Request, error) {
+		r, err := http.NewRequestWithContext(ctx, http.MethodPost, trivagoMCPEndpoint, bytes.NewReader(reqBytes))
+		if err != nil {
+			return nil, err
+		}
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Accept", "application/json, text/event-stream")
+		if sessionID != "" {
+			r.Header.Set("Mcp-Session-Id", sessionID)
+		}
+		return r, nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("trivago: HTTP request: %w", err)
 	}
