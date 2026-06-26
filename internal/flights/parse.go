@@ -65,6 +65,20 @@ func parseFlights(rawFlights []any) []models.FlightResult {
 	return results
 }
 
+// parseFailureIfAllDropped reports a typed parse failure when the upstream handed
+// us flight entries but parseFlights decoded none of them — the positional array
+// shape rotated underneath us. It returns nil when there were no raw entries (a
+// genuine empty result, an honest no-hit) or when at least one entry parsed. The
+// returned error wraps models.ErrParseFailed so the caller classifies it as
+// StatusFailed and the circuit breaker counts it, instead of mistaking a broken
+// parser for a route with no flights.
+func parseFailureIfAllDropped(parsed, rawEntries int) error {
+	if rawEntries > 0 && parsed == 0 {
+		return fmt.Errorf("google flights: parsed 0 of %d entries: %w", rawEntries, models.ErrParseFailed)
+	}
+	return nil
+}
+
 // parseOneFlight parses a single flight entry into a FlightResult.
 func parseOneFlight(entry []any) (models.FlightResult, error) {
 	var fr models.FlightResult

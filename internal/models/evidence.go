@@ -39,6 +39,16 @@ const (
 // letting errors.Is(err, ErrRateLimited) classify the outcome as rate_limited.
 var ErrRateLimited = errors.New("upstream provider rate-limited or temporarily unavailable")
 
+// ErrParseFailed marks a provider response the parser could not decode: a 200 OK
+// body whose shape rotated underneath the positional/HTML decoder so that NO
+// entries parsed even though the upstream returned some. Wrap it with %w to keep
+// a clean message while letting errors.Is(err, ErrParseFailed) and
+// ClassifyProviderError (-> StatusFailed) distinguish "parser broke" from a
+// genuine empty result (StatusCheckedNoHit). The difference is load-bearing: a
+// parse failure means the provider is unreliable this attempt and should count
+// toward the circuit breaker, whereas an honest empty result must not.
+var ErrParseFailed = errors.New("provider response could not be parsed (response shape changed)")
+
 // ClassifyProviderError maps an error to a provider status. A typed rate-limit
 // (ErrRateLimited) wins first so a 429/challenge never renders as a hard parse
 // failure; deadlines map to StatusTimeout; retryable upstream signatures (rate

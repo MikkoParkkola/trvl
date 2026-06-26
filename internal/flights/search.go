@@ -711,6 +711,15 @@ func searchGoogleFlightsWithClient(ctx context.Context, client *batchexec.Client
 
 	flights := parseFlights(rawFlights)
 
+	// Google returned flight entries but the positional parser decoded none of
+	// them — the array shape rotated. That is a parser failure, not a route with
+	// no flights; surface it as a typed error (StatusFailed) so the breaker and
+	// the aggregator treat the provider as unreliable rather than empty-but-healthy.
+	if perr := parseFailureIfAllDropped(len(flights), len(rawFlights)); perr != nil {
+		slog.Debug("google flights: all entries unparseable", "entries", len(rawFlights))
+		return &models.FlightSearchResult{Error: perr.Error()}, perr
+	}
+
 	// Add booking URLs. Prices are in the API's native currency (IP-based).
 	// Currency conversion, if needed, happens in the CLI display layer.
 	for i := range flights {
