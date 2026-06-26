@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 	"github.com/MikkoParkkola/trvl/internal/travelgraph"
@@ -42,7 +43,13 @@ func travelNudgesTool() ToolDef {
 					"properties": map[string]interface{}{
 						"Kind":    schemaString(),
 						"Message": schemaString(),
-						"Sources": schemaStringArray(),
+						"Sources": schemaArray(map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"Kind": schemaString(),
+								"ID":   schemaString(),
+							},
+						}),
 					},
 				}),
 				"count": schemaInt(),
@@ -86,7 +93,7 @@ func handleTravelNudges(_ context.Context, _ map[string]any, _ ElicitFunc, _ Sam
 	}
 
 	g := travelgraph.Build(ws, history, prefs, ts)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, time.Now())
 
 	type nudgeResponse struct {
 		Nudges []travelgraph.Nudge `json:"nudges"`
@@ -100,7 +107,7 @@ func handleTravelNudges(_ context.Context, _ map[string]any, _ ElicitFunc, _ Sam
 	} else {
 		summary = fmt.Sprintf("%d grounded nudge(s):\n", len(nudges))
 		for _, n := range nudges {
-			summary += fmt.Sprintf("  [%s] %s\n    sources: %s\n", n.Kind, n.Message, strings.Join(n.Sources, ", "))
+			summary += fmt.Sprintf("  [%s] %s\n    sources: %s\n", n.Kind, n.Message, formatNudgeSources(n.Sources))
 		}
 	}
 
@@ -109,4 +116,14 @@ func handleTravelNudges(_ context.Context, _ map[string]any, _ ElicitFunc, _ Sam
 		return nil, nil, err
 	}
 	return content, resp, nil
+}
+
+// formatNudgeSources renders nudge source references as "kind:id" tokens joined
+// by commas for the human-readable summary block.
+func formatNudgeSources(srcs []travelgraph.SourceRef) string {
+	parts := make([]string, len(srcs))
+	for i, s := range srcs {
+		parts[i] = fmt.Sprintf("%s:%s", s.Kind, s.ID)
+	}
+	return strings.Join(parts, ", ")
 }

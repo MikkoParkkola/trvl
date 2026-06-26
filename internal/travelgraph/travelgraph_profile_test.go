@@ -32,7 +32,7 @@ func firstSource(nudges []travelgraph.Nudge) string {
 	if len(nudges) == 0 || len(nudges[0].Sources) == 0 {
 		return ""
 	}
-	return nudges[0].Sources[0]
+	return nudges[0].Sources[0].ID
 }
 
 // sourcesInOrder flattens the first source of each nudge, preserving order.
@@ -40,7 +40,7 @@ func sourcesInOrder(nudges []travelgraph.Nudge) []string {
 	out := make([]string, 0, len(nudges))
 	for _, n := range nudges {
 		if len(n.Sources) > 0 {
-			out = append(out, n.Sources[0])
+			out = append(out, n.Sources[0].ID)
 		}
 	}
 	return out
@@ -98,7 +98,7 @@ func TestProfile_ExcludedDestination_GatesNudge(t *testing.T) {
 			}
 
 			g := travelgraph.Build(ws, nil, prefs, nil)
-			got := sourcesInOrder(travelgraph.Nudges(g))
+			got := sourcesInOrder(travelgraph.Nudges(g, now))
 
 			if !equalStrings(got, tc.wantIDs) {
 				t.Errorf("sources = %v, want %v", got, tc.wantIDs)
@@ -121,7 +121,7 @@ func TestProfile_HomeAirportRoutesRankFirst(t *testing.T) {
 	prefs.HomeAirports = []string{"HEL"}
 
 	g := travelgraph.Build(ws, nil, prefs, nil)
-	got := sourcesInOrder(travelgraph.Nudges(g))
+	got := sourcesInOrder(travelgraph.Nudges(g, now))
 
 	want := []string{"w-home", "w-far"}
 	if !equalStrings(got, want) {
@@ -142,7 +142,7 @@ func TestProfile_NearbyAirportCountsAsHome(t *testing.T) {
 	prefs.NearbyAirports = map[string][]string{"HEL": {"ARN"}}
 
 	g := travelgraph.Build(ws, nil, prefs, nil)
-	if got := firstSource(travelgraph.Nudges(g)); got != "w-nearby" {
+	if got := firstSource(travelgraph.Nudges(g, now)); got != "w-nearby" {
 		t.Errorf("nearby-airport route did not rank first: got %q, want w-nearby", got)
 	}
 }
@@ -161,7 +161,7 @@ func TestProfile_AffinityBreaksTieAmongNonHomeRoutes(t *testing.T) {
 	prefs.AirportAffinity = map[string]float64{"TOP": 0.9, "LOW": 0.1}
 
 	g := travelgraph.Build(ws, nil, prefs, nil)
-	if got := firstSource(travelgraph.Nudges(g)); got != "w-top" {
+	if got := firstSource(travelgraph.Nudges(g, now)); got != "w-top" {
 		t.Errorf("high-affinity route did not rank first: got %q, want w-top", got)
 	}
 }
@@ -179,7 +179,7 @@ func TestProfile_HomeBonusDominatesAffinity(t *testing.T) {
 	prefs.AirportAffinity = map[string]float64{"TOP": 1.0}
 
 	g := travelgraph.Build(ws, nil, prefs, nil)
-	if got := firstSource(travelgraph.Nudges(g)); got != "w-home" {
+	if got := firstSource(travelgraph.Nudges(g, now)); got != "w-home" {
 		t.Errorf("home bonus did not dominate affinity: got %q, want w-home", got)
 	}
 }
@@ -196,7 +196,7 @@ func TestProfile_NoProfile_StableKeyOrder(t *testing.T) {
 	}
 
 	g := travelgraph.Build(ws, nil, nil, nil)
-	got := sourcesInOrder(travelgraph.Nudges(g))
+	got := sourcesInOrder(travelgraph.Nudges(g, now))
 
 	// Route keys order: AMS-AAA < AMS-BBB < AMS-CCC.
 	want := []string{"w-a", "w-b", "w-c"}

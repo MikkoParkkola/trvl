@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
@@ -53,7 +54,7 @@ nothing is shown.`,
 			}
 
 			g := travelgraph.Build(ws, history, prefs, ts)
-			nudges := travelgraph.Nudges(g)
+			nudges := travelgraph.Nudges(g, time.Now())
 
 			if format == "json" {
 				return models.FormatJSON(os.Stdout, nudges)
@@ -63,9 +64,19 @@ nothing is shown.`,
 				return nil
 			}
 			for _, n := range nudges {
-				fmt.Printf("[%s] %s\n  sources: %s\n", n.Kind, n.Message, strings.Join(n.Sources, ", "))
+				fmt.Printf("[%s] %s\n  sources: %s\n", n.Kind, n.Message, formatSources(n.Sources))
 			}
 			return nil
 		},
 	}
+}
+
+// formatSources renders nudge source references as "kind:id" tokens joined by
+// commas, for the human-readable CLI output.
+func formatSources(srcs []travelgraph.SourceRef) string {
+	parts := make([]string, len(srcs))
+	for i, s := range srcs {
+		parts[i] = fmt.Sprintf("%s:%s", s.Kind, s.ID)
+	}
+	return strings.Join(parts, ", ")
 }
