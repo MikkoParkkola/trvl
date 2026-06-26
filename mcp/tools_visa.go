@@ -13,14 +13,14 @@ func checkVisaTool() ToolDef {
 	return ToolDef{
 		Name:        "check_visa",
 		Title:       "Visa Requirements",
-		Description: "Check visa and entry requirements for a passport→destination country pair. Returns visa status (visa-free, visa-required, visa-on-arrival, e-visa, freedom-of-movement), maximum stay duration, and notes. Uses ISO 3166-1 alpha-2 country codes (e.g. FI=Finland, JP=Japan, US=United States).",
+		Description: "Check visa and entry requirements for a passport→destination country pair. Returns visa status (visa-free, visa-required, visa-on-arrival, e-visa, freedom-of-movement), maximum stay duration, and notes. Uses ISO 3166-1 alpha-2 country codes (e.g. FI=Finland, JP=Japan, US=United States). Set list_countries=true to enumerate all supported country codes and names instead of doing a lookup.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"passport":    {Type: "string", Description: "Passport country code (ISO 3166-1 alpha-2, e.g. FI, US, GB, JP)"},
-				"destination": {Type: "string", Description: "Destination country code (ISO 3166-1 alpha-2, e.g. JP, TH, US, DE)"},
+				"passport":       {Type: "string", Description: "Passport country code (ISO 3166-1 alpha-2, e.g. FI, US, GB, JP). Required unless list_countries is true."},
+				"destination":    {Type: "string", Description: "Destination country code (ISO 3166-1 alpha-2, e.g. JP, TH, US, DE). Required unless list_countries is true."},
+				"list_countries": {Type: "boolean", Description: "When true, return all supported country codes and names instead of a passport→destination lookup. passport and destination are ignored."},
 			},
-			Required: []string{"passport", "destination"},
 		},
 		OutputSchema: visaOutputSchema(),
 		Annotations: &ToolAnnotations{
@@ -54,8 +54,15 @@ func visaOutputSchema() interface{} {
 }
 
 func handleCheckVisa(_ context.Context, args map[string]any, _ ElicitFunc, _ SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
+	if argBool(args, "list_countries", false) {
+		return handleListVisaCountries(progress)
+	}
+
 	passport := argString(args, "passport")
 	destination := argString(args, "destination")
+	if passport == "" || destination == "" {
+		return nil, nil, fmt.Errorf("both passport and destination are required (use ISO country codes, e.g. FI, JP), or set list_countries=true")
+	}
 
 	sendProgress(progress, 30, 100, fmt.Sprintf("Looking up %s → %s visa requirements...", strings.ToUpper(passport), strings.ToUpper(destination)))
 
@@ -69,6 +76,48 @@ func handleCheckVisa(_ context.Context, args map[string]any, _ ElicitFunc, _ Sam
 		return nil, nil, err
 	}
 	return content, result, nil
+}
+
+// visaCountry is one entry in the supported-countries list, mirroring the
+// `trvl visa --list` CLI output shape (code + display name).
+type visaCountry struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
+// visaCountryList is the structured result for the list_countries path.
+type visaCountryList struct {
+	Success   bool          `json:"success"`
+	Countries []visaCountry `json:"countries"`
+}
+
+func handleListVisaCountries(progress ProgressFunc) ([]ContentBlock, interface{}, error) {
+	sendProgress(progress, 30, 100, "Listing supported countries...")
+
+	codes := visa.ListCountries()
+	countries := make([]visaCountry, 0, len(codes))
+	for _, code := range codes {
+		countries = append(countries, visaCountry{Code: code, Name: visa.CountryName(code)})
+	}
+	result := visaCountryList{Success: true, Countries: countries}
+
+	sendProgress(progress, 100, 100, "Done")
+
+	summary := buildVisaCountryListSummary(countries)
+	content, err := buildAnnotatedContentBlocks(summary, result)
+	if err != nil {
+		return nil, nil, err
+	}
+	return content, result, nil
+}
+
+func buildVisaCountryListSummary(countries []visaCountry) string {
+	var sb strings.Builder
+	_, _ = fmt.Fprintf(&sb, "Supported countries (%d):\n\n", len(countries))
+	for _, c := range countries {
+		_, _ = fmt.Fprintf(&sb, "  %s  %s\n", c.Code, c.Name)
+	}
+	return sb.String()
 }
 
 func buildVisaSummary(result visa.Result) string {
