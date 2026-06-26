@@ -33,8 +33,8 @@ func TestParseRetryAfter_DeltaSeconds(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
-			if got := parseRetryAfter(tc.in, now); got != tc.want {
-				t.Errorf("parseRetryAfter(%q) = %v, want %v", tc.in, got, tc.want)
+			if got := ParseRetryAfter(tc.in, now); got != tc.want {
+				t.Errorf("ParseRetryAfter(%q) = %v, want %v", tc.in, got, tc.want)
 			}
 		})
 	}
@@ -44,18 +44,18 @@ func TestParseRetryAfter_HTTPDate(t *testing.T) {
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
 
 	future := now.Add(30 * time.Second).UTC().Format(http.TimeFormat)
-	if got := parseRetryAfter(future, now); got <= 0 || got > 31*time.Second {
+	if got := ParseRetryAfter(future, now); got <= 0 || got > 31*time.Second {
 		t.Errorf("future date: got %v, want ~30s", got)
 	}
 
 	past := now.Add(-30 * time.Second).UTC().Format(http.TimeFormat)
-	if got := parseRetryAfter(past, now); got != 0 {
+	if got := ParseRetryAfter(past, now); got != 0 {
 		t.Errorf("past date: got %v, want 0", got)
 	}
 
 	// Far-future dates are capped.
 	farFuture := now.Add(2 * time.Hour).UTC().Format(http.TimeFormat)
-	if got := parseRetryAfter(farFuture, now); got != retryAfterMaxDelay {
+	if got := ParseRetryAfter(farFuture, now); got != retryAfterMaxDelay {
 		t.Errorf("far-future date: got %v, want cap %v", got, retryAfterMaxDelay)
 	}
 }
@@ -63,7 +63,7 @@ func TestParseRetryAfter_HTTPDate(t *testing.T) {
 func TestParseRetryAfter_Invalid(t *testing.T) {
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
 	for _, in := range []string{"", "   ", "not-a-number", "abc", "1.5"} {
-		if got := parseRetryAfter(in, now); got != 0 {
+		if got := ParseRetryAfter(in, now); got != 0 {
 			t.Errorf("invalid %q: got %v, want 0", in, got)
 		}
 	}
@@ -71,10 +71,10 @@ func TestParseRetryAfter_Invalid(t *testing.T) {
 
 func TestRetryAfterOrDefault(t *testing.T) {
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
-	if got := retryAfterOrDefault("", now); got != retryAfterDefaultDelay {
+	if got := RetryAfterOrDefault("", now); got != retryAfterDefaultDelay {
 		t.Errorf("empty header: got %v, want default %v", got, retryAfterDefaultDelay)
 	}
-	if got := retryAfterOrDefault("5", now); got != 5*time.Second {
+	if got := RetryAfterOrDefault("5", now); got != 5*time.Second {
 		t.Errorf("5s header: got %v, want 5s", got)
 	}
 }
