@@ -17,7 +17,8 @@ func getBaggageRulesTool() ToolDef {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"airline_code": {Type: "string", Description: "IATA airline code (e.g. KL, FR, U2) or \"all\" to list all airlines"},
+				"airline_code":  {Type: "string", Description: "IATA airline code (e.g. KL, FR, U2) or \"all\" to list all airlines"},
+				"carry_on_only": {Type: "boolean", Description: "When listing all airlines, return only carriers that include a full overhead cabin bag in the base fare (excludes low-cost carriers that charge extra for the overhead bag). Ignored for single-airline lookups."},
 			},
 			Required: []string{"airline_code"},
 		},
@@ -61,6 +62,15 @@ func handleGetBaggageRules(_ context.Context, args map[string]any, _ ElicitFunc,
 
 	if code == "ALL" || code == "" {
 		airlines := baggage.All()
+		if argBool(args, "carry_on_only", false) {
+			filtered := make([]baggage.AirlineBaggage, 0, len(airlines))
+			for _, ab := range airlines {
+				if !ab.OverheadOnly {
+					filtered = append(filtered, ab)
+				}
+			}
+			airlines = filtered
+		}
 		summary := buildBaggageSummaryAll(airlines)
 		type response struct {
 			Airlines []baggage.AirlineBaggage `json:"airlines"`
