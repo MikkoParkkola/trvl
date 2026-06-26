@@ -17,6 +17,12 @@ type CircuitHealth struct {
 // CircuitBreakerHealth mirrors the runtime's circuit-break decision so
 // provider_health can explain whether a provider will be tried, skipped, or
 // allowed through as a half-open recovery probe.
+//
+// It reads the breaker fields (ErrorCount/LastErrorAt/LastSuccess) directly off
+// cfg, so concurrent callers MUST pass a snapshot copy — not a live shared
+// *ProviderConfig from Registry.List()/Get() — or they race the breaker writers
+// (MarkSuccess/MarkError). Use Registry.ListSafe()/GetSafe() to obtain copies.
+// Single-threaded callers (CLI/tests) may pass any config (#144; MIK-5858).
 func CircuitBreakerHealth(cfg *ProviderConfig, now time.Time) CircuitHealth {
 	if cfg == nil {
 		return CircuitHealth{State: "unknown"}

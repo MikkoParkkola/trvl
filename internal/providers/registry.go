@@ -330,6 +330,47 @@ func (r *Registry) BreakerSnapshot(id string) (BreakerState, bool) {
 	}, true
 }
 
+// ListSafe returns value copies of all loaded provider configurations, taken
+// under RLock. Use this on any path that may run concurrently with
+// MarkSuccess/MarkError/ResetBreaker (the MCP server tool handlers, the HTTP
+// dashboard, and BuildStatusReport): the breaker fields
+// (ErrorCount/LastError/LastErrorAt/LastSuccess) are value types, so the
+// struct copy snapshots them atomically under the lock. Reading those fields
+// off the live shared pointers returned by List()/Get() on a concurrent path
+// is the #144 data-race class. Display-only single-threaded callers (the CLI
+// commands, which run one command and exit) may keep using List()/Get().
+//
+// The remaining reference-typed fields (Headers, lookups, Consent, …) are
+// shared with the live config, which is safe: they are populated at load time
+// and never mutated by the breaker writers, so concurrent readers never race
+// on them.
+func (r *Registry) ListSafe() []*ProviderConfig {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	out := make([]*ProviderConfig, 0, len(r.configs))
+	for _, cfg := range r.configs {
+		c := *cfg // value copy snapshots breaker fields under the lock
+		out = append(out, &c)
+	}
+	return out
+}
+
+// GetSafe returns a value copy of the provider configuration with the given ID
+// taken under RLock, or nil. It is the single-provider companion to ListSafe
+// for concurrent readers; see ListSafe for the rationale.
+func (r *Registry) GetSafe(id string) *ProviderConfig {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	cfg, ok := r.configs[id]
+	if !ok {
+		return nil
+	}
+	c := *cfg // value copy snapshots breaker fields under the lock
+	return &c
+}
+
 // MarkSuccess records a successful request for the given provider.
 func (r *Registry) MarkSuccess(id string) {
 	r.mu.Lock()

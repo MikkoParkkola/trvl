@@ -89,3 +89,84 @@ func TestProviderBreaker_ConcurrentSearchAndMark(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+// TestProviderBreaker_ConcurrentStatusReportAndMark stresses BuildStatusReport
+// (the MCP provider_health tool + HTTP dashboard path) against concurrent
+// MarkSuccess/MarkError writes on the shared provider configs, under the race
+// detector.
+//
+// This is the MIK-5858 companion guard to the SearchHotels case above: before
+// the fix, BuildStatusReport iterated Registry.List() (live shared pointers)
+// and passed them to CircuitBreakerHealth, which read ErrorCount/LastErrorAt/
+// LastSuccess directly — a data race against the lock-protected breaker writers
+// reachable concurrently from an in-flight search. On the fixed code
+// (BuildStatusReport iterates Registry.ListSafe(), which value-copies each
+// config under RLock) this passes clean under `go test -race`.
+func TestProviderBreaker_ConcurrentStatusReportAndMark(t *testing.T) {
+	dir := t.TempDir()
+	reg, err := NewRegistryAt(dir)
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+
+	const nprov = 8
+	ids := make([]string, nprov)
+	for i := 0; i < nprov; i++ {
+		id := fmt.Sprintf("fake-%02d", i)
+		ids[i] = id
+		cfg := &ProviderConfig{
+			ID:       id,
+			Name:     id,
+			Category: "hotels",
+			Endpoint: "https://example.invalid/search",
+			Method:   "GET",
+		}
+		if err := reg.Save(cfg); err != nil {
+			t.Fatalf("save %s: %v", id, err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	// Writers: hammer the lock-protected breaker mutations on shared configs.
+	for w := 0; w < 4; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				for _, id := range ids {
+					reg.MarkError(id, "boom")
+					reg.MarkSuccess(id)
+				}
+			}
+		}()
+	}
+
+	// Readers: hammer BuildStatusReport, whose circuit-state derivation reads
+	// the same breaker fields via CircuitBreakerHealth.
+	for r := 0; r < 4; r++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				_ = BuildStatusReport(reg, dir, time.Now())
+			}
+		}()
+	}
+
+	// Hammer for long enough that any racy interleave is observed under -race.
+	time.Sleep(1500 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+}
