@@ -495,14 +495,16 @@ func TestHandleCheckVisa_SameCountry(t *testing.T) {
 }
 
 func TestHandleCheckVisa_EmptyArgs(t *testing.T) {
+	// Empty args take the lookup path, which now requires passport+destination
+	// and returns a Go error (list_countries is the only argument-free mode).
 	content, structured, err := handleCheckVisa(context.Background(),
 		map[string]any{}, nil, nil, nil)
-	if err != nil {
-		t.Fatalf("expected no error for empty visa lookup, got: %v", err)
+	if err == nil {
+		t.Fatal("expected error for empty visa lookup args")
 	}
-	// visa.Lookup returns an error result, not a Go error
-	_ = content
-	_ = structured
+	if content != nil || structured != nil {
+		t.Fatalf("expected nil content/structured on error, got content=%v structured=%v", content, structured)
+	}
 }
 
 // --- handleGetWeather input defaults (0% coverage) ---
