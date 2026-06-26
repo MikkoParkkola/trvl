@@ -98,36 +98,62 @@ func finalizePriceSources(sources []PriceSource, now time.Time) []PriceSource {
 	return out
 }
 
+// priceConfidenceRank orders price-confidence tiers so the highest-trust price
+// wins the headline: verified > room_level > unverified. It mirrors the
+// sort-side ranking in internal/hotels/search_filter.go so headline selection
+// and result ordering agree — a verified, all-in room price leads even when a
+// cheaper unverified lead-in teaser exists for the same hotel.
+func priceConfidenceRank(confidence string) int {
+	switch confidence {
+	case PriceConfidenceVerified:
+		return 3
+	case PriceConfidenceRoomLevel:
+		return 2
+	default:
+		return 1
+	}
+}
+
 func selectPrimaryHotelSource(sources []PriceSource, preferredCurrency, currentCurrency string) (PriceSource, bool) {
 	preferredCurrency = strings.ToUpper(strings.TrimSpace(preferredCurrency))
 	currentCurrency = strings.ToUpper(strings.TrimSpace(currentCurrency))
-	if selected, ok := cheapestSourceInCurrency(sources, preferredCurrency); ok {
+	if selected, ok := bestSourceInCurrency(sources, preferredCurrency); ok {
 		return selected, true
 	}
-	if selected, ok := cheapestSourceInCurrency(sources, currentCurrency); ok {
+	if selected, ok := bestSourceInCurrency(sources, currentCurrency); ok {
 		return selected, true
 	}
 	bestCurrency := mostRepresentedSourceCurrency(sources)
-	if selected, ok := cheapestSourceInCurrency(sources, bestCurrency); ok {
+	if selected, ok := bestSourceInCurrency(sources, bestCurrency); ok {
 		return selected, true
 	}
 	return PriceSource{}, false
 }
 
-func cheapestSourceInCurrency(sources []PriceSource, currency string) (PriceSource, bool) {
+// bestSourceInCurrency picks the headline source within a single currency by
+// highest price-confidence tier first, then cheapest within that tier. This is
+// the "verified leads" rule: an honest, tax-inclusive verified price beats a
+// cheaper-but-unverified teaser, but among equally-trusted prices the cheapest
+// still wins.
+func bestSourceInCurrency(sources []PriceSource, currency string) (PriceSource, bool) {
 	if currency == "" {
 		return PriceSource{}, false
 	}
 	var selected PriceSource
+	selectedRank := 0
+	found := false
 	for _, s := range sources {
 		if s.Price <= 0 || strings.ToUpper(s.Currency) != currency {
 			continue
 		}
-		if selected.Price == 0 || s.Price < selected.Price {
+		rank := priceConfidenceRank(s.PriceConfidence)
+		if !found || rank > selectedRank || (rank == selectedRank && s.Price < selected.Price) {
 			selected = s
+			selectedRank = rank
+			found = true
 		}
 	}
-	return selected, selected.Price > 0
+	return selected, found
 }
 
 func mostRepresentedSourceCurrency(sources []PriceSource) string {
