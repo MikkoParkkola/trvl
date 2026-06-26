@@ -11,6 +11,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/cars"
 	"github.com/MikkoParkkola/trvl/internal/ground"
+	"github.com/MikkoParkkola/trvl/internal/hacks"
 	"github.com/MikkoParkkola/trvl/internal/trip"
 	trvlmcp "github.com/MikkoParkkola/trvl/mcp"
 )
@@ -433,5 +434,59 @@ func TestOnePromptDemoScriptRendersRequiredFlow(t *testing.T) {
 		if !strings.Contains(text, needle) {
 			t.Fatalf("demo script missing %q:\n%s", needle, text)
 		}
+	}
+}
+
+// TestPublicDocsAdvertiseDetectorCount pins the marketed "N detectors" claim in
+// every public doc to hacks.RegisteredDetectorCount(), the single source of
+// truth for the detector roster. If a detector is added or removed, the hacks
+// package count test fails first; this test then fails until the docs are
+// reconciled — a tripwire so the count cannot silently drift again.
+//
+// Each doc phrases the count slightly differently (e.g. "36 detectors",
+// "36 parallel detectors", "36 travel hack detectors"), so the expected needle
+// is built per file from the live count. The stale guard forbids the same
+// phrasing at count±1.
+func TestPublicDocsAdvertiseDetectorCount(t *testing.T) {
+	t.Parallel()
+
+	count := hacks.RegisteredDetectorCount()
+
+	// needle builds a count-parameterised phrase, e.g. phrase("%d detectors").
+	phrase := func(format string, n int) string { return fmt.Sprintf(format, n) }
+
+	docs := []struct {
+		path   string
+		format string // contains exactly one %d for the detector count
+	}{
+		{filepath.Join("..", "..", "README.md"), "%d parallel detectors"},
+		{filepath.Join("..", "..", "AGENTS.md"), "%d travel hack detectors"},
+		{filepath.Join("..", "..", "docs", "PROVIDERS.md"), "%d detectors in parallel"},
+		{filepath.Join("..", "..", "docs", "CLI.md"), "%d detectors"},
+		{filepath.Join("..", "..", "npm", "README.md"), "%d detectors"},
+		{filepath.Join("..", "..", "docs", "COMPARISON.md"), "%d detectors"},
+	}
+
+	for _, doc := range docs {
+		doc := doc
+		t.Run(filepath.Base(filepath.Dir(doc.path))+"_"+filepath.Base(doc.path), func(t *testing.T) {
+			t.Parallel()
+
+			data, err := os.ReadFile(doc.path)
+			if err != nil {
+				t.Fatalf("ReadFile(%q): %v", doc.path, err)
+			}
+			text := string(data)
+
+			current := phrase(doc.format, count)
+			if !strings.Contains(text, current) {
+				t.Errorf("%s should advertise the current detector count %q", doc.path, current)
+			}
+			for _, drift := range []int{count + 1, count - 1} {
+				if stale := phrase(doc.format, drift); strings.Contains(text, stale) {
+					t.Errorf("%s claims a stale detector count %q (registered=%d)", doc.path, stale, count)
+				}
+			}
+		})
 	}
 }

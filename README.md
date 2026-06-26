@@ -130,7 +130,7 @@ trvl hotels "Helsinki" --checkin 2026-09-01 --checkout 2026-09-04 --stealth
 | **Flights** | Google Flights + Kiwi + Skiplagged merged; LCC fares, AFKLM award scan, round-trip (both legs) | [PROVIDERS.md](docs/PROVIDERS.md) |
 | **Ground** | 20 train/bus/ferry providers across Europe, API-first | [PROVIDERS.md](docs/PROVIDERS.md) |
 | **Hotels** | 6 sources, discovery → verification trust model | [PROVIDERS.md](docs/PROVIDERS.md) |
-| **Travel hacks** | 37 parallel detectors (hidden-city, positioning, stopover, multimodal, error-fare…) | [PROVIDERS.md](docs/PROVIDERS.md) |
+| **Travel hacks** | 36 parallel detectors (hidden-city, positioning, stopover, multimodal, error-fare…) | [PROVIDERS.md](docs/PROVIDERS.md) |
 | **CLI** | Standalone tool, 56 commands, table/JSON output | [CLI.md](docs/CLI.md) |
 | **Profile** | Learns home airports, FF status, luggage, preferences from your booking history | [traveller-workspace.md](docs/traveller-workspace.md) |
 

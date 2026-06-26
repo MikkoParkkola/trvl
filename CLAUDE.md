@@ -88,7 +88,7 @@ internal/          Domain packages (one per data source)
   ground/          Buses, trains, ferries (20 providers)
   destinations/    City intelligence (weather, safety, holidays)
   deals/           RSS deal feeds
-  hacks/           Travel hack detectors (37 parallel)
+  hacks/           Travel hack detectors (36 parallel)
   lounges/         Airport lounge data
   baggage/         Airline baggage rules
   weather/         Open-Meteo forecasts

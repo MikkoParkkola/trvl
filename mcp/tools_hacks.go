@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/hacks"
+	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
 
 // detectTravelHacksTool returns the MCP tool definition for hack detection.
@@ -64,7 +65,11 @@ func hacksOutputSchema() interface{} {
 	}
 }
 
-// detectorNames lists the 20 parallel hack detectors for progress reporting.
+// detectorNames is a labels-only subset of detector categories used purely to
+// animate progress while DetectAll runs. It is NOT the authoritative detector
+// set: DetectAll registers more detectors than are named here, and the count of
+// hacks actually returned comes from DetectAll, not from len(detectorNames).
+// These labels exist only to give the progress bar human-readable checkpoints.
 var detectorNames = []string{
 	"throwaway ticketing", "hidden city", "positioning flights",
 	"split ticketing", "night transport", "airline stopovers",
@@ -100,6 +105,14 @@ func handleDetectTravelHacks(ctx context.Context, args map[string]any, _ ElicitF
 		CarryOnOnly: carryOn,
 		NaivePrice:  naivePrice,
 		Passengers:  passengers,
+	}
+
+	// Thread the traveller's loyalty profile so loyalty-aware detectors
+	// (mileage run, back-to-back) prefer the user's own alliances/status.
+	// Missing or unreadable preferences leave the zero profile, which preserves
+	// the pre-loyalty behaviour — keeping this surface fed identically to the CLI.
+	if prefs, err := preferences.Load(); err == nil {
+		input.Loyalty = hacks.LoyaltyFromPreferences(prefs)
 	}
 
 	// Emit progress for each detector group (detectors run in parallel internally).

@@ -33,7 +33,7 @@ Add to `claude_desktop_config.json`:
 - Ground transport (buses, trains, ferries — 20 providers)
 - Destination intelligence (weather, safety, holidays, events)
 - Trip planning and price alerts
-- Travel hacks detection (37 detectors)
+- Travel hacks detection (36 detectors)
 
 ## License
 

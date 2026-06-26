@@ -218,6 +218,13 @@ type DetectorInput struct {
 	CarryOnOnly bool    // relevant for hidden-city (checked bags go to final dest)
 	NaivePrice  float64 // baseline price for savings computation
 	Passengers  int     // number of passengers (group-split fires at 3+)
+
+	// Loyalty carries the traveller's frequent-flyer programmes so that
+	// loyalty-aware detectors (mileage run, back-to-back) can prefer or filter
+	// to opportunities relevant to the user's actual alliances and status.
+	// The zero value preserves pre-loyalty behaviour (no regression): detectors
+	// fall back to surfacing every opportunity. See loyalty.go.
+	Loyalty LoyaltyProfile
 }
 
 func (in *DetectorInput) currency() string {
@@ -256,11 +263,13 @@ var stopoverPrograms = map[string]StopoverProgram{
 // detectFn is the signature for individual hack detectors.
 type detectFn func(ctx context.Context, in DetectorInput) []Hack
 
-// DetectAll runs all detectors in parallel and returns every hack found.
-// It respects ctx cancellation; detectors that finish after cancellation
-// are discarded.
-func DetectAll(ctx context.Context, in DetectorInput) []Hack {
-	detectors := []detectFn{
+// allDetectors returns the full registered set of detectors that DetectAll runs
+// in parallel. It is the single source of truth for the detector roster:
+// RegisteredDetectorCount() reports len(allDetectors()), and the public docs
+// detector count is pinned to it by a tripwire test so a claim can never drift
+// from the implementation.
+func allDetectors() []detectFn {
+	return []detectFn{
 		detectThrowaway,
 		detectHiddenCity,
 		detectPositioning,
@@ -298,6 +307,20 @@ func DetectAll(ctx context.Context, in DetectorInput) []Hack {
 		detectDayUse,
 		detectErrorFare,
 	}
+}
+
+// RegisteredDetectorCount reports how many detectors DetectAll runs. It is the
+// authoritative number for public "N detectors" claims; keep marketing docs in
+// sync with this value (a tripwire test enforces it).
+func RegisteredDetectorCount() int {
+	return len(allDetectors())
+}
+
+// DetectAll runs all detectors in parallel and returns every hack found.
+// It respects ctx cancellation; detectors that finish after cancellation
+// are discarded.
+func DetectAll(ctx context.Context, in DetectorInput) []Hack {
+	detectors := allDetectors()
 
 	// Each detector gets a child context with a per-detector timeout so a
 	// slow API call cannot block the entire hacks response.
