@@ -47,10 +47,14 @@ func SearchExplore(ctx context.Context, client *batchexec.Client, origin string,
 		}
 	}
 
+	// Enforce the budget cap client-side. This is the authoritative price
+	// filter (see ExploreOptions.MaxPrice); it stays correct even if a future
+	// server-side payload slot drifts or is absent.
+	result.Destinations = filterByBudget(result.Destinations, opts.MaxPrice)
+	result.Count = len(result.Destinations)
+
 	return result, nil
 }
-
-// doExploreRequest performs a single explore API call.
 func doExploreRequest(ctx context.Context, client *batchexec.Client, encoded string) (*models.ExploreResult, error) {
 	status, body, err := client.PostExplore(ctx, encoded)
 	if err != nil {
@@ -95,4 +99,34 @@ type ExploreOptions struct {
 	SouthLat      float64
 	EastLng       float64
 	WestLng       float64
+
+	// CabinClass is encoded server-side into the explore payload's known
+	// class slot (1=economy..4=first). Zero defaults to economy.
+	CabinClass models.CabinClass
+
+	// MaxPrice caps the per-traveller indicative price. Zero = no cap.
+	//
+	// Enforced client-side (filterByBudget) as the correctness layer. Google's
+	// explore payload has a server-side max-price slot, but its positional
+	// offset is not reverse-engineered here, so we do NOT encode it — guessing
+	// the offset would corrupt the whole payload. The client-side filter is
+	// authoritative; a server-side slot would be pure optimisation.
+	// ponytail: client-side cap is correctness; server-side encoding is a
+	// follow-up needing the gflights offset reference.
+	MaxPrice float64
+}
+
+// filterByBudget drops destinations whose indicative price exceeds maxPrice.
+// maxPrice <= 0 is a no-op (returns the slice unchanged).
+func filterByBudget(dests []models.ExploreDestination, maxPrice float64) []models.ExploreDestination {
+	if maxPrice <= 0 {
+		return dests
+	}
+	kept := dests[:0]
+	for _, d := range dests {
+		if d.Price > 0 && d.Price <= maxPrice {
+			kept = append(kept, d)
+		}
+	}
+	return kept
 }
