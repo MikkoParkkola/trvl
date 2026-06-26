@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/breaker"
 	"github.com/MikkoParkkola/trvl/internal/cache"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/searchctx"
@@ -58,13 +60,42 @@ type providerResult struct {
 	name   string
 }
 
+// groundBreaker protects the provider fan-out: a provider that fails (network
+// error, timeout, rate-limit) DefaultThreshold times in a row is skipped for
+// the cooldown instead of being retried on every search, then probed again once
+// the cooldown elapses. It is keyed by provider name and shared across searches
+// by design — a provider's recent health carries between requests. A
+// "not applicable for this route" answer is healthy, not a failure, so it never
+// trips the breaker.
+var groundBreaker = breaker.New()
+
+// errCircuitBroken marks a provider call skipped because its breaker is open.
+// It is a deliberate skip, not a fresh failure, so the result aggregator
+// reports it as a circuit_broken status without counting it as an error.
+var errCircuitBroken = errors.New("skipped: recent failures tripped the circuit breaker")
+
 // launchProvider starts a provider search in a new goroutine, sending the
-// result to the results channel when done.
+// result to the results channel when done. The shared groundBreaker gates the
+// call: a tripped provider is skipped without touching the network, and each
+// real outcome feeds the breaker (a genuine failure advances it toward
+// tripping; a healthy or not-applicable response closes it).
 func launchProvider(wg *sync.WaitGroup, results chan<- providerResult, name string, fn func() ([]models.GroundRoute, error)) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		if groundBreaker.Tripped(name) {
+			results <- providerResult{name: name, err: errCircuitBroken}
+			return
+		}
 		routes, err := fn()
+		// A not-applicable answer (no route for this origin/destination) is a
+		// healthy "nothing to sell" response, not a provider failure, so it must
+		// not push the breaker toward tripping.
+		if err != nil && !isProviderNotApplicable(err) {
+			groundBreaker.RecordFailure(name)
+		} else {
+			groundBreaker.RecordSuccess(name)
+		}
 		results <- providerResult{routes: routes, err: err, name: name}
 	}()
 }
@@ -495,6 +526,20 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	var statuses []models.ProviderStatus
 	for r := range results {
 		if r.err != nil {
+			if r.err == errCircuitBroken {
+				// Deliberately skipped: the provider has been failing and its
+				// breaker is open. Report it honestly, but it is not a fresh
+				// error so it does not drag the search toward "partial".
+				slog.Debug("ground provider circuit-broken", "provider", r.name)
+				statuses = append(statuses, models.ProviderStatus{
+					ID:      r.name,
+					Name:    r.name,
+					Status:  models.StatusCircuitBroken,
+					Error:   "skipped: recent failures tripped the circuit breaker",
+					FixHint: "wait for the cooldown to elapse, then it retries automatically",
+				})
+				continue
+			}
 			if isProviderNotApplicable(r.err) {
 				slog.Debug("ground provider not applicable", "provider", r.name, "reason", r.err)
 				// Attempted but no applicable route for this origin/destination —
