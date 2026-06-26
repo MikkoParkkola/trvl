@@ -95,6 +95,13 @@ func SearchRyanair(ctx context.Context, origin, destination, date, currency stri
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
+		// Typed, retryable classification for rate-limit / block / overload so
+		// the merge layer surfaces an honest `rate_limited` status instead of a
+		// generic failure (mirrors googleUpstreamStatusError in search.go).
+		switch resp.StatusCode {
+		case http.StatusTooManyRequests, http.StatusForbidden, http.StatusServiceUnavailable:
+			return nil, fmt.Errorf("ryanair: unexpected status %d: %w", resp.StatusCode, models.ErrRateLimited)
+		}
 		return nil, fmt.Errorf("ryanair: unexpected status %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))

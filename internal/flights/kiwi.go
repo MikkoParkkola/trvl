@@ -238,6 +238,13 @@ func kiwiRPCWithHeaders(ctx context.Context, sessionID string, payload kiwiRPCRe
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		// Classify rate-limit / block / overload as a typed, retryable error so
+		// the merge layer reports an honest `rate_limited` status instead of a
+		// generic failure (mirrors googleUpstreamStatusError in search.go).
+		switch resp.StatusCode {
+		case http.StatusTooManyRequests, http.StatusForbidden, http.StatusServiceUnavailable:
+			return resp.Header, kiwiRPCResponse{}, fmt.Errorf("kiwi: HTTP %d: %s: %w", resp.StatusCode, bytes.TrimSpace(body), models.ErrRateLimited)
+		}
 		return resp.Header, kiwiRPCResponse{}, fmt.Errorf("kiwi: HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(body))
 	}
 
