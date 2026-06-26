@@ -53,7 +53,7 @@ func TestBelowThreshold_OneNudgeWithWatchIDInSources(t *testing.T) {
 
 	// WHEN
 	g := travelgraph.Build([]watch.Watch{w}, history, nil, nil)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 
 	// THEN: exactly one nudge, cites the watch ID
 	if len(nudges) != 1 {
@@ -81,7 +81,7 @@ func TestBelowThreshold_AtExactThreshold_Fires(t *testing.T) {
 	}
 
 	g := travelgraph.Build([]watch.Watch{w}, nil, nil, nil)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 
 	if len(nudges) != 1 {
 		t.Fatalf("expected 1 nudge at exact threshold, got %d", len(nudges))
@@ -111,7 +111,7 @@ func TestNoGroundedTrigger_ZeroNudges(t *testing.T) {
 
 	// WHEN
 	g := travelgraph.Build([]watch.Watch{w}, history, nil, nil)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 
 	// THEN: no nudges
 	if len(nudges) != 0 {
@@ -132,7 +132,7 @@ func TestWatchAboveThresholdNoHistory_ZeroNudges(t *testing.T) {
 	}
 
 	g := travelgraph.Build([]watch.Watch{w}, nil, nil, nil)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 
 	if len(nudges) != 0 {
 		t.Errorf("expected 0 nudges, got %d", len(nudges))
@@ -157,7 +157,7 @@ func TestHistoricLow_ConfidentAndLowBand_FiresNudge(t *testing.T) {
 
 	// WHEN
 	g := travelgraph.Build([]watch.Watch{w}, history, nil, nil)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 
 	// THEN: exactly one KindHistoricLow nudge citing the route key
 	lowNudges := filterKind(nudges, travelgraph.KindHistoricLow)
@@ -191,7 +191,7 @@ func TestAllNudgesHaveAtLeastOneSource(t *testing.T) {
 		append([]watch.PricePoint{pt("wb1", 75.0, "EUR", 2)}, histHist...),
 		nil, nil,
 	)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 
 	if len(nudges) == 0 {
 		t.Fatal("expected at least one nudge")
@@ -207,9 +207,76 @@ func TestAllNudgesHaveAtLeastOneSource(t *testing.T) {
 
 func TestEmptyInputs_NoPanicZeroNudges(t *testing.T) {
 	g := travelgraph.Build(nil, nil, nil, nil)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 	if len(nudges) != 0 {
 		t.Errorf("expected 0 nudges on empty graph, got %d", len(nudges))
+	}
+}
+
+// --- MIK-6233.AC.2 (TRVL.PTG.2): every emitted nudge carries >=1 SourceRef ---
+
+// TestNudgesCarrySources asserts the core grounding invariant: every nudge that
+// Nudges emits carries a non-empty Sources slice, so a caller can always trace
+// a nudge back to the source record that produced it. The graph mixes a
+// below-threshold watch and a historic-low route to exercise both producers.
+func TestNudgesCarrySources(t *testing.T) {
+	wBelow := watch.Watch{
+		ID: "carry-below", Origin: "AMS", Destination: "BCN",
+		BelowPrice: 80.0, LastPrice: 75.0, Currency: "EUR",
+	}
+	wHist := watch.Watch{
+		ID: "carry-hist", Origin: "HEL", Destination: "DXB",
+		BelowPrice: 0, LastPrice: 400.0, Currency: "EUR",
+	}
+	histHist := historyWithSpread("carry-hist", "EUR", 11, 600.0, 80.0)
+	histHist = append(histHist, pt("carry-hist", 400.0, "EUR", 1))
+
+	g := travelgraph.Build(
+		[]watch.Watch{wBelow, wHist},
+		append([]watch.PricePoint{pt("carry-below", 75.0, "EUR", 2)}, histHist...),
+		nil, nil,
+	)
+	nudges := travelgraph.Nudges(g, now)
+
+	if len(nudges) == 0 {
+		t.Fatal("expected at least one nudge to assert the Sources invariant against")
+	}
+	for i, n := range nudges {
+		if len(n.Sources) == 0 {
+			t.Errorf("nudge[%d] (%s) has empty Sources: %+v", i, n.Kind, n)
+			continue
+		}
+		for j, s := range n.Sources {
+			if s.ID == "" {
+				t.Errorf("nudge[%d].Sources[%d] has empty ID: %+v", i, j, s)
+			}
+		}
+	}
+}
+
+// --- MIK-6233.AC.3 (TRVL.PTG.3): nudges fire ONLY on grounded triggers ---
+
+// TestNudgesGroundedOnly asserts the anti-speculation guarantee: a graph with no
+// grounded trigger (a watch above its target and flat price history that
+// fareintel does not rate as a confident "buy") yields zero nudges.
+func TestNudgesGroundedOnly(t *testing.T) {
+	w := watch.Watch{
+		ID:          "no-trigger",
+		Origin:      "HEL",
+		Destination: "LHR",
+		BelowPrice:  200.0, // target far below current — not crossed
+		LastPrice:   250.0,
+		Currency:    "EUR",
+	}
+	// Flat history near the current price → fareintel verdict is "watch", not a
+	// confident "buy", so no historic-low trigger either.
+	history := historyWithSpread("no-trigger", "EUR", 11, 250.0, 5.0)
+	history = append(history, pt("no-trigger", 250.0, "EUR", 0.5))
+
+	graphWithNoTrigger := travelgraph.Build([]watch.Watch{w}, history, nil, nil)
+
+	if got := travelgraph.Nudges(graphWithNoTrigger, now); len(got) != 0 {
+		t.Errorf("expected 0 nudges from a graph with no grounded trigger, got %d: %v", len(got), got)
 	}
 }
 
@@ -226,7 +293,7 @@ func TestNoBelowPrice_NeverFiresThreshold(t *testing.T) {
 	}
 
 	g := travelgraph.Build([]watch.Watch{w}, nil, nil, nil)
-	nudges := filterKind(travelgraph.Nudges(g), travelgraph.KindBelowThreshold)
+	nudges := filterKind(travelgraph.Nudges(g, now), travelgraph.KindBelowThreshold)
 
 	if len(nudges) != 0 {
 		t.Errorf("expected no threshold nudges when BelowPrice=0, got %d", len(nudges))
@@ -246,7 +313,7 @@ func TestOrphanPricePoint_Ignored(t *testing.T) {
 
 	// WHEN
 	g := travelgraph.Build(nil, []watch.PricePoint{orphan}, nil, nil)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 
 	// THEN: no panic, no nudges
 	if len(nudges) != 0 {
@@ -266,7 +333,7 @@ func TestHistoricLow_TooFewPoints_NoNudge(t *testing.T) {
 		pt("w-few", 120.0, "EUR", 1),
 	}
 	g := travelgraph.Build([]watch.Watch{w}, history, nil, nil)
-	nudges := filterKind(travelgraph.Nudges(g), travelgraph.KindHistoricLow)
+	nudges := filterKind(travelgraph.Nudges(g, now), travelgraph.KindHistoricLow)
 	if len(nudges) != 0 {
 		t.Errorf("expected 0 historic-low nudges with only 2 points, got %d", len(nudges))
 	}
@@ -274,9 +341,9 @@ func TestHistoricLow_TooFewPoints_NoNudge(t *testing.T) {
 
 // --- helpers ---
 
-func containsSource(sources []string, id string) bool {
+func containsSource(sources []travelgraph.SourceRef, id string) bool {
 	for _, s := range sources {
-		if s == id {
+		if s.ID == id {
 			return true
 		}
 	}
@@ -338,7 +405,7 @@ func TestRouteKeyedCorpus_FiresHistoricLowWithNoWatch(t *testing.T) {
 
 	// WHEN: no watches at all — the route corpus is the only input
 	g := travelgraph.Build(nil, history, nil, nil)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 
 	// THEN: exactly one KindHistoricLow nudge citing the route key "AMS-VLC"
 	lowNudges := filterKind(nudges, travelgraph.KindHistoricLow)
@@ -362,7 +429,7 @@ func TestRouteKeyedCorpus_MalformedKey_Skipped(t *testing.T) {
 		{RouteKey: "", Price: 0, Currency: "EUR", Timestamp: now},
 	}
 	g := travelgraph.Build(nil, history, nil, nil)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 	if len(nudges) != 0 {
 		t.Errorf("expected 0 nudges for malformed route keys, got %d: %v", len(nudges), nudges)
 	}
@@ -376,7 +443,7 @@ func TestRouteKeyedCorpus_HotelKey_Skipped(t *testing.T) {
 		{RouteKey: "HOTEL|AMS|MARRIOTT|2026-07-15", Price: 250.0, Currency: "EUR", Timestamp: now},
 	}
 	g := travelgraph.Build(nil, history, nil, nil)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 	if len(nudges) != 0 {
 		t.Errorf("expected 0 nudges for hotel-kind route key, got %d: %v", len(nudges), nudges)
 	}
@@ -405,7 +472,7 @@ func TestRouteKeyedCorpus_MergesWithWatchHistory(t *testing.T) {
 
 	// WHEN
 	g := travelgraph.Build([]watch.Watch{w}, history, nil, nil)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 
 	// THEN: merged corpus reaches high-confidence → historic-low nudge fires
 	lowNudges := filterKind(nudges, travelgraph.KindHistoricLow)
@@ -425,7 +492,7 @@ func TestNoGroundedTrigger_RouteKeyed_ZeroNudges(t *testing.T) {
 	history = append(history, ptRoute(rk, 300.0, "EUR", 0.5))
 
 	g := travelgraph.Build(nil, history, nil, nil)
-	nudges := travelgraph.Nudges(g)
+	nudges := travelgraph.Nudges(g, now)
 
 	if len(nudges) != 0 {
 		t.Errorf("expected 0 nudges (flat route-keyed history), got %d: %v", len(nudges), nudges)

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/fareintel"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
@@ -41,17 +42,36 @@ const (
 	KindHistoricLow NudgeKind = "historic_low"
 )
 
-// Nudge is a single proactive message grounded in one or more source records.
+// SourceKind classifies the kind of record a SourceRef points at.
+type SourceKind string
+
+const (
+	// SourceWatch references a watch.Watch by its ID.
+	SourceWatch SourceKind = "watch"
+	// SourceRoute references a route bucket by its canonical
+	// "ORIGIN-DESTINATION" key.
+	SourceRoute SourceKind = "route"
+)
+
+// SourceRef is a reference back to the concrete data record that grounds a
+// nudge. Kind distinguishes the record type; ID is its identifier (a watch ID
+// or a route key), so a caller can always trace a nudge to its origin record.
+type SourceRef struct {
+	Kind SourceKind
+	ID   string
+}
+
+// Nudge is a single proactive message grounded in one source record at minimum.
 //
-// Every Nudge carries at least one Source identifier so the caller can trace it
-// back to the underlying watch, route key, or trip that triggered it. Nudges
-// with an empty Sources slice are not produced by this package.
+// Every Nudge carries at least one SourceRef so the caller can trace it back to
+// the underlying watch or route that triggered it. Nudges with an empty Sources
+// slice are not produced by this package.
 type Nudge struct {
 	Kind    NudgeKind
 	Message string
-	// Sources holds the identifiers (watch ID, route key, trip ID) that ground
-	// this nudge. len(Sources) >= 1 is an invariant for all emitted nudges.
-	Sources []string
+	// Sources holds the source-record references that ground this nudge.
+	// len(Sources) >= 1 is an invariant for all emitted nudges.
+	Sources []SourceRef
 }
 
 // routeHistory groups price points by route key (for multi-watch aggregation).
@@ -178,6 +198,26 @@ func (g *Graph) routeFor(key string) *routeHistory {
 	return rh
 }
 
+// RouteEntry is the read-only view of a single route bucket: the watches
+// covering the route and the price points observed for it. Each element retains
+// its source-record reference (watch.Watch / watch.PricePoint) so callers can
+// trace any joined entry back to its origin.
+type RouteEntry struct {
+	Watches []watch.Watch
+	Points  []watch.PricePoint
+}
+
+// ByRoute returns the RouteEntry indexed under a canonical "ORIGIN-DESTINATION"
+// route key (e.g. "HEL-NYC"), and whether that route exists in the graph. The
+// key is normalised (upper-cased, trimmed) to match how Build indexes routes.
+func (g *Graph) ByRoute(key string) (RouteEntry, bool) {
+	rh, ok := g.byRoute[strings.ToUpper(strings.TrimSpace(key))]
+	if !ok {
+		return RouteEntry{}, false
+	}
+	return RouteEntry{Watches: rh.watches, Points: rh.points}, true
+}
+
 // Nudges evaluates the graph and returns all grounded nudges. It emits at most
 // one nudge per watch (below-threshold check) and at most one nudge per route
 // (historic-low check). If there are no grounded triggers, the slice is empty.
@@ -202,7 +242,11 @@ func (g *Graph) routeFor(key string) *routeHistory {
 //
 // With nil/empty preferences the gate is a no-op and ordering is stable by
 // route key, so the no-profile baseline is unchanged.
-func Nudges(g *Graph) []Nudge {
+//
+// now is the evaluation reference time. Price points dated after now are not yet
+// observed and therefore cannot ground a nudge, so they are excluded from the
+// historic-low corpus. Pass time.Now() in production.
+func Nudges(g *Graph, now time.Time) []Nudge {
 	var scored []scoredNudge
 	// Track which routes already produced a KindBelowThreshold nudge so the
 	// historic-low check doesn't double-fire on the same route.
@@ -226,7 +270,7 @@ func Nudges(g *Graph) []Nudge {
 		if belowRoutes[key] || g.isExcludedRoute(key) {
 			continue // already nudged via threshold crossing, or gated out
 		}
-		if n, ok := historicLowNudge(key, rh); ok {
+		if n, ok := historicLowNudge(key, rh, now); ok {
 			scored = append(scored, scoredNudge{nudge: n, key: key, rank: g.routeRank(key)})
 		}
 	}
@@ -352,7 +396,7 @@ func belowThresholdNudges(rh *routeHistory) []Nudge {
 				w.LastPrice, w.Currency,
 				w.BelowPrice, w.Currency,
 			),
-			Sources: []string{w.ID},
+			Sources: []SourceRef{{Kind: SourceWatch, ID: w.ID}},
 		})
 	}
 	return out
@@ -366,19 +410,21 @@ func isThresholdCrossed(w watch.Watch) bool {
 
 // historicLowNudge returns a KindHistoricLow nudge for a route when fareintel
 // rates it as a "buy" with "high" confidence. The current price is derived from
-// the most recent price point in history. Returns (Nudge, true) when a nudge
-// fires, (Nudge{}, false) otherwise.
-func historicLowNudge(key string, rh *routeHistory) (Nudge, bool) {
-	if len(rh.points) < 3 {
+// the most recent price point in history. Points dated after now are excluded
+// (not yet observed). Returns (Nudge, true) when a nudge fires, (Nudge{}, false)
+// otherwise.
+func historicLowNudge(key string, rh *routeHistory, now time.Time) (Nudge, bool) {
+	points := observedPoints(rh.points, now)
+	if len(points) < 3 {
 		return Nudge{}, false
 	}
 
-	latest := latestPoint(rh.points)
+	latest := latestPoint(points)
 	if latest.Price <= 0 {
 		return Nudge{}, false
 	}
 
-	res := fareintel.Analyze(latest.Price, latest.Currency, rh.points)
+	res := fareintel.Analyze(latest.Price, latest.Currency, points)
 	if res.Verdict != fareintel.VerdictBuy || res.Confidence != "high" {
 		return Nudge{}, false
 	}
@@ -391,8 +437,25 @@ func historicLowNudge(key string, rh *routeHistory) (Nudge, bool) {
 			latest.Price, latest.Currency,
 			-res.PercentVsMedian, res.MedianPrice, latest.Currency,
 		),
-		Sources: []string{key},
+		Sources: []SourceRef{{Kind: SourceRoute, ID: key}},
 	}, true
+}
+
+// observedPoints returns the price points that are at or before now (already
+// observed). A point dated after now is in the future and cannot ground a
+// nudge. When now is the zero time, all points are treated as observed so
+// callers that do not care about temporal filtering keep the full corpus.
+func observedPoints(points []watch.PricePoint, now time.Time) []watch.PricePoint {
+	if now.IsZero() {
+		return points
+	}
+	out := make([]watch.PricePoint, 0, len(points))
+	for _, p := range points {
+		if !p.Timestamp.After(now) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // latestPoint returns the price point with the most recent Timestamp.
