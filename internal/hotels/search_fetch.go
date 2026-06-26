@@ -243,10 +243,20 @@ func fetchHotelPageFull(ctx context.Context, client *batchexec.Client, location 
 	}
 
 	pr := parseHotelsFromPageFull(string(body), opts.Currency)
-	if len(pr.Hotels) == 0 {
-		return parseResult{}, fmt.Errorf("parse hotel results: no hotels found in response payload")
+	if perr := hotelParseFailure(len(pr.Hotels), pr.TotalAvailable); perr != nil {
+		// Google's own metadata claims hotels exist but the decoder produced
+		// none — the entry shape rotated. Surface a typed parse failure so
+		// ClassifyProviderError maps it to StatusFailed and the breaker counts
+		// it, instead of a lie that masquerades as a healthy empty result.
+		return parseResult{}, perr
 	}
 
+	// An empty result with TotalAvailable == 0 is an honest no-hit: return it as
+	// a successful empty parseResult so the caller maps the zero count to
+	// StatusCheckedNoHit rather than a false provider failure.
+	// ponytail: TotalAvailable == 0 cannot distinguish a genuinely empty page
+	// from a total page-shape loss; acceptable because partial rotations (the
+	// common case) keep TotalAvailable > 0 and are caught above.
 	return pr, nil
 }
 
