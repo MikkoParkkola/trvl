@@ -468,18 +468,18 @@ func planTripTool() ToolDef {
 	return ToolDef{
 		Name:        "plan_trip",
 		Title:       "Plan Complete Trip",
-		Description: "Plan a complete trip with outbound flights, return flights, and hotel options in one search. Returns top 5 options for each plus a total cost summary.",
+		Description: "Plan a complete trip with outbound flights, return flights, and hotel options in one search. Returns top 5 options for each plus a total cost summary. Omit return_date for a one-way trip.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
 				"origin":      {Type: "string", Description: "Origin IATA airport code (e.g. AMS, HEL)"},
 				"destination": {Type: "string", Description: "Destination IATA airport code (e.g. PRG, BCN)"},
 				"depart_date": {Type: "string", Description: "Departure date (YYYY-MM-DD)"},
-				"return_date": {Type: "string", Description: "Return date (YYYY-MM-DD)"},
+				"return_date": {Type: "string", Description: "Return date (YYYY-MM-DD). Omit for a one-way trip."},
 				"guests":      {Type: "integer", Description: "Number of guests (default: 1, must be >= 1)"},
 				"currency":    {Type: "string", Description: "Target currency (e.g. EUR, USD)"},
 			},
-			Required: []string{"origin", "destination", "depart_date", "return_date"},
+			Required: []string{"origin", "destination", "depart_date"},
 		},
 		OutputSchema: planTripOutputSchema(),
 		Annotations: &ToolAnnotations{
@@ -499,9 +499,12 @@ func handlePlanTrip(ctx context.Context, args map[string]any, elicit ElicitFunc,
 
 	departDate := argString(args, "depart_date")
 	returnDate := argString(args, "return_date")
-	if departDate == "" || returnDate == "" {
-		return nil, nil, fmt.Errorf("depart_date and return_date are required")
+	if departDate == "" {
+		return nil, nil, fmt.Errorf("depart_date is required")
 	}
+	// An empty return_date plans a one-way trip — mirrors the CLI plan-all path,
+	// which leaves the return date blank for one-way searches. PlanTrip then skips
+	// the return leg without fabricating one.
 
 	input := trip.PlanInput{
 		Origin:      origin,

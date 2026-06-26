@@ -149,12 +149,20 @@ type PlanResult struct {
 
 // PlanTrip searches flights and hotels in parallel and returns the top options
 // along with a cheapest-combination summary.
+//
+// An empty input.ReturnDate plans a one-way trip: only the outbound flight leg
+// is searched (no return leg, no native single-ticket round-trip fare), Nights
+// is 0, and the cheapest-combination summary covers the outbound flight plus a
+// single-night hotel lead-in. Supplying a ReturnDate keeps the round-trip
+// behaviour byte-identical. This mirrors the CLI one-way path, which passes an
+// empty return date straight through to the same one-way flight search — no
+// return is ever fabricated.
 func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 	if input.Origin == "" || input.Destination == "" {
 		return nil, fmt.Errorf("origin and destination are required")
 	}
-	if input.DepartDate == "" || input.ReturnDate == "" {
-		return nil, fmt.Errorf("depart and return dates are required")
+	if input.DepartDate == "" {
+		return nil, fmt.Errorf("depart date is required")
 	}
 	if input.Guests <= 0 {
 		return nil, fmt.Errorf("guests must be at least 1")
@@ -164,15 +172,22 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid depart date %q: %w", input.DepartDate, err)
 	}
-	returnDate, err := models.ParseDate(input.ReturnDate)
-	if err != nil {
-		return nil, fmt.Errorf("invalid return date %q: %w", input.ReturnDate, err)
-	}
-	if !returnDate.After(departDate) {
-		return nil, fmt.Errorf("return date must be after depart date")
-	}
 
-	nights := int(math.Round(returnDate.Sub(departDate).Hours() / 24))
+	// A round trip is requested only when a return date is supplied. One-way
+	// trips skip return-date parsing entirely — there is no date to validate and
+	// no nights to compute.
+	roundTrip := input.ReturnDate != ""
+	nights := 0
+	if roundTrip {
+		returnDate, rerr := models.ParseDate(input.ReturnDate)
+		if rerr != nil {
+			return nil, fmt.Errorf("invalid return date %q: %w", input.ReturnDate, rerr)
+		}
+		if !returnDate.After(departDate) {
+			return nil, fmt.Errorf("return date must be after depart date")
+		}
+		nights = int(math.Round(returnDate.Sub(departDate).Hours() / 24))
+	}
 
 	result := &PlanResult{
 		Origin:      input.Origin,
@@ -221,7 +236,7 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 		wg          sync.WaitGroup
 	)
 
-	wg.Add(4)
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		outResult, outErr = flights.SearchFlightsWithClient(ctx, client, input.Origin, input.Destination, input.DepartDate, flights.SearchOptions{
@@ -229,27 +244,33 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 			Adults: input.Guests,
 		})
 	}()
-	go func() {
-		defer wg.Done()
-		retResult, retErr = flights.SearchFlightsWithClient(ctx, client, input.Destination, input.Origin, input.ReturnDate, flights.SearchOptions{
-			SortBy: models.SortCheapest,
-			Adults: input.Guests,
-		})
-	}()
-	go func() {
-		defer wg.Done()
-		// Native single-ticket round-trip fares. Passing ReturnDate routes this
-		// through searchRoundTripComposed, which queries providers' genuine
-		// round-trip fares (FareRoundTrip) alongside composed one-way pairs. The
-		// leg sub-searches share the same singleflight cache keys as the outbound
-		// and return goroutines above, so only the native-RT passes are net-new
-		// network — no extra fan-out beyond this single call.
-		rtResult, rtErr = flights.SearchFlightsWithClient(ctx, client, input.Origin, input.Destination, input.DepartDate, flights.SearchOptions{
-			SortBy:     models.SortCheapest,
-			Adults:     input.Guests,
-			ReturnDate: input.ReturnDate,
-		})
-	}()
+	// Return leg and native single-ticket round-trip fares are only searched for
+	// a round trip. A one-way plan skips both — no return is fabricated.
+	if roundTrip {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			retResult, retErr = flights.SearchFlightsWithClient(ctx, client, input.Destination, input.Origin, input.ReturnDate, flights.SearchOptions{
+				SortBy: models.SortCheapest,
+				Adults: input.Guests,
+			})
+		}()
+		go func() {
+			defer wg.Done()
+			// Native single-ticket round-trip fares. Passing ReturnDate routes this
+			// through searchRoundTripComposed, which queries providers' genuine
+			// round-trip fares (FareRoundTrip) alongside composed one-way pairs. The
+			// leg sub-searches share the same singleflight cache keys as the outbound
+			// and return goroutines above, so only the native-RT passes are net-new
+			// network — no extra fan-out beyond this single call.
+			rtResult, rtErr = flights.SearchFlightsWithClient(ctx, client, input.Origin, input.Destination, input.DepartDate, flights.SearchOptions{
+				SortBy:     models.SortCheapest,
+				Adults:     input.Guests,
+				ReturnDate: input.ReturnDate,
+			})
+		}()
+	}
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		hotelLocation := models.ResolveHotelCity(input.Destination)
@@ -428,7 +449,13 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 		result.Summary.PerDay = grandTotal / float64(nights)
 	}
 
-	result.Success = len(result.OutboundFlights) > 0 && len(result.ReturnFlights) > 0 && len(result.Hotels) > 0
+	// A one-way plan is complete with outbound flights + hotels; a round trip
+	// additionally needs the return leg. The return-flights view stays empty for
+	// a one-way trip, so it is neither required for success nor reported missing.
+	result.Success = len(result.OutboundFlights) > 0 && len(result.Hotels) > 0
+	if roundTrip {
+		result.Success = result.Success && len(result.ReturnFlights) > 0
+	}
 
 	// Collect errors.
 	var errs []string
@@ -436,7 +463,7 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 	if len(result.OutboundFlights) == 0 {
 		missing = append(missing, "outbound flights")
 	}
-	if len(result.ReturnFlights) == 0 {
+	if roundTrip && len(result.ReturnFlights) == 0 {
 		missing = append(missing, "return flights")
 	}
 	if len(result.Hotels) == 0 {

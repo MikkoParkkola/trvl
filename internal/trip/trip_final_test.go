@@ -3,6 +3,7 @@ package trip
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -11,27 +12,88 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/weather"
 )
 
-func TestPlanTrip_MissingReturnDate(t *testing.T) {
-	_, err := PlanTrip(context.Background(), PlanInput{
-		Origin:      "HEL",
-		Destination: "BCN",
-		DepartDate:  "2026-07-01",
-		Guests:      1,
-	})
-	if err == nil {
-		t.Error("expected error for missing return date")
+// TestPlanTrip_ValidationGate is table-driven over the input-validation contract
+// that runs before any network call. The key one-way change is asserted here: a
+// missing return date is NOT a validation error (unlike a missing depart date),
+// while a malformed or non-future return date is still rejected. These cases all
+// return from the early-validation block, so the test is deterministic and offline.
+func TestPlanTrip_ValidationGate(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   PlanInput
+		wantErr string // substring the error must contain
+	}{
+		{
+			name:    "missing origin",
+			input:   PlanInput{Destination: "BCN", DepartDate: "2026-07-01", Guests: 1},
+			wantErr: "origin and destination",
+		},
+		{
+			name:    "missing depart date",
+			input:   PlanInput{Origin: "HEL", Destination: "BCN", ReturnDate: "2026-07-08", Guests: 1},
+			wantErr: "depart date is required",
+		},
+		{
+			name:    "zero guests",
+			input:   PlanInput{Origin: "HEL", Destination: "BCN", DepartDate: "2026-07-01", Guests: 0},
+			wantErr: "guests must be at least 1",
+		},
+		{
+			name:    "malformed return date is rejected",
+			input:   PlanInput{Origin: "HEL", Destination: "BCN", DepartDate: "2026-07-01", ReturnDate: "not-a-date", Guests: 1},
+			wantErr: "invalid return date",
+		},
+		{
+			name:    "return date not after depart is rejected",
+			input:   PlanInput{Origin: "HEL", Destination: "BCN", DepartDate: "2026-07-08", ReturnDate: "2026-07-01", Guests: 1},
+			wantErr: "return date must be after depart date",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := PlanTrip(context.Background(), tc.input)
+			if err == nil {
+				t.Fatalf("expected validation error containing %q, got nil", tc.wantErr)
+			}
+			if !contains(err.Error(), tc.wantErr) {
+				t.Errorf("error = %q, want substring %q", err.Error(), tc.wantErr)
+			}
+		})
 	}
 }
 
-func TestPlanTrip_MissingDepartDate(t *testing.T) {
-	_, err := PlanTrip(context.Background(), PlanInput{
+// TestPlanTrip_OneWayStructuralInvariants asserts the assembled one-way plan: no
+// return date echoed back, zero nights, and no return-flight leg fabricated. It is
+// gated behind TRVL_TEST_LIVE_INTEGRATIONS because PlanTrip runs live searches past
+// validation; offline those searches fail yet these structural invariants still hold.
+// Mirrors the existing live-test pattern in this package.
+func TestPlanTrip_OneWayStructuralInvariants(t *testing.T) {
+	if os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") == "" {
+		t.Skip("skipping live-API test; set TRVL_TEST_LIVE_INTEGRATIONS=1 to run")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	result, err := PlanTrip(ctx, PlanInput{
 		Origin:      "HEL",
 		Destination: "BCN",
-		ReturnDate:  "2026-07-08",
+		DepartDate:  "2026-08-01",
 		Guests:      1,
 	})
-	if err == nil {
-		t.Error("expected error for missing depart date")
+	if err != nil {
+		t.Fatalf("PlanTrip returned a hard error for a valid one-way input: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if result.ReturnDate != "" {
+		t.Errorf("ReturnDate = %q, want empty for one-way", result.ReturnDate)
+	}
+	if result.Nights != 0 {
+		t.Errorf("Nights = %d, want 0 for one-way", result.Nights)
+	}
+	if len(result.ReturnFlights) != 0 {
+		t.Errorf("ReturnFlights = %d, want 0 for one-way (no return fabricated)", len(result.ReturnFlights))
 	}
 }
 
