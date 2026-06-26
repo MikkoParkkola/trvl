@@ -22,7 +22,7 @@ func loadR2RFixture(t *testing.T, name string) string {
 // ranges, and that single-mode options are typed by their mode.
 func TestParseRome2Rio_LondonParis(t *testing.T) {
 	body := loadR2RFixture(t, "rome2rio_london_paris.html")
-	routes, err := parseRome2Rio(body, "London", "Paris")
+	routes, _, err := parseRome2Rio(body, "London", "Paris")
 	if err != nil {
 		t.Fatalf("parseRome2Rio: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestParseRome2Rio_LondonParis(t *testing.T) {
 // genuinely multimodal (ferry+fly, train+night train+bus).
 func TestParseRome2Rio_HelsinkiTromso(t *testing.T) {
 	body := loadR2RFixture(t, "rome2rio_helsinki_tromso.html")
-	routes, err := parseRome2Rio(body, "Helsinki", "Tromso")
+	routes, _, err := parseRome2Rio(body, "Helsinki", "Tromso")
 	if err != nil {
 		t.Fatalf("parseRome2Rio: %v", err)
 	}
@@ -107,12 +107,15 @@ func TestParseRome2Rio_HelsinkiTromso(t *testing.T) {
 // this is what SearchRome2Rio's retry loop keys off.
 func TestParseRome2Rio_ThinRenderHasNoRoutes(t *testing.T) {
 	thin := "<html><body><h1>Loading…</h1></body></html>"
-	routes, err := parseRome2Rio(thin, "London", "Paris")
+	routes, matched, err := parseRome2Rio(thin, "London", "Paris")
 	if err != nil {
 		t.Fatalf("parseRome2Rio(thin): %v", err)
 	}
 	if len(routes) != 0 {
 		t.Errorf("thin render should yield 0 routes, got %d", len(routes))
+	}
+	if matched != 0 {
+		t.Errorf("thin render should match 0 route anchors, got %d", matched)
 	}
 }
 
