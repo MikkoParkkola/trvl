@@ -12,6 +12,7 @@ package travelgraph
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/fareintel"
@@ -64,8 +65,9 @@ type routeHistory struct {
 type Graph struct {
 	// byRoute maps "ORIGIN-DESTINATION" to the aggregated history and watches.
 	byRoute map[string]*routeHistory
-	// prefs holds user preferences for contextual filtering (currently stored for
-	// future extension; not used in nudge logic itself).
+	// prefs holds user preferences. They gate and rank emitted nudges:
+	// ExcludedDestinations hard-drops unwanted routes, and home airports +
+	// AirportAffinity reorder the surviving nudges by relevance (see Nudges).
 	prefs *preferences.Preferences
 	// trips holds planned / booked trips indexed by ID.
 	trips map[string]trips.Trip
@@ -189,30 +191,146 @@ func (g *Graph) routeFor(key string) *routeHistory {
 //     and confidence is "high" fires KindHistoricLow. Source: route key.
 //     This check is skipped if the route already fired a KindBelowThreshold to
 //     avoid duplicate nudges for the same route.
+//
+// Profile awareness (uses g.prefs):
+//
+//   - Routes whose destination is in ExcludedDestinations are gated out: the
+//     user never wants those destinations, so a "buy" signal for them is noise.
+//   - Surviving nudges are ordered by profile relevance — routes departing from
+//     a home (or nearby) airport rank first, then by destination AirportAffinity,
+//     so the most personally relevant nudges surface at the top of the list.
+//
+// With nil/empty preferences the gate is a no-op and ordering is stable by
+// route key, so the no-profile baseline is unchanged.
 func Nudges(g *Graph) []Nudge {
-	var out []Nudge
+	var scored []scoredNudge
 	// Track which routes already produced a KindBelowThreshold nudge so the
 	// historic-low check doesn't double-fire on the same route.
 	belowRoutes := make(map[string]bool)
 
 	for key, rh := range g.byRoute {
-		belowNudges := belowThresholdNudges(rh)
-		if len(belowNudges) > 0 {
-			out = append(out, belowNudges...)
-			belowRoutes[key] = true
+		if g.isExcludedRoute(key) {
+			continue
 		}
+		belowNudges := belowThresholdNudges(rh)
+		if len(belowNudges) == 0 {
+			continue
+		}
+		for _, n := range belowNudges {
+			scored = append(scored, scoredNudge{nudge: n, key: key, rank: g.routeRank(key)})
+		}
+		belowRoutes[key] = true
 	}
 
 	for key, rh := range g.byRoute {
-		if belowRoutes[key] {
-			continue // already nudged via threshold crossing
+		if belowRoutes[key] || g.isExcludedRoute(key) {
+			continue // already nudged via threshold crossing, or gated out
 		}
 		if n, ok := historicLowNudge(key, rh); ok {
-			out = append(out, n)
+			scored = append(scored, scoredNudge{nudge: n, key: key, rank: g.routeRank(key)})
 		}
 	}
 
+	return orderByRelevance(scored)
+}
+
+// scoredNudge couples an emitted nudge with the route key it came from and the
+// profile-relevance rank used to order the final slice. Higher rank sorts first.
+type scoredNudge struct {
+	nudge Nudge
+	key   string
+	rank  int
+}
+
+// orderByRelevance returns the nudges sorted by descending profile rank, with
+// route key as a deterministic tiebreaker. When every rank is equal (the
+// no-profile case) the result is simply route-key ordered — stable and
+// reproducible, unlike the bare map iteration it replaces.
+func orderByRelevance(scored []scoredNudge) []Nudge {
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].rank != scored[j].rank {
+			return scored[i].rank > scored[j].rank
+		}
+		return scored[i].key < scored[j].key
+	})
+	out := make([]Nudge, 0, len(scored))
+	for _, s := range scored {
+		out = append(out, s.nudge)
+	}
 	return out
+}
+
+// splitRouteKey splits a canonical "ORIGIN-DESTINATION" key back into its two
+// airport codes. Returns ("", "", false) for keys that don't contain exactly
+// one separator (defensive — all keys built by routeKey are well-formed).
+func splitRouteKey(key string) (origin, dest string, ok bool) {
+	o, d, found := strings.Cut(key, "-")
+	if !found || o == "" || d == "" {
+		return "", "", false
+	}
+	return o, d, true
+}
+
+// isExcludedRoute reports whether the route's destination is hard-excluded by
+// the user's ExcludedDestinations preference. Matching is case-insensitive on
+// the destination airport code. Returns false when prefs are nil/empty.
+func (g *Graph) isExcludedRoute(key string) bool {
+	if g.prefs == nil || len(g.prefs.ExcludedDestinations) == 0 {
+		return false
+	}
+	_, dest, ok := splitRouteKey(key)
+	if !ok {
+		return false
+	}
+	for _, ex := range g.prefs.ExcludedDestinations {
+		if strings.EqualFold(strings.TrimSpace(ex), dest) {
+			return true
+		}
+	}
+	return false
+}
+
+// homeRankBonus is added to a route's rank when it departs from one of the
+// user's home or nearby airports. It dominates the affinity component (which is
+// at most affinityRankScale) so any home-origin route always outranks a
+// non-home route, regardless of destination affinity.
+const homeRankBonus = 1000
+
+// affinityRankScale maps a destination's AirportAffinity score in [0,1] onto an
+// integer rank contribution in [0,100], keeping ranks comparable as ints.
+const affinityRankScale = 100
+
+// routeRank scores a route for ordering: a large bonus when its origin is a
+// home/nearby airport, plus a destination-affinity component. Higher is more
+// relevant. Returns 0 for nil prefs so the no-profile case orders by key alone.
+func (g *Graph) routeRank(key string) int {
+	if g.prefs == nil {
+		return 0
+	}
+	origin, dest, ok := splitRouteKey(key)
+	if !ok {
+		return 0
+	}
+
+	rank := 0
+	if g.isHomeOrigin(origin) {
+		rank += homeRankBonus
+	}
+	if aff, found := g.prefs.AirportAffinity[strings.ToUpper(dest)]; found {
+		rank += int(aff * affinityRankScale)
+	}
+	return rank
+}
+
+// isHomeOrigin reports whether origin is one of the user's home airports or a
+// configured nearby alternative. Matching is case-insensitive.
+func (g *Graph) isHomeOrigin(origin string) bool {
+	for _, home := range g.prefs.ExpandHomeOrigins() {
+		if strings.EqualFold(home, origin) {
+			return true
+		}
+	}
+	return false
 }
 
 // belowThresholdNudges emits one KindBelowThreshold nudge per watch that has
