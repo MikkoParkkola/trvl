@@ -29,15 +29,20 @@ type PlanInput struct {
 
 // PlanFlight is a flight option in the trip plan.
 type PlanFlight struct {
-	Price     float64 `json:"price"`
-	Currency  string  `json:"currency"`
-	Airline   string  `json:"airline"`
-	Flight    string  `json:"flight_number"`
-	Stops     int     `json:"stops"`
-	Duration  int     `json:"duration_min"`
-	Departure string  `json:"departure"`
-	Arrival   string  `json:"arrival"`
-	Route     string  `json:"route"`
+	Price    float64 `json:"price"`
+	Currency string  `json:"currency"`
+	// ComparablePrice is the all-in fare including unavoidable baggage fees
+	// (mirrors models.FlightResult.ComparablePrice). Equals Price when no bag
+	// surcharge applies. The plan's GrandTotal is summed from this, not the
+	// headline Price, so the quoted total is what a traveller actually pays.
+	ComparablePrice float64 `json:"comparable_price,omitempty"`
+	Airline         string  `json:"airline"`
+	Flight          string  `json:"flight_number"`
+	Stops           int     `json:"stops"`
+	Duration        int     `json:"duration_min"`
+	Departure       string  `json:"departure"`
+	Arrival         string  `json:"arrival"`
+	Route           string  `json:"route"`
 }
 
 // PlanHotel is a hotel option in the trip plan.
@@ -98,6 +103,10 @@ type PlanDestinationContext struct {
 // PlanSummary shows the cheapest combination.
 type PlanSummary struct {
 	FlightsTotal float64 `json:"flights_total"`
+	// BaggageTotal is the unavoidable baggage surcharge folded into the flight
+	// quote (all-in flight cost minus headline fares). Itemised so the user can
+	// see what bags add. GrandTotal == FlightsTotal + BaggageTotal + HotelTotal.
+	BaggageTotal float64 `json:"baggage_total"`
 	HotelTotal   float64 `json:"hotel_total"`
 	GrandTotal   float64 `json:"grand_total"`
 	PerPerson    float64 `json:"per_person"`
@@ -408,16 +417,20 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 		convertPlanHotels(ctx, result.Hotels, input.Currency)
 	}
 
-	// Build summary from cheapest options.
-	var cheapOut, cheapRet float64
+	// Build summary from cheapest options. Two parallel figures per leg: the
+	// headline fare (Price) and the all-in fare (ComparablePrice, incl. bags).
+	var cheapOut, cheapRet float64     // all-in (baggage-inclusive)
+	var cheapOutHl, cheapRetHl float64 // headline fares
 	var cheapHotel float64
 	cur := choosePlanSummaryCurrency(input.Currency, result)
 
 	if len(result.OutboundFlights) > 0 {
-		cheapOut = convertedPlanAmount(ctx, result.OutboundFlights[0].Price, result.OutboundFlights[0].Currency, cur)
+		cheapOut = convertedPlanAmount(ctx, comparableOrPrice(result.OutboundFlights[0]), result.OutboundFlights[0].Currency, cur)
+		cheapOutHl = convertedPlanAmount(ctx, result.OutboundFlights[0].Price, result.OutboundFlights[0].Currency, cur)
 	}
 	if len(result.ReturnFlights) > 0 {
-		cheapRet = convertedPlanAmount(ctx, result.ReturnFlights[0].Price, result.ReturnFlights[0].Currency, cur)
+		cheapRet = convertedPlanAmount(ctx, comparableOrPrice(result.ReturnFlights[0]), result.ReturnFlights[0].Currency, cur)
+		cheapRetHl = convertedPlanAmount(ctx, result.ReturnFlights[0].Price, result.ReturnFlights[0].Currency, cur)
 	}
 	if len(result.Hotels) > 0 {
 		cheapHotel = convertedPlanAmount(ctx, result.Hotels[0].Total, result.Hotels[0].Currency, cur)
@@ -425,19 +438,36 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 
 	// Prefer the cheaper of {two one-ways, native single-ticket round-trip}. The
 	// native RT price is ALREADY a full round-trip per person, so it competes
-	// directly against cheapOut+cheapRet — no doubling. When no native fare was
+	// directly against cheapOut+cheapRet -- no doubling. When no native fare was
 	// found (or it is pricier), this is byte-identical to the two-one-way total.
-	var cheapRT float64
+	// The cheaper-of decision is made on the all-in cost (what a traveller really
+	// pays), and the matching headline figure is tracked so the baggage delta is
+	// consistent with the branch we actually chose.
+	var cheapRT, cheapRTHl float64
 	if len(result.RoundTripFares) > 0 {
-		cheapRT = convertedPlanAmount(ctx, result.RoundTripFares[0].Price, result.RoundTripFares[0].Currency, cur)
+		cheapRT = convertedPlanAmount(ctx, comparableOrPrice(result.RoundTripFares[0]), result.RoundTripFares[0].Currency, cur)
+		cheapRTHl = convertedPlanAmount(ctx, result.RoundTripFares[0].Price, result.RoundTripFares[0].Currency, cur)
 	}
-	perPersonFlights := cheaperPerPersonFlights(cheapOut+cheapRet, cheapRT)
 
-	flightsTotal := perPersonFlights * float64(input.Guests)
-	grandTotal := flightsTotal + cheapHotel
+	oneWayAllIn := cheapOut + cheapRet
+	perPersonAllIn := oneWayAllIn
+	perPersonHeadline := cheapOutHl + cheapRetHl
+	if cheapRT > 0 && cheapRT < oneWayAllIn {
+		perPersonAllIn = cheapRT
+		perPersonHeadline = cheapRTHl
+	}
+
+	flightsHeadline := perPersonHeadline * float64(input.Guests)
+	flightsAllIn := perPersonAllIn * float64(input.Guests)
+	baggageTotal := flightsAllIn - flightsHeadline
+	if baggageTotal < 0 {
+		baggageTotal = 0 // never let a stale comparable under-report fares
+	}
+	grandTotal := flightsAllIn + cheapHotel
 
 	result.Summary = PlanSummary{
-		FlightsTotal: flightsTotal,
+		FlightsTotal: flightsHeadline,
+		BaggageTotal: baggageTotal,
 		HotelTotal:   cheapHotel,
 		GrandTotal:   grandTotal,
 		Currency:     cur,
@@ -506,10 +536,11 @@ func extractTopFlights(flts []models.FlightResult, n int) []PlanFlight {
 			continue
 		}
 		pf := PlanFlight{
-			Price:    f.Price,
-			Currency: f.Currency,
-			Stops:    f.Stops,
-			Duration: f.Duration,
+			Price:           f.Price,
+			ComparablePrice: f.PriceForRanking(), // all-in incl. unavoidable bags; == Price when none
+			Currency:        f.Currency,
+			Stops:           f.Stops,
+			Duration:        f.Duration,
 		}
 		if len(f.Legs) > 0 {
 			pf.Airline = f.Legs[0].Airline
@@ -540,6 +571,16 @@ func cheaperPerPersonFlights(twoOneWays, nativeRoundTrip float64) float64 {
 	return twoOneWays
 }
 
+// comparableOrPrice returns a plan flight's all-in fare (ComparablePrice,
+// baggage-inclusive) when set, falling back to the headline Price. Mirrors
+// models.FlightResult.PriceForRanking for the plan's own flight type.
+func comparableOrPrice(f PlanFlight) float64 {
+	if f.ComparablePrice > 0 {
+		return f.ComparablePrice
+	}
+	return f.Price
+}
+
 // extractTopRoundTripFares maps native single-ticket round-trip fares to
 // PlanFlights. Only FareRoundTrip results are kept — a single bookable ticket
 // whose Price is the full round-trip total per person. The Route spans both
@@ -568,10 +609,11 @@ func extractTopRoundTripFares(flts []models.FlightResult, n int) []PlanFlight {
 			continue
 		}
 		pf := PlanFlight{
-			Price:    f.Price,
-			Currency: f.Currency,
-			Stops:    f.Stops,
-			Duration: f.Duration,
+			Price:           f.Price,
+			ComparablePrice: f.PriceForRanking(), // all-in incl. unavoidable bags; == Price when none
+			Currency:        f.Currency,
+			Stops:           f.Stops,
+			Duration:        f.Duration,
 		}
 		if len(f.Legs) > 0 {
 			pf.Airline = f.Legs[0].Airline
@@ -842,7 +884,11 @@ func convertPlanFlights(ctx context.Context, flights []PlanFlight, currency stri
 		if flights[i].Price <= 0 || flights[i].Currency == "" || flights[i].Currency == currency {
 			continue
 		}
-		flights[i].Price = convertedPlanAmount(ctx, flights[i].Price, flights[i].Currency, currency)
+		from := flights[i].Currency
+		flights[i].Price = convertedPlanAmount(ctx, flights[i].Price, from, currency)
+		if flights[i].ComparablePrice > 0 {
+			flights[i].ComparablePrice = convertedPlanAmount(ctx, flights[i].ComparablePrice, from, currency)
+		}
 		flights[i].Currency = currency
 	}
 }
