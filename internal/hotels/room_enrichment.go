@@ -3,6 +3,7 @@ package hotels
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -159,7 +160,60 @@ func enrichHotelRooms(ctx context.Context, hotels []models.HotelResult, opts Hot
 
 	for r := range results {
 		hotels[r.index].RoomTypes = r.rooms
+		// Feed the strongest drilled room into the price sources so the
+		// verified room price can win the headline when the caller re-runs
+		// FinalizeHotelPriceTrust (the "verified leads" rule).
+		if src, ok := bestRoomSource(r.rooms); ok {
+			hotels[r.index].Sources = append(hotels[r.index].Sources, src)
+		}
 	}
 
 	return hotels
+}
+
+// bestRoomSource builds a PriceSource from the strongest drilled room (highest
+// price-confidence tier, then cheapest nightly within tier) so a verified,
+// all-in room price can become the headline. Returns false when no room carries
+// a usable price.
+func bestRoomSource(rooms []models.Room) (models.PriceSource, bool) {
+	var best models.Room
+	bestRank := 0
+	found := false
+	for _, rm := range rooms {
+		price := roomHeadlinePrice(rm)
+		if price <= 0 {
+			continue
+		}
+		rank := priceConfidenceRank(rm.PriceConfidence)
+		if !found || rank > bestRank || (rank == bestRank && price < roomHeadlinePrice(best)) {
+			best = rm
+			bestRank = rank
+			found = true
+		}
+	}
+	if !found {
+		return models.PriceSource{}, false
+	}
+	provider := best.Provider
+	if provider == "" {
+		provider = "google"
+	}
+	return models.PriceSource{
+		Provider:        provider,
+		Price:           roomHeadlinePrice(best),
+		Currency:        best.Currency,
+		BookingURL:      best.ProviderURL,
+		PriceBasis:      best.PriceBasis,
+		PriceConfidence: best.PriceConfidence,
+		RetrievedAt:     time.Now(),
+	}, true
+}
+
+// roomHeadlinePrice is the per-night price a room contributes to the headline:
+// the nightly rate when present, otherwise the room's single price field.
+func roomHeadlinePrice(rm models.Room) float64 {
+	if rm.NightlyPrice > 0 {
+		return rm.NightlyPrice
+	}
+	return rm.Price
 }

@@ -756,6 +756,11 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// annotation so the verified room price is scored.
 	if opts.EnrichRooms {
 		hotels = enrichHotelRooms(ctx, hotels, opts)
+		// Enrichment appends verified room prices as new sources after the
+		// initial finalize+sort, so re-run both: the verified room price wins
+		// the headline (verified leads) and re-ranks ahead of cheaper teasers.
+		models.FinalizeHotelPriceTrust(hotels, opts.Currency, time.Now())
+		sortHotels(hotels, opts.Sort, opts.CenterLat, opts.CenterLon)
 	}
 
 	// When the eco-certified filter is active, all returned hotels have
