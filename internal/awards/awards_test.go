@@ -241,3 +241,133 @@ func TestDefaultTransferRatios_HasMajorChains(t *testing.T) {
 		}
 	}
 }
+
+func TestSeedBalancesFromProfile(t *testing.T) {
+	cases := []struct {
+		name     string
+		explicit []PointBalance
+		profile  []ProfileProgram
+		want     []PointBalance
+	}{
+		{
+			name:     "profile seeds programs when none specified",
+			explicit: nil,
+			profile:  []ProfileProgram{{Program: "AY", Balance: 40000}, {Program: "KL", Balance: 0}},
+			want:     []PointBalance{{Program: "AY", Balance: 40000}, {Program: "KL", Balance: 0}},
+		},
+		{
+			name:     "explicit value overrides profile",
+			explicit: []PointBalance{{Program: "MR", Balance: 80000}},
+			profile:  []ProfileProgram{{Program: "AY", Balance: 40000}},
+			want:     []PointBalance{{Program: "MR", Balance: 80000}},
+		},
+		{
+			name:     "empty profile is no change",
+			explicit: nil,
+			profile:  nil,
+			want:     nil,
+		},
+		{
+			name:     "blank program codes skipped",
+			explicit: nil,
+			profile:  []ProfileProgram{{Program: "  ", Balance: 10}, {Program: "ay", Balance: 5}},
+			want:     []PointBalance{{Program: "AY", Balance: 5}},
+		},
+		{
+			name:     "duplicate codes merge keeping highest balance",
+			explicit: nil,
+			profile:  []ProfileProgram{{Program: "VS", Balance: 20000}, {Program: "vs", Balance: 50000}},
+			want:     []PointBalance{{Program: "VS", Balance: 50000}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SeedBalancesFromProfile(tc.explicit, tc.profile)
+			if !equalBalances(got, tc.want) {
+				t.Errorf("SeedBalancesFromProfile() = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestProfileProgramsFrom(t *testing.T) {
+	cases := []struct {
+		name string
+		in   LoyaltyInput
+		want []ProfileProgram
+	}{
+		{
+			name: "frequent-flyer first then bare airlines",
+			in: LoyaltyInput{
+				FrequentFlyer: []ProfileProgram{{Program: "AY", Balance: 40000}},
+				Airlines:      []string{"KL"},
+			},
+			want: []ProfileProgram{{Program: "AY", Balance: 40000}, {Program: "KL", Balance: 0}},
+		},
+		{
+			name: "airline already covered by frequent-flyer is not duplicated",
+			in: LoyaltyInput{
+				FrequentFlyer: []ProfileProgram{{Program: "AY", Balance: 40000}},
+				Airlines:      []string{"ay", "KL"},
+			},
+			want: []ProfileProgram{{Program: "AY", Balance: 40000}, {Program: "KL", Balance: 0}},
+		},
+		{
+			name: "blank codes skipped",
+			in: LoyaltyInput{
+				FrequentFlyer: []ProfileProgram{{Program: "", Balance: 99}},
+				Airlines:      []string{"  ", "vs"},
+			},
+			want: []ProfileProgram{{Program: "VS", Balance: 0}},
+		},
+		{
+			name: "empty input yields empty set",
+			in:   LoyaltyInput{},
+			want: []ProfileProgram{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ProfileProgramsFrom(tc.in)
+			if len(got) != len(tc.want) {
+				t.Fatalf("ProfileProgramsFrom() len = %d, want %d (%+v)", len(got), len(tc.want), got)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("ProfileProgramsFrom()[%d] = %+v, want %+v", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestSeedBalancesFromProfile_EndToEnd proves a profile-only search
+// produces the same sweet spots as passing the equivalent balances
+// explicitly — the core promise of the gap fix.
+func TestSeedBalancesFromProfile_EndToEnd(t *testing.T) {
+	profile := ProfileProgramsFrom(LoyaltyInput{
+		FrequentFlyer: []ProfileProgram{{Program: "VS", Balance: 60000}},
+	})
+	seeded := SeedBalancesFromProfile(nil, profile)
+	fromProfile := FindSweetSpots([]AwardSeat{sampleSeat()}, seeded, nil)
+	fromExplicit := FindSweetSpots([]AwardSeat{sampleSeat()},
+		[]PointBalance{{Program: "VS", Balance: 60000}}, nil)
+	if len(fromProfile) != len(fromExplicit) || len(fromProfile) == 0 {
+		t.Fatalf("profile-seeded result count %d != explicit %d", len(fromProfile), len(fromExplicit))
+	}
+	if !fromProfile[0].Affordable || fromProfile[0].SourceProgram != "VS" {
+		t.Errorf("profile-seeded top spot = %+v, want affordable native VS", fromProfile[0])
+	}
+}
+
+func equalBalances(a, b []PointBalance) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

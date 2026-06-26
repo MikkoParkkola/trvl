@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/MikkoParkkola/trvl/internal/awards"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -143,6 +144,37 @@ type FrequentFlyerStatus struct {
 	AirlineCode  string `json:"airline_code,omitempty"`  // optional specific IATA carrier code
 	MilesBalance int    `json:"miles_balance,omitempty"` // current miles/points balance
 	ProgramName  string `json:"program_name,omitempty"`  // e.g. "Flying Blue", "Royal Plus"
+}
+
+// AwardLoyaltyInput projects the saved loyalty profile into the
+// dependency-free shape the awards package consumes to seed an award
+// search. It is the single translation point shared by the CLI and MCP
+// surfaces so both seed identical program sets.
+//
+// FrequentFlyerPrograms map to (carrier code, miles balance) pairs using
+// AirlineCode — the program's redemption currency. Entries without an
+// AirlineCode are skipped because there is no program code to redeem
+// from. LoyaltyAirlines map to bare codes with no recorded balance.
+// Returns the zero value on a nil receiver so callers can invoke it
+// unconditionally.
+func (p *Preferences) AwardLoyaltyInput() awards.LoyaltyInput {
+	if p == nil {
+		return awards.LoyaltyInput{}
+	}
+	ff := make([]awards.ProfileProgram, 0, len(p.FrequentFlyerPrograms))
+	for _, prog := range p.FrequentFlyerPrograms {
+		if strings.TrimSpace(prog.AirlineCode) == "" {
+			continue
+		}
+		ff = append(ff, awards.ProfileProgram{
+			Program: prog.AirlineCode,
+			Balance: prog.MilesBalance,
+		})
+	}
+	return awards.LoyaltyInput{
+		FrequentFlyer: ff,
+		Airlines:      p.LoyaltyAirlines,
+	}
 }
 
 // PaymentCard captures the per-card metadata internal/cards needs to

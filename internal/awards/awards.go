@@ -112,6 +112,100 @@ func DefaultTransferRatios() []TransferRatio {
 	}
 }
 
+// ProfileProgram is one loyalty program seeded from the traveller's
+// saved profile: the program/currency code plus an optional known
+// balance. A balance of 0 means the user redeems with this program but
+// the balance is not recorded; it still surfaces the program as a
+// source option (Affordable=false) so the user sees the redemption path.
+type ProfileProgram struct {
+	Program string // source program / currency IATA code (e.g. "AY", "KL")
+	Balance int    // known balance in whole points; 0 if not recorded
+}
+
+// LoyaltyInput is the plain, dependency-free projection of a traveller's
+// saved loyalty profile that ProfileProgramsFrom consumes. Surfaces
+// (CLI, MCP) translate their own preferences types into this so the
+// program-set construction lives in exactly one place.
+//
+// FrequentFlyer carries the per-program (carrier code, known balance)
+// pairs; Airlines carries bare loyalty-airline IATA codes the user
+// redeems with but for which no balance is recorded.
+type LoyaltyInput struct {
+	FrequentFlyer []ProfileProgram
+	Airlines      []string
+}
+
+// ProfileProgramsFrom flattens a traveller's saved loyalty profile into
+// the ordered ProfileProgram set used to seed an award search. It is the
+// single shared translation point for both surfaces: frequent-flyer
+// programs come first (they may carry a real balance), then any bare
+// loyalty airlines that were not already covered. Blank codes are
+// skipped and duplicates are dropped (first occurrence wins, preserving
+// any balance from the frequent-flyer entry).
+func ProfileProgramsFrom(in LoyaltyInput) []ProfileProgram {
+	out := make([]ProfileProgram, 0, len(in.FrequentFlyer)+len(in.Airlines))
+	seen := make(map[string]struct{}, cap(out))
+	add := func(code string, balance int) {
+		code = strings.ToUpper(strings.TrimSpace(code))
+		if code == "" {
+			return
+		}
+		if _, dup := seen[code]; dup {
+			return
+		}
+		seen[code] = struct{}{}
+		out = append(out, ProfileProgram{Program: code, Balance: balance})
+	}
+	for _, p := range in.FrequentFlyer {
+		add(p.Program, p.Balance)
+	}
+	for _, code := range in.Airlines {
+		add(code, 0)
+	}
+	return out
+}
+
+// SeedBalancesFromProfile builds the PointBalance set for an award
+// search from the traveller's saved loyalty profile when the user did
+// not pass any explicit balances. It is the single seeding entrypoint
+// shared by the CLI and MCP surfaces so both behave identically.
+//
+// explicit takes strict precedence: when the user supplied one or more
+// balances, it is returned unchanged and the profile is ignored, so an
+// explicit value always wins over the profile default.
+//
+// When explicit is empty, balances are seeded from profile. Duplicate
+// program codes are merged (highest known balance wins) and blank codes
+// are skipped, so a malformed profile cannot inject empty programs. An
+// empty profile yields no change (explicit is returned as-is).
+func SeedBalancesFromProfile(explicit []PointBalance, profile []ProfileProgram) []PointBalance {
+	if len(explicit) > 0 {
+		return explicit
+	}
+	merged := make(map[string]int, len(profile))
+	order := make([]string, 0, len(profile))
+	for _, p := range profile {
+		code := strings.ToUpper(strings.TrimSpace(p.Program))
+		if code == "" {
+			continue
+		}
+		if _, seen := merged[code]; !seen {
+			order = append(order, code)
+		}
+		if p.Balance > merged[code] {
+			merged[code] = p.Balance
+		}
+	}
+	if len(order) == 0 {
+		return explicit
+	}
+	out := make([]PointBalance, 0, len(order))
+	for _, code := range order {
+		out = append(out, PointBalance{Program: code, Balance: merged[code]})
+	}
+	return out
+}
+
 // FindSweetSpots scans every AwardSeat against the user's available
 // balances and the transfer table. For each seat, it constructs every
 // (source-program, target-program=seat.Program) path the table allows
