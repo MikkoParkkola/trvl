@@ -65,3 +65,140 @@ func TestHandleCheckWatches_ReturnsLivePrice(t *testing.T) {
 		t.Errorf("expected below_goal:true, got %s", got)
 	}
 }
+
+// storedWatch re-opens the on-disk watch store (the same path handleWatchPrice
+// writes to, under the test HOME) and returns the single watch it finds. It
+// proves the handler persisted what we expect rather than only echoing the
+// response struct.
+func storedWatch(t *testing.T) watch.Watch {
+	t.Helper()
+	store, err := watch.DefaultStore()
+	if err != nil {
+		t.Fatalf("DefaultStore: %v", err)
+	}
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := store.List()
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 stored watch, got %d", len(got))
+	}
+	return got[0]
+}
+
+// TestHandleWatchPrice_WebhookPersists proves the webhook arg is wired into the
+// stored watch, mirroring the CLI --webhook flag.
+func TestHandleWatchPrice_WebhookPersists(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	const hookURL = "https://hooks.invalid/notify"
+	_, _, err := handleWatchPrice(context.Background(), map[string]any{
+		"type":         "flight",
+		"origin":       "HEL",
+		"destination":  "BCN",
+		"date":         "2026-09-01",
+		"target_price": 200.0,
+		"webhook":      hookURL,
+	}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("handleWatchPrice: %v", err)
+	}
+
+	w := storedWatch(t)
+	if w.WebhookURL != hookURL {
+		t.Errorf("expected webhook to persist, got %q", w.WebhookURL)
+	}
+}
+
+// TestHandleWatchPrice_FlightDateRange proves a flight watch with a
+// depart_from/depart_to window (and no single date) is accepted and stored as a
+// date-range watch, mirroring the CLI --from/--to mode.
+func TestHandleWatchPrice_FlightDateRange(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	_, _, err := handleWatchPrice(context.Background(), map[string]any{
+		"type":         "flight",
+		"origin":       "HEL",
+		"destination":  "PRG",
+		"depart_from":  "2026-07-01",
+		"depart_to":    "2026-08-31",
+		"target_price": 100.0,
+	}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("handleWatchPrice (date range): %v", err)
+	}
+
+	w := storedWatch(t)
+	if !w.IsDateRange() {
+		t.Errorf("expected a date-range watch, got DepartFrom=%q DepartTo=%q DepartDate=%q",
+			w.DepartFrom, w.DepartTo, w.DepartDate)
+	}
+	if w.DepartFrom != "2026-07-01" || w.DepartTo != "2026-08-31" {
+		t.Errorf("date range not persisted: from=%q to=%q", w.DepartFrom, w.DepartTo)
+	}
+	if w.DepartDate != "" {
+		t.Errorf("date-range watch must not set a single DepartDate, got %q", w.DepartDate)
+	}
+}
+
+// TestHandleWatchPrice_FlightNoDateErrors proves a flight watch with neither a
+// single date nor a depart_from/depart_to range is rejected.
+func TestHandleWatchPrice_FlightNoDateErrors(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	_, _, err := handleWatchPrice(context.Background(), map[string]any{
+		"type":         "flight",
+		"origin":       "HEL",
+		"destination":  "BCN",
+		"target_price": 200.0,
+	}, nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected an error when a flight watch has neither date nor date range")
+	}
+}
+
+// TestHandleWatchPrice_AlertDropPersists proves alert_drop / alert_drop_abs
+// persist and that target_price may be omitted when a proactive drop alert is
+// set, mirroring the CLI which allows --alert-drop without --below.
+func TestHandleWatchPrice_AlertDropPersists(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	_, _, err := handleWatchPrice(context.Background(), map[string]any{
+		"type":           "flight",
+		"origin":         "HEL",
+		"destination":    "NRT",
+		"date":           "2026-09-01",
+		"alert_drop":     12.0,
+		"alert_drop_abs": 50.0,
+	}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("handleWatchPrice (alert drop, no target_price): %v", err)
+	}
+
+	w := storedWatch(t)
+	if w.AlertDropPct != 12.0 {
+		t.Errorf("expected AlertDropPct=12, got %v", w.AlertDropPct)
+	}
+	if w.AlertDropAbs != 50.0 {
+		t.Errorf("expected AlertDropAbs=50, got %v", w.AlertDropAbs)
+	}
+	if w.BelowPrice != 0 {
+		t.Errorf("expected no fixed threshold, got BelowPrice=%v", w.BelowPrice)
+	}
+}
+
+// TestHandleWatchPrice_NoThresholdErrors proves the handler rejects a watch with
+// no target_price and no proactive drop alert (nothing to fire on).
+func TestHandleWatchPrice_NoThresholdErrors(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	_, _, err := handleWatchPrice(context.Background(), map[string]any{
+		"type":        "flight",
+		"origin":      "HEL",
+		"destination": "BCN",
+		"date":        "2026-09-01",
+	}, nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected an error when neither target_price nor alert_drop is set")
+	}
+}

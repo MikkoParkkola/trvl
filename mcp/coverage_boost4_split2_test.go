@@ -408,8 +408,17 @@ func TestWatchPriceTool_Definition(t *testing.T) {
 	if tool.Name != "watch_price" {
 		t.Errorf("Name = %q, want watch_price", tool.Name)
 	}
-	if len(tool.InputSchema.Required) < 2 {
-		t.Errorf("Required = %v, want at least 2", tool.InputSchema.Required)
+	// "type" is the only hard requirement: target_price is optional when a
+	// proactive alert_drop / alert_drop_abs is supplied, mirroring the CLI which
+	// allows --alert-drop without --below.
+	hasType := false
+	for _, r := range tool.InputSchema.Required {
+		if r == "type" {
+			hasType = true
+		}
+	}
+	if !hasType {
+		t.Errorf("Required = %v, want it to include \"type\"", tool.InputSchema.Required)
 	}
 	if tool.Annotations == nil {
 		t.Fatal("annotations should be set")
