@@ -43,6 +43,13 @@ var trainlineLimiter = newProviderLimiter(12 * time.Second)
 // trainlineClient uses Chrome TLS fingerprint to bypass Datadome bot detection.
 var trainlineClient = batchexec.ChromeHTTPClient()
 
+// trainlineMaxRetryDelay caps how long we wait on a 429 Retry-After before
+// giving up; a throttled origin must not stall the whole search.
+const trainlineMaxRetryDelay = 30 * time.Second
+
+// trainlineAfter is the 429 backoff sleep seam (swapped to instant in tests).
+var trainlineAfter = time.After
+
 var (
 	trainlineDo             = func(req *http.Request) (*http.Response, error) { return trainlineClient.Do(req) }
 	trainlineFetchViaNab    = fetchTrainlineViaNab
@@ -338,6 +345,45 @@ func trainlineViaCurl(ctx context.Context, fromID, toID, date, currency string) 
 	return readAndParseTrainlineResponse(strings.NewReader(trimmed), "", "", date, currency)
 }
 
+// trainlineDoWithRetry issues the request and, on a single HTTP 429, honours the
+// Retry-After header (capped at trainlineMaxRetryDelay) and replays the request
+// exactly once. makeReq rebuilds a fresh request per attempt so the POST body is
+// re-read cleanly. A 403 bot wall is never retried here — SearchTrainline's own
+// fallback ladder handles it; any non-429 response is returned to the caller as-is.
+func trainlineDoWithRetry(ctx context.Context, makeReq func() (*http.Request, error)) (*http.Response, error) {
+	req, err := makeReq()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := trainlineDo(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusTooManyRequests {
+		return resp, nil
+	}
+
+	delay := providers.RetryAfterOrDefault(resp.Header.Get("Retry-After"), time.Now())
+	if delay > trainlineMaxRetryDelay {
+		delay = trainlineMaxRetryDelay
+	}
+	// Drain + close the 429 body before replaying so the connection can be reused.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+	_ = resp.Body.Close()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-trainlineAfter(delay):
+	}
+
+	req2, err := makeReq()
+	if err != nil {
+		return nil, err
+	}
+	return trainlineDo(req2)
+}
+
 // SearchTrainline searches thetrainline.com for train connections between two cities.
 // By default it uses the public journey-search API only. Browser/curl-assisted
 // fallbacks are opt-in via allowBrowserFallbacks.
@@ -406,12 +452,9 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 
 	slog.Debug("trainline search", "from", from, "to", to, "date", date)
 
-	req, err := newTrainlineRequest("")
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := trainlineDo(req)
+	resp, err := trainlineDoWithRetry(ctx, func() (*http.Request, error) {
+		return newTrainlineRequest("")
+	})
 	if err != nil {
 		return nil, fmt.Errorf("trainline search: %w", err)
 	}
