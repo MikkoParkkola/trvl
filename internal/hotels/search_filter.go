@@ -93,25 +93,47 @@ func sortHotels(hotels []models.HotelResult, sortBy string, centerLat, centerLon
 			return lessPrice(hotels[i], hotels[j])
 		})
 	case "rating":
-		// Sort by rating descending.
+		// Sort by rating descending; priced listings always lead unpriced ones.
 		sort.Slice(hotels, func(i, j int) bool {
+			if lead, decided := pricedLead(hotels[i], hotels[j]); decided {
+				return lead
+			}
 			return hotels[i].Rating > hotels[j].Rating
 		})
 	case "stars":
-		// Sort by star rating descending.
+		// Sort by star rating descending; priced listings always lead.
 		sort.Slice(hotels, func(i, j int) bool {
+			if lead, decided := pricedLead(hotels[i], hotels[j]); decided {
+				return lead
+			}
 			return hotels[i].Stars > hotels[j].Stars
 		})
 	case "distance":
-		// Sort by distance from city center ascending.
+		// Sort by distance from city center ascending; priced listings always lead.
 		if centerLat != 0 || centerLon != 0 {
 			sort.Slice(hotels, func(i, j int) bool {
+				if lead, decided := pricedLead(hotels[i], hotels[j]); decided {
+					return lead
+				}
 				di := Haversine(centerLat, centerLon, hotels[i].Lat, hotels[i].Lon)
 				dj := Haversine(centerLat, centerLon, hotels[j].Lat, hotels[j].Lon)
 				return di < dj
 			})
 		}
 	}
+}
+
+// pricedLead enforces the operator rule "lead with the ones that have proper
+// price available" for the non-price sort modes (rating/stars/distance). When
+// exactly one of a,b carries a bookable price it leads; decided=false when both
+// are priced or both unpriced, so the caller falls through to the chosen sort
+// key. The "cheapest" sort already handles zero-price demotion in lessPrice.
+func pricedLead(a, b models.HotelResult) (lead, decided bool) {
+	ap, bp := a.Price > 0, b.Price > 0
+	if ap != bp {
+		return ap, true
+	}
+	return false, false
 }
 
 // medianHotelCoords computes the median lat/lon from hotels that have
