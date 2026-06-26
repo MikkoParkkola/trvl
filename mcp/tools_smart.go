@@ -253,6 +253,11 @@ var smartIntentAliases = map[string]string{
 	"profile":            "get_preferences",
 	"providers":          "provider_health",
 	"provider":           "provider_health",
+	"nudges":             "travel_nudges",
+	"price_drops":        "travel_nudges",
+	"deals_for_me":       "travel_nudges",
+	"what_should_i_book": "travel_nudges",
+	"proactive":          "travel_nudges",
 }
 
 func inferTravelTarget(text, action string) string {
