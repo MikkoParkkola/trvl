@@ -167,10 +167,30 @@ func SearchKiwiFlights(ctx context.Context, origin, destination, date, currency 
 	}
 
 	results := make([]models.FlightResult, 0, len(itineraries))
+	usable := 0
 	for _, itinerary := range itineraries {
+		if itinerary.FlyFrom != "" && itinerary.FlyTo != "" {
+			usable++
+		}
 		results = append(results, mapKiwiItinerary(itinerary, currency))
 	}
+	if perr := kiwiParseFailureIfAllDropped(usable, len(itineraries)); perr != nil {
+		return nil, perr
+	}
 	return results, nil
+}
+
+// kiwiParseFailureIfAllDropped mirrors parseFailureIfAllDropped for the Kiwi MCP
+// path: when the upstream returned itinerary entries but none carried a usable
+// route, the response shape rotated underneath us. It wraps models.ErrParseFailed
+// so the caller classifies it as StatusFailed and the circuit breaker counts it,
+// instead of mistaking a broken decoder for a route with no flights. Returns nil
+// for a genuine empty result (no entries) or when at least one itinerary parsed.
+func kiwiParseFailureIfAllDropped(usable, rawEntries int) error {
+	if rawEntries > 0 && usable == 0 {
+		return fmt.Errorf("kiwi: decoded 0 of %d itineraries: %w", rawEntries, models.ErrParseFailed)
+	}
+	return nil
 }
 
 func kiwiInitializeSession(ctx context.Context) (string, error) {
