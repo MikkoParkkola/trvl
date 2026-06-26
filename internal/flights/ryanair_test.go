@@ -2,9 +2,12 @@ package flights
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 const ryanairFixture = `{"fares":[{"outbound":{
@@ -55,6 +58,25 @@ func TestSearchRyanair_MapsFare(t *testing.T) {
 	}
 	if f.BookingURL == "" {
 		t.Error("booking URL not set")
+	}
+}
+
+func TestSearchRyanair_RateLimitTyped(t *testing.T) {
+	for _, code := range []int{http.StatusTooManyRequests, http.StatusForbidden, http.StatusServiceUnavailable} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(code)
+		}))
+		orig := ryanairBaseURL
+		ryanairBaseURL = srv.URL
+		_, err := SearchRyanair(context.Background(), "STN", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
+		ryanairBaseURL = orig
+		srv.Close()
+		if err == nil {
+			t.Fatalf("status %d: want error, got nil", code)
+		}
+		if !errors.Is(err, models.ErrRateLimited) {
+			t.Errorf("status %d: err = %v, want models.ErrRateLimited", code, err)
+		}
 	}
 }
 
