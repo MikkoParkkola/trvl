@@ -273,8 +273,20 @@ func TestSearchAnyplaceEndToEnd(t *testing.T) {
 	}
 }
 
-// TestSearchAnyplaceLiveIntegration hits the real Anyplace endpoints. Opt-in
+// TestSearchAnyplaceLiveIntegration probes the real Anyplace endpoints. Opt-in
 // only: gated behind TRVL_TEST_LIVE_INTEGRATIONS=1 and skipped by -short.
+//
+// Anyplace is DEPRECATED / off by default (see anyplaceEnabled, 2026-06-20):
+// the site moved to client-side rendering and the former SSR / _next/data city
+// routes now 308-redirect to the homepage shell. The shipped contract — parser
+// correctness against fixtures and the honest-skip (disabled -> nil,nil) path —
+// is covered deterministically by TestSearchAnyplaceEndToEnd. This live test is
+// therefore a *resurrection probe*: it force-enables the provider and reports
+// whether a stable data path has returned. A live transport/endpoint failure
+// (the current, expected reality) is an honest Skip, not a test failure —
+// mirroring the easyJet AKAMAI_BLOCK precedent. The test only FAILS if the live
+// call succeeds yet yields zero listings, which would be a genuine parser
+// regression worth surfacing.
 func TestSearchAnyplaceLiveIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping live integration in -short mode")
@@ -288,11 +300,13 @@ func TestSearchAnyplaceLiveIntegration(t *testing.T) {
 
 	hotels, err := SearchAnyplace(context.Background(), "Lisbon", HotelSearchOptions{Currency: "USD"})
 	if err != nil {
-		t.Fatalf("live SearchAnyplace: %v", err)
+		// Expected while Anyplace remains deprecated (dead SSR/_next/data path).
+		// Honest skip: signals "upstream still down", not a code defect.
+		t.Skipf("anyplace live endpoint still unavailable (provider remains deprecated): %v", err)
 	}
 	if len(hotels) == 0 {
-		t.Fatal("live integration returned zero hotels")
+		t.Fatal("live call succeeded but returned zero hotels (parser regression)")
 	}
-	t.Logf("live Anyplace returned %d listings; first: %s @ %.0f %s",
+	t.Logf("live Anyplace returned %d listings; first: %s @ %.0f %s — endpoint resurrected, candidate to re-enable",
 		len(hotels), hotels[0].Name, hotels[0].Price, hotels[0].Currency)
 }
