@@ -43,6 +43,7 @@ func flightsCmd() *cobra.Command {
 		flightRailFly  bool
 		deep           bool
 		stealth        bool
+		maxPrice       int
 	)
 
 	cmd := &cobra.Command{
@@ -171,6 +172,7 @@ Examples:
 				Airlines:   airlines,
 				Adults:     adults,
 				Stealth:    stealth,
+				MaxPrice:   maxPrice,
 			}
 
 			// --compare-cabins: search all cabin classes in parallel.
@@ -207,6 +209,17 @@ Examples:
 			if err != nil {
 				return err
 			}
+
+			// Apply the traveller's saved preferences as post-search filters,
+			// matching the MCP surface (mcp/tools_flights.go). The CLI previously
+			// ignored the stored budget cap and preferred departure-time window;
+			// this brings it to parity so the profile is actually used.
+			//
+			// Explicit-flag precedence: when the user passes --max-price on the
+			// command line, that explicit value already flows into opts.MaxPrice
+			// (the server-side cap) and we skip the profile BudgetFlightMax
+			// fallback so a stored preference never overrides an explicit flag.
+			applyFlightProfileFilters(result, prefs, cmd.Flags().Changed("max-price"))
 
 			// MIK-6229/6234: log the search and compute price-position + all
 			// call-free savings via the shared pricefeed (single source shared
@@ -311,6 +324,7 @@ Examples:
 	cmd.Flags().StringVar(&sortBy, "sort", "", "Sort by: cheapest, duration, departure, arrival")
 	cmd.Flags().StringSliceVar(&airlines, "airline", nil, "Filter by airline IATA code (repeatable)")
 	cmd.Flags().IntVar(&adults, "adults", 1, "Number of adult passengers")
+	cmd.Flags().IntVar(&maxPrice, "max-price", 0, "Maximum flight price in whole currency units (0 = no limit). Overrides the saved profile budget cap when set.")
 	cmd.Flags().StringVar(&format, "format", "table", "Output format: table, json")
 	cmd.Flags().StringVar(&targetCurrency, "currency", "", "Convert prices to this currency (e.g. EUR, USD). Empty = show API default")
 	cmd.Flags().BoolVar(&compareCabins, "compare-cabins", false, "Compare prices across all cabin classes (economy, premium, business, first)")
@@ -326,6 +340,31 @@ Examples:
 	cmd.ValidArgsFunction = airportCompletion
 
 	return cmd
+}
+
+// applyFlightProfileFilters applies the traveller's saved preferences as
+// post-search filters, mirroring the MCP surface (mcp/tools_flights.go): the
+// saved budget cap, the preferred departure-time window, and frequent-flyer bag
+// allowance adjustments. It keeps result.Count consistent with the filtered
+// slice, exactly as the MCP path does.
+//
+// budgetFlagSet reports whether the user passed an explicit --max-price flag on
+// the command line. When true, the explicit value has already been applied as a
+// server-side cap (opts.MaxPrice) and the profile BudgetFlightMax fallback is
+// skipped so a stored preference never silently overrides an explicit flag.
+//
+// It is a no-op on a nil/unsuccessful result so callers can invoke it
+// unconditionally after a search.
+func applyFlightProfileFilters(result *models.FlightSearchResult, prefs *preferences.Preferences, budgetFlagSet bool) {
+	if prefs == nil || result == nil || !result.Success {
+		return
+	}
+	if !budgetFlagSet {
+		result.Flights = flights.FilterFlightsByBudget(result.Flights, prefs.BudgetFlightMax)
+	}
+	result.Flights = flights.FilterFlightsByTimePreference(result.Flights, prefs.FlightTimeEarliest, prefs.FlightTimeLatest)
+	result.Flights = flights.AdjustBagAllowance(result.Flights, prefs.FrequentFlyerPrograms)
+	result.Count = len(result.Flights)
 }
 
 // printFlightsTable renders flight results as an ASCII table.
