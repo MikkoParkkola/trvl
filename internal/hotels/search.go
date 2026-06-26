@@ -98,6 +98,11 @@ type HotelSearchOptions struct {
 	EnrichAmenities bool // fetch detail pages for top hotels to get full amenity lists
 	EnrichLimit     int  // max hotels to enrich (default: 5, max: 10)
 
+	// EnrichRooms drills into the top-N ranked hotels for real room-level
+	// pricing (Google/Booking/SerpAPI/Agoda). Opt-in and rate-limit aware.
+	EnrichRooms      bool
+	EnrichRoomsLimit int // max hotels to room-enrich (default: 5, max: 10)
+
 	// MaxPages overrides the default pagination depth (maxPages).
 	// Compound commands (trip-cost, weekend, multi-city) set this to 1
 	// because they only need the cheapest result, not 75 hotels.
@@ -744,6 +749,13 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// Enrich top hotels with full amenity data from detail pages.
 	if opts.EnrichAmenities {
 		hotels = enrichHotelAmenities(ctx, hotels, opts.EnrichLimit)
+	}
+
+	// Enrich top hotels with real room-level pricing via the unified
+	// drill-down (Google/Booking/SerpAPI/Agoda). Runs before confidence
+	// annotation so the verified room price is scored.
+	if opts.EnrichRooms {
+		hotels = enrichHotelRooms(ctx, hotels, opts)
 	}
 
 	// When the eco-certified filter is active, all returned hotels have
