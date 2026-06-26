@@ -56,6 +56,42 @@ func FilterFlightsByBudget(flights []models.FlightResult, maxPrice float64) []mo
 	return out
 }
 
+// FilterByAirline keeps only flights operated (on at least one leg) by one of
+// the requested airline IATA codes. Matching is case-insensitive and trims
+// surrounding whitespace on both the requested codes and the leg codes.
+//
+// An empty (or all-blank) airlines list is a no-op: the input slice is returned
+// unchanged. A flight with no legs, or whose legs carry no matching airline
+// code, is dropped when a filter is active, since it cannot satisfy the
+// restriction.
+//
+// This mirrors the CLI `--airline` semantics (restrict to these carriers) as a
+// deterministic post-search narrowing over whatever the provider returned. The
+// function never mutates the input slice and always returns a valid (possibly
+// empty) slice.
+func FilterByAirline(flights []models.FlightResult, airlines []string) []models.FlightResult {
+	wanted := make(map[string]struct{}, len(airlines))
+	for _, a := range airlines {
+		if code := strings.ToUpper(strings.TrimSpace(a)); code != "" {
+			wanted[code] = struct{}{}
+		}
+	}
+	if len(wanted) == 0 {
+		return flights
+	}
+	out := make([]models.FlightResult, 0, len(flights))
+	for _, f := range flights {
+		for _, leg := range f.Legs {
+			code := strings.ToUpper(strings.TrimSpace(leg.AirlineCode))
+			if _, ok := wanted[code]; ok {
+				out = append(out, f)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // FirstPricedResult returns the first flight with Price > 0 from a pre-sorted slice.
 // Returns nil if no priced flight exists.
 func FirstPricedResult(flights []models.FlightResult) []models.FlightResult {

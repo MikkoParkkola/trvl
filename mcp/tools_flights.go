@@ -201,7 +201,8 @@ func searchFlightsTool() ToolDef {
 				"no_early_connection": {Type: "boolean", Description: "Drop flights whose post-overnight leg departs before preferences.early_connection_floor (default 10:00)."},
 				"lounge_required":     {Type: "boolean", Description: "Drop flights where a layover airport lacks lounge coverage from user's cards."},
 				"first_result":        {Type: "boolean", Description: "Return only the first result with a valid price after sorting. Combine with sort_by to get e.g. the shortest priced flight (duration) or cheapest. Default: false."},
-				"provider":            {Type: "string", Description: "Flight provider: empty (default) = Google Flights + Kiwi + Skiplagged merge, 'skiplagged' = Skiplagged MCP only (hidden-city + virtual-interlining defaults). Use the solo provider when you want to cross-validate hidden-city candidates."},
+				"airline":             {Type: "array", Items: &Property{Type: "string"}, Description: "Restrict results to these airline IATA codes (e.g. AY, AF, KL). Accepts a JSON array or a comma-separated string. Empty = no filter. Mirrors the CLI --airline flag: the codes are passed to the provider and the results are also narrowed post-search to flights with at least one matching leg."},
+				"provider":            {Type: "string", Description: "Flight provider: empty (default) = Google Flights + Kiwi + Skiplagged merge, 'skiplagged' = Skiplagged MCP only (hidden-city + virtual-interlining defaults), 'afklm' (aliases: af-klm, airfranceklm) = Air France-KLM Offers API only (opt-in, native round-trip fares; requires a credential). Use a solo provider when you want to cross-validate candidates."},
 			},
 			Required: []string{"destination", "departure_date"},
 		},
@@ -280,6 +281,7 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		MaxDuration:       argInt(args, "max_duration", 0),
 		ExcludeBasic:      argBool(args, "exclude_basic", false),
 		Alliances:         argStringSlice(args, "alliances"),
+		Airlines:          argStringSlice(args, "airline"),
 		DepartAfter:       argString(args, "depart_after"),
 		DepartBefore:      argString(args, "depart_before"),
 		LessEmissions:     argBool(args, "less_emissions", false),
@@ -354,6 +356,14 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 	// plan_flight_bundle — lets agents stick with search_flights and still
 	// get the filter stack.
 	if result != nil && result.Success {
+		// Airline restriction (CLI --airline parity). opts.Airlines was already
+		// passed to the provider as a server-side hint; narrow deterministically
+		// here so the response only contains flights with a matching leg, even
+		// when a provider returns near-matches.
+		if len(opts.Airlines) > 0 {
+			result.Flights = flights.FilterByAirline(result.Flights, opts.Airlines)
+			result.Count = len(result.Flights)
+		}
 		if mins := argInt(args, "min_layover_minutes", 0); mins > 0 || len(argStringSlice(args, "layover_at")) > 0 {
 			result.Flights = flights.FilterByLongLayover(result.Flights, mins, argStringSlice(args, "layover_at"))
 			result.Count = len(result.Flights)
@@ -618,10 +628,11 @@ func buildBookingContext(date, origin string, originSource travelctx.Source) *bo
 // provider based on the optional `provider` argument. Empty (or one
 // of the legacy aliases) goes through the default Google Flights +
 // Kiwi merge in `flights.SearchFlights`. `provider="skiplagged"`
-// dispatches to the Skiplagged MCP-backed provider, which is opt-in
-// only and never participates in the default-on path. New providers
-// must explicitly register here so the dispatcher remains the single
-// switchboard.
+// dispatches to the Skiplagged MCP-backed provider and
+// `provider="afklm"` (aliases af-klm, airfranceklm) to the
+// Air France-KLM Offers API; both are opt-in only and never
+// participate in the default-on path. New providers must explicitly
+// register here so the dispatcher remains the single switchboard.
 func dispatchFlightSearch(ctx context.Context, args map[string]any, origin, dest, date string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
 	provider := strings.ToLower(strings.TrimSpace(argString(args, "provider")))
 	// origin/dest are validated, possibly comma-separated multi-airport lists.
@@ -638,13 +649,18 @@ func dispatchFlightSearch(ctx context.Context, args map[string]any, origin, dest
 			return nil, fmt.Errorf("provider skiplagged supports exactly one origin and one destination")
 		}
 		return flights.SearchSkiplagged(ctx, origins[0], dests[0], date, opts)
+	case "afklm", "af-klm", "airfranceklm":
+		if len(origins) != 1 || len(dests) != 1 {
+			return nil, fmt.Errorf("provider afklm supports exactly one origin and one destination")
+		}
+		return flights.SearchAFKLM(ctx, origins[0], dests[0], date, opts)
 	case "", "default", "google", "google_flights", "kiwi":
 		if multiAirportRoute(origins, dests) {
 			return flights.SearchMultiAirport(ctx, origins, dests, date, opts)
 		}
 		return flights.SearchFlights(ctx, origins[0], dests[0], date, opts)
 	default:
-		return nil, fmt.Errorf("unsupported provider %q (valid: skiplagged, or empty for default Google+Kiwi+Skiplagged merge)", provider)
+		return nil, fmt.Errorf("unsupported provider %q (valid: skiplagged, afklm, or empty for default Google+Kiwi+Skiplagged merge)", provider)
 	}
 }
 
