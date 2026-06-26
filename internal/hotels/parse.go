@@ -57,6 +57,20 @@ func parseHotelsFromPage(page string, currency string) ([]models.HotelResult, er
 	return pr.Hotels, nil
 }
 
+// hotelParseFailure reports a typed parse failure when the upstream page claims
+// hotels exist (totalAvailable > 0) yet the decoder extracted none — the entry
+// shape rotated underneath the positional parser. It returns nil when zero
+// parsed is consistent with an honest empty result (totalAvailable == 0), so a
+// genuinely empty search is never misreported as a provider failure. Wrapping
+// models.ErrParseFailed lets ClassifyProviderError map the failure to
+// StatusFailed and the circuit breaker count it.
+func hotelParseFailure(parsed, totalAvailable int) error {
+	if totalAvailable > 0 && parsed == 0 {
+		return fmt.Errorf("google hotels: parsed 0 of %d available hotels: %w", totalAvailable, models.ErrParseFailed)
+	}
+	return nil
+}
+
 // parseHotelsFromPageFull extracts hotels and metadata from a Google Travel
 // Hotels HTML page. Unlike parseHotelsFromPage, it returns the full parseResult
 // including total available count.
