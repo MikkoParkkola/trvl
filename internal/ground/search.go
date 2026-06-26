@@ -202,12 +202,21 @@ func searchRoundTripByName(ctx context.Context, from, to, date, returnDate strin
 		if res.HackSaving != nil && combined.HackSaving == nil {
 			combined.HackSaving = res.HackSaving
 		}
+		// Carry each direction's provider outcomes into the combined envelope so a
+		// round-trip is as honest about partial failures as a one-way (otherwise a
+		// timed-out inbound provider would vanish). Direction-prefix the id to keep
+		// outbound/inbound entries distinct.
+		for _, ps := range res.ProviderStatuses {
+			ps.ID = dir + ":" + ps.ID
+			combined.ProviderStatuses = append(combined.ProviderStatuses, ps)
+		}
 	}
 	tagDirection(outbound, "outbound")
 	tagDirection(inbound, "inbound")
 
 	combined.Count = len(combined.Routes)
 	combined.Success = combined.Count > 0
+	combined.Completeness = models.ComputeCompleteness(combined.ProviderStatuses)
 	return combined, nil
 }
 
@@ -483,18 +492,41 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 
 	var allRoutes []models.GroundRoute
 	var errors []string
+	var statuses []models.ProviderStatus
 	for r := range results {
 		if r.err != nil {
 			if isProviderNotApplicable(r.err) {
 				slog.Debug("ground provider not applicable", "provider", r.name, "reason", r.err)
+				// Attempted but no applicable route for this origin/destination —
+				// not a failure, so it must not drag Completeness toward "partial".
+				statuses = append(statuses, models.ProviderStatus{
+					ID:     r.name,
+					Name:   r.name,
+					Status: models.StatusSkipped,
+				})
 			} else {
 				slog.Warn("ground provider error", "provider", r.name, "error", r.err)
 				errors = append(errors, fmt.Sprintf("%s: %v", r.name, r.err))
+				statuses = append(statuses, models.ProviderStatus{
+					ID:     r.name,
+					Name:   r.name,
+					Status: models.ClassifyProviderError(r.err),
+					Error:  r.err.Error(),
+				})
 			}
 			continue
 		}
 		allRoutes = append(allRoutes, r.routes...)
+		statuses = append(statuses, models.ProviderStatus{
+			ID:      r.name,
+			Name:    r.name,
+			Status:  models.StatusOK,
+			Results: len(r.routes),
+		})
 	}
+	// Deterministic order: the channel drains concurrently, so sort by id for
+	// stable JSON output (and stable tests).
+	sort.Slice(statuses, func(i, j int) bool { return statuses[i].ID < statuses[j].ID })
 
 	// Filter/deduplicate in one pass while preserving the current semantics:
 	// unavailable routes are removed first, then duplicate routes are suppressed
@@ -513,9 +545,11 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	annotateGroundConfidence(allRoutes, time.Now())
 
 	result := &models.GroundSearchResult{
-		Success: len(allRoutes) > 0,
-		Count:   len(allRoutes),
-		Routes:  allRoutes,
+		Success:          len(allRoutes) > 0,
+		Count:            len(allRoutes),
+		Routes:           allRoutes,
+		ProviderStatuses: statuses,
+		Completeness:     models.ComputeCompleteness(statuses),
 	}
 	if len(allRoutes) == 0 && len(errors) > 0 {
 		result.Error = strings.Join(errors, "; ")
