@@ -27,8 +27,9 @@ if [ "$force" -eq 0 ] && scripts/gitnexus/check-staleness.sh >/dev/null 2>&1; th
   exit 0
 fi
 
-echo "gitnexus: re-analyzing (npx gitnexus analyze)..."
-npx --yes gitnexus analyze
+gitnexus_version="${GITNEXUS_VERSION:-1.6.8}"
+echo "gitnexus: re-analyzing (npx gitnexus@$gitnexus_version analyze)..."
+npx --yes "gitnexus@$gitnexus_version" analyze
 
 if [ "$keep_counts" -eq 0 ]; then
   # Index (.gitnexus/, gitignored) is updated in place; drop the cosmetic
