@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.5] - 2026-06-28
+
+### Changed
+- **Go-first repo hardening.** Replaced the remaining tracked Python ground-provider scraper with the native Go CDP path, and added CI enforcement that rejects tracked Python files unless explicitly allowlisted.
+- **Workflow supply-chain gates.** SHA-pinned workflow runtime actions, moved workflow Node jobs to Node 24, pinned GitNexus CLI usage, and added a workflow-hygiene guard so these constraints stay enforced.
+- **Go quality gates and release docs.** Added pinned `golangci-lint v2.12.2` to CI, made `make lint` fail closed when lint/security tools are missing, and completed v1.17 changelog compare links.
+
 ## [1.17.4] - 2026-06-27
 
 ### Changed
@@ -741,7 +748,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.17.4...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.17.5...HEAD
+[1.17.5]: https://github.com/MikkoParkkola/trvl/compare/v1.17.4...v1.17.5
 [1.17.4]: https://github.com/MikkoParkkola/trvl/compare/v1.17.3...v1.17.4
 [1.17.3]: https://github.com/MikkoParkkola/trvl/compare/v1.17.2...v1.17.3
 [1.17.2]: https://github.com/MikkoParkkola/trvl/compare/v1.17.1...v1.17.2
