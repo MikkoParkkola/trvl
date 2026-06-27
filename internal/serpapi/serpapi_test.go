@@ -28,7 +28,9 @@ func TestSearchHotels_HTTP200(t *testing.T) {
 				TotalRate:    Rate{Extracted: 693, Lowest: "$693"},
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -65,7 +67,7 @@ func TestSearchHotelsVerifiedFetchesPropertyDetailsAndPromotesProviderTotal(t *t
 			listCalls++
 			assertQuery(t, q.Get("adults"), "2", "adults")
 			assertQuery(t, q.Get("gl"), "us", "gl")
-			json.NewEncoder(w).Encode(Response{
+			if err := json.NewEncoder(w).Encode(Response{
 				SearchMetadata: struct {
 					ID     string `json:"id"`
 					Status string `json:"status"`
@@ -77,13 +79,15 @@ func TestSearchHotelsVerifiedFetchesPropertyDetailsAndPromotesProviderTotal(t *t
 					TotalRate:     Rate{Extracted: 779, Lowest: "€779"},
 					Prices:        nil,
 				}},
-			})
+			}); err != nil {
+				t.Errorf("encode list response: %v", err)
+			}
 			return
 		}
 
 		detailCalls++
 		assertQuery(t, q.Get("property_token"), "sorriso-token", "property_token")
-		json.NewEncoder(w).Encode(propertyDetailsResponse{
+		if err := json.NewEncoder(w).Encode(propertyDetailsResponse{
 			SearchMetadata: struct {
 				ID     string `json:"id"`
 				Status string `json:"status"`
@@ -97,7 +101,9 @@ func TestSearchHotelsVerifiedFetchesPropertyDetailsAndPromotesProviderTotal(t *t
 					TotalRate:    Rate{Extracted: 1102, Lowest: "€1,102"},
 				}},
 			},
-		})
+		}); err != nil {
+			t.Errorf("encode detail response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -154,7 +160,7 @@ func TestSearchHotelsVerifiedPopulatesPricesFromFeaturedOnlyDetail(t *testing.T)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Get("property_token") == "" {
-			json.NewEncoder(w).Encode(Response{
+			if err := json.NewEncoder(w).Encode(Response{
 				SearchMetadata: struct {
 					ID     string `json:"id"`
 					Status string `json:"status"`
@@ -166,10 +172,12 @@ func TestSearchHotelsVerifiedPopulatesPricesFromFeaturedOnlyDetail(t *testing.T)
 					TotalRate:     Rate{Extracted: 779, Lowest: "€779"},
 					Prices:        nil,
 				}},
-			})
+			}); err != nil {
+				t.Errorf("encode list response: %v", err)
+			}
 			return
 		}
-		json.NewEncoder(w).Encode(propertyDetailsResponse{
+		if err := json.NewEncoder(w).Encode(propertyDetailsResponse{
 			SearchMetadata: struct {
 				ID     string `json:"id"`
 				Status string `json:"status"`
@@ -184,7 +192,9 @@ func TestSearchHotelsVerifiedPopulatesPricesFromFeaturedOnlyDetail(t *testing.T)
 					TotalRate:    Rate{Extracted: 1024, Lowest: "€1,024"},
 				}},
 			},
-		})
+		}); err != nil {
+			t.Errorf("encode detail response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -220,7 +230,7 @@ func TestSearchHotelsVerifiedMarksPropertiesBeyondDetailLimit(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Get("property_token") == "" {
-			json.NewEncoder(w).Encode(Response{
+			if err := json.NewEncoder(w).Encode(Response{
 				SearchMetadata: struct {
 					ID     string `json:"id"`
 					Status string `json:"status"`
@@ -237,10 +247,12 @@ func TestSearchHotelsVerifiedMarksPropertiesBeyondDetailLimit(t *testing.T) {
 						TotalRate:     Rate{Extracted: 200},
 					},
 				},
-			})
+			}); err != nil {
+				t.Errorf("encode list response: %v", err)
+			}
 			return
 		}
-		json.NewEncoder(w).Encode(propertyDetailsResponse{
+		if err := json.NewEncoder(w).Encode(propertyDetailsResponse{
 			SearchMetadata: struct {
 				ID     string `json:"id"`
 				Status string `json:"status"`
@@ -252,7 +264,9 @@ func TestSearchHotelsVerifiedMarksPropertiesBeyondDetailLimit(t *testing.T) {
 					TotalRate: Rate{Extracted: 120},
 				}},
 			},
-		})
+		}); err != nil {
+			t.Errorf("encode detail response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -292,7 +306,7 @@ func TestSearchHotelsVerifiedUsesLocalCacheForDuplicateListAndDetailRequests(t *
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("property_token") == "" {
 			listCalls++
-			json.NewEncoder(w).Encode(Response{
+			if err := json.NewEncoder(w).Encode(Response{
 				SearchMetadata: struct {
 					ID     string `json:"id"`
 					Status string `json:"status"`
@@ -303,12 +317,14 @@ func TestSearchHotelsVerifiedUsesLocalCacheForDuplicateListAndDetailRequests(t *
 					RatePerNight:  Rate{Extracted: 100},
 					TotalRate:     Rate{Extracted: 500},
 				}},
-			})
+			}); err != nil {
+				t.Errorf("encode list response: %v", err)
+			}
 			return
 		}
 
 		detailCalls++
-		json.NewEncoder(w).Encode(propertyDetailsResponse{
+		if err := json.NewEncoder(w).Encode(propertyDetailsResponse{
 			SearchMetadata: struct {
 				ID     string `json:"id"`
 				Status string `json:"status"`
@@ -320,7 +336,9 @@ func TestSearchHotelsVerifiedUsesLocalCacheForDuplicateListAndDetailRequests(t *
 					TotalRate: Rate{Extracted: 520},
 				}},
 			},
-		})
+		}); err != nil {
+			t.Errorf("encode detail response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -356,12 +374,14 @@ func TestSearchHotelsWithOptionsNoCacheBypassesLocalCache(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		assertQuery(t, r.URL.Query().Get("no_cache"), "true", "no_cache")
-		json.NewEncoder(w).Encode(Response{
+		if err := json.NewEncoder(w).Encode(Response{
 			SearchMetadata: struct {
 				ID     string `json:"id"`
 				Status string `json:"status"`
 			}{Status: "Success"},
-		})
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -409,12 +429,14 @@ func TestSearchHotelsWithOptionsPassesAccommodationCriteria(t *testing.T) {
 		assertQuery(t, q.Get("bathrooms"), "1", "bathrooms")
 		assertQuery(t, q.Get("next_page_token"), "next-token", "next_page_token")
 		assertQuery(t, q.Get("no_cache"), "true", "no_cache")
-		json.NewEncoder(w).Encode(Response{
+		if err := json.NewEncoder(w).Encode(Response{
 			SearchMetadata: struct {
 				ID     string `json:"id"`
 				Status string `json:"status"`
 			}{Status: "Success"},
-		})
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -494,7 +516,7 @@ func TestResolveGoogleMapsPlaceUsesDataCID(t *testing.T) {
 		assertQuery(t, q.Get("type"), "place", "type")
 		assertQuery(t, q.Get("data_cid"), "4860344902944680041", "data_cid")
 		assertQuery(t, q.Get("api_key"), "test_key", "api_key")
-		json.NewEncoder(w).Encode(mapsPlaceResponse{
+		if err := json.NewEncoder(w).Encode(mapsPlaceResponse{
 			SearchMetadata: struct {
 				ID     string `json:"id"`
 				Status string `json:"status"`
@@ -505,7 +527,9 @@ func TestResolveGoogleMapsPlaceUsesDataCID(t *testing.T) {
 				DataID:  "0x133b6ab82c204df7:0x437369f021e5e869",
 				DataCID: "4860344902944680041",
 			},
-		})
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -563,7 +587,9 @@ func TestSearchHotels_ErrorStatus(t *testing.T) {
 				Status string `json:"status"`
 			}{Status: "Error"},
 		}
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -613,7 +639,9 @@ func TestSearchHotelsWithOptions_PaginationToken(t *testing.T) {
 			Properties: []Hotel{{Name: "Paged Hotel"}},
 		}
 		resp.SerpapiPagination.NextPageToken = "NEXT_PAGE_3"
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer srv.Close()
 

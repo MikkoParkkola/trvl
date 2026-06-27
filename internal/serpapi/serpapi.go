@@ -297,7 +297,7 @@ func GetPropertyDetails(ctx context.Context, opts SearchOptions, propertyToken s
 	if result.SearchMetadata.Status == "Error" {
 		return nil, fmt.Errorf("serpapi: error status")
 	}
-	if result.Hotel.Name == "" && result.Hotel.PropertyToken == "" && len(result.Hotel.Prices) == 0 && len(result.Hotel.FeaturedPrices) == 0 {
+	if result.Name == "" && result.PropertyToken == "" && len(result.Prices) == 0 && len(result.FeaturedPrices) == 0 {
 		return nil, fmt.Errorf("serpapi: property details response did not include hotel details")
 	}
 	return &result.Hotel, nil
@@ -479,7 +479,7 @@ func doSerpAPIRequest(req *http.Request, result any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("serpapi: HTTP %d", resp.StatusCode)

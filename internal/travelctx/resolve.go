@@ -266,10 +266,11 @@ func atof(s string) float64 {
 		return 0
 	}
 	var neg bool
-	if s[0] == '-' {
+	switch s[0] {
+	case '-':
 		neg = true
 		s = s[1:]
-	} else if s[0] == '+' {
+	case '+':
 		s = s[1:]
 	}
 	var intPart, fracPart float64

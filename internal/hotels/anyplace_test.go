@@ -235,11 +235,11 @@ func TestSearchAnyplaceEndToEnd(t *testing.T) {
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/listings/lisbon-portugal":
+		switch r.URL.Path {
+		case "/listings/lisbon-portugal":
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = w.Write(html)
-		case r.URL.Path == "/_next/data/AbC123dEf456/listings/lisbon-portugal.json":
+		case "/_next/data/AbC123dEf456/listings/lisbon-portugal.json":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(cityJSON)
 		default:

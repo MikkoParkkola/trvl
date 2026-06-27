@@ -166,9 +166,9 @@ func buildCarSearchSummary(result *models.CarSearchResult, opts cars.SearchOptio
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d rental car offers for %s from %s to %s", result.Count, opts.PickupLocation, opts.PickupDate, opts.DropoffDate))
+	_, _ = fmt.Fprintf(&sb, "Found %d rental car offers for %s from %s to %s", result.Count, opts.PickupLocation, opts.PickupDate, opts.DropoffDate)
 	if opts.DropoffLocation != "" && opts.DropoffLocation != opts.PickupLocation {
-		sb.WriteString(fmt.Sprintf(", returning at %s", opts.DropoffLocation))
+		_, _ = fmt.Fprintf(&sb, ", returning at %s", opts.DropoffLocation)
 	}
 	sb.WriteString(":\n\n")
 	limit := min(len(result.Offers), 5)
@@ -178,12 +178,12 @@ func buildCarSearchSummary(result *models.CarSearchResult, opts cars.SearchOptio
 		if name == "" {
 			name = offer.VehicleClass
 		}
-		sb.WriteString(fmt.Sprintf("%d. %s — %s %.2f", i+1, name, offer.Currency, offer.Price))
+		_, _ = fmt.Fprintf(&sb, "%d. %s — %s %.2f", i+1, name, offer.Currency, offer.Price)
 		if offer.VehicleClass != "" {
 			sb.WriteString(" · " + offer.VehicleClass)
 		}
 		if offer.Seats > 0 {
-			sb.WriteString(fmt.Sprintf(" · %d seats", offer.Seats))
+			_, _ = fmt.Fprintf(&sb, " · %d seats", offer.Seats)
 		}
 		if offer.BookingURL != "" {
 			sb.WriteString(" · " + offer.BookingURL)

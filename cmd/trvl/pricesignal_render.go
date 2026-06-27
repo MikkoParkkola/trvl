@@ -17,10 +17,10 @@ func printPricePosition(w io.Writer, pos *pricesignal.Position) {
 		return
 	}
 	if !pos.Confident {
-		fmt.Fprintf(w, "\nPrice position: not enough history yet (%d observation(s)) — current price shown, no trend.\n", pos.Observations)
+		_, _ = fmt.Fprintf(w, "\nPrice position: not enough history yet (%d observation(s)) — current price shown, no trend.\n", pos.Observations)
 		return
 	}
-	fmt.Fprintf(w, "\nPrice position: %s — %s of this route (low %.0f / median %.0f / high %.0f over %d obs, %s vs median).\n",
+	_, _ = fmt.Fprintf(w, "\nPrice position: %s — %s of this route (low %.0f / median %.0f / high %.0f over %d obs, %s vs median).\n",
 		verdictText(pos.Verdict),
 		bandText(pos.Band),
 		pos.Low, pos.Median, pos.High, pos.Observations,

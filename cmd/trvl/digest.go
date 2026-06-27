@@ -78,8 +78,8 @@ func collectDigest(currency string) dealradar.Digest {
 func runDigest(cmd *cobra.Command, dryRun bool, currency string) error {
 	d := collectDigest(currency)
 	if dryRun {
-		fmt.Fprint(cmd.OutOrStdout(), d.Render())
-		return nil
+		_, err := fmt.Fprint(cmd.OutOrStdout(), d.Render())
+		return err
 	}
 	m, err := mailer.NewFromEnv()
 	if err != nil {
@@ -88,6 +88,6 @@ func runDigest(cmd *cobra.Command, dryRun bool, currency string) error {
 	if _, err := m.SendDigest(d.Subject(), d.Render()); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "deal-radar digest sent (%d deals)\n", len(d.Items))
-	return nil
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "deal-radar digest sent (%d deals)\n", len(d.Items))
+	return err
 }

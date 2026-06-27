@@ -442,7 +442,7 @@ func argIntSlice(args map[string]any, key string) []int {
 			if part == "" {
 				continue
 			}
-			var n json.Number = json.Number(part)
+			n := json.Number(part)
 			i, err := n.Int64()
 			if err == nil {
 				result = append(result, int(i))
