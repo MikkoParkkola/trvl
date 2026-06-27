@@ -388,6 +388,7 @@ func resetTrainlineSeams(t *testing.T) {
 	origResolve := trainlineResolveChallenge
 	origOpen := trainlineOpenBrowser
 	origLimiter := trainlineLimiter
+	origBrowserScraper := browserScraperNavigateText
 	t.Cleanup(func() {
 		trainlineDo = origDo
 		trainlineFetchViaNab = origNab
@@ -397,6 +398,7 @@ func resetTrainlineSeams(t *testing.T) {
 		trainlineResolveChallenge = origResolve
 		trainlineOpenBrowser = origOpen
 		trainlineLimiter = origLimiter
+		browserScraperNavigateText = origBrowserScraper
 	})
 	trainlineLimiter = rate.NewLimiter(rate.Inf, 1)
 	trainlineBrowserCookies = func(string) string { return "" }
@@ -412,8 +414,9 @@ func resetTrainlineSeams(t *testing.T) {
 		return nil, errStubbedFallback
 	}
 	trainlineOpenBrowser = func(string) error { return nil }
-	// Neutralise the Playwright scraper last-resort so it cannot shell out.
-	t.Setenv("TRVL_SCRAPER_PATH", "/nonexistent/trvl-test-scraper.py")
+	browserScraperNavigateText = func(context.Context, string, time.Duration) (string, error) {
+		return "", errStubbedFallback
+	}
 }
 
 // TestSearchTrainline_HeadlessClearedRetriesSilently verifies that when the

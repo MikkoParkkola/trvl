@@ -21,12 +21,12 @@ cmd/trvl                          CLI entry point (cobra)
   |     +-- regiojet.go           RegioJet REST API (brn-ybus-pubapi.sa.cz)
   |     +-- eurostar.go           Eurostar GraphQL (site-api.eurostar.com)
   |     +-- deutschebahn.go       DB Vendo API (int.bahn.de/web/api)
-  |     +-- oebb.go               ÖBB Austrian Railways (Playwright browser scraper)
+  |     +-- oebb.go               ÖBB Austrian Railways (shop/HAFAS APIs)
   |     +-- ns.go                 NS Dutch Railways (public API, embedded key)
   |     +-- digitransit.go        VR Finnish Railways via Digitransit GraphQL
-  |     +-- sncf.go               SNCF Connect API (curl BFF fallback + Playwright)
+  |     +-- sncf.go               SNCF Connect API (curl BFF fallback + Go CDP)
   |     +-- trainline.go          Trainline aggregated rail API (browser cookie auth)
-  |     +-- renfe.go              Renfe Spanish Railways (Playwright browser scraper)
+  |     +-- renfe.go              Renfe Spanish Railways (REST price calendar)
   |     +-- transitous.go         Transitous/MOTIS2 (routing.spicebus.org)
   |
   +-- internal/cars               Rental car search surface and setup-aware provider statuses
@@ -37,7 +37,7 @@ cmd/trvl                          CLI entry point (cobra)
   |     +-- stenaline.go          Stena Line reference schedule — Distribusion API pending
   |     +-- dfds.go               DFDS availability API (travel-search-prod.dfds-pax-web.com)
   |     +-- taxi.go               Taxi fare estimates for airport transfers
-  |     +-- browser_scraper.go    Shared Playwright browser automation
+  |     +-- browser_scraper.go    Shared Go CDP browser fallback
   |     +-- search.go             Parallel dispatch + result merging
   |     +-- internal/models
   |
@@ -154,12 +154,12 @@ User: "ground Prague Vienna 2026-07-01"
           +---> regiojet.go      Location resolve -> route search (10 req/s limit)
           +---> eurostar.go      Station lookup -> GraphQL query (1 req/20s limit)
           +---> deutschebahn.go  Location search -> journey query (1 req/2s limit)
-          +---> oebb.go          Browser session -> Railjet journey (Playwright)
+          +---> oebb.go          Shop/HAFAS API -> Railjet journey
           +---> ns.go            Station lookup -> journey query (embedded key)
           +---> digitransit.go   GraphQL query -> VR fare lookup (public key)
           +---> sncf.go          curl BFF -> offer query (1 req/6s limit)
           +---> trainline.go     Station search -> journey query (browser cookie auth)
-          +---> renfe.go         Browser session -> AVE journey (Playwright)
+          +---> renfe.go         REST price calendar -> AVE journey
           +---> transitous.go    Geocode -> MOTIS2 routing (1 req/6s limit)
           +---> tallink.go       voyage-avails API (1 req/12s limit)
           +---> vikingline.go    Reference schedule lookup (no network)

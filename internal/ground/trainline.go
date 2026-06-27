@@ -562,7 +562,7 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 			_ = trainlineOpenBrowser(trainlineHomeURL)
 		}
 
-		// Last resort: browser scraper via Playwright.
+		// Last resort: opt-in browser scraper via Go CDP.
 		slog.Debug("trainline 403 — trying browser scraper fallback")
 		if bRoutes, bErr := BrowserScrapeRoutes(ctx, "trainline", from, to, date, currency); bErr == nil && len(bRoutes) > 0 {
 			return bRoutes, nil
