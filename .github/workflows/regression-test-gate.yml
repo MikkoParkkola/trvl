@@ -25,7 +25,7 @@ jobs:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-regression-test') }}
     steps:
       - name: Checkout (full history for base..head diff)
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
       - name: Require a same-package regression test for fix PRs
