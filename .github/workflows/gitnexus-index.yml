@@ -44,8 +44,17 @@ jobs:
           restore-keys: |
             gitnexus-${{ runner.os }}-
 
-      - name: Analyze (incremental)
-        run: npx --yes gitnexus analyze
+      - name: Analyze (incremental with clean fallback)
+        run: |
+          set -euo pipefail
+
+          if npx --yes gitnexus analyze; then
+            exit 0
+          fi
+
+          echo "::warning::Incremental GitNexus analysis failed; clearing restored .gitnexus cache and retrying from a clean index"
+          rm -rf .gitnexus
+          npx --yes gitnexus analyze
 
       - name: Publish index metadata
         uses: actions/upload-artifact@v4
