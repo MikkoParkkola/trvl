@@ -7,9 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.4] - 2026-06-27
+
+### Changed
+- **MCP HTTP auth is explicit-only.** `trvl mcp --http` now refuses before binding unless the operator configures a static token, scoped read/write tokens, or OAuth introspection. This removes the hidden generated-token startup path that protected the server but left clients without a usable token; CLI help and remote MCP docs now describe the explicit-auth contract.
+
+## [1.17.3] - 2026-06-27
+
+### Security
+- **Generated MCP HTTP token logs redacted.** The short-lived generated bearer token path no longer printed token material in startup logs. This release was superseded by 1.17.4's explicit-auth-only HTTP startup requirement.
+
+## [1.17.2] - 2026-06-27
+
+### Fixed
+- **SerpAPI hotel-room fallback logging.** Quieted room fallback debug output so provider fallback diagnostics do not pollute normal CLI/MCP output.
+- **GitNexus CI index freshness.** Rebuilt the GitNexus index after a stale-cache CI failure so code-intelligence gates run against current repository state.
+
+## [1.17.1] - 2026-06-27
+
+### Fixed
+- **Landing live-test reliability.** Converted the Landing provider live integration into an honest resurrection probe for the current anti-bot 403 behavior instead of reporting a stale provider expectation as a product regression.
+
+## [1.17.0] - 2026-06-27
+
+Provider reliability, verified hotel pricing, circuit breakers, trip-budget honesty, and travelgraph release.
+
 ### Added
 - **Rail+fly virtual-origin expansion and priced bundles (MIK-3079).** `--rail-fly` now recognises the airport-style virtual origins ANR (Antwerp) and BRU (Brussels) alongside the ZYR rail station, each resolving to the right KL(→AMS)/AF(→CDG) Air&Rail station. A new bundle composer (`internal/hacks/rail_fly_bundle.go`) prices the rail leg + flight leg + return as a **single total** — the rail leg priced via `internal/ground` with a deterministic `groundCostBetween` fallback, so the saving stays one honest number with no live call required. The bundle output carries both legs with timing, a recommended change window, and a connection-guarantee status (airline-protected Air&Rail for a hub origin, self-transfer for an alias origin). An open-jaw rail-return path composes a hack whose outbound is a flight and whose return is a rail leg (fly into one city, train out of another). All new tests are offline and deterministic.
 - **Trip composition from confirmation emails (MIK-3088).** A new `internal/inboxparser` package parses raw RFC-822 confirmation emails from KLM, Booking.com, and Airbnb into structured trip artifacts (provider, reference, and trip legs), with unrecognised mail rejected cleanly. `IngestConfirmations` wires parsed records into a trip via `trips.MergeReservationArtifacts`, populating both `Trip.Legs` and `Trip.Bookings` with no manual entry. A new `internal/daygraph` package composes one `DayPlan` per trip day from point-of-interest places, with a deterministic haversine-based route-time estimate; places missing coordinates are surfaced as day warnings rather than dropped. The iCalendar exporter now emits an all-day event per day plan alongside the existing per-leg events.
+- **Authorized stealth mode.** Flight and hotel searches gained opt-in `--stealth` support guarded by an authorized-domain allowlist, plus DataDome challenge detection evidence for provider research.
+- **Provider inventory.** Added or wired opt-in Vueling, Norwegian Air, AF/KLM, Expedia, Agoda room drill-down, and Google room-level hotel pricing paths; flight CLI `--provider` can select Vueling and Norwegian explicitly.
+- **Travelgraph, loyalty, and awards.** Personal travelgraph nudges are available through MCP, nudges consume saved preferences, hack detection is loyalty-aware, detector count is reconciled to 36, and award search can seed from the saved loyalty profile.
+- **MCP surface improvements.** Added airline filtering for `search_flights`, one-way trip support in `plan_trip`, carry-on-only baggage filtering, visa country listing, multi-program points arbitrage, global deals with optional origins/currency conversion, and watch-price webhooks/date ranges/alert-drop modes.
+- **Ground and provider resilience.** Ground search carries round-trip data and partial-failure status; Distribusion, Norwegian, Rome2Rio, Trainline, Trivago, Skiplagged, Kiwi, and Ryanair now classify or retry provider rate limits more honestly.
+- **Shared circuit breakers.** Added an in-memory circuit-breaker primitive and wired it through hotel, flight, and ground provider fan-outs.
+
+### Changed
+- **Verified hotel pricing leads.** Real room-level prices are enabled by default in CLI and MCP hotel flows, provider rows with verified room prices rank ahead of lead-in prices, and sort modes keep priced listings ahead of unpriced teasers.
+- **Trip plan totals are more honest.** Headline trip plans now show hotel and flight provider coverage, expose hotel price source, prefer native single-ticket round trips, include unavoidable baggage fees, and fold estimated daily spend into `GrandTotal`.
+- **Smart-router positioning.** Public docs lead with the compact smart-router value and demote compatibility alias count to back-compat detail.
+
+### Fixed
+- **Provider errors stay typed.** Google Flights zero-parse responses, Google Hotels parse failures, Booking.com Apollo parse failures, Kiwi all-dropped decodes, Rome2Rio zero-route responses, bot-wall blocks, 5xx responses, and retryable room provider blocks now surface as typed provider statuses instead of false empty results.
+- **Flight ranking and profile filters.** Price-less round-trip fares rank below real-priced results, Kiwi round-trip return legs are preserved, and CLI flight search applies traveller profile budget and time-window filters.
 
 ## [1.14.1] - 2026-06-20
 
