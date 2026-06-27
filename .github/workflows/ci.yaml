@@ -11,6 +11,13 @@ permissions:
   contents: read
 
 jobs:
+  workflow-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Check workflow supply-chain hygiene
+        run: scripts/ci/check-workflow-hygiene.sh
+
   test:
     permissions:
       contents: write
