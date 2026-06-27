@@ -325,13 +325,17 @@ func RunHTTPWithOptions(opts HTTPServerOptions) error {
 		generatedToken = true
 	}
 	if generatedToken {
-		log.Printf("trvl MCP generated HTTP bearer token: %s", opts.Token)
+		log.Print(generatedHTTPTokenLogMessage())
 	} else if strings.TrimSpace(opts.OAuthIntrospectionURL) != "" {
 		log.Printf("trvl MCP HTTP OAuth introspection auth enabled")
 	} else {
 		log.Printf("trvl MCP HTTP auth enabled")
 	}
 	return NewHTTPServerWithOptions(opts).ListenAndServe()
+}
+
+func generatedHTTPTokenLogMessage() string {
+	return "trvl MCP generated ephemeral HTTP bearer token (redacted); pass --token or set TRVL_MCP_TOKEN for client configuration"
 }
 
 func generateMCPToken() (string, error) {

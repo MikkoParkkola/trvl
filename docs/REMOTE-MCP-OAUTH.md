@@ -15,11 +15,12 @@ that injects tokens).
 
 Running `trvl mcp --http` binds to `127.0.0.1:8080` and requires a bearer
 token. If you do not supply one, trvl generates a random token at startup and
-prints it to the log. Nothing is reachable from another machine because the
-listener is loopback-only.
+redacts it from the startup log. Use `--token` or `TRVL_MCP_TOKEN` when a
+client needs a reusable token. Nothing is reachable from another machine
+because the listener is loopback-only.
 
 ```bash
-trvl mcp --http                   # 127.0.0.1:8080, random token printed at startup
+trvl mcp --http                   # 127.0.0.1:8080, random token generated and redacted
 trvl mcp --http --token hunter2   # 127.0.0.1:8080, fixed token
 ```
 
@@ -36,9 +37,9 @@ no authentication is configured; set --token/--read-token/--write-token (or
 TRVL_MCP_TOKEN), or --oauth-introspection-url, before binding to a non-loopback host
 ```
 
-This is deliberate. A remote listener with an auto-generated token printed to a
-log is weak, so trvl forces you to make the auth decision explicitly before it
-will accept connections from the network.
+This is deliberate. A remote listener with an implicit generated token is weak,
+so trvl forces you to make the auth decision explicitly before it will accept
+connections from the network.
 
 ## Scope model: read vs write
 

@@ -30,10 +30,11 @@ Claude Code and other MCP-compatible clients.
 Use --http to start an HTTP server instead. It listens on 127.0.0.1 by
 default; pass --host explicitly for gateway or remote access. HTTP mode
 requires bearer-token authentication, using --token, TRVL_MCP_TOKEN, or a
-random token generated at startup. Remote deployments can use scoped
-read/write bearer tokens or OAuth 2.1 access-token introspection; trvl acts as
-the MCP resource server and expects the OAuth provider or gateway to handle
-Authorization Code + PKCE.
+random token generated at startup. Generated tokens are redacted from logs; use
+--token or TRVL_MCP_TOKEN when a client needs a reusable token. Remote
+deployments can use scoped read/write bearer tokens or OAuth 2.1 access-token
+introspection; trvl acts as the MCP resource server and expects the OAuth
+provider or gateway to handle Authorization Code + PKCE.
 
 For safety, binding to a non-loopback host (e.g. --host 0.0.0.0) without any
 token or OAuth introspection configured is refused: remote exposure requires
