@@ -1,175 +1,482 @@
 package ground
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
+	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/chromedp/cdproto/network"
+	cdppage "github.com/chromedp/cdproto/page"
+	"github.com/chromedp/chromedp"
 )
 
 // browserScraperTimeout is the maximum time allowed for a single browser scrape.
 const browserScraperTimeout = 45 * time.Second
 
-var errScraperScriptNotFound = errors.New("browser scraper: scraper.py not found")
+var errBrowserScraperUnsupportedProvider = errors.New("browser scraper: unsupported provider")
 
-// scraperRoute is the JSON shape emitted by scraper.py per route.
-type scraperRoute struct {
-	Price      float64 `json:"price"`
-	Currency   string  `json:"currency"`
-	Departure  string  `json:"departure"`
-	Arrival    string  `json:"arrival"`
-	Duration   int     `json:"duration"`
-	Type       string  `json:"type"`
-	Provider   string  `json:"provider"`
-	Transfers  int     `json:"transfers"`
-	BookingURL string  `json:"booking_url"`
-}
+var (
+	browserScraperNavigateText  = chromedpNavigateText
+	browserScraperSNCFResponses = chromedpSNCFResponses
+	browserScraperCaptureHeader = chromedpCaptureHeader
+)
 
-// scraperOutput is the top-level JSON shape emitted by scraper.py.
-type scraperOutput struct {
-	Routes []scraperRoute `json:"routes"`
-	Error  string         `json:"error,omitempty"`
-}
+var (
+	browserPriceRE = regexp.MustCompile(`[£€$]\s*\d+(?:[\.,]\d+)?`)
+	browserTimeRE  = regexp.MustCompile(`\b\d{2}:\d{2}\b`)
+)
 
-// resolveScraperScriptPath returns the absolute path to scraper.py, resolved
-// relative to this source file so it works regardless of the working directory.
-func resolveScraperScriptPath() (string, error) {
-	if override := strings.TrimSpace(os.Getenv("TRVL_SCRAPER_PATH")); override != "" {
-		info, err := os.Stat(override)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return "", fmt.Errorf("%w (TRVL_SCRAPER_PATH=%q)", errScraperScriptNotFound, override)
-			}
-			return "", fmt.Errorf("browser scraper: stat %q: %w", override, err)
-		}
-		if info.IsDir() {
-			return "", fmt.Errorf("browser scraper: %q is a directory", override)
-		}
-		return override, nil
-	}
+const browserStealthScript = `
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+Object.defineProperty(navigator, 'languages', {get: () => ['en-GB', 'en']});
+window.chrome = window.chrome || {runtime: {}};
+`
 
-	var candidates []string
-	if exePath, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exePath)
-		candidates = append(candidates,
-			filepath.Join(exeDir, "scraper.py"),
-			filepath.Join(exeDir, "internal", "ground", "scraper.py"),
-		)
-	}
-	if _, thisFile, _, ok := runtime.Caller(0); ok {
-		candidates = append(candidates, filepath.Join(filepath.Dir(thisFile), "scraper.py"))
-	}
-
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate, nil
-		}
-	}
-
-	return "", errScraperScriptNotFound
-}
-
-// BrowserScrapeRoutes launches the Playwright scraper to fetch live train
-// prices from provider websites via a real headless browser.
-//
-// Falls back gracefully if Python 3 or Playwright is not installed — callers
-// should treat a non-nil error as "unavailable" and continue without results.
+// BrowserScrapeRoutes fetches opt-in browser-assisted ground routes using the
+// repo's existing Go CDP stack. It intentionally does not spawn an external
+// language runtime; callers already treat non-nil errors as provider-unavailable.
 func BrowserScrapeRoutes(ctx context.Context, provider, from, to, date, currency string) ([]models.GroundRoute, error) {
-	input := map[string]string{
-		"provider": provider,
-		"from":     from,
-		"to":       to,
-		"date":     date,
-		"currency": currency,
-	}
-	inputJSON, err := json.Marshal(input)
-	if err != nil {
-		return nil, fmt.Errorf("browser scraper marshal: %w", err)
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if currency == "" {
+		currency = "EUR"
 	}
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, browserScraperTimeout)
 	defer cancel()
 
-	scriptPath, err := resolveScraperScriptPath()
+	switch provider {
+	case "trainline":
+		return browserScrapeTrainline(timeoutCtx, from, to, date, currency)
+	case "sncf":
+		return browserScrapeSNCF(timeoutCtx, from, to, date, currency)
+	default:
+		return nil, fmt.Errorf("%w: %s", errBrowserScraperUnsupportedProvider, provider)
+	}
+}
+
+func browserScrapeTrainline(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
+	fromID, ok := LookupTrainlineStation(from)
+	if !ok {
+		return nil, fmt.Errorf("browser scraper trainline: no station ID for %q", from)
+	}
+	toID, ok := LookupTrainlineStation(to)
+	if !ok {
+		return nil, fmt.Errorf("browser scraper trainline: no station ID for %q", to)
+	}
+
+	targetURL := buildTrainlineBrowserResultsURL(fromID, toID, date)
+	bodyText, err := browserScraperNavigateText(ctx, targetURL, 15*time.Second)
 	if err != nil {
-		return nil, err
-	}
-	cmd := exec.CommandContext(timeoutCtx, "python3", scriptPath)
-	cmd.Stdin = bytes.NewReader(inputJSON)
-
-	slog.Debug("browser scraper launching", "provider", provider, "from", from, "to", to, "date", date)
-
-	output, err := cmd.Output()
-	if err != nil {
-		// Distinguish "python3 not found" from a script error.
-		if isExecNotFound(err) {
-			return nil, fmt.Errorf("browser scraper: python3 not found in PATH")
-		}
-		// cmd.Output() wraps stderr in *exec.ExitError.Detail; surface it.
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("browser scraper exited %d: %s", exitErr.ExitCode(), exitErr.Stderr)
-		}
-		return nil, fmt.Errorf("browser scraper: %w", err)
+		return nil, fmt.Errorf("browser scraper trainline: %w", err)
 	}
 
-	var result scraperOutput
-	if err := json.Unmarshal(output, &result); err != nil {
-		return nil, fmt.Errorf("browser scraper decode: %w (raw: %.200s)", err, output)
+	routes := parseTrainlineBrowserText(bodyText, from, to, date, currency)
+	if len(routes) == 0 {
+		return nil, errors.New("browser scraper trainline: no routes parsed")
 	}
-	if result.Error != "" {
-		return nil, fmt.Errorf("browser scraper: %s", result.Error)
-	}
-
-	routes := make([]models.GroundRoute, 0, len(result.Routes))
-	for _, sr := range result.Routes {
-		if sr.Price <= 0 {
-			continue
-		}
-		r := models.GroundRoute{
-			Provider:  sr.Provider,
-			Type:      sr.Type,
-			Price:     sr.Price,
-			Currency:  sr.Currency,
-			Duration:  sr.Duration,
-			Transfers: sr.Transfers,
-			Departure: models.GroundStop{
-				City: from,
-				Time: sr.Departure,
-			},
-			Arrival: models.GroundStop{
-				City: to,
-				Time: sr.Arrival,
-			},
-			BookingURL: sr.BookingURL,
-		}
-		if r.Type == "" {
-			r.Type = "train"
-		}
-		if r.Provider == "" {
-			r.Provider = provider
-		}
-		routes = append(routes, r)
-	}
-
-	slog.Debug("browser scraper results", "provider", provider, "count", len(routes))
 	return routes, nil
 }
 
-// isExecNotFound returns true when the error indicates the executable was not
-// found on PATH (i.e. python3 is not installed).
-func isExecNotFound(err error) bool {
-	if err == nil {
-		return false
+func browserScrapeSNCF(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
+	fromStation, ok := LookupSNCFStation(from)
+	if !ok {
+		return nil, fmt.Errorf("browser scraper sncf: no station code for %q", from)
 	}
-	return errors.Is(err, exec.ErrNotFound)
+	toStation, ok := LookupSNCFStation(to)
+	if !ok {
+		return nil, fmt.Errorf("browser scraper sncf: no station code for %q", to)
+	}
+
+	bookingURL := buildSNCFBookingURL(fromStation.Code, toStation.Code, date)
+	responses, bffKey, err := browserScraperSNCFResponses(ctx, bookingURL, fromStation, toStation, date)
+	if err != nil {
+		return nil, fmt.Errorf("browser scraper sncf: %w", err)
+	}
+
+	for _, data := range responses {
+		routes := parseSNCFBFFResponse(data, bookingURL, date, currency)
+		if len(routes) == 0 {
+			continue
+		}
+		for i := range routes {
+			routes[i].Departure.City = fromStation.City
+			routes[i].Departure.Station = fromStation.Name
+			routes[i].Arrival.City = toStation.City
+			routes[i].Arrival.Station = toStation.Name
+		}
+		return routes, nil
+	}
+
+	keyState := "missing"
+	if bffKey != "" {
+		keyState = "present"
+	}
+	return nil, fmt.Errorf("browser scraper sncf: no routes parsed (x-bff-key %s)", keyState)
+}
+
+func buildTrainlineBrowserResultsURL(fromID, toID, date string) string {
+	return "https://www.thetrainline.com/book/results?" +
+		"journeySearchType=single" +
+		"&origin=urn%3Atrainline%3Ageneric%3Aloc%3A" + fromID +
+		"&destination=urn%3Atrainline%3Ageneric%3Aloc%3A" + toID +
+		"&outwardDate=" + date + "T08%3A00%3A00" +
+		"&outwardDateType=departAfter" +
+		"&passengers%5B%5D=1996-01-01" +
+		"&lang=en&transportModes%5B%5D=mixed"
+}
+
+func parseTrainlineBrowserText(text, from, to, date, currency string) []models.GroundRoute {
+	if strings.Contains(text, "No tickets") {
+		return nil
+	}
+
+	minPrice := 0.0
+	minCurrency := strings.ToUpper(currency)
+	for _, raw := range browserPriceRE.FindAllString(text, 15) {
+		price, cur, ok := parseBrowserPrice(raw, minCurrency)
+		if !ok {
+			continue
+		}
+		if minPrice == 0 || price < minPrice {
+			minPrice = price
+			minCurrency = cur
+		}
+	}
+	if minPrice <= 0 {
+		return nil
+	}
+
+	times := browserTimeRE.FindAllString(text, 20)
+	bookingURL := buildTrainlineBrowserBookingURL(from, to, date)
+	if len(times) < 2 {
+		return []models.GroundRoute{{
+			Provider:   "trainline",
+			Type:       "train",
+			Price:      minPrice,
+			Currency:   minCurrency,
+			Departure:  models.GroundStop{City: from, Time: date},
+			Arrival:    models.GroundStop{City: to, Time: date},
+			BookingURL: bookingURL,
+		}}
+	}
+
+	limit := min(len(times), 10)
+	routes := make([]models.GroundRoute, 0, limit/2)
+	for i := 0; i+1 < limit; i += 2 {
+		routes = append(routes, models.GroundRoute{
+			Provider:   "trainline",
+			Type:       "train",
+			Price:      minPrice,
+			Currency:   minCurrency,
+			Departure:  models.GroundStop{City: from, Time: date + "T" + times[i] + ":00"},
+			Arrival:    models.GroundStop{City: to, Time: date + "T" + times[i+1] + ":00"},
+			BookingURL: bookingURL,
+		})
+	}
+	return routes
+}
+
+func parseBrowserPrice(raw, fallbackCurrency string) (float64, string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, "", false
+	}
+
+	currency := strings.ToUpper(fallbackCurrency)
+	symbol := []rune(raw)[0]
+	switch symbol {
+	case '£':
+		currency = "GBP"
+	case '€':
+		currency = "EUR"
+	case '$':
+		currency = "USD"
+	}
+
+	amount := strings.TrimSpace(string([]rune(raw)[1:]))
+	amount = strings.ReplaceAll(amount, ",", ".")
+	price, err := strconv.ParseFloat(amount, 64)
+	if err != nil || price <= 0 {
+		return 0, "", false
+	}
+	return price, currency, true
+}
+
+func buildTrainlineBrowserBookingURL(from, to, date string) string {
+	return "https://www.thetrainline.com/book/trains/" +
+		trainlineSlug(from) + "/" +
+		trainlineSlug(to) + "/" +
+		date
+}
+
+func trainlineSlug(s string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			b.WriteRune(r)
+			lastDash = false
+		case !lastDash:
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func chromedpNavigateText(ctx context.Context, targetURL string, dwell time.Duration) (string, error) {
+	taskCtx, cancel := newBrowserScraperContext(ctx)
+	defer cancel()
+
+	var bodyText string
+	actions := browserBaseActions()
+	actions = append(actions,
+		chromedp.Navigate(targetURL),
+		dismissCookieBanners(),
+		chromedp.Sleep(dwell),
+		chromedp.Text("body", &bodyText, chromedp.ByQuery),
+	)
+	if err := chromedp.Run(taskCtx, actions...); err != nil {
+		return "", err
+	}
+	return bodyText, nil
+}
+
+func chromedpCaptureHeader(ctx context.Context, targetURLs []string, headerName string, dwell time.Duration) (string, error) {
+	taskCtx, cancel := newBrowserScraperContext(ctx)
+	defer cancel()
+
+	var (
+		mu    sync.Mutex
+		value string
+	)
+	chromedp.ListenTarget(taskCtx, func(ev any) {
+		req, ok := ev.(*network.EventRequestWillBeSent)
+		if !ok {
+			return
+		}
+		if got := networkHeaderValue(req.Request.Headers, headerName); got != "" {
+			mu.Lock()
+			if value == "" {
+				value = got
+			}
+			mu.Unlock()
+		}
+	})
+
+	actions := browserBaseActions()
+	for _, targetURL := range targetURLs {
+		if strings.TrimSpace(targetURL) == "" {
+			continue
+		}
+		actions = append(actions,
+			chromedp.Navigate(targetURL),
+			chromedp.Sleep(dwell),
+		)
+	}
+	if err := chromedp.Run(taskCtx, actions...); err != nil {
+		return "", err
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	return value, nil
+}
+
+func chromedpSNCFResponses(ctx context.Context, bookingURL string, fromStation, toStation SNCFStation, date string) ([]map[string]any, string, error) {
+	taskCtx, cancel := newBrowserScraperContext(ctx)
+	defer cancel()
+
+	var (
+		mu     sync.Mutex
+		bffKey string
+		raws   []string
+	)
+	chromedp.ListenTarget(taskCtx, func(ev any) {
+		req, ok := ev.(*network.EventRequestWillBeSent)
+		if !ok {
+			return
+		}
+		if got := networkHeaderValue(req.Request.Headers, "x-bff-key"); got != "" {
+			mu.Lock()
+			if bffKey == "" {
+				bffKey = got
+			}
+			mu.Unlock()
+		}
+	})
+
+	actions := browserBaseActions()
+	actions = append(actions,
+		chromedp.Navigate(sncfHomeURL),
+		chromedp.Sleep(3*time.Second),
+		dismissCookieBanners(),
+		chromedp.Navigate(bookingURL),
+		chromedp.Sleep(4*time.Second),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			mu.Lock()
+			key := bffKey
+			mu.Unlock()
+			for _, bffPath := range sncfBFFPaths {
+				raw, err := evaluateSNCFFetch(ctx, bffPath.path, bffPath.bodyFn(fromStation.Code, toStation.Code, date), key)
+				if err != nil {
+					slog.Debug("browser scraper sncf fetch failed", "path", bffPath.path, "err", err)
+					continue
+				}
+				mu.Lock()
+				raws = append(raws, raw)
+				mu.Unlock()
+			}
+			return nil
+		}),
+	)
+
+	if err := chromedp.Run(taskCtx, actions...); err != nil {
+		return nil, "", err
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	return decodeBrowserJSONBodies(raws), bffKey, nil
+}
+
+func evaluateSNCFFetch(ctx context.Context, endpoint, body, bffKey string) (string, error) {
+	headers := map[string]string{
+		"Content-Type": "application/json",
+		"Accept":       "application/json",
+	}
+	if bffKey != "" {
+		headers["x-bff-key"] = bffKey
+	}
+	headersJSON, err := json.Marshal(headers)
+	if err != nil {
+		return "", err
+	}
+
+	js := fmt.Sprintf(`(async () => {
+const response = await fetch(%s, {method: "POST", headers: %s, body: %s});
+const text = await response.text();
+if (response.status !== 200) {
+  return JSON.stringify({_httpError: response.status, _body: text.slice(0, 100)});
+}
+return text;
+})()`, jsString(endpoint), string(headersJSON), jsString(body))
+
+	var raw string
+	if err := chromedp.Evaluate(js, &raw).Do(ctx); err != nil {
+		return "", err
+	}
+	return raw, nil
+}
+
+func decodeBrowserJSONBodies(raws []string) []map[string]any {
+	responses := make([]map[string]any, 0, len(raws))
+	for _, raw := range raws {
+		raw = strings.TrimSpace(raw)
+		if raw == "" || (!strings.HasPrefix(raw, "{") && !strings.HasPrefix(raw, "[")) {
+			continue
+		}
+		var data map[string]any
+		if err := json.Unmarshal([]byte(raw), &data); err != nil {
+			continue
+		}
+		if data["_httpError"] != nil {
+			continue
+		}
+		responses = append(responses, data)
+	}
+	return responses
+}
+
+func newBrowserScraperContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	allocOpts := append([]chromedp.ExecAllocatorOption{}, chromedp.DefaultExecAllocatorOptions[:]...)
+	allocOpts = append(allocOpts,
+		chromedp.UserAgent(trainlineChromeUA),
+		chromedp.Headless,
+		chromedp.NoFirstRun,
+		chromedp.NoDefaultBrowserCheck,
+		chromedp.Flag("disable-background-networking", true),
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("disable-extensions", true),
+		chromedp.Flag("no-sandbox", true),
+	)
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(ctx, allocOpts...)
+	taskCtx, cancelTask := chromedp.NewContext(allocCtx)
+	return taskCtx, func() {
+		cancelTask()
+		cancelAlloc()
+	}
+}
+
+func browserBaseActions() []chromedp.Action {
+	return []chromedp.Action{
+		network.Enable(),
+		network.SetExtraHTTPHeaders(network.Headers{
+			"Accept-Language":    "en-GB,en;q=0.9",
+			"sec-ch-ua":          trainlineChromeSecCHUA,
+			"sec-ch-ua-mobile":   "?0",
+			"sec-ch-ua-platform": `"macOS"`,
+		}),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			_, err := cdppage.AddScriptToEvaluateOnNewDocument(browserStealthScript).Do(ctx)
+			return err
+		}),
+		chromedp.EmulateViewport(1280, 800),
+	}
+}
+
+func dismissCookieBanners() chromedp.Action {
+	const script = `(function () {
+const selectors = [
+  '#onetrust-accept-btn-handler',
+  'button[aria-label="Accept all"]',
+  'button:has-text("Accept all")'
+];
+for (const selector of selectors) {
+  try {
+    const button = document.querySelector(selector);
+    if (button) { button.click(); return true; }
+  } catch (_) {}
+}
+return false;
+})()`
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		var clicked bool
+		_ = chromedp.Evaluate(script, &clicked).Do(ctx)
+		return nil
+	})
+}
+
+func networkHeaderValue(headers network.Headers, name string) string {
+	for k, v := range headers {
+		if !strings.EqualFold(k, name) {
+			continue
+		}
+		switch typed := v.(type) {
+		case string:
+			return typed
+		case []string:
+			return strings.Join(typed, ",")
+		default:
+			return fmt.Sprint(typed)
+		}
+	}
+	return ""
+}
+
+func jsString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }

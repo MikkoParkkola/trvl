@@ -144,7 +144,7 @@ type sncfCalendarResponse struct {
 }
 
 // sncfBFFPaths lists the SNCF BFF API paths to try, in order of preference.
-// These match the paths discovered by scraper.py via XHR interception.
+// These match the paths discovered via the SNCF SPA's XHR traffic.
 var sncfBFFPaths = []struct {
 	path   string
 	bodyFn func(fromCode, toCode, date string) string
@@ -178,40 +178,24 @@ var sncfBFFPaths = []struct {
 	},
 }
 
-// captureSNCFKey launches the Playwright helper to navigate sncf-connect.com
+// captureSNCFKey uses the Go CDP browser helper to navigate sncf-connect.com
 // and extract the x-bff-key header that the SPA injects into all BFF requests.
-// Returns empty string if Playwright is unavailable or the key is not found.
+// Returns empty string if the browser is unavailable or the key is not found.
 func captureSNCFKey(ctx context.Context) string {
-	scriptPath, err := resolveScraperScriptPath()
-	if err != nil {
-		slog.Debug("captureSNCFKey: scraper unavailable", "err", err)
-		return ""
-	}
-	input := `{"provider":"sncf_key"}`
-
 	timeoutCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(timeoutCtx, "python3", scriptPath)
-	cmd.Stdin = strings.NewReader(input)
-	output, err := cmd.Output()
+	key, err := browserScraperCaptureHeader(
+		timeoutCtx,
+		[]string{sncfHomeURL, sncfHomeURL + "/search"},
+		"x-bff-key",
+		5*time.Second,
+	)
 	if err != nil {
-		slog.Debug("captureSNCFKey: scraper error", "err", err)
+		slog.Debug("captureSNCFKey: browser unavailable", "err", err)
 		return ""
 	}
-
-	var result struct {
-		Key   string `json:"key"`
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal(output, &result); err != nil {
-		slog.Debug("captureSNCFKey: parse error", "err", err)
-		return ""
-	}
-	if result.Error != "" {
-		slog.Debug("captureSNCFKey: script error", "err", result.Error)
-	}
-	return result.Key
+	return key
 }
 
 // sncfViaCurl tries to call SNCF's BFF API by shelling out to the system curl
@@ -219,7 +203,7 @@ func captureSNCFKey(ctx context.Context) string {
 // Transport) which produces a real browser-like ClientHello that Datadome does
 // not flag as a bot — unlike Go's crypto/tls or even utls.
 //
-// It first attempts to capture the x-bff-key via a Playwright browser session
+// It first attempts to capture the x-bff-key via a Go CDP browser session
 // so that authenticated BFF endpoints can be reached. Falls back to keyless
 // requests which still work on some endpoints.
 func sncfViaCurl(ctx context.Context, fromCode, toCode, date, currency string) ([]models.GroundRoute, error) {

@@ -257,6 +257,7 @@ func resetSNCFSeams(t *testing.T) {
 	origResolve := sncfResolveChallenge
 	origOpen := sncfOpenBrowser
 	origLimiter := sncfLimiter
+	origBrowserScraper := browserScraperSNCFResponses
 	t.Cleanup(func() {
 		sncfDo = origDo
 		sncfFetchViaNab = origNab
@@ -265,6 +266,7 @@ func resetSNCFSeams(t *testing.T) {
 		sncfResolveChallenge = origResolve
 		sncfOpenBrowser = origOpen
 		sncfLimiter = origLimiter
+		browserScraperSNCFResponses = origBrowserScraper
 	})
 	sncfLimiter = rate.NewLimiter(rate.Inf, 1)
 	sncfBrowserCookies = func(string) string { return "" }
@@ -278,7 +280,9 @@ func resetSNCFSeams(t *testing.T) {
 		return nil, errStubbedFallback
 	}
 	sncfOpenBrowser = func(string) error { return nil }
-	t.Setenv("TRVL_SCRAPER_PATH", "/nonexistent/trvl-test-scraper.py")
+	browserScraperSNCFResponses = func(context.Context, string, SNCFStation, SNCFStation, string) ([]map[string]any, string, error) {
+		return nil, "", errStubbedFallback
+	}
 }
 
 // TestSearchSNCF_HeadlessClearedRetriesSilently verifies a ChallengeCleared
