@@ -44,6 +44,11 @@ var railFlyStations = []railFlyStation{
 	{IATA: "ZDH", City: "Basel", HubIATA: "ZRH", Airline: "LX", AirlineName: "Swiss", TrainProvider: "SBB", TrainMinutes: 80, FareZone: "Basel border zone"},
 }
 
+// railFlyFlightSearcher is the function used to search flight prices. It is a
+// package-level seam so detector tests can cover the full path without live
+// network calls.
+var railFlyFlightSearcher = flights.SearchFlightsWithClient
+
 // DetectRailFlyArbitrage checks if booking via a rail-connected origin
 // (e.g., Antwerp instead of Amsterdam for KLM) triggers a cheaper fare zone.
 // For a hub origin the Air&Rail train is bundled free in the ticket; for an
@@ -72,7 +77,7 @@ func DetectRailFlyArbitrage(ctx context.Context, origin, destination, departDate
 		baseOpts.ReturnDate = returnDate
 	}
 
-	baseResult, baseErr := flights.SearchFlightsWithClient(ctx, client, origin, destination, departDate, baseOpts)
+	baseResult, baseErr := railFlyFlightSearcher(ctx, client, origin, destination, departDate, baseOpts)
 	basePrice, baseCurrency, _ := cheapestFlightInfo(baseResult, baseErr)
 	if basePrice <= 0 {
 		return nil
@@ -99,7 +104,7 @@ func DetectRailFlyArbitrage(ctx context.Context, origin, destination, departDate
 			if returnDate != "" {
 				opts.ReturnDate = returnDate
 			}
-			res, err := flights.SearchFlightsWithClient(ctx, client, st.IATA, destination, departDate, opts)
+			res, err := railFlyFlightSearcher(ctx, client, st.IATA, destination, departDate, opts)
 			p, c, _ := cheapestFlightInfo(res, err)
 			results <- railResult{station: st, price: p, currency: c}
 		}()

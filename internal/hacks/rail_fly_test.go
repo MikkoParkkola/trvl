@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -398,6 +400,161 @@ func TestRailFlyStationsForHub_aliasDoesNotBreakHubMatch(t *testing.T) {
 		if got := len(railFlyStationsForHub(tc.origin)); got != tc.want {
 			t.Errorf("railFlyStationsForHub(%q) = %d stations, want %d", tc.origin, got, tc.want)
 		}
+	}
+}
+
+// withRailFlyFlightSearcher swaps the package-level flight searcher for the
+// duration of a test and restores it afterwards.
+func withRailFlyFlightSearcher(t *testing.T, fn func(context.Context, *batchexec.Client, string, string, string, flights.SearchOptions) (*models.FlightSearchResult, error)) {
+	t.Helper()
+	orig := railFlyFlightSearcher
+	railFlyFlightSearcher = fn
+	t.Cleanup(func() { railFlyFlightSearcher = orig })
+}
+
+func railFlyFlight(price float64, currency string) *models.FlightSearchResult {
+	if price <= 0 {
+		return &models.FlightSearchResult{Success: true}
+	}
+	return &models.FlightSearchResult{
+		Success: true,
+		Count:   1,
+		Flights: []models.FlightResult{
+			{
+				Price:    price,
+				Currency: currency,
+				Legs:     []models.FlightLeg{{Airline: "KLM", AirlineCode: "KL"}},
+			},
+		},
+	}
+}
+
+func TestRailFlyDetectComposesPricedBundle(t *testing.T) {
+	withRailFlyFlightSearcher(t, func(_ context.Context, _ *batchexec.Client, origin, _, _ string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if opts.ReturnDate != "" {
+			t.Fatalf("one-way rail-fly search should not set ReturnDate, got %q", opts.ReturnDate)
+		}
+		switch origin {
+		case "AMS":
+			return railFlyFlight(420, "EUR"), nil
+		case "ZWE":
+			return railFlyFlight(260, "EUR"), nil
+		case "ZYR":
+			return railFlyFlight(310, "EUR"), nil
+		default:
+			return railFlyFlight(0, "EUR"), nil
+		}
+	})
+	withRailGroundSearcher(t, func(_ context.Context, _, _, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		return &models.GroundSearchResult{Success: true, Count: 1, Routes: []models.GroundRoute{
+			{Provider: "eurostar", Type: "train", Price: 39, Currency: "EUR"},
+		}}, nil
+	})
+
+	hacks := DetectRailFlyArbitrage(context.Background(), "ams", "bcn", "2026-05-01", "")
+	if len(hacks) != 1 {
+		t.Fatalf("expected one rail-fly hack, got %d", len(hacks))
+	}
+	h := hacks[0]
+	if h.Bundle == nil {
+		t.Fatal("expected composed rail-fly bundle")
+	}
+	if h.Bundle.TotalCost != 260 {
+		t.Fatalf("bundle total = %v, want 260", h.Bundle.TotalCost)
+	}
+	if h.Savings != 160 {
+		t.Fatalf("savings = %v, want 160", h.Savings)
+	}
+	if h.RailCost != 0 {
+		t.Fatalf("hub-origin rail cost = %v, want bundled 0", h.RailCost)
+	}
+	if len(h.Bundle.Legs) != 2 {
+		t.Fatalf("bundle legs = %d, want 2", len(h.Bundle.Legs))
+	}
+}
+
+func TestRailFlyDetectRoundTripAddsOpenJawRailReturn(t *testing.T) {
+	withRailFlyFlightSearcher(t, func(_ context.Context, _ *batchexec.Client, origin, _, _ string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if opts.ReturnDate != "2026-05-08" {
+			t.Fatalf("round-trip rail-fly search ReturnDate = %q, want 2026-05-08", opts.ReturnDate)
+		}
+		switch origin {
+		case "AMS":
+			return railFlyFlight(500, "EUR"), nil
+		case "ZWE":
+			return railFlyFlight(260, "EUR"), nil
+		case "ZYR":
+			return railFlyFlight(310, "EUR"), nil
+		default:
+			return railFlyFlight(0, "EUR"), nil
+		}
+	})
+	withRailGroundSearcher(t, func(_ context.Context, from, to, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		price := 39.0
+		if from == "BCN" && to == "AMS" {
+			price = 70
+		}
+		return &models.GroundSearchResult{Success: true, Count: 1, Routes: []models.GroundRoute{
+			{Provider: "train", Type: "train", Price: price, Currency: "EUR"},
+		}}, nil
+	})
+
+	hacks := DetectRailFlyArbitrage(context.Background(), "AMS", "BCN", "2026-05-01", "2026-05-08")
+	if len(hacks) != 2 {
+		t.Fatalf("expected rail-fly + open-jaw hacks, got %d", len(hacks))
+	}
+	if hacks[0].Type != "rail_fly_arbitrage" || hacks[0].Bundle == nil {
+		t.Fatalf("first hack = type %q bundle %+v, want rail_fly_arbitrage with priced bundle", hacks[0].Type, hacks[0].Bundle)
+	}
+	if hacks[1].Type != "open_jaw_rail_return" {
+		t.Fatalf("second hack type = %q, want open_jaw_rail_return", hacks[1].Type)
+	}
+	if hacks[1].Bundle == nil || len(hacks[1].Bundle.Legs) != 2 {
+		t.Fatalf("open-jaw hack should carry two bundle legs, got %+v", hacks[1].Bundle)
+	}
+	if hacks[1].Bundle.TotalCost != 330 {
+		t.Fatalf("open-jaw total = %v, want 330", hacks[1].Bundle.TotalCost)
+	}
+}
+
+func TestRailFlyDetectNoBaselinePrice(t *testing.T) {
+	withRailFlyFlightSearcher(t, func(_ context.Context, _ *batchexec.Client, _, _, _ string, _ flights.SearchOptions) (*models.FlightSearchResult, error) {
+		return railFlyFlight(0, "EUR"), nil
+	})
+
+	if hacks := DetectRailFlyArbitrage(context.Background(), "AMS", "BCN", "2026-05-01", ""); len(hacks) != 0 {
+		t.Fatalf("expected no hacks without a baseline price, got %d", len(hacks))
+	}
+}
+
+func TestRailFlyDetectNoCheaperStation(t *testing.T) {
+	withRailFlyFlightSearcher(t, func(_ context.Context, _ *batchexec.Client, origin, _, _ string, _ flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if origin == "AMS" {
+			return railFlyFlight(200, "EUR"), nil
+		}
+		return railFlyFlight(250, "EUR"), nil
+	})
+
+	if hacks := DetectRailFlyArbitrage(context.Background(), "AMS", "BCN", "2026-05-01", ""); len(hacks) != 0 {
+		t.Fatalf("expected no hacks when rail stations are not cheaper, got %d", len(hacks))
+	}
+}
+
+func TestRailFlyDetectSavingsBelowThreshold(t *testing.T) {
+	withRailFlyFlightSearcher(t, func(_ context.Context, _ *batchexec.Client, origin, _, _ string, _ flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if origin == "AMS" {
+			return railFlyFlight(200, "EUR"), nil
+		}
+		return railFlyFlight(190, "EUR"), nil
+	})
+	withRailGroundSearcher(t, func(_ context.Context, _, _, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		return &models.GroundSearchResult{Success: true, Count: 1, Routes: []models.GroundRoute{
+			{Provider: "eurostar", Type: "train", Price: 20, Currency: "EUR"},
+		}}, nil
+	})
+
+	if hacks := DetectRailFlyArbitrage(context.Background(), "AMS", "BCN", "2026-05-01", ""); len(hacks) != 0 {
+		t.Fatalf("expected no hacks below savings threshold, got %d", len(hacks))
 	}
 }
 
