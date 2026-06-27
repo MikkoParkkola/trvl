@@ -19,6 +19,8 @@ jobs:
         run: scripts/ci/check-workflow-hygiene.sh
       - name: Check language hygiene
         run: scripts/ci/check-language-hygiene.sh
+      - name: Check file-size hygiene
+        run: scripts/ci/check-file-size.sh
 
   test:
     permissions:

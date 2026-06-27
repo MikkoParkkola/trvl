@@ -88,6 +88,13 @@ CI enforces a 50% line-coverage threshold. New packages are expected to land
 with coverage at or above that threshold; regressions in existing packages
 will block merge.
 
+Tracked text files default to an 800-line ceiling so source and docs stay
+reviewable. Split large files by topic or package before crossing that limit.
+Append-only public history files may be exceptions only when they are listed in
+`.github/loc-allowlist.txt` with a specific reason. `CHANGELOG.md` is currently
+the only approved exception because release history must remain root-visible for
+users, package managers, and release tooling.
+
 ## Testing Discipline
 
 - Unit tests run offline. HTTP must be mocked via `httptest` or an injected

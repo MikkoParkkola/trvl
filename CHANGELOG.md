@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Go-first repo hardening.** Replaced the remaining tracked Python ground-provider scraper with the native Go CDP path, and added CI enforcement that rejects tracked Python files unless explicitly allowlisted.
 - **Workflow supply-chain gates.** SHA-pinned workflow runtime actions, moved workflow Node jobs to Node 24, pinned GitNexus CLI usage, and added a workflow-hygiene guard so these constraints stay enforced.
-- **Go quality gates and release docs.** Added pinned `golangci-lint v2.12.2` to CI, made `make lint` fail closed when lint/security tools are missing, and completed v1.17 changelog compare links.
+- **Go quality gates and release docs.** Added pinned `golangci-lint v2.12.2` to CI, made `make lint` fail closed when lint/security tools are missing, completed v1.17 changelog compare links, and codified `CHANGELOG.md` as the single justified 800-line exception.
 
 ## [1.17.4] - 2026-06-27
 
