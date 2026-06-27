@@ -13,15 +13,17 @@ that injects tokens).
 
 ## Localhost-safe defaults
 
-Running `trvl mcp --http` binds to `127.0.0.1:8080` and requires a bearer
-token. If you do not supply one, trvl generates a random token at startup and
-redacts it from the startup log. Use `--token` or `TRVL_MCP_TOKEN` when a
-client needs a reusable token. Nothing is reachable from another machine
-because the listener is loopback-only.
+HTTP mode always requires explicit authentication, even on localhost. Running
+`trvl mcp --http` without a bearer token or OAuth introspection URL is refused
+before trvl binds a listener. This avoids starting a protected server with a
+hidden token that no client can use.
+
+Nothing is reachable from another machine by default because the listener is
+loopback-only, but you still need to provide the token your MCP client will send.
 
 ```bash
-trvl mcp --http                   # 127.0.0.1:8080, random token generated and redacted
-trvl mcp --http --token hunter2   # 127.0.0.1:8080, fixed token
+TRVL_MCP_TOKEN="$(openssl rand -base64 32)" trvl mcp --http
+trvl mcp --http --token "$(openssl rand -base64 32)"
 ```
 
 ## Remote exposure requires explicit auth (GH-89.AUTH.4)
@@ -37,9 +39,8 @@ no authentication is configured; set --token/--read-token/--write-token (or
 TRVL_MCP_TOKEN), or --oauth-introspection-url, before binding to a non-loopback host
 ```
 
-This is deliberate. A remote listener with an implicit generated token is weak,
-so trvl forces you to make the auth decision explicitly before it will accept
-connections from the network.
+This is deliberate. trvl forces you to make the auth decision explicitly before
+it will accept HTTP connections.
 
 ## Scope model: read vs write
 

@@ -29,16 +29,13 @@ Claude Code and other MCP-compatible clients.
 
 Use --http to start an HTTP server instead. It listens on 127.0.0.1 by
 default; pass --host explicitly for gateway or remote access. HTTP mode
-requires bearer-token authentication, using --token, TRVL_MCP_TOKEN, or a
-random token generated at startup. Generated tokens are redacted from logs; use
---token or TRVL_MCP_TOKEN when a client needs a reusable token. Remote
-deployments can use scoped read/write bearer tokens or OAuth 2.1 access-token
-introspection; trvl acts as the MCP resource server and expects the OAuth
-provider or gateway to handle Authorization Code + PKCE.
+requires explicit authentication: use --token, TRVL_MCP_TOKEN, scoped
+read/write bearer tokens, or OAuth 2.1 access-token introspection. trvl acts as
+the MCP resource server and expects the OAuth provider or gateway to handle
+Authorization Code + PKCE.
 
-For safety, binding to a non-loopback host (e.g. --host 0.0.0.0) without any
-token or OAuth introspection configured is refused: remote exposure requires
-explicit authentication. See docs/REMOTE-MCP-OAUTH.md.`,
+For safety, HTTP mode without any token or OAuth introspection configured is
+refused before binding a listener. See docs/REMOTE-MCP-OAUTH.md.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if httpMode {
 				return mcp.RunHTTPWithOptions(mcp.HTTPServerOptions{
@@ -60,7 +57,7 @@ explicit authentication. See docs/REMOTE-MCP-OAUTH.md.`,
 	cmd.Flags().BoolVar(&httpMode, "http", false, "Run as HTTP server instead of stdio")
 	cmd.Flags().StringVar(&host, "host", "127.0.0.1", "HTTP server host (only used with --http)")
 	cmd.Flags().IntVar(&port, "port", 8080, "HTTP server port (only used with --http)")
-	cmd.Flags().StringVar(&token, "token", "", "Bearer token for HTTP mode (default: TRVL_MCP_TOKEN or generated)")
+	cmd.Flags().StringVar(&token, "token", "", "Bearer token for HTTP mode (default: TRVL_MCP_TOKEN)")
 	cmd.Flags().StringVar(&readToken, "read-token", "", "Read-only bearer token for HTTP mode (default: TRVL_MCP_READ_TOKEN)")
 	cmd.Flags().StringVar(&writeToken, "write-token", "", "Read/write bearer token for HTTP mode (default: TRVL_MCP_WRITE_TOKEN)")
 	cmd.Flags().StringVar(&oauthIntrospectionURL, "oauth-introspection-url", "", "OAuth 2.1 token introspection URL for HTTP mode (default: TRVL_MCP_OAUTH_INTROSPECTION_URL)")
