@@ -185,7 +185,7 @@ Token bucket: 10 requests/second (matching fli's rate limit). Configurable via `
 
 Two transport modes:
 - **stdio**: `trvl mcp` — for Claude Code integration
-- **HTTP**: `trvl mcp --http --port 8000` — loopback by default with bearer-token auth; pass `--host` explicitly for gateway or remote use. HTTP supports a generated local token, static read/write bearer tokens, or OAuth 2.1 access-token introspection with `trvl:read` / `trvl:write` scopes.
+- **HTTP**: `trvl mcp --http --port 8000` — loopback by default and refused unless explicit auth is configured; pass `--host` explicitly for gateway or remote use. HTTP supports static read/write bearer tokens or OAuth 2.1 access-token introspection with `trvl:read` / `trvl:write` scopes.
 
 One compact `travel` tool is advertised by default, with the legacy compatibility aliases still callable directly. `TRVL_MCP_TOOL_MODE=legacy` restores the full advertised list for clients that need explicit tools.
 

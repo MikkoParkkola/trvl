@@ -1,8 +1,6 @@
 package mcp
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -266,6 +264,26 @@ func requireRemoteAuth(host string, authConfigured bool) error {
 	)
 }
 
+func httpAuthConfigured(opts HTTPServerOptions) bool {
+	return strings.TrimSpace(opts.Token) != "" ||
+		strings.TrimSpace(opts.ReadToken) != "" ||
+		strings.TrimSpace(opts.WriteToken) != "" ||
+		strings.TrimSpace(opts.OAuthIntrospectionURL) != ""
+}
+
+func requireHTTPAuth(host string, authConfigured bool) error {
+	if authConfigured {
+		return nil
+	}
+	if isRemoteBindHost(host) {
+		return requireRemoteAuth(host, false)
+	}
+	return fmt.Errorf(
+		"refusing to start: --http requires explicit authentication; " +
+			"set --token/--read-token/--write-token (or TRVL_MCP_TOKEN), or --oauth-introspection-url",
+	)
+}
+
 // scopeSummary renders an access scope set for audit logging (never the token).
 func scopeSummary(access RequestAccess) string {
 	switch {
@@ -287,7 +305,6 @@ func RunHTTP(host string, port int, token string) error {
 }
 
 func RunHTTPWithOptions(opts HTTPServerOptions) error {
-	generatedToken := false
 	if strings.TrimSpace(opts.Token) == "" {
 		opts.Token = strings.TrimSpace(os.Getenv("TRVL_MCP_TOKEN"))
 	}
@@ -309,39 +326,13 @@ func RunHTTPWithOptions(opts HTTPServerOptions) error {
 	if strings.TrimSpace(opts.OAuthAudience) == "" {
 		opts.OAuthAudience = strings.TrimSpace(os.Getenv("TRVL_MCP_OAUTH_AUDIENCE"))
 	}
-	if !NewHTTPAuth(opts).Configured() {
-		// GH-89.AUTH.4: remote exposure requires explicit auth. A non-loopback
-		// bind with no configured token/OAuth is refused rather than silently
-		// protected by an auto-generated token printed to logs. Localhost keeps
-		// the convenient auto-generated token.
-		if err := requireRemoteAuth(opts.Host, false); err != nil {
-			return err
-		}
-		generated, err := generateMCPToken()
-		if err != nil {
-			return fmt.Errorf("generate MCP HTTP token: %w", err)
-		}
-		opts.Token = generated
-		generatedToken = true
+	if err := requireHTTPAuth(opts.Host, httpAuthConfigured(opts)); err != nil {
+		return err
 	}
-	if generatedToken {
-		log.Print(generatedHTTPTokenLogMessage())
-	} else if strings.TrimSpace(opts.OAuthIntrospectionURL) != "" {
+	if strings.TrimSpace(opts.OAuthIntrospectionURL) != "" {
 		log.Printf("trvl MCP HTTP OAuth introspection auth enabled")
 	} else {
 		log.Printf("trvl MCP HTTP auth enabled")
 	}
 	return NewHTTPServerWithOptions(opts).ListenAndServe()
-}
-
-func generatedHTTPTokenLogMessage() string {
-	return "trvl MCP generated ephemeral HTTP bearer token (redacted); pass --token or set TRVL_MCP_TOKEN for client configuration"
-}
-
-func generateMCPToken() (string, error) {
-	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b[:]), nil
 }

@@ -71,11 +71,7 @@ func TestIsRemoteBindHost(t *testing.T) {
 // This exercises the gate without binding a socket because the gate runs
 // before ListenAndServe.
 func TestRunHTTPWithOptions_RemoteHostWithoutAuthRefused(t *testing.T) {
-	// Ensure env-derived auth does not accidentally configure the server.
-	t.Setenv("TRVL_MCP_TOKEN", "")
-	t.Setenv("TRVL_MCP_READ_TOKEN", "")
-	t.Setenv("TRVL_MCP_WRITE_TOKEN", "")
-	t.Setenv("TRVL_MCP_OAUTH_INTROSPECTION_URL", "")
+	clearHTTPAuthEnv(t)
 
 	err := RunHTTPWithOptions(HTTPServerOptions{Host: "0.0.0.0", Port: 0})
 	if err == nil {
@@ -84,6 +80,28 @@ func TestRunHTTPWithOptions_RemoteHostWithoutAuthRefused(t *testing.T) {
 	if !strings.Contains(err.Error(), "refusing to start") {
 		t.Fatalf("error = %q, want refusal", err.Error())
 	}
+}
+
+// RunHTTPWithOptions must also refuse loopback HTTP mode when no explicit auth
+// is configured. The token must be one the client can supply explicitly.
+func TestRunHTTPWithOptions_LoopbackWithoutAuthRefused(t *testing.T) {
+	clearHTTPAuthEnv(t)
+
+	err := RunHTTPWithOptions(HTTPServerOptions{Host: "127.0.0.1", Port: 0})
+	if err == nil {
+		t.Fatal("expected refusal error for loopback host without auth, got nil")
+	}
+	if !strings.Contains(err.Error(), "--http requires explicit authentication") {
+		t.Fatalf("error = %q, want explicit-auth refusal", err.Error())
+	}
+}
+
+func clearHTTPAuthEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("TRVL_MCP_TOKEN", "")
+	t.Setenv("TRVL_MCP_READ_TOKEN", "")
+	t.Setenv("TRVL_MCP_WRITE_TOKEN", "")
+	t.Setenv("TRVL_MCP_OAUTH_INTROSPECTION_URL", "")
 }
 
 // --- Audit counters surfaced on /health ---
