@@ -153,11 +153,11 @@ func TestSearchUniplacesMockServer(t *testing.T) {
 	const wantBuildID = "search-06e8c5954f295939db05be8c4e59664a7fc91851"
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/accommodation/lisbon":
+		switch r.URL.Path {
+		case "/accommodation/lisbon":
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = w.Write(listingHTML)
-		case r.URL.Path == "/_next/data/"+wantBuildID+"/en/accommodation/lisbon.json":
+		case "/_next/data/" + wantBuildID + "/en/accommodation/lisbon.json":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(offersJSON)
 		default:

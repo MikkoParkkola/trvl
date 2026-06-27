@@ -284,7 +284,7 @@ func resolveAgodaCityID(ctx context.Context, location string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("autocomplete status %d", resp.StatusCode)
 	}
@@ -353,7 +353,7 @@ func fetchAgodaSearch(ctx context.Context, cityID int, opts HotelSearchOptions) 
 			continue
 		}
 		raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
-		resp.Body.Close()
+		closeErr := resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			// Agoda's /graphql/search is anti-bot sensitive and intermittently
 			// answers an otherwise-valid request with 400/403/429 (plus the
@@ -377,6 +377,10 @@ func fetchAgodaSearch(ctx context.Context, cityID int, opts HotelSearchOptions) 
 		}
 		if readErr != nil {
 			lastErr = readErr
+			continue
+		}
+		if closeErr != nil {
+			lastErr = closeErr
 			continue
 		}
 		var sr agodaSearchResponse

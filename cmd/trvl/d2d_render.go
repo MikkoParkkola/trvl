@@ -17,17 +17,17 @@ func printDoorToDoor(w io.Writer, it multimodal.Itinerary) {
 	if total.Counts.Confirmed == 0 && total.Counts.Indicative == 0 && total.Counts.Unverified == 0 {
 		return
 	}
-	fmt.Fprintf(w, "     Door-to-door: %s %.2f confirmed", total.Currency, total.ConfirmedTotal)
+	_, _ = fmt.Fprintf(w, "     Door-to-door: %s %.2f confirmed", total.Currency, total.ConfirmedTotal)
 	if sum, n := legSum(total.IndicativeLegs); n > 0 {
-		fmt.Fprintf(w, " + %s %.2f indicative across %d leg(s) — verify before booking", total.Currency, sum, n)
+		_, _ = fmt.Fprintf(w, " + %s %.2f indicative across %d leg(s) — verify before booking", total.Currency, sum, n)
 	}
 	if sum, n := legSum(total.UnverifiedLegs); n > 0 {
-		fmt.Fprintf(w, " + %s %.2f unverified across %d leg(s)", total.Currency, sum, n)
+		_, _ = fmt.Fprintf(w, " + %s %.2f unverified across %d leg(s)", total.Currency, sum, n)
 	}
 	if total.MixedCurrency {
-		fmt.Fprintf(w, " (mixed currencies: %d leg(s) excluded)", len(total.ExcludedCurrencyLegs))
+		_, _ = fmt.Fprintf(w, " (mixed currencies: %d leg(s) excluded)", len(total.ExcludedCurrencyLegs))
 	}
-	fmt.Fprintf(w, " · band %s [%.0f–%.0f]\n", total.Band, total.BandLow, total.BandHigh)
+	_, _ = fmt.Fprintf(w, " · band %s [%.0f–%.0f]\n", total.Band, total.BandLow, total.BandHigh)
 }
 
 func itineraryToLegs(it multimodal.Itinerary) []d2d.Leg {

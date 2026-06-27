@@ -37,7 +37,11 @@ func TestTier1Client_Get_LiveTLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("Close response body: %v", err)
+		}
+	}()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
@@ -87,7 +91,11 @@ func TestTier1Client_SeedCookies_FromCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("Close response body: %v", err)
+		}
+	}()
 	if echo := resp.Header.Get("X-Echo-Cookie"); echo == "" {
 		t.Fatalf("expected Cookie header echoed, got empty")
 	}

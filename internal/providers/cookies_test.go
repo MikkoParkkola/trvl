@@ -332,7 +332,7 @@ func TestWithInteractive(t *testing.T) {
 		t.Error("WithInteractive ctx must report true")
 	}
 	//lint:ignore SA1012 deliberately testing nil-safety of isInteractive
-	if isInteractive(nil) {
+	if isInteractive(nil) { //nolint:staticcheck
 		t.Error("nil ctx must not be interactive")
 	}
 }

@@ -45,9 +45,9 @@ func printSavingsSection(w io.Writer, header string, savings []counterfactual.Sa
 	if len(savings) == 0 {
 		return
 	}
-	fmt.Fprintln(w, header)
+	_, _ = fmt.Fprintln(w, header)
 	for _, s := range savings {
-		fmt.Fprintf(w, "  • %s%s\n", s.Description, asOfSuffix(s.AsOf, now))
+		_, _ = fmt.Fprintf(w, "  • %s%s\n", s.Description, asOfSuffix(s.AsOf, now))
 	}
 }
 

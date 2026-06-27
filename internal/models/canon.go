@@ -75,7 +75,7 @@ func parseAmount(s string) float64 {
 		case t[sep] == ',':
 			// Comma is the decimal point; dots are thousands.
 			t = strings.ReplaceAll(t, ".", "")
-			t = strings.Replace(t, ",", ".", -1)
+			t = strings.ReplaceAll(t, ",", ".")
 		default:
 			// Dot is the decimal point; commas are thousands.
 			t = strings.ReplaceAll(t, ",", "")
