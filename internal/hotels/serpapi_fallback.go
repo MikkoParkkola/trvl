@@ -2,7 +2,6 @@ package hotels
 
 import (
 	"context"
-	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -71,16 +70,13 @@ func trySerpAPIPriceFallback(ctx context.Context, opts HotelPriceOpts) *models.H
 
 func trySerpAPIRoomFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string, string) {
 	if strings.TrimSpace(serpapiAPIKeyFunc()) == "" {
-		log.Printf("DEBUG serpapi room fallback skipped: no SERPAPI_KEY")
 		return nil, "", ""
 	}
 
 	query, place := serpapiFallbackQuery(ctx, opts.HotelID, opts.Location)
 	if query == "" {
-		log.Printf("DEBUG serpapi room fallback aborted: empty query (hotelID=%q location=%q place=%v)", opts.HotelID, opts.Location, place != nil)
 		return nil, "", ""
 	}
-	log.Printf("DEBUG serpapi room fallback: query=%q placeResolved=%v", query, place != nil)
 
 	guests := opts.Guests
 	if guests <= 0 {
@@ -106,7 +102,6 @@ func trySerpAPIRoomFallback(ctx context.Context, opts RoomSearchOptions) ([]Room
 	for page := 0; page < serpapiFallbackMaxPages; page++ {
 		result, err := serpapiSearchHotelsFunc(ctx, searchOpts)
 		if err != nil || result == nil {
-			log.Printf("DEBUG serpapi room fallback: search failed page=%d query=%q err=%v", page, query, err)
 			lastErr = err
 			break
 		}
@@ -121,7 +116,6 @@ func trySerpAPIRoomFallback(ctx context.Context, opts RoomSearchOptions) ([]Room
 		searchOpts.NextPageToken = token
 	}
 	if hotel == nil {
-		log.Printf("DEBUG serpapi room fallback: no hotel matched in %d properties across pages (query=%q name=%q)", scanned, query, opts.Location)
 		// A retryable bot-wall / 429 on the metered search is not a genuine
 		// "no match"; surface it so a withheld Google Hotels price is not read
 		// as absent inventory. Hard failures and plain misses stay silent.
@@ -131,10 +125,8 @@ func trySerpAPIRoomFallback(ctx context.Context, opts RoomSearchOptions) ([]Room
 	hotel = selectedSerpAPIPropertyDetails(ctx, hotel, searchOpts)
 	rooms := roomTypesFromSerpAPIHotel(hotel, opts.Currency)
 	if len(rooms) == 0 {
-		log.Printf("DEBUG serpapi room fallback: matched hotel %q but extracted 0 rooms", hotel.Name)
 		return nil, "", ""
 	}
-	log.Printf("DEBUG serpapi room fallback: matched %q, extracted %d rooms", hotel.Name, len(rooms))
 
 	name := hotel.Name
 	if name == "" && place != nil {
