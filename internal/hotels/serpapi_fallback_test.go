@@ -1,7 +1,9 @@
 package hotels
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -114,6 +116,7 @@ func TestSerpAPIPriceFallbackFetchesSelectedPropertyDetail(t *testing.T) {
 
 func TestSerpAPIRoomFallbackConvertsVerifiedRoomsAndRefundability(t *testing.T) {
 	const rawID = "0x133b6ab82c204df7:0x437369f021e5e869"
+	logOutput := captureStandardLog(t)
 	restore := stubSerpAPIFallback(t, &serpapi.MapsPlace{
 		Title:   "Hotel Continental Mare",
 		Address: "Via Baldassarre Cossa, 25, 80074 Ischia NA, Italy",
@@ -168,6 +171,9 @@ func TestSerpAPIRoomFallbackConvertsVerifiedRoomsAndRefundability(t *testing.T) 
 	if room.BreakfastIncluded == nil || !*room.BreakfastIncluded {
 		t.Fatalf("breakfast included = %#v, want true", room.BreakfastIncluded)
 	}
+	if got := logOutput.String(); got != "" {
+		t.Fatalf("standard log output = %q, want none for normal SerpAPI room fallback", got)
+	}
 }
 
 func TestSerpAPIRoomFallbackFetchesSelectedPropertyDetail(t *testing.T) {
@@ -215,6 +221,7 @@ func TestSerpAPIRoomFallbackFetchesSelectedPropertyDetail(t *testing.T) {
 }
 
 func TestSerpAPIFallbackSkipsWithoutKey(t *testing.T) {
+	logOutput := captureStandardLog(t)
 	origKey := serpapiAPIKeyFunc
 	origResolve := serpapiResolveGoogleMapsPlaceFunc
 	origSearch := serpapiSearchHotelsFunc
@@ -246,6 +253,18 @@ func TestSerpAPIFallbackSkipsWithoutKey(t *testing.T) {
 	if rooms != nil || name != "" || notice != "" {
 		t.Fatalf("room fallback = rooms %#v name %q notice %q, want empty without key", rooms, name, notice)
 	}
+	if got := logOutput.String(); got != "" {
+		t.Fatalf("standard log output = %q, want none without SERPAPI_KEY", got)
+	}
+}
+
+func captureStandardLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(previous) })
+	return &buf
 }
 
 func TestSearchPageFallbackRejectsBroadCityNameMatch(t *testing.T) {
