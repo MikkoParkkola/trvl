@@ -63,10 +63,26 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 	// searchNativeRoundTrip), so two redundant one-way Skiplagged calls would
 	// only waste its rate budget.
 	legCtx := disableSkiplaggedOneWay(disableHacksCompose(ctx))
+
+	statuses := make([]models.ProviderStatus, 0, 8)
+
+	// Google Flights prices a round-trip as a single native fare (tripType=1, both
+	// segments in one request) — one bookable ticket, often with a genuine return
+	// discount, which is the superior answer to a round-trip query. Query it FIRST,
+	// before the two one-way leg searches below, so it gets fresh Google rate
+	// budget: run as the 3rd consecutive Google call it was reliably rate-limited
+	// into zero results (MIK-6612), silently leaving users only the pricier
+	// split-ticket pairs. Currency comes from opts (the dominant signal); the
+	// composed/outbound fallback is not yet available here and only matters on the
+	// rare unset-currency path, where normalisation harmlessly no-ops. If this
+	// shifts a 429 onto an inbound leg, split-ticket simply has fewer options — an
+	// acceptable trade to secure the native return fare the user actually asked for.
+	googleRT, googleStatuses := searchGoogleNativeRoundTrip(ctx, client, origin, destination, date, returnDate, opts, nativeRoundTripCurrency(opts, nil, nil))
+	statuses = append(statuses, googleStatuses...)
+
 	outbound, outErr := SearchFlightsWithClient(legCtx, client, origin, destination, date, legOpts)
 	inbound, inErr := SearchFlightsWithClient(legCtx, client, destination, origin, returnDate, legOpts)
 
-	statuses := make([]models.ProviderStatus, 0, 8)
 	var outFlights, inFlights []models.FlightResult
 	if outbound != nil {
 		outFlights = outbound.Flights
@@ -79,21 +95,16 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 
 	composed, truncated := composeRoundTrips(outFlights, inFlights, opts)
 
-	// Native round-trip pass: providers that price a return as a single fare can
-	// beat the sum of two one-ways (a real return discount) and are one bookable
-	// ticket. Query them WITH ReturnDate intact (the legs above clear it) and
-	// merge their genuine round-trip itineraries into the candidate pool. The
-	// cheapest sorts first, so a discounted native fare naturally outranks a more
-	// expensive composed pair; FareType keeps the two honestly distinguishable.
+	// Native round-trip pass (Skiplagged, then the Google fares fetched above, then
+	// Kiwi): providers that price a return as a single fare can beat the sum of two
+	// one-ways (a real return discount) and are one bookable ticket. Query them
+	// WITH ReturnDate intact (the legs clear it) and merge their genuine round-trip
+	// itineraries into the candidate pool. The cheapest sorts first, so a
+	// discounted native fare naturally outranks a more expensive composed pair;
+	// FareType keeps the two honestly distinguishable. Skiplagged and Kiwi run
+	// after the legs — distinct providers, no shared Google rate budget.
 	nativeRT, nativeStatuses := searchNativeRoundTrip(legCtx, client, origin, destination, date, returnDate, opts, nativeRoundTripCurrency(opts, composed, outFlights))
 	statuses = append(statuses, nativeStatuses...)
-
-	// Google Flights prices a round-trip as a single native fare too (tripType=1,
-	// both segments in one request). It was wrongly routed to composition-only
-	// since #198 (a transient rate-limit misread as a structural rejection); query
-	// it natively so its genuine — often discounted — round-trip total competes.
-	googleRT, googleStatuses := searchGoogleNativeRoundTrip(ctx, client, origin, destination, date, returnDate, opts, nativeRoundTripCurrency(opts, composed, outFlights))
-	statuses = append(statuses, googleStatuses...)
 	nativeRT = append(nativeRT, googleRT...)
 
 	// Kiwi likewise prices a round-trip as one native fare (outbound leg at the
