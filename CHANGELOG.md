@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.7] - 2026-06-28
+
+### Fixed
+- **Release pipeline GoReleaser install path.** The tag workflow now installs
+  GoReleaser before `cosign` is on `PATH`, then runs `goreleaser build` and
+  `goreleaser release` directly. This keeps artifact signing intact while
+  avoiding upstream checksum-bundle format drift in the action installer.
+- **Homebrew policy hygiene.** The release workflow comments and hygiene guard
+  now stay aligned with the Formula-only Homebrew policy.
+
 ## [1.17.6] - 2026-06-28
 
 ### Changed
