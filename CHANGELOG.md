@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-06-28
+
+### Added
+- **Return-ticket flight search.** Flight queries now ask Google for native
+  round-trip fares first and fall back to stitching one-way legs only when no
+  round-trip offer exists, so returned itineraries reflect real round-trip
+  pricing instead of two separate one-way prices added together.
+- **Booking-readiness verdict for hotels.** Each hotel result now carries a
+  `ready` / `caution` / `unverified` label derived from its price, link
+  stability, room-match confidence, and refundability signals. Results with a
+  trustworthy, bookable price lead the list.
+- **Trip landed cost.** Trip plans now include airport transfers and city tax
+  in the total, with a clear message when a plan runs over budget.
+- **Per-package trip enrichment.** Trip packages now attach weather, public
+  holidays, and local events, each with a typed status so missing data is
+  explicit rather than silent.
+- **Anonymous usage heartbeat (opt-out).** trvl sends at most one anonymous
+  heartbeat per install per day so the project can gauge active usage and
+  platform mix. It carries no IP, hostname, username, search query, or travel
+  data, only a project tag, the version, the Go runtime string, and a random
+  local install id. It is off in CI, dev builds, and tests, and you can opt out
+  with `TRVL_NO_TELEMETRY`, `NO_TELEMETRY`, or `DO_NOT_TRACK`. See the README
+  "Privacy & telemetry" section.
+
 ## [1.17.7] - 2026-06-28
 
 ### Fixed
