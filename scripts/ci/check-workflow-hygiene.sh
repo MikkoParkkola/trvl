@@ -75,7 +75,11 @@ gitnexus_docs_use_sha_pinned_cache_example() {
 
 release_goreleaser_action_uses_node24_pin() {
   ! grep -qF 'goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a' .github/workflows/release.yml &&
-    [ "$(grep -cF 'goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2' .github/workflows/release.yml)" -eq 3 ]
+    [ "$(grep -cF 'goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2' .github/workflows/release.yml)" -eq 1 ] &&
+    grep -qF 'install-only: true' .github/workflows/release.yml &&
+    grep -qF 'run: goreleaser build --single-target --snapshot --clean' .github/workflows/release.yml &&
+    grep -qF 'run: goreleaser release --clean --skip=docker' .github/workflows/release.yml &&
+    grep -qF 'run: goreleaser release --clean --skip=docker --skip=homebrew' .github/workflows/release.yml
 }
 
 release_docker_job_has_timeout() {
@@ -107,6 +111,7 @@ release_docker_trivy_blocks_before_push() {
 release_homebrew_stays_formula_only_until_notarized() {
   grep -q '^brews:' .goreleaser.yaml &&
     ! grep -q '^homebrew_casks:' .goreleaser.yaml &&
+    ! grep -q 'homebrew_casks' .github/workflows/release.yml &&
     grep -q 'release/build never run' .goreleaser.yaml &&
     grep -q 'Formula-only until Developer ID notarization is proven in release CI' docs/DISTRIBUTION.md
 }
