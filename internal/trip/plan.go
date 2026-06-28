@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -167,8 +168,13 @@ type PlanResult struct {
 	Breakfast      []PlanBreakfast         `json:"breakfast,omitempty"`
 	ReviewSnippets []PlanReviewSnippet     `json:"review_snippets,omitempty"`
 	Context        *PlanDestinationContext `json:"context,omitempty"`
-	Summary        PlanSummary             `json:"summary"`
-	Error          string                  `json:"error,omitempty"`
+	// Enrichment carries the typed, never-failing per-package weather/holiday/
+	// event status (MIK-6530 PLANCOMP.3). Each source reports ok / none /
+	// unavailable / not_configured so the renderer is honest about what was and
+	// wasn't reachable rather than silently omitting a missing feed.
+	Enrichment PackageEnrichment `json:"enrichment"`
+	Summary    PlanSummary       `json:"summary"`
+	Error      string            `json:"error,omitempty"`
 
 	// HotelCoverage / HotelProviders carry the per-provider evidence so the
 	// renderer can be honest about partial accommodation coverage instead of
@@ -423,6 +429,27 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 			result.Context = planCtx
 			enrichMu.Unlock()
 		}
+	}()
+
+	// PLANCOMP.3: per-package weather + public holidays for the exact date
+	// window, plus events when the opt-in key is set. Best-effort and typed —
+	// each source degrades to an honest status, never a hard failure, so a quiet
+	// feed leaves a label rather than a blank.
+	enrichWg.Add(1)
+	go func() {
+		defer enrichWg.Done()
+		location := models.ResolveLocationName(input.Destination)
+		dates := models.DateRange{CheckIn: input.DepartDate, CheckOut: input.ReturnDate}
+		info := destinations.EnrichBestEffort(enrichCtx, location, dates)
+		eventsKeyOn := os.Getenv("TICKETMASTER_API_KEY") != ""
+		var events []models.Event
+		if eventsKeyOn {
+			events, _ = destinations.GetEvents(enrichCtx, location, input.DepartDate, input.ReturnDate)
+		}
+		enrichment := classifyEnrichment(info, events, eventsKeyOn)
+		enrichMu.Lock()
+		result.Enrichment = enrichment
+		enrichMu.Unlock()
 	}()
 
 	// Enrich the chosen hotel with OSM tags (stars, website, wheelchair,
