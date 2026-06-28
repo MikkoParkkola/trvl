@@ -73,10 +73,39 @@ gitnexus_docs_use_sha_pinned_cache_example() {
     grep -q 'actions/cache@[0-9a-f]\{40\}' scripts/gitnexus/README.md
 }
 
+release_docker_job_has_timeout() {
+  awk '
+    /^  docker:/ { in_job=1; next }
+    in_job && /^  [a-zA-Z0-9_-]+:/ { exit }
+    in_job && /^[[:space:]]+timeout-minutes:[[:space:]]*[0-9]+/ { found=1 }
+    END { exit found ? 0 : 1 }
+  ' .github/workflows/release.yml
+}
+
+release_docker_builds_emit_plain_progress() {
+  [ "$(grep -c -- '--progress=plain' .github/workflows/release.yml)" -ge 2 ]
+}
+
+release_docker_trivy_blocks_before_push() {
+  local trivy_line push_line
+  trivy_line="$(grep -nF 'name: Trivy image scan (block push on fixable HIGH/CRITICAL CVEs)' .github/workflows/release.yml | cut -d: -f1)"
+  push_line="$(grep -nF 'name: Build and push multi-arch image' .github/workflows/release.yml | cut -d: -f1)"
+
+  [ -n "$trivy_line" ] &&
+    [ -n "$push_line" ] &&
+    [ "$trivy_line" -lt "$push_line" ] &&
+    grep -qF 'exit-code: "1"' .github/workflows/release.yml &&
+    grep -qF 'severity: HIGH,CRITICAL' .github/workflows/release.yml &&
+    grep -qF 'ignore-unfixed: true' .github/workflows/release.yml
+}
+
 check "workflow action uses refs are pinned to commit SHAs" all_workflow_uses_are_sha_pinned
 check "setup-node jobs use Node 24" all_setup_node_jobs_use_node24
 check "GitNexus CLI calls include an explicit npm package version" no_unpinned_gitnexus_cli_calls
 check "GitNexus CI and local refresh use the same pinned CLI version" gitnexus_version_is_pinned_consistently
 check "GitNexus cached-index docs use a SHA-pinned cache action example" gitnexus_docs_use_sha_pinned_cache_example
+check "release Docker job has an explicit timeout" release_docker_job_has_timeout
+check "release Docker buildx commands emit plain progress logs" release_docker_builds_emit_plain_progress
+check "release Docker push remains behind the Trivy HIGH/CRITICAL gate" release_docker_trivy_blocks_before_push
 
 exit "$fail"
