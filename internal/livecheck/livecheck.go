@@ -39,6 +39,29 @@ func (Checker) CheckPrice(ctx context.Context, w watch.Watch) (float64, string, 
 	}
 }
 
+// cheapest returns the element with the lowest positive price. A zero or
+// negative price never displaces a positive one, and the first positive price
+// wins ties — the exact semantics the flight/date/hotel selection loops used to
+// duplicate inline. If no element has a positive price it returns the first
+// element (an honest "found nothing priceable"). Callers guarantee a non-empty
+// slice; the price accessor lets one helper serve all three result types.
+//
+// The sentinel is "best has price <= 0" rather than the inline loops' "== 0":
+// this is a no-op for real provider data (prices are never negative) but makes
+// the selector correct in the degenerate case where the first element carries a
+// negative price and a later one is genuinely positive.
+func cheapest[T any](items []T, price func(T) float64) T {
+	best := items[0]
+	bestP := price(best)
+	for _, x := range items[1:] {
+		p := price(x)
+		if p > 0 && (bestP <= 0 || p < bestP) {
+			best, bestP = x, p
+		}
+	}
+	return best
+}
+
 func checkFlight(ctx context.Context, w watch.Watch) (float64, string, string, error) {
 	// Route watch or date range: use calendar/dates search.
 	if w.IsRouteWatch() || w.IsDateRange() {
@@ -55,12 +78,7 @@ func checkFlight(ctx context.Context, w watch.Watch) (float64, string, string, e
 		return 0, "", "", nil
 	}
 
-	cheapest := result.Flights[0]
-	for _, f := range result.Flights[1:] {
-		if f.Price > 0 && (cheapest.Price == 0 || f.Price < cheapest.Price) {
-			cheapest = f
-		}
-	}
+	cheapest := cheapest(result.Flights, func(f models.FlightResult) float64 { return f.Price })
 	return cheapest.Price, cheapest.Currency, w.DepartDate, nil
 }
 
@@ -89,12 +107,7 @@ func checkFlightRange(ctx context.Context, w watch.Watch) (float64, string, stri
 	// with zero new provider calls. Best-effort: never affect the check result.
 	persistDateGrid(w.Origin, w.Destination, result.Dates)
 
-	cheapest := result.Dates[0]
-	for _, d := range result.Dates[1:] {
-		if d.Price > 0 && (cheapest.Price == 0 || d.Price < cheapest.Price) {
-			cheapest = d
-		}
-	}
+	cheapest := cheapest(result.Dates, func(d models.DatePriceResult) float64 { return d.Price })
 	return cheapest.Price, cheapest.Currency, cheapest.Date, nil
 }
 
@@ -159,11 +172,6 @@ func checkHotel(ctx context.Context, w watch.Watch) (float64, string, string, er
 		return 0, "", "", nil
 	}
 
-	cheapest := result.Hotels[0]
-	for _, h := range result.Hotels[1:] {
-		if h.Price > 0 && (cheapest.Price == 0 || h.Price < cheapest.Price) {
-			cheapest = h
-		}
-	}
+	cheapest := cheapest(result.Hotels, func(h models.HotelResult) float64 { return h.Price })
 	return cheapest.Price, cheapest.Currency, checkIn, nil
 }
