@@ -18,6 +18,10 @@ Contributions follow the rules in [`CONTRIBUTING.md`](CONTRIBUTING.md) — in pa
   - #149 — hermetic tests for 10 previously untested MCP tool handlers
   - earlier iterations (#123, #146, #147, #148) reworked into the landed versions above
 
+- **@RobertoReale** — *Roberto Reale*
+  - Independent build-and-test of the full budget-travel pipeline ([Budget Travel Pipeline](https://blog-roberto-reale.vercel.app)) across v1.8.0 to v1.18.0, which surfaced the list-vs-actual hotel price gap, a wrong-hotel name match (fixed in v1.9.2), and silent ad-click link expiry
+  - Contributed the island / unindexed-destination command sequence now documented in [`docs/CLI.md`](docs/CLI.md)
+
 ---
 
 Want to help? Good entry points:
