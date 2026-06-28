@@ -104,6 +104,13 @@ release_docker_trivy_blocks_before_push() {
     grep -qF 'ignore-unfixed: true' .github/workflows/release.yml
 }
 
+release_homebrew_stays_formula_only_until_notarized() {
+  grep -q '^brews:' .goreleaser.yaml &&
+    ! grep -q '^homebrew_casks:' .goreleaser.yaml &&
+    grep -q 'release/build never run' .goreleaser.yaml &&
+    grep -q 'Formula-only until Developer ID notarization is proven in release CI' docs/DISTRIBUTION.md
+}
+
 check "workflow action uses refs are pinned to commit SHAs" all_workflow_uses_are_sha_pinned
 check "setup-node jobs use Node 24" all_setup_node_jobs_use_node24
 check "GitNexus CLI calls include an explicit npm package version" no_unpinned_gitnexus_cli_calls
@@ -113,5 +120,6 @@ check "release GoReleaser action uses the reviewed Node 24 pin" release_goreleas
 check "release Docker job has an explicit timeout" release_docker_job_has_timeout
 check "release Docker buildx commands emit plain progress logs" release_docker_builds_emit_plain_progress
 check "release Docker push remains behind the Trivy HIGH/CRITICAL gate" release_docker_trivy_blocks_before_push
+check "release Homebrew distribution stays Formula-only until notarized casks are proven" release_homebrew_stays_formula_only_until_notarized
 
 exit "$fail"

@@ -50,6 +50,22 @@ The 2026-05-12 baseline captured 337 GitHub release asset downloads and 0 npm `t
 | mcp.so | Submitted, not live | [chatmcp/mcpso#2288](https://github.com/chatmcp/mcpso/issues/2288) tracks the submission. `https://mcp.so/server/trvl` returned "Project not found" on 2026-05-12. |
 | Glama | Not live; repo metadata fixed | `https://glama.ai/api/mcp/v1/servers/MikkoParkkola/trvl` returned 404 on 2026-05-12. `glama.json` is now tracked so the repo exposes the maintainer manifest. Manual "Add Server" flow may still be required. |
 
+## Homebrew macOS Policy
+
+Decision: Formula-only until Developer ID notarization is proven in release CI.
+
+trvl intentionally publishes a Homebrew Formula through GoReleaser's `brews`
+configuration, not a Cask. The Formula install path relocates the CLI binary in
+a way that avoids the `com.apple.quarantine` launch failure that affected the
+prior Cask-style distribution attempt. A Cask must not be introduced unless the
+release workflow first signs and notarizes Darwin artifacts with a Developer ID
+certificate, staples the notarization ticket when applicable, and verifies a
+quarantined install can run `trvl version` on macOS before publishing.
+
+The existing Formula path stays the supported Homebrew channel until that full
+notarized-Cask path is implemented and proven. `scripts/ci/check-workflow-hygiene.sh`
+blocks accidental `homebrew_casks` reintroduction while this policy is active.
+
 ## Listing Copy
 
 Short description:
