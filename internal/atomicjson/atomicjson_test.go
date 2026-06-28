@@ -119,3 +119,49 @@ func TestWriteNoTempLeftover(t *testing.T) {
 		t.Fatalf("expected only x.json, got %v", names)
 	}
 }
+
+// TestWriteBytesMkdirAllError exercises the dir-creation failure branch: when a
+// parent path component is an existing regular file, MkdirAll cannot create the
+// directory under it and WriteBytes must surface the error rather than panic or
+// silently drop the write.
+func TestWriteBytesMkdirAllError(t *testing.T) {
+	dir := t.TempDir()
+	// Create a regular file, then try to write "under" it as if it were a dir.
+	blocker := filepath.Join(dir, "afile")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(blocker, "nested", "out.json")
+	if err := WriteBytes(target, []byte("{}")); err == nil {
+		t.Fatal("expected error when a parent component is a regular file, got nil")
+	}
+}
+
+// TestWriteBytesRenameError exercises the rename-failure branch on non-Windows:
+// when the destination path is an existing directory, os.Rename of a file over
+// it fails, and WriteBytes must return that error while cleaning up its temp
+// file (no leftover .tmp-* in the directory).
+func TestWriteBytesRenameError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("rename-over-directory semantics differ on Windows")
+	}
+	dir := t.TempDir()
+	// Make the target path itself a directory so rename(file -> dir) fails.
+	target := filepath.Join(dir, "iam-a-dir")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteBytes(target, []byte("{}")); err == nil {
+		t.Fatal("expected error renaming over an existing directory, got nil")
+	}
+	// The temp file must have been cleaned up despite the failure.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Name() != "iam-a-dir" {
+			t.Errorf("expected no temp leftover, found %q", e.Name())
+		}
+	}
+}
