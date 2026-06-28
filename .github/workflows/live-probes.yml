@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   live-probes:
@@ -29,3 +30,34 @@ jobs:
         # -run Probe selects every *_probe_test.go test across the module; the
         # env gate flips them from skipped to live.
         run: TRVL_TEST_LIVE_PROBES=1 go test -count=1 -run Probe ./...
+      - name: Open drift alert on failure
+        # A scheduled red run nobody watches is not visibility. On a probe
+        # failure (only on the scheduled run, not manual dispatch), open or
+        # refresh a single tracking issue so provider drift surfaces actively.
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const title = 'Live provider probe failure (wire-format drift)';
+            const body = [
+              'A scheduled live provider probe failed. This usually means a provider',
+              'rotated its wire format (the MIK-6531 class) and a production-shaped',
+              'request now returns an error or stopped filtering.',
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            ].join('\n');
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'provider-drift',
+            });
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['provider-drift'],
+              });
+            }

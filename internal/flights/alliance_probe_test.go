@@ -58,10 +58,10 @@ func TestAllianceProbe(t *testing.T) {
 
 	// Alliance value formats to try at each position.
 	formats := []filterProbe{
-		{"str_STAR_ALLIANCE", []any{"STAR_ALLIANCE"}},
-		{"int_1", []any{1}},
-		{"scalar_1", 1},
-		{"nested_str", []any{[]any{"STAR_ALLIANCE"}}},
+		{name: "str_STAR_ALLIANCE", value: []any{"STAR_ALLIANCE"}},
+		{name: "int_1", value: []any{1}},
+		{name: "scalar_1", value: 1},
+		{name: "nested_str", value: []any{[]any{"STAR_ALLIANCE"}}},
 	}
 
 	// ---- Part 1: Settings positions (outer[1][pos]) ----
@@ -93,14 +93,14 @@ func TestAllianceProbe(t *testing.T) {
 	// ---- Part 3: Extra formats at pos 25 (wider exploration) ----
 	t.Run("Settings_pos25_extra", func(t *testing.T) {
 		extraFormats := []filterProbe{
-			{"int_2_skyteam", []any{2}},
-			{"int_3_oneworld", []any{3}},
-			{"nested_int", []any{[]any{1}}},
-			{"str_lowercase", []any{"star_alliance"}},
-			{"str_StarAlliance", []any{"StarAlliance"}},
-			{"double_nested", []any{[]any{[]any{"STAR_ALLIANCE"}}}},
-			{"str_with_nil", []any{"STAR_ALLIANCE", nil}},
-			{"int_pair", []any{1, nil}},
+			{name: "int_2_skyteam", value: []any{2}},
+			{name: "int_3_oneworld", value: []any{3}},
+			{name: "nested_int", value: []any{[]any{1}}},
+			{name: "str_lowercase", value: []any{"star_alliance"}},
+			{name: "str_StarAlliance", value: []any{"StarAlliance"}},
+			{name: "double_nested", value: []any{[]any{[]any{"STAR_ALLIANCE"}}}},
+			{name: "str_with_nil", value: []any{"STAR_ALLIANCE", nil}},
+			{name: "int_pair", value: []any{1, nil}},
 		}
 		results := runSettingsProbes(t, client, "HEL", "LHR", searchDate, baseOpts, 25, extraFormats)
 		analyzeAllianceResults(t, "settings[25]_extra", baseline, results)

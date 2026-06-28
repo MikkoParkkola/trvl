@@ -55,12 +55,12 @@ func TestAllianceCodes(t *testing.T) {
 	// ---- Part 1: Numeric codes at segment[5] ----
 	t.Run("NumericCodes", func(t *testing.T) {
 		probes := []filterProbe{
-			{"int_1", []any{1}},
-			{"int_2", []any{2}},
-			{"int_3", []any{3}},
-			{"str_1", []any{"1"}},
-			{"str_2", []any{"2"}},
-			{"str_3", []any{"3"}},
+			{name: "int_1", value: []any{1}},
+			{name: "int_2", value: []any{2}},
+			{name: "int_3", value: []any{3}},
+			{name: "str_1", value: []any{"1"}},
+			{name: "str_2", value: []any{"2"}},
+			{name: "str_3", value: []any{"3"}},
 		}
 		results := runSegmentProbes(t, client, origin, dest, date, baseOpts, 5, probes)
 
@@ -86,9 +86,9 @@ func TestAllianceCodes(t *testing.T) {
 	// ---- Part 2: Known string codes for reference ----
 	t.Run("StringCodes", func(t *testing.T) {
 		probes := []filterProbe{
-			{"STAR_ALLIANCE", []any{"STAR_ALLIANCE"}},
-			{"ONEWORLD", []any{"ONEWORLD"}},
-			{"SKYTEAM", []any{"SKYTEAM"}},
+			{name: "STAR_ALLIANCE", value: []any{"STAR_ALLIANCE"}, expectOK: true},
+			{name: "ONEWORLD", value: []any{"ONEWORLD"}, expectOK: true},
+			{name: "SKYTEAM", value: []any{"SKYTEAM"}, expectOK: true},
 		}
 		results := runSegmentProbes(t, client, origin, dest, date, baseOpts, 5, probes)
 
@@ -107,10 +107,10 @@ func TestAllianceCodes(t *testing.T) {
 	// ---- Part 3: Multi-alliance AND vs OR ----
 	t.Run("MultiAlliance", func(t *testing.T) {
 		probes := []filterProbe{
-			{"SA+OW_combined", []any{"STAR_ALLIANCE", "ONEWORLD"}},
-			{"SA+ST_combined", []any{"STAR_ALLIANCE", "SKYTEAM"}},
-			{"OW+ST_combined", []any{"ONEWORLD", "SKYTEAM"}},
-			{"all_three", []any{"STAR_ALLIANCE", "ONEWORLD", "SKYTEAM"}},
+			{name: "SA+OW_combined", value: []any{"STAR_ALLIANCE", "ONEWORLD"}, expectOK: true},
+			{name: "SA+ST_combined", value: []any{"STAR_ALLIANCE", "SKYTEAM"}, expectOK: true},
+			{name: "OW+ST_combined", value: []any{"ONEWORLD", "SKYTEAM"}, expectOK: true},
+			{name: "all_three", value: []any{"STAR_ALLIANCE", "ONEWORLD", "SKYTEAM"}, expectOK: true},
 		}
 		results := runSegmentProbes(t, client, origin, dest, date, baseOpts, 5, probes)
 
@@ -139,10 +139,10 @@ func TestAllianceCodes(t *testing.T) {
 	// ---- Part 4: Case sensitivity ----
 	t.Run("CaseSensitivity", func(t *testing.T) {
 		probes := []filterProbe{
-			{"STAR_ALLIANCE_upper", []any{"STAR_ALLIANCE"}},
-			{"star_alliance_lower", []any{"star_alliance"}},
-			{"Star_Alliance_mixed", []any{"Star_Alliance"}},
-			{"StarAlliance_nounderscore", []any{"StarAlliance"}},
+			{name: "STAR_ALLIANCE_upper", value: []any{"STAR_ALLIANCE"}, expectOK: true},
+			{name: "star_alliance_lower", value: []any{"star_alliance"}},
+			{name: "Star_Alliance_mixed", value: []any{"Star_Alliance"}},
+			{name: "StarAlliance_nounderscore", value: []any{"StarAlliance"}},
 		}
 		results := runSegmentProbes(t, client, origin, dest, date, baseOpts, 5, probes)
 

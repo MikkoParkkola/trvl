@@ -18,12 +18,14 @@ import (
 // Positions tested:
 //
 //	segment[2]   departure time window [startHour, endHour]
-//	segment[13]  emissions filter (1 = less emissions only)
-//	outer[1][25] alliance filter (["STAR_ALLIANCE"], ["ONEWORLD"], etc.)
+//	segment[5]   alliance filter (["STAR_ALLIANCE"], etc.) -- PRODUCTION position
+//	segment[13]  emissions filter ([]any{1} = less emissions only)
+//	outer[1][25] alliance filter -- ABANDONED, returns 400 (kept as exploration)
 //
 // For each filter we send: nil (baseline) and one or more constrained values.
 // If the constrained value returns fewer flights than nil, the filter works.
-// If any probe returns HTTP 400, the wire format is wrong.
+// A 400 on a production-shaped probe (expectOK) is a drift alarm: Google changed
+// the wire format. A 400 on an exploratory probe is expected and only logged.
 func TestFiltersProbe(t *testing.T) {
 	testutil.RequireLiveProbe(t)
 
@@ -51,60 +53,73 @@ func TestFiltersProbe(t *testing.T) {
 		}
 	}
 
-	// ---- Departure Time ----
+	// ---- Departure Time (segment[2]) ----
 	t.Run("DepartureTime", func(t *testing.T) {
 		probes := []filterProbe{
-			{"nil", nil},
-			{"[6,12]_morning", []any{6, 12}},
-			{"[18,24]_evening", []any{18, 24}},
-			{"[0,6]_redeye", []any{0, 6}},
-			{"[12,18]_afternoon", []any{12, 18}},
+			{name: "nil", value: nil, expectOK: true},
+			{name: "[6,12]_morning", value: []any{6, 12}, expectOK: true},
+			{name: "[18,24]_evening", value: []any{18, 24}, expectOK: true},
+			{name: "[0,6]_redeye", value: []any{0, 6}, expectOK: true},
+			{name: "[12,18]_afternoon", value: []any{12, 18}, expectOK: true},
 		}
 		results := runSegmentProbes(t, client, "HEL", "LHR", searchDate, baseOpts, 2, probes)
 		analyzeResults(t, "DEPART_TIME", results)
 	})
 
 	// ---- Emissions (segment[13]) ----
-	// Scalar 1 returns 400. Probe alternative wire formats.
+	// Production ships []any{1} here (see emissionsFilter). Scalar 1 returns 400
+	// and is kept only as an exploratory probe documenting why.
 	t.Run("Emissions", func(t *testing.T) {
 		probes := []filterProbe{
-			{"nil", nil},
-			{"1_scalar", 1},
-			{"[1]_array", []any{1}},
-			{"true", true},
-			{"[1,nil]", []any{1, nil}},
-			{"[nil,1]", []any{nil, 1}},
+			{name: "nil", value: nil, expectOK: true},
+			{name: "[1]_array_PROD", value: []any{1}, expectOK: true}, // production wire format
+			{name: "1_scalar", value: 1},                              // exploratory: known 400
+			{name: "true", value: true},                               // exploratory
+			{name: "[1,nil]", value: []any{1, nil}},                   // exploratory
+			{name: "[nil,1]", value: []any{nil, 1}},                   // exploratory
 		}
 		results := runSegmentProbes(t, client, "HEL", "LHR", searchDate, baseOpts, 13, probes)
 		analyzeResults(t, "EMISSIONS_seg13", results)
 	})
 
-	// ---- Emissions at segment[14] (maybe off-by-one?) ----
+	// ---- Emissions at segment[14] (exploratory off-by-one check) ----
+	// Position 14 is currently hardcoded to 3 in buildSegment; these probes are
+	// pure exploration, not a production format, so none assert.
 	t.Run("Emissions_pos14", func(t *testing.T) {
 		probes := []filterProbe{
-			{"nil", nil},
-			{"1_scalar", 1},
-			{"[1]_array", []any{1}},
+			{name: "nil", value: nil},
+			{name: "1_scalar", value: 1},
+			{name: "[1]_array", value: []any{1}},
 		}
-		// Position 14 is currently hardcoded to 3 in buildSegment.
-		// Probe with emissions values there instead.
 		results := runSegmentProbes(t, client, "HEL", "LHR", searchDate, baseOpts, 14, probes)
 		analyzeResults(t, "EMISSIONS_seg14", results)
 	})
 
-	// ---- Alliance (outer[1][25]) ----
-	// String arrays return 400. Probe alternative formats.
-	t.Run("Alliance", func(t *testing.T) {
+	// ---- Alliance (segment[5], PRODUCTION position) ----
+	// Production moved the alliance filter off the abandoned outer[1][25] slot to
+	// segment[5] with an uppercased string array (see alliancesFilter +
+	// search_filters.go). This probe verifies that live format still works -- a
+	// 400 here is the drift alarm MIK-6531 was about.
+	t.Run("Alliance_seg5", func(t *testing.T) {
 		probes := []filterProbe{
-			{"nil", nil},
-			{"str_STAR_ALLIANCE", []any{"STAR_ALLIANCE"}},
-			{"int_1", []any{1}},                           // maybe integer codes?
-			{"int_2", []any{2}},                           // ONEWORLD as int?
-			{"int_3", []any{3}},                           // SKYTEAM as int?
-			{"nested_str", []any{[]any{"STAR_ALLIANCE"}}}, // nested array?
-			{"nested_int", []any{[]any{1}}},               // nested int array?
-			{"scalar_1", 1},                               // scalar int
-			{"scalar_str", "STAR_ALLIANCE"},               // scalar string
+			{name: "nil", value: nil, expectOK: true},
+			{name: "str_STAR_ALLIANCE_PROD", value: []any{"STAR_ALLIANCE"}, expectOK: true},
+			{name: "str_ONEWORLD_PROD", value: []any{"ONEWORLD"}, expectOK: true},
+		}
+		results := runSegmentProbes(t, client, "HEL", "LHR", searchDate, baseOpts, 5, probes)
+		analyzeResults(t, "ALLIANCE_seg5", results)
+	})
+
+	// ---- Alliance (outer[1][25], ABANDONED position) ----
+	// Kept as exploration documenting why the settings slot was abandoned: every
+	// shape here returns 400. expectOK=false everywhere so it never false-alarms.
+	t.Run("Alliance_pos25_abandoned", func(t *testing.T) {
+		probes := []filterProbe{
+			{name: "nil", value: nil},
+			{name: "str_STAR_ALLIANCE", value: []any{"STAR_ALLIANCE"}},
+			{name: "int_1", value: []any{1}},
+			{name: "nested_str", value: []any{[]any{"STAR_ALLIANCE"}}},
+			{name: "scalar_str", value: "STAR_ALLIANCE"},
 		}
 		results := runSettingsProbes(t, client, "HEL", "LHR", searchDate, baseOpts, 25, probes)
 		analyzeResults(t, "ALLIANCE_pos25", results)
@@ -112,9 +127,16 @@ func TestFiltersProbe(t *testing.T) {
 }
 
 // filterProbe defines a single probe: a name and a value to patch in.
+//
+// expectOK marks a probe as production-shaped: the wire format trvl actually
+// ships. A production-shaped probe that returns HTTP 400 means Google rotated
+// the format out from under us -- that is a real, alarm-worthy regression.
+// Exploratory probes (expectOK=false) deliberately send abandoned or candidate
+// shapes to learn what Google accepts; a 400 there is expected and only logged.
 type filterProbe struct {
-	name  string
-	value any
+	name     string
+	value    any
+	expectOK bool
 }
 
 // probeResult captures one probe's outcome.
@@ -124,6 +146,7 @@ type probeResult struct {
 	count    int
 	bodySize int
 	err      error
+	expectOK bool
 }
 
 // runSegmentProbes patches a position inside segment[0] (the outbound segment,
@@ -164,6 +187,7 @@ func runSegmentProbes(t *testing.T, client *batchexec.Client, origin, dest, date
 				status:   status,
 				count:    count,
 				bodySize: len(body),
+				expectOK: p.expectOK,
 			}
 			t.Logf("%-20s  status=%d  flights=%d  body=%d bytes",
 				p.name, status, count, len(body))
@@ -210,6 +234,7 @@ func runSettingsProbes(t *testing.T, client *batchexec.Client, origin, dest, dat
 				status:   status,
 				count:    count,
 				bodySize: len(body),
+				expectOK: p.expectOK,
 			}
 			t.Logf("%-20s  status=%d  flights=%d  body=%d bytes",
 				p.name, status, count, len(body))
@@ -321,10 +346,17 @@ func analyzeResults(t *testing.T, label string, results []probeResult) {
 		}
 	}
 
-	// Check for 400s -- indicates broken wire format.
+	// A 400 on a production-shaped probe (expectOK) means Google rotated the
+	// wire format and trvl is now broken in production -- that is the drift
+	// alarm. A 400 on an exploratory probe is expected and only logged.
 	for _, r := range results {
-		if r.status == 400 {
-			t.Errorf("BUG: %s=%s returns 400 -- wire format rejected by Google", label, r.name)
+		if r.status != 400 {
+			continue
+		}
+		if r.expectOK {
+			t.Errorf("DRIFT: %s=%s returns 400 -- PRODUCTION wire format rejected by Google", label, r.name)
+		} else {
+			t.Logf("exploratory %s=%s returns 400 (expected for non-production shape)", label, r.name)
 		}
 	}
 
