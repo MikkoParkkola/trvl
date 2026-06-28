@@ -225,6 +225,7 @@ func TestHoldStoreGetUpdateAndRemove(t *testing.T) {
 func TestDefaultHoldStoreUsesHomeTrvlDirectory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	store, err := DefaultHoldStore()
 	if err != nil {

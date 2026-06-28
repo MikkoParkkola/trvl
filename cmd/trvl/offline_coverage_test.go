@@ -747,6 +747,7 @@ func tempOutputFile(t *testing.T) *os.File {
 	if err != nil {
 		t.Fatalf("CreateTemp: %v", err)
 	}
+	t.Cleanup(func() { _ = f.Close() })
 	return f
 }
 
