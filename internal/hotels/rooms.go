@@ -10,18 +10,22 @@ import (
 
 // RoomType represents a specific room category at a hotel.
 type RoomType struct {
-	Name               string                      `json:"name"`
-	Price              float64                     `json:"price"`
-	NightlyPrice       float64                     `json:"nightly_price,omitempty"`
-	TotalPrice         float64                     `json:"total_price,omitempty"`
-	TaxesAndFees       float64                     `json:"taxes_and_fees,omitempty"`
-	TaxesFeesIncluded  *bool                       `json:"taxes_fees_included,omitempty"`
-	Currency           string                      `json:"currency"`
-	Provider           string                      `json:"provider,omitempty"`
-	ProviderURL        string                      `json:"provider_url,omitempty"`
-	RateID             string                      `json:"rate_id,omitempty"`
-	RatePlanName       string                      `json:"rate_plan_name,omitempty"`
-	MatchConfidence    string                      `json:"match_confidence,omitempty"`
+	Name              string  `json:"name"`
+	Price             float64 `json:"price"`
+	NightlyPrice      float64 `json:"nightly_price,omitempty"`
+	TotalPrice        float64 `json:"total_price,omitempty"`
+	TaxesAndFees      float64 `json:"taxes_and_fees,omitempty"`
+	TaxesFeesIncluded *bool   `json:"taxes_fees_included,omitempty"`
+	Currency          string  `json:"currency"`
+	Provider          string  `json:"provider,omitempty"`
+	ProviderURL       string  `json:"provider_url,omitempty"`
+	RateID            string  `json:"rate_id,omitempty"`
+	RatePlanName      string  `json:"rate_plan_name,omitempty"`
+	MatchConfidence   string  `json:"match_confidence,omitempty"`
+	// Readiness is the composed booking-readiness verdict (ready|caution|
+	// unverified) from roomReadiness: one trustworthy gate over the scattered
+	// price, link-durability, identity, and refundability signals. See MIK-6232.
+	Readiness          string                      `json:"readiness,omitempty"`
 	MaxGuests          int                         `json:"max_guests,omitempty"`
 	BedType            string                      `json:"bed_type,omitempty"`
 	SizeM2             float64                     `json:"size_m2,omitempty"`
@@ -239,6 +243,14 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// lead-in), then cheapest-first within a tier, so the most actionable price
 	// surfaces first and unpriced lead-ins sink to the bottom.
 	sortRoomsByBookability(rooms)
+
+	// Compose the per-room booking-readiness verdict over the now-final trust
+	// signals (price, link durability, room identity, refundability). One gate
+	// the agent and CLI can lead with instead of re-deriving from scattered
+	// fields. See MIK-6232.
+	for i := range rooms {
+		rooms[i].Readiness = roomReadiness(rooms[i])
+	}
 
 	return &RoomAvailability{
 		Success:  true,

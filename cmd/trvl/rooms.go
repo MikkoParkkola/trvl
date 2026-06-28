@@ -186,7 +186,7 @@ func formatRoomsTable(result *hotels.RoomAvailability) error {
 		fmt.Printf("Notice: %s\n\n", result.Notice)
 	}
 
-	headers := []string{"Room", "Price", "Guests", "Bed", "Board", "Cancellation", "Provider", "Amenities"}
+	headers := []string{"Room", "Price", "Readiness", "Guests", "Bed", "Board", "Cancellation", "Provider", "Amenities"}
 	rows := make([][]string, 0, len(result.Rooms))
 	var prices priceScale
 
@@ -213,6 +213,7 @@ func formatRoomsTable(result *hotels.RoomAvailability) error {
 		rows = append(rows, []string{
 			room.Name,
 			priceText,
+			readinessLabel(room),
 			guestsText,
 			room.BedType,
 			boardLabel(room),
@@ -274,6 +275,22 @@ func cancellationLabel(room hotels.RoomType) string {
 		return "Non refundable"
 	}
 	return ""
+}
+
+// readinessLabel renders the composed booking-readiness verdict (MIK-6232) for
+// the rooms table. Blank when the room carries no verdict (e.g. legacy data),
+// so the column never fabricates confidence.
+func readinessLabel(room hotels.RoomType) string {
+	switch room.Readiness {
+	case hotels.ReadinessReady:
+		return "Ready"
+	case hotels.ReadinessCaution:
+		return "Caution"
+	case hotels.ReadinessUnverified:
+		return "Unverified"
+	default:
+		return ""
+	}
 }
 
 // roomHighlight builds a compact one-line decision summary (board +
