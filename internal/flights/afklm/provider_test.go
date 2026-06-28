@@ -142,3 +142,54 @@ func TestProviderCabinMapping(t *testing.T) {
 		}
 	}
 }
+
+// TestBoundDirection locks the round-trip leg tagging: bound 0 is the outbound,
+// bound 1 the inbound/return, and any further bounds (open-jaw / multi-city)
+// stay untagged. This is the native return-ticket leg mapping for AF-KLM, so a
+// regression here would mislabel return flights.
+func TestBoundDirection(t *testing.T) {
+	cases := []struct {
+		idx  int
+		want string
+	}{
+		{0, "outbound"},
+		{1, "inbound"},
+		{2, ""},  // open-jaw third bound: untagged
+		{5, ""},  // multi-city
+		{-1, ""}, // defensive: never expected, must not panic or mislabel
+	}
+	for _, tc := range cases {
+		if got := boundDirection(tc.idx); got != tc.want {
+			t.Errorf("boundDirection(%d): got %q, want %q", tc.idx, got, tc.want)
+		}
+	}
+}
+
+// TestParseLayover covers the success path and every failure branch: empty
+// endpoints and unparseable datetimes must report ok=false so the caller skips
+// the layover diff rather than computing garbage from zero-value times.
+func TestParseLayover(t *testing.T) {
+	prev, cur, ok := parseLayover("2026-05-15T10:30:00", "2026-05-15T12:45:00")
+	if !ok {
+		t.Fatal("parseLayover(valid pair): ok=false, want true")
+	}
+	if got := cur.Sub(prev); got != 2*time.Hour+15*time.Minute {
+		t.Errorf("layover gap: got %v, want 2h15m", got)
+	}
+
+	failCases := []struct {
+		name             string
+		prevArr, nextDep string
+	}{
+		{"empty_prev", "", "2026-05-15T12:45:00"},
+		{"empty_next", "2026-05-15T10:30:00", ""},
+		{"both_empty", "", ""},
+		{"bad_prev", "garbage", "2026-05-15T12:45:00"},
+		{"bad_next", "2026-05-15T10:30:00", "not-a-time"},
+	}
+	for _, tc := range failCases {
+		if _, _, ok := parseLayover(tc.prevArr, tc.nextDep); ok {
+			t.Errorf("parseLayover(%s): ok=true, want false", tc.name)
+		}
+	}
+}
