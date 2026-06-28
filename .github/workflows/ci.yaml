@@ -21,6 +21,8 @@ jobs:
         run: scripts/ci/check-language-hygiene.sh
       - name: Check file-size hygiene
         run: scripts/ci/check-file-size.sh
+      - name: Check release metadata
+        run: scripts/ci/check-release-metadata.sh
 
   test:
     permissions:

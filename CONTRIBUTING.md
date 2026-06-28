@@ -95,6 +95,13 @@ Append-only public history files may be exceptions only when they are listed in
 the only approved exception because release history must remain root-visible for
 users, package managers, and release tooling.
 
+Release metadata in `server.json` and `npm/package.json` tracks the latest
+published release documented in `CHANGELOG.md`. Update those files in the same
+PR that cuts a release section. The release workflow still stamps `server.json`
+from the pushed tag immediately before MCP Registry publish, so tag-time
+publishing is deterministic even when the checked-in manifests are reviewed as
+normal source files.
+
 ## Testing Discipline
 
 - Unit tests run offline. HTTP must be mocked via `httptest` or an injected

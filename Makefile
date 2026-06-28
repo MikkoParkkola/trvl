@@ -33,6 +33,7 @@ repo-hygiene:
 	scripts/ci/check-workflow-hygiene.sh
 	scripts/ci/check-language-hygiene.sh
 	scripts/ci/check-file-size.sh
+	scripts/ci/check-release-metadata.sh
 
 lint: repo-hygiene
 	$(GO_RUN) vet ./...
