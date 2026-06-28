@@ -195,6 +195,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     needs: goreleaser
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -229,8 +230,12 @@ jobs:
       # base-image OS/library CVEs. Only push (multi-arch) if the scan is clean.
       - name: Build amd64 image for vulnerability scan
         run: |
+          set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
+          start="$(date -u +%s)"
+          echo "Docker scan image build started at $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
           docker buildx build \
+            --progress=plain \
             --platform linux/amd64 \
             --build-arg VERSION="${VERSION}" \
             --tag "ghcr.io/mikkoparkkola/trvl:scan" \
@@ -239,6 +244,8 @@ jobs:
             --cache-to type=gha,mode=max,ignore-error=true \
             --load \
             .
+          end="$(date -u +%s)"
+          echo "Docker scan image build finished in $((end - start)) seconds"
 
       - name: Trivy image scan (block push on fixable HIGH/CRITICAL CVEs)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -252,8 +259,12 @@ jobs:
 
       - name: Build and push multi-arch image
         run: |
+          set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
+          start="$(date -u +%s)"
+          echo "Docker multi-arch build/push started at $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
           docker buildx build \
+            --progress=plain \
             --platform linux/amd64,linux/arm64 \
             --build-arg VERSION="${VERSION}" \
             --tag "ghcr.io/mikkoparkkola/trvl:${VERSION}" \
@@ -263,6 +274,8 @@ jobs:
             --cache-to type=gha,mode=max,ignore-error=true \
             --push \
             .
+          end="$(date -u +%s)"
+          echo "Docker multi-arch build/push finished in $((end - start)) seconds"
 
   mcp-registry:
     runs-on: ubuntu-latest
