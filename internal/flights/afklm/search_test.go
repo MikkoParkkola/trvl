@@ -323,3 +323,50 @@ func TestDaysUntilDepartureTTLTable(t *testing.T) {
 		}
 	}
 }
+
+// TestDaysFromISOBranches covers the parse-fallback and clamp branches that the
+// TTL table (happy "2006-01-02" path only) leaves untested: the RFC3339
+// fallback used by LowestFaresRequest.FromDate, empty/garbage input, and a past
+// date clamping to 0 instead of going negative.
+func TestDaysFromISOBranches(t *testing.T) {
+	now := time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name string
+		in   string
+		want int
+	}{
+		{"empty", "", 0},
+		{"garbage", "not-a-date", 0},
+		{"calendar_date", "2026-05-01", 10},
+		{"rfc3339_fallback", "2026-05-01T08:30:00Z", 10},
+		{"rfc3339_offset", "2026-05-01T23:30:00+02:00", 10},
+		{"past_clamps_to_zero", "2026-04-01", 0},
+		{"today_is_zero", "2026-04-21", 0},
+	}
+	for _, tc := range cases {
+		if got := daysFromISO(tc.in, now); got != tc.want {
+			t.Errorf("daysFromISO(%q): got %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestDaysUntilDepartureWrapper covers the connection-extraction wrapper: empty
+// connections returns 0, and a populated first connection delegates to
+// daysFromISO.
+func TestDaysUntilDepartureWrapper(t *testing.T) {
+	now := time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)
+
+	if got := daysUntilDeparture(AvailableOffersRequest{}, now); got != 0 {
+		t.Errorf("daysUntilDeparture(empty connections): got %d, want 0", got)
+	}
+
+	req := AvailableOffersRequest{
+		RequestedConnections: []RequestedConnection{
+			{DepartureDate: "2026-05-01"}, // 10 days out
+			{DepartureDate: "2026-09-01"}, // ignored: only first connection drives TTL
+		},
+	}
+	if got := daysUntilDeparture(req, now); got != 10 {
+		t.Errorf("daysUntilDeparture(first=2026-05-01): got %d, want 10", got)
+	}
+}
