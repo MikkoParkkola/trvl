@@ -248,6 +248,12 @@ func TestNativeRoundTripCurrency_Priority(t *testing.T) {
 	if got := nativeRoundTripCurrency(SearchOptions{Currency: "GBP"}, eur, usd); got != "GBP" {
 		t.Errorf("explicit currency: got %q want GBP", got)
 	}
+	// Explicit opts.Currency holds even with no leg/composed signal yet — the
+	// contract searchRoundTripComposed relies on when it queries the native Google
+	// round-trip BEFORE the legs run (MIK-6612), so currency is not lost by reorder.
+	if got := nativeRoundTripCurrency(SearchOptions{Currency: "GBP"}, nil, nil); got != "GBP" {
+		t.Errorf("explicit currency with nil signals: got %q want GBP", got)
+	}
 	// Else fall back to the composed pairs' currency.
 	if got := nativeRoundTripCurrency(SearchOptions{}, eur, usd); got != "EUR" {
 		t.Errorf("composed currency: got %q want EUR", got)
