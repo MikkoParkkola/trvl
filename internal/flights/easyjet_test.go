@@ -150,6 +150,7 @@ func TestEasyjetSearchEligible_RequiresSharedClientAndConfig(t *testing.T) {
 // never a crash. This is the Case-C deliverable: the opt-in path is wired and
 // reports its unavailability truthfully.
 func TestSearchFlightsCore_EasyjetHonestStatusWhenUnconfigured(t *testing.T) {
+	resetFlightBreakerForTest(t, "easyjet")
 	t.Setenv("EASYJET_API_BASE", "")
 	body := makeFlightResponseBody(t)
 	ts := flightsTestServer(t, 200, body)

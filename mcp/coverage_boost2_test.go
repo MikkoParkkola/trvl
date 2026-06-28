@@ -9,6 +9,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/hacks"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
 // Test helper constructors for option types.
@@ -213,9 +214,7 @@ func TestHandleDetectTravelHacks_MissingOrigin(t *testing.T) {
 
 func TestHandleDetectTravelHacks_DefaultCurrency(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping live HTTP test in short mode")
-	}
+	testutil.RequireLiveIntegration(t)
 	content, result, err := handleDetectTravelHacks(context.Background(), map[string]any{
 		"origin": "HEL", "destination": "PRG", "date": "2026-07-01",
 	}, nil, nil, nil)

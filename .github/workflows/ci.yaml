@@ -87,8 +87,8 @@ jobs:
             exit 1
           fi
           echo "Total coverage: ${COVERAGE}%"
-          if [ "$(echo "$COVERAGE < 75" | bc -l)" -eq 1 ]; then
-            echo "::error::Coverage ${COVERAGE}% is below 75% threshold"
+          if [ "$(echo "$COVERAGE < 80" | bc -l)" -eq 1 ]; then
+            echo "::error::Coverage ${COVERAGE}% is below 80% threshold"
             exit 1
           fi
       - name: Check coverage wiki

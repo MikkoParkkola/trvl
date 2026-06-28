@@ -10,6 +10,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
 func TestRelativeTimeStr_MultipleMinutesAgo(t *testing.T) {
@@ -323,9 +324,7 @@ func TestSuggestCmd_InvalidDestIATAV7(t *testing.T) {
 }
 
 func TestFlightsCmd_HomeOriginResolves(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping live HTTP test in short mode")
-	}
+	testutil.RequireLiveIntegration(t)
 	cmd := flightsCmd()
 	cmd.SetArgs([]string{"home", "BCN", "2026-07-01"})
 	_ = cmd.Execute()

@@ -237,6 +237,7 @@ func TestNorwegianRoundTripComposesViaSearchSingleLCC(t *testing.T) {
 // and never a crash. This is the opt-in deliverable: the path is wired and
 // reports its unavailability truthfully.
 func TestSearchFlightsCore_NorwegianHonestStatusWhenUnconfigured(t *testing.T) {
+	resetFlightBreakerForTest(t, "norwegian")
 	t.Setenv("NORWEGIAN_API_BASE", "")
 	body := makeFlightResponseBody(t)
 	ts := flightsTestServer(t, 200, body)

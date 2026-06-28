@@ -151,6 +151,7 @@ func TestVuelingSearchEligible_RequiresSharedClientAndConfig(t *testing.T) {
 // never a crash. This is the opt-in deliverable: the path is wired and reports
 // its unavailability truthfully.
 func TestSearchFlightsCore_VuelingHonestStatusWhenUnconfigured(t *testing.T) {
+	resetFlightBreakerForTest(t, "vueling")
 	t.Setenv("VUELING_API_BASE", "")
 	body := makeFlightResponseBody(t)
 	ts := flightsTestServer(t, 200, body)
