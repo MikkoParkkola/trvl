@@ -25,6 +25,9 @@ type PlanInput struct {
 	ReturnDate  string
 	Guests      int
 	Currency    string
+	// Budget is the all-in ceiling for the whole trip in Currency. Zero means
+	// "no budget set": the planner ranks normally and never reports over-budget.
+	Budget float64
 }
 
 // PlanFlight is a flight option in the trip plan.
@@ -113,13 +116,33 @@ type PlanSummary struct {
 	// daily-spend index. It is an ESTIMATE, never a live quote — MealsEstimated
 	// is set whenever it is included so callers can label it. Folding it in is
 	// what makes GrandTotal a no-surprise landed cost, not just flights + hotel.
-	// GrandTotal == FlightsTotal + BaggageTotal + HotelTotal + MealsTotal.
+	// GrandTotal == FlightsTotal + BaggageTotal + HotelTotal + MealsTotal +
+	// TransfersTotal + TaxesTotal.
 	MealsTotal     float64 `json:"meals_total"`
 	MealsEstimated bool    `json:"meals_estimated"`
+	// TransfersTotal is the airport<->city round-trip cost for the whole party,
+	// from the bundled offline transfer table. TransfersEstimated is true when a
+	// curated figure was found; when false the amount is zero (a typed not-found
+	// status, never a fabricated number) per the MIK-6530 fail-fast contract.
+	TransfersTotal     float64 `json:"transfers_total"`
+	TransfersEstimated bool    `json:"transfers_estimated"`
+	// TaxesTotal is the tourist/city tax for the whole party over the stay, from
+	// the bundled offline city-tax table. Same typed-not-found semantics as
+	// transfers via TaxesEstimated.
+	TaxesTotal     float64 `json:"taxes_total"`
+	TaxesEstimated bool    `json:"taxes_estimated"`
 	GrandTotal     float64 `json:"grand_total"`
 	PerPerson      float64 `json:"per_person"`
 	PerDay         float64 `json:"per_day"`
 	Currency       string  `json:"currency"`
+	// Budget echoes the requested ceiling (PlanInput.Budget). OverBudget is true
+	// when no package fits under it; Overage is how much the cheapest total
+	// exceeds it, and BudgetMessage carries the explicit "no package fits"
+	// sentence. All zero/false when no budget was set.
+	Budget        float64 `json:"budget,omitempty"`
+	OverBudget    bool    `json:"over_budget,omitempty"`
+	Overage       float64 `json:"overage,omitempty"`
+	BudgetMessage string  `json:"budget_message,omitempty"`
 }
 
 // PlanResult is the full trip plan response.
@@ -477,17 +500,31 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 	// rather than just flights + hotel.
 	meals := dailyspend.Lookup(models.ResolveLocationName(input.Destination))
 	mealsTotal := convertedPlanAmount(ctx, meals.Total(input.Guests, nights), meals.Currency, cur)
-	grandTotal := flightsAllIn + cheapHotel + mealsTotal
+	// Airport<->city transfer and tourist/city tax: real money a flight+hotel
+	// quote hides. Both from bundled offline tables; a city not in the table
+	// degrades to a typed not-found status (zero + Estimated=false) rather than a
+	// fabricated figure (MIK-6530 PLANCOMP.1).
+	transfersTotal, transfersKnown := transferCostConverted(ctx, input.Destination, input.Guests, cur)
+	taxesTotal, taxesKnown := cityTaxConverted(ctx, input.Destination, input.Guests, nights, cur)
+	grandTotal := flightsAllIn + cheapHotel + mealsTotal + transfersTotal + taxesTotal
 
 	result.Summary = PlanSummary{
-		FlightsTotal:   flightsHeadline,
-		BaggageTotal:   baggageTotal,
-		HotelTotal:     cheapHotel,
-		MealsTotal:     mealsTotal,
-		MealsEstimated: mealsTotal > 0,
-		GrandTotal:     grandTotal,
-		Currency:       cur,
+		FlightsTotal:       flightsHeadline,
+		BaggageTotal:       baggageTotal,
+		HotelTotal:         cheapHotel,
+		MealsTotal:         mealsTotal,
+		MealsEstimated:     mealsTotal > 0,
+		TransfersTotal:     transfersTotal,
+		TransfersEstimated: transfersKnown,
+		TaxesTotal:         taxesTotal,
+		TaxesEstimated:     taxesKnown,
+		GrandTotal:         grandTotal,
+		Currency:           cur,
 	}
+	// PLANCOMP.2: if a budget was set and nothing fits under it, say so plainly,
+	// carrying the cheapest total and the overage.
+	result.Summary.Budget = input.Budget
+	result.Summary.OverBudget, result.Summary.Overage, result.Summary.BudgetMessage = budgetVerdict(grandTotal, input.Budget, cur)
 	if input.Guests > 0 {
 		result.Summary.PerPerson = grandTotal / float64(input.Guests)
 	}
