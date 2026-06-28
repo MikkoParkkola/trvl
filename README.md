@@ -164,6 +164,27 @@ Full troubleshooting: [docs/CLI.md](docs/CLI.md).
 
 Part of a suite of MCP tools: [mcp-gateway](https://github.com/MikkoParkkola/mcp-gateway) (universal gateway) · [nab](https://github.com/MikkoParkkola/nab) (web extraction with anti-bot) · [axterminator](https://github.com/MikkoParkkola/axterminator) (macOS GUI automation).
 
+## Privacy & telemetry
+
+trvl sends one anonymous heartbeat per install per day so the project knows roughly how many people use it and on which platforms. That is the entire purpose. The heartbeat carries only:
+
+- a fixed project tag (`trvl`) and event name (`heartbeat`)
+- the trvl version
+- the Go runtime string (OS, architecture, Go version, e.g. `darwin/arm64/go1.26.4`)
+- a random install id generated locally on first run (stored in `~/.trvl/install-id`)
+
+It never sends your IP, hostname, username, search queries, or any travel data. The collector derives coarse geography server-side from the request and only reports it in aggregate, with a minimum group size of 5 (k-anonymity), so no single install is identifiable. The request has a 3-second timeout and fails silently. If the collector is down or slow, trvl behaves exactly as if telemetry were off.
+
+To turn it off, set any one of these before running trvl:
+
+```bash
+export TRVL_NO_TELEMETRY=1   # trvl-specific switch
+export NO_TELEMETRY=1        # common convention
+export DO_NOT_TRACK=1        # cross-tool Do-Not-Track signal
+```
+
+It is also skipped automatically in CI and for development builds. Override the endpoint with `TRVL_TELEMETRY_ENDPOINT` if you run your own collector. The collector and its aggregation rules are tracked in MIK-6565.
+
 ## Legal & license
 
 trvl is a **personal-use tool** that reads public-facing web APIs (Google Flights, Google Hotels, and others). It does not bypass authentication or circumvent rate limits; request patterns are throttled to look like manual browsing. Automated access may violate some providers' Terms of Service — you are responsible for compliance in your jurisdiction.
