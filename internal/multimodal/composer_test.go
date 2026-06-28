@@ -269,3 +269,120 @@ func TestLegSpecsForRoute_SingleModeNoLegs(t *testing.T) {
 		t.Errorf("single-mode route should yield one end-to-end leg, got %+v", specs)
 	}
 }
+
+func TestProductionSeamsAndPurePickers(t *testing.T) {
+	planner := NewPlanner(true)
+	if planner.Discover == nil || planner.Price == nil || planner.Hacks == nil || !planner.AllowBrowser {
+		t.Fatalf("NewPlanner did not wire production seams: %#v", planner)
+	}
+
+	pricer := productionLegPricer(false)
+	if _, ok := pricer(context.Background(), LegSpec{Mode: "drive", From: "A", To: "B"}); ok {
+		t.Fatal("drive legs should not be treated as bookable provider fares")
+	}
+	if _, ok := pricer(context.Background(), LegSpec{Mode: "walk", From: "A", To: "B"}); ok {
+		t.Fatal("walk legs should not be treated as bookable provider fares")
+	}
+	if _, ok := pricer(context.Background(), LegSpec{Mode: "fly", From: "Unknownville", To: "Nowhere"}); ok {
+		t.Fatal("unresolvable flight endpoints should be unpriced")
+	}
+	if _, ok := pricer(context.Background(), LegSpec{Mode: "train", From: "", To: "Paris"}); ok {
+		t.Fatal("ground legs with missing endpoints should be unpriced")
+	}
+
+	if code, ok := resolveAirport("hel"); !ok || code != "HEL" {
+		t.Fatalf("resolveAirport IATA = %q/%v", code, ok)
+	}
+	if code, ok := resolveAirport("Helsinki"); !ok || code != "HEL" {
+		t.Fatalf("resolveAirport city = %q/%v", code, ok)
+	}
+	if _, ok := resolveAirport("Unknownville"); ok {
+		t.Fatal("unknown city should not resolve to an airport")
+	}
+
+	bestFlight, ok := cheapestFlight([]models.FlightResult{
+		{Price: 0, Currency: "EUR"},
+		{Price: 200, Currency: ""},
+		{Price: 300, ComparablePrice: 180, Currency: "EUR", Provider: "google"},
+		{Price: 190, Currency: "EUR", Provider: "kiwi"},
+	})
+	if !ok || bestFlight.Provider != "google" {
+		t.Fatalf("cheapestFlight = %#v/%v", bestFlight, ok)
+	}
+	if _, ok := cheapestFlight([]models.FlightResult{{Price: 0, Currency: "EUR"}}); ok {
+		t.Fatal("empty priced flight set should not produce a cheapest flight")
+	}
+
+	bestRoute, ok := cheapestRoute([]models.GroundRoute{
+		{Price: 0, Currency: "EUR"},
+		{Price: 40, Currency: ""},
+		{Price: 55, Currency: "EUR", Provider: "flixbus"},
+		{Price: 45, Currency: "EUR", Provider: "sncf"},
+	})
+	if !ok || bestRoute.Provider != "sncf" {
+		t.Fatalf("cheapestRoute = %#v/%v", bestRoute, ok)
+	}
+	if _, ok := cheapestRoute([]models.GroundRoute{{Price: 0, Currency: "EUR"}}); ok {
+		t.Fatal("empty priced route set should not produce a cheapest route")
+	}
+
+	if got := flightProvider(models.FlightResult{}); got != "flights" {
+		t.Fatalf("flightProvider default = %q", got)
+	}
+	if got := flightProvider(models.FlightResult{Provider: "kiwi"}); got != "kiwi" {
+		t.Fatalf("flightProvider explicit = %q", got)
+	}
+}
+
+func TestBoundRoutesAndIntegerFormatting(t *testing.T) {
+	routes := make([]models.GroundRoute, 0, 12)
+	for i := 0; i < 12; i++ {
+		price := float64(200 - i)
+		if i == 0 {
+			price = 0
+		}
+		routes = append(routes, models.GroundRoute{Price: price})
+	}
+	bounded := boundRoutes(routes)
+	if len(bounded) != maxRoutesPriced {
+		t.Fatalf("bounded len = %d, want %d", len(bounded), maxRoutesPriced)
+	}
+	for i := 1; i < len(bounded); i++ {
+		if indicativeSortKey(bounded[i-1]) > indicativeSortKey(bounded[i]) {
+			t.Fatalf("routes not sorted by indicative price: %#v", bounded)
+		}
+	}
+	if got := itoa(0); got != "0" {
+		t.Fatalf("itoa(0) = %q", got)
+	}
+	if got := itoa(-42); got != "-42" {
+		t.Fatalf("itoa(-42) = %q", got)
+	}
+	if got := itoa(12345); got != "12345" {
+		t.Fatalf("itoa(12345) = %q", got)
+	}
+}
+
+func TestPlan_BoundsLargeDiscoverySet(t *testing.T) {
+	routes := make([]models.GroundRoute, 0, 12)
+	for i := 0; i < 12; i++ {
+		r := route2("bus", "Hub", "train", "Helsinki", "London", float64(100+i), "EUR")
+		r.BookingURL = itoa(i)
+		routes = append(routes, r)
+	}
+	p := plannerWith(discoverFixed(routes...), fakePricer{
+		"bus":   {Price: 10, Currency: "EUR"},
+		"train": {Price: 20, Currency: "EUR"},
+	}.price)
+
+	plan, err := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if plan.Discovered != 12 || plan.Priced != maxRoutesPriced {
+		t.Fatalf("discovered/priced = %d/%d", plan.Discovered, plan.Priced)
+	}
+	if len(plan.Notes) == 0 {
+		t.Fatalf("expected truncation note for large discovery set")
+	}
+}

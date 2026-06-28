@@ -127,3 +127,37 @@ func TestValidateOriginDest_CityNames(t *testing.T) {
 		t.Errorf("dest = %q, want HND (first airport for Tokyo alphabetically)", dest)
 	}
 }
+
+func TestValidateAirportListAndResolveLocationVariants(t *testing.T) {
+	t.Parallel()
+
+	list, err := validateAirportList(" hel, london ")
+	if err != nil {
+		t.Fatalf("validateAirportList city list: %v", err)
+	}
+	if !strings.HasPrefix(list, "HEL,") {
+		t.Fatalf("list = %q, want HEL first", list)
+	}
+
+	primary, err := resolvePrimaryAirport("London")
+	if err != nil {
+		t.Fatalf("resolvePrimaryAirport London: %v", err)
+	}
+	if primary == "" || len(primary) != 3 {
+		t.Fatalf("primary = %q, want IATA code", primary)
+	}
+
+	if got := resolveMCPLocation("hel"); got != "HEL" {
+		t.Fatalf("resolveMCPLocation IATA = %q", got)
+	}
+	if got := resolveMCPLocation("Tokyo"); got != "HND" {
+		t.Fatalf("resolveMCPLocation Tokyo = %q, want HND", got)
+	}
+	if got := resolveMCPLocation("not-an-airport"); got != "NOT-AN-AIRPORT" {
+		t.Fatalf("resolveMCPLocation unknown = %q", got)
+	}
+
+	if _, err := validateAirportList("not-an-airport"); err == nil {
+		t.Fatal("expected invalid airport list error")
+	}
+}

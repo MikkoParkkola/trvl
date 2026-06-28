@@ -60,6 +60,18 @@ func TestOutcomeFailed(t *testing.T) {
 	}
 }
 
+func resetFlightBreakerForTest(t *testing.T, keys ...string) {
+	t.Helper()
+	for _, key := range keys {
+		flightBreaker.RecordSuccess(key)
+	}
+	t.Cleanup(func() {
+		for _, key := range keys {
+			flightBreaker.RecordSuccess(key)
+		}
+	})
+}
+
 var errTest = errProbe("boom")
 
 type errProbe string

@@ -175,3 +175,64 @@ func TestHoldStoreRoundTripsActiveHoldsJSON(t *testing.T) {
 		t.Fatalf("Path = %q, want active_holds.json under store dir", got)
 	}
 }
+
+func TestHoldStoreGetUpdateAndRemove(t *testing.T) {
+	store := NewHoldStore(t.TempDir())
+	id, err := store.Add(Hold{
+		HotelName:     "Editable Stay",
+		CheckIn:       "2026-06-01",
+		CheckOut:      "2026-06-03",
+		OriginalPrice: 240,
+		Currency:      "EUR",
+		Refundable:    true,
+	})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	hold, ok := store.Get(id)
+	if !ok {
+		t.Fatalf("Get(%q) returned false", id)
+	}
+	hold.LastSeenPrice = 210
+	if err := store.Update(hold); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	updated, ok := store.Get(id)
+	if !ok || updated.LastSeenPrice != 210 {
+		t.Fatalf("updated hold = %#v, ok=%v", updated, ok)
+	}
+
+	removed, err := store.Remove(id)
+	if err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if !removed {
+		t.Fatal("Remove returned false for existing hold")
+	}
+	if _, ok := store.Get(id); ok {
+		t.Fatal("hold still present after Remove")
+	}
+	removed, err = store.Remove(id)
+	if err != nil {
+		t.Fatalf("Remove missing: %v", err)
+	}
+	if removed {
+		t.Fatal("Remove returned true for missing hold")
+	}
+}
+
+func TestDefaultHoldStoreUsesHomeTrvlDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	store, err := DefaultHoldStore()
+	if err != nil {
+		t.Fatalf("DefaultHoldStore: %v", err)
+	}
+	want := filepath.Join(home, ".trvl", "active_holds.json")
+	if got := store.Path(); got != want {
+		t.Fatalf("Path = %q, want %q", got, want)
+	}
+}

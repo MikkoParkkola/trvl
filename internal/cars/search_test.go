@@ -3,6 +3,7 @@ package cars
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -130,5 +131,66 @@ func TestSearch_SkyscannerFixtureNormalizesOffers(t *testing.T) {
 	}
 	if len(result.ProviderStatuses) != 1 || result.ProviderStatuses[0].Status != "ok" {
 		t.Fatalf("provider statuses = %#v, want ok", result.ProviderStatuses)
+	}
+}
+
+func TestPureProviderParsingHelpers(t *testing.T) {
+	if MarketedProviderCount() != 1 {
+		t.Fatalf("MarketedProviderCount = %d", MarketedProviderCount())
+	}
+	if got := MarketedProviderNames(); len(got) != 1 || got[0] != ProviderSkyscanner {
+		t.Fatalf("MarketedProviderNames = %#v", got)
+	}
+
+	providers := normalizedProviders([]string{" skyscanner, custom ", "", "other"})
+	if strings.Join(providers, "|") != "skyscanner|custom|other" {
+		t.Fatalf("normalizedProviders = %#v", providers)
+	}
+	if got := normalizedProviders(nil); len(got) != 1 || got[0] != ProviderSkyscanner {
+		t.Fatalf("default providers = %#v", got)
+	}
+	if got := normalizedProviders([]string{" , "}); len(got) != 1 || got[0] != ProviderSkyscanner {
+		t.Fatalf("blank providers = %#v", got)
+	}
+
+	status := carProviderError("x", "Provider X", errors.New("bad shape"))
+	if status.Status != "error" || status.FixHintCode != "RESPONSE_SHAPE_CHANGED" || !strings.Contains(status.Error, "bad shape") {
+		t.Fatalf("carProviderError = %#v", status)
+	}
+
+	if got, ok := parsePriceString("EUR 1,234.50"); !ok || got != 1234.50 {
+		t.Fatalf("parsePriceString = %.2f/%v", got, ok)
+	}
+	if got, ok := parsePriceString("only text"); ok || got != 0 {
+		t.Fatalf("parsePriceString text = %.2f/%v", got, ok)
+	}
+
+	floatCases := []any{float64(3.5), float32(4.5), 5, int64(6), json.Number("7.5"), "EUR 8.50"}
+	for _, tc := range floatCases {
+		if got, ok := floatValue(tc); !ok || got <= 0 {
+			t.Fatalf("floatValue(%T) = %.2f/%v", tc, got, ok)
+		}
+	}
+	if _, ok := floatValue(struct{}{}); ok {
+		t.Fatal("unsupported float value should return ok=false")
+	}
+
+	if got := firstString(map[string]any{"vehicle_name": " Golf "}, "vehicleName"); got != "Golf" {
+		t.Fatalf("firstString normalized key = %q", got)
+	}
+	if got := firstFloat(map[string]any{"price": map[string]any{"amount": "42"}}, "price.amount"); got != 42 {
+		t.Fatalf("firstFloat nested = %.2f", got)
+	}
+	if got := firstInt(map[string]any{"seats": json.Number("5")}, "seats"); got != 5 {
+		t.Fatalf("firstInt = %d", got)
+	}
+	if got, ok := firstBool(map[string]any{"free_cancel": "included"}, "freeCancel"); !ok || !got {
+		t.Fatalf("firstBool = %v/%v", got, ok)
+	}
+	if got, ok := boolValue("no"); !ok || got {
+		t.Fatalf("boolValue no = %v/%v", got, ok)
+	}
+	if _, ok := boolValue("maybe"); ok {
+		t.Fatal("boolValue maybe should be unknown")
 	}
 }

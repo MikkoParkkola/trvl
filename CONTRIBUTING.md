@@ -75,16 +75,16 @@ Every PR must pass the existing trvl quality gates. Run these locally before
 asking for review:
 
 ```bash
-GOTOOLCHAIN=go1.26.3 go vet ./...
-GOTOOLCHAIN=go1.26.3 go test -short -race ./...
+GOTOOLCHAIN=go1.26.4 go vet ./...
+GOTOOLCHAIN=go1.26.4 go test -short -race ./...
 staticcheck ./...
 govulncheck ./...
 ```
 
 The Makefile wraps these as `make lint` and `make test` and pins the
-toolchain; use the Make targets if your host `go` is older than 1.26.3.
+toolchain; use the Make targets if your host `go` is older than 1.26.4.
 
-CI enforces a 50% line-coverage threshold. New packages are expected to land
+CI enforces an 80% line-coverage threshold. New packages are expected to land
 with coverage at or above that threshold; regressions in existing packages
 will block merge.
 

@@ -12,7 +12,7 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 - Hotel providers working: Google Hotels, Booking.com (browser cookies), Airbnb (SSR/Niobe), Hostelworld (autocomplete), Trivago (Streamable HTTP MCP), HomeToGo (public SSR+JSON, vacation rentals)
 - Flight providers: Google Flights (hand-rolled protobuf), Kiwi, Skiplagged (hidden-city, opt-in), Ryanair (public API), Wizz Air (public unauthenticated), Air France–KLM Offers API v3 (opt-in), Transavia (official API, opt-in), easyJet (opt-in, `EASYJET_API_BASE` — public availability API is Akamai bot-defended/403, so no default-on path; honest typed `AKAMAI_BLOCK` status when unconfigured). Travelpayouts/Aviasales price signals are an opt-in source surfaced via `trvl pricetrends` (not in the bookable merge).
 - Enrichment (free, unauthenticated): weather (Open-Meteo), air quality (`trvl air`), sun times (`trvl sun`, sunrise-sunset.org), bike-share (`trvl bikes`, CityBikes)
-- CI: build, vet, staticcheck, govulncheck, race tests, coverage ≥50% on ubuntu + windows
+- CI: build, vet, staticcheck, govulncheck, race tests, coverage >=80% on ubuntu + windows
 - Latest release train: tag-triggered workflow + adhoc codesign identifier (PR #50)
 - npm wrapper, ICS calendar export, and the smart-router consolidation (compatibility aliases → 1 advertised `travel` tool, ~98.9% `tools/list` context reduction) landed in last ~90d (MIK-3081/3082/3083/3084 + 6-package wiring batch in PR #57)
 
@@ -30,7 +30,7 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 |---|---|---|
 | **No frameworks** — stdlib + carefully chosen libs only | Predictable behavior, minimal deps, long-lived binary | Add web frameworks, ORMs, DI containers |
 | **No API keys required by default** | Zero-friction onboarding; "API-first" phrasing uses *provider* APIs, not user-paid ones | Introduce paid-API requirements on default code paths |
-| **`GOTOOLCHAIN=go1.26.3` pinning via Makefile** | CI reproducibility; host `go` on PATH may be older | Run raw `go build/test` without the prefix on older hosts |
+| **`GOTOOLCHAIN=go1.26.4` pinning via Makefile** | CI reproducibility; host `go` on PATH may be older | Run raw `go build/test` without the prefix on older hosts |
 | **`internal/models` is the shared type package** | Unidirectional import flow; no cycles | Import from other `internal/` packages into `models/` |
 | **Live tests are opt-in** via `TRVL_TEST_LIVE_INTEGRATIONS=1` and `TRVL_TEST_LIVE_PROBES=1` | Default suite must be deterministic and offline | Enable live probes in the default `go test ./...` suite |
 | **Protobuf-style encoding for Google Flights is hand-rolled** (no `.proto` files) | The upstream format is undocumented; hand-rolled is auditable | Add `protoc` / `.proto`-generation to the build pipeline |
@@ -122,9 +122,9 @@ go vet ./...                        # Vet (CI runs this)
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yaml`): build, vet, staticcheck, govulncheck, test with race detector, coverage threshold (50%). Runs on ubuntu + windows, Go 1.26.3.
+GitHub Actions (`.github/workflows/ci.yaml`): build, vet, staticcheck, govulncheck, test with race detector, coverage threshold (80%). Runs on ubuntu + windows, Go 1.26.4.
 
-Make targets pin `GOTOOLCHAIN=go1.26.3` so local build/test entrypoints match CI even when the host `go` on `PATH` is older. For raw `go ...` commands on such hosts, prefix `GOTOOLCHAIN=go1.26.3`.
+Make targets pin `GOTOOLCHAIN=go1.26.4` so local build/test entrypoints match CI even when the host `go` on `PATH` is older. For raw `go ...` commands on such hosts, prefix `GOTOOLCHAIN=go1.26.4`.
 
 ## Key Details
 
@@ -146,7 +146,7 @@ Make targets pin `GOTOOLCHAIN=go1.26.3` so local build/test entrypoints match CI
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **trvl** (21724 symbols, 65509 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **trvl** (21830 symbols, 66688 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

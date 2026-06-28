@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
 // --- HTTP handler tests ---
@@ -240,9 +242,7 @@ func TestHTTPHandler_POST_ToolsList(t *testing.T) {
 
 func TestHTTPHandler_POST_ToolsCall(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping live HTTP test in short mode")
-	}
+	testutil.RequireLiveIntegration(t)
 	hs := NewHTTPServer(0)
 
 	params := ToolCallParams{
@@ -503,9 +503,7 @@ func TestHTTPHandler_LargePayload(t *testing.T) {
 
 func TestAllToolHandlers(t *testing.T) {
 	t.Parallel()
-	if testing.Short() {
-		t.Skip("skipping live HTTP test in short mode")
-	}
+	testutil.RequireLiveIntegration(t)
 	handlers := []struct {
 		name     string
 		args     map[string]any
