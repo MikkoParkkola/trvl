@@ -3,7 +3,7 @@
   "name": "io.github.MikkoParkkola/trvl",
   "title": "trvl",
   "description": "Door-to-door travel MCP + CLI: flights, hotels, trains, cars, ferries. No API keys, Go binary.",
-  "version": "1.17.5",
+  "version": "1.17.6",
   "repository": {
     "url": "https://github.com/MikkoParkkola/trvl",
     "source": "github"
@@ -12,7 +12,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/mikkoparkkola/trvl:1.17.5",
+      "identifier": "ghcr.io/mikkoparkkola/trvl:1.17.6",
       "transport": {
         "type": "stdio"
       }
@@ -21,7 +21,7 @@
       "registryType": "npm",
       "identifier": "trvl-mcp",
       "registryBaseUrl": "https://registry.npmjs.org",
-      "version": "1.17.5",
+      "version": "1.17.6",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.6] - 2026-06-28
+
+### Changed
+- **Release metadata drift guard.** CI now rejects stale `server.json` and
+  `npm/package.json` release metadata when `CHANGELOG.md` documents a newer
+  published release.
+- **Release pipeline diagnostics.** Docker publishing now has an explicit
+  timeout, plain build progress logs, and a hygiene guard that keeps the
+  Trivy HIGH/CRITICAL gate ahead of the multi-arch push.
+- **Release runtime maintenance.** The tag workflow now uses the reviewed
+  Node 24 GoReleaser action pin and the repo consumes the latest setup-go
+  action pin from Dependabot.
+- **Homebrew macOS policy.** Distribution docs now lock trvl to Formula-only
+  Homebrew publishing until Developer ID notarization and a quarantined macOS
+  launch check are proven in release CI.
+- **Dependency maintenance.** Bumped `github.com/cloudflare/circl` to 1.6.4.
+
 ## [1.17.5] - 2026-06-28
 
 ### Changed
@@ -748,7 +765,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.17.5...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.17.6...HEAD
+[1.17.6]: https://github.com/MikkoParkkola/trvl/compare/v1.17.5...v1.17.6
 [1.17.5]: https://github.com/MikkoParkkola/trvl/compare/v1.17.4...v1.17.5
 [1.17.4]: https://github.com/MikkoParkkola/trvl/compare/v1.17.3...v1.17.4
 [1.17.3]: https://github.com/MikkoParkkola/trvl/compare/v1.17.2...v1.17.3
