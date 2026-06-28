@@ -1,4 +1,4 @@
-# TheFork API Map — Key-Free Stealth-Tier Discovery (MIK-2949)
+# TheFork API Map — Key-Free Stealth-Tier Discovery
 
 **Status: BLOCKED by DataDome behavioural CAPTCHA. No connector shipped. Docs-only,
 fail-fast outcome — plus one honest detection fix (DataDome is now recognized as a
@@ -99,7 +99,7 @@ because the SPA never loaded. The gate is at the device-attestation layer *befor
 application/auth layer. Whether the underlying discovery API is anonymous-session or
 token-gated is moot until DataDome is solved, which no key-free path here achieves.
 
-## Verdict (fail-fast per MIK-2949 ABSOLUTE RULES)
+## Verdict (fail-fast per the key-free rule)
 
 > "if the stealth tier CANNOT pass DataDome's behavioural CAPTCHA (`t=bv`) key-free …
 > STOP. … That is an honest SUCCESS, not a failure."
@@ -157,7 +157,7 @@ some conflict with the no-keys / no-paid-service product principle:
    DataDome's risk score — infrastructure, not a static binary, and not key-free in
    spirit.
 4. **Solving the `t=bv` CAPTCHA**, which requires either a human or a paid CAPTCHA-solving
-   service. The latter is explicitly **forbidden** by MIK-2949 (violates key-free).
+   service. The latter is explicitly **forbidden** (violates the key-free rule).
 
 Until one of (1)–(3) is built and *verified* to yield a cleared session that lets the SPA
 load, there is no honest key-free TheFork connector to ship.

@@ -1,6 +1,6 @@
 # trvl Comparison Matrix
 
-Last updated: 2026-05-13 · Owner: [MIK-3439](https://linear.app/parm/issue/MIK-3439)
+Last updated: 2026-05-13
 
 This page compares trvl with the alternatives an AI-power-user is likely to consider: fli, Skiplagged MCP, 1Stay/stays, Google Travel, KAYAK, ChatGPT with web search, and other travel MCP servers.
 
