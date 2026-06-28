@@ -24,14 +24,14 @@ The batch surfaced by @RobertoReale's "Budget Travel Pipeline" blog (parts 1 & 2
 
 | Issue | Pri | What |
 |---|---|---|
-| #19 / MIK-6076 | P3 | Directory submissions (mcp.so, Glama, Smithery, PulseMCP). trvl is discoverable via GitHub/pkg.go.dev but not yet broadly registry-listed; submission has real value. |
-| MIK-3288 | P3 | Stealth-mode opt-in for nab + trvl: hardens the scrapers the no-key promise depends on. |
+| #19 | P3 | Directory submissions (mcp.so, Glama, Smithery, PulseMCP). trvl is discoverable via GitHub/pkg.go.dev but not yet broadly registry-listed; submission has real value. |
+|  | P3 | Stealth-mode opt-in for nab + trvl: hardens the scrapers the no-key promise depends on. |
 
 ## vNext — Platform
 
 | Issue | What |
 |---|---|
-| MIK-4633 | trvl-plugin epic — price-watch automation. Monitors + CronCreate + PushNotification = "tell me when this trip drops below €X". The leap from search tool to standing agent. Needs its own design spike before it is DoR-ready. |
+|  | trvl-plugin epic — price-watch automation. Monitors + CronCreate + PushNotification = "tell me when this trip drops below €X". The leap from search tool to standing agent. Needs its own design spike before it is DoR-ready. |
 
 ## Meta
 

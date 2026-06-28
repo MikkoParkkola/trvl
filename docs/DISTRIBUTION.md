@@ -1,6 +1,6 @@
 # Distribution Status
 
-Tracking issue: [MIK-3441](https://linear.app/parm/issue/MIK-3441/p1pos-trvl-directory-submissions-smitheryai-awesome-mcp-mcp-registry)
+Distribution / registry submissions.
 Related GitHub issue: [#19](https://github.com/MikkoParkkola/trvl/issues/19)
 
 ## GitHub Referrer Baseline
@@ -26,7 +26,7 @@ gh api repos/MikkoParkkola/trvl/traffic/popular/referrers
 
 ## Automated Distribution Metrics
 
-MIK-3443 added weekly aggregate metrics collection:
+Weekly aggregate metrics collection was added:
 
 ```bash
 make distribution-metrics

@@ -2,7 +2,7 @@
 
 > **The canonical travel MCP server. 1 smart tool, 66 compatibility aliases, 22 providers, zero API keys, one binary.**
 
-Last updated: 2026-05-13 · Parent epic: [MIK-3438](https://linear.app/parm/issue/MIK-3438)
+Last updated: 2026-05-13
 
 ---
 
@@ -90,13 +90,13 @@ The maintained head-to-head matrix lives in [COMPARISON.md](COMPARISON.md). It c
 
 ## 8. Distribution strategy
 
-Tracked as children of [MIK-3438](https://linear.app/parm/issue/MIK-3438):
+Active workstreams:
 
-- **MIK-3439** — vs-comparison matrix (credibility)
-- **MIK-3440** — demo refresh: asciinema + GIF + first-5-prompts starter
-- **MIK-3441** — registry submissions: smithery.ai, awesome-mcp, MCP-registry, PulseMCP ([status](DISTRIBUTION.md))
-- **MIK-3442** — case-study artifact: real booking, real savings, screenshots
-- **MIK-3443** — distribution telemetry to measure positioning impact
+- vs-comparison matrix (credibility)
+- demo refresh: asciinema + GIF + first-5-prompts starter
+- registry submissions: smithery.ai, awesome-mcp, MCP-registry, PulseMCP ([status](DISTRIBUTION.md))
+- case-study artifact: real booking, real savings, screenshots
+- distribution telemetry to measure positioning impact
 
 ## 9. Success metrics (90-day)
 

@@ -183,7 +183,7 @@ export NO_TELEMETRY=1        # common convention
 export DO_NOT_TRACK=1        # cross-tool Do-Not-Track signal
 ```
 
-It is also skipped automatically in CI and for development builds. Override the endpoint with `TRVL_TELEMETRY_ENDPOINT` if you run your own collector. The collector and its aggregation rules are tracked in MIK-6565.
+It is also skipped automatically in CI and for development builds. Override the endpoint with `TRVL_TELEMETRY_ENDPOINT` if you run your own collector.
 
 ## Legal & license
 
