@@ -70,11 +70,11 @@ func testCheckedBagsBudgetRoute(t *testing.T, client *batchexec.Client) {
 	}
 
 	probes := []filterProbe{
-		{"[0,0]_baseline", []any{0, 0}},
-		{"[1,0]_carryon", []any{1, 0}},
-		{"[1,1]_carry+check", []any{1, 1}},
-		{"[0,1]_checked_only", []any{0, 1}},
-		{"[0,2]_2checked", []any{0, 2}},
+		{name: "[0,0]_baseline", value: []any{0, 0}, expectOK: true},
+		{name: "[1,0]_carryon", value: []any{1, 0}, expectOK: true},
+		{name: "[1,1]_carry+check", value: []any{1, 1}, expectOK: true},
+		{name: "[0,1]_checked_only", value: []any{0, 1}, expectOK: true},
+		{name: "[0,2]_2checked", value: []any{0, 2}, expectOK: true},
 	}
 
 	results := make([]probeResult, len(probes))
@@ -111,6 +111,7 @@ func testCheckedBagsBudgetRoute(t *testing.T, client *batchexec.Client) {
 				status:   status,
 				count:    count,
 				bodySize: len(body),
+				expectOK: p.expectOK,
 			}
 			t.Logf("%-20s  status=%d  flights=%d  body=%d bytes",
 				p.name, status, count, len(body))
@@ -196,11 +197,11 @@ func testAllianceVariants(t *testing.T, client *batchexec.Client) {
 	}
 
 	probes := []filterProbe{
-		{"nil_baseline", nil},
-		{"ONEWORLD", []any{"ONEWORLD"}},
-		{"SKYTEAM", []any{"SKYTEAM"}},
-		{"STAR_ALLIANCE", []any{"STAR_ALLIANCE"}},
-		{"STAR+ONEWORLD", []any{"STAR_ALLIANCE", "ONEWORLD"}},
+		{name: "nil_baseline", value: nil, expectOK: true},
+		{name: "ONEWORLD", value: []any{"ONEWORLD"}, expectOK: true},
+		{name: "SKYTEAM", value: []any{"SKYTEAM"}, expectOK: true},
+		{name: "STAR_ALLIANCE", value: []any{"STAR_ALLIANCE"}, expectOK: true},
+		{name: "STAR+ONEWORLD", value: []any{"STAR_ALLIANCE", "ONEWORLD"}, expectOK: true},
 	}
 
 	results := make([]probeResult, len(probes))
@@ -237,6 +238,7 @@ func testAllianceVariants(t *testing.T, client *batchexec.Client) {
 				status:   status,
 				count:    count,
 				bodySize: len(body),
+				expectOK: p.expectOK,
 			}
 			t.Logf("%-20s  status=%d  flights=%d  body=%d bytes",
 				p.name, status, count, len(body))
