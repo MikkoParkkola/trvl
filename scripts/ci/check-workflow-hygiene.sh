@@ -73,6 +73,11 @@ gitnexus_docs_use_sha_pinned_cache_example() {
     grep -q 'actions/cache@[0-9a-f]\{40\}' scripts/gitnexus/README.md
 }
 
+release_goreleaser_action_uses_node24_pin() {
+  ! grep -qF 'goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a' .github/workflows/release.yml &&
+    [ "$(grep -cF 'goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2' .github/workflows/release.yml)" -eq 3 ]
+}
+
 release_docker_job_has_timeout() {
   awk '
     /^  docker:/ { in_job=1; next }
@@ -104,6 +109,7 @@ check "setup-node jobs use Node 24" all_setup_node_jobs_use_node24
 check "GitNexus CLI calls include an explicit npm package version" no_unpinned_gitnexus_cli_calls
 check "GitNexus CI and local refresh use the same pinned CLI version" gitnexus_version_is_pinned_consistently
 check "GitNexus cached-index docs use a SHA-pinned cache action example" gitnexus_docs_use_sha_pinned_cache_example
+check "release GoReleaser action uses the reviewed Node 24 pin" release_goreleaser_action_uses_node24_pin
 check "release Docker job has an explicit timeout" release_docker_job_has_timeout
 check "release Docker buildx commands emit plain progress logs" release_docker_builds_emit_plain_progress
 check "release Docker push remains behind the Trivy HIGH/CRITICAL gate" release_docker_trivy_blocks_before_push
