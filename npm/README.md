@@ -19,7 +19,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "trvl": {
       "command": "npx",
-      "args": ["trvl-mcp"]
+      "args": ["-y", "trvl-mcp"]
     }
   }
 }

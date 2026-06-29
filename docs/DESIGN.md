@@ -1,5 +1,7 @@
 # trvl — Design Document
 
+> **Historical document.** This is the *original* design from 2026-04-02, kept for context. It does not track the current implementation. For the current architecture see [`DESIGN.md`](../DESIGN.md) (System Design) and [`docs/ARCHITECTURE.md`](ARCHITECTURE.md).
+
 **Status**: IMPLEMENTED (initial design — project has evolved significantly since)
 **Author**: Mikko Parkkola
 **Date**: 2026-04-02

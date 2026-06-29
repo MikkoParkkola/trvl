@@ -4,28 +4,15 @@ Living roadmap. Sequenced by ROI and dependency, not by wishlist size. Each item
 
 ## Shipped
 
-- **v1.9.2** (2026-06-14): wrong-hotel SerpAPI guard. A name-based lookup with no Google place ID no longer returns a different property's prices labelled `verified` (reported by @RobertoReale). main healed to the released line; LCC integration (Ryanair/Wizz/easyJet) confirmed shipped.
-
-## v1.10 — Trust & Discoverability
-
-The batch surfaced by @RobertoReale's "Budget Travel Pipeline" blog (parts 1 & 2). Most of what the blog asked for already exists in trvl (`find_trip_window`, multi-passenger `adults`, `search_accommodations` verification, `price_basis` tax basis, anomaly `missing_criteria`), so the work is exposing and hardening it, not building net-new subsystems. Four of five touch the accommodation trust surface, so they ship as one release.
-
-| Issue | Pri | What | Why |
-|---|---|---|---|
-| #167 | P1 | Docs: surface `find_trip_window`, multi-pax, verified accommodation | A power user forked `fli` and built `hotel-rates-mcp` to get what trvl already does, because the docs hid it. Highest leverage, docs-only, zero code risk. **Do first.** |
-| #168 | P1 | Link-durability triage: drop dead `aclk`/`travel/clk` redirects, always emit a durable Booking.com fallback | Fulfils the "link that works" promise; an expired link sends the user to a 404. |
-| #169 | P2 | Tourist/city tax as a separate cash note (never estimated, never ranked) | Completes the honesty story; one field. |
-| #171 | P3 | Flag tax-added-at-checkout when shown total == pre-tax | Sharpens the existing `price_basis` signal. |
-| #170 | P2 | Expose `--min-duration`/`--max-duration` on `trvl dates` CLI (engine already supports it) | Closes the exact CLI gap behind the `fli` fork. Flight-side, parallelizable. |
-
-**Exit:** cut v1.10, then reply to @RobertoReale: the gaps he worked around are now native.
-
-## v1.11 — Reach
-
-| Issue | Pri | What |
-|---|---|---|
-| #19 | P3 | Directory submissions (mcp.so, Glama, Smithery, PulseMCP). trvl is discoverable via GitHub/pkg.go.dev but not yet broadly registry-listed; submission has real value. |
-|  | P3 | Stealth-mode opt-in for nab + trvl: hardens the scrapers the no-key promise depends on. |
+- **v1.18.0** (2026-06-28): current release line. Booking-readiness verdict from composed trust signals, per-package weather/holidays/events enrichment with typed status, native Google round-trip flight queries, privacy-preserving daily active-user heartbeat. See [CHANGELOG.md](CHANGELOG.md).
+- **v1.10 — Trust & Discoverability** (shipped, v1.10.0 2026-06-14): the batch surfaced by @RobertoReale's "Budget Travel Pipeline" blog. All five items landed and their issues are closed:
+  - #167 (P1) — docs surfacing `find_trip_window`, multi-pax, verified accommodation.
+  - #168 (P1) — link-durability triage: dead `aclk`/`travel/clk` redirects dropped, durable Booking.com fallback always emitted.
+  - #169 (P2) — tourist/city tax as a separate cash note (never estimated, never ranked).
+  - #170 (P2) — `--min-duration`/`--max-duration` exposed on `trvl dates`.
+  - #171 (P3) — tax-added-at-checkout flagged when shown total == pre-tax.
+- **v1.11 — Reach** (shipped): #19 directory submissions (mcp.so, Glama, Smithery, PulseMCP) closed; trvl is now registry-listed. Stealth-mode opt-in for nab + trvl landed.
+- **v1.9.2** (2026-06-14): wrong-hotel SerpAPI guard. A name-based lookup with no Google place ID no longer returns a different property's prices labelled `verified` (reported by @RobertoReale). LCC integration (Ryanair/Wizz/easyJet) confirmed shipped.
 
 ## vNext — Platform
 
@@ -35,4 +22,4 @@ The batch surfaced by @RobertoReale's "Budget Travel Pipeline" blog (parts 1 & 2
 
 ## Meta
 
-- **Release process**: v1.9.1 was tagged off a feature branch and never merged back to `main`, orphaning `main` 5 commits behind the released code. Fix the tag-triggered flow to merge back (or release only from `main`) before the next release repeats it.
+- **Release process**: v1.9.1 was tagged off a feature branch and never merged back to `main`, orphaning `main` 5 commits behind the released code. The tag-triggered flow should merge back (or release only from `main`) to avoid repeating it.

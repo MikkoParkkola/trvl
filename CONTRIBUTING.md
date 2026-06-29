@@ -3,10 +3,10 @@
 ## Purpose
 
 trvl is a travel MCP server and CLI: **1 smart `travel` MCP tool** (advertised) plus
-**64 compatibility aliases** and **55 CLI commands** stitched
+**66 compatibility aliases** and **56 CLI commands** stitched
 together against flight, hotel, ground-transport, destination, and deals
 providers. The smart router advertises a single tool (~378 tokens) instead of
-64 (~33,500 tokens) to keep AI context lean; the 64 aliases remain callable via
+66 (~33,500 tokens) to keep AI context lean; the 66 aliases remain callable via
 the `intent` field. Pull requests are welcome from anyone — bug reports, missing
 airlines, parser breakages, new providers, documentation. Because trvl depends
 on a long tail of third-party Go libraries (cookie jars, HTTP clients, JS
@@ -191,9 +191,8 @@ with the local workaround.
 This list is not exhaustive; it seeds the current backlog so contributors
 know where effort is already in flight.
 
-- `kooky` — macOS v20 app-bound cookie decryption. Draft PR body lives at
-  `/tmp/kooky-v20-pr-body.md`. If you pick this up, coordinate with the
-  maintainer before filing to avoid duplicate work.
+- `kooky` — macOS v20 app-bound cookie decryption. If you pick this up,
+  coordinate with the maintainer before filing to avoid duplicate work.
 - `nab` — internal project, maintained by the same team. Contributions are
   direct commits against the canonical repository; the upstream-first rule
   still applies in spirit (fix in `nab` rather than wrapping around it in

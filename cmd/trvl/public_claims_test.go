@@ -372,6 +372,29 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 				"## Current: 11 providers",
 			},
 		},
+		{
+			// CONTRIBUTING.md states the alias + CLI command counts in its
+			// Purpose section; keep them pinned to the live counts.
+			path: filepath.Join("..", "..", "CONTRIBUTING.md"),
+			required: []string{
+				fmt.Sprintf("%d compatibility aliases", compatAliasCount),
+				fmt.Sprintf("%d CLI commands", cliCommandCount),
+			},
+			forbidden: []string{
+				"64 compatibility aliases",
+				"55 CLI commands",
+			},
+		},
+		{
+			// llms.txt advertises the CLI command count in its section heading.
+			path: filepath.Join("..", "..", "llms.txt"),
+			required: []string{
+				fmt.Sprintf("CLI (%d commands", cliCommandCount),
+			},
+			forbidden: []string{
+				"## CLI (14 commands)",
+			},
+		},
 	}
 
 	for _, check := range checks {
@@ -463,8 +486,10 @@ func TestPublicDocsAdvertiseDetectorCount(t *testing.T) {
 		{filepath.Join("..", "..", "AGENTS.md"), "%d travel hack detectors"},
 		{filepath.Join("..", "..", "docs", "PROVIDERS.md"), "%d detectors in parallel"},
 		{filepath.Join("..", "..", "docs", "CLI.md"), "%d detectors"},
+		{filepath.Join("..", "..", "docs", "MCP-TOOLS-REFERENCE.md"), "%d parallel detectors"},
 		{filepath.Join("..", "..", "npm", "README.md"), "%d detectors"},
 		{filepath.Join("..", "..", "docs", "COMPARISON.md"), "%d detectors"},
+		{filepath.Join("..", "..", ".claude-plugin", "plugin.json"), "%d travel hack detectors"},
 	}
 
 	for _, doc := range docs {

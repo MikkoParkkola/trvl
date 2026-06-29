@@ -46,7 +46,7 @@ done
   - Verification drill-down for room availability, cancellation, board, nightly price, total price, and taxes/fees when providers expose them.
 - watch_room_availability(hotel_name, check_in, check_out, [currency])
 - search_hotel_by_name(name, check_in, check_out, [location, currency])
-  - Searches for a specific hotel by name across all providers (Google Hotels, Trivago, Booking, Airbnb, Hostelworld). Fuzzy-matches results to the search name. Ideal for finding a known property.
+  - Searches for a specific hotel by name across all providers (Google Hotels, Trivago, Booking, Airbnb, Hostelworld, HomeToGo). Fuzzy-matches results to the search name. Ideal for finding a known property.
 - destination_info(location, [travel_dates])
 - calculate_trip_cost(origin, destination, depart_date, return_date, [guests, currency])
 - weekend_getaway(origin, month, [max_budget, nights])
@@ -110,7 +110,7 @@ done
 - setup_profile()
 - setup_providers()
 
-## CLI (14 commands)
+## CLI (56 commands — selected examples below)
 
 trvl flights JFK LHR 2026-07-01
 trvl flights HEL BCN 2026-07-01 --return 2026-07-08 --cabin business
@@ -131,4 +131,4 @@ trvl mcp --http       # MCP HTTP server
 
 - Full README: https://github.com/MikkoParkkola/trvl/blob/main/README.md
 - Agent setup: https://github.com/MikkoParkkola/trvl/blob/main/AGENTS.md
-- Design doc: https://github.com/MikkoParkkola/trvl/blob/main/docs/DESIGN.md
+- Design doc (current system design): https://github.com/MikkoParkkola/trvl/blob/main/DESIGN.md

@@ -10,7 +10,7 @@ matrix when changing behaviour or before claiming Definition of Done.
 | Unit and regression | `go test -short ./...` | Default local pass for pure logic, command helpers, MCP schemas, parsers, and storage. |
 | Race and coverage | `go test -short -p=1 -race -coverprofile coverage.out ./...` | Mirrors CI's low-parallelism path for constrained runners. |
 | Coverage summary | `go tool cover -func=coverage.out` | Use the `total:` row in handoffs. |
-| Full integration | `TRVL_LIVE_INTEGRATION=1 go test ./...` | Runs tests guarded by `testutil.RequireLiveIntegration`; requires network and may hit provider rate limits. |
+| Full integration | `TRVL_TEST_LIVE_INTEGRATIONS=1 go test ./...` | Runs tests guarded by `testutil.RequireLiveIntegration`; requires network and may hit provider rate limits. |
 | E2E CLI smoke | `go test -short ./cmd/trvl ./mcp` | Covers CLI/MCP wiring and user-facing tool surfaces without live providers. |
 | Fuzz seed corpus | `go test ./internal/nlsearch -run FuzzHeuristicKeepsStructuredFieldsValid` | Runs fuzz seeds as a normal test; use `-fuzz=FuzzHeuristicKeepsStructuredFieldsValid` for deeper campaigns. |
 | Chaos | `go test ./internal/chaos ./internal/providers -run 'Chaos|Circuit|Timeout|Retry'` | Exercises deterministic failure injection, provider cooldown, timeout, and retry paths. |

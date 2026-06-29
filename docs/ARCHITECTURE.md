@@ -28,17 +28,22 @@ cmd/trvl                          CLI entry point (cobra)
   |     +-- trainline.go          Trainline aggregated rail API (browser cookie auth)
   |     +-- renfe.go              Renfe Spanish Railways (REST price calendar)
   |     +-- transitous.go         Transitous/MOTIS2 (routing.spicebus.org)
-  |
-  +-- internal/cars               Rental car search surface and setup-aware provider statuses
-  |     +-- search.go             Optional Skyscanner Car Hire integration
+  |     +-- europeansleeper.go    European Sleeper night trains
+  |     +-- snalltaget.go         Snälltåget Swedish night trains
   |     +-- tallink.go            Tallink/Silja Line REST API (book.tallink.com) — live prices
   |     +-- vikingline.go         Viking Line reference schedule — Distribusion API pending
   |     +-- eckeroline.go         Eckerö Line Magento AJAX API (getdepartures) — live prices
+  |     +-- finnlines.go          Finnlines ferry schedule
   |     +-- stenaline.go          Stena Line reference schedule — Distribusion API pending
   |     +-- dfds.go               DFDS availability API (travel-search-prod.dfds-pax-web.com)
+  |     +-- ferryhopper.go        Ferryhopper Mediterranean ferry routes
   |     +-- taxi.go               Taxi fare estimates for airport transfers
   |     +-- browser_scraper.go    Shared Go CDP browser fallback
   |     +-- search.go             Parallel dispatch + result merging
+  |
+  +-- internal/cars               Rental car search surface and setup-aware provider statuses
+  |     +-- provider_catalog.go   User-facing rental-car provider catalog
+  |     +-- search.go             Optional Skyscanner Car Hire integration
   |     +-- internal/models
   |
   +-- internal/route              Multi-modal routing engine
@@ -166,7 +171,7 @@ User: "ground Prague Vienna 2026-07-01"
           +---> eckeroline.go    Magento AJAX API (form_key + getdepartures)
           +---> stenaline.go     Reference schedule lookup (no network)
           +---> dfds.go          Availability API (1 req/12s limit)
-          |     (all 16 run in parallel via goroutines)
+          |     (all 20 run in parallel via goroutines)
           v
     merge + sort + filter        Combine results, apply --max-price / --type filters
           |
@@ -253,7 +258,7 @@ Create `internal/ground/amtrak_test.go` with:
 - **Single binary**: `trvl` compiles to a ~15MB static binary. Users download it and it works. No Python environment, no Node.js, no Docker. `curl | tar | run`.
 - **No runtime dependencies**: No pip install, no npm install, no virtualenv. The binary is the whole application.
 - **Fast compilation**: The full test suite (980+ tests) runs in seconds. CI builds complete in under a minute.
-- **Concurrency**: Goroutines make parallel provider search natural. Searching 6 ground transport providers in parallel is a `sync.WaitGroup` and 6 goroutines.
+- **Concurrency**: Goroutines make parallel provider search natural. Searching 20 ground transport providers in parallel is a `sync.WaitGroup` and 20 goroutines.
 - **MCP fit**: MCP servers are long-running stdio processes. Go's low memory footprint and fast startup make it ideal for a tool that launches per-conversation.
 
 ### Why reverse-engineer vs official APIs?
@@ -286,7 +291,7 @@ MCP (Model Context Protocol) is how AI assistants call external tools. trvl as a
 - **Progressive disclosure**: Every response includes suggestions for follow-up searches ("Try nearby airports", "Check flexible dates"). The AI can chain these automatically.
 - **No integration work for local mode**: Adding trvl to any MCP client is one config line. Local stdio needs no REST API, webhook, or OAuth setup. Remote HTTP mode is explicit and can use scoped bearer tokens or OAuth 2.1 introspection when a gateway/provider handles Authorization Code + PKCE.
 
-trvl also works as a standalone CLI (22 commands) for users who prefer the terminal or want to script searches.
+trvl also works as a standalone CLI (56 commands) for users who prefer the terminal or want to script searches.
 
 ### Why a monorepo with internal packages?
 
@@ -299,14 +304,17 @@ Go's `internal/` convention enforces that packages under `internal/` cannot be i
 
 ## External dependencies
 
-trvl has 5 direct dependencies (and 5 transitive):
+trvl has 21 direct dependencies. The CLI/runtime core is small; most of the list is the browser-emulation and telemetry machinery that lets trvl reach bot-defended providers without user API keys.
 
 | Dependency | Purpose |
 |-----------|---------|
-| `github.com/refraction-networking/utls` | Chrome TLS fingerprint impersonation |
 | `github.com/spf13/cobra` | CLI command framework |
-| `golang.org/x/time` | Token-bucket rate limiter (`rate.Limiter`) |
-| `golang.org/x/net` | HTTP/2 and proxy support |
-| `golang.org/x/term` | Terminal width detection for table formatting |
+| `github.com/refraction-networking/utls`, `github.com/bogdanfinn/{utls,fhttp,tls-client}`, `github.com/cloudflare/circl` | Chrome TLS/HTTP fingerprint impersonation |
+| `github.com/chromedp/chromedp`, `github.com/chromedp/cdproto` | Headless-Chrome (CDP) browser fallback for JS-gated providers |
+| `github.com/browserutils/kooky` | Reads browser cookie databases off disk (e.g. Booking.com auth) |
+| `github.com/grafana/sobek` | Embedded JS runtime for provider script evaluation |
+| `github.com/andybalholm/brotli`, `github.com/klauspost/compress` | Response decompression |
+| `go.opentelemetry.io/otel{,/sdk,/trace,/exporters/...}` | Optional OpenTelemetry tracing |
+| `golang.org/x/{net,time,term,sync,text}` | HTTP/2 + proxy, rate limiting, terminal width, errgroup, text transforms |
 
 Everything else is Go stdlib: `net/http`, `encoding/json`, `sync`, `context`, `time`, `sort`, `strings`, `fmt`.

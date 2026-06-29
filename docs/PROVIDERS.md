@@ -47,7 +47,7 @@
 
 ## Flight Providers
 
-trvl ships with **Google Flights** (hand-rolled protobuf) on the default code path, augmented by **Kiwi** (virtual-interlining merge) for compatible one-way searches and **AFKLM Flying Blue** (Offers API v3, opt-in) for award-availability scans. Two additional providers are available as opt-ins for specific use cases:
+trvl ships with **Google Flights** (hand-rolled protobuf) on the default code path, augmented by **Kiwi** (virtual-interlining merge) and **Skiplagged** (hidden-city) for compatible one-way searches. Several additional providers are available as opt-ins for specific use cases — **AFKLM Flying Blue** for award scans, plus the low-cost carriers **Ryanair**, **Wizz Air**, **Transavia**, and **easyJet** via `--provider`:
 
 | Provider | Protocol | Strength | Activation | Auth |
 |----------|----------|----------|------------|------|
@@ -55,6 +55,10 @@ trvl ships with **Google Flights** (hand-rolled protobuf) on the default code pa
 | **Kiwi** | REST | Virtual-interlining + self-connect candidates | default (one-way merge) | None |
 | **AFKLM Flying Blue** | Offers API v3 + Award API | Cash + miles cabin search on KL/AF metal; native round-trip fares (both legs, one ticket) | `--provider afklm` (cash) / `--award` (miles), both opt-in | API credential (cash) / Flying Blue session cookie (award) |
 | **Skiplagged** | Streamable HTTP MCP (`@skiplagged/mcp` v0.0.4, protocol 2025-06-18) | Genre-defining hidden-city + virtual-interlining defaults | default (one-way merge) / `--provider skiplagged` for solo | None |
+| **Ryanair** | Public API | Largest European low-cost network | `--provider ryanair` | None |
+| **Wizz Air** | Public API | Central/Eastern European low-cost routes | `--provider wizzair` | None |
+| **Transavia** | Official API | KLM-group low-cost (NL/FR bases) | `--provider transavia`, opt-in | None |
+| **easyJet** | Availability API | Western European low-cost | `--provider easyjet`, opt-in (`EASYJET_API_BASE`) | None (public path is Akamai bot-defended) |
 
 The default flight search merges results from Google Flights, Kiwi, and Skiplagged into a single sorted list, so plain `trvl flights HEL BCN 2026-07-01` already includes hidden-city / virtual-interlining options. Use `--provider skiplagged` to query Skiplagged on its own when you want to cross-validate or see only the hidden-city candidates.
 
@@ -91,6 +95,8 @@ trvl searches 20 ground transport providers in parallel, covering most of Europe
 | **Renfe** | REST | Spanish AVE high-speed + regional | EUR 36+ | None |
 | **SNCF** | REST | French TGV, TER, Intercity | Varies | None by default; optional browser/curl fallback |
 | **Trainline** | REST | Aggregated: SNCF, DB, Eurostar, Trenitalia, … | Varies | None by default; optional browser/curl fallback |
+| **European Sleeper** | Reference schedule | Night trains (Brussels ↔ Amsterdam ↔ Berlin ↔ Prague) | EUR 49+ | None |
+| **Snälltåget** | Reference schedule | Swedish night trains (Stockholm ↔ Malmö ↔ Berlin) | EUR 40+ | None |
 | **FlixBus** | REST | Pan-European buses (40+ countries) | EUR 5+ | None |
 | **RegioJet** | REST | CZ/SK/AT/HU/DE/PL buses + trains | EUR 5+ | None |
 | **Transitous** | MOTIS2 REST | Pan-European transit (schedule-based fallback) | — | None |
@@ -100,6 +106,7 @@ trvl searches 20 ground transport providers in parallel, covering most of Europe
 | **Stena Line** | Reference schedule | North Sea + Baltic (Gothenburg, Kiel, Karlskrona, Gdynia, …) | EUR 25+ | None |
 | **Finnlines** | GraphQL (AppSync) | Helsinki ↔ Travemünde, Naantali ↔ Kapellskär, Malmö ↔ Świnoujście | EUR 27+ | Public API key (embedded) |
 | **DFDS** | REST API | North Sea + Baltic (Kiel, Amsterdam, Newcastle, Copenhagen, …) | EUR 49+ | None |
+| **Ferryhopper** | REST API | Mediterranean ferries (Greece, Italy, Spain, Croatia, …) | EUR 10+ | None |
 
 Two providers (NS, Digitransit/VR) use public API keys that are embedded in the binary — no signup or personal key is required from the user.
 
