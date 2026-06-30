@@ -122,6 +122,27 @@ func itoa3(a, b, c int) string {
 	return strconv.Itoa(a) + "." + strconv.Itoa(b) + "." + strconv.Itoa(c)
 }
 
+// wizzVersionNewer reports whether semver a is strictly newer than b. Returns
+// false for equal versions and for any malformed (non X.Y.Z numeric) input — so
+// a corrupt cache is never adopted.
+func wizzVersionNewer(a, b string) bool {
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	if len(pa) != 3 || len(pb) != 3 {
+		return false
+	}
+	for i := 0; i < 3; i++ {
+		na, ea := strconv.Atoi(pa[i])
+		nb, eb := strconv.Atoi(pb[i])
+		if ea != nil || eb != nil {
+			return false
+		}
+		if na != nb {
+			return na > nb
+		}
+	}
+	return false
+}
+
 // wizzHeal discovers a live version when `stale` has rotated. Serialized via the
 // write lock so concurrent searches don't stampede the edge; idempotent — a
 // caller arriving after another goroutine already healed gets the new version.
@@ -196,7 +217,12 @@ func wizzMaybeLoadCache() {
 			return
 		}
 		var c wizzVersionCache
-		if json.Unmarshal(b, &c) == nil && len(strings.Split(c.Version, ".")) == 3 {
+		// Only adopt the cache when it is strictly NEWER than the compiled
+		// default. Otherwise a release that bumps wizzDefaultVersion past a user's
+		// cached value would be silently downgraded back to the stale cache (and
+		// could then fail if Wizz had moved beyond the heal walk's range from it).
+		// wizzVersionNewer also rejects a malformed/corrupt cache (returns false).
+		if json.Unmarshal(b, &c) == nil && wizzVersionNewer(c.Version, wizzDefaultVersion) {
 			wizzVersionMu.Lock()
 			wizzVersion = c.Version
 			wizzVersionMu.Unlock()
