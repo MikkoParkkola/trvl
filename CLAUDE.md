@@ -85,7 +85,7 @@ cmd/trvl/          CLI commands (cobra-style, one file per command)
 internal/          Domain packages (one per data source)
   flights/         Google Flights scraping + protobuf encoding
   hotels/          Google Hotels scraping
-  ground/          Buses, trains, ferries (20 providers)
+  ground/          Buses, trains, ferries (21 providers)
   destinations/    City intelligence (weather, safety, holidays)
   deals/           RSS deal feeds
   hacks/           Travel hack detectors (36 parallel)

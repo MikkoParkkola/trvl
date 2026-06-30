@@ -202,7 +202,7 @@ trvl airport-transfer CDG "Hotel Lutetia Paris" 2026-07-01 --provider taxi
 
 ### Multi-Modal Routing
 
-Combines flights, trains, buses and ferries into optimal itineraries across all 20 providers. `--avoid` filters only the avoided mode, and `--depart-after` / `--arrive-by` are applied against the assembled itinerary times.
+Combines flights, trains, buses and ferries into optimal itineraries across all 21 providers. `--avoid` filters only the avoided mode, and `--depart-after` / `--arrive-by` are applied against the assembled itinerary times.
 
 ```bash
 trvl route Helsinki Dubrovnik --arrive-by 2026-04-10     # Pareto-optimal itineraries

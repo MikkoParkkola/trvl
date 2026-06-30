@@ -10,7 +10,7 @@ Last updated: 2026-05-13
 
 **trvl makes your AI assistant a competent travel agent.**
 
-Not a chatbot that "thinks" about travel. An agent with structured, live access to 22 real providers — flights, hotels, trains, buses, ferries, weather, awards, alerts — through one compact `travel` MCP tool plus 66 legacy-compatible capabilities that any compliant client (Claude, Cursor, Windsurf, Codex, ChatGPT-with-MCP, …) can call directly.
+Not a chatbot that "thinks" about travel. An agent with structured, live access to 23 real providers — flights, hotels, trains, buses, ferries, weather, awards, alerts — through one compact `travel` MCP tool plus 66 legacy-compatible capabilities that any compliant client (Claude, Cursor, Windsurf, Codex, ChatGPT-with-MCP, …) can call directly.
 
 ## 2. The problem we solve
 

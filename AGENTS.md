@@ -537,7 +537,7 @@ Searches all providers (Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld
 {"from": "Amsterdam", "to": "Paris", "date": "2026-07-01"}
 ```
 Optional: `type` ("bus"|"train"|"ferry"), `currency`, `max_price`, `provider`
-Searches 20+ providers in parallel including FlixBus, RegioJet, Eurostar, DB, NS, SNCF, Trainline, ferries. Eurostar Snap fares auto-searched for valid routes.
+Searches 21+ providers in parallel including FlixBus, RegioJet, Eurostar, DB, NS, SNCF, Trainline, ferries. Eurostar Snap fares auto-searched for valid routes.
 
 ### onboard_profile — Progressive user interview
 ```json
