@@ -156,30 +156,55 @@ func isItalianCity(city string) bool {
 	return false
 }
 
-// trenitaliaCanonical maps English (and common variant) city names to the
-// Italian name the lefrecce.it resolver indexes. Without this, querying the
-// resolver with an English alias mis-resolves: "Rome" returns "Rometta
-// Messinese" (Sicily), "Turin" returns "Ponte Della Venturina" — both unrelated
-// to the intended city. Querying with the Italian name returns the real station
-// (Roma Termini, Torino Porta Nuova).
+// trenitaliaCanonical maps recognized city tokens (English aliases and the
+// Italian forms) to the Italian name the lefrecce.it resolver indexes. Without
+// canonicalisation, querying the resolver with an English alias mis-resolves:
+// "Rome" returns "Rometta Messinese" (Sicily), "Turin" returns "Ponte Della
+// Venturina" — both unrelated. Querying with the Italian name returns the real
+// city centroid (Roma, Torino).
 var trenitaliaCanonical = map[string]string{
-	"rome":     "Roma",
-	"milan":    "Milano",
-	"florence": "Firenze",
-	"venice":   "Venezia",
-	"naples":   "Napoli",
-	"turin":    "Torino",
-	"genoa":    "Genova",
-	"padua":    "Padova",
+	"rome": "Roma", "roma": "Roma",
+	"milan": "Milano", "milano": "Milano",
+	"florence": "Firenze", "firenze": "Firenze",
+	"venice": "Venezia", "venezia": "Venezia",
+	"naples": "Napoli", "napoli": "Napoli",
+	"turin": "Torino", "torino": "Torino",
+	"genoa": "Genova", "genova": "Genova",
+	"padua": "Padova", "padova": "Padova",
+	"bologna": "Bologna", "verona": "Verona", "bari": "Bari",
+	"catania": "Catania", "palermo": "Palermo", "messina": "Messina",
+	"salerno": "Salerno", "trieste": "Trieste", "brescia": "Brescia",
+	"bergamo": "Bergamo", "trento": "Trento", "ferrara": "Ferrara",
+	"pisa": "Pisa", "siena": "Siena", "perugia": "Perugia",
+	"ancona": "Ancona", "rimini": "Rimini", "pescara": "Pescara",
+	"lecce": "Lecce", "taranto": "Taranto", "foggia": "Foggia",
+	"brindisi": "Brindisi",
 }
 
-// canonicalItalianCity returns the Italian resolver query term for a city name,
-// translating known English aliases and otherwise returning the input trimmed.
+// canonicalItalianCity returns the Italian resolver query term for a city name.
+// It tolerates real-world inputs an agent may pass: a country qualifier
+// ("Milan, Italy"), an English alias ("Rome"), or a station-style name
+// ("Milano Centrale", "Milan Centrale") — all normalise to the bare Italian city
+// ("Roma", "Milano") so the resolver returns the city centroid. Falls back to the
+// trimmed input when nothing is recognised.
 func canonicalItalianCity(city string) string {
-	if it, ok := trenitaliaCanonical[strings.ToLower(strings.TrimSpace(city))]; ok {
+	raw := strings.TrimSpace(city)
+	// Drop a trailing country/region qualifier: "Milan, Italy" -> "Milan".
+	if i := strings.IndexByte(raw, ','); i >= 0 {
+		raw = strings.TrimSpace(raw[:i])
+	}
+	lower := strings.ToLower(raw)
+	// Whole-string match (the common case: "Milan", "Roma").
+	if it, ok := trenitaliaCanonical[lower]; ok {
 		return it
 	}
-	return strings.TrimSpace(city)
+	// Token match for station-style names: "Milano Centrale" -> "Milano".
+	for _, tok := range strings.Fields(lower) {
+		if it, ok := trenitaliaCanonical[tok]; ok {
+			return it
+		}
+	}
+	return raw
 }
 
 // resolveTrenitaliaStation queries the locations search endpoint and returns
