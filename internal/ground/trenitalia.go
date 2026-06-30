@@ -291,9 +291,10 @@ func normaliseISOTime(s string) string {
 // The function resolves names to Trenitalia station IDs, POSTs the solutions
 // request, and maps SALEABLE results with positive prices to GroundRoute values.
 func SearchTrenitalia(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
-	if currency == "" {
-		currency = "EUR"
-	}
+	// Trenitalia prices exclusively in EUR (the BFF returns € amounts), so the
+	// currency parameter is accepted for signature parity with the other ground
+	// providers but does not drive a conversion — results are always EUR.
+	_ = currency
 
 	if _, err := models.ParseDate(date); err != nil {
 		return nil, fmt.Errorf("trenitalia: invalid date %q: %w", date, err)
