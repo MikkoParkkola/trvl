@@ -39,7 +39,7 @@ The parser is intentionally minimal and rules-based — it understands:
   • "next weekend" / "this weekend"
 
 For free-form sentences with city names instead of IATA codes, use the travel
-MCP tool from an AI assistant — it can route to the compatibility aliases that
+MCP tool from an AI assistant — it can route to the legacy-compatible capabilities that
 resolve cities to airports via sampling.
 
 Examples:

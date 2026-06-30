@@ -18,6 +18,6 @@ travel(intent=plan_trip, origin=HEL, destination=LON, depart=2026-07-01, return=
 Naive -> Optimized -> Saved
 EUR 684 -> EUR 611 -> EUR 73
 
-1 smart MCP tool + 63 compatibility aliases + 21 providers
+1 smart MCP tool + 66 legacy-compatible capabilities + 22 providers
 Manual booking only: trvl returns provider URLs and readiness checks, not automatic purchase.
 DEMO

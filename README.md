@@ -126,7 +126,7 @@ trvl hotels "Helsinki" --checkin 2026-09-01 --checkout 2026-09-04 --stealth
 
 | Area | Highlights | Reference |
 |------|-----------|-----------|
-| **MCP tools** | 1 smart `travel` router — a natural-language tool that advertises a single tool (~378 tokens) instead of a full per-domain list (~33,500 tokens): ~98.9% smaller `tools/list` footprint. Older clients that call legacy tool names still work (66 compatibility aliases). | [MCP-TOOLS-REFERENCE.md](docs/MCP-TOOLS-REFERENCE.md) |
+| **MCP tools** | 1 smart `travel` router — a natural-language tool that advertises a single tool (~378 tokens) instead of a full per-domain list (~33,500 tokens): ~98.9% smaller `tools/list` footprint. Older clients that call legacy tool names still work (66 legacy-compatible capabilities). | [MCP-TOOLS-REFERENCE.md](docs/MCP-TOOLS-REFERENCE.md) |
 | **Flights** | Google Flights + Kiwi + Skiplagged merged; LCC fares, AFKLM award scan, round-trip (both legs) | [PROVIDERS.md](docs/PROVIDERS.md) |
 | **Ground** | 20 train/bus/ferry providers across Europe, API-first | [PROVIDERS.md](docs/PROVIDERS.md) |
 | **Hotels** | 6 sources, discovery → verification trust model | [PROVIDERS.md](docs/PROVIDERS.md) |

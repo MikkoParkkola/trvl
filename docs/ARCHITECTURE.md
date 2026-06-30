@@ -81,7 +81,7 @@ cmd/trvl                          CLI entry point (cobra)
   +-- internal/cookies            Browser cookie loader for CAPTCHA-protected providers (Trainline, Eurostar, SNCF)
   +-- internal/jsonutil           Safe nested JSON array access
 
-mcp/                              MCP server (1 advertised smart tool + 66 aliases, stdio + HTTP)
+mcp/                              MCP server (1 advertised smart tool + 66 legacy-compatible capabilities, stdio + HTTP)
   +-- internal/flights
   +-- internal/hotels
   +-- internal/ground

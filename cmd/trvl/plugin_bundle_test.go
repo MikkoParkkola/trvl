@@ -104,7 +104,7 @@ func TestMIK3400PluginBundle(t *testing.T) {
 		"/trvl plan",
 		"/trvl price-watch",
 		"/trvl destination-research",
-		"1 smart MCP tool plus 66 compatibility aliases",
+		"1 smart MCP tool plus 66 legacy-compatible capabilities",
 	)
 }
 
