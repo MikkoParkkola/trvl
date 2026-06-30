@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
 // TestProbeNativeRoundTrip hits live Google Flights with a NATIVE round-trip
@@ -126,6 +128,12 @@ func TestProbeRoundTripOrchestrator(t *testing.T) {
 	if err != nil {
 		t.Logf("orchestrator err: %v", err)
 	}
+	// A throttled / edge-blocked CI run (Google + Kiwi 429 or AKAMAI_BLOCK from a
+	// datacenter IP) legitimately yields zero native fares — that is transient
+	// noise, not a wire-format regression, so skip (yellow) instead of failing
+	// (red). Real drift surfaces as a non-transient error or a 200 with no native
+	// fares and clean provider statuses, which still fails below.
+	testutil.SkipIfTransient(t, err)
 	if res == nil {
 		t.Fatal("nil result")
 	}
@@ -149,6 +157,25 @@ func TestProbeRoundTripOrchestrator(t *testing.T) {
 		t.Logf("  status %s: %s results=%d", s.ID, s.Status, s.Results)
 	}
 	if native == 0 {
+		// Before reding the build, check whether the NATIVE round-trip providers
+		// (Google/Kiwi/Skiplagged, IDs prefixed "native_roundtrip:") were
+		// edge-blocked/throttled this run. Only their failure makes zero native
+		// fares noise rather than drift. Statuses from the one-way fallback legs
+		// (prefixed "outbound:"/"inbound:") include opt-in carriers like
+		// easyJet/Vueling that are *perpetually* AKAMAI_BLOCK'd by default, so
+		// scanning them would mask the exact Google/Kiwi regression this probe
+		// exists to catch.
+		for _, s := range res.ProviderStatuses {
+			if !strings.HasPrefix(s.ID, "native_roundtrip:") {
+				continue
+			}
+			if s.Status == "ok" {
+				continue
+			}
+			if testutil.IsTransientMsg(s.Error) || strings.EqualFold(s.FixHintCode, "AKAMAI_BLOCK") {
+				t.Skipf("skipping: native round-trip provider blocked/throttled this run (%s: %s %s) — not a regression", s.ID, s.Error, s.FixHintCode)
+			}
+		}
 		t.Errorf("expected at least one native round-trip fare (Google/Kiwi) in merged results")
 	}
 }
