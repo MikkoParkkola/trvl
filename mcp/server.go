@@ -40,7 +40,7 @@ const (
 	// Prevents hung queries from blocking the MCP server indefinitely.
 	// Flights: 2-5s typical, 30s worst case (Google + Kiwi sequential).
 	// Hotels: 5-20s typical, 60s worst case (Google 9 pages + providers).
-	// Ground: 10-30s typical (21 parallel providers).
+	// Ground: 10-30s typical (20 parallel providers).
 	// 60s is the hard cap — kills multi-page searches and preflight cascades
 	// before they accumulate to minutes.
 	toolTimeout = 60 * time.Second
