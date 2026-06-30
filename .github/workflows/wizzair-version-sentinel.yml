@@ -1,0 +1,105 @@
+name: Wizz Air version sentinel
+
+# Auto-discovers Wizz Air API version-path rotations and opens a PR bumping
+# wizzDefaultVersion — so the manual "find the new version in DevTools" chore
+# (#430) disappears. The discovery oracle (scripts/wizzair-discover-version.sh)
+# probes be.wizzair.com/<v>/Api/asset/culture behind CloudFront: 404 = path gone,
+# 200/405 = path live. It is datacenter-reachable, so this runs in plain CI with
+# no residential vantage or headless browser — and so it does NOT violate the
+# binary's deliberate "no runtime auto-discovery" design (wizzair.go): the binary
+# stays pure; this is external maintenance automation that proposes a reviewable,
+# test-gated diff.
+#
+# Hands-off setup (optional): add a fine-grained PAT secret WIZZAIR_SENTINEL_PAT
+# (contents:write + pull-requests:write). With it, the bump PR triggers CI and
+# auto-merges. Without it the PR still opens (via GITHUB_TOKEN) but needs a
+# one-click manual merge, because PRs opened by GITHUB_TOKEN do not start CI.
+
+on:
+  schedule:
+    - cron: "31 6 * * *" # 06:31 UTC daily, offset from the 05:17 live probes
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  sentinel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26.4"
+
+      - name: Discover current Wizz Air API version
+        id: discover
+        run: |
+          set +e
+          out="$(bash scripts/wizzair-discover-version.sh)"
+          echo "$out"
+          status="$(printf '%s\n' "$out" | tail -1 | sed -n 's/.*STATUS=\([a-z]*\).*/\1/p')"
+          current="$(printf '%s\n' "$out" | tail -1 | sed -n 's/.*CURRENT=\([0-9.]*\).*/\1/p')"
+          new="$(printf '%s\n' "$out" | tail -1 | sed -n 's/.*NEW=\([0-9.]*\).*/\1/p')"
+          {
+            echo "status=$status"
+            echo "current=$current"
+            echo "new=$new"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open version-bump PR
+        if: steps.discover.outputs.status == 'rotated'
+        env:
+          GH_TOKEN: ${{ secrets.WIZZAIR_SENTINEL_PAT || github.token }}
+          CUR: ${{ steps.discover.outputs.current }}
+          NEW: ${{ steps.discover.outputs.new }}
+        run: |
+          set -euo pipefail
+          branch="auto/wizzair-version-${NEW}"
+          # Idempotent: if the bump PR already exists, do nothing.
+          if gh pr list --head "$branch" --state open --json number -q 'length' | grep -qx 0; then :; else
+            echo "PR for $branch already open; nothing to do."; exit 0
+          fi
+
+          sed -i -E "s/(wizzDefaultVersion = \")[0-9]+\.[0-9]+\.[0-9]+(\")/\1${NEW}\2/" internal/flights/wizzair.go
+          gofmt -w internal/flights/wizzair.go
+          # Validate the bump compiles and the format guard passes before proposing it.
+          GOTOOLCHAIN=go1.26.4 go test ./internal/flights/ -run 'TestWizzDefaultVersion' -count=1
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "fix(flights): bump Wizz Air API version ${CUR} -> ${NEW} (auto, #430)"
+          git push -u origin "$branch"
+
+          body="Automated by the Wizz Air version sentinel.
+
+          The \`${CUR}\` API version path 404'd on the live oracle (rotation signature) and \`${NEW}\` is now live (\`be.wizzair.com/${NEW}/Api/asset/culture\` returns a non-404). Bumps \`wizzDefaultVersion\`.
+
+          Oracle proves the version *path* is live; it cannot confirm a priced search end-to-end (the timetable endpoint edge-blocks datacenter IPs). The opt-in nightly live probe validates real search from its own vantage.
+
+          Labeled \`skip-regression-test\`: data-only bump, and \`TestWizzDefaultVersionWellFormed\` already guards the constant's shape."
+          gh pr create --title "fix(flights): bump Wizz Air API version ${CUR} -> ${NEW} (auto, #430)" \
+            --body "$body" --label skip-regression-test
+          # Hands-off merge when a PAT is configured (so CI runs on the PR).
+          gh pr merge "$branch" --auto --squash --delete-branch || \
+            echo "auto-merge not armed (no PAT? CI will not start on a GITHUB_TOKEN PR) — merge manually."
+
+      - name: Open tracking issue when discovery exhausts the search range
+        if: steps.discover.outputs.status == 'unknown'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CUR: ${{ steps.discover.outputs.current }}
+        run: |
+          set -euo pipefail
+          title="Wizz Air version rotated beyond auto-discovery range"
+          body="The Wizz Air version sentinel found that \`${CUR}\` rotated away (404 on the live oracle) but no candidate version in the bounded search range (next minors/patches/majors) is live. Wizz likely jumped further than the walk covers. Read the current version from be.wizzair.com (DevTools Network tab -> any be.wizzair.com request -> /<version>/Api/...) and bump \`wizzDefaultVersion\` in internal/flights/wizzair.go, or widen the search in scripts/wizzair-discover-version.sh."
+          existing="$(gh issue list --state open --label provider-drift --search "in:title $title" --json number -q '.[0].number')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body" --label provider-drift
+          fi
