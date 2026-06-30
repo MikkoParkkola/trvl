@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
 // TestProbeNativeRoundTrip hits live Google Flights with a NATIVE round-trip
@@ -126,6 +128,12 @@ func TestProbeRoundTripOrchestrator(t *testing.T) {
 	if err != nil {
 		t.Logf("orchestrator err: %v", err)
 	}
+	// A throttled / edge-blocked CI run (Google + Kiwi 429 or AKAMAI_BLOCK from a
+	// datacenter IP) legitimately yields zero native fares — that is transient
+	// noise, not a wire-format regression, so skip (yellow) instead of failing
+	// (red). Real drift surfaces as a non-transient error or a 200 with no native
+	// fares and clean provider statuses, which still fails below.
+	testutil.SkipIfTransient(t, err)
 	if res == nil {
 		t.Fatal("nil result")
 	}
@@ -149,6 +157,18 @@ func TestProbeRoundTripOrchestrator(t *testing.T) {
 		t.Logf("  status %s: %s results=%d", s.ID, s.Status, s.Results)
 	}
 	if native == 0 {
+		// Before reding the build, check whether the native providers were
+		// edge-blocked/throttled this run (status error carrying a transient
+		// marker or the AKAMAI_BLOCK fix-hint). If so, zero native fares is
+		// noise, not drift.
+		for _, s := range res.ProviderStatuses {
+			if s.Status == "ok" {
+				continue
+			}
+			if testutil.IsTransientMsg(s.Error) || strings.EqualFold(s.FixHintCode, "AKAMAI_BLOCK") {
+				t.Skipf("skipping: native providers blocked/throttled this run (%s: %s %s) — not a regression", s.ID, s.Error, s.FixHintCode)
+			}
+		}
 		t.Errorf("expected at least one native round-trip fare (Google/Kiwi) in merged results")
 	}
 }

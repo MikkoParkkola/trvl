@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
 // loadHomeToGoFixture reads a saved HomeToGo search payload from testdata.
@@ -255,6 +257,7 @@ func TestSearchHomeToGoLiveProbe(t *testing.T) {
 	defer func() { hometogoEnabled = origEnabled }()
 
 	hotels, err := SearchHomeToGo(context.Background(), "Berlin", HotelSearchOptions{Currency: "EUR"})
+	testutil.SkipIfTransient(t, err) // 403/429 from CI datacenter IPs is edge-block noise, not wire-format drift
 	if err != nil {
 		t.Fatalf("live SearchHomeToGo: %v", err)
 	}

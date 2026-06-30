@@ -7,17 +7,20 @@ import (
 
 // transientMarkers are substrings that identify an error as transient network
 // noise rather than a genuine provider regression. These come up nightly when
-// the CI runner's datacenter IP gets throttled by no-key providers (Google
-// Flights/Hotels return HTTP 429; Skiplagged's origin returns 429/502). A
-// rate-limited night is noise: it must not red the Live Probes workflow,
-// otherwise the signal we actually care about (a rotated API, a re-stubbed
-// checker, a real format change) drowns in flapping.
+// the CI runner's datacenter IP gets throttled or edge-blocked by no-key
+// providers (Google Flights/Hotels return HTTP 429; Skiplagged's origin returns
+// 429/502; HomeToGo and Wizz's CloudFront/Akamai edge return HTTP 403 to
+// datacenter IPs). A rate-limited or edge-blocked night is noise: it must not
+// red the Live Probes workflow, otherwise the signal we actually care about (a
+// rotated API path, a re-stubbed checker, a real format change) drowns in
+// flapping.
 //
-// The classification is deliberately conservative: only well-known throttle and
-// transient-gateway markers are matched, plus the context-deadline that follows
-// the batchexec client's internal 429 retry/backoff loop. A 200 response with an
-// unexpected body shape ("unexpected flight data format") is NOT transient and
-// still fails — that is real drift worth surfacing.
+// The classification is deliberately conservative: only well-known throttle,
+// edge-block, and transient-gateway markers are matched, plus the
+// context-deadline that follows the batchexec client's internal 429 retry/backoff
+// loop. A 200 response with an unexpected body shape ("unexpected flight data
+// format") and a rotated version path (404 / "version path rotated") are NOT
+// transient and still fail — those are real drift worth surfacing.
 var transientMarkers = []string{
 	"429",
 	"rate limited",
@@ -25,6 +28,10 @@ var transientMarkers = []string{
 	"unexpected status 429",
 	"bad gateway",
 	"502",
+	"403",
+	"forbidden",
+	"akamai_block",
+	"edge-blocked",
 	"context deadline exceeded",
 	"timeout",
 	"connection reset",

@@ -13,6 +13,10 @@ func TestIsTransientMsg(t *testing.T) {
 		"context deadline exceeded",
 		"i/o timeout",
 		"connection reset by peer",
+		"hometogo resolve: unexpected status 403 for https://www.hometogo.com/berlin/",
+		"HTTP 403 Forbidden",
+		"wizzair: status 403 (edge-blocked, body=\"...\")",
+		"provider blocked: AKAMAI_BLOCK",
 	}
 	for _, m := range transient {
 		if !IsTransientMsg(m) {
