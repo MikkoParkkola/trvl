@@ -150,13 +150,44 @@ func isItalianCity(city string) bool {
 	return false
 }
 
+// trenitaliaCanonical maps English (and common variant) city names to the
+// Italian name the lefrecce.it resolver indexes. Without this, querying the
+// resolver with an English alias mis-resolves: "Rome" returns "Rometta
+// Messinese" (Sicily), "Turin" returns "Ponte Della Venturina" — both unrelated
+// to the intended city. Querying with the Italian name returns the real station
+// (Roma Termini, Torino Porta Nuova).
+var trenitaliaCanonical = map[string]string{
+	"rome":     "Roma",
+	"milan":    "Milano",
+	"florence": "Firenze",
+	"venice":   "Venezia",
+	"naples":   "Napoli",
+	"turin":    "Torino",
+	"genoa":    "Genova",
+	"padua":    "Padova",
+}
+
+// canonicalItalianCity returns the Italian resolver query term for a city name,
+// translating known English aliases and otherwise returning the input trimmed.
+func canonicalItalianCity(city string) string {
+	if it, ok := trenitaliaCanonical[strings.ToLower(strings.TrimSpace(city))]; ok {
+		return it
+	}
+	return strings.TrimSpace(city)
+}
+
 // resolveTrenitaliaStation queries the locations search endpoint and returns
 // the best matching station ID for the given city name.
-// Preference order: non-multistation exact-name match, then non-multistation
-// first result, then any first result.
+//
+// English aliases are canonicalised to Italian first (see trenitaliaCanonical),
+// then among the results we prefer a non-multistation station whose name
+// actually contains the queried city term — guarding against the resolver
+// returning an unrelated first hit (e.g. a fuzzy match in a different region).
+// Falls back to the first non-multistation result, then the first result.
 func resolveTrenitaliaStation(ctx context.Context, city string) (int, string, error) {
+	query := canonicalItalianCity(city)
 	apiURL := fmt.Sprintf("%s/Channels.Website.BFF.WEB/website/locations/search?name=%s&limit=5",
-		trenitaliaHost, url.QueryEscape(city))
+		trenitaliaHost, url.QueryEscape(query))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
@@ -185,13 +216,20 @@ func resolveTrenitaliaStation(ctx context.Context, city string) (int, string, er
 		return 0, "", fmt.Errorf("trenitalia: no station found for %q", city)
 	}
 
-	// Prefer non-multistation results (a real station vs. a "all stations" node).
+	queryLower := strings.ToLower(query)
+	// Best: a non-multistation station whose name matches the queried city.
+	for _, r := range results {
+		if !r.Multistation && strings.Contains(strings.ToLower(r.Name), queryLower) {
+			return r.ID, r.Name, nil
+		}
+	}
+	// Next: any non-multistation result.
 	for _, r := range results {
 		if !r.Multistation {
 			return r.ID, r.Name, nil
 		}
 	}
-	// Fall back to first result.
+	// Last resort: the first result (likely a multistation "all stations" node).
 	return results[0].ID, results[0].Name, nil
 }
 

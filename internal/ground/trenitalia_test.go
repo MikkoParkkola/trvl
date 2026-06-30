@@ -162,3 +162,22 @@ func TestSearchTrenitaliaLive(t *testing.T) {
 		}
 	}
 }
+
+// TestCanonicalItalianCity guards the English->Italian alias map that prevents
+// the resolver mis-matching (e.g. "Rome" -> "Rometta Messinese" without it).
+func TestCanonicalItalianCity(t *testing.T) {
+	cases := map[string]string{
+		"Rome":   "Roma",
+		"rome":   "Roma",
+		"Turin":  "Torino",
+		"Naples": "Napoli",
+		"Milan":  "Milano",
+		"Roma":   "Roma",     // already Italian, unchanged
+		"Bologna": "Bologna", // no alias, passthrough
+	}
+	for in, want := range cases {
+		if got := canonicalItalianCity(in); got != want {
+			t.Errorf("canonicalItalianCity(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
