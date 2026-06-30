@@ -36,7 +36,7 @@ Collect only missing facts:
 - Traveller count, budget, cabin, bags, and hotel constraints when relevant.
 
 Always load preferences first through `travel` with `intent="get_preferences"`
-or by calling the compatibility alias directly. Do not re-ask values already
+or by calling the callable capability directly. Do not re-ask values already
 present in the traveller profile. If the request is underspecified, ask at most
 three questions or call `interview_trip` when available.
 
@@ -74,4 +74,4 @@ Return an assessed itinerary, not raw tool dumps:
 
 If native `mcp__trvl__travel` is unavailable, use
 `mcp__gateway__gateway_invoke` with `server="trvl"` and `tool="travel"`.
-Exact legacy tool names remain callable as compatibility aliases.
+Exact legacy tool names remain legacy-compatible capabilities.

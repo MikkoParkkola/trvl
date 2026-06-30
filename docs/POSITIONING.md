@@ -1,6 +1,6 @@
 # trvl — Positioning
 
-> **The canonical travel MCP server. 1 smart tool, 66 compatibility aliases, 22 providers, zero API keys, one binary.**
+> **The canonical travel MCP server. 1 smart tool, 66 legacy-compatible capabilities, 22 providers, zero API keys, one binary.**
 
 Last updated: 2026-05-13
 
@@ -10,7 +10,7 @@ Last updated: 2026-05-13
 
 **trvl makes your AI assistant a competent travel agent.**
 
-Not a chatbot that "thinks" about travel. An agent with structured, live access to 22 real providers — flights, hotels, trains, buses, ferries, weather, awards, alerts — through one compact `travel` MCP tool plus 66 compatibility aliases that any compliant client (Claude, Cursor, Windsurf, Codex, ChatGPT-with-MCP, …) can call directly.
+Not a chatbot that "thinks" about travel. An agent with structured, live access to 22 real providers — flights, hotels, trains, buses, ferries, weather, awards, alerts — through one compact `travel` MCP tool plus 66 legacy-compatible capabilities that any compliant client (Claude, Cursor, Windsurf, Codex, ChatGPT-with-MCP, …) can call directly.
 
 ## 2. The problem we solve
 
@@ -39,7 +39,7 @@ trvl is the first MCP server purpose-built to fix all three at once.
 ## 5. Value triangle (what makes us category-defining)
 
 ```
-            21 providers (most in MCP space)
+            22 providers (most in MCP space)
                        /\
                       /  \
                      /    \
@@ -58,10 +58,10 @@ trvl is the first MCP server purpose-built to fix all three at once.
 
 | Pillar | Why it matters | Evidence |
 |---|---|---|
-| 21 providers | Highest count of any travel MCP. Multi-provider arbitrage is impossible without coverage. | [README provider list](../README.md#providers) |
+| 22 providers | Highest count of any travel MCP. Multi-provider arbitrage is impossible without coverage. | [README provider list](../README.md#providers) |
 | Zero API keys | Removes the #1 install-abandonment cause. Free tier works on day zero. | Default config has no key fields |
-| Agent-native | Structured tool I/O beats HTML scraping for agent reliability. | [AGENTS.md](../AGENTS.md) — 1 smart tool, 66 compatibility aliases, typed schemas |
-| Browser fallback | When a provider has no API (Booking.com, AFKLM), we use a headless browser, not pretend support. | [internal/browser/](../internal/browser/) |
+| Agent-native | Structured tool I/O beats HTML scraping for agent reliability. | [AGENTS.md](../AGENTS.md) — 1 smart tool, 66 legacy-compatible capabilities, typed schemas |
+| Browser fallback | When a provider has no API (Booking.com, AFKLM), we use a headless browser, not pretend support. | [internal/stealth/](../internal/stealth/) |
 | One binary | `brew install`, done. No Docker, no Python venv, no Node toolchain. | `goreleaser` artifacts, all platforms |
 
 ## 6. Versus the real alternatives
@@ -75,16 +75,16 @@ The maintained head-to-head matrix lives in [COMPARISON.md](COMPARISON.md). It c
 | **1Stay/stays** | Transaction-complete hotel booking MCP | trvl is broader and safer for local assistants; it deliberately stops at provider URLs and booking-readiness checks rather than taking payment/cancellation liability |
 | **Google Flights / Kayak (web)** | Consumer search UIs | Not callable by agents; no MCP; no award sweetspots; no multi-provider arbitrage in one query |
 | **ChatGPT browse + travel sites** | LLM searches and summarizes web pages | No deterministic travel schema; can't run trvl's hidden-city, award, and watch workflows as typed tool calls |
-| **Other travel MCPs (one-provider wrappers)** | Usually 1–3 providers, often Google Flights only | trvl has 21 providers in one binary |
+| **Other travel MCPs (one-provider wrappers)** | Usually 1–3 providers, often Google Flights only | trvl has 22 providers in one binary |
 | **Travel-agent SaaS (Hopper, etc.)** | Paid consumer app | trvl is free, open-source, embeddable, not a product to log in to |
 
 ## 7. Proof points
 
-- 1 smart MCP tool plus 66 compatibility aliases live on `main` ([tool list](../AGENTS.md))
+- 1 smart MCP tool plus 66 legacy-compatible capabilities live on `main` ([tool list](../AGENTS.md))
 - Traveller Workspace v2 adds confirmation import, booking-candidate readiness, itinerary route-time warnings, and conservative fare intelligence without automatic purchase claims ([workspace docs](traveller-workspace.md)).
 - Hotel detail enrichment surfaces best-effort room cancellation/refundability, board/breakfast, nightly-vs-total pricing, and tax/fee metadata when providers expose it through structured detail pages.
-- 21 providers wired (`google-flights`, `airbnb`, `booking.com`, `trivago`, `hostelworld`, `ferryhopper`, `kelkoo`, `kiwi`, `flixbus`, `rome2rio`, `omio`, `trainline`, `afklm`, `lufthansa`, `aircanada`, `delta`, `iata`, `openweathermap`, `noaa`, `weather.gov`, `wikivoyage`)
-- Real protobuf reverse-engineering for Google Flights (not HTML scrape — see `internal/providers/googleflights/`)
+- 22 transport providers wired — 20 ground/ferry providers (`flixbus`, `regiojet`, `eurostar`, `db`, `oebb`, `ns`, `vr`, `sncf`, `trainline`, `transitous`, `renfe`, `european-sleeper`, `snalltaget`, `tallink`, `viking-line`, `eckero-line`, `finnlines`, `stena-line`, `dfds`, `ferryhopper`) plus taxi estimates and optional Skyscanner car hire. Flights and hotels are separate rosters: 8 flight sources (`google-flights`, `kiwi`, `skiplagged`, `afklm`, `ryanair`, `wizzair`, `transavia`, `easyjet`) and 6 hotel sources (`google-hotels`, `booking.com`, `airbnb`, `trivago`, `hostelworld`, `hometogo`)
+- Real protobuf reverse-engineering for Google Flights (not HTML scrape — see `internal/flights/`)
 - Single-binary distribution: macOS / Linux / Windows / Docker
 - License: PolyForm NC 1.0 — free for non-commercial agents, paid for commercial integrations (see [LICENSE](../LICENSE))
 

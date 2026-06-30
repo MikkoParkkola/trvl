@@ -1,6 +1,6 @@
 ---
 name: trvl
-description: "AI Travel Agent — flights, accommodations, hotels, buses, trains, ferries, night trains, restaurants, price tracking, destinations, hacks, visas, points/award redemptions, airport lounges, traveller profile. Searches Google Flights/Hotels, Skiplagged, Kiwi, AFKLM Offers v3, Trivago, Airbnb, Booking.com, Hostelworld, Ferryhopper, FlixBus, RegioJet, Eurostar/Snap, Deutsche Bahn, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS in real-time. 1 smart MCP tool, 66 compatibility aliases, 37 hack detectors. No API keys required by default."
+description: "AI Travel Agent — flights, accommodations, hotels, buses, trains, ferries, night trains, restaurants, price tracking, destinations, hacks, visas, points/award redemptions, airport lounges, traveller profile. Searches Google Flights/Hotels, Skiplagged, Kiwi, AFKLM Offers v3, Trivago, Airbnb, Booking.com, Hostelworld, Ferryhopper, FlixBus, RegioJet, Eurostar/Snap, Deutsche Bahn, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS in real-time. 1 smart MCP tool, 66 legacy-compatible capabilities, 36 hack detectors. No API keys required by default."
 triggers:
   - flight
   - flights
@@ -56,7 +56,7 @@ allowed-tools:
 
 # trvl — AI Travel Agent
 
-> **1 smart MCP tool, 66 compatibility aliases, 56 CLI commands, 37 hack detectors, 22 providers.** Single-binary travel agent for any AI assistant. No API keys required by default.
+> **1 smart MCP tool, 66 legacy-compatible capabilities, 56 CLI commands, 36 hack detectors, 22 providers.** Single-binary travel agent for any AI assistant. No API keys required by default.
 
 ## LOAD PROFILE — ALWAYS FIRST
 
@@ -74,14 +74,14 @@ From? · To? · When (date/window)? · Flex? · Travelers? · Budget? · Carry-o
 
 - Native MCP: prefer `mcp__trvl__travel` when the compact schema is loaded.
 - Gateway: prefer `mcp__gateway__gateway_invoke` with `server="trvl"` and `tool="travel"`, passing `query`, `intent`, `action`, and `params`.
-- Compatibility aliases: exact names such as `search_flights`, `search_accommodations`, `search_hotels`, `search_ground`, `watch_price`, and `update_preferences` still work when a workflow or older client names them.
+- Callable capabilities: exact names such as `search_flights`, `search_accommodations`, `search_hotels`, `search_ground`, `watch_price`, and `update_preferences` still work when a workflow or older client names them.
 - Discovery: `mcp__gateway__gateway_search_tools` only when uncertain about availability/schema.
 
 ---
 
-## CORE TOOL ROUTING (primary `travel` tool + 66 compatibility aliases)
+## CORE TOOL ROUTING (primary `travel` tool + 66 legacy-compatible capabilities)
 
-Use `travel` for new calls. Put the target family or exact alias in `intent`,
+Use `travel` for new calls. Put the target family or exact capability name in `intent`,
 state-changing verbs in `action`, and the old tool arguments in `params`.
 The full compatibility surface is below.
 
@@ -103,7 +103,7 @@ The full compatibility surface is below.
 
 ---
 
-## COMPATIBILITY SURFACE — ALL 66 ALIASES
+## COMPATIBILITY SURFACE — ALL 66 CALLABLE CAPABILITIES
 
 ### Flights (12)
 
@@ -161,7 +161,7 @@ The full compatibility surface is below.
 
 | Tool | Use |
 |---|---|
-| `detect_travel_hacks` | Run 37 parallel detectors: throwaway, hidden_city, positioning, split, stopover, date_flex, open_jaw, group_split, error_fare, flash_sale, departure_tax, back_to_back, mileage_run, low_cost_carrier, advance_purchase, currency_arbitrage, tuesday_booking, fare_breakpoint, destination_airport, EU261, day_use, multimodal (skip_flight / positioning / open_jaw / return_split), rail_fly_arbitrage, throwaway_ground, eurostar_return, cross_border_rail, ferry_cabin, ferry_positioning, self_transfer, regional_pass, rail_competition, calendar_conflict, accommodation_split, fuel_surcharge, home_stopover, flight_combo |
+| `detect_travel_hacks` | Run 36 parallel detectors: throwaway, hidden_city, positioning, split, stopover, date_flex, open_jaw, group_split, error_fare, flash_sale, departure_tax, back_to_back, mileage_run, low_cost_carrier, advance_purchase, currency_arbitrage, tuesday_booking, fare_breakpoint, destination_airport, EU261, day_use, multimodal (skip_flight / positioning / open_jaw / return_split), rail_fly_arbitrage, throwaway_ground, eurostar_return, cross_border_rail, ferry_cabin, ferry_positioning, self_transfer, regional_pass, rail_competition, calendar_conflict, accommodation_split, fuel_surcharge, home_stopover, flight_combo |
 | `assess_trip` | GO / WAIT / NO_GO viability check (parallel: flights + hotels + visa + weather) `origin`, `destination`, `depart_date`, `return_date`, `passport` |
 | `search_deals` | Free RSS deal feeds (Secret Flying, Fly4Free, Holiday Pirates, TPG) — error fares, flash sales, packages `origins`, `max_price`, `type`, `hours` |
 

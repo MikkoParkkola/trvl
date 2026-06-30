@@ -1,12 +1,12 @@
 # trvl — MCP Tools & Filters Reference
 
-> Moved out of the README to keep it readable. The smart `travel` router and its 66 compatibility aliases, the search-filter matrices, and the MCP protocol feature set.
+> Moved out of the README to keep it readable. The smart `travel` router and its 66 legacy-compatible capabilities, the search-filter matrices, and the MCP protocol feature set.
 
-## MCP Tool + Compatibility Aliases
+## MCP Tool + Callable Capabilities
 
 | Tool | What it does | Example |
 |------|-------------|---------|
-| **travel** | Smart MCP router for natural or structured requests; forwards to the right compatibility alias | "find hotels in Tokyo" / `intent=search_flights` |
+| **travel** | Smart MCP router for natural or structured requests; forwards to the right callable capability | "find hotels in Tokyo" / `intent=search_flights` |
 | **search_flights** | Search flights on a specific date | HEL -> NRT, 2026-06-15, business class, nonstop |
 | **search_dates** | Find cheapest day to fly across a date range | HEL -> BCN, June-August 2026 |
 | **search_accommodations** | Traveller-first room/apartment search; verifies matched offers before ranking | Paris, Jul 1-5, apartment with kitchen, refundable |
@@ -34,7 +34,7 @@
 | **get_weather** | Get a weather forecast for any city (Open-Meteo, up to 14 days) | Prague, weekend forecast |
 | **get_preferences** | Read user travel preferences (FF status, bag rules, seat preferences) | — |
 | **provider_health** | Diagnose configured providers with success rate, freshness, result counts, error class, circuit state, next retry, and fix hints | "why is Booking.com failing?" |
-| **detect_travel_hacks** | Run 18 parallel detectors for flight and ground savings opportunities | HEL → AMS, Apr 13, carry-on only |
+| **detect_travel_hacks** | Run 36 parallel detectors for flight and ground savings opportunities | HEL → AMS, Apr 13, carry-on only |
 | **detect_accommodation_hacks** | Find hotel split savings (e.g. 2-city stay cheaper than 1 hotel) | Prague, Jun 15-22 |
 | **search_natural** | Natural language search using keyword heuristics — dispatches to the right tool automatically | "cheapest weekend in July from Helsinki" |
 | **find_trip_window** | Find optimal travel windows by intersecting price calendars with your busy intervals (pass from your calendar tool) | "best week for Prague, May-Aug" |
@@ -115,8 +115,8 @@
 |---------|---------|
 | **Structured content** | Typed JSON (`structuredContent`) alongside human-readable summaries |
 | **Content annotations** | `audience: ["user"]` for summaries, `audience: ["assistant"]` for data |
-| **Output schemas** | Full JSON Schema validation for the `travel` smart router and all 66 compatibility tool responses |
-| **Prompts** | `plan-trip`, `find-cheapest-dates`, `compare-hotels`, `where-should-i-go` |
+| **Output schemas** | Full JSON Schema validation for the `travel` smart router and all 66 legacy-compatible capability tool responses |
+| **Prompts** | `plan-trip`, `find-cheapest-dates`, `compare-hotels`, `where-should-i-go`, `packing-list`, `setup_profile`, `setup_providers` |
 | **Resources** | Airport codes (50 major hubs), flight/hotel usage guides, price-watch subscriptions |
 | **Tool description orchestration** | `find_trip_window` instructs the LLM to fetch calendar data first, then pass busy intervals in — works on every MCP client. See [docs/MCP-ORCHESTRATION.md](docs/MCP-ORCHESTRATION.md) |
 | **Progress notifications** | Long-running searches stream progress tokens to the client |

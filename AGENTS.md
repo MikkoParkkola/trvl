@@ -59,13 +59,13 @@ The skills at `.claude/skills/trvl.md` and `.claude/skills/providers.md` teach y
 
 ```bash
 trvl version
-# Expected: trvl 0.3.0 (or later)
+# Expected: trvl 1.18.0 (or later)
 
 trvl flights HEL LHR 2026-07-01 --format json | head -5
 # Expected: JSON with flight results
 ```
 
-Tell the user: "trvl is installed with 1 smart MCP tool, 66 compatibility aliases, and 2 bundled Claude skills. It includes 36 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_accommodations`, `search_hotels`, and `watch_price` continue to work as compatibility aliases. I can search flights, accommodations, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
+Tell the user: "trvl is installed with 1 smart MCP tool, 66 legacy-compatible capabilities, and 2 bundled Claude skills. It includes 36 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_accommodations`, `search_hotels`, and `watch_price` continue to work as legacy-compatible capabilities. I can search flights, accommodations, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
 
 ### Hotel price trust protocol
 
@@ -203,7 +203,7 @@ Save with `update_preferences`.
 | Field | Behavior |
 |-------|----------|
 | `home_airports` | Default origin for flight/trip/weekend/discover searches |
-| `display_currency` | Price display across the smart router and all 66 compatibility aliases |
+| `display_currency` | Price display across the smart router and all 66 legacy-compatible capabilities |
 | `no_dormitories` | `FilterHotels()` drops hostels, capsules, guesthouse rooms by chain name + regex |
 | `ensuite_only` | `FilterHotels()` drops shared-bathroom properties |
 | `min_hotel_stars` | Passed to Google Hotels API as search filter |
@@ -285,7 +285,7 @@ CLI alternative: `trvl prefs init`
 
 ## How To Use (after setup)
 
-You now have one `travel` MCP tool available by default. Older clients that call legacy per-domain tool names still work — 66 of them remain callable as compatibility aliases. Use `travel` for new clients and the aliases when an older workflow names a specific tool:
+You now have one `travel` MCP tool available by default. Older clients that call legacy per-domain tool names still work — 66 of them remain legacy-compatible capabilities. Use `travel` for new clients and the legacy names when an older workflow names a specific tool:
 
 ### search_flights — Find flights between airports
 ```json
@@ -627,7 +627,7 @@ done with trvl alone.
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **trvl** (21830 symbols, 66688 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **trvl** (21933 symbols, 67842 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

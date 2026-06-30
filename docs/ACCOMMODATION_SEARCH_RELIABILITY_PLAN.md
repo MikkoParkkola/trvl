@@ -1,5 +1,7 @@
 # Accommodation search reliability plan
 
+> **Status: SHIPPED.** This plan has been implemented — `search_accommodations` (criteria-first ranking + evidence ledger) is live (`mcp/tools.go`, `mcp/tools_accommodations*.go`), with `AccommodationNeed`/`AccommodationOffer` models in `internal/models/accommodation.go`. Retained as design rationale; the "gaps" and pending-work sections below describe the original starting point, not current behaviour.
+
 This plan turns the public article caveat into a product rule: trvl must search
 for the accommodation the user asked for, not merely for properties with low
 lead-in prices.

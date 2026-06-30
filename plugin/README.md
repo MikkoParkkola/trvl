@@ -6,11 +6,11 @@ for complex itineraries.
 
 ## Install From Local Path
 
-From this repository:
+From a local clone of this repository (run from the repo root):
 
 ```bash
-claude plugin validate /Users/mikko/github/trvl/plugin
-claude plugin marketplace add /Users/mikko/github/trvl/plugin --scope user
+claude plugin validate ./plugin
+claude plugin marketplace add ./plugin --scope user
 claude plugin install trvl --scope user
 ```
 
@@ -39,7 +39,7 @@ brew install MikkoParkkola/tap/trvl
 
 The command routes to `trvl-trip-planner`, loads the traveller profile through
 the `travel` smart tool, then dispatches to `plan_trip`, `search_flights`,
-`search_accommodations`, and `search_hotels` compatibility aliases when useful.
+`search_accommodations`, and `search_hotels` legacy-compatible capabilities when useful.
 It runs `assess_trip` and
 reports the itinerary with travel hack savings.
 
@@ -74,10 +74,8 @@ The command routes to `trvl-destination-research`, composing
 
 ## Underlying Tool Surface
 
-The original MIK-3400 acceptance text refers to the 43 underlying tools
-available when the plugin was proposed. The current trvl MCP server advertises
-1 smart MCP tool plus 66 compatibility aliases, and this plugin is wired for
-the full current surface.
+The current trvl MCP server advertises 1 smart MCP tool plus 66 legacy-compatible capabilities,
+and this plugin is wired for the full current surface.
 
 Flights:
 `search_flights`, `search_dates`, `suggest_dates`, `optimize_trip_dates`,

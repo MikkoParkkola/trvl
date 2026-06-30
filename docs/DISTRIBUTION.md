@@ -70,7 +70,7 @@ blocks accidental `homebrew_casks` reintroduction while this policy is active.
 
 Short description:
 
-> AI travel agent with 1 smart MCP tool plus 66 compatibility aliases for flights, hotels, rental cars, trains, buses, ferries, price alerts, hidden-city search, and award redemptions. Free core providers, no personal API keys, one Go binary.
+> AI travel agent with 1 smart MCP tool plus 66 legacy-compatible capabilities for flights, hotels, rental cars, trains, buses, ferries, price alerts, hidden-city search, and award redemptions. Free core providers, no personal API keys, one Go binary.
 
 Install snippet:
 
