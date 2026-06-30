@@ -66,8 +66,10 @@ jobs:
 
           sed -i -E "s/(wizzDefaultVersion = \")[0-9]+\.[0-9]+\.[0-9]+(\")/\1${NEW}\2/" internal/flights/wizzair.go
           gofmt -w internal/flights/wizzair.go
-          # Validate the bump compiles and the format guard passes before proposing it.
-          GOTOOLCHAIN=go1.26.4 go test ./internal/flights/ -run 'TestWizzDefaultVersion' -count=1
+          # Validate the bump: the whole flights package must compile and pass.
+          # (Running the full package, not a -run filter, avoids the Go footgun
+          # where an unmatched filter exits 0 and validates nothing.)
+          GOTOOLCHAIN=go1.26.4 go test ./internal/flights/ -count=1
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -82,9 +84,13 @@ jobs:
           Oracle proves the version *path* is live; it cannot confirm a priced search end-to-end (the timetable endpoint edge-blocks datacenter IPs). The opt-in nightly live probe validates real search from its own vantage.
 
           Labeled \`skip-regression-test\`: data-only bump, and \`TestWizzDefaultVersionWellFormed\` already guards the constant's shape."
+          # Ensure the bypass label exists first (gh pr create --label errors if a
+          # label is absent); idempotent, no-op when it already exists.
+          gh label create skip-regression-test \
+            --description "Auditable bypass of the regression-test-gate for genuinely untestable fixes" \
+            --color ededed 2>/dev/null || true
           gh pr create --title "fix(flights): bump Wizz Air API version ${CUR} -> ${NEW} (auto, #430)" \
             --body "$body" --label skip-regression-test
-          # Hands-off merge when a PAT is configured (so CI runs on the PR).
           gh pr merge "$branch" --auto --squash --delete-branch || \
             echo "auto-merge not armed (no PAT? CI will not start on a GITHUB_TOKEN PR) — merge manually."
 
