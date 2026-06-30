@@ -248,14 +248,18 @@ func SearchWizzair(ctx context.Context, origin, destination, date, currency stri
 		return nil, fmt.Errorf("wizzair: marshal request: %w", err)
 	}
 
+	// Capture the version this attempt will use BEFORE the request, so a
+	// concurrent heal between the failure and the heal call can't make us walk
+	// past an already-working version (we'd otherwise treat the healed version as
+	// the stale one and probe its successors).
+	used := wizzResolvedVersion()
 	results, err := wizzSearchOnce(ctx, payload, date, currency)
 	// Self-heal on a version rotation: discover the new version, swap it in, and
 	// retry once. The retry IS the end-to-end verification — it only succeeds if
 	// the discovered version actually serves a priced timetable response.
 	if errors.Is(err, ErrWizzVersionRotated) && wizzHealEnabled() {
-		stale := wizzResolvedVersion()
-		if newV, ok := wizzHeal(ctx, stale); ok && newV != stale {
-			slog.Warn("wizzair self-healed API version after rotation", "from", stale, "to", newV)
+		if newV, ok := wizzHeal(ctx, used); ok && newV != used {
+			slog.Warn("wizzair self-healed API version after rotation", "from", used, "to", newV)
 			if werr := wizzLimiter.Wait(ctx); werr == nil {
 				results, err = wizzSearchOnce(ctx, payload, date, currency)
 			}

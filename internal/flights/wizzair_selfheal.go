@@ -181,7 +181,10 @@ func wizzPersistVersion(v string) {
 // stale) compiled-in default. Skipped under a test host or an operator pin.
 func wizzMaybeLoadCache() {
 	wizzHealCacheOnce.Do(func() {
-		if !wizzRealHost() || strings.TrimSpace(os.Getenv("WIZZAIR_API_VERSION")) != "" {
+		// Skip under a test host or whenever healing is off (operator pin or
+		// WIZZAIR_NO_AUTOHEAL): the opt-out must fully restore fail-clean and must
+		// not silently adopt a previously-cached healed version.
+		if !wizzRealHost() || !wizzHealEnabled() {
 			return
 		}
 		path, ok := wizzCachePath()
