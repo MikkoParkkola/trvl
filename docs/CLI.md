@@ -177,12 +177,12 @@ trvl multi-city HEL --visit BCN,ROM,PAR --dates 2026-07-01,2026-07-21
 
 ### Buses, Trains & Ferries
 
-Searches 20 providers in parallel: FlixBus (buses, pan-European), RegioJet (buses+trains, CZ/SK/AT/HU/DE/PL), Eurostar/Snap (trains, London↔Paris/Brussels/Amsterdam/Cologne), Deutsche Bahn (trains, all European rail), ÖBB (shop/HAFAS API), NS (Dutch railways), VR (Finnish railways, via Digitransit API), SNCF (trains, French TGV/TER), Trainline (aggregated rail across major European operators), Transitous.org (transit routing, pan-European), Renfe (Spanish AVE high-speed API), European Sleeper (night trains Brussels↔Berlin↔Prague + Amsterdam/Rotterdam/Antwerp/Dresden), Snälltåget (Swedish night trains Stockholm↔Malmö/Åre/Berlin, Sqills S3 API), Tallink (Baltic Sea ferries, live API), Viking Line (Baltic Sea ferries), Eckerö Line (Helsinki↔Tallinn, live Magento API), Finnlines (Helsinki↔Travemünde, Naantali↔Kapellskär, GraphQL API), Stena Line (North Sea + Baltic ferries), DFDS (North Sea + Baltic ferries, live availability API), and Ferryhopper (33 countries, 190+ ferry operators, via MCP). Airport transfers also add taxi fare estimates for door-to-door comparisons.
+Searches 21 providers in parallel: FlixBus (buses, pan-European), RegioJet (buses+trains, CZ/SK/AT/HU/DE/PL), Eurostar/Snap (trains, London↔Paris/Brussels/Amsterdam/Cologne), Deutsche Bahn (trains, all European rail), ÖBB (shop/HAFAS API), NS (Dutch railways), VR (Finnish railways, via Digitransit API), SNCF (trains, French TGV/TER), Trainline (aggregated rail across major European operators), Transitous.org (transit routing, pan-European), Renfe (Spanish AVE high-speed API), Trenitalia (Italian high-speed + regional rail, lefrecce.it BFF), European Sleeper (night trains Brussels↔Berlin↔Prague + Amsterdam/Rotterdam/Antwerp/Dresden), Snälltåget (Swedish night trains Stockholm↔Malmö/Åre/Berlin, Sqills S3 API), Tallink (Baltic Sea ferries, live API), Viking Line (Baltic Sea ferries), Eckerö Line (Helsinki↔Tallinn, live Magento API), Finnlines (Helsinki↔Travemünde, Naantali↔Kapellskär, GraphQL API), Stena Line (North Sea + Baltic ferries), DFDS (North Sea + Baltic ferries, live availability API), and Ferryhopper (33 countries, 190+ ferry operators, via MCP). Airport transfers also add taxi fare estimates for door-to-door comparisons.
 
 API routes are the default path. If you want trvl to try browser/curl/cookie-assisted fallbacks for protected providers such as SNCF or Trainline, pass `--allow-browser-fallbacks` (or set `TRVL_ALLOW_BROWSER_FALLBACKS=true`).
 
 ```bash
-trvl ground Prague Vienna 2026-07-01                  # All 20 providers
+trvl ground Prague Vienna 2026-07-01                  # All 21 providers
 trvl ground London Paris 2026-07-01                   # Eurostar + FlixBus + DB
 trvl bus Prague Krakow 2026-07-01                     # Same command, bus alias
 trvl train Prague Vienna 2026-07-01 --type train      # Trains only
