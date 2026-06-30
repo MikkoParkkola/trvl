@@ -135,6 +135,28 @@ func TestSearchWizzair_NoHealWhenPinned(t *testing.T) {
 	}
 }
 
+// TestWizzVersionNewer guards the cache anti-downgrade comparator: a cached
+// version is adopted only when strictly newer than the compiled default.
+func TestWizzVersionNewer(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"29.5.0", "29.4.0", true},  // newer minor
+		{"29.4.1", "29.4.0", true},  // newer patch
+		{"30.0.0", "29.9.9", true},  // newer major
+		{"29.4.0", "29.4.0", false}, // equal
+		{"29.3.0", "29.4.0", false}, // older -> do not adopt (no downgrade)
+		{"bad", "29.4.0", false},    // malformed -> reject
+		{"29.4", "29.4.0", false},   // wrong shape -> reject
+	}
+	for _, c := range cases {
+		if got := wizzVersionNewer(c.a, c.b); got != c.want {
+			t.Errorf("wizzVersionNewer(%q,%q) = %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+}
+
 // TestWizzHealEnabled covers the enable/disable matrix.
 func TestWizzHealEnabled(t *testing.T) {
 	t.Setenv("WIZZAIR_API_VERSION", "")
