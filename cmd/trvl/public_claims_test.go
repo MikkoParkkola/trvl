@@ -137,8 +137,8 @@ func registeredMCPCompatibilityAliasCount(t *testing.T) int {
 
 	// Exclude the primary travel smart router and any non-alias smart
 	// capabilities (e.g. plan_journey) — these are reachable via the travel
-	// router intent but are NOT legacy compatibility aliases, so they must not
-	// inflate the marketed "compatibility aliases" count.
+	// router intent but are NOT in the legacy-compatible-capability set, so they must not
+	// inflate the marketed "legacy-compatible capabilities" count.
 	nonAliasCapabilities := map[string]bool{
 		"travel":           true, // the smart router itself
 		"plan_journey":     true, // Leave-By Scheduler capability (MIK-5734 B)
@@ -183,7 +183,7 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 			path: filepath.Join("..", "..", "README.md"),
 			required: []string{
 				fmt.Sprintf("https://img.shields.io/badge/providers-%d-brightgreen", totalProviderCount),
-				fmt.Sprintf("%d compatibility aliases", compatAliasCount),
+				fmt.Sprintf("%d legacy-compatible capabilities", compatAliasCount),
 			},
 			forbidden: []string{
 				"https://img.shields.io/badge/providers-16-brightgreen",
@@ -208,12 +208,12 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 		},
 		{
 			// MCP surface reference (extracted from README): smart router,
-			// compatibility aliases, output-schema coverage, and the tool table
+			// legacy-compatible capabilities, output-schema coverage, and the tool table
 			// (per-tool marker uniqueness is asserted below for this file).
 			path: filepath.Join("..", "..", "docs", "MCP-TOOLS-REFERENCE.md"),
 			required: []string{
-				fmt.Sprintf("%d compatibility aliases", compatAliasCount),
-				fmt.Sprintf("Full JSON Schema validation for the `travel` smart router and all %d compatibility tool responses", compatAliasCount),
+				fmt.Sprintf("%d legacy-compatible capabilities", compatAliasCount),
+				fmt.Sprintf("Full JSON Schema validation for the `travel` smart router and all %d legacy-compatible capability tool responses", compatAliasCount),
 			},
 		},
 		{
@@ -221,7 +221,7 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 			// subcommands, and the at-a-glance capability table.
 			path: filepath.Join("..", "..", "docs", "CLI.md"),
 			required: []string{
-				fmt.Sprintf("Full v2025-11-25 — %d smart MCP tool, %d compatibility aliases", toolCount, compatAliasCount),
+				fmt.Sprintf("Full v2025-11-25 — %d smart MCP tool, %d legacy-compatible capabilities", toolCount, compatAliasCount),
 				fmt.Sprintf("%d commands (+ %d watch subcommands)", cliCommandCount, watchSubcommandCount),
 				fmt.Sprintf("Searches %d providers in parallel:", groundProviderCount),
 			},
@@ -237,8 +237,8 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 		{
 			path: filepath.Join("..", "..", "AGENTS.md"),
 			required: []string{
-				fmt.Sprintf("trvl is installed with %d smart MCP tool, %d compatibility aliases, and %d bundled Claude skill", toolCount, compatAliasCount, skillCount),
-				fmt.Sprintf("| `display_currency` | Price display across the smart router and all %d compatibility aliases |", compatAliasCount),
+				fmt.Sprintf("trvl is installed with %d smart MCP tool, %d legacy-compatible capabilities, and %d bundled Claude skill", toolCount, compatAliasCount, skillCount),
+				fmt.Sprintf("| `display_currency` | Price display across the smart router and all %d legacy-compatible capabilities |", compatAliasCount),
 				"### search_lounges — Find airport lounges at a given airport",
 				"### check_visa — Check visa requirements for a passport→destination pair",
 				"### calculate_points_value — Compare points vs cash for a redemption",
@@ -258,7 +258,7 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 		{
 			path: filepath.Join("..", "..", "demo.tape"),
 			required: []string{
-				fmt.Sprintf("# %d smart MCP tool · %d aliases · %d CLI commands · %d providers · No API keys", toolCount, compatAliasCount, cliCommandCount, totalProviderCount),
+				fmt.Sprintf("# %d smart MCP tool · %d legacy-compatible capabilities · %d CLI commands · %d providers · No API keys", toolCount, compatAliasCount, cliCommandCount, totalProviderCount),
 				"scripts/demo/full-demo.sh",
 				"scripts/demo/one-prompt-demo.sh",
 			},
@@ -275,7 +275,7 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 				"Plan a realistic long weekend from HEL to London in July",
 				"hotel details, ground transfer, hacks",
 				"optional watch_price below EUR 200",
-				fmt.Sprintf("%d smart MCP tool + %d compatibility aliases + %d providers", toolCount, compatAliasCount, totalProviderCount),
+				fmt.Sprintf("%d smart MCP tool + %d legacy-compatible capabilities + %d providers", toolCount, compatAliasCount, totalProviderCount),
 				"Manual booking only",
 			},
 			forbidden: []string{
@@ -287,7 +287,7 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 			path: filepath.Join("..", "..", ".claude-plugin", "plugin.json"),
 			required: []string{
 				fmt.Sprintf("%d smart MCP tool", toolCount),
-				fmt.Sprintf("%d compatibility aliases", compatAliasCount),
+				fmt.Sprintf("%d legacy-compatible capabilities", compatAliasCount),
 			},
 			forbidden: []string{
 				"16 MCP tools",
@@ -298,7 +298,7 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 		{
 			path: filepath.Join("..", "..", ".claude", "skills", "trvl.md"),
 			required: []string{
-				fmt.Sprintf("## CORE TOOL ROUTING (primary `travel` tool + %d compatibility aliases)", compatAliasCount),
+				fmt.Sprintf("## CORE TOOL ROUTING (primary `travel` tool + %d legacy-compatible capabilities)", compatAliasCount),
 				fmt.Sprintf("Bus/train/ferry (%d providers)", groundProviderCount),
 				"`travel`",
 				"`search_airport_transfers`",
@@ -377,11 +377,11 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 			// Purpose section; keep them pinned to the live counts.
 			path: filepath.Join("..", "..", "CONTRIBUTING.md"),
 			required: []string{
-				fmt.Sprintf("%d compatibility aliases", compatAliasCount),
+				fmt.Sprintf("%d legacy-compatible capabilities", compatAliasCount),
 				fmt.Sprintf("%d CLI commands", cliCommandCount),
 			},
 			forbidden: []string{
-				"64 compatibility aliases",
+				"64 legacy-compatible capabilities",
 				"55 CLI commands",
 			},
 		},

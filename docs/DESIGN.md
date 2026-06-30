@@ -189,7 +189,7 @@ Two transport modes:
 - **stdio**: `trvl mcp` — for Claude Code integration
 - **HTTP**: `trvl mcp --http --port 8000` — loopback by default and refused unless explicit auth is configured; pass `--host` explicitly for gateway or remote use. HTTP supports static read/write bearer tokens or OAuth 2.1 access-token introspection with `trvl:read` / `trvl:write` scopes.
 
-One compact `travel` tool is advertised by default, with the legacy compatibility aliases still callable directly. `TRVL_MCP_TOOL_MODE=legacy` restores the full advertised list for clients that need explicit tools.
+One compact `travel` tool is advertised by default, with the legacy-compatible capabilities still callable directly. `TRVL_MCP_TOOL_MODE=legacy` restores the full advertised list for clients that need explicit tools.
 
 ## 5. Tech Selection Rationale
 

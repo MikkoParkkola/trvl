@@ -25,7 +25,7 @@ room availability, or rolling trip opportunities.
 ## Inputs
 
 Load preferences first through `travel` with `intent="get_preferences"` or the
-compatibility alias, then collect only the missing watch parameters:
+callable capability, then collect only the missing watch parameters:
 
 - Watch type: flight, hotel, room availability, or opportunity window.
 - Route or property name and location.
@@ -60,4 +60,4 @@ Return:
 Do not create or update saved preferences unless the user explicitly confirms
 the profile change. If native `mcp__trvl__travel` is unavailable, invoke
 `tool="travel"` through `mcp__gateway__gateway_invoke` with `server="trvl"`.
-Exact legacy tool names remain callable as compatibility aliases.
+Exact legacy tool names remain legacy-compatible capabilities.

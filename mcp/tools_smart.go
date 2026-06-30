@@ -22,7 +22,7 @@ func travelTool() ToolDef {
 			"watches, preferences, or providers, and params for the target tool arguments. Exact " +
 			"legacy tool names such as search_flights, search_accommodations, search_hotels, search_ground, watch_price, " +
 			"update_preferences, or configure_provider are accepted as intent values and remain " +
-			"compatibility aliases.",
+			"legacy-compatible capabilities.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{

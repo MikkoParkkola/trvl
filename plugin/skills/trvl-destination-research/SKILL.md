@@ -25,7 +25,7 @@ to do in a place, event ideas, neighborhoods, safety, visa, or local context.
 ## Inputs
 
 Load preferences first through `travel` with `intent="get_preferences"` or the
-compatibility alias. Collect:
+callable capability. Collect:
 
 - Location.
 - Travel dates or a broad month/season.
@@ -63,4 +63,4 @@ Return a single research packet:
 Do not overstate live availability; mark event, restaurant, and POI details as
 current search results. If native `mcp__trvl__travel` is unavailable, use
 `mcp__gateway__gateway_invoke` with `server="trvl"` and `tool="travel"`.
-Exact legacy tool names remain callable as compatibility aliases.
+Exact legacy tool names remain legacy-compatible capabilities.

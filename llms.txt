@@ -2,7 +2,7 @@
 
 > AI travel MCP server and CLI for Google Flights, Google Hotels, Booking.com, Trivago, Airbnb, Hostelworld, HomeToGo, trains, buses, ferries, door-to-door multimodal itineraries, price alerts, award travel, and travel-hack detection.
 
-trvl is a single Go binary for AI assistants and terminal users. It searches flights, hotels, ground transport, destinations, airport transfers, price watches, and trip plans with a 1-tool MCP router plus compatibility aliases. Default use needs no personal API keys. Most providers use public HTTP/JSON endpoints; a few protected providers use explicit browser/cookie/curl fallbacks when enabled.
+trvl is a single Go binary for AI assistants and terminal users. It searches flights, hotels, ground transport, destinations, airport transfers, price watches, and trip plans with a 1-tool MCP router plus legacy-compatible capabilities. Default use needs no personal API keys. Most providers use public HTTP/JSON endpoints; a few protected providers use explicit browser/cookie/curl fallbacks when enabled.
 
 Trust boundary for hotels: use `search_accommodations` for traveller-facing stay recommendations. `search_hotels` is a discovery search. Google Hotels-style prices can be lead-in or teaser rates and must not be treated as checkout-final. For public recommendations, ranked offers should come from criteria-matched `search_accommodations` results or from shortlisted hotels verified with `search_hotels_with_details`, `hotel_rooms`, or `trvl serpapi` and ranked on room-level `total_price`/tax-inclusive provider totals when present. trvl surfaces booking/provider links for manual booking handoff; it does not book, hold, or guarantee a rate.
 
@@ -25,7 +25,7 @@ for s in trvl providers; do
   curl -fsSL "https://raw.githubusercontent.com/MikkoParkkola/trvl/main/.claude/skills/$s.md" -o "$HOME/.claude/skills/$s.md"
 done
 
-## MCP Tools (1 smart tool + compatibility aliases)
+## MCP Tools (1 smart tool + legacy-compatible capabilities)
 
 - search_flights(origin, destination, departure_date, [return_date, cabin_class, max_stops, sort_by, alliances, depart_after, depart_before, less_emissions, carry_on_bags, checked_bags, require_checked_bag, max_price, max_duration, exclude_basic, airlines])
   - checked_bags: HIDDEN GOOGLE FEATURE — server-side filter not exposed in Google's own UI

@@ -39,7 +39,7 @@ brew install MikkoParkkola/tap/trvl
 
 The command routes to `trvl-trip-planner`, loads the traveller profile through
 the `travel` smart tool, then dispatches to `plan_trip`, `search_flights`,
-`search_accommodations`, and `search_hotels` compatibility aliases when useful.
+`search_accommodations`, and `search_hotels` legacy-compatible capabilities when useful.
 It runs `assess_trip` and
 reports the itinerary with travel hack savings.
 
@@ -74,7 +74,7 @@ The command routes to `trvl-destination-research`, composing
 
 ## Underlying Tool Surface
 
-The current trvl MCP server advertises 1 smart MCP tool plus 66 compatibility aliases,
+The current trvl MCP server advertises 1 smart MCP tool plus 66 legacy-compatible capabilities,
 and this plugin is wired for the full current surface.
 
 Flights:

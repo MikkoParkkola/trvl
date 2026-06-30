@@ -30,7 +30,7 @@ Example description snippet:
 
 | Capability | Status | Notes |
 |---|---|---|
-| Tools | Active | **1 advertised smart `travel` tool** (~378 tokens) routing to 66 compatibility aliases across flights, accommodations, hotels, routes, hacks, trips, preferences, natural search, external-provider management — vs ~33,500 tokens if all 66 were advertised (98.9% leaner). Set `TRVL_MCP_TOOL_MODE=legacy` to advertise all 66. |
+| Tools | Active | **1 advertised smart `travel` tool** (~378 tokens) routing to 66 legacy-compatible capabilities across flights, accommodations, hotels, routes, hacks, trips, preferences, natural search, external-provider management — vs ~33,500 tokens if all 66 were advertised (98.9% leaner). Set `TRVL_MCP_TOOL_MODE=legacy` to advertise all 66. |
 | Resources | Active | Airport codes, usage guides, price-watch subscriptions |
 | Prompts | Active | `plan-trip`, `find-cheapest-dates`, `compare-hotels`, `where-should-i-go`, `packing-list`, `setup_profile`, `setup_providers` |
 | Progress Notifications | Active | Long-running searches stream `notifications/progress` |

@@ -33,7 +33,7 @@ Use the compact smart router:
 }
 ```
 
-Direct compatibility alias:
+Direct callable capability:
 
 ```json
 {
