@@ -15,21 +15,23 @@ package flights
 // internal/baggage).
 //
 // VERSION ROTATION (verified gotcha): the {version} path segment rotates
-// periodically (observed "10.1.0", "27.x", ...). It is NOT hardcoded into the
-// URL builder. Resolution order (first hit wins):
+// periodically (observed "10.1.0", "29.3.0", "29.4.0", ...). It is NOT hardcoded
+// into the URL builder. Resolution order (first hit wins):
 //
 //  1. WIZZAIR_API_VERSION env var (operator override, no code change / redeploy).
-//  2. wizzVersion package var (overridable in tests; seeded from the const).
+//  2. wizzVersion package var — seeded from the const, updated by runtime
+//     self-healing (and loaded from the ~/.trvl cache at startup).
 //
-// wizzDefaultVersion is the last-known-good value. There is deliberately NO
-// live-discovery path: Wizz's current API version is JS-gated and has no clean
-// server-side HTTP endpoint that reliably returns it, and a headless-browser
-// dependency is forbidden (single static binary, no frameworks). When the
-// segment rotates, the timetable endpoint 404s; SearchWizzair detects that and
-// returns ErrWizzVersionRotated, which the aggregate renders as a typed,
-// actionable ProviderStatus (FixHintCode "WIZZ_VERSION_ROTATED") telling the
-// operator to set WIZZAIR_API_VERSION. The env override is the authoritative,
-// zero-deploy manual fix.
+// wizzDefaultVersion is the last-known-good value and the cold-start fallback.
+// Resolution order at request time (first hit wins): WIZZAIR_API_VERSION env
+// override; a previously self-healed version cached in ~/.trvl/wizzair_version.json;
+// then this constant. When the segment rotates, the timetable endpoint 404s and
+// SearchWizzair self-heals at runtime (see wizzair_selfheal.go): it discovers the
+// new version via the be.wizzair.com/<v>/Api/asset/culture oracle and retries —
+// the retry is the end-to-end verification. If healing is disabled
+// (WIZZAIR_API_VERSION pin or WIZZAIR_NO_AUTOHEAL=1) or no candidate is live, the
+// rotation surfaces as a typed, actionable ProviderStatus (FixHintCode
+// "WIZZ_VERSION_ROTATED") telling the operator to set WIZZAIR_API_VERSION.
 //
 // Tracking: low-cost-carrier provider breadth (flights domain); GH #115.
 
@@ -40,6 +42,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -55,12 +58,12 @@ import (
 // it with errors.Is and render a typed, actionable ProviderStatus instead of a
 // silent failure. The wrapped message carries the version that was tried.
 //
-// Why no auto-discovery: Wizz's current API version is JS-gated and has no clean
-// server-side HTTP endpoint that reliably returns it. A guessed-but-unverified
-// discovery mechanism would be worse than none (it could pin the wrong version),
-// and a headless-browser dependency is forbidden by the single-binary principle.
-// The honest design is graceful degradation plus the WIZZAIR_API_VERSION env
-// override as the authoritative manual fix.
+// On this error SearchWizzair self-heals (wizzair_selfheal.go): it discovers the
+// current version via the asset/culture oracle and retries — verifying the new
+// version end-to-end from the caller's real IP. This sentinel is still the
+// terminal outcome when healing is disabled (WIZZAIR_API_VERSION pin /
+// WIZZAIR_NO_AUTOHEAL=1) or discovery finds no live candidate, so graceful
+// degradation plus the env override remains the floor.
 var ErrWizzVersionRotated = errors.New("wizzair API version path rotated")
 
 // ErrWizzBlocked is the sentinel for a non-200 whose body is NOT Wizz's own JSON
@@ -123,6 +126,8 @@ func wizzResolvedVersion() string {
 	if v := strings.TrimSpace(os.Getenv("WIZZAIR_API_VERSION")); v != "" {
 		return v
 	}
+	wizzVersionMu.RLock()
+	defer wizzVersionMu.RUnlock()
 	return wizzVersion
 }
 
@@ -220,6 +225,8 @@ func SearchWizzair(ctx context.Context, origin, destination, date, currency stri
 	if currency == "" {
 		currency = "EUR"
 	}
+	// Adopt a previously-healed version (if any) before the first request.
+	wizzMaybeLoadCache()
 	if err := wizzLimiter.Wait(ctx); err != nil {
 		return nil, err
 	}
@@ -241,6 +248,26 @@ func SearchWizzair(ctx context.Context, origin, destination, date, currency stri
 		return nil, fmt.Errorf("wizzair: marshal request: %w", err)
 	}
 
+	results, err := wizzSearchOnce(ctx, payload, date, currency)
+	// Self-heal on a version rotation: discover the new version, swap it in, and
+	// retry once. The retry IS the end-to-end verification — it only succeeds if
+	// the discovered version actually serves a priced timetable response.
+	if errors.Is(err, ErrWizzVersionRotated) && wizzHealEnabled() {
+		stale := wizzResolvedVersion()
+		if newV, ok := wizzHeal(ctx, stale); ok && newV != stale {
+			slog.Warn("wizzair self-healed API version after rotation", "from", stale, "to", newV)
+			if werr := wizzLimiter.Wait(ctx); werr == nil {
+				results, err = wizzSearchOnce(ctx, payload, date, currency)
+			}
+		}
+	}
+	return results, err
+}
+
+// wizzSearchOnce performs one timetable request at the currently-resolved
+// version and maps the response. A rotated version surfaces as
+// ErrWizzVersionRotated (404) for the caller to optionally heal and retry.
+func wizzSearchOnce(ctx context.Context, payload []byte, date, currency string) ([]models.FlightResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, wizzTimetableURL(), bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("wizzair: build request: %w", err)
@@ -249,7 +276,7 @@ func SearchWizzair(ctx context.Context, origin, destination, date, currency stri
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Origin", "https"+"://"+"wizzair.com")
 	req.Header.Set("Referer", "https"+"://"+"wizzair.com/")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+	req.Header.Set("User-Agent", wizzBrowserUA)
 
 	resp, err := wizzClient.Do(req)
 	if err != nil {
