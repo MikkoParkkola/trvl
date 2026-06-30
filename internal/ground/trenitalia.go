@@ -94,44 +94,36 @@ type trenitaliaPrice struct {
 	Amount   float64 `json:"amount"`
 }
 
-// italianCities is the static set of cities served by Trenitalia high-speed and
-// regional rail. Case-insensitive substring matching is used at call time.
+// italianCities is the fast-path gate: a set of cities served by Trenitalia
+// high-speed/regional rail, covering all 20 regional capitals, every provincial
+// capital, and the major rail hubs and tourist destinations (lakes, coast).
+// It is intentionally broad to avoid skipping valid routes (e.g. Milan→Como),
+// but it is a heuristic, not an authority — an unlisted small-town station fails
+// safe: HasTrenitaliaRoute returns false, Trenitalia is skipped, and the rest of
+// the ground search proceeds normally. Case-insensitive substring match at call
+// time (see isItalianCity).
 var italianCities = []string{
-	"rome", "roma",
-	"milan", "milano",
-	"florence", "firenze",
-	"venice", "venezia",
-	"naples", "napoli",
-	"turin", "torino",
-	"bologna",
-	"genoa", "genova",
-	"verona",
-	"bari",
-	"catania",
-	"palermo",
-	"messina",
-	"reggio calabria",
-	"salerno",
-	"trieste",
-	"padova", "padua",
-	"brescia",
-	"bergamo",
-	"trento",
-	"ferrara",
-	"pisa",
-	"siena",
-	"perugia",
-	"ancona",
-	"rimini",
-	"pescara",
-	"l'aquila",
-	"campobasso",
-	"potenza",
-	"cosenza",
-	"lecce",
-	"taranto",
-	"foggia",
-	"brindisi",
+	// Regional capitals + major hubs
+	"rome", "roma", "milan", "milano", "florence", "firenze",
+	"venice", "venezia", "naples", "napoli", "turin", "torino",
+	"bologna", "genoa", "genova", "verona", "trieste", "trento",
+	"bolzano", "aosta", "perugia", "ancona", "l'aquila", "campobasso",
+	"bari", "potenza", "catanzaro", "reggio calabria", "palermo", "cagliari",
+	// Provincial capitals + tourist/rail cities (north)
+	"como", "lecco", "varese", "monza", "pavia", "cremona", "mantova", "mantua",
+	"brescia", "bergamo", "lodi", "sondrio", "novara", "vercelli", "asti",
+	"alessandria", "cuneo", "biella", "savona", "imperia", "sanremo", "la spezia",
+	"piacenza", "parma", "modena", "reggio emilia", "ferrara", "ravenna",
+	"forli", "cesena", "rimini", "padova", "padua", "vicenza", "treviso",
+	"belluno", "rovigo", "udine", "pordenone", "gorizia",
+	// Centre
+	"pisa", "livorno", "lucca", "pistoia", "prato", "arezzo", "siena", "grosseto",
+	"terni", "viterbo", "rieti", "frosinone", "latina",
+	// South + islands
+	"pescara", "chieti", "teramo", "caserta", "salerno", "avellino", "benevento",
+	"sorrento", "foggia", "lecce", "taranto", "brindisi", "barletta",
+	"cosenza", "crotone", "vibo valentia", "messina", "catania", "siracusa",
+	"ragusa", "agrigento", "trapani", "caltanissetta", "enna", "sassari", "olbia",
 }
 
 // HasTrenitaliaRoute returns true if both city names appear to be Italian
