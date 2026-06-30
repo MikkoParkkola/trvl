@@ -98,7 +98,12 @@ var ErrWizzRejected = errors.New("wizzair declined the request (validationCodes)
 // serve. Both were previously swallowed into an opaque "unexpected status 400"
 // that red-flagged the probe. SearchWizzair now reads the body and classifies
 // these into ErrWizzBlocked / ErrWizzRejected (see classifyWizzStatus).
-const wizzDefaultVersion = "29.3.0"
+//
+// 2026-06-30 (#430): rotated "29.3.0" -> "29.4.0". The scheduled live probe
+// 404'd on the 29.3.0 path (the rotation signature). New version read from the
+// web app's live config — be.wizzair.com/29.4.0/Api/asset/culture serves from a
+// residential IP — confirming the path segment advanced one minor.
+const wizzDefaultVersion = "29.4.0"
 
 // wizzVersion is the active API version. Overridable in tests; the env var
 // WIZZAIR_API_VERSION takes precedence at request time via wizzResolvedVersion.
