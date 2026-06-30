@@ -38,12 +38,25 @@ jobs:
       - name: Discover current Wizz Air API version
         id: discover
         run: |
+          # The script's non-zero exits encode status (10 rotated / 2 exhausted /
+          # 3 inconclusive), so we capture rather than fail on them — but we then
+          # VALIDATE the parsed status. A blank or unrecognized status (e.g. the
+          # source grep stopped matching after a refactor) must fail loudly, not
+          # let the scheduled run go green having silently done nothing.
           set +e
           out="$(bash scripts/wizzair-discover-version.sh)"
+          set -e
           echo "$out"
-          status="$(printf '%s\n' "$out" | tail -1 | sed -n 's/.*STATUS=\([a-z]*\).*/\1/p')"
-          current="$(printf '%s\n' "$out" | tail -1 | sed -n 's/.*CURRENT=\([0-9.]*\).*/\1/p')"
-          new="$(printf '%s\n' "$out" | tail -1 | sed -n 's/.*NEW=\([0-9.]*\).*/\1/p')"
+          last="$(printf '%s\n' "$out" | tail -1)"
+          status="$(printf '%s\n' "$last" | sed -n 's/.*STATUS=\([a-z]*\).*/\1/p')"
+          current="$(printf '%s\n' "$last" | sed -n 's/.*CURRENT=\([0-9.]*\).*/\1/p')"
+          new="$(printf '%s\n' "$last" | sed -n 's/.*NEW=\([0-9.]*\).*/\1/p')"
+          case "$status" in
+            ok|rotated|exhausted|inconclusive) : ;;
+            *)
+              echo "::error title=Sentinel discovery broken::Unrecognized discovery output (status='$status'). The probe script likely failed or its contract changed. Last line: $last"
+              exit 1 ;;
+          esac
           {
             echo "status=$status"
             echo "current=$current"
@@ -95,7 +108,7 @@ jobs:
             echo "auto-merge not armed (no PAT? CI will not start on a GITHUB_TOKEN PR) — merge manually."
 
       - name: Open tracking issue when discovery exhausts the search range
-        if: steps.discover.outputs.status == 'unknown'
+        if: steps.discover.outputs.status == 'exhausted'
         env:
           GH_TOKEN: ${{ github.token }}
           CUR: ${{ steps.discover.outputs.current }}

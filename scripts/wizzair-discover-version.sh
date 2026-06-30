@@ -18,7 +18,7 @@
 # Output (stdout, last line is machine-readable):
 #   STATUS=ok        CURRENT=<v>                 -> current still live, no change
 #   STATUS=rotated   CURRENT=<v> NEW=<w>         -> rotated; <w> is the new live version
-#   STATUS=unknown   CURRENT=<v>                 -> rotated but no candidate found in range
+#   STATUS=exhausted   CURRENT=<v>                 -> rotated but no candidate found in range
 #   STATUS=inconclusive CURRENT=<v>              -> probes blocked/throttled; try later
 # Exit codes: 0 ok | 10 rotated | 2 unknown | 3 inconclusive | 1 usage error
 set -euo pipefail
@@ -73,4 +73,4 @@ done
 if $saw_inconclusive; then
 	echo "STATUS=inconclusive CURRENT=$current"; exit 3
 fi
-echo "STATUS=unknown CURRENT=$current"; exit 2
+echo "STATUS=exhausted CURRENT=$current"; exit 2
