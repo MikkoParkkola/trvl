@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // loadTrenitaliaFixture reads the named file from the testdata/ directory.
@@ -193,5 +194,22 @@ func TestHasTrenitaliaRouteEmptyInput(t *testing.T) {
 	}
 	if HasTrenitaliaRoute("ro", "Rome") {
 		t.Error(`2-char fragment "ro" must not match`)
+	}
+}
+
+// TestSearchTrenitaliaLivePalermoCatania is a regression for the resolver
+// picking a peripheral station (e.g. "Palermo Aeroporto") that returns HTTP 400.
+// The city-level centroid must yield valid Palermo->Catania fares.
+func TestSearchTrenitaliaLivePalermoCatania(t *testing.T) {
+	if os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") != "1" {
+		t.Skip("set TRVL_TEST_LIVE_INTEGRATIONS=1 to run live Trenitalia tests")
+	}
+	date := time.Now().AddDate(0, 0, 14).Format("2006-01-02")
+	routes, err := SearchTrenitalia(context.Background(), "Palermo", "Catania", date, "EUR")
+	if err != nil {
+		t.Fatalf("Palermo->Catania should resolve via the city centroid, got: %v", err)
+	}
+	if len(routes) == 0 {
+		t.Fatal("expected at least one Palermo->Catania route")
 	}
 }

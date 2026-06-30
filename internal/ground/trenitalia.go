@@ -223,19 +223,32 @@ func resolveTrenitaliaStation(ctx context.Context, city string) (int, string, er
 	}
 
 	queryLower := strings.ToLower(query)
-	// Best: a non-multistation station whose name matches the queried city.
+	// Best: the city-level "all stations" (multistation) centroid whose name
+	// matches the query. The lefrecce site uses this for a city search; it
+	// returns valid fares from the city's central station and — critically —
+	// avoids picking a peripheral stop. The resolver often lists an airport or
+	// suburban station first (e.g. "Palermo Aeroporto", "Catania Acquicella"),
+	// and POSTing those station IDs returns HTTP 400, so a first-non-multistation
+	// match would silently break common city searches.
+	for _, r := range results {
+		if r.Multistation && strings.Contains(strings.ToLower(r.Name), queryLower) {
+			return r.ID, r.Name, nil
+		}
+	}
+	// Next: a non-multistation station whose name matches the query (cities with
+	// no centroid node, e.g. a single-station town).
 	for _, r := range results {
 		if !r.Multistation && strings.Contains(strings.ToLower(r.Name), queryLower) {
 			return r.ID, r.Name, nil
 		}
 	}
-	// Next: any non-multistation result.
+	// Next: any multistation centroid, then any result.
 	for _, r := range results {
-		if !r.Multistation {
+		if r.Multistation {
 			return r.ID, r.Name, nil
 		}
 	}
-	// Last resort: the first result (likely a multistation "all stations" node).
+	// Last resort: the first result.
 	return results[0].ID, results[0].Name, nil
 }
 
