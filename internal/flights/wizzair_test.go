@@ -7,9 +7,26 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// TestWizzDefaultVersionWellFormed guards the wizzDefaultVersion constant
+// against a malformed value. This matters because the version is bumped both by
+// hand and (per #430) by an automated discovery sentinel that rewrites the
+// constant from a CI probe — a typo or a non-version string there would silently
+// produce a broken request URL (be.wizzair.com/<garbage>/Api/...) that 404s on
+// every search. A semver-shaped guard catches that at build time.
+func TestWizzDefaultVersionWellFormed(t *testing.T) {
+	if !regexp.MustCompile(`^\d+\.\d+\.\d+$`).MatchString(wizzDefaultVersion) {
+		t.Fatalf("wizzDefaultVersion = %q, want a bare semver like \"29.4.0\"", wizzDefaultVersion)
+	}
+	// The resolved version must land in the timetable URL path verbatim.
+	if got := wizzTimetableURL(); !strings.Contains(got, "/"+wizzDefaultVersion+"/Api/") {
+		t.Fatalf("wizzTimetableURL() = %q, expected to contain /%s/Api/", got, wizzDefaultVersion)
+	}
+}
 
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
