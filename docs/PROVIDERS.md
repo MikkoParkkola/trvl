@@ -57,7 +57,7 @@ trvl ships with **Google Flights** (hand-rolled protobuf) on the default code pa
 | **Skiplagged** | Streamable HTTP MCP (`@skiplagged/mcp` v0.0.4, protocol 2025-06-18) | Genre-defining hidden-city + virtual-interlining defaults | default (one-way merge) / `--provider skiplagged` for solo | None |
 | **Ryanair** | Public API | Largest European low-cost network | `--provider ryanair` | None |
 | **Wizz Air** | Public API | Central/Eastern European low-cost routes | `--provider wizzair` | None |
-| **Transavia** | Official API | KLM-group low-cost (NL/FR bases) | `--provider transavia`, opt-in | None |
+| **Transavia** | Official API | KLM-group low-cost (NL/FR bases) | `--provider transavia`, opt-in | `TRANSAVIA_API_KEY` (free developer key) |
 | **easyJet** | Availability API | Western European low-cost | `--provider easyjet`, opt-in (`EASYJET_API_BASE`) | None (public path is Akamai bot-defended) |
 
 The default flight search merges results from Google Flights, Kiwi, and Skiplagged into a single sorted list, so plain `trvl flights HEL BCN 2026-07-01` already includes hidden-city / virtual-interlining options. Use `--provider skiplagged` to query Skiplagged on its own when you want to cross-validate or see only the hidden-city candidates.
