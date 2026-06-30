@@ -40,12 +40,12 @@ type trenitaliaLocationResult struct {
 
 // trenitaliaSolutionsRequest is the POST body for fare search.
 type trenitaliaSolutionsRequest struct {
-	DepartureLocationID int                            `json:"departureLocationId"`
-	ArrivalLocationID   int                            `json:"arrivalLocationId"`
-	DepartureTime       string                         `json:"departureTime"`
-	Adults              int                            `json:"adults"`
-	Children            int                            `json:"children"`
-	Criteria            trenitaliaCriteria             `json:"criteria"`
+	DepartureLocationID int                             `json:"departureLocationId"`
+	ArrivalLocationID   int                             `json:"arrivalLocationId"`
+	DepartureTime       string                          `json:"departureTime"`
+	Adults              int                             `json:"adults"`
+	Children            int                             `json:"children"`
+	Criteria            trenitaliaCriteria              `json:"criteria"`
 	AdvancedSearch      trenitaliaAdvancedSearchRequest `json:"advancedSearchRequest"`
 }
 
@@ -73,14 +73,14 @@ type trenitaliaSolutionWrapper struct {
 }
 
 type trenitaliaSolution struct {
-	Origin        string              `json:"origin"`
-	Destination   string              `json:"destination"`
-	DepartureTime string              `json:"departureTime"`
-	ArrivalTime   string              `json:"arrivalTime"`
-	Duration      string              `json:"duration"` // e.g. "3h 10min"
-	Status        string              `json:"status"`
-	Trains        []trenitaliaTrain   `json:"trains"`
-	Price         trenitaliaPrice     `json:"price"`
+	Origin        string            `json:"origin"`
+	Destination   string            `json:"destination"`
+	DepartureTime string            `json:"departureTime"`
+	ArrivalTime   string            `json:"arrivalTime"`
+	Duration      string            `json:"duration"` // e.g. "3h 10min"
+	Status        string            `json:"status"`
+	Trains        []trenitaliaTrain `json:"trains"`
+	Price         trenitaliaPrice   `json:"price"`
 }
 
 type trenitaliaTrain struct {
@@ -142,6 +142,12 @@ func HasTrenitaliaRoute(from, to string) bool {
 
 func isItalianCity(city string) bool {
 	lower := strings.ToLower(strings.TrimSpace(city))
+	// Guard empty/too-short input: an empty string is a substring of every
+	// catalog entry, so without this HasTrenitaliaRoute("", "Rome") would match
+	// and fire an avoidable live resolver call for missing-param searches.
+	if len(lower) < 3 {
+		return false
+	}
 	for _, c := range italianCities {
 		if strings.Contains(lower, c) || strings.Contains(c, lower) {
 			return true

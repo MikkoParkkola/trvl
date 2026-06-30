@@ -167,17 +167,31 @@ func TestSearchTrenitaliaLive(t *testing.T) {
 // the resolver mis-matching (e.g. "Rome" -> "Rometta Messinese" without it).
 func TestCanonicalItalianCity(t *testing.T) {
 	cases := map[string]string{
-		"Rome":   "Roma",
-		"rome":   "Roma",
-		"Turin":  "Torino",
-		"Naples": "Napoli",
-		"Milan":  "Milano",
-		"Roma":   "Roma",     // already Italian, unchanged
+		"Rome":    "Roma",
+		"rome":    "Roma",
+		"Turin":   "Torino",
+		"Naples":  "Napoli",
+		"Milan":   "Milano",
+		"Roma":    "Roma",    // already Italian, unchanged
 		"Bologna": "Bologna", // no alias, passthrough
 	}
 	for in, want := range cases {
 		if got := canonicalItalianCity(in); got != want {
 			t.Errorf("canonicalItalianCity(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// TestHasTrenitaliaRouteEmptyInput guards against blank city names matching via
+// the reverse-substring check (empty string is a substring of everything).
+func TestHasTrenitaliaRouteEmptyInput(t *testing.T) {
+	if HasTrenitaliaRoute("", "Rome") {
+		t.Error(`HasTrenitaliaRoute("", "Rome") = true, want false (blank must not match)`)
+	}
+	if HasTrenitaliaRoute("Milan", "") {
+		t.Error(`HasTrenitaliaRoute("Milan", "") = true, want false`)
+	}
+	if HasTrenitaliaRoute("ro", "Rome") {
+		t.Error(`2-char fragment "ro" must not match`)
 	}
 }
