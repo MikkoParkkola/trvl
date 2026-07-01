@@ -92,8 +92,8 @@ func TestSearchWizzair_SelfHealsOnRotation(t *testing.T) {
 	wizzHost = srv.URL
 	wizzVersion = stale
 	defer func() { wizzHost, wizzVersion = origHost, origVer }()
-	t.Setenv("WIZZAIR_API_VERSION", "")  // no operator pin
-	t.Setenv("WIZZAIR_NO_AUTOHEAL", "")  // healing enabled
+	t.Setenv("WIZZAIR_API_VERSION", "") // no operator pin
+	t.Setenv("WIZZAIR_NO_AUTOHEAL", "") // healing enabled
 
 	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
 	if err != nil {
