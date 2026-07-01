@@ -238,3 +238,21 @@ func TestItalianCityQualifiers(t *testing.T) {
 		t.Error("US Rome->Milan must not match Trenitalia")
 	}
 }
+
+// TestItalianCityUnqualifiedForeign guards the exact/station-word matching:
+// a foreign multi-word place containing an Italian city token must not match.
+func TestItalianCityUnqualifiedForeign(t *testing.T) {
+	foreign := []string{"Venice Beach", "Rome Georgia", "Milan Ohio", "Naples Florida"}
+	for _, in := range foreign {
+		if _, ok := italianCity(in); ok {
+			t.Errorf("italianCity(%q) = ok=true, want false", in)
+		}
+	}
+	// Real Italian station names must still resolve.
+	station := map[string]string{"Milano Centrale": "Milano", "Roma Termini": "Roma", "Como": "Como"}
+	for in, want := range station {
+		if got, ok := italianCity(in); !ok || got != want {
+			t.Errorf("italianCity(%q) = (%q,%v), want (%q,true)", in, got, ok, want)
+		}
+	}
+}

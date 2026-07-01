@@ -100,8 +100,8 @@ type trenitaliaPrice struct {
 // It is intentionally broad to avoid skipping valid routes (e.g. Milan→Como),
 // but it is a heuristic, not an authority — an unlisted small-town station fails
 // safe: HasTrenitaliaRoute returns false, Trenitalia is skipped, and the rest of
-// the ground search proceeds normally. Case-insensitive substring match at call
-// time (see isItalianCity).
+// the ground search proceeds normally. Matched exactly (or as a "<city>
+// <station-word>" name) by italianCity — never by loose substring.
 var italianCities = []string{
 	// Regional capitals + major hubs
 	"rome", "roma", "milan", "milano", "florence", "firenze",
@@ -164,24 +164,65 @@ func italianCity(city string) (string, bool) {
 		return raw, false
 	}
 
-	// English/Italian alias, whole-string then station-style token match.
+	// Exact city match: an alias ("Rome"/"Milano") or a bare broad-list city
+	// ("Como"). Exact-only — no substring — so a foreign place that merely
+	// contains a city token ("Venice Beach") does not match.
 	if it, ok := trenitaliaCanonical[lower]; ok {
 		return it, true
 	}
-	for _, tok := range strings.Fields(lower) {
-		if it, ok := trenitaliaCanonical[tok]; ok {
-			return it, true
-		}
+	if italianCitySet[lower] {
+		return raw, true
 	}
 
-	// Broader city list (cities without an English alias, e.g. Como, Lucca):
-	// query the resolver with the bare Italian name.
-	for _, c := range italianCities {
-		if strings.Contains(lower, c) || strings.Contains(c, lower) {
-			return raw, true
+	// Station-style: "<city> <station-word>..." — the first token is a known
+	// Italian city AND every remaining token is a recognized station qualifier
+	// ("Milano Centrale", "Roma Termini"). This admits real Italian station names
+	// while rejecting unqualified foreign multi-word places ("Venice Beach",
+	// "Rome Georgia").
+	fields := strings.Fields(lower)
+	rawFields := strings.Fields(raw)
+	if len(fields) >= 2 {
+		var cityQuery string
+		if it, ok := trenitaliaCanonical[fields[0]]; ok {
+			cityQuery = it
+		} else if italianCitySet[fields[0]] {
+			cityQuery = rawFields[0]
+		}
+		if cityQuery != "" {
+			allStationWords := true
+			for _, tok := range fields[1:] {
+				if !stationWords[tok] {
+					allStationWords = false
+					break
+				}
+			}
+			if allStationWords {
+				return cityQuery, true
+			}
 		}
 	}
 	return raw, false
+}
+
+// italianCitySet is the O(1) membership form of italianCities for exact lookup.
+var italianCitySet = func() map[string]bool {
+	m := make(map[string]bool, len(italianCities))
+	for _, c := range italianCities {
+		m[c] = true
+	}
+	return m
+}()
+
+// stationWords are common Italian rail-station qualifiers that may follow a city
+// name. A multi-word input is Italian only when every non-city token is one of
+// these, so "Milano Centrale" matches but "Venice Beach" does not.
+var stationWords = map[string]bool{
+	"centrale": true, "termini": true, "porta": true, "nuova": true,
+	"garibaldi": true, "tiburtina": true, "ostiense": true, "cadorna": true,
+	"lambrate": true, "rogoredo": true, "mestre": true, "marittima": true,
+	"afragola": true, "smn": true, "santa": true, "maria": true, "novella": true,
+	"aeroporto": true, "scalo": true, "centro": true, "stazione": true,
+	"nord": true, "sud": true, "est": true, "ovest": true,
 }
 
 // trenitaliaCanonical maps recognized city tokens (English aliases and the
@@ -367,9 +408,11 @@ func SearchTrenitalia(ctx context.Context, from, to, date, currency string) ([]m
 	payload := trenitaliaSolutionsRequest{
 		DepartureLocationID: fromID,
 		ArrivalLocationID:   toID,
-		DepartureTime:       date + "T08:00:00.000",
-		Adults:              1,
-		Children:            0,
+		// Midnight: the BFF returns departures at-or-after departureTime, so start
+		// at 00:00 to include early-morning trains on the requested date.
+		DepartureTime: date + "T00:00:00.000",
+		Adults:        1,
+		Children:      0,
 		Criteria: trenitaliaCriteria{
 			FrecceOnly:   false,
 			RegionalOnly: false,
