@@ -421,6 +421,19 @@ func SearchTrenitalia(ctx context.Context, from, to, date, currency string) ([]m
 			transfers = len(sol.Trains) - 1
 		}
 
+		// Prefer the actual station the train uses (from the solution) over the
+		// resolver name, which for a city search is the "all stations" centroid
+		// (e.g. "Milano ( Tutte Le Stazioni )") and would hide which station the
+		// traveller actually departs from / arrives at ("Milano Centrale").
+		depStation := sol.Origin
+		if depStation == "" {
+			depStation = fromName
+		}
+		arrStation := sol.Destination
+		if arrStation == "" {
+			arrStation = toName
+		}
+
 		routes = append(routes, models.GroundRoute{
 			Provider: "trenitalia",
 			Type:     "train",
@@ -429,12 +442,12 @@ func SearchTrenitalia(ctx context.Context, from, to, date, currency string) ([]m
 			Duration: parseTrenitaliaDuration(sol.Duration),
 			Departure: models.GroundStop{
 				City:    from,
-				Station: fromName,
+				Station: depStation,
 				Time:    depTime,
 			},
 			Arrival: models.GroundStop{
 				City:    to,
-				Station: toName,
+				Station: arrStation,
 				Time:    arrTime,
 			},
 			Transfers:  transfers,
