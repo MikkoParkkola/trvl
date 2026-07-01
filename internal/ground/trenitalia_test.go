@@ -213,3 +213,28 @@ func TestSearchTrenitaliaLivePalermoCatania(t *testing.T) {
 		t.Fatal("expected at least one Palermo->Catania route")
 	}
 }
+
+// TestItalianCityQualifiers guards the qualifier logic: an Italy qualifier keeps
+// the city Italian, a foreign qualifier makes it explicitly non-Italian so
+// Trenitalia is skipped rather than returning Italian fares for a US town.
+func TestItalianCityQualifiers(t *testing.T) {
+	italian := map[string]string{
+		"Milan, Italy": "Milano",
+		"Rome, IT":     "Roma",
+		"Roma, Italia": "Roma",
+	}
+	for in, want := range italian {
+		if got, ok := italianCity(in); !ok || got != want {
+			t.Errorf("italianCity(%q) = (%q,%v), want (%q,true)", in, got, ok, want)
+		}
+	}
+	foreign := []string{"Rome, Georgia", "Milan, Ohio", "Venice, California"}
+	for _, in := range foreign {
+		if _, ok := italianCity(in); ok {
+			t.Errorf("italianCity(%q) = ok=true, want false (foreign city must not resolve to Italy)", in)
+		}
+	}
+	if HasTrenitaliaRoute("Rome, Georgia", "Milan, Ohio") {
+		t.Error("US Rome->Milan must not match Trenitalia")
+	}
+}

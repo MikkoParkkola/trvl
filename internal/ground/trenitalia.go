@@ -126,26 +126,62 @@ var italianCities = []string{
 	"ragusa", "agrigento", "trapani", "caltanissetta", "enna", "sassari", "olbia",
 }
 
-// HasTrenitaliaRoute returns true if both city names appear to be Italian
-// cities served by Trenitalia (case-insensitive substring match).
+// HasTrenitaliaRoute returns true if both endpoints are Italian cities served by
+// Trenitalia. It shares italianCity() with the resolver query builder so the gate
+// and the canonicalizer can never disagree.
 func HasTrenitaliaRoute(from, to string) bool {
-	return isItalianCity(from) && isItalianCity(to)
+	_, ok1 := italianCity(from)
+	_, ok2 := italianCity(to)
+	return ok1 && ok2
 }
 
-func isItalianCity(city string) bool {
-	lower := strings.ToLower(strings.TrimSpace(city))
-	// Guard empty/too-short input: an empty string is a substring of every
-	// catalog entry, so without this HasTrenitaliaRoute("", "Rome") would match
-	// and fire an avoidable live resolver call for missing-param searches.
-	if len(lower) < 3 {
-		return false
-	}
-	for _, c := range italianCities {
-		if strings.Contains(lower, c) || strings.Contains(c, lower) {
-			return true
+// italianCity resolves a user city name to (canonical Italian query term, isItalian).
+//
+// It honors real-world inputs an agent may pass: an English alias ("Rome"), the
+// Italian form, a station-style name ("Milano Centrale"), and an Italy qualifier
+// ("Milan, Italy"). Critically, a NON-Italy qualifier makes it explicitly
+// foreign: "Rome, Georgia" / "Milan, Ohio" return isItalian=false, so Trenitalia
+// is skipped rather than returning Italian fares mislabeled with a US city.
+func italianCity(city string) (string, bool) {
+	raw := strings.TrimSpace(city)
+	lower := strings.ToLower(raw)
+
+	// A comma qualifier disambiguates the place. Keep it Italian only when the
+	// qualifier says Italy; any other qualifier means a foreign city of the same
+	// name (Rome, GA; Milan, OH) and must not resolve to the Italian city.
+	if i := strings.IndexByte(lower, ','); i >= 0 {
+		switch strings.TrimSpace(lower[i+1:]) {
+		case "italy", "italia", "it":
+			raw = strings.TrimSpace(raw[:strings.IndexByte(raw, ',')])
+			lower = strings.ToLower(raw)
+		default:
+			return raw, false
 		}
 	}
-	return false
+
+	// Guard empty/too-short input (an empty string is a substring of everything).
+	if len(lower) < 3 {
+		return raw, false
+	}
+
+	// English/Italian alias, whole-string then station-style token match.
+	if it, ok := trenitaliaCanonical[lower]; ok {
+		return it, true
+	}
+	for _, tok := range strings.Fields(lower) {
+		if it, ok := trenitaliaCanonical[tok]; ok {
+			return it, true
+		}
+	}
+
+	// Broader city list (cities without an English alias, e.g. Como, Lucca):
+	// query the resolver with the bare Italian name.
+	for _, c := range italianCities {
+		if strings.Contains(lower, c) || strings.Contains(c, lower) {
+			return raw, true
+		}
+	}
+	return raw, false
 }
 
 // trenitaliaCanonical maps recognized city tokens (English aliases and the
@@ -173,30 +209,13 @@ var trenitaliaCanonical = map[string]string{
 	"brindisi": "Brindisi",
 }
 
-// canonicalItalianCity returns the Italian resolver query term for a city name.
-// It tolerates real-world inputs an agent may pass: a country qualifier
-// ("Milan, Italy"), an English alias ("Rome"), or a station-style name
-// ("Milano Centrale", "Milan Centrale") — all normalise to the bare Italian city
-// ("Roma", "Milano") so the resolver returns the city centroid. Falls back to the
-// trimmed input when nothing is recognised.
+// canonicalItalianCity returns the Italian resolver query term for a city
+// name (delegates to italianCity for the shared normalization rules).
 func canonicalItalianCity(city string) string {
-	raw := strings.TrimSpace(city)
-	// Drop a trailing country/region qualifier: "Milan, Italy" -> "Milan".
-	if i := strings.IndexByte(raw, ','); i >= 0 {
-		raw = strings.TrimSpace(raw[:i])
+	if name, ok := italianCity(city); ok {
+		return name
 	}
-	lower := strings.ToLower(raw)
-	// Whole-string match (the common case: "Milan", "Roma").
-	if it, ok := trenitaliaCanonical[lower]; ok {
-		return it
-	}
-	// Token match for station-style names: "Milano Centrale" -> "Milano".
-	for _, tok := range strings.Fields(lower) {
-		if it, ok := trenitaliaCanonical[tok]; ok {
-			return it
-		}
-	}
-	return raw
+	return strings.TrimSpace(city)
 }
 
 // resolveTrenitaliaStation queries the locations search endpoint and returns
