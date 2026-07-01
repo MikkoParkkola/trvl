@@ -214,24 +214,21 @@ func TestKiwiDurationMinutes(t *testing.T) {
 
 func TestKiwiDisplayTime(t *testing.T) {
 	t.Run("local_time", func(t *testing.T) {
-		dt := kiwiDateTime{Local: "2026-04-18T14:30:00", UTC: "2026-04-18T12:30:00Z"}
-		got := kiwiDisplayTime(dt)
+		got := kiwiDisplayTime("2026-04-18T14:30:00")
 		if got != "2026-04-18T14:30" {
 			t.Errorf("got %q, want 2026-04-18T14:30", got)
 		}
 	})
 
 	t.Run("utc_fallback", func(t *testing.T) {
-		dt := kiwiDateTime{Local: "", UTC: "2026-04-18T12:30:00Z"}
-		got := kiwiDisplayTime(dt)
+		got := kiwiDisplayTime("2026-04-18T12:30:00Z")
 		if got != "2026-04-18T12:30" {
 			t.Errorf("got %q, want 2026-04-18T12:30", got)
 		}
 	})
 
 	t.Run("empty", func(t *testing.T) {
-		dt := kiwiDateTime{}
-		got := kiwiDisplayTime(dt)
+		got := kiwiDisplayTime("")
 		if got != "" {
 			t.Errorf("got %q, want empty", got)
 		}
