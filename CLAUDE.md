@@ -8,7 +8,7 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 
 ## Current Status
 
-- Go 1.26.4 · MCP 2025-11-25 · single binary · 23 transport providers (+ flight & hotel sources below)
+- Go 1.26.4 · MCP 2025-11-25 · single binary · 24 transport providers (+ flight & hotel sources below)
 - Hotel providers working: Google Hotels, Booking.com (browser cookies), Airbnb (SSR/Niobe), Hostelworld (autocomplete), Trivago (Streamable HTTP MCP), HomeToGo (public SSR+JSON, vacation rentals)
 - Flight providers: Google Flights (hand-rolled protobuf), Kiwi, Skiplagged (hidden-city, opt-in), Ryanair (public API), Wizz Air (public unauthenticated), Air France–KLM Offers API v3 (opt-in), Transavia (official API, opt-in), easyJet (opt-in, `EASYJET_API_BASE` — public availability API is Akamai bot-defended/403, so no default-on path; honest typed `AKAMAI_BLOCK` status when unconfigured). Travelpayouts/Aviasales price signals are an opt-in source surfaced via `trvl pricetrends` (not in the bookable merge).
 - Enrichment (free, unauthenticated): weather (Open-Meteo), air quality (`trvl air`), sun times (`trvl sun`, sunrise-sunset.org), bike-share (`trvl bikes`, CityBikes)
@@ -85,7 +85,7 @@ cmd/trvl/          CLI commands (cobra-style, one file per command)
 internal/          Domain packages (one per data source)
   flights/         Google Flights scraping + protobuf encoding
   hotels/          Google Hotels scraping
-  ground/          Buses, trains, ferries (21 providers)
+  ground/          Buses, trains, ferries (22 providers)
   destinations/    City intelligence (weather, safety, holidays)
   deals/           RSS deal feeds
   hacks/           Travel hack detectors (36 parallel)

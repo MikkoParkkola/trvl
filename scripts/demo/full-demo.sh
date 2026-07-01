@@ -14,4 +14,4 @@ echo "$ scripts/demo/one-prompt-demo.sh"
 scripts/demo/one-prompt-demo.sh
 echo
 
-echo "# 1 smart MCP tool · 66 legacy-compatible capabilities · 56 CLI commands · 23 providers · No API keys"
+echo "# 1 smart MCP tool · 66 legacy-compatible capabilities · 56 CLI commands · 24 providers · No API keys"

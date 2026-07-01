@@ -83,7 +83,7 @@ trvl flights STN DUB 2026-07-01 --return 2026-07-08 --provider ryanair
 
 ## Ground Transport Providers
 
-trvl searches 21 ground transport providers in parallel, covering most of Europe. Airport transfers add taxi estimates and rental cars add optional Skyscanner Car Hire, so trvl exposes 23 transport providers overall:
+trvl searches 22 ground transport providers in parallel, covering most of Europe. Airport transfers add taxi estimates and rental cars add optional Skyscanner Car Hire, so trvl exposes 24 transport providers overall:
 
 | Provider | Protocol | Coverage | Starting price | Auth |
 |----------|----------|----------|----------------|------|
@@ -94,6 +94,7 @@ trvl searches 21 ground transport providers in parallel, covering most of Europe
 | **NS** | REST | Dutch rail network | EUR 5+ | Public subscription key (embedded) |
 | **Renfe** | REST | Spanish AVE high-speed + regional | EUR 36+ | None |
 | **Trenitalia** | REST/BFF JSON | Italian high-speed + regional rail (Frecciarossa, Frecciargento, Intercity) | EUR 19+ | None |
+| **Italo (NTV)** | REST/BFF JSON | Italian high-speed rail (AGV/EVO; Milano/Torino/Venezia ↔ Roma/Napoli ↔ Salerno) | EUR 20+ | None (anonymous session token) |
 | **SNCF** | REST | French TGV, TER, Intercity | Varies | None by default; optional browser/curl fallback |
 | **Trainline** | REST | Aggregated: SNCF, DB, Eurostar, Trenitalia, … | Varies | None by default; optional browser/curl fallback |
 | **European Sleeper** | Reference schedule | Night trains (Brussels ↔ Amsterdam ↔ Berlin ↔ Prague) | EUR 49+ | None |
