@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Italo (NTV) Italian high-speed rail provider.** New default-on, no-key ground
+  provider covering Italo's high-speed network (AGV/EVO trains across the
+  Milano/Torino/Venezia to Roma/Napoli/Salerno corridors). Uses Italo's modern
+  public JSON API (anonymous session token then async availability search),
+  returns real fares and schedules, and filters out the Trenitalia-operated
+  solutions Italo resells so it never duplicates the dedicated Trenitalia
+  provider. Ground provider roster is now 22 (24 transport providers overall).
+
 ## [1.18.0] - 2026-06-28
 
 ### Added

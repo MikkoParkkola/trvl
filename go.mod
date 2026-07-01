@@ -11,6 +11,7 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc
 	github.com/chromedp/chromedp v0.15.1
 	github.com/cloudflare/circl v1.6.4
+	github.com/google/uuid v1.6.0
 	github.com/grafana/sobek v0.0.0-20260406180825-6d789dcdd177
 	github.com/klauspost/compress v1.18.6
 	github.com/refraction-networking/utls v1.8.2
@@ -47,7 +48,6 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/gonuts/binary v0.2.0 // indirect
 	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/keybase/go-keychain v0.0.1 // indirect

@@ -56,7 +56,7 @@ allowed-tools:
 
 # trvl — AI Travel Agent
 
-> **1 smart MCP tool, 66 legacy-compatible capabilities, 56 CLI commands, 36 hack detectors, 23 providers.** Single-binary travel agent for any AI assistant. No API keys required by default.
+> **1 smart MCP tool, 66 legacy-compatible capabilities, 56 CLI commands, 36 hack detectors, 24 providers.** Single-binary travel agent for any AI assistant. No API keys required by default.
 
 ## LOAD PROFILE — ALWAYS FIRST
 
@@ -93,8 +93,8 @@ The full compatibility surface is below.
 | `search_accommodations` | Criteria-first room/apartment search; ranked offers must match occupancy, amenities, refundability, and price basis |
 | `search_hotels` | Multi-provider hotel search |
 | `search_hotels_with_details` | Search + top-N room, cancellation, board, fee, and amenity enrichment |
-| `search_route` | Multi-modal: flights + Bus/train/ferry (21 providers) |
-| `search_ground` | Bus/train/ferry (21 providers) |
+| `search_route` | Multi-modal: flights + Bus/train/ferry (22 providers) |
+| `search_ground` | Bus/train/ferry (22 providers) |
 | `plan_trip` | Flights + hotels in one parallel search |
 | `optimize_booking` | Unified optimizer with 9 expansion strategies |
 | `get_preferences` / `update_preferences` | User profile + travel hints |

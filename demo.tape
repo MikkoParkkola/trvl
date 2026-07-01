@@ -13,7 +13,7 @@ Set CursorBlink false
 # not fail when live travel providers throttle. Run scripts/demo/full-demo.sh
 # directly to inspect the source transcript.
 # It renders scripts/demo/one-prompt-demo.sh and must show:
-# 1 smart MCP tool · 66 legacy-compatible capabilities · 56 CLI commands · 23 providers · No API keys
+# 1 smart MCP tool · 66 legacy-compatible capabilities · 56 CLI commands · 24 providers · No API keys
 
 Type "scripts/demo/full-demo.sh"
 Enter

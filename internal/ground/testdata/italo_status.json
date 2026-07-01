@@ -1,0 +1,139 @@
+{
+  "fareTypes": "nativeFares",
+  "trips": [
+    {
+      "departureStation": "MC_",
+      "arrivalStation": "RMT",
+      "travelSolutions": [
+        {
+          "travelSolutionId": "sol-italo-1",
+          "journeys": [
+            {
+              "serviceProvider": "ITALO",
+              "departureStation": "MC_",
+              "arrivalStation": "RMT",
+              "segments": [
+                {
+                  "departureStation": "MC_",
+                  "arrivalStation": "RMT",
+                  "std": "2026-07-15T08:00:00",
+                  "sta": "2026-07-15T11:10:00",
+                  "trainNumber": "9907",
+                  "equipmentType": "AGV",
+                  "fares": [
+                    {
+                      "productClass": "S",
+                      "paxFares": [
+                        { "paxType": "ADT", "fullPaxFarePrice": 89.9, "fullPaxDiscountPrice": 59.9 }
+                      ]
+                    },
+                    {
+                      "productClass": "P",
+                      "paxFares": [
+                        { "paxType": "ADT", "fullPaxFarePrice": 120.0, "fullPaxDiscountPrice": 120.0 }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "travelSolutionId": "sol-trenitalia",
+          "journeys": [
+            {
+              "serviceProvider": "TRENITALIA",
+              "departureStation": "MC_",
+              "arrivalStation": "RMT",
+              "segments": [
+                {
+                  "departureStation": "MC_",
+                  "arrivalStation": "RMT",
+                  "std": "2026-07-15T09:00:00",
+                  "sta": "2026-07-15T12:00:00",
+                  "trainNumber": "9512",
+                  "equipmentType": "ETR",
+                  "fares": [
+                    {
+                      "productClass": "B",
+                      "paxFares": [
+                        { "paxType": "ADT", "fullPaxFarePrice": 45.0, "fullPaxDiscountPrice": 45.0 }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "travelSolutionId": "sol-italo-soldout",
+          "journeys": [
+            {
+              "serviceProvider": "ITALO",
+              "departureStation": "MC_",
+              "arrivalStation": "RMT",
+              "segments": [
+                {
+                  "departureStation": "MC_",
+                  "arrivalStation": "RMT",
+                  "std": "2026-07-15T10:00:00",
+                  "sta": "2026-07-15T13:15:00",
+                  "trainNumber": "9915",
+                  "equipmentType": "AGV",
+                  "fares": [
+                    {
+                      "productClass": "S",
+                      "paxFares": [
+                        { "paxType": "ADT", "fullPaxFarePrice": 0, "fullPaxDiscountPrice": 0 }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "travelSolutionId": "sol-italo-connecting",
+          "numberOfChanges": 1,
+          "journeys": [
+            {
+              "serviceProvider": "ITALO",
+              "departureStation": "MC_",
+              "arrivalStation": "RMT",
+              "segments": [
+                {
+                  "departureStation": "MC_",
+                  "arrivalStation": "BC_",
+                  "std": "2026-07-15T11:00:00",
+                  "sta": "2026-07-15T12:00:00",
+                  "trainNumber": "8100",
+                  "equipmentType": "AGV",
+                  "fares": [
+                    {
+                      "productClass": "S",
+                      "paxFares": [
+                        { "paxType": "ADT", "fullPaxFarePrice": 40.0, "fullPaxDiscountPrice": 40.0 }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "departureStation": "BC_",
+                  "arrivalStation": "RMT",
+                  "std": "2026-07-15T12:20:00",
+                  "sta": "2026-07-15T14:30:00",
+                  "trainNumber": "8200",
+                  "equipmentType": "AGV",
+                  "fares": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -449,6 +449,13 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		})
 	}
 
+	// Italo (NTV) — only if both cities are on Italo's high-speed network.
+	if useProvider("italo") && HasItaloRoute(from, to) {
+		launchProvider(&wg, results, "italo", func() ([]models.GroundRoute, error) {
+			return SearchItalo(ctx, from, to, date, opts.Currency)
+		})
+	}
+
 	// Tallink/Silja Line — ferry routes in the Baltic Sea.
 	if useProvider("tallink") && HasTallinkRoute(from, to) {
 		launchProvider(&wg, results, "tallink", func() ([]models.GroundRoute, error) {
