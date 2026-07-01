@@ -30,7 +30,7 @@ Add to `claude_desktop_config.json`:
 - **1 smart `travel` MCP tool** — natural-language router; advertises one tool (~378 tokens) instead of a full per-domain list (~33,500), so your AI's context window stays lean. Older clients that call legacy per-domain tool names still work, reachable as legacy-compatible capabilities via the `intent` field (set `TRVL_MCP_TOOL_MODE=legacy` to advertise the full list for clients that require it).
 - Flight search (Google Flights, Kiwi)
 - Criteria-first accommodation search plus hotel discovery (Google Hotels, Booking.com, Airbnb, Hostelworld, Trivago) and verified room/detail flows for shortlisted candidates
-- Ground transport (buses, trains, ferries — 20 providers)
+- Ground transport (buses, trains, ferries — 21 providers)
 - Destination intelligence (weather, safety, holidays, events)
 - Trip planning and price alerts
 - Travel hacks detection (36 detectors)

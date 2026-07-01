@@ -16,7 +16,7 @@ cmd/trvl                          CLI entry point (cobra)
   |     +-- internal/jsonutil
   |     +-- internal/models
   |
-  +-- internal/ground             Bus + train + ferry search (20 providers in parallel)
+  +-- internal/ground             Bus + train + ferry search (21 providers in parallel)
   |     +-- flixbus.go            FlixBus REST API (global.api.flixbus.com)
   |     +-- regiojet.go           RegioJet REST API (brn-ybus-pubapi.sa.cz)
   |     +-- eurostar.go           Eurostar GraphQL (site-api.eurostar.com)
@@ -27,6 +27,7 @@ cmd/trvl                          CLI entry point (cobra)
   |     +-- sncf.go               SNCF Connect API (curl BFF fallback + Go CDP)
   |     +-- trainline.go          Trainline aggregated rail API (browser cookie auth)
   |     +-- renfe.go              Renfe Spanish Railways (REST price calendar)
+  |     +-- trenitalia.go         Trenitalia Italian Railways (lefrecce.it BFF JSON)
   |     +-- transitous.go         Transitous/MOTIS2 (routing.spicebus.org)
   |     +-- europeansleeper.go    European Sleeper night trains
   |     +-- snalltaget.go         Snälltåget Swedish night trains
@@ -258,7 +259,7 @@ Create `internal/ground/amtrak_test.go` with:
 - **Single binary**: `trvl` compiles to a ~15MB static binary. Users download it and it works. No Python environment, no Node.js, no Docker. `curl | tar | run`.
 - **No runtime dependencies**: No pip install, no npm install, no virtualenv. The binary is the whole application.
 - **Fast compilation**: The full test suite (980+ tests) runs in seconds. CI builds complete in under a minute.
-- **Concurrency**: Goroutines make parallel provider search natural. Searching 20 ground transport providers in parallel is a `sync.WaitGroup` and 20 goroutines.
+- **Concurrency**: Goroutines make parallel provider search natural. Searching 21 ground transport providers in parallel is a `sync.WaitGroup` and 21 goroutines.
 - **MCP fit**: MCP servers are long-running stdio processes. Go's low memory footprint and fast startup make it ideal for a tool that launches per-conversation.
 
 ### Why reverse-engineer vs official APIs?
@@ -277,7 +278,7 @@ When you search "Prague to Vienna", trvl queries all relevant ground providers s
 
 ```
 Sequential: FlixBus(2s) + RegioJet(1s) + DB(3s) + ÖBB(4s) + NS(1s) + VR(1s) + SNCF(2s) + Trainline(2s) + Renfe(4s) + Eurostar(1s) + Transitous(1s) + ferries(1s) = 23s
-Parallel:   max(all 20 providers)                                                                                                                                   = 4s
+Parallel:   max(all 21 providers)                                                                                                                                   = 4s
 ```
 
 Parallel search gives you the best price across all providers in the time it takes to query the slowest one. The implementation is straightforward Go concurrency: one goroutine per provider, results collected via a channel, merged and sorted after all complete.

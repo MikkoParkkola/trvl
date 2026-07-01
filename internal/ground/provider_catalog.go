@@ -12,6 +12,7 @@ var marketedProviderNames = []string{
 	"trainline",
 	"transitous",
 	"renfe",
+	"trenitalia",
 	"european_sleeper",
 	"snalltaget",
 	"tallink",

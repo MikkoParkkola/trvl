@@ -4,8 +4,8 @@ import "testing"
 
 func TestMarketedProviderNamesRemainUnique(t *testing.T) {
 	names := MarketedProviderNames()
-	if len(names) != 20 {
-		t.Fatalf("marketed provider count = %d, want 20", len(names))
+	if len(names) != 21 {
+		t.Fatalf("marketed provider count = %d, want 21", len(names))
 	}
 
 	seen := make(map[string]struct{}, len(names))

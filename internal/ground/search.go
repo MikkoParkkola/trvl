@@ -442,6 +442,13 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		})
 	}
 
+	// Trenitalia — only if both cities are Italian (high-speed + regional).
+	if useProvider("trenitalia") && HasTrenitaliaRoute(from, to) {
+		launchProvider(&wg, results, "trenitalia", func() ([]models.GroundRoute, error) {
+			return SearchTrenitalia(ctx, from, to, date, opts.Currency)
+		})
+	}
+
 	// Tallink/Silja Line — ferry routes in the Baltic Sea.
 	if useProvider("tallink") && HasTallinkRoute(from, to) {
 		launchProvider(&wg, results, "tallink", func() ([]models.GroundRoute, error) {

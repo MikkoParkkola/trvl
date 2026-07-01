@@ -1,0 +1,528 @@
+package ground
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
+)
+
+// trenitaliaHost is the base host for the Trenitalia BFF API.
+// Overridable in tests via httptest.Server.
+var trenitaliaHost = "https://www.lefrecce.it"
+
+// trenitaliaLimiter: conservative 5 req/min to avoid hammering the BFF.
+var trenitaliaLimiter = newProviderLimiter(12 * time.Second)
+
+// trenitaliaClient is a shared HTTP client for Trenitalia API calls.
+var trenitaliaClient = &http.Client{
+	Timeout: 30 * time.Second,
+}
+
+// trenitaliaLocationResult is one entry from the station resolver endpoint.
+type trenitaliaLocationResult struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	DisplayName  string `json:"displayName"`
+	Timezone     string `json:"timezone"`
+	Multistation bool   `json:"multistation"`
+	CentroidID   int    `json:"centroidId"`
+}
+
+// trenitaliaSolutionsRequest is the POST body for fare search.
+type trenitaliaSolutionsRequest struct {
+	DepartureLocationID int                             `json:"departureLocationId"`
+	ArrivalLocationID   int                             `json:"arrivalLocationId"`
+	DepartureTime       string                          `json:"departureTime"`
+	Adults              int                             `json:"adults"`
+	Children            int                             `json:"children"`
+	Criteria            trenitaliaCriteria              `json:"criteria"`
+	AdvancedSearch      trenitaliaAdvancedSearchRequest `json:"advancedSearchRequest"`
+}
+
+type trenitaliaCriteria struct {
+	FrecceOnly   bool   `json:"frecceOnly"`
+	RegionalOnly bool   `json:"regionalOnly"`
+	NoChanges    bool   `json:"noChanges"`
+	Order        string `json:"order"`
+	Limit        int    `json:"limit"`
+	Offset       int    `json:"offset"`
+}
+
+type trenitaliaAdvancedSearchRequest struct {
+	BestFare bool `json:"bestFare"`
+}
+
+// trenitaliaSolutionsResponse is the top-level response from the solutions endpoint.
+type trenitaliaSolutionsResponse struct {
+	SearchID  string                      `json:"searchId"`
+	Solutions []trenitaliaSolutionWrapper `json:"solutions"`
+}
+
+type trenitaliaSolutionWrapper struct {
+	Solution trenitaliaSolution `json:"solution"`
+}
+
+type trenitaliaSolution struct {
+	Origin        string            `json:"origin"`
+	Destination   string            `json:"destination"`
+	DepartureTime string            `json:"departureTime"`
+	ArrivalTime   string            `json:"arrivalTime"`
+	Duration      string            `json:"duration"` // e.g. "3h 10min"
+	Status        string            `json:"status"`
+	Trains        []trenitaliaTrain `json:"trains"`
+	Price         trenitaliaPrice   `json:"price"`
+}
+
+type trenitaliaTrain struct {
+	TrainCategory string `json:"trainCategory"`
+	Acronym       string `json:"acronym"`
+	Name          string `json:"name"`
+}
+
+type trenitaliaPrice struct {
+	Currency string  `json:"currency"`
+	Amount   float64 `json:"amount"`
+}
+
+// italianCities is the fast-path gate: a set of cities served by Trenitalia
+// high-speed/regional rail, covering all 20 regional capitals, every provincial
+// capital, and the major rail hubs and tourist destinations (lakes, coast).
+// It is intentionally broad to avoid skipping valid routes (e.g. Milan→Como),
+// but it is a heuristic, not an authority — an unlisted small-town station fails
+// safe: HasTrenitaliaRoute returns false, Trenitalia is skipped, and the rest of
+// the ground search proceeds normally. Matched exactly (or as a "<city>
+// <station-word>" name) by italianCity — never by loose substring.
+var italianCities = []string{
+	// Regional capitals + major hubs
+	"rome", "roma", "milan", "milano", "florence", "firenze",
+	"venice", "venezia", "naples", "napoli", "turin", "torino",
+	"bologna", "genoa", "genova", "verona", "trieste", "trento",
+	"bolzano", "aosta", "perugia", "ancona", "l'aquila", "campobasso",
+	"bari", "potenza", "catanzaro", "reggio calabria", "palermo", "cagliari",
+	// Provincial capitals + tourist/rail cities (north)
+	"como", "lecco", "varese", "monza", "pavia", "cremona", "mantova", "mantua",
+	"brescia", "bergamo", "lodi", "sondrio", "novara", "vercelli", "asti",
+	"alessandria", "cuneo", "biella", "savona", "imperia", "sanremo", "la spezia",
+	"piacenza", "parma", "modena", "reggio emilia", "ferrara", "ravenna",
+	"forli", "cesena", "rimini", "padova", "padua", "vicenza", "treviso",
+	"belluno", "rovigo", "udine", "pordenone", "gorizia",
+	// Centre
+	"pisa", "livorno", "lucca", "pistoia", "prato", "arezzo", "siena", "grosseto",
+	"terni", "viterbo", "rieti", "frosinone", "latina",
+	// South + islands
+	"pescara", "chieti", "teramo", "caserta", "salerno", "avellino", "benevento",
+	"sorrento", "foggia", "lecce", "taranto", "brindisi", "barletta",
+	"cosenza", "crotone", "vibo valentia", "messina", "catania", "siracusa",
+	"ragusa", "agrigento", "trapani", "caltanissetta", "enna", "sassari", "olbia",
+}
+
+// HasTrenitaliaRoute returns true if both endpoints are Italian cities served by
+// Trenitalia. It shares italianCity() with the resolver query builder so the gate
+// and the canonicalizer can never disagree.
+func HasTrenitaliaRoute(from, to string) bool {
+	_, ok1 := italianCity(from)
+	_, ok2 := italianCity(to)
+	return ok1 && ok2
+}
+
+// italianCity resolves a user city name to (canonical Italian query term, isItalian).
+//
+// It honors real-world inputs an agent may pass: an English alias ("Rome"), the
+// Italian form, a station-style name ("Milano Centrale"), and an Italy qualifier
+// ("Milan, Italy"). Critically, a NON-Italy qualifier makes it explicitly
+// foreign: "Rome, Georgia" / "Milan, Ohio" return isItalian=false, so Trenitalia
+// is skipped rather than returning Italian fares mislabeled with a US city.
+func italianCity(city string) (string, bool) {
+	raw := strings.TrimSpace(city)
+	lower := strings.ToLower(raw)
+
+	// A comma qualifier disambiguates the place. Keep it Italian only when the
+	// qualifier says Italy; any other qualifier means a foreign city of the same
+	// name (Rome, GA; Milan, OH) and must not resolve to the Italian city.
+	if i := strings.IndexByte(lower, ','); i >= 0 {
+		switch strings.TrimSpace(lower[i+1:]) {
+		case "italy", "italia", "it":
+			raw = strings.TrimSpace(raw[:strings.IndexByte(raw, ',')])
+			lower = strings.ToLower(raw)
+		default:
+			return raw, false
+		}
+	}
+
+	// Guard empty/too-short input (an empty string is a substring of everything).
+	if len(lower) < 3 {
+		return raw, false
+	}
+
+	// Exact city match: an alias ("Rome"/"Milano") or a bare broad-list city
+	// ("Como"). Exact-only — no substring — so a foreign place that merely
+	// contains a city token ("Venice Beach") does not match.
+	if it, ok := trenitaliaCanonical[lower]; ok {
+		return it, true
+	}
+	if italianCitySet[lower] {
+		return raw, true
+	}
+
+	// Station-style: "<city> <station-word>..." where <city> is the LONGEST known
+	// city prefix (so multi-word cities like "La Spezia Centrale" and "Reggio
+	// Calabria Centrale" work), and every remaining token is a recognized station
+	// qualifier. Admits real Italian station names while rejecting unqualified
+	// foreign multi-word places ("Venice Beach", "Rome Georgia"). Exotic station
+	// names whose suffix isn't a known station word fail safe (provider skipped).
+	fields := strings.Fields(lower)
+	rawFields := strings.Fields(raw)
+	for k := len(fields) - 1; k >= 1; k-- {
+		prefix := strings.Join(fields[:k], " ")
+		var cityQuery string
+		if it, ok := trenitaliaCanonical[prefix]; ok {
+			cityQuery = it
+		} else if italianCitySet[prefix] {
+			cityQuery = strings.Join(rawFields[:k], " ")
+		}
+		if cityQuery == "" {
+			continue
+		}
+		allStationWords := true
+		for _, tok := range fields[k:] {
+			if !stationWords[tok] {
+				allStationWords = false
+				break
+			}
+		}
+		if allStationWords {
+			return cityQuery, true
+		}
+	}
+	return raw, false
+}
+
+// italianCitySet is the O(1) membership form of italianCities for exact lookup.
+var italianCitySet = func() map[string]bool {
+	m := make(map[string]bool, len(italianCities))
+	for _, c := range italianCities {
+		m[c] = true
+	}
+	return m
+}()
+
+// stationWords are common Italian rail-station qualifiers that may follow a city
+// name. A multi-word input is Italian only when every non-city token is one of
+// these, so "Milano Centrale" matches but "Venice Beach" does not.
+var stationWords = map[string]bool{
+	"centrale": true, "termini": true, "porta": true, "nuova": true,
+	"garibaldi": true, "tiburtina": true, "ostiense": true, "cadorna": true,
+	"lambrate": true, "rogoredo": true, "mestre": true, "marittima": true,
+	"afragola": true, "smn": true, "santa": true, "maria": true, "novella": true,
+	"aeroporto": true, "scalo": true, "centro": true, "stazione": true,
+	"nord": true, "sud": true, "est": true, "ovest": true,
+	"lucia": true, "s.": true, "s": true, "p.ta": true, "ss": true,
+	"susa": true, "campo": true, "marte": true, "spezia": true,
+}
+
+// trenitaliaCanonical maps recognized city tokens (English aliases and the
+// Italian forms) to the Italian name the lefrecce.it resolver indexes. Without
+// canonicalisation, querying the resolver with an English alias mis-resolves:
+// "Rome" returns "Rometta Messinese" (Sicily), "Turin" returns "Ponte Della
+// Venturina" — both unrelated. Querying with the Italian name returns the real
+// city centroid (Roma, Torino).
+var trenitaliaCanonical = map[string]string{
+	"rome": "Roma", "roma": "Roma",
+	"milan": "Milano", "milano": "Milano",
+	"florence": "Firenze", "firenze": "Firenze",
+	"venice": "Venezia", "venezia": "Venezia",
+	"naples": "Napoli", "napoli": "Napoli",
+	"turin": "Torino", "torino": "Torino",
+	"genoa": "Genova", "genova": "Genova",
+	"padua": "Padova", "padova": "Padova",
+	"bologna": "Bologna", "verona": "Verona", "bari": "Bari",
+	"mantua": "Mantova", "mantova": "Mantova",
+	"catania": "Catania", "palermo": "Palermo", "messina": "Messina",
+	"salerno": "Salerno", "trieste": "Trieste", "brescia": "Brescia",
+	"bergamo": "Bergamo", "trento": "Trento", "ferrara": "Ferrara",
+	"pisa": "Pisa", "siena": "Siena", "perugia": "Perugia",
+	"ancona": "Ancona", "rimini": "Rimini", "pescara": "Pescara",
+	"lecce": "Lecce", "taranto": "Taranto", "foggia": "Foggia",
+	"brindisi": "Brindisi",
+}
+
+// canonicalItalianCity returns the Italian resolver query term for a city
+// name (delegates to italianCity for the shared normalization rules).
+func canonicalItalianCity(city string) string {
+	if name, ok := italianCity(city); ok {
+		return name
+	}
+	return strings.TrimSpace(city)
+}
+
+// resolveTrenitaliaStation queries the locations search endpoint and returns
+// the best matching station ID for the given city name.
+//
+// English aliases are canonicalised to Italian first (see trenitaliaCanonical),
+// then among the results we prefer a non-multistation station whose name
+// actually contains the queried city term — guarding against the resolver
+// returning an unrelated first hit (e.g. a fuzzy match in a different region).
+// Falls back to the first non-multistation result, then the first result.
+func resolveTrenitaliaStation(ctx context.Context, city string) (int, string, error) {
+	query := canonicalItalianCity(city)
+	apiURL := fmt.Sprintf("%s/Channels.Website.BFF.WEB/website/locations/search?name=%s&limit=5",
+		trenitaliaHost, url.QueryEscape(query))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return 0, "", fmt.Errorf("trenitalia station resolve: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "trvl/1.0 (travel agent; github.com/MikkoParkkola/trvl)")
+
+	resp, err := trenitaliaClient.Do(req)
+	if err != nil {
+		return 0, "", fmt.Errorf("trenitalia station resolve: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return 0, "", fmt.Errorf("trenitalia station resolve: HTTP %d: %s", resp.StatusCode, body)
+	}
+
+	var results []trenitaliaLocationResult
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 512*1024)).Decode(&results); err != nil {
+		return 0, "", fmt.Errorf("trenitalia station resolve decode: %w", err)
+	}
+
+	if len(results) == 0 {
+		return 0, "", fmt.Errorf("trenitalia: no station found for %q", city)
+	}
+
+	queryLower := strings.ToLower(query)
+	// Best: the city-level "all stations" (multistation) centroid whose name
+	// matches the query. The lefrecce site uses this for a city search; it
+	// returns valid fares from the city's central station and — critically —
+	// avoids picking a peripheral stop. The resolver often lists an airport or
+	// suburban station first (e.g. "Palermo Aeroporto", "Catania Acquicella"),
+	// and POSTing those station IDs returns HTTP 400, so a first-non-multistation
+	// match would silently break common city searches.
+	for _, r := range results {
+		if r.Multistation && strings.Contains(strings.ToLower(r.Name), queryLower) {
+			return r.ID, r.Name, nil
+		}
+	}
+	// Next: a non-multistation station whose name matches the query (cities with
+	// no centroid node, e.g. a single-station town).
+	for _, r := range results {
+		if !r.Multistation && strings.Contains(strings.ToLower(r.Name), queryLower) {
+			return r.ID, r.Name, nil
+		}
+	}
+	// Next: any multistation centroid, then any result.
+	for _, r := range results {
+		if r.Multistation {
+			return r.ID, r.Name, nil
+		}
+	}
+	// Last resort: the first result.
+	return results[0].ID, results[0].Name, nil
+}
+
+// parseTrenitaliaDuration converts duration strings like "3h 10min", "45min",
+// "2h" into a total number of minutes.
+func parseTrenitaliaDuration(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	total := 0
+	// Extract hours.
+	if hIdx := strings.Index(s, "h"); hIdx >= 0 {
+		hStr := strings.TrimSpace(s[:hIdx])
+		if h, err := strconv.Atoi(hStr); err == nil {
+			total += h * 60
+		}
+		s = strings.TrimSpace(s[hIdx+1:])
+	}
+	// Extract minutes.
+	minStr := strings.TrimSuffix(strings.TrimSpace(s), "min")
+	minStr = strings.TrimSpace(minStr)
+	if minStr != "" {
+		if m, err := strconv.Atoi(minStr); err == nil {
+			total += m
+		}
+	}
+	return total
+}
+
+// buildTrenitaliaBookingURL constructs a search deep-link for lefrecce.it.
+func buildTrenitaliaBookingURL(fromID, toID int, date string) string {
+	return fmt.Sprintf(
+		"https://www.lefrecce.it/Channels.Website.WEB/website/#/it/results?departureLocationId=%d&arrivalLocationId=%d&departureTime=%sT00:00:00.000&adults=1&children=0",
+		fromID, toID, date,
+	)
+}
+
+// normaliseISOTime trims the offset and milliseconds from a Trenitalia
+// timestamp (e.g. "2026-07-15T08:00:00.000+02:00" → "2026-07-15T08:00:00").
+func normaliseISOTime(s string) string {
+	// Strip milliseconds and timezone offset.
+	if dot := strings.Index(s, "."); dot >= 0 {
+		s = s[:dot]
+	}
+	return s
+}
+
+// SearchTrenitalia searches Trenitalia (lefrecce.it BFF) for high-speed and
+// regional rail connections between two Italian cities.
+//
+// from/to are city names (e.g. "Milan", "Rome"). date is YYYY-MM-DD.
+// The function resolves names to Trenitalia station IDs, POSTs the solutions
+// request, and maps SALEABLE results with positive prices to GroundRoute values.
+func SearchTrenitalia(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
+	// Trenitalia prices exclusively in EUR (the BFF returns € amounts), so the
+	// currency parameter is accepted for signature parity with the other ground
+	// providers but does not drive a conversion — results are always EUR.
+	_ = currency
+
+	if _, err := models.ParseDate(date); err != nil {
+		return nil, fmt.Errorf("trenitalia: invalid date %q: %w", date, err)
+	}
+
+	if err := trenitaliaLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("trenitalia rate limiter: %w", err)
+	}
+
+	fromID, fromName, err := resolveTrenitaliaStation(ctx, from)
+	if err != nil {
+		return nil, fmt.Errorf("trenitalia: resolve origin %q: %w", from, err)
+	}
+	toID, toName, err := resolveTrenitaliaStation(ctx, to)
+	if err != nil {
+		return nil, fmt.Errorf("trenitalia: resolve destination %q: %w", to, err)
+	}
+
+	slog.Debug("trenitalia search", "from", fromName, "to", toName, "date", date, "fromID", fromID, "toID", toID)
+
+	payload := trenitaliaSolutionsRequest{
+		DepartureLocationID: fromID,
+		ArrivalLocationID:   toID,
+		// Midnight: the BFF returns departures at-or-after departureTime, so start
+		// at 00:00 to include early-morning trains on the requested date.
+		DepartureTime: date + "T00:00:00.000",
+		Adults:        1,
+		Children:      0,
+		Criteria: trenitaliaCriteria{
+			FrecceOnly:   false,
+			RegionalOnly: false,
+			NoChanges:    false,
+			Order:        "DEPARTURE_DATE",
+			Limit:        10,
+			Offset:       0,
+		},
+		AdvancedSearch: trenitaliaAdvancedSearchRequest{BestFare: false},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("trenitalia marshal: %w", err)
+	}
+
+	apiURL := trenitaliaHost + "/Channels.Website.BFF.WEB/website/ticket/solutions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "trvl/1.0 (travel agent; github.com/MikkoParkkola/trvl)")
+
+	resp, err := trenitaliaClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("trenitalia search: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("trenitalia: HTTP %d: %s", resp.StatusCode, respBody)
+	}
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
+	if err != nil {
+		return nil, fmt.Errorf("trenitalia read: %w", err)
+	}
+	slog.Debug("trenitalia raw response", "status", resp.StatusCode, "body_len", len(respBody))
+
+	var apiResp trenitaliaSolutionsResponse
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("trenitalia decode: %w", err)
+	}
+
+	bookingURL := buildTrenitaliaBookingURL(fromID, toID, date)
+	var routes []models.GroundRoute
+
+	for _, wrapper := range apiResp.Solutions {
+		sol := wrapper.Solution
+
+		// Skip non-bookable or zero-priced solutions.
+		if sol.Status != "SALEABLE" {
+			continue
+		}
+		if sol.Price.Amount <= 0 {
+			continue
+		}
+
+		depTime := normaliseISOTime(sol.DepartureTime)
+		arrTime := normaliseISOTime(sol.ArrivalTime)
+
+		// Transfers = number of trains minus 1 (direct = 0).
+		transfers := 0
+		if len(sol.Trains) > 1 {
+			transfers = len(sol.Trains) - 1
+		}
+
+		// Prefer the actual station the train uses (from the solution) over the
+		// resolver name, which for a city search is the "all stations" centroid
+		// (e.g. "Milano ( Tutte Le Stazioni )") and would hide which station the
+		// traveller actually departs from / arrives at ("Milano Centrale").
+		depStation := sol.Origin
+		if depStation == "" {
+			depStation = fromName
+		}
+		arrStation := sol.Destination
+		if arrStation == "" {
+			arrStation = toName
+		}
+
+		routes = append(routes, models.GroundRoute{
+			Provider: "trenitalia",
+			Type:     "train",
+			Price:    sol.Price.Amount,
+			Currency: "EUR",
+			Duration: parseTrenitaliaDuration(sol.Duration),
+			Departure: models.GroundStop{
+				City:    from,
+				Station: depStation,
+				Time:    depTime,
+			},
+			Arrival: models.GroundStop{
+				City:    to,
+				Station: arrStation,
+				Time:    arrTime,
+			},
+			Transfers:  transfers,
+			BookingURL: bookingURL,
+		})
+	}
+
+	slog.Debug("trenitalia results", "routes", len(routes))
+	return routes, nil
+}
