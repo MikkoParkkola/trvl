@@ -174,31 +174,34 @@ func italianCity(city string) (string, bool) {
 		return raw, true
 	}
 
-	// Station-style: "<city> <station-word>..." — the first token is a known
-	// Italian city AND every remaining token is a recognized station qualifier
-	// ("Milano Centrale", "Roma Termini"). This admits real Italian station names
-	// while rejecting unqualified foreign multi-word places ("Venice Beach",
-	// "Rome Georgia").
+	// Station-style: "<city> <station-word>..." where <city> is the LONGEST known
+	// city prefix (so multi-word cities like "La Spezia Centrale" and "Reggio
+	// Calabria Centrale" work), and every remaining token is a recognized station
+	// qualifier. Admits real Italian station names while rejecting unqualified
+	// foreign multi-word places ("Venice Beach", "Rome Georgia"). Exotic station
+	// names whose suffix isn't a known station word fail safe (provider skipped).
 	fields := strings.Fields(lower)
 	rawFields := strings.Fields(raw)
-	if len(fields) >= 2 {
+	for k := len(fields) - 1; k >= 1; k-- {
+		prefix := strings.Join(fields[:k], " ")
 		var cityQuery string
-		if it, ok := trenitaliaCanonical[fields[0]]; ok {
+		if it, ok := trenitaliaCanonical[prefix]; ok {
 			cityQuery = it
-		} else if italianCitySet[fields[0]] {
-			cityQuery = rawFields[0]
+		} else if italianCitySet[prefix] {
+			cityQuery = strings.Join(rawFields[:k], " ")
 		}
-		if cityQuery != "" {
-			allStationWords := true
-			for _, tok := range fields[1:] {
-				if !stationWords[tok] {
-					allStationWords = false
-					break
-				}
+		if cityQuery == "" {
+			continue
+		}
+		allStationWords := true
+		for _, tok := range fields[k:] {
+			if !stationWords[tok] {
+				allStationWords = false
+				break
 			}
-			if allStationWords {
-				return cityQuery, true
-			}
+		}
+		if allStationWords {
+			return cityQuery, true
 		}
 	}
 	return raw, false
@@ -224,6 +227,7 @@ var stationWords = map[string]bool{
 	"aeroporto": true, "scalo": true, "centro": true, "stazione": true,
 	"nord": true, "sud": true, "est": true, "ovest": true,
 	"lucia": true, "s.": true, "s": true, "p.ta": true, "ss": true,
+	"susa": true, "campo": true, "marte": true, "spezia": true,
 }
 
 // trenitaliaCanonical maps recognized city tokens (English aliases and the

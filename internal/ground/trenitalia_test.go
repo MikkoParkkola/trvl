@@ -273,3 +273,23 @@ func TestItalianCityMoreStationsAndAliases(t *testing.T) {
 		}
 	}
 }
+
+// TestItalianCityMultiWordStations covers longest-prefix city matching for
+// multi-word city names with station suffixes.
+func TestItalianCityMultiWordStations(t *testing.T) {
+	cases := map[string]string{
+		"La Spezia Centrale":       "La Spezia",
+		"Reggio Calabria Centrale": "Reggio Calabria",
+		"Torino Porta Susa":        "Torino",
+		"La Spezia":                "La Spezia",
+	}
+	for in, want := range cases {
+		if got, ok := italianCity(in); !ok || got != want {
+			t.Errorf("italianCity(%q) = (%q,%v), want (%q,true)", in, got, ok, want)
+		}
+	}
+	// Foreign multi-word still rejected.
+	if _, ok := italianCity("Venice Beach"); ok {
+		t.Error("Venice Beach must not match")
+	}
+}
