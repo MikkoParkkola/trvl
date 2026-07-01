@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
@@ -165,17 +166,36 @@ func TestProbeRoundTripOrchestrator(t *testing.T) {
 		// easyJet/Vueling that are *perpetually* AKAMAI_BLOCK'd by default, so
 		// scanning them would mask the exact Google/Kiwi regression this probe
 		// exists to catch.
-		for _, s := range res.ProviderStatuses {
-			if !strings.HasPrefix(s.ID, "native_roundtrip:") {
+		// Scan ALL native round-trip statuses before deciding. A single transient
+		// provider must NOT let a DIFFERENT provider's real regression (e.g. a Kiwi
+		// parser break surfacing as StatusFailed) slip through as a yellow skip —
+		// that would defeat the exact drift this probe exists to catch.
+		var hardFailure *models.ProviderStatus
+		sawTransient := false
+		for i := range res.ProviderStatuses {
+			s := &res.ProviderStatuses[i]
+			if !strings.HasPrefix(s.ID, "native_roundtrip:") || s.Status == "ok" {
 				continue
 			}
-			if s.Status == "ok" {
+			// A rate-limited/timed-out native provider is transient noise (throttled
+			// datacenter IP). The status STATE is authoritative because such a
+			// ProviderStatus can carry an empty Error string that IsTransientMsg
+			// alone would miss.
+			if s.Status == models.StatusRateLimited || s.Status == models.StatusTimeout ||
+				testutil.IsTransientMsg(s.Error) || strings.EqualFold(s.FixHintCode, "AKAMAI_BLOCK") {
+				sawTransient = true
 				continue
 			}
-			if testutil.IsTransientMsg(s.Error) || strings.EqualFold(s.FixHintCode, "AKAMAI_BLOCK") {
-				t.Skipf("skipping: native round-trip provider blocked/throttled this run (%s: %s %s) — not a regression", s.ID, s.Error, s.FixHintCode)
-			}
+			hardFailure = s // a non-transient native failure is a real regression
 		}
-		t.Errorf("expected at least one native round-trip fare (Google/Kiwi) in merged results")
+		switch {
+		case hardFailure != nil:
+			t.Errorf("native round-trip provider hard failure (likely a real regression): %s: status=%s %s %s",
+				hardFailure.ID, hardFailure.Status, hardFailure.Error, hardFailure.FixHintCode)
+		case sawTransient:
+			t.Skipf("skipping: all failing native round-trip providers were blocked/throttled this run — not a regression")
+		default:
+			t.Errorf("expected at least one native round-trip fare (Google/Kiwi) in merged results")
+		}
 	}
 }

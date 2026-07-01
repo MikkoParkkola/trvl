@@ -21,25 +21,33 @@ func TestParseKiwiRPCResponse_SSE(t *testing.T) {
 
 func TestMapKiwiItineraryMarksSelfConnect(t *testing.T) {
 	itinerary := kiwiItinerary{
-		FlyFrom:           "HEL",
-		FlyTo:             "DBV",
-		CityFrom:          "Helsinki",
-		CityTo:            "Dubrovnik",
-		Departure:         kiwiDateTime{UTC: "2026-07-01T12:00:00.000Z", Local: "2026-07-01T15:00:00.000"},
-		Arrival:           kiwiDateTime{UTC: "2026-07-01T18:00:00.000Z", Local: "2026-07-01T20:00:00.000"},
-		DurationInSeconds: 21600,
-		Price:             121,
-		Currency:          "EUR",
-		DeepLink:          "https://on.kiwi.com/test",
-		Layovers: []kiwiLayover{
-			{
-				At:       "ARN",
-				City:     "Stockholm",
-				CityCode: "STO",
-				Arrival:  kiwiDateTime{UTC: "2026-07-01T13:00:00.000Z", Local: "2026-07-01T15:00:00.000"},
-				Departure: kiwiDateTime{
-					UTC:   "2026-07-01T14:00:00.000Z",
-					Local: "2026-07-01T16:00:00.000",
+		Price:                121,
+		TotalDurationSeconds: 21600,
+		BookingURL:           "https://on.kiwi.com/test",
+		Outbound: &kiwiLeg{
+			From:          "HEL",
+			To:            "DBV",
+			DepartureTime: "2026-07-01T15:00:00",
+			ArrivalTime:   "2026-07-01T20:00:00",
+			Stops:         1,
+			Segments: []kiwiSegment{
+				{
+					From:            "HEL",
+					To:              "ARN",
+					FromCity:        "Helsinki",
+					ToCity:          "Stockholm",
+					DepartureTime:   "2026-07-01T15:00:00",
+					ArrivalTime:     "2026-07-01T16:00:00",
+					DurationSeconds: 3600,
+				},
+				{
+					From:            "ARN",
+					To:              "DBV",
+					FromCity:        "Stockholm",
+					ToCity:          "Dubrovnik",
+					DepartureTime:   "2026-07-01T16:00:00",
+					ArrivalTime:     "2026-07-01T20:00:00",
+					DurationSeconds: 14400,
 				},
 			},
 		},

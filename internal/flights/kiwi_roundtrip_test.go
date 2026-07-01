@@ -27,7 +27,7 @@ func TestMapKiwiItineraryRoundTrip(t *testing.T) {
 	if len(itineraries) != 1 {
 		t.Fatalf("itineraries = %d, want 1", len(itineraries))
 	}
-	if itineraries[0].Return == nil {
+	if itineraries[0].Inbound == nil {
 		t.Fatal("expected a parsed return journey, got nil")
 	}
 
@@ -85,9 +85,9 @@ func TestMapKiwiItineraryRoundTrip(t *testing.T) {
 	if flight.Stops != 1 {
 		t.Errorf("Stops = %d, want 1 (outbound legs-1, return excluded)", flight.Stops)
 	}
-	// totalDurationInSeconds (47700) / 60 = 795 minutes covers both halves.
+	// totalDurationSeconds (47700) / 60 = 795 minutes covers both halves.
 	if flight.Duration != 795 {
-		t.Errorf("Duration = %d, want 795 (totalDurationInSeconds/60)", flight.Duration)
+		t.Errorf("Duration = %d, want 795 (totalDurationSeconds/60)", flight.Duration)
 	}
 }
 
@@ -96,16 +96,25 @@ func TestMapKiwiItineraryRoundTrip(t *testing.T) {
 // Direction tags and no round-trip FareType (empty, as a one-way result).
 func TestMapKiwiItineraryOneWayNoDirectionTags(t *testing.T) {
 	itinerary := kiwiItinerary{
-		FlyFrom:           "HEL",
-		FlyTo:             "BCN",
-		CityFrom:          "Helsinki",
-		CityTo:            "Barcelona",
-		Departure:         kiwiDateTime{UTC: "2026-07-25T10:55:00.000Z", Local: "2026-07-25T13:55:00.000"},
-		Arrival:           kiwiDateTime{UTC: "2026-07-25T16:50:00.000Z", Local: "2026-07-25T18:50:00.000"},
-		DurationInSeconds: 21300,
-		Price:             102,
-		Currency:          "EUR",
-		DeepLink:          "https://on.kiwi.com/oneway",
+		Price:                102,
+		TotalDurationSeconds: 21300,
+		BookingURL:           "https://on.kiwi.com/oneway",
+		Outbound: &kiwiLeg{
+			From:          "HEL",
+			To:            "BCN",
+			DepartureTime: "2026-07-25T13:55:00",
+			ArrivalTime:   "2026-07-25T18:50:00",
+			Segments: []kiwiSegment{
+				{
+					From:          "HEL",
+					To:            "BCN",
+					FromCity:      "Helsinki",
+					ToCity:        "Barcelona",
+					DepartureTime: "2026-07-25T13:55:00",
+					ArrivalTime:   "2026-07-25T18:50:00",
+				},
+			},
+		},
 	}
 
 	flight := mapKiwiItinerary(itinerary, "EUR")

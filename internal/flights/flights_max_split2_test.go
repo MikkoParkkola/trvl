@@ -161,18 +161,27 @@ func TestMergeFlightResults_WithFilters(t *testing.T) {
 
 func TestMapKiwiItinerary_Direct(t *testing.T) {
 	itinerary := kiwiItinerary{
-		FlyFrom:           "HEL",
-		FlyTo:             "NRT",
-		CityFrom:          "Helsinki",
-		CityTo:            "Tokyo",
-		Departure:         kiwiDateTime{UTC: "2026-06-15T10:00:00Z", Local: "2026-06-15T13:00:00"},
-		Arrival:           kiwiDateTime{UTC: "2026-06-16T01:00:00Z", Local: "2026-06-16T10:00:00"},
-		DurationInSeconds: 54000,
-		Price:             450,
-		Currency:          "EUR",
-		DeepLink:          "https://kiwi.com/booking/123",
+		Price:                450,
+		TotalDurationSeconds: 54000,
+		BookingURL:           "https://kiwi.com/booking/123",
+		Outbound: &kiwiLeg{
+			From:          "HEL",
+			To:            "NRT",
+			DepartureTime: "2026-06-15T13:00:00",
+			ArrivalTime:   "2026-06-16T10:00:00",
+			Segments: []kiwiSegment{
+				{
+					From:          "HEL",
+					To:            "NRT",
+					FromCity:      "Helsinki",
+					ToCity:        "Tokyo",
+					DepartureTime: "2026-06-15T13:00:00",
+					ArrivalTime:   "2026-06-16T10:00:00",
+				},
+			},
+		},
 	}
-	fr := mapKiwiItinerary(itinerary, "USD")
+	fr := mapKiwiItinerary(itinerary, "EUR")
 	if fr.Price != 450 {
 		t.Errorf("price = %v, want 450", fr.Price)
 	}
@@ -195,21 +204,31 @@ func TestMapKiwiItinerary_Direct(t *testing.T) {
 
 func TestMapKiwiItinerary_WithLayover(t *testing.T) {
 	itinerary := kiwiItinerary{
-		FlyFrom:           "HEL",
-		FlyTo:             "NRT",
-		CityFrom:          "Helsinki",
-		CityTo:            "Tokyo",
-		Departure:         kiwiDateTime{UTC: "2026-06-15T10:00:00Z"},
-		Arrival:           kiwiDateTime{UTC: "2026-06-16T01:00:00Z"},
-		DurationInSeconds: 54000,
-		Price:             350,
-		Currency:          "",
-		Layovers: []kiwiLayover{
-			{
-				At:        "FRA",
-				City:      "Frankfurt",
-				Arrival:   kiwiDateTime{UTC: "2026-06-15T13:00:00Z"},
-				Departure: kiwiDateTime{UTC: "2026-06-15T15:00:00Z"},
+		Price:                350,
+		TotalDurationSeconds: 54000,
+		Outbound: &kiwiLeg{
+			From:          "HEL",
+			To:            "NRT",
+			DepartureTime: "2026-06-15T10:00:00",
+			ArrivalTime:   "2026-06-16T01:00:00",
+			Stops:         1,
+			Segments: []kiwiSegment{
+				{
+					From:          "HEL",
+					To:            "FRA",
+					FromCity:      "Helsinki",
+					ToCity:        "Frankfurt",
+					DepartureTime: "2026-06-15T10:00:00",
+					ArrivalTime:   "2026-06-15T13:00:00",
+				},
+				{
+					From:          "FRA",
+					To:            "NRT",
+					FromCity:      "Frankfurt",
+					ToCity:        "Tokyo",
+					DepartureTime: "2026-06-15T15:00:00",
+					ArrivalTime:   "2026-06-16T01:00:00",
+				},
 			},
 		},
 	}
@@ -233,17 +252,26 @@ func TestMapKiwiItinerary_WithLayover(t *testing.T) {
 
 func TestMapKiwiItinerary_TotalDurationFallback(t *testing.T) {
 	itinerary := kiwiItinerary{
-		FlyFrom:                "HEL",
-		FlyTo:                  "NRT",
-		DurationInSeconds:      0,
-		TotalDurationInSeconds: 7200,
-		Departure:              kiwiDateTime{UTC: "2026-06-15T10:00:00Z"},
-		Arrival:                kiwiDateTime{UTC: "2026-06-15T12:00:00Z"},
-		Price:                  100,
+		Price:                100,
+		TotalDurationSeconds: 7200,
+		Outbound: &kiwiLeg{
+			From:          "HEL",
+			To:            "NRT",
+			DepartureTime: "2026-06-15T10:00:00",
+			ArrivalTime:   "2026-06-15T12:00:00",
+			Segments: []kiwiSegment{
+				{
+					From:          "HEL",
+					To:            "NRT",
+					DepartureTime: "2026-06-15T10:00:00",
+					ArrivalTime:   "2026-06-15T12:00:00",
+				},
+			},
+		},
 	}
 	fr := mapKiwiItinerary(itinerary, "EUR")
 	if fr.Duration != 120 {
-		t.Errorf("duration = %d, want 120 (from TotalDurationInSeconds)", fr.Duration)
+		t.Errorf("duration = %d, want 120 (from TotalDurationSeconds)", fr.Duration)
 	}
 }
 

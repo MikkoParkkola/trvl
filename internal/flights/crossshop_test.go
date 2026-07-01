@@ -36,21 +36,32 @@ func gflight(origin, dest, depart string, price float64, currency string) models
 // layover->segment decomposition (XSHOP.1).
 func helIstBcnKiwi(bundledPrice float64) models.FlightResult {
 	itin := kiwiItinerary{
-		FlyFrom:   "HEL",
-		FlyTo:     "BCN",
-		CityFrom:  "Helsinki",
-		CityTo:    "Barcelona",
-		Departure: kiwiDateTime{Local: "2026-07-01T08:00:00", UTC: "2026-07-01T05:00:00Z"},
-		Arrival:   kiwiDateTime{Local: "2026-07-01T18:00:00", UTC: "2026-07-01T16:00:00Z"},
-		Price:     bundledPrice,
-		Currency:  "EUR",
-		Layovers: []kiwiLayover{{
-			At:        "IST",
-			City:      "Istanbul",
-			CityCode:  "IST",
-			Arrival:   kiwiDateTime{Local: "2026-07-01T11:00:00", UTC: "2026-07-01T08:00:00Z"},
-			Departure: kiwiDateTime{Local: "2026-07-01T13:00:00", UTC: "2026-07-01T10:00:00Z"},
-		}},
+		Price: bundledPrice,
+		Outbound: &kiwiLeg{
+			From:          "HEL",
+			To:            "BCN",
+			DepartureTime: "2026-07-01T08:00:00",
+			ArrivalTime:   "2026-07-01T18:00:00",
+			Stops:         1,
+			Segments: []kiwiSegment{
+				{
+					From:          "HEL",
+					To:            "IST",
+					FromCity:      "Helsinki",
+					ToCity:        "Istanbul",
+					DepartureTime: "2026-07-01T08:00:00",
+					ArrivalTime:   "2026-07-01T11:00:00",
+				},
+				{
+					From:          "IST",
+					To:            "BCN",
+					FromCity:      "Istanbul",
+					ToCity:        "Barcelona",
+					DepartureTime: "2026-07-01T13:00:00",
+					ArrivalTime:   "2026-07-01T18:00:00",
+				},
+			},
+		},
 	}
 	return mapKiwiItinerary(itin, "EUR")
 }
