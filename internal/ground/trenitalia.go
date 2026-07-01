@@ -361,7 +361,7 @@ func parseTrenitaliaDuration(s string) int {
 // buildTrenitaliaBookingURL constructs a search deep-link for lefrecce.it.
 func buildTrenitaliaBookingURL(fromID, toID int, date string) string {
 	return fmt.Sprintf(
-		"https://www.lefrecce.it/Channels.Website.WEB/website/#/it/results?departureLocationId=%d&arrivalLocationId=%d&departureTime=%sT08:00:00.000&adults=1&children=0",
+		"https://www.lefrecce.it/Channels.Website.WEB/website/#/it/results?departureLocationId=%d&arrivalLocationId=%d&departureTime=%sT00:00:00.000&adults=1&children=0",
 		fromID, toID, date,
 	)
 }
