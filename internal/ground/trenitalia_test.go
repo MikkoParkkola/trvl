@@ -256,3 +256,20 @@ func TestItalianCityUnqualifiedForeign(t *testing.T) {
 		}
 	}
 }
+
+// TestItalianCityMoreStationsAndAliases covers the Mantua alias and major
+// station names with multi-word suffixes.
+func TestItalianCityMoreStationsAndAliases(t *testing.T) {
+	cases := map[string]string{
+		"Mantua":                      "Mantova",
+		"Venezia Santa Lucia":         "Venezia",
+		"Venice Santa Lucia":          "Venezia",
+		"Firenze Santa Maria Novella": "Firenze",
+		"Roma Ostiense":               "Roma",
+	}
+	for in, want := range cases {
+		if got, ok := italianCity(in); !ok || got != want {
+			t.Errorf("italianCity(%q) = (%q,%v), want (%q,true)", in, got, ok, want)
+		}
+	}
+}

@@ -223,6 +223,7 @@ var stationWords = map[string]bool{
 	"afragola": true, "smn": true, "santa": true, "maria": true, "novella": true,
 	"aeroporto": true, "scalo": true, "centro": true, "stazione": true,
 	"nord": true, "sud": true, "est": true, "ovest": true,
+	"lucia": true, "s.": true, "s": true, "p.ta": true, "ss": true,
 }
 
 // trenitaliaCanonical maps recognized city tokens (English aliases and the
@@ -241,6 +242,7 @@ var trenitaliaCanonical = map[string]string{
 	"genoa": "Genova", "genova": "Genova",
 	"padua": "Padova", "padova": "Padova",
 	"bologna": "Bologna", "verona": "Verona", "bari": "Bari",
+	"mantua": "Mantova", "mantova": "Mantova",
 	"catania": "Catania", "palermo": "Palermo", "messina": "Messina",
 	"salerno": "Salerno", "trieste": "Trieste", "brescia": "Brescia",
 	"bergamo": "Bergamo", "trento": "Trento", "ferrara": "Ferrara",
