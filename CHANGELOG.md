@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-07-01
+
 ### Added
 - **Italo (NTV) Italian high-speed rail provider.** New default-on, no-key ground
   provider covering Italo's high-speed network (AGV/EVO trains across the
@@ -15,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns real fares and schedules, and filters out the Trenitalia-operated
   solutions Italo resells so it never duplicates the dedicated Trenitalia
   provider. Ground provider roster is now 22 (24 transport providers overall).
+
+### Fixed
+- **Kiwi flight provider restored after upstream drift.** Kiwi's MCP server went
+  stateless (its initialize handshake stopped issuing a session id) and
+  redesigned its search response schema; both broke every Kiwi flight search.
+  The session id is now treated as optional per spec and the response parser was
+  rewritten to the new outbound/inbound-with-segments shape, so Kiwi results
+  return again — now with the operating carrier code and flight number per leg.
+  The round-trip orchestrator probe was also hardened so a transient throttle on
+  one native provider can no longer mask a real regression on another.
 
 ## [1.18.0] - 2026-06-28
 
