@@ -316,8 +316,16 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		opts.SortBy = parsed
 	}
 
-	// Apply profile hints as defaults — only when the caller has not set the
-	// corresponding parameter explicitly.
+	// Apply travel-profile hints as pre-search defaults — only when the caller
+	// has not set the corresponding parameter explicitly.
+	//
+	// DELIBERATE SURFACE-SPECIFIC DECISION (do not "unify" this away): the
+	// pre-search profile→opts seeding is intentionally MCP-only. It is driven by
+	// the persisted travel *profile* (internal/profile.TravelProfile, learned
+	// from booking history) which the CLI deliberately does NOT consult — the
+	// CLI takes its search parameters only from explicit flags. The policy that
+	// BOTH surfaces must run identically is the POST-search preference chain
+	// (flights.ApplySharedFlightPolicy, below), not this profile-hint seeding.
 	//
 	// IMPORTANT: PreferredAlliance is intentionally NOT auto-applied as a
 	// hard `Alliances` filter. Doing so silently disables Kiwi and
@@ -328,13 +336,20 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 	// alliance filter they pass `alliances` explicitly. Reverted as part of
 	// the merge-zero-results regression (default search returned 0 flights
 	// when the user's profile had a preferred alliance set).
+	//
+	// IMPORTANT: MaxPrice is likewise NOT auto-applied from the profile hint
+	// (issue #452). opts.MaxPrice is a HARD post-fetch ceiling applied inside
+	// the merge/filter pipeline AFTER each provider's raw fetch count is already
+	// recorded in provider_statuses, so a route priced above the user's
+	// historical average silently collapsed the merged result down to whichever
+	// provider fit under the ceiling — with no signal in the response. Only
+	// CabinClass is seeded here: it narrows the provider QUERY itself rather
+	// than post-filtering an already-merged result, so it cannot truncate a
+	// merge.
 	prof, _ := profile.Load()
 	hints := profile.FlightHints(prof, primaryOrigin, primaryDest)
 	if _, explicit := args["cabin_class"]; !explicit && hints.CabinClass > 0 && opts.CabinClass == 0 {
 		opts.CabinClass = models.CabinClass(hints.CabinClass)
-	}
-	if _, explicit := args["max_price"]; !explicit && hints.MaxPrice > 0 && opts.MaxPrice == 0 {
-		opts.MaxPrice = hints.MaxPrice
 	}
 
 	result, err := dispatchFlightSearch(ctx, args, origin, dest, date, opts)
@@ -342,15 +357,14 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		return nil, nil, err
 	}
 
-	// Apply preference-based post-filters (budget, departure time window,
-	// and frequent flyer bag allowance adjustments).
+	// Apply the shared budget/time/bag preference policy — single source of
+	// truth in flights.ApplySharedFlightPolicy, identical to the CLI surface
+	// (cmd/trvl/flights.go) so the two cannot drift. An explicit max_price arg
+	// skips the preference budget filter (the core already applied that ceiling),
+	// matching the CLI's --max-price behavior.
 	prefs, _ := preferences.Load()
-	if prefs != nil && result != nil && result.Success {
-		result.Flights = flights.FilterFlightsByBudget(result.Flights, prefs.BudgetFlightMax)
-		result.Flights = flights.FilterFlightsByTimePreference(result.Flights, prefs.FlightTimeEarliest, prefs.FlightTimeLatest)
-		result.Flights = flights.AdjustBagAllowance(result.Flights, prefs.FrequentFlyerPrograms)
-		result.Count = len(result.Flights)
-	}
+	_, explicitMaxPrice := args["max_price"]
+	flights.ApplySharedFlightPolicy(result, prefs, explicitMaxPrice)
 
 	// Apply Mikko-mental-model filters when the caller set them. Parity with
 	// plan_flight_bundle — lets agents stick with search_flights and still
