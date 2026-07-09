@@ -210,16 +210,20 @@ Examples:
 				return err
 			}
 
-			// Apply the traveller's saved preferences as post-search filters,
-			// matching the MCP surface (mcp/tools_flights.go). The CLI previously
-			// ignored the stored budget cap and preferred departure-time window;
-			// this brings it to parity so the profile is actually used.
+			// Apply the traveller's saved preferences as post-search filters via
+			// the SINGLE shared policy function (flights.ApplySharedFlightPolicy),
+			// the identical budget/time/bag chain the MCP surface runs
+			// (mcp/tools_flights.go). Both surfaces call the same function so the
+			// two cannot drift — the recurring bug class behind the #452 MaxPrice
+			// truncation, the earlier PreferredAlliance regression, and the
+			// pending CabinClass divergence.
 			//
 			// Explicit-flag precedence: when the user passes --max-price on the
 			// command line, that explicit value already flows into opts.MaxPrice
-			// (the server-side cap) and we skip the profile BudgetFlightMax
-			// fallback so a stored preference never overrides an explicit flag.
-			applyFlightProfileFilters(result, prefs, cmd.Flags().Changed("max-price"))
+			// (the server-side cap) and the shared policy skips the profile
+			// BudgetFlightMax fallback so a stored preference never overrides an
+			// explicit flag.
+			flights.ApplySharedFlightPolicy(result, prefs, cmd.Flags().Changed("max-price"))
 
 			// MIK-6229/6234: log the search and compute price-position + all
 			// call-free savings via the shared pricefeed (single source shared
@@ -340,31 +344,6 @@ Examples:
 	cmd.ValidArgsFunction = airportCompletion
 
 	return cmd
-}
-
-// applyFlightProfileFilters applies the traveller's saved preferences as
-// post-search filters, mirroring the MCP surface (mcp/tools_flights.go): the
-// saved budget cap, the preferred departure-time window, and frequent-flyer bag
-// allowance adjustments. It keeps result.Count consistent with the filtered
-// slice, exactly as the MCP path does.
-//
-// budgetFlagSet reports whether the user passed an explicit --max-price flag on
-// the command line. When true, the explicit value has already been applied as a
-// server-side cap (opts.MaxPrice) and the profile BudgetFlightMax fallback is
-// skipped so a stored preference never silently overrides an explicit flag.
-//
-// It is a no-op on a nil/unsuccessful result so callers can invoke it
-// unconditionally after a search.
-func applyFlightProfileFilters(result *models.FlightSearchResult, prefs *preferences.Preferences, budgetFlagSet bool) {
-	if prefs == nil || result == nil || !result.Success {
-		return
-	}
-	if !budgetFlagSet {
-		result.Flights = flights.FilterFlightsByBudget(result.Flights, prefs.BudgetFlightMax)
-	}
-	result.Flights = flights.FilterFlightsByTimePreference(result.Flights, prefs.FlightTimeEarliest, prefs.FlightTimeLatest)
-	result.Flights = flights.AdjustBagAllowance(result.Flights, prefs.FrequentFlyerPrograms)
-	result.Count = len(result.Flights)
 }
 
 // printFlightsTable renders flight results as an ASCII table.
