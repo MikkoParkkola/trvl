@@ -348,9 +348,22 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 	// merge.
 	prof, _ := profile.Load()
 	hints := profile.FlightHints(prof, primaryOrigin, primaryDest)
-	if _, explicit := args["cabin_class"]; !explicit && hints.CabinClass > 0 && opts.CabinClass == 0 {
-		opts.CabinClass = models.CabinClass(hints.CabinClass)
-	}
+	opts = applyFlightProfileHints(opts, args, hints)
+	// MaxPrice is intentionally NOT auto-applied as a hard filter — see the
+	// note above about PreferredAlliance. AvgFlightPrice*1.5 is a coarse,
+	// route-agnostic-ish ceiling; on a route priced above the user's
+	// historical average (e.g. a long-haul the user rarely books) it can
+	// silently discard the majority of legitimately fetched, on-budget
+	// inventory from every provider except the cheapest one — while
+	// provider_statuses still reports those providers "ok" (the filter runs
+	// after fetch, inside filterFlightResults), making the truncation
+	// invisible to the caller. This also breaks CLI parity: the CLI flights
+	// command never applies profile hints. Root cause of MIK issue #452
+	// (search_flights returning 4 kiwi-only flights instead of the full
+	// 106-flight multi-provider set for identical params). If a caller wants
+	// a price ceiling they pass `max_price` explicitly, or set an explicit
+	// preferences.BudgetFlightMax (applied uniformly to both CLI and MCP
+	// below via FilterFlightsByBudget).
 
 	result, err := dispatchFlightSearch(ctx, args, origin, dest, date, opts)
 	if err != nil {
@@ -636,6 +649,39 @@ func buildBookingContext(date, origin string, originSource travelctx.Source) *bo
 	bc.BookingWindow = string(window)
 	bc.Advisory = window.Advisory()
 	return bc
+}
+
+// applyFlightProfileHints layers profile-derived defaults onto opts, but only
+// for parameters the caller did not set explicitly.
+//
+// IMPORTANT: PreferredAlliance (and, by the same reasoning, MaxPrice) are
+// intentionally NOT auto-applied as hard filters here:
+//
+//   - Alliances: auto-applying the user's dominant alliance silently disables
+//     Kiwi and Skiplagged in the multi-provider merge (their eligibility
+//     checks bail when `len(opts.Alliances) > 0`) and over-narrows Google
+//     Flights to alliance-only routes. Reverted as part of the
+//     merge-zero-results regression (default search returned 0 flights when
+//     the user's profile had a preferred alliance set).
+//   - MaxPrice: AvgFlightPrice*1.5 is a coarse historical-average ceiling.
+//     On a route priced above the user's average (e.g. a long-haul they
+//     rarely book), auto-applying it as a hard `flights.SearchOptions.MaxPrice`
+//     silently discards the majority of legitimately fetched inventory from
+//     every provider except the cheapest one, while provider_statuses still
+//     reports those providers "ok" (the filter runs after fetch). It also
+//     breaks CLI parity: `cmd/trvl` never applies profile hints. Root cause
+//     of the search_flights truncation bug (MCP returned 4 kiwi-only flights
+//     instead of the full 106-flight multi-provider set for identical
+//     params).
+//
+// Only CabinClass is auto-applied: it narrows the provider query itself
+// (rather than post-filtering an already-fetched merge), so a caller sees a
+// consistent, non-silently-truncated result set either way.
+func applyFlightProfileHints(opts flights.SearchOptions, args map[string]any, hints profile.FlightSearchHints) flights.SearchOptions {
+	if _, explicit := args["cabin_class"]; !explicit && hints.CabinClass > 0 && opts.CabinClass == 0 {
+		opts.CabinClass = models.CabinClass(hints.CabinClass)
+	}
+	return opts
 }
 
 // dispatchFlightSearch routes a search_flights call to the right
