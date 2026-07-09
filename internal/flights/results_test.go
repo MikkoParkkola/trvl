@@ -7,6 +7,72 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
+// TestMergeFlightResults_ProfileMaxPriceHintWouldTruncateMultiProvider
+// reproduces, at the real merge/filter pipeline, the exact symptom reported
+// in issue #452: search_flights via MCP returned only 4 kiwi-only flights for
+// FCO->HRG while the CLI and a direct flights.SearchFlights() call returned
+// 106 flights across every provider. The root cause was mcp.handleSearchFlights
+// silently setting opts.MaxPrice from a profile-derived AvgFlightPrice*1.5
+// hint whenever the caller omitted max_price — a hard filter applied here,
+// inside mergeFlightResults/filterFlightResults, AFTER each provider's raw
+// fetch count is already recorded in provider_statuses (so "google_flights:
+// ok, 91 results" and a 4-flight final list could coexist with no visible
+// signal of truncation).
+//
+// This test locks in both directions:
+//   - opts.MaxPrice == 0 (the fixed mcp.applyFlightProfileHints never sets
+//     it from a profile hint) must preserve every provider's flights.
+//   - opts.MaxPrice set to a stale/low ceiling (simulating the pre-fix bug)
+//     DOES collapse the merge down to the cheap provider only — proving this
+//     is genuinely the mechanism that produced the reported truncation, not
+//     just a hypothetical.
+func TestMergeFlightResults_ProfileMaxPriceHintWouldTruncateMultiProvider(t *testing.T) {
+	kiwiFlights := []models.FlightResult{
+		{Price: 120, Currency: "EUR", Provider: "kiwi", Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "FCO"}, ArrivalAirport: models.AirportInfo{Code: "HRG"}, DepartureTime: "2026-08-10T06:00", ArrivalTime: "2026-08-10T10:00"}}},
+		{Price: 140, Currency: "EUR", Provider: "kiwi", Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "FCO"}, ArrivalAirport: models.AirportInfo{Code: "HRG"}, DepartureTime: "2026-08-10T09:00", ArrivalTime: "2026-08-10T13:00"}}},
+	}
+	googleFlights := []models.FlightResult{
+		{Price: 410, Currency: "EUR", Provider: "google_flights", Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "FCO"}, ArrivalAirport: models.AirportInfo{Code: "HRG"}, AirlineCode: "MS", DepartureTime: "2026-08-10T11:00", ArrivalTime: "2026-08-10T15:00"}}},
+		{Price: 455, Currency: "EUR", Provider: "google_flights", Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "FCO"}, ArrivalAirport: models.AirportInfo{Code: "HRG"}, AirlineCode: "LH", DepartureTime: "2026-08-10T14:00", ArrivalTime: "2026-08-10T20:00"}}},
+	}
+
+	t.Run("fixed: no MaxPrice hint preserves every provider", func(t *testing.T) {
+		merged := mergeFlightResults(googleFlights, kiwiFlights, nil, SearchOptions{})
+		if len(merged) != len(kiwiFlights)+len(googleFlights) {
+			t.Fatalf("merged count = %d, want %d (kiwi + google_flights must both survive when no price ceiling is set — issue #452)",
+				len(merged), len(kiwiFlights)+len(googleFlights))
+		}
+		var sawGoogle, sawKiwi bool
+		for _, f := range merged {
+			switch f.Provider {
+			case "google_flights":
+				sawGoogle = true
+			case "kiwi":
+				sawKiwi = true
+			}
+		}
+		if !sawGoogle || !sawKiwi {
+			t.Fatalf("merged providers incomplete: sawGoogle=%v sawKiwi=%v, want both true", sawGoogle, sawKiwi)
+		}
+	})
+
+	t.Run("mechanism proof: a stale MaxPrice ceiling collapses to one provider", func(t *testing.T) {
+		// 300 mirrors AvgFlightPrice(200)*1.5 from a user profile whose
+		// historical average is far below this route's real fares — the
+		// exact shape of the bug that shipped before the fix.
+		merged := mergeFlightResults(googleFlights, kiwiFlights, nil, SearchOptions{MaxPrice: 300})
+		if len(merged) != len(kiwiFlights) {
+			t.Fatalf("merged count = %d, want %d (a stale price ceiling should reproduce the pre-fix truncation to kiwi-only)",
+				len(merged), len(kiwiFlights))
+		}
+		for _, f := range merged {
+			if f.Provider != "kiwi" {
+				t.Fatalf("unexpected provider %q survived the ceiling; want kiwi-only collapse (proves the truncation mechanism)", f.Provider)
+			}
+		}
+	})
+}
+
 func TestMergeFlightResults_SortsCheapestAndFiltersStops(t *testing.T) {
 	googleFlights := []models.FlightResult{
 		{
