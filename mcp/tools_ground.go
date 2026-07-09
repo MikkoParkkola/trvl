@@ -8,7 +8,6 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
-	"github.com/MikkoParkkola/trvl/internal/profile"
 	"github.com/MikkoParkkola/trvl/internal/transfer"
 	"github.com/MikkoParkkola/trvl/internal/trip"
 	"github.com/MikkoParkkola/trvl/internal/weather"
@@ -147,13 +146,15 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 		opts.Providers = strings.Split(p, ",")
 	}
 
-	// Apply profile hint for preferred transport mode when the caller has not
-	// specified one explicitly.
-	if _, explicit := args["type"]; !explicit && opts.Type == "" {
-		prof, _ := profile.Load()
-		hints := profile.GroundHints(prof, from, to)
-		opts.Type = hints.PreferredType
-	}
+	// Explicit `type` arg is still respected as a hard filter (see
+	// filterGroundRoutes). We deliberately do NOT seed opts.Type from
+	// profile.GroundHints (or profile.Load) here. A profile-derived
+	// preferred mode must not become a hard filter that silently drops
+	// other modes (bus/train/ferry) the user never explicitly excluded.
+	// Same silent-truncation class as flights #453 (and the prior hotel
+	// HotelHints.MaxPrice seeding). After this change both CLI and MCP
+	// show all modes unless the caller passes `type`/`--type` explicitly.
+	// Profile mode-preference as a soft ranking signal remains future work.
 
 	result, err := ground.SearchByName(ctx, from, to, date, opts)
 	if err != nil {
