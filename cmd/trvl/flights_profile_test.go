@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
@@ -37,7 +38,7 @@ func TestApplyFlightProfileFiltersBudget(t *testing.T) {
 	}
 
 	// No explicit --max-price flag, so the profile budget applies.
-	applyFlightProfileFilters(result, prefs, false)
+	flights.ApplySharedFlightPolicy(result, prefs, false)
 
 	if result.Count != 2 {
 		t.Fatalf("expected Count 2 after budget filter, got %d", result.Count)
@@ -71,7 +72,7 @@ func TestApplyFlightProfileFiltersExplicitFlagWins(t *testing.T) {
 
 	// Explicit --max-price flag set: the profile budget post-filter is skipped
 	// (the explicit value is already applied server-side via opts.MaxPrice).
-	applyFlightProfileFilters(result, prefs, true)
+	flights.ApplySharedFlightPolicy(result, prefs, true)
 
 	if result.Count != 2 {
 		t.Fatalf("expected explicit flag to skip the profile budget filter (Count 2), got %d", result.Count)
@@ -99,7 +100,7 @@ func TestApplyFlightProfileFiltersTimeWindow(t *testing.T) {
 		},
 	}
 
-	applyFlightProfileFilters(result, prefs, false)
+	flights.ApplySharedFlightPolicy(result, prefs, false)
 
 	if result.Count != 1 {
 		t.Fatalf("expected Count 1 after time-window filter, got %d", result.Count)
@@ -109,12 +110,12 @@ func TestApplyFlightProfileFiltersTimeWindow(t *testing.T) {
 // TestApplyFlightProfileFiltersNilSafe verifies the helper is a no-op on a nil
 // or unsuccessful result, so callers can invoke it unconditionally.
 func TestApplyFlightProfileFiltersNilSafe(t *testing.T) {
-	applyFlightProfileFilters(nil, preferences.Default(), false)
+	flights.ApplySharedFlightPolicy(nil, preferences.Default(), false)
 
 	failed := &models.FlightSearchResult{Success: false, Flights: []models.FlightResult{makeFlight(900, "12:00")}}
 	prefs := preferences.Default()
 	prefs.BudgetFlightMax = 500
-	applyFlightProfileFilters(failed, prefs, false)
+	flights.ApplySharedFlightPolicy(failed, prefs, false)
 	if len(failed.Flights) != 1 {
 		t.Errorf("expected unsuccessful result untouched, got %d flights", len(failed.Flights))
 	}

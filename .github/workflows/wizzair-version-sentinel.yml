@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
 
       - name: Discover current Wizz Air API version
         id: discover
@@ -82,7 +82,7 @@ jobs:
           # Validate the bump: the whole flights package must compile and pass.
           # (Running the full package, not a -run filter, avoids the Go footgun
           # where an unmatched filter exits 0 and validates nothing.)
-          GOTOOLCHAIN=go1.26.4 go test ./internal/flights/ -count=1
+          GOTOOLCHAIN=go1.26.5 go test ./internal/flights/ -count=1
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 // TestOptimizeNestedRT_SavingsScenario (MIK-3076): with a stubbed pricer where
@@ -18,10 +19,16 @@ func TestOptimizeNestedRT_SavingsScenario(t *testing.T) {
 		}
 		return 300 // round-trip rooted on side A
 	}
+	// Dates must be in the future or optimizeNestedRT rejects them. The pricer
+	// is stubbed (date-independent), so only the relative window spacing matters
+	// — compute future dates so this test never goes stale (was hard-coded to
+	// 2026-07-01, which broke once that date passed).
+	base := time.Now().AddDate(0, 2, 0)
+	d := func(offset int) string { return base.AddDate(0, 0, offset).Format("2006-01-02") }
 	args := map[string]any{
 		"origin": "HEL", "destination": "AMS",
-		"window1_depart": "2026-07-01", "window1_return": "2026-07-05",
-		"window2_depart": "2026-07-20", "window2_return": "2026-07-24",
+		"window1_depart": d(0), "window1_return": d(4),
+		"window2_depart": d(19), "window2_return": d(23),
 	}
 	_, raw, err := optimizeNestedRT(context.Background(), args, stub)
 	if err != nil {
