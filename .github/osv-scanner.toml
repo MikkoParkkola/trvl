@@ -33,3 +33,8 @@
 #
 # Keep this list EMPTY unless a vuln genuinely has no fix. The right fix for a
 # fixable vuln is to bump the dependency, not to ignore it.
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+ignoreUntil = 2026-10-09
+reason = "golang.org/x/crypto/openpgp: unmaintained/unsafe-by-design, no upstream fix (introduced:0, fixed:none). VERIFIED UNREACHABLE: `go mod why golang.org/x/crypto` reports 'main module does not need package golang.org/x/crypto', and `rg x/crypto/openpgp` finds zero imports in trvl. Indirect-only, unused. Re-review 2026-10-09 (bump/drop the transitive dep if a maintained replacement lands)."
