@@ -295,6 +295,10 @@ func TestSearchEuropeanSleeper_MockEmptyTrips(t *testing.T) {
 // ============================================================
 
 func TestSearchDigitransit_MockHappyPath2(t *testing.T) {
+	// Dynamic future date: the search query and the mock route times must be in
+	// the future or they get filtered as past. Was hard-coded to 2026-07-01,
+	// which broke once that date passed.
+	day := time.Now().AddDate(0, 1, 0)
 	origClient := httpClient
 	origLimiter := digitransitLimiter
 	t.Cleanup(func() {
@@ -311,16 +315,16 @@ func TestSearchDigitransit_MockHappyPath2(t *testing.T) {
 					"itineraries": []any{
 						map[string]any{
 							"duration":     5400,
-							"startTime":    float64(time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC).UnixMilli()),
-							"endTime":      float64(time.Date(2026, 7, 1, 9, 30, 0, 0, time.UTC).UnixMilli()),
+							"startTime":    float64(time.Date(day.Year(), day.Month(), day.Day(), 8, 0, 0, 0, time.UTC).UnixMilli()),
+							"endTime":      float64(time.Date(day.Year(), day.Month(), day.Day(), 9, 30, 0, 0, time.UTC).UnixMilli()),
 							"walkDistance": 500.0,
 							"waitingTime":  0,
 							"transfers":    0,
 							"legs": []any{
 								map[string]any{
 									"mode":       "RAIL",
-									"startTime":  float64(time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC).UnixMilli()),
-									"endTime":    float64(time.Date(2026, 7, 1, 9, 30, 0, 0, time.UTC).UnixMilli()),
+									"startTime":  float64(time.Date(day.Year(), day.Month(), day.Day(), 8, 0, 0, 0, time.UTC).UnixMilli()),
+									"endTime":    float64(time.Date(day.Year(), day.Month(), day.Day(), 9, 30, 0, 0, time.UTC).UnixMilli()),
 									"duration":   5400,
 									"from":       map[string]any{"name": "Helsinki", "stop": map[string]any{"code": "HEL"}},
 									"to":         map[string]any{"name": "Tampere", "stop": map[string]any{"code": "TRE"}},
@@ -341,7 +345,7 @@ func TestSearchDigitransit_MockHappyPath2(t *testing.T) {
 		Timeout:   5 * time.Second,
 	}
 
-	routes, err := SearchDigitransit(context.Background(), "Helsinki", "Tampere", "2026-07-01", "EUR")
+	routes, err := SearchDigitransit(context.Background(), "Helsinki", "Tampere", day.Format("2006-01-02"), "EUR")
 	if err != nil {
 		t.Fatalf("SearchDigitransit: %v", err)
 	}
