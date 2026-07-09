@@ -348,9 +348,13 @@ func buildHotelSearchRequest(args map[string]any) (hotelSearchRequest, error) {
 	if _, explicit := args["stars"]; !explicit && opts.Stars == 0 && hints.MinStars > 0 {
 		opts.Stars = hints.MinStars
 	}
-	if _, explicit := args["max_price"]; !explicit && opts.MaxPrice == 0 && hints.MaxPrice > 0 {
-		opts.MaxPrice = hints.MaxPrice
-	}
+	// NOTE: hints.MaxPrice (profile average nightly rate × budget flex) is
+	// deliberately NOT applied here. Seeding a hard price ceiling from a derived
+	// profile average silently truncates results the caller never asked to
+	// exclude — the exact bug fixed for flights in #453 (search_flights was
+	// dropping cheap options below a profile-derived cap). A genuine user
+	// preference (prefs.BudgetPerNightMax, applied above) still constrains the
+	// search; a profile *hint* must not. Do not re-add a hints.MaxPrice seed.
 	if _, explicit := args["property_type"]; !explicit && opts.PropertyType == "" && hints.PropertyType != "" {
 		opts.PropertyType = hints.PropertyType
 	}
@@ -382,6 +386,12 @@ func runHotelSearch(ctx context.Context, req hotelSearchRequest) (*models.HotelS
 		result.Hotels = preferences.FilterHotels(result.Hotels, req.Location, req.Prefs)
 		result.Count = len(result.Hotels)
 	}
+
+	// Shared CLI+MCP post-search policy: when the party includes children, never
+	// surface adults-only properties. Same applicator the CLI uses, so the two
+	// surfaces cannot drift. hidden count is ignored here — the structured Count
+	// already reflects the exclusion.
+	hotels.ApplySharedHotelPolicy(result, len(req.Options.ChildrenAges) > 0)
 
 	return result, nil
 }
