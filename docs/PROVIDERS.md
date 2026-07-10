@@ -47,7 +47,7 @@
 
 ## Flight Providers
 
-trvl ships with **Google Flights** (hand-rolled protobuf) on the default code path, augmented by **Kiwi** (virtual-interlining merge) and **Skiplagged** (hidden-city) for compatible one-way searches. Several additional providers are available as opt-ins for specific use cases — **AFKLM Flying Blue** for award scans, plus the low-cost carriers **Ryanair**, **Wizz Air**, **Transavia**, and **easyJet** via `--provider`:
+trvl ships with **Google Flights** (hand-rolled protobuf) on the default code path, augmented by **Kiwi** (virtual-interlining merge) and **Skiplagged** (hidden-city) for compatible one-way searches. Several additional providers are available as opt-ins for specific use cases — **AFKLM Flying Blue** for award scans, plus the low-cost carriers **Ryanair**, **Wizz Air**, **Transavia**, **easyJet**, **Vueling**, and **Norwegian** via `--provider`:
 
 | Provider | Protocol | Strength | Activation | Auth |
 |----------|----------|----------|------------|------|
@@ -59,6 +59,8 @@ trvl ships with **Google Flights** (hand-rolled protobuf) on the default code pa
 | **Wizz Air** | Public API | Central/Eastern European low-cost routes | `--provider wizzair` | None |
 | **Transavia** | Official API | KLM-group low-cost (NL/FR bases) | `--provider transavia`, opt-in | `TRANSAVIA_API_KEY` (free developer key) |
 | **easyJet** | Availability API | Western European low-cost | `--provider easyjet`, opt-in (`EASYJET_API_BASE`) | None (public path is Akamai bot-defended) |
+| **Vueling** | Availability API | Spanish/European low-cost | `--provider vueling`, opt-in (`VUELING_API_BASE`) | None (public path is Akamai bot-defended) |
+| **Norwegian** | Availability API | Scandinavian low-cost | `--provider norwegian`, opt-in (`NORWEGIAN_API_BASE`) | None (public path is Cloudflare bot-defended) |
 
 The default flight search merges results from Google Flights, Kiwi, and Skiplagged into a single sorted list, so plain `trvl flights HEL BCN 2026-07-01` already includes hidden-city / virtual-interlining options. Use `--provider skiplagged` to query Skiplagged on its own when you want to cross-validate or see only the hidden-city candidates.
 
@@ -75,7 +77,7 @@ trvl flights AMS NRT 2026-09-15 --award
 # AFKLM cash fares only, with native round-trip tickets (both legs, one fare):
 trvl flights AMS BCN 2026-07-01 --return 2026-07-08 --provider afklm
 
-# A single low-cost carrier only (Ryanair, Wizz Air, Transavia, or easyJet).
+# A single low-cost carrier only (Ryanair, Wizz Air, Transavia, easyJet, Vueling, or Norwegian).
 # Low-cost carriers have no discounted return fare, so a --return request is
 # composed honestly as two one-way tickets (both legs, booked separately):
 trvl flights STN DUB 2026-07-01 --return 2026-07-08 --provider ryanair

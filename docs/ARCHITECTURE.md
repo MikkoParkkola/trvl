@@ -300,6 +300,7 @@ Go's `internal/` convention enforces that packages under `internal/` cannot be i
 
 - **API stability**: Only `cmd/trvl` and `mcp/` are public entry points. Internal packages can change freely without breaking external users.
 - **Shared types**: `internal/models` defines `Flight`, `Hotel`, `GroundRoute`, etc. Both CLI and MCP use the same types, ensuring consistency.
+- **Shared post-search policy layer**: `internal/flights/policy.go` (`ApplySharedFlightPolicy`) and `internal/hotels/policy.go` (`ApplySharedHotelPolicy`) are the single source of truth so CLI and MCP cannot drift on budget caps, time windows, FF bag adjustments, and adults-only exclusion (when party includes children). Both surfaces call the shared functions after search; genuine `Budget*Max` prefs apply on both; profile-derived *hints* (e.g. HotelHints.MaxPrice, GroundHints.Type) are deliberately not used for hard filtering.
 - **Shared HTTP layer**: `internal/batchexec` handles TLS fingerprinting, rate limiting, caching, and retry. All Google-facing packages share this single client.
 - **No circular dependencies**: The dependency graph is a clean DAG from entry points down to `models` at the leaf.
 
