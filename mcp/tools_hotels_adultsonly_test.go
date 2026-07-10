@@ -35,9 +35,9 @@ func TestHandleSearchHotels_ExcludesAdultsOnlyForChildren(t *testing.T) {
 	}
 
 	_, structured, err := handleSearchHotels(context.Background(), map[string]any{
-		"location":     "Madeira",
-		"check_in":     "2026-06-15",
-		"check_out":    "2026-06-18",
+		"location":      "Madeira",
+		"check_in":      "2026-06-15",
+		"check_out":     "2026-06-18",
 		"children_ages": []any{7}, // party includes a child -> exclude adults-only
 	}, nil, nil, nil)
 	if err != nil {
