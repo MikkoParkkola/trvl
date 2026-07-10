@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -220,5 +221,78 @@ func TestClientQPSSpacing(t *testing.T) {
 	gap := callTimes[1].Sub(callTimes[0])
 	if gap < 900*time.Millisecond {
 		t.Errorf("QPS gap too short: %v (want >= 900ms)", gap)
+	}
+}
+
+// TestSharedLimiterAcrossProviders proves that two AFKLMProvider / Client
+// instances obtained via the default NewClient path (no injected limiter)
+// share the package singleton and are rate-limited to aggregate 1 QPS.
+// Uses real shared limiter (not Inf test one). 2 requests is sufficient
+// and deterministic for the assertion.
+func TestSharedLimiterAcrossProviders(t *testing.T) {
+	t.Setenv("AFKLM_KEY", "dummy-shared-limiter-test")
+	// Use distinct cache dirs so quota files don't interfere across test runs.
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/hal+json")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"recommendations":[]}`))
+	}))
+	defer srv.Close()
+
+	// Create via NewClient (exercises default shared limiter path).
+	c1, err := NewClient(ClientOptions{
+		Credential: "dummy",
+		BaseURL:    srv.URL,
+		HTTPClient: srv.Client(),
+		CacheDir:   dir1,
+		Now:        time.Now,
+	})
+	if err != nil {
+		t.Fatalf("NewClient c1: %v", err)
+	}
+	c2, err := NewClient(ClientOptions{
+		Credential: "dummy",
+		BaseURL:    srv.URL,
+		HTTPClient: srv.Client(),
+		CacheDir:   dir2,
+		Now:        time.Now,
+	})
+	if err != nil {
+		t.Fatalf("NewClient c2: %v", err)
+	}
+
+	req := AvailableOffersRequest{
+		BookingFlow: "LEISURE",
+		Passengers:  []Passenger{{ID: 1, Type: "ADT"}},
+		RequestedConnections: []RequestedConnection{{
+			DepartureDate: "2026-09-01",
+			Origin:        Place{Type: "AIRPORT", Code: "AMS"},
+			Destination:   Place{Type: "AIRPORT", Code: "PRG"},
+		}},
+	}
+
+	start := time.Now()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		r := req
+		r.RequestedConnections[0].DepartureDate = "2026-09-01"
+		_, _, _ = c1.AvailableOffers(context.Background(), r)
+	}()
+	go func() {
+		defer wg.Done()
+		r := req
+		r.RequestedConnections[0].DepartureDate = "2026-09-02"
+		_, _, _ = c2.AvailableOffers(context.Background(), r)
+	}()
+	wg.Wait()
+	elapsed := time.Since(start)
+
+	if elapsed < 900*time.Millisecond {
+		t.Errorf("shared limiter did not serialize 2 concurrent requests: elapsed=%v (want >=900ms)", elapsed)
 	}
 }

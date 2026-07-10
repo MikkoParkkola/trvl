@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/MikkoParkkola/trvl/internal/flights/afklm"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -24,6 +25,29 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 	var mu sync.Mutex
 	var allFlights []models.FlightResult
 	var wg sync.WaitGroup
+
+	// AFKLM quota protection for multi-airport spread (#471):
+	// The find / tripsearch path + SearchMultiAirport fans N origins (home + nearby + rail+fly)
+	// to other providers unchanged. For AFKLM (1 QPS + hard 100 req/day quota) we issue
+	// at most one query per logical search, using the first (primary) origin/dest pair.
+	// Sub-searches in the fanout are suppressed via the afklmNewProvider seam so they
+	// treat AFKLM as unconfigured. AFKLM results carry their real departure airport codes
+	// and are simply pooled. Non-AFKLM providers are unaffected.
+	if opts.ReturnDate != "" && len(origins) > 0 && len(destinations) > 0 {
+		primO := origins[0]
+		primD := destinations[0]
+		afklmFl, _ := searchAFKLMNativeRoundTrip(ctx, primO, primD, date, opts.ReturnDate, opts)
+		if len(afklmFl) > 0 {
+			mu.Lock()
+			allFlights = append(allFlights, afklmFl...)
+			mu.Unlock()
+		}
+		// Suppress AFKLM in the parallel spread subs (they would otherwise each
+		// call NewProvider + search, burning quota). Restore after.
+		origAF := afklmNewProvider
+		afklmNewProvider = func() (*afklm.AFKLMProvider, error) { return nil, afklm.ErrNoCredential }
+		defer func() { afklmNewProvider = origAF }()
+	}
 
 	for _, orig := range origins {
 		for _, dest := range destinations {

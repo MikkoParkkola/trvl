@@ -3,10 +3,13 @@ package flights
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/flights/afklm"
@@ -449,6 +452,42 @@ func TestSearchRoundTrip_DefaultMerge_SilentSkipNoCredential(t *testing.T) {
 		if f.Provider == "afklm" {
 			t.Errorf("afklm must be absent with no credential")
 		}
+	}
+}
+
+// TestSearchMultiAirport_Spread_AFKLMAtMostOnePerLogicalSearch verifies that
+// when SearchMultiAirport (the spread path used by find + default merge RT)
+// fans multiple origins, AFKLM default-merge path issues at most 1 seam call
+// (hence at most 1 query) thanks to the primary-only + seam-suppression logic.
+func TestSearchMultiAirport_Spread_AFKLMAtMostOnePerLogicalSearch(t *testing.T) {
+	origNew := afklmNewProvider
+	defer func() { afklmNewProvider = origNew }()
+
+	var calls int32
+	afklmNewProvider = func() (*afklm.AFKLMProvider, error) {
+		atomic.AddInt32(&calls, 1)
+		// Return non-NoCredential err so searchAFKLM skips without calling SearchFlights on a nil p
+		// and without network.
+		return nil, fmt.Errorf("afklm test: no real call")
+	}
+
+	origF := afklmTestFlights
+	afklmTestFlights = nil
+	defer func() { afklmTestFlights = origF }()
+
+	// RT + multiple origins exercises the spread + primary AFKLM restriction.
+	// Other providers fan normally; AFKLM must not.
+	// Use short ctx so parallel sub-searches (google etc) fail fast instead of hanging on net.
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	opts := SearchOptions{ReturnDate: "2026-07-10"}
+	_, err := SearchMultiAirport(ctx, []string{"HEL", "AMS"}, []string{"BCN"}, "2026-07-01", opts)
+	if err != nil {
+		// SearchMultiAirport itself does not error on provider failures (they are silent-skipped).
+		t.Fatalf("SearchMultiAirport unexpected err: %v", err)
+	}
+	if calls > 1 {
+		t.Errorf("AFKLM seam called %d times on spread RT search; want <=1 (primary only)", calls)
 	}
 }
 

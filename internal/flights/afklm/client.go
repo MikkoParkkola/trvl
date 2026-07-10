@@ -26,6 +26,22 @@ const (
 // ErrDailyQuotaExhausted is returned when the daily quota has been exhausted.
 var ErrDailyQuotaExhausted = errors.New("afklm: daily quota exhausted (>=95/100 calls used)")
 
+// sharedLimiter returns the process-wide 1 QPS (burst 1) limiter used by
+// all AFKLM clients by default. Created once via sync.Once so that N
+// AFKLMProvider / Client instances share a single rate bucket (addressing
+// the per-instance limiter problem from #471).
+var (
+	sharedLimiter     *rate.Limiter
+	sharedLimiterOnce sync.Once
+)
+
+func getSharedLimiter() *rate.Limiter {
+	sharedLimiterOnce.Do(func() {
+		sharedLimiter = rate.NewLimiter(rate.Every(time.Second), 1)
+	})
+	return sharedLimiter
+}
+
 // ClientOptions configures the AF-KLM HTTP client.
 type ClientOptions struct {
 	BaseURL    string           // default "https://api.airfranceklm.com"
@@ -34,6 +50,7 @@ type ClientOptions struct {
 	CacheDir   string           // default ~/.trvl/cache/afklm
 	HTTPClient *http.Client     // default: stdlib default
 	Now        func() time.Time // injectable for tests
+	Limiter    *rate.Limiter    // if nil, uses the process-wide shared 1 QPS singleton; injectable for tests
 }
 
 // Client is an HTTP client for the AF-KLM Offers API v3.
@@ -88,8 +105,10 @@ func NewClient(opts ClientOptions) (*Client, error) {
 		return nil, fmt.Errorf("afklm: init cache: %w", err)
 	}
 
-	// 1 QPS token bucket; burst=1 for strict 1-per-second enforcement.
-	lim := rate.NewLimiter(rate.Every(time.Second), 1)
+	lim := opts.Limiter
+	if lim == nil {
+		lim = getSharedLimiter()
+	}
 
 	return &Client{
 		baseURL:    opts.BaseURL,
