@@ -90,7 +90,7 @@ func TestEnrichCrossShop_PartialsAndBoundaries(t *testing.T) {
 
 	// non self connect skipped
 	plain := models.FlightResult{Provider: "google_flights", Legs: []models.FlightLeg{{}, {}}}
-	alts, st = enrichCrossShop(context.Background(), []models.FlightResult{plain}, pricer, 0, SearchOptions{})
+	_, st = enrichCrossShop(context.Background(), []models.FlightResult{plain}, pricer, 0, SearchOptions{})
 	if st.Status != models.StatusSkipped {
 		t.Errorf("no eligible selfconnect -> skipped, got %s", st.Status)
 	}
