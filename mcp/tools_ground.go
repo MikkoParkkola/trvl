@@ -13,6 +13,8 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/weather"
 )
 
+var searchGroundByNameFunc = ground.SearchByName
+
 func searchGroundTool() ToolDef {
 	return ToolDef{
 		Name:        "search_ground",
@@ -156,7 +158,7 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 	// show all modes unless the caller passes `type`/`--type` explicitly.
 	// Profile mode-preference as a soft ranking signal remains future work.
 
-	result, err := ground.SearchByName(ctx, from, to, date, opts)
+	result, err := searchGroundByNameFunc(ctx, from, to, date, opts)
 	if err != nil {
 		return nil, nil, toolExecutionError("Ground transport search", err)
 	}
