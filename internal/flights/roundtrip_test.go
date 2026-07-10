@@ -1,9 +1,15 @@
 package flights
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/flights/afklm"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -32,9 +38,12 @@ func TestTagGoogleNativeRoundTrip(t *testing.T) {
 	}
 	f := got[0]
 
-	// A native Google fare is a true round-trip ticket, not a split pair.
-	if f.FareType != models.FareRoundTrip {
-		t.Errorf("FareType: got %q, want %q", f.FareType, models.FareRoundTrip)
+	// Outbound-only native shell (return at booking) is deliberately NOT tagged
+	// FareRoundTrip — only results with a real paired return leg get the tag
+	// (after enrich or when provider returned both). This prevents misleading
+	// callers. Price is still the full RT total.
+	if f.FareType != "" {
+		t.Errorf("FareType: got %q, want empty (outbound-only native shell not tagged round_trip)", f.FareType)
 	}
 	// Price is the full round-trip total (never summed legs) — carried verbatim.
 	if f.Price != 314 {
@@ -78,8 +87,9 @@ func TestTagNativeRoundTrip_KeepsProviderDeepLink(t *testing.T) {
 		t.Fatalf("count: got %d, want 1", len(got))
 	}
 	f := got[0]
-	if f.FareType != models.FareRoundTrip {
-		t.Errorf("FareType: got %q, want %q", f.FareType, models.FareRoundTrip)
+	// Outbound-only: no FareRoundTrip tag (see correctness fix in tagNativeRoundTrip).
+	if f.FareType != "" {
+		t.Errorf("FareType: got %q, want empty (outbound-only native shell not tagged round_trip)", f.FareType)
 	}
 	// Empty bookingURL must preserve the provider's own deep link (it encodes the return).
 	if f.BookingURL != "https://kiwi.com/deep/link?return=2026-07-08" {
@@ -373,4 +383,112 @@ func TestComposedProviderLabel(t *testing.T) {
 	if got := composedProviderLabel("", ""); got != "composed (unknown + unknown)" {
 		t.Errorf("empty label: got %q", got)
 	}
+}
+
+// --- AFKLM opportunistic in default RT merge (credential = enable) + no-cred silent + tag correctness ---
+
+// (var afklmTestFlights lives in roundtrip.go as package-level seam)
+
+func TestSearchRoundTrip_DefaultMerge_IncludesAFKLMWhenCredential(t *testing.T) {
+	sample := models.FlightResult{
+		Price: 453.98, Currency: "EUR", Provider: "afklm", FareType: models.FareRoundTrip,
+		Legs: []models.FlightLeg{
+			{DepartureAirport: models.AirportInfo{Code: "AMS"}, ArrivalAirport: models.AirportInfo{Code: "PRG"}, DepartureTime: "2026-05-15T06:40", Direction: "outbound"},
+			{DepartureAirport: models.AirportInfo{Code: "PRG"}, ArrivalAirport: models.AirportInfo{Code: "AMS"}, DepartureTime: "2026-05-22T20:55", Direction: "inbound"},
+		},
+	}
+	origF := afklmTestFlights
+	afklmTestFlights = []models.FlightResult{sample}
+	defer func() { afklmTestFlights = origF }()
+
+	// stub NewProvider too (seam takes precedence inside search func)
+	origNew := afklmNewProvider
+	afklmNewProvider = func() (*afklm.AFKLMProvider, error) { return nil, nil }
+	defer func() { afklmNewProvider = origNew }()
+
+	body := makeTestFlightBody(t)
+	ts := makeTestFlightServer(t, 200, body)
+	defer ts.Close()
+	bx := batchexec.NewTestClient(ts.URL)
+
+	res, err := SearchFlightsWithClient(context.Background(), bx, "AMS", "PRG", "2026-05-15", SearchOptions{ReturnDate: "2026-05-22"})
+	if err != nil {
+		t.Fatalf("default RT must succeed: %v", err)
+	}
+	has := false
+	for _, f := range res.Flights {
+		if f.Provider == "afklm" && f.FareType == models.FareRoundTrip {
+			has = true
+			break
+		}
+	}
+	if !has {
+		t.Errorf("afklm RT must appear in default merge when 'credential' present via seam")
+	}
+}
+
+func TestSearchRoundTrip_DefaultMerge_SilentSkipNoCredential(t *testing.T) {
+	origNew := afklmNewProvider
+	afklmNewProvider = func() (*afklm.AFKLMProvider, error) { return nil, afklm.ErrNoCredential }
+	defer func() { afklmNewProvider = origNew }()
+
+	origF := afklmTestFlights
+	afklmTestFlights = nil
+	defer func() { afklmTestFlights = origF }()
+
+	body := makeTestFlightBody(t)
+	ts := makeTestFlightServer(t, 200, body)
+	defer ts.Close()
+	bx := batchexec.NewTestClient(ts.URL)
+
+	res, err := SearchFlightsWithClient(context.Background(), bx, "HEL", "NRT", "2026-06-15", SearchOptions{ReturnDate: "2026-06-22"})
+	if err != nil {
+		t.Fatalf("no-cred must not fail the merge: %v", err)
+	}
+	for _, f := range res.Flights {
+		if f.Provider == "afklm" {
+			t.Errorf("afklm must be absent with no credential")
+		}
+	}
+}
+
+func TestOutboundOnlyNativeShell_NotTaggedRoundTrip(t *testing.T) {
+	src := []models.FlightResult{owFlight("Google Flights", "EUR", 300, "HEL", "BCN")}
+	got := tagGoogleNativeRoundTrip(src, "HEL", "BCN", "2026-07-01", "2026-07-08", "EUR")
+	if len(got) != 1 {
+		t.Fatal("expected 1")
+	}
+	if got[0].FareType == models.FareRoundTrip {
+		t.Error("outbound-only native shell must NOT be tagged FareRoundTrip")
+	}
+}
+
+// --- local test helpers ---
+
+func makeTestFlightBody(t *testing.T) []byte {
+	t.Helper()
+	leg := make([]any, 23)
+	leg[3] = "HEL"
+	leg[6] = "NRT"
+	leg[20] = []any{2026.0, 6.0, 15.0}
+	leg[21] = []any{2026.0, 6.0, 16.0}
+	leg[22] = []any{"AY", "79", nil, "Finnair"}
+	fi := make([]any, 13)
+	fi[2] = []any{leg}
+	fi[9] = 350.0
+	fl := []any{fi, []any{[]any{nil, 350.0}}, nil, nil, []any{}}
+	inner := make([]any, 4)
+	inner[2] = []any{[]any{fl}}
+	ij, _ := json.Marshal(inner)
+	outer := []any{[]any{nil, nil, string(ij)}}
+	oj, _ := json.Marshal(outer)
+	return append([]byte(")]}'\n"), oj...)
+}
+
+func makeTestFlightServer(t *testing.T, code int, body []byte) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(code)
+		_, _ = w.Write(body)
+	}))
 }

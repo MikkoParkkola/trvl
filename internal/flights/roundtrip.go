@@ -4,12 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
+	"github.com/MikkoParkkola/trvl/internal/flights/afklm"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
+
+// afklmNewProvider is the constructor used to opportunistically include
+// AFKLM native round-trips in the default merge. It is overridden in tests
+// to inject a pre-configured provider (via NewProviderWithClient) without
+// depending on real credentials or network for credential resolution.
+var afklmNewProvider = afklm.NewProvider
+
+// afklmTestFlights is a test seam (prod code never sets it) allowing
+// deterministic injection of AFKLM results for testing default-merge
+// inclusion without cross-package client construction.
+var afklmTestFlights []models.FlightResult
 
 // Round-trip support combines two complementary sources:
 //
@@ -114,6 +127,17 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 	kiwiRT, kiwiStatuses := searchKiwiNativeRoundTrip(ctx, client, origin, destination, date, returnDate, opts, nativeRoundTripCurrency(opts, composed, outFlights))
 	statuses = append(statuses, kiwiStatuses...)
 	nativeRT = append(nativeRT, kiwiRT...)
+
+	// Opportunistic AFKLM native round-trip (the only provider returning genuine
+	// both-bound single-carrier round-trips) on the DEFAULT merge path.
+	// Included IFF a credential resolves (env AFKLM_KEY / keychain / 1Password)
+	// via the existing NewProvider/ErrNoCredential check — no new plumbing.
+	// When no credential: silent fast skip (no error, no warning, no latency).
+	// Any AFKLM error is non-fatal (log + continue). --provider afklm remains
+	// "AFKLM only"; this path only augments the default Google+Kiwi+Skiplagged.
+	afklmRT, afklmSt := searchAFKLMNativeRoundTrip(ctx, origin, destination, date, returnDate, opts)
+	statuses = append(statuses, afklmSt...)
+	nativeRT = append(nativeRT, afklmRT...)
 
 	// One hop further: native fares that priced the return "at booking" carry
 	// only an outbound leg, so there is nothing for a return-leg condition filter
@@ -395,29 +419,27 @@ const (
 )
 
 // tagNativeRoundTrip converts raw itineraries from a provider's native
-// round-trip request into honest FareRoundTrip results. Each flight keeps its
-// price (the full round-trip total the provider quoted) and gets that
-// round-trip booking URL (empty keeps the provider's own deep link).
+// round-trip request into results. Each flight keeps its price (the full
+// round-trip total the provider quoted) and gets that round-trip booking URL
+// (empty keeps the provider's own deep link).
 //
-// Leg directions are tagged by date: a native round-trip response is
-// inconsistent — sometimes it carries the full round-trip (both halves),
-// sometimes only the outbound itinerary with the return chosen at booking.
-// directionTaggedLegs labels legs departing on/after returnDate as "inbound"
-// using the real data the provider returned, never a fabricated leg. Only when
-// no inbound leg is present do we prepend the "return selected at booking"
-// warning — when the inbound legs ARE present, the tagged legs speak for
-// themselves and that warning would be false. Never mutates the source legs
-// (directionTaggedLegs copies) so cached one-way responses stay untouched.
-// Pure and deterministic so it can be unit-tested without the network.
+// Leg directions are tagged by date using the real data returned; never
+// fabricate a return leg. FareRoundTrip is applied ONLY when a real paired
+// inbound leg is present in the response (hasInbound). Outbound-only shells
+// ("return selected at booking") deliberately keep empty FareType so users
+// are not misled. The warning is added only for the outbound-only case.
+// Never mutates source legs. Pure/deterministic for tests.
 func tagNativeRoundTrip(flights []models.FlightResult, warning, bookingURL, departDate, returnDate string) []models.FlightResult {
 	if len(flights) == 0 {
 		return nil
 	}
 	out := make([]models.FlightResult, 0, len(flights))
 	for _, f := range flights {
-		f.FareType = models.FareRoundTrip
 		legs, hasInbound := directionTaggedLegs(f.Legs, departDate, returnDate)
 		f.Legs = legs
+		if hasInbound {
+			f.FareType = models.FareRoundTrip
+		}
 		if bookingURL != "" {
 			f.BookingURL = bookingURL
 		}
@@ -519,6 +541,70 @@ func searchKiwiNativeRoundTrip(ctx context.Context, client *batchexec.Client, or
 	return native, []models.ProviderStatus{status}
 }
 
+// searchAFKLMNativeRoundTrip attempts to include AFKLM native round-trips in
+// the default merge. It reuses afklm.NewProvider (overridable) to detect
+// credential presence via ErrNoCredential — no new auth code. On no credential
+// it returns immediately with zero results/status (silent). Search errors are
+// best-effort (status recorded but search continues). AFKLM always returns
+// full both-leg round-trips when ReturnDate is supplied.
+func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, returnDate string, opts SearchOptions) ([]models.FlightResult, []models.ProviderStatus) {
+	// test seam: synthetic results (used by unit tests for deterministic AFKLM merge coverage)
+	if len(afklmTestFlights) > 0 {
+		native := append([]models.FlightResult(nil), afklmTestFlights...)
+		target := nativeRoundTripCurrency(opts, nil, nil)
+		normalizeFlightCurrencies(ctx, native, target, destinations.ConvertCurrency)
+		return native, []models.ProviderStatus{{
+			ID: "native_roundtrip:afklm", Name: "AFKLM (native round-trip)", Status: models.StatusOK, Results: len(native),
+		}}
+	}
+
+	p, err := afklmNewProvider()
+	if errors.Is(err, afklm.ErrNoCredential) {
+		return nil, nil // silent, zero latency, zero user signal
+	}
+	if err != nil {
+		slog.Debug("afklm: NewProvider error (non-ErrNoCredential); skipping default merge inclusion", "err", err)
+		return nil, nil
+	}
+
+	res, err := p.SearchFlights(ctx, origin, destination, date, models.FlightSearchOptions{
+		ReturnDate: returnDate,
+		CabinClass: opts.CabinClass,
+		MaxStops:   opts.MaxStops,
+		SortBy:     opts.SortBy,
+		Airlines:   opts.Airlines,
+		Adults:     opts.Adults,
+		Currency:   opts.Currency,
+	})
+	if err != nil {
+		slog.Debug("afklm: search error in default merge (best-effort; does not fail search)", "err", err)
+		return nil, []models.ProviderStatus{{
+			ID:     "native_roundtrip:afklm",
+			Name:   "AFKLM (native round-trip)",
+			Status: models.ClassifyProviderError(err),
+			Error:  err.Error(),
+		}}
+	}
+	if res == nil || !res.Success || len(res.Flights) == 0 {
+		if res != nil && res.Error != "" {
+			slog.Debug("afklm: soft error from provider", "afklm_error", res.Error)
+		}
+		return nil, nil
+	}
+
+	native := append([]models.FlightResult(nil), res.Flights...)
+	target := nativeRoundTripCurrency(opts, nil, nil)
+	normalizeFlightCurrencies(ctx, native, target, destinations.ConvertCurrency)
+
+	st := models.ProviderStatus{
+		ID:      "native_roundtrip:afklm",
+		Name:    "AFKLM (native round-trip)",
+		Status:  okOrNoHit(len(native)),
+		Results: len(native),
+	}
+	return native, []models.ProviderStatus{st}
+}
+
 // nativeRoundTripCurrency picks the currency to normalise native round-trip fares
 // to, so they rank against the composed pairs in one currency: the caller's
 // explicit currency if set, else the currency the composed pairs are already in,
@@ -605,9 +691,27 @@ func enrichNativeReturnLegs(native, inbound []models.FlightResult, n int) ([]mod
 	enriched, eligible := 0, 0
 	for _, idx := range order {
 		f := out[idx]
-		if f.FareType != models.FareRoundTrip || flightHasInboundLeg(f) {
-			continue // already two-legged, or not a native single fare
+		if flightHasInboundLeg(f) {
+			continue // already two-legged (full native RT or post-enrich)
 		}
+		// Only enrich outbound-only *native round-trip shells* (Google/Kiwi
+		// "return selected at booking"). These carry the specific booking-time
+		// warning set by tagNativeRoundTrip. Plain one-ways (e.g. from
+		// composition) and full fares do not; they must stay untouched.
+		// (AFKLM always returns both legs for round-trips.)
+		isNativeOutboundShell := false
+		for _, w := range f.Warnings {
+			if w == googleNativeRoundTripWarning || w == kiwiNativeRoundTripWarning {
+				isNativeOutboundShell = true
+				break
+			}
+		}
+		if !isNativeOutboundShell {
+			continue
+		}
+		// We no longer require FareRoundTrip tag here because tagNativeRoundTrip
+		// now sets it only for responses that already carry a real paired leg
+		// (or we set it here after attaching one).
 		eligible++
 		if enriched >= n {
 			continue // capped — reported below, never silently dropped
@@ -639,6 +743,9 @@ func attachReturnLeg(f, ret models.FlightResult) models.FlightResult {
 	legs = append(legs, f.Legs...)
 	legs = append(legs, taggedLegs(ret.Legs, "inbound")...)
 	f.Legs = legs
+
+	// Now that a real paired return leg is attached, tag as genuine round-trip fare.
+	f.FareType = models.FareRoundTrip
 
 	provider := ret.Provider
 	if provider == "" {
