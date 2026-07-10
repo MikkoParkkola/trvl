@@ -363,7 +363,7 @@ func TestDetectThrowawayGround_ValidInput(t *testing.T) {
 // ============================================================
 
 func TestCheapestFlightInfo_Error(t *testing.T) {
-	p, _, _ := cheapestFlightInfo(nil, nil)
+	p, _, _, _ := cheapestFlightInfo(nil, nil)
 	if p != 0 {
 		t.Errorf("expected 0 price for nil result, got %f", p)
 	}
@@ -371,7 +371,7 @@ func TestCheapestFlightInfo_Error(t *testing.T) {
 
 func TestCheapestFlightInfo_NoFlights(t *testing.T) {
 	result := &models.FlightSearchResult{Success: true, Flights: nil}
-	p, _, _ := cheapestFlightInfo(result, nil)
+	p, _, _, _ := cheapestFlightInfo(result, nil)
 	if p != 0 {
 		t.Errorf("expected 0 price for empty flights, got %f", p)
 	}
@@ -385,7 +385,7 @@ func TestCheapestFlightInfo_WithFlights(t *testing.T) {
 			{Price: 150, Currency: "EUR", Legs: []models.FlightLeg{{Airline: "Norwegian"}}},
 		},
 	}
-	p, cur, airline := cheapestFlightInfo(result, nil)
+	p, cur, airline, _ := cheapestFlightInfo(result, nil)
 	if p != 150 {
 		t.Errorf("expected 150, got %f", p)
 	}

@@ -386,13 +386,8 @@ func formatMiles(n int) string {
 	return b.String()
 }
 
-// railFlyHubs lists origin hub airports where Rail+Fly arbitrage is possible
-// (departing from a rail-connected nearby station/airport can be cheaper).
-// Keyed by ORIGIN — the detector substitutes rail-reachable origins. The
-// --rail-fly flag forces the check even for origins outside this allowlist.
-var railFlyHubs = map[string]bool{
-	"AMS": true, "FRA": true, "CDG": true, "ZRH": true,
-}
+// rail fly gating removed (MIK-469): we now drive purely from
+// hacks.RailFlyStationsForHub(origin) having stations; no hardcoded hub allowlist.
 
 // maybeShowFlightHackTips runs applicable hack detectors after a flight search
 // and prints up to 3 compact tips sorted by savings (highest first).
@@ -452,9 +447,12 @@ func maybeShowFlightHackTips(ctx context.Context, origins, dests []string, depar
 	}
 
 	// --- API-call detector: Rail+Fly (goroutine with 15s timeout) ---
+	// Un-gated (MIK-469): run whenever RailFlyStationsForHub reports stations
+	// for the origin (covers all KLM/AF/LH/LX rail-served hubs + aliases).
+	// The --rail-fly flag still forces it for explicit request.
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	if railFly || railFlyHubs[origin] {
+	if railFly || len(hacks.RailFlyStationsForHub(origin)) > 0 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

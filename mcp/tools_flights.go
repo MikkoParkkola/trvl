@@ -169,6 +169,9 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		opts.SortBy = parsed
 	}
 
+	prefsForSuppression, _ := preferences.Load() //nolint:errcheck
+	opts.SuppressedHacks = prefsForSuppression.SuppressedHacks
+
 	// Apply travel-profile hints as pre-search defaults — only when the caller
 	// has not set the corresponding parameter explicitly.
 	//

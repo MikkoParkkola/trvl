@@ -174,6 +174,7 @@ Examples:
 				Stealth:    stealth,
 				MaxPrice:   maxPrice,
 			}
+			opts.SuppressedHacks = prefs.SuppressedHacks
 
 			// --compare-cabins: search all cabin classes in parallel.
 			if compareCabins {

@@ -174,3 +174,80 @@ func TestFlightSearchPolicyParity(t *testing.T) {
 		}
 	})
 }
+
+// --- #469 rail+fly candidate injection + suppression + conservative tests ---
+
+func TestApplySharedFlightPolicy_InjectsRailFlyCandidateForAMS(t *testing.T) {
+	// Simulate post-attach result with a rail_fly HackSaving that carries a
+	// concrete candidate from a rail station (via detector seam).
+	res := &models.FlightSearchResult{
+		Success: true,
+		Flights: []models.FlightResult{
+			{Price: 300, Currency: "EUR", Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "AMS"}}}},
+		},
+		HackSaving: &models.HackSaving{
+			Type:     "rail_fly_arbitrage",
+			Price:    220,
+			Savings:  80,
+			Currency: "EUR",
+			Candidates: []models.FlightResult{
+				{
+					Price:    220,
+					Currency: "EUR",
+					Legs: []models.FlightLeg{
+						{DepartureAirport: models.AirportInfo{Code: "ZYR"}, ArrivalAirport: models.AirportInfo{Code: "BCN"}},
+					},
+				},
+			},
+		},
+	}
+	ApplySharedFlightPolicy(res, &preferences.Preferences{}, false)
+	if len(res.Flights) < 2 {
+		t.Fatalf("expected >=2 flights after injection, got %d", len(res.Flights))
+	}
+	found := false
+	for _, f := range res.Flights {
+		for _, w := range f.Warnings {
+			if strings.Contains(w, "[rail+fly]") && f.Legs[0].DepartureAirport.Code == "ZYR" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("expected a [rail+fly] candidate from ZYR/ZWE to be injected into ranked results")
+	}
+}
+
+func TestApplySharedFlightPolicy_SuppressesRailFlyCandidate(t *testing.T) {
+	res := &models.FlightSearchResult{
+		Success: true,
+		Flights: []models.FlightResult{{Price: 300, Currency: "EUR"}},
+		HackSaving: &models.HackSaving{
+			Type:       "rail_fly_arbitrage",
+			Candidates: []models.FlightResult{{Price: 220, Currency: "EUR", Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "ZWE"}}}}},
+		},
+	}
+	p := &preferences.Preferences{SuppressedHacks: []string{"rail_fly"}}
+	ApplySharedFlightPolicy(res, p, false)
+	// Only the original; no injection
+	if len(res.Flights) != 1 {
+		t.Fatalf("suppressed rail_fly should not inject candidates, got %d flights", len(res.Flights))
+	}
+}
+
+func TestApplySharedFlightPolicy_Conservative_NoInjectWithoutConcreteItinerary(t *testing.T) {
+	res := &models.FlightSearchResult{
+		Success: true,
+		Flights: []models.FlightResult{{Price: 400, Currency: "EUR"}},
+		HackSaving: &models.HackSaving{
+			Type:    "date_flex", // advisory estimate only, no concrete legs
+			Price:   350,
+			Savings: 50,
+			// Candidates deliberately empty
+		},
+	}
+	ApplySharedFlightPolicy(res, &preferences.Preferences{}, false)
+	if len(res.Flights) != 1 {
+		t.Fatalf("hack saving without concrete Candidates must stay advisory (no injection), got %d flights", len(res.Flights))
+	}
+}

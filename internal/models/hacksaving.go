@@ -36,4 +36,12 @@ type HackSaving struct {
 	Steps []string `json:"steps,omitempty"`
 	// Citations are booking URLs / provider names backing the option.
 	Citations []string `json:"citations,omitempty"`
+
+	// Candidates, when populated, carries concrete bookable FlightResults
+	// (real legs + real price) that were produced by the detector for this
+	// saving (e.g. the actual flights searched from a rail station for
+	// rail_fly_arbitrage). The ApplySharedFlightPolicy layer appends copies
+	// of these into the ranked Flights list when the hack category is not
+	// suppressed. Never fabricate — only real results from a search are put here.
+	Candidates []FlightResult `json:"candidates,omitempty"`
 }

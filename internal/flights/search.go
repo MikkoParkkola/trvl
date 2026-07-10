@@ -79,6 +79,10 @@ type SearchOptions struct {
 	// …) in result.HackSaving. Set NoHacks to run a pure naive search.
 	NoHacks bool
 
+	// SuppressedHacks lists categories (from profile) to avoid injecting as
+	// bookable candidates. Checked in post-policy; advisory path may still run.
+	SuppressedHacks []string
+
 	// Stealth opts into the operator-authorized stealth transport for the
 	// Google Flights fetch. It is DEFAULT OFF (zero value). Even when true,
 	// stealth activates ONLY for a request whose host is on the operator

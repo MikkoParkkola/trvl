@@ -569,6 +569,33 @@ func withRailGroundSearcher(t *testing.T, fn func(ctx context.Context, from, to,
 	t.Cleanup(func() { railGroundSearcher = orig })
 }
 
+// TestRailFlyInjectsConcreteCandidateViaSeam verifies that when the rail
+// station search seam returns a real flight, DetectRailFlyArbitrage populates
+// ConcreteCandidates (for later injection as ranked bookable result).
+func TestRailFlyInjectsConcreteCandidateViaSeam(t *testing.T) {
+	withRailFlyFlightSearcher(t, func(_ context.Context, _ *batchexec.Client, origin, _, _ string, _ flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if origin == "AMS" {
+			return &models.FlightSearchResult{Success: true, Flights: []models.FlightResult{{Price: 280, Currency: "EUR", Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "AMS"}}}}}}, nil
+		}
+		// rail origin returns a concrete cheaper itinerary
+		return &models.FlightSearchResult{Success: true, Flights: []models.FlightResult{{Price: 210, Currency: "EUR", Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "ZWE"}}}}}}, nil
+	})
+	withRailGroundSearcher(t, func(_ context.Context, _, _, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		return &models.GroundSearchResult{Success: true, Count: 1, Routes: []models.GroundRoute{{Provider: "eurostar", Type: "train", Price: 0, Currency: "EUR"}}}, nil
+	})
+
+	hacks := DetectRailFlyArbitrage(context.Background(), "AMS", "BCN", "2026-07-01", "")
+	if len(hacks) == 0 {
+		t.Fatal("expected rail+fly hack for AMS")
+	}
+	if len(hacks[0].ConcreteCandidates) == 0 {
+		t.Fatal("expected ConcreteCandidates populated via rail searcher seam")
+	}
+	if hacks[0].ConcreteCandidates[0].Legs[0].DepartureAirport.Code != "ZWE" {
+		t.Errorf("candidate origin = %q, want ZWE (rail station)", hacks[0].ConcreteCandidates[0].Legs[0].DepartureAirport.Code)
+	}
+}
+
 var testRailFlyStation = railFlyStation{
 	IATA: "ZWE", City: "Antwerp", HubIATA: "AMS", Airline: "KL",
 	AirlineName: "KLM", TrainProvider: "Eurostar", TrainMinutes: 60,

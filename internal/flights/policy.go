@@ -1,6 +1,8 @@
 package flights
 
 import (
+	"strings"
+
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
@@ -30,5 +32,31 @@ func ApplySharedFlightPolicy(result *models.FlightSearchResult, prefs *preferenc
 	}
 	result.Flights = FilterFlightsByTimePreference(result.Flights, prefs.FlightTimeEarliest, prefs.FlightTimeLatest)
 	result.Flights = AdjustBagAllowance(result.Flights, prefs.FrequentFlyerPrograms)
+
+	// #469: inject concrete, bookable hack-derived candidates (e.g. rail+fly
+	// from rail-station origins) into the ranked Flights when the HackSaving
+	// carries real results (never estimates) and the category is not
+	// suppressed via preferences. Advisory-only savings stay out of the
+	// bookable list.
+	if hs := result.HackSaving; hs != nil && len(hs.Candidates) > 0 {
+		if !prefs.HackSuppressed(hs.Type) {
+			for _, c := range hs.Candidates {
+				f := c // copy
+				// Ensure the tradeoff annotation is present on promoted candidate.
+				hasNote := false
+				for _, w := range f.Warnings {
+					if strings.Contains(w, "[rail+fly]") {
+						hasNote = true
+						break
+					}
+				}
+				if !hasNote {
+					f.Warnings = append(f.Warnings, "[rail+fly] throwaway train leg; board/exit at the hub airport")
+				}
+				result.Flights = append(result.Flights, f)
+			}
+		}
+	}
+
 	result.Count = len(result.Flights)
 }

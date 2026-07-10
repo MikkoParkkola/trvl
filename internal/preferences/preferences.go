@@ -130,6 +130,14 @@ type Preferences struct {
 	// hard-excluded from all results (ProfileMatch returns 0 for these).
 	// The warsaw_filter factor reflects this exclusion in the score breakdown.
 	ExcludedDestinations []string `json:"excluded_destinations,omitempty"`
+
+	// SuppressedHacks lists hack categories (e.g. "rail_fly", "hidden_city",
+	// "throwaway") that the user does not want surfaced as injected bookable
+	// candidates (per #469 / #464: opt-OUT, not opt-in). When a category is
+	// present, its concrete candidates are not appended to results; the
+	// advisory HackSaving and tips may still appear unless NoHacks. Absent
+	// or empty means show all by default.
+	SuppressedHacks []string `json:"suppressed_hacks,omitempty"`
 }
 
 // FamilyMember represents a person the user may book travel for.
@@ -390,6 +398,31 @@ func (p *Preferences) ArrivalWindowFor(dest string) (after, before string, ok bo
 		}
 	}
 	return "", "", false
+}
+
+// HackSuppressed returns whether the named hack category (e.g. "rail_fly",
+// "hidden_city") is listed in SuppressedHacks (case-insensitive match).
+// Shorthand categories (e.g. "rail_fly") match full detector types
+// (e.g. "rail_fly_arbitrage") via substring. Returns false when p is nil
+// or the list is empty (default: show everything).
+func (p *Preferences) HackSuppressed(category string) bool {
+	if p == nil || len(p.SuppressedHacks) == 0 {
+		return false
+	}
+	want := strings.ToLower(strings.TrimSpace(category))
+	if want == "" {
+		return false
+	}
+	for _, s := range p.SuppressedHacks {
+		sup := strings.ToLower(strings.TrimSpace(s))
+		if sup == "" {
+			continue
+		}
+		if sup == want || strings.Contains(want, sup) || strings.Contains(sup, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func lowerStr(s string) string {
