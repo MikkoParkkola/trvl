@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.19.1] - 2026-07-10
+
+### Fixed
+
+- **Hotel search CLI/MCP parity.** The MCP `search_hotels` surface no longer
+  seeds a hard nightly-price ceiling from your saved profile (average nightly
+  rate × budget flex), which had silently dropped cheaper properties you never
+  asked to exclude. Your explicit `BudgetPerNightMax` preference still applies
+  on both the CLI and the MCP surface. Adults-only properties are now hidden for
+  parties that include children on **both** surfaces (previously the CLI only);
+  `search_accommodations` inherits the same rule.
+- **Ground transport CLI/MCP parity.** The MCP `search_ground` surface no longer
+  seeds a preferred transport mode from your profile, which had silently hidden
+  other modes (bus/train/ferry) you never excluded. Both the CLI and the MCP
+  surface now show all modes unless you pass an explicit `type` / `--type`.
+
+### Changed
+
+- Internal: extracted the flight and hotel JSON-schema builders into dedicated
+  `schema_*.go` files and added regression-test coverage for the cross-provider
+  merge/filter/eligibility paths where the truncation bugs above hid. No
+  user-facing behaviour change.
+
 ## [1.19.0] - 2026-07-01
 
 ### Added
@@ -820,7 +843,9 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.17.6...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.19.1...HEAD
+[1.19.1]: https://github.com/MikkoParkkola/trvl/compare/v1.19.0...v1.19.1
+[1.19.0]: https://github.com/MikkoParkkola/trvl/compare/v1.18.0...v1.19.0
 [1.17.6]: https://github.com/MikkoParkkola/trvl/compare/v1.17.5...v1.17.6
 [1.17.5]: https://github.com/MikkoParkkola/trvl/compare/v1.17.4...v1.17.5
 [1.17.4]: https://github.com/MikkoParkkola/trvl/compare/v1.17.3...v1.17.4
