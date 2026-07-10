@@ -173,12 +173,21 @@ func runHotels(cmd *cobra.Command, args []string) error {
 	}
 
 	// Apply preference-based filters (only when not already set via flags).
+	// Mirrors the MCP surface (mcp/tools_hotels buildHotelSearchRequest) so a
+	// user preference like BudgetPerNightMax constrains BOTH surfaces, not just
+	// MCP — the CLI previously ignored the budget preference entirely.
 	if prefs != nil {
 		if opts.Stars == 0 && prefs.MinHotelStars > 0 {
 			opts.Stars = prefs.MinHotelStars
 		}
 		if opts.MinRating == 0 && prefs.MinHotelRating > 0 {
 			opts.MinRating = prefs.MinHotelRating
+		}
+		if opts.MaxPrice == 0 && prefs.BudgetPerNightMax > 0 {
+			opts.MaxPrice = prefs.BudgetPerNightMax
+		}
+		if opts.MinPrice == 0 && prefs.BudgetPerNightMin > 0 {
+			opts.MinPrice = prefs.BudgetPerNightMin
 		}
 	}
 
@@ -192,11 +201,11 @@ func runHotels(cmd *cobra.Command, args []string) error {
 	}
 
 	// When the party includes children, never surface adults-only properties.
+	// Shared with the MCP surface via hotels.ApplySharedHotelPolicy so both
+	// behave identically.
 	if children > 0 && result != nil {
-		var hidden int
-		result.Hotels, hidden = excludeAdultsOnly(result.Hotels)
+		hidden := hotels.ApplySharedHotelPolicy(result, true)
 		if hidden > 0 {
-			result.Count = len(result.Hotels)
 			plural := "property"
 			if hidden != 1 {
 				plural = "properties"
@@ -439,20 +448,6 @@ func printHotelLinks(w io.Writer, hotels []models.HotelResult, location string) 
 			_, _ = fmt.Fprintf(w, "      Photo:         %s\n", u)
 		}
 	}
-}
-
-// excludeAdultsOnly returns the hotels with every adults-only property
-// removed, plus the count removed. The input slice is not mutated.
-func excludeAdultsOnly(in []models.HotelResult) (kept []models.HotelResult, hidden int) {
-	kept = make([]models.HotelResult, 0, len(in))
-	for _, h := range in {
-		if h.AdultsOnly {
-			hidden++
-			continue
-		}
-		kept = append(kept, h)
-	}
-	return kept, hidden
 }
 
 // formatProviderWarning builds a one-line transparency warning when any
