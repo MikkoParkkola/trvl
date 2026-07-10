@@ -170,7 +170,7 @@ trvl sends one anonymous heartbeat per install per day so the project knows roug
 
 - a fixed project tag (`trvl`) and event name (`heartbeat`)
 - the trvl version
-- the Go runtime string (OS, architecture, Go version, e.g. `darwin/arm64/go1.26.4`)
+- the Go runtime string (OS, architecture, Go version, e.g. `darwin/arm64/go1.26.5`)
 - a random install id generated locally on first run (stored in `~/.trvl/install-id`)
 
 It never sends your IP, hostname, username, search queries, or any travel data. The collector derives coarse geography server-side from the request and only reports it in aggregate, with a minimum group size of 5 (k-anonymity), so no single install is identifiable. The request has a 3-second timeout and fails silently. If the collector is down or slow, trvl behaves exactly as if telemetry were off.
