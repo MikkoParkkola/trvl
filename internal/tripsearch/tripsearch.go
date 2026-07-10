@@ -293,7 +293,7 @@ func ExpandOrigins(originArg string, prefs *preferences.Preferences) ([]string, 
 	return out, nil
 }
 
-// AddRailFlyOrigins appends ZYR/ANR/BRU when AMS is among origins. Rationale:
+// AddRailFlyOrigins appends ZWE/ZYR when AMS is among origins. Rationale:
 // direct rail connections from AMS Centraal to these Belgian stations make
 // them viable "rail + fly" origins.
 func AddRailFlyOrigins(origins []string) []string {
@@ -311,7 +311,7 @@ func AddRailFlyOrigins(origins []string) []string {
 	for _, o := range origins {
 		existing[strings.ToUpper(o)] = true
 	}
-	for _, rf := range []string{"ZYR", "ANR", "BRU"} {
+	for _, rf := range []string{"ZWE", "ZYR"} {
 		if !existing[rf] {
 			origins = append(origins, rf)
 		}
@@ -373,7 +373,7 @@ func Annotations(f models.FlightResult, origins []string) string {
 	tags := []string{}
 	if len(f.Legs) > 0 {
 		orig := f.Legs[0].DepartureAirport.Code
-		for _, rf := range []string{"ZYR", "ANR", "BRU"} {
+		for _, rf := range []string{"ZWE", "ZYR"} {
 			if orig == rf {
 				tags = append(tags, "[rail+fly]")
 			}

@@ -68,7 +68,7 @@ func findCmdWith(use string, hidden bool) *cobra.Command {
 
 1. Multi-airport origin spread (home + nearby from preferences)
 2. RT via primary airline (google_flights)
-3. Rail+fly origins (ZYR/ANR/BRU) when AMS involved
+3. Rail+fly origins (ZWE/ZYR) when AMS involved
 4. Hidden-city skip-last-leg detection (optional)
 5. Post-search filters (time, lounge, no-early-connection)
 6. Rank: cheapest profile-compliant first
@@ -274,10 +274,10 @@ func nextSaturdayISO(from time.Time) string {
 }
 
 // baselineDirectPrice returns the cheapest fare across bundles whose first
-// leg is NOT a rail-fly origin (ZYR/ANR/BRU). Returns 0 when no direct
+// leg is NOT a rail-fly origin (ZWE/ZYR). Returns 0 when no direct
 // bundles exist — callers suppress the savings callout in that case.
 func baselineDirectPrice(fls []models.FlightResult) float64 {
-	railFly := map[string]bool{"ZYR": true, "ANR": true, "BRU": true}
+	railFly := map[string]bool{"ZWE": true, "ZYR": true}
 	best := 0.0
 	for _, f := range fls {
 		if len(f.Legs) == 0 {

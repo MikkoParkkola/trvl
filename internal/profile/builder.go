@@ -392,14 +392,14 @@ func normalizeGroundMode(provider string) string {
 // allianceMap maps airline IATA codes to alliances.
 var allianceMap = map[string]string{
 	// Star Alliance
-	"LH": "Star Alliance", "SK": "Star Alliance", "LX": "Star Alliance",
+	"LH": "Star Alliance", "LX": "Star Alliance",
 	"OS": "Star Alliance", "SN": "Star Alliance", "TP": "Star Alliance",
 	"TK": "Star Alliance", "A3": "Star Alliance", "LO": "Star Alliance",
 	"NH": "Star Alliance", "SQ": "Star Alliance", "UA": "Star Alliance",
 	"AC": "Star Alliance", "NZ": "Star Alliance", "ET": "Star Alliance",
 	"MS": "Star Alliance",
 	// SkyTeam
-	"AF": "SkyTeam", "KL": "SkyTeam", "AZ": "SkyTeam",
+	"AF": "SkyTeam", "KL": "SkyTeam", "SK": "SkyTeam", "AZ": "SkyTeam",
 	"DL": "SkyTeam", "KE": "SkyTeam", "SU": "SkyTeam",
 	"MU": "SkyTeam", "CZ": "SkyTeam", "CI": "SkyTeam",
 	"ME": "SkyTeam", "RO": "SkyTeam", "SV": "SkyTeam",

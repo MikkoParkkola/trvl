@@ -92,7 +92,7 @@ var skyteamAirlines = map[string]bool{
 	"AF": true, "KL": true, "DL": true, "KE": true, "AZ": true,
 	"MU": true, "AM": true, "ME": true, "RO": true, "OK": true,
 	"SV": true, "VN": true, "GA": true, "CI": true, "CZ": true,
-	"KQ": true, "UX": true, "AR": true,
+	"KQ": true, "UX": true, "AR": true, "SK": true,
 }
 
 // oneworldAirlines lists IATA codes belonging to Oneworld.

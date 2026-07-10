@@ -27,6 +27,7 @@ var Programs = []Program{
 		Slug: "finnair-plus", Name: "Finnair Plus",
 		FloorCPP: 1.0, CeilingCPP: 2.2, Category: "airline",
 	},
+	// NOTE: SK (SAS) now SkyTeam; earning maps to Flying Blue. EuroBonus slug kept for compatibility.
 	{
 		Slug: "sas-eurobonus", Name: "SAS EuroBonus",
 		FloorCPP: 1.0, CeilingCPP: 2.1, Category: "airline",

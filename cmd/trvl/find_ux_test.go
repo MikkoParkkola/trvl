@@ -87,8 +87,8 @@ func TestBaselineDirectPrice_ExcludesRailFly(t *testing.T) {
 	flts := []models.FlightResult{
 		// Direct AMS origin — counts as baseline.
 		{Price: 291, Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "AMS"}}}},
-		// Rail+fly BRU — excluded.
-		{Price: 159, Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "BRU"}}}},
+		// Rail+fly ZWE — excluded.
+		{Price: 159, Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "ZWE"}}}},
 		// Another direct — cheaper, should become baseline.
 		{Price: 250, Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "EIN"}}}},
 	}
@@ -101,7 +101,7 @@ func TestBaselineDirectPrice_ExcludesRailFly(t *testing.T) {
 func TestBaselineDirectPrice_AllRailFlyReturnsZero(t *testing.T) {
 	t.Parallel()
 	flts := []models.FlightResult{
-		{Price: 159, Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "BRU"}}}},
+		{Price: 159, Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "ZWE"}}}},
 		{Price: 170, Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "ZYR"}}}},
 	}
 	if got := baselineDirectPrice(flts); got != 0 {
@@ -160,5 +160,20 @@ func TestSweepSaturdays_BadInputReturnsAsIs(t *testing.T) {
 	got := sweepSaturdays("not-a-date", 30, 4)
 	if len(got) != 1 || got[0] != "not-a-date" {
 		t.Errorf("bad input should round-trip as singleton: %v", got)
+	}
+}
+
+// find rail baseline excludes exactly the rail stations {ZWE, ZYR}.
+func TestBaselineDirectPrice_RailSetIsZWEZYR(t *testing.T) {
+	t.Parallel()
+	// ZWE and ZYR must be excluded; BRU (airport alias) and others are not in this map.
+	flts := []models.FlightResult{
+		{Price: 100, Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "ZWE"}}}},
+		{Price: 110, Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "ZYR"}}}},
+		{Price: 120, Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "BRU"}}}},
+		{Price: 90, Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "AMS"}}}},
+	}
+	if got := baselineDirectPrice(flts); got != 90 {
+		t.Errorf("baselineDirectPrice with ZWE/ZYR rail = %.0f, want 90 (BRU not excluded here)", got)
 	}
 }

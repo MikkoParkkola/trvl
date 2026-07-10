@@ -618,7 +618,7 @@ func prioritiseByDistrict(hotels []models.HotelResult, districts []string) []mod
 const affinityMaxScore = 100.0
 
 // railFlyOrigins is the set of rail+fly airports reachable from AMS.
-var railFlyOrigins = map[string]bool{"ZYR": true, "ANR": true, "BRU": true}
+var railFlyOrigins = map[string]bool{"ZYR": true, "ZWE": true, "BRU": true}
 
 // RecordWinningOrigin increments the affinity score for the given IATA code
 // and persists the change.
@@ -670,7 +670,7 @@ func RecordWinningOrigin(iata string) error {
 // defaultNearbyAirports returns the built-in nearby-airport seed.
 func defaultNearbyAirports() map[string][]string {
 	return map[string][]string{
-		"AMS": {"EIN", "BRU", "ANR", "ZYR"},
+		"AMS": {"EIN", "BRU", "ZWE", "ZYR"},
 		"HEL": {"TKU", "TMP", "TLL", "ARN"},
 	}
 }

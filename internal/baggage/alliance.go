@@ -27,6 +27,7 @@ var allianceMembers = map[string][]string{
 		"UX", // Air Europa
 		"AZ", // ITA Airways
 		"SU", // Aeroflot
+		"SK", // SAS
 	},
 	"oneworld": {
 		"BA", // British Airways
@@ -47,7 +48,6 @@ var allianceMembers = map[string][]string{
 	"star_alliance": {
 		"LH", // Lufthansa
 		"LX", // Swiss
-		"SK", // SAS
 		"TK", // Turkish Airlines
 		"NH", // ANA
 		"UA", // United Airlines
