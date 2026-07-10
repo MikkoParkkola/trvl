@@ -17,6 +17,13 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
+// ArrivalWindow describes a per-destination preferred arrival clock window.
+// "after" and "before" are "HH:MM" bounds (empty means unbounded on that side).
+type ArrivalWindow struct {
+	After  string `json:"after,omitempty"`
+	Before string `json:"before,omitempty"`
+}
+
 // Preferences holds all personal travel preferences for the user.
 type Preferences struct {
 	// Identity
@@ -37,6 +44,11 @@ type Preferences struct {
 	// Preferred districts/neighborhoods per city.
 	// e.g. {"Prague": ["Prague 1", "Prague 2"], "Helsinki": ["Kallio", "Punavuori"]}
 	PreferredDistricts map[string][]string `json:"preferred_districts,omitempty"`
+
+	// Per-destination arrival time windows (profile-driven). Mirrors
+	// PreferredDistricts pattern. Key may be airport code (e.g. "HEL") or city.
+	// Example: {"HEL": {"after": "00:00", "before": "02:00"}}
+	ArrivalWindows map[string]ArrivalWindow `json:"arrival_windows,omitempty"`
 
 	// Currency & locale
 	DisplayCurrency string `json:"display_currency"` // "EUR"
@@ -357,6 +369,27 @@ func (p *Preferences) DistrictsFor(city string) []string {
 		}
 	}
 	return nil
+}
+
+// ArrivalWindowFor returns the (after, before, ok) for the given destination
+// (airport code or city name). Matches exact then case-insensitive.
+// Returns ok=false (and empty strings) when no window is configured for it.
+func (p *Preferences) ArrivalWindowFor(dest string) (after, before string, ok bool) {
+	if p.ArrivalWindows == nil {
+		return "", "", false
+	}
+	// Exact match first.
+	if w, found := p.ArrivalWindows[dest]; found && (w.After != "" || w.Before != "") {
+		return w.After, w.Before, true
+	}
+	// Case-insensitive fallback.
+	destLower := lowerStr(dest)
+	for k, w := range p.ArrivalWindows {
+		if lowerStr(k) == destLower && (w.After != "" || w.Before != "") {
+			return w.After, w.Before, true
+		}
+	}
+	return "", "", false
 }
 
 func lowerStr(s string) string {

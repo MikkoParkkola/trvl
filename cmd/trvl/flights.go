@@ -542,6 +542,7 @@ func printFlightsTable(ctx context.Context, origin, destination, targetCurrency 
 				Total:        f.Price,
 				Stops:        f.Stops,
 				DepartTime:   flightDepartHHMM(f),
+				ArrivalTime:  flightArrivalHHMM(f),
 				AirlineCodes: flightAirlineCodes(f),
 			})
 			label := fmt.Sprintf("#%d", i+1)

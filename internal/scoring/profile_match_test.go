@@ -48,6 +48,7 @@ func TestComputeProfileMatch_DefaultPrefs(t *testing.T) {
 		scoring.FactorBudgetFit,
 		scoring.FactorLoyaltyEarn,
 		scoring.FactorTimeWindowFit,
+		scoring.FactorArrivalWindowFit,
 		scoring.FactorDirectness,
 		scoring.FactorDistrictMatch,
 		scoring.FactorAirportAffinity,
@@ -681,6 +682,7 @@ func TestDefaultWeights_ContainsExpectedFactors(t *testing.T) {
 	for _, factor := range []string{
 		scoring.FactorBudgetFit,
 		scoring.FactorLoyaltyEarn,
+		scoring.FactorArrivalWindowFit,
 		scoring.FactorBucketListBoost,
 		scoring.FactorFamilyModeCompatibility,
 	} {
@@ -691,5 +693,96 @@ func TestDefaultWeights_ContainsExpectedFactors(t *testing.T) {
 	// WarsawFilter is a hard exclusion and should NOT have a weight.
 	if _, ok := weights[scoring.FactorWarsawFilter]; ok {
 		t.Errorf("default weights should not contain %q (hard exclusion, not weighted)", scoring.FactorWarsawFilter)
+	}
+}
+
+// ── Factor: arrival_window_fit (GitHub #470) ─────────────────────────────────
+
+func TestFactor_ArrivalWindowFit_HigherForInWindowArrival(t *testing.T) {
+	prefs := defaultPrefs()
+	prefs.ArrivalWindows = map[string]preferences.ArrivalWindow{
+		"HEL": {After: "00:00", Before: "03:00"},
+	}
+
+	// all else equal; only arrival time differs
+	inEarly := baseInput()
+	inEarly.AirportCode = "HEL"
+	inEarly.CityName = "Helsinki"
+	inEarly.ArrivalTime = "00:25"
+
+	inLate := baseInput()
+	inLate.AirportCode = "HEL"
+	inLate.CityName = "Helsinki"
+	inLate.ArrivalTime = "22:45"
+
+	sEarly, bdEarly := scoring.ComputeProfileMatch(prefs, inEarly)
+	sLate, bdLate := scoring.ComputeProfileMatch(prefs, inLate)
+
+	if bdEarly[scoring.FactorArrivalWindowFit] != 1.0 {
+		t.Errorf("00:25 arrival must be in-window (1.0), got %.2f", bdEarly[scoring.FactorArrivalWindowFit])
+	}
+	if bdLate[scoring.FactorArrivalWindowFit] != 0.25 {
+		t.Errorf("22:45 arrival must be out-of-window (0.25), got %.2f", bdLate[scoring.FactorArrivalWindowFit])
+	}
+	if bdEarly[scoring.FactorArrivalWindowFit] <= bdLate[scoring.FactorArrivalWindowFit] {
+		t.Errorf("arrival_window_fit for 00:25 (%.2f) must be > 22:45 (%.2f)",
+			bdEarly[scoring.FactorArrivalWindowFit], bdLate[scoring.FactorArrivalWindowFit])
+	}
+	// since inputs equal except the factor, overall score must be strictly higher
+	if sEarly <= sLate {
+		t.Errorf("overall score for 00:25 arrival (%d) must be > 22:45 (%d) when window set", sEarly, sLate)
+	}
+}
+
+func TestFactor_ArrivalWindowFit_NeutralWhenUnset_NoRankingChange(t *testing.T) {
+	prefs := defaultPrefs()
+	// deliberately no ArrivalWindows
+
+	inEarly := baseInput()
+	inEarly.AirportCode = "HEL"
+	inEarly.ArrivalTime = "00:25"
+
+	inLate := baseInput()
+	inLate.AirportCode = "HEL"
+	inLate.ArrivalTime = "22:45"
+
+	sEarly, bdEarly := scoring.ComputeProfileMatch(prefs, inEarly)
+	sLate, bdLate := scoring.ComputeProfileMatch(prefs, inLate)
+
+	if bdEarly[scoring.FactorArrivalWindowFit] != 0.5 || bdLate[scoring.FactorArrivalWindowFit] != 0.5 {
+		t.Errorf("no window configured: factor must stay neutral 0.5, got %.2f/%.2f",
+			bdEarly[scoring.FactorArrivalWindowFit], bdLate[scoring.FactorArrivalWindowFit])
+	}
+	if sEarly != sLate {
+		t.Errorf("no window: arrival times must not affect ranking (scores %d vs %d)", sEarly, sLate)
+	}
+}
+
+// TestFactor_ArrivalWindowFit_WrapAround tests the required midnight-crossing case:
+// After > Before means (arr >= After || arr <= Before) is in-window.
+func TestFactor_ArrivalWindowFit_WrapAround(t *testing.T) {
+	prefs := defaultPrefs()
+	prefs.ArrivalWindows = map[string]preferences.ArrivalWindow{
+		"HEL": {After: "22:00", Before: "02:00"},
+	}
+
+	inIn := baseInput()
+	inIn.AirportCode = "HEL"
+	inIn.CityName = "Helsinki"
+	inIn.ArrivalTime = "23:30"
+
+	inOut := baseInput()
+	inOut.AirportCode = "HEL"
+	inOut.CityName = "Helsinki"
+	inOut.ArrivalTime = "12:00"
+
+	_, bdIn := scoring.ComputeProfileMatch(prefs, inIn)
+	_, bdOut := scoring.ComputeProfileMatch(prefs, inOut)
+
+	if bdIn[scoring.FactorArrivalWindowFit] != 1.0 {
+		t.Errorf("23:30 must be in wrap-around window (1.0), got %.2f", bdIn[scoring.FactorArrivalWindowFit])
+	}
+	if bdOut[scoring.FactorArrivalWindowFit] != 0.25 {
+		t.Errorf("12:00 must be out of wrap-around window (0.25), got %.2f", bdOut[scoring.FactorArrivalWindowFit])
 	}
 }

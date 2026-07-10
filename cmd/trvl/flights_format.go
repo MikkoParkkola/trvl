@@ -552,3 +552,33 @@ func flightAirlineCodes(f models.FlightResult) []string {
 	}
 	return codes
 }
+
+// flightArrivalHHMM extracts the "HH:MM" clock time of arrival *at the destination*.
+// For round-trips (Direction-tagged legs), selects the arrival of the last outbound leg.
+// For one-ways falls back to last leg. Duplicates minimal clock-parse to stay surgical.
+func flightArrivalHHMM(f models.FlightResult) string {
+	if len(f.Legs) == 0 {
+		return ""
+	}
+	for i := len(f.Legs) - 1; i >= 0; i-- {
+		leg := f.Legs[i]
+		if leg.Direction == "outbound" || leg.Direction == "" {
+			return extractArrivalClock(leg.ArrivalTime)
+		}
+	}
+	return extractArrivalClock(f.Legs[len(f.Legs)-1].ArrivalTime)
+}
+
+func extractArrivalClock(dt string) string {
+	if len(dt) >= len("2006-01-02T15:04") {
+		clock := dt[len("2006-01-02T"):]
+		if len(clock) > 5 {
+			clock = clock[:5]
+		}
+		return clock
+	}
+	if len(dt) == 5 && dt[2] == ':' {
+		return dt
+	}
+	return ""
+}

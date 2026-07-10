@@ -186,3 +186,36 @@ func TestExtractDepartureHHMM(t *testing.T) {
 		})
 	}
 }
+
+// Regression for GitHub #465: return (inbound) leg departure must also be
+// respected by the time window filter. Outbound may be fine but inbound early
+// must cause exclusion.
+func TestFilterFlightsByTimePreference_ReturnLegRespected(t *testing.T) {
+	flts := []models.FlightResult{
+		{
+			Price: 400,
+			Legs: []models.FlightLeg{
+				{Direction: "outbound", DepartureTime: "2026-07-01T11:00"},
+				{Direction: "inbound", DepartureTime: "2026-07-08T07:00"}, // violates earliest=10:00
+			},
+		},
+		{
+			Price: 500,
+			Legs: []models.FlightLeg{
+				{Direction: "outbound", DepartureTime: "2026-07-01T11:00"},
+				{Direction: "inbound", DepartureTime: "2026-07-08T10:30"},
+			},
+		},
+		{
+			Price: 100, // one-way, should still be filtered on its (only) leg
+			Legs:  []models.FlightLeg{{DepartureTime: "2026-07-01T09:00"}},
+		},
+	}
+	got := FilterFlightsByTimePreference(flts, "10:00", "")
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 kept (the good round-trip), got %d: %+v", len(got), got)
+	}
+	if got[0].Price != 500 {
+		t.Errorf("kept flight price = %.0f, want 500", got[0].Price)
+	}
+}
