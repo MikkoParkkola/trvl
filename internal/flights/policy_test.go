@@ -174,4 +174,3 @@ func TestFlightSearchPolicyParity(t *testing.T) {
 		}
 	})
 }
-
