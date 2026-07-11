@@ -14,6 +14,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/flights/afklm"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"golang.org/x/time/rate"
 )
 
 func owFlight(provider, currency string, price float64, dep, arr string) models.FlightResult {
@@ -452,6 +453,48 @@ func TestSearchRoundTrip_DefaultMerge_SilentSkipNoCredential(t *testing.T) {
 		if f.Provider == "afklm" {
 			t.Errorf("afklm must be absent with no credential")
 		}
+	}
+}
+
+func TestSearchRoundTrip_DefaultMerge_SilentSkipDailyQuota(t *testing.T) {
+	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	d := t.TempDir()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("no HTTP call on AFKLM daily quota in default-merge path")
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	cli, err := afklm.NewClient(afklm.ClientOptions{
+		Credential: "dummy",
+		CacheDir:   d,
+		BaseURL:    srv.URL,
+		HTTPClient: srv.Client(),
+		Now:        func() time.Time { return now },
+		Limiter:    rate.NewLimiter(rate.Inf, 1),
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	cc := cli.Cache()
+	for i := 0; i < 95; i++ {
+		_ = cc.IncQuota(now)
+	}
+
+	p := afklm.NewProviderWithClient(cli)
+
+	origNew := afklmNewProvider
+	afklmNewProvider = func() (*afklm.AFKLMProvider, error) { return p, nil }
+	defer func() { afklmNewProvider = origNew }()
+
+	origF := afklmTestFlights
+	afklmTestFlights = nil
+	defer func() { afklmTestFlights = origF }()
+
+	flights, statuses := searchAFKLMNativeRoundTrip(context.Background(), "AMS", "PRG", "2026-08-01", "2026-08-08", SearchOptions{})
+	if flights != nil || statuses != nil {
+		t.Errorf("searchAFKLMNativeRoundTrip must return nil,nil on daily quota (like ErrNoCredential); got %d/%d", len(flights), len(statuses))
 	}
 }
 

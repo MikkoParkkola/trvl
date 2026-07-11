@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -19,12 +20,19 @@ import (
 const (
 	defaultBaseURL = "https://api.airfranceklm.com"
 	defaultHost    = "KL"
-	// quotaHardLimit is the maximum daily calls before we hard-refuse.
+	// quotaHardLimit is the default daily call limit (headroom below AFKLM's 100).
 	quotaHardLimit = 95
 )
 
-// ErrDailyQuotaExhausted is returned when the daily quota has been exhausted.
-var ErrDailyQuotaExhausted = errors.New("afklm: daily quota exhausted (>=95/100 calls used)")
+// nowFunc is the package-level injectable clock seam for daily quota
+// date rollover detection. Overridden in tests to simulate calendar day
+// changes deterministically.
+var nowFunc = time.Now
+
+// ErrDailyQuota is returned when the daily quota has been exhausted.
+// Callers treat it analogously to ErrNoCredential (silent graceful skip
+// for opportunistic use).
+var ErrDailyQuota = errors.New("afklm: daily quota exhausted")
 
 // sharedLimiter returns the process-wide 1 QPS (burst 1) limiter used by
 // all AFKLM clients by default. Created once via sync.Once so that N
@@ -76,7 +84,7 @@ func NewClient(opts ClientOptions) (*Client, error) {
 		opts.Host = defaultHost
 	}
 	if opts.Now == nil {
-		opts.Now = time.Now
+		opts.Now = nowFunc
 	}
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = &http.Client{Timeout: 30 * time.Second}
@@ -165,23 +173,30 @@ func (c *Client) do(ctx context.Context, path string, body interface{}, daysUnti
 
 // fetch executes the actual HTTP call, enforcing QPS + quota, writing cache.
 func (c *Client) fetch(ctx context.Context, path string, rawBody []byte, cacheKey string, daysUntilDep int) ([]byte, bool, error) {
-	// Quota check (serialised).
+	// Rate-limit wait first (shared 1 QPS).
+	if err := c.limiter.Wait(ctx); err != nil {
+		return nil, false, fmt.Errorf("afklm: rate limiter: %w", err)
+	}
+
+	// Quota check (serialised) AFTER limiter.Wait, right before the live HTTP
+	// request (per spec for #474).
 	c.mu.Lock()
 	used, err := c.cache.QuotaUsed(c.now())
 	if err != nil {
 		c.mu.Unlock()
 		return nil, false, fmt.Errorf("afklm: quota check: %w", err)
 	}
-	if used >= quotaHardLimit {
+	limit := quotaHardLimit
+	if v := os.Getenv("AFKLM_DAILY_LIMIT"); v != "" {
+		if n, perr := strconv.Atoi(v); perr == nil && n > 0 {
+			limit = n
+		}
+	}
+	if used >= limit {
 		c.mu.Unlock()
-		return nil, false, ErrDailyQuotaExhausted
+		return nil, false, ErrDailyQuota
 	}
 	c.mu.Unlock()
-
-	// Rate-limit wait.
-	if err := c.limiter.Wait(ctx); err != nil {
-		return nil, false, fmt.Errorf("afklm: rate limiter: %w", err)
-	}
 
 	respBody, err := c.httpPost(ctx, path, rawBody)
 	if err != nil {
@@ -199,7 +214,7 @@ func (c *Client) fetch(ctx context.Context, path string, rawBody []byte, cacheKe
 		}
 	}
 
-	// Increment quota on successful call.
+	// Increment quota ONLY on successful live network call (not on hits/skips).
 	c.mu.Lock()
 	_ = c.cache.IncQuota(c.now())
 	c.mu.Unlock()

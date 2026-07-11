@@ -576,6 +576,10 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 		Adults:     opts.Adults,
 		Currency:   opts.Currency,
 	})
+	if errors.Is(err, afklm.ErrDailyQuota) {
+		slog.Debug("afklm: daily quota reached; skipping default merge inclusion")
+		return nil, nil
+	}
 	if err != nil {
 		slog.Debug("afklm: search error in default merge (best-effort; does not fail search)", "err", err)
 		return nil, []models.ProviderStatus{{
