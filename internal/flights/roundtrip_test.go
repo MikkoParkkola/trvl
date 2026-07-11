@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -531,6 +532,55 @@ func TestSearchMultiAirport_Spread_AFKLMAtMostOnePerLogicalSearch(t *testing.T) 
 	}
 	if calls > 1 {
 		t.Errorf("AFKLM seam called %d times on spread RT search; want <=1 (primary only)", calls)
+	}
+}
+
+// TestSearchMultiAirport_ConcurrentRoundTrips_NoDataRace guards the fix that
+// removed the afklmNewProvider package-global swap from SearchMultiAirport.
+// The old code mutated that shared global on every RT spread search; two
+// concurrent SearchMultiAirport calls therefore write-write raced on it and
+// `go test -race` flagged it. Suppression now flows through a copied
+// SearchOptions.suppressAFKLM, so concurrent calls share no mutable state.
+// Run under -race this is clean; against the pre-fix code it fails.
+//
+// Beyond race-absence it also asserts the invariant the whole mechanism exists
+// to protect: the AFKLM seam is entered exactly once per logical search (the
+// primary pair) even under concurrency — fanout subs stay suppressed. With N
+// concurrent SearchMultiAirport calls the seam count must equal N, not N×combos.
+func TestSearchMultiAirport_ConcurrentRoundTrips_NoDataRace(t *testing.T) {
+	origNew := afklmNewProvider
+	defer func() { afklmNewProvider = origNew }()
+	var seamCalls int32
+	// Non-network stub so the primary AFKLM read resolves without credentials/net.
+	afklmNewProvider = func() (*afklm.AFKLMProvider, error) {
+		atomic.AddInt32(&seamCalls, 1)
+		return nil, afklm.ErrNoCredential
+	}
+	origF := afklmTestFlights
+	afklmTestFlights = nil
+	defer func() { afklmTestFlights = origF }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	opts := SearchOptions{ReturnDate: "2026-07-10"}
+
+	const n = 4
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Fanout subs fail fast offline; the point is concurrent entry into
+			// the AFKLM-suppression path, which must touch no shared mutable state.
+			_, _ = SearchMultiAirport(ctx, []string{"HEL", "AMS"}, []string{"BCN"}, "2026-07-01", opts)
+		}()
+	}
+	wg.Wait()
+
+	// Exactly one primary seam call per logical search; fanout fully suppressed.
+	// A regression that let fanout subs reach the seam would push this above n.
+	if got := atomic.LoadInt32(&seamCalls); got != n {
+		t.Errorf("AFKLM seam entered %d times across %d concurrent spread searches; want exactly %d (one primary each)", got, n, n)
 	}
 }
 

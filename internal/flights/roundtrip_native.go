@@ -280,6 +280,12 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 		}}
 	}
 
+	// Fanout suppression (set by SearchMultiAirport on sub-searches): skip AFKLM
+	// so its 1-QPS/100-req-day quota is spent at most once per logical search.
+	if opts.suppressAFKLM {
+		return nil, nil
+	}
+
 	p, err := afklmNewProvider()
 	if errors.Is(err, afklm.ErrNoCredential) {
 		return nil, nil // silent, zero latency, zero user signal

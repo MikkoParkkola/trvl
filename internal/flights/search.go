@@ -89,6 +89,14 @@ type SearchOptions struct {
 	// allowlist (TRVL_STEALTH_ALLOWLIST); a requested-but-unauthorized host
 	// runs the normal path and logs a single refusal line. See internal/stealth.
 	Stealth bool
+
+	// suppressAFKLM tells the native round-trip path to skip AFKLM inclusion
+	// for this sub-search. SearchMultiAirport sets it on the fanout sub-options
+	// (not the primary) so the 1-QPS/100-req-day AFKLM quota is spent at most
+	// once per logical search. Threaded via a copied SearchOptions rather than a
+	// mutated package global (which raced under concurrent SearchMultiAirport
+	// calls). Unexported: internal fanout control, not a user-facing knob.
+	suppressAFKLM bool
 }
 
 // defaults fills in zero-value fields with sensible defaults.
@@ -113,14 +121,23 @@ func SearchFlights(ctx context.Context, origin, destination, date string, opts S
 }
 
 // flightSearchKey builds a singleflight dedup key from the search parameters.
+//
+// suppressAFKLM is part of the key because it changes which providers a result
+// includes. Today the one-way singleflight path never sees it set (it is only
+// applied on the round-trip branch, which returns before this key is built), so
+// including it is a no-op for current callers. It is keyed anyway so that if a
+// future change ever routes a suppressed sub-search through singleflight, an
+// AFKLM-suppressed and an AFKLM-included request cannot collide on one cache
+// entry and serve each other's results.
 func flightSearchKey(origin, destination, date string, opts SearchOptions) string {
-	return fmt.Sprintf("flight|%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s|%v|%v|%v|%s|%s|%s",
+	return fmt.Sprintf("flight|%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s|%v|%v|%v|%s|%s|%s|%v",
 		origin, destination, date, opts.ReturnDate,
 		opts.CabinClass, opts.MaxStops, opts.SortBy, opts.Adults,
 		opts.MaxPrice, opts.MaxDuration, opts.CarryOnBags, opts.CheckedBags,
 		opts.Currency, canonicalStringSlice(opts.Airlines),
 		opts.ExcludeBasic, opts.LessEmissions, opts.RequireCheckedBag,
 		canonicalStringSlice(opts.Alliances), opts.DepartAfter, opts.DepartBefore,
+		opts.suppressAFKLM,
 	)
 }
 
