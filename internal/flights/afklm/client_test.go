@@ -265,14 +265,18 @@ func TestSharedLimiterAcrossProviders(t *testing.T) {
 		t.Fatalf("NewClient c2: %v", err)
 	}
 
-	req := AvailableOffersRequest{
-		BookingFlow: "LEISURE",
-		Passengers:  []Passenger{{ID: 1, Type: "ADT"}},
-		RequestedConnections: []RequestedConnection{{
-			DepartureDate: "2026-09-01",
-			Origin:        Place{Type: "AIRPORT", Code: "AMS"},
-			Destination:   Place{Type: "AIRPORT", Code: "PRG"},
-		}},
+	// mkReq builds a fully independent request (own RequestedConnections slice)
+	// so the two goroutines below never write a shared backing array under -race.
+	mkReq := func(date string) AvailableOffersRequest {
+		return AvailableOffersRequest{
+			BookingFlow: "LEISURE",
+			Passengers:  []Passenger{{ID: 1, Type: "ADT"}},
+			RequestedConnections: []RequestedConnection{{
+				DepartureDate: date,
+				Origin:        Place{Type: "AIRPORT", Code: "AMS"},
+				Destination:   Place{Type: "AIRPORT", Code: "PRG"},
+			}},
+		}
 	}
 
 	start := time.Now()
@@ -280,15 +284,11 @@ func TestSharedLimiterAcrossProviders(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		r := req
-		r.RequestedConnections[0].DepartureDate = "2026-09-01"
-		_, _, _ = c1.AvailableOffers(context.Background(), r)
+		_, _, _ = c1.AvailableOffers(context.Background(), mkReq("2026-09-01"))
 	}()
 	go func() {
 		defer wg.Done()
-		r := req
-		r.RequestedConnections[0].DepartureDate = "2026-09-02"
-		_, _, _ = c2.AvailableOffers(context.Background(), r)
+		_, _, _ = c2.AvailableOffers(context.Background(), mkReq("2026-09-02"))
 	}()
 	wg.Wait()
 	elapsed := time.Since(start)
@@ -481,7 +481,7 @@ func TestAFKLMDailyQuota_EnvOverridesThreshold(t *testing.T) {
 
 	t.Setenv("AFKLM_DAILY_LIMIT", "3")
 	// ensure unset after? t.Setenv does restore in Go 1.17+
-	defer os.Unsetenv("AFKLM_DAILY_LIMIT") // belt and suspenders
+	defer func() { _ = os.Unsetenv("AFKLM_DAILY_LIMIT") }() // belt and suspenders
 
 	called := int32(0)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

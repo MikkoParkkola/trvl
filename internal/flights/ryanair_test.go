@@ -32,9 +32,9 @@ func TestSearchRyanair_MapsFare(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	orig := ryanairBaseURL
-	ryanairBaseURL = srv.URL
-	defer func() { ryanairBaseURL = orig }()
+	orig := ryanairURL()
+	ryanairBaseURL.Store(srv.URL)
+	defer func() { ryanairBaseURL.Store(orig) }()
 
 	out, err := SearchRyanair(context.Background(), "STN", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
 	if err != nil {
@@ -66,10 +66,10 @@ func TestSearchRyanair_RateLimitTyped(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(code)
 		}))
-		orig := ryanairBaseURL
-		ryanairBaseURL = srv.URL
+		orig := ryanairURL()
+		ryanairBaseURL.Store(srv.URL)
 		_, err := SearchRyanair(context.Background(), "STN", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
-		ryanairBaseURL = orig
+		ryanairBaseURL.Store(orig)
 		srv.Close()
 		if err == nil {
 			t.Fatalf("status %d: want error, got nil", code)
