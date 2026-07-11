@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/MikkoParkkola/trvl/internal/flights/afklm"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -30,9 +29,10 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 	// The find / tripsearch path + SearchMultiAirport fans N origins (home + nearby + rail+fly)
 	// to other providers unchanged. For AFKLM (1 QPS + hard 100 req/day quota) we issue
 	// at most one query per logical search, using the first (primary) origin/dest pair.
-	// Sub-searches in the fanout are suppressed via the afklmNewProvider seam so they
+	// Sub-searches in the fanout are suppressed via opts.suppressAFKLM so they
 	// treat AFKLM as unconfigured. AFKLM results carry their real departure airport codes
 	// and are simply pooled. Non-AFKLM providers are unaffected.
+	subOpts := opts
 	if opts.ReturnDate != "" && len(origins) > 0 && len(destinations) > 0 {
 		primO := origins[0]
 		primD := destinations[0]
@@ -43,10 +43,9 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 			mu.Unlock()
 		}
 		// Suppress AFKLM in the parallel spread subs (they would otherwise each
-		// call NewProvider + search, burning quota). Restore after.
-		origAF := afklmNewProvider
-		afklmNewProvider = func() (*afklm.AFKLMProvider, error) { return nil, afklm.ErrNoCredential }
-		defer func() { afklmNewProvider = origAF }()
+		// call NewProvider + search, burning quota). Threaded via copied opts —
+		// no shared-global mutation, so concurrent SearchMultiAirport calls are race-free.
+		subOpts.suppressAFKLM = true
 	}
 
 	for _, orig := range origins {
@@ -60,7 +59,7 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 				sem <- struct{}{}
 				defer func() { <-sem }()
 
-				result, err := SearchFlightsWithClient(ctx, client, o, d, date, opts)
+				result, err := SearchFlightsWithClient(ctx, client, o, d, date, subOpts)
 				if err != nil || !result.Success {
 					return // skip failed combos silently
 				}
