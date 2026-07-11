@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -20,12 +21,17 @@ const ryanairFixture = `{"fares":[{"outbound":{
 }}]}`
 
 func TestSearchRyanair_MapsFare(t *testing.T) {
+	// ryanairBaseURL is a process-global that other tests' SearchMultiAirport
+	// fanout can also hit (they issue real Ryanair sub-searches). Assert only on
+	// THIS test's own request (departureAirportIataCode=STN) and answer any
+	// foreign leaked request benignly, so cross-test traffic can't fail us.
+	var sawOwn atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("departureAirportIataCode"); got != "STN" {
-			t.Errorf("departure param = %q, want STN", got)
-		}
-		if got := r.URL.Query().Get("outboundDepartureDateFrom"); got != "2026-07-07" {
-			t.Errorf("date param = %q, want 2026-07-07", got)
+		if r.URL.Query().Get("departureAirportIataCode") == "STN" {
+			if got := r.URL.Query().Get("outboundDepartureDateFrom"); got != "2026-07-07" {
+				t.Errorf("date param = %q, want 2026-07-07", got)
+			}
+			sawOwn.Store(true)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(ryanairFixture))
@@ -39,6 +45,9 @@ func TestSearchRyanair_MapsFare(t *testing.T) {
 	out, err := SearchRyanair(context.Background(), "STN", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
 	if err != nil {
 		t.Fatalf("SearchRyanair error: %v", err)
+	}
+	if !sawOwn.Load() {
+		t.Fatal("stub never received the STN request — SearchRyanair mapped departureAirportIataCode wrong")
 	}
 	if len(out) != 1 {
 		t.Fatalf("want 1 result, got %d", len(out))
