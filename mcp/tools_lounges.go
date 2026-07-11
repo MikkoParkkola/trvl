@@ -183,7 +183,7 @@ var airlineProgramNames = map[string]string{
 	"NH": "ANA Mileage Club",
 	"AC": "Aeroplan",
 	"TK": "Miles&Smiles",
-	"SK": "EuroBonus",
+	"SK": "Flying Blue",
 }
 
 // ffStatusToCards converts a slice of FrequentFlyerStatus into synthetic card

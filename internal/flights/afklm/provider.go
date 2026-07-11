@@ -2,6 +2,7 @@ package afklm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -121,20 +122,17 @@ func (p *AFKLMProvider) SearchFlights(ctx context.Context, origin, dest, date st
 
 	resp, _, err := p.client.AvailableOffers(ctx, req)
 	if err != nil {
-		// Graceful degradation for quota and credential errors.
-		switch err {
-		case ErrDailyQuotaExhausted:
-			return &models.FlightSearchResult{
-				Success:  false,
-				TripType: tripType,
-				Error:    "afklm: daily quota exhausted — try again tomorrow",
-			}, nil
-		case ErrNoCredential:
+		// Graceful degradation for credential errors (quota is propagated so
+		// roundtrip opportunistic path can treat exactly like ErrNoCredential).
+		if errors.Is(err, ErrNoCredential) {
 			return &models.FlightSearchResult{
 				Success:  false,
 				TripType: tripType,
 				Error:    "afklm: no API key configured",
 			}, nil
+		}
+		if errors.Is(err, ErrDailyQuota) {
+			return nil, ErrDailyQuota
 		}
 		return nil, fmt.Errorf("afklm: search: %w", err)
 	}

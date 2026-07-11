@@ -141,10 +141,10 @@ func backToBackLivePrices(ctx context.Context, in DetectorInput) ([]Hack, bool) 
 	wg.Wait()
 
 	// All 4 must succeed for a valid comparison.
-	owOutPrice, owOutCur, _ := cheapestFlightInfo(owOutResult, owOutErr)
-	owRetPrice, _, _ := cheapestFlightInfo(owRetResult, owRetErr)
-	rtOriginPrice, rtCur, _ := cheapestFlightInfo(rtOriginResult, rtOriginErr)
-	rtDestPrice, _, _ := cheapestFlightInfo(rtDestResult, rtDestErr)
+	owOutPrice, owOutCur, _, _ := cheapestFlightInfo(owOutResult, owOutErr)
+	owRetPrice, _, _, _ := cheapestFlightInfo(owRetResult, owRetErr)
+	rtOriginPrice, rtCur, _, _ := cheapestFlightInfo(rtOriginResult, rtOriginErr)
+	rtDestPrice, _, _, _ := cheapestFlightInfo(rtDestResult, rtDestErr)
 
 	if owOutPrice <= 0 || owRetPrice <= 0 || rtOriginPrice <= 0 || rtDestPrice <= 0 {
 		return nil, false

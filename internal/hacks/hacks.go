@@ -178,6 +178,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // Hack represents a detected travel optimization opportunity.
@@ -212,6 +214,13 @@ type Hack struct {
 	// plus the change window and connection-guarantee status so a multimodal
 	// hack is auditable end-to-end. See rail_fly_bundle.go.
 	Bundle *RailFlyBundle `json:"rail_fly_bundle,omitempty"`
+
+	// ConcreteCandidates holds zero or more real FlightResult values returned
+	// by an actual provider search performed inside this detector (e.g. the
+	// cheapest itinerary(s) from a rail-station origin for rail+fly). These
+	// are safe to inject into a search result's Flights list as bookable
+	// ranked candidates. Advisory-only hacks leave this empty. Never invent.
+	ConcreteCandidates []models.FlightResult `json:"-"`
 }
 
 // DetectorInput carries all parameters shared across detectors.

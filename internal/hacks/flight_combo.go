@@ -84,10 +84,13 @@ func DetectFlightCombo(ctx context.Context, in FlightComboInput) []Hack {
 }
 
 // cheapestFlightInfo extracts the cheapest price, currency, and airline from a
-// search result. Returns zero price on any error or empty result.
-func cheapestFlightInfo(result *models.FlightSearchResult, err error) (price float64, cur string, airline string) {
+// search result. Returns zero price on any error or empty result. Also returns
+// the best FlightResult (or nil) so detectors that perform concrete searches
+// (rail+fly) can capture the real itinerary for candidate injection without
+// re-searching or fabricating.
+func cheapestFlightInfo(result *models.FlightSearchResult, err error) (price float64, cur string, airline string, flight *models.FlightResult) {
 	if err != nil || result == nil || !result.Success || len(result.Flights) == 0 {
-		return 0, "", ""
+		return 0, "", "", nil
 	}
 	best := result.Flights[0]
 	for _, f := range result.Flights[1:] {
@@ -96,7 +99,7 @@ func cheapestFlightInfo(result *models.FlightSearchResult, err error) (price flo
 		}
 	}
 	if best.Price <= 0 {
-		return 0, "", ""
+		return 0, "", "", nil
 	}
 	air := ""
 	if len(best.Legs) > 0 {
@@ -105,7 +108,7 @@ func cheapestFlightInfo(result *models.FlightSearchResult, err error) (price flo
 			air = best.Legs[0].AirlineCode
 		}
 	}
-	return best.Price, best.Currency, air
+	return best.Price, best.Currency, air, &best
 }
 
 // detectSingleTripCombo compares a round-trip price against the sum of two
@@ -142,9 +145,9 @@ func detectSingleTripCombo(ctx context.Context, origin, dest string, trip TripLe
 	}()
 	wg.Wait()
 
-	rtPrice, rtCurrency, _ := cheapestFlightInfo(rtResult, rtErr)
-	owOutPrice, _, owOutAirline := cheapestFlightInfo(owOutResult, owOutErr)
-	owRetPrice, _, owRetAirline := cheapestFlightInfo(owRetResult, owRetErr)
+	rtPrice, rtCurrency, _, _ := cheapestFlightInfo(rtResult, rtErr)
+	owOutPrice, _, owOutAirline, _ := cheapestFlightInfo(owOutResult, owOutErr)
+	owRetPrice, _, owRetAirline, _ := cheapestFlightInfo(owRetResult, owRetErr)
 
 	if rtCurrency != "" {
 		currency = rtCurrency
@@ -203,7 +206,7 @@ func detectMultiTripCombo(ctx context.Context, origin, dest string, trips []Trip
 				ReturnDate: t.ReturnDate,
 				SortBy:     models.SortCheapest,
 			})
-			p, c, _ := cheapestFlightInfo(result, err)
+			p, c, _, _ := cheapestFlightInfo(result, err)
 			baselinePrices[i] = rtInfo{price: p, currency: c}
 		}()
 	}
@@ -258,7 +261,7 @@ func detectMultiTripCombo(ctx context.Context, origin, dest string, trips []Trip
 				})
 				<-sem
 
-				p, _, _ := cheapestFlightInfo(result, err)
+				p, _, _, _ := cheapestFlightInfo(result, err)
 				if p <= 0 {
 					return // this permutation is invalid
 				}

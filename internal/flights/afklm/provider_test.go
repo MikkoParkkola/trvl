@@ -2,6 +2,7 @@ package afklm
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -110,14 +111,11 @@ func TestProviderQuotaExhausted(t *testing.T) {
 	p := NewProviderWithClient(client)
 
 	result, err := p.SearchFlights(context.Background(), "AMS", "PRG", "2026-05-15", models.FlightSearchOptions{})
-	if err != nil {
-		t.Fatalf("expected graceful degradation, got error: %v", err)
+	if !errors.Is(err, ErrDailyQuota) {
+		t.Fatalf("expected ErrDailyQuota from SearchFlights on quota, got err=%v result=%+v", err, result)
 	}
-	if result.Success {
-		t.Error("expected success=false on quota exhaustion")
-	}
-	if result.Error == "" {
-		t.Error("expected non-empty result.Error on quota exhaustion")
+	if result != nil {
+		t.Error("expected nil result when returning ErrDailyQuota")
 	}
 }
 

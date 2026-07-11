@@ -22,6 +22,7 @@ const (
 	FactorBudgetFit                 = "budget_fit"
 	FactorLoyaltyEarn               = "loyalty_earn"
 	FactorTimeWindowFit             = "time_window_fit"
+	FactorArrivalWindowFit          = "arrival_window_fit"
 	FactorDirectness                = "directness"
 	FactorDistrictMatch             = "district_match"
 	FactorAirportAffinity           = "airport_affinity"
@@ -41,6 +42,7 @@ func DefaultWeights() map[string]float64 {
 		FactorBudgetFit:                 25.0,
 		FactorLoyaltyEarn:               12.0,
 		FactorTimeWindowFit:             8.0,
+		FactorArrivalWindowFit:          6.0,
 		FactorDirectness:                10.0,
 		FactorDistrictMatch:             8.0,
 		FactorAirportAffinity:           8.0,
@@ -76,6 +78,7 @@ type DiscoverInput struct {
 	// Optional flight detail (populated when calling from flights/hotels views).
 	Stops        int      // number of stops (0 = direct)
 	DepartTime   string   // "HH:MM" 24h format; "" if unknown
+	ArrivalTime  string   // "HH:MM" 24h format arrival at destination; "" if unknown
 	AirlineCodes []string // IATA airline codes for all legs; nil if unknown
 }
 
@@ -111,6 +114,7 @@ func ComputeProfileMatch(prefs *preferences.Preferences, input DiscoverInput) (s
 	breakdown[FactorBudgetFit] = scoreBudgetFit(input)
 	breakdown[FactorLoyaltyEarn] = scoreLoyaltyEarn(prefs, input)
 	breakdown[FactorTimeWindowFit] = scoreTimeWindowFit(prefs, input)
+	breakdown[FactorArrivalWindowFit] = scoreArrivalWindowFit(prefs, input)
 	breakdown[FactorDirectness] = scoreDirectness(prefs, input)
 	breakdown[FactorDistrictMatch] = scoreDistrictMatch(prefs, input)
 	breakdown[FactorAirportAffinity] = scoreAirportAffinity(prefs, input)
@@ -214,6 +218,77 @@ func scoreTimeWindowFit(prefs *preferences.Preferences, input DiscoverInput) flo
 		}
 	}
 	return 1.0
+}
+
+// scoreArrivalWindowFit scores the flight's arrival time at destination against
+// a per-destination arrival window from preferences (if any).
+//
+// Window is [After, Before] in "HH:MM" (bounds optional). Scoring:
+//   - 0.5 (neutral) if no window for dest (via AirportCode then CityName),
+//     or ArrivalTime unknown, or both bounds empty.
+//   - 1.0 if arrival time is inside the window.
+//   - 0.25 if outside.
+//
+// Wrap-around: if After > Before (e.g. "22:00" to "02:00"), inside when
+// arr >= After || arr <= Before. Otherwise (After <= Before) use
+// arr >= After && arr <= Before.
+//
+// Single-bound windows use the half-open rule: >= After or <= Before.
+// Uses parseHHMM; no magic numbers, no hardcoded destinations.
+func scoreArrivalWindowFit(prefs *preferences.Preferences, input DiscoverInput) float64 {
+	after, before, ok := prefs.ArrivalWindowFor(input.AirportCode)
+	if !ok {
+		after, before, ok = prefs.ArrivalWindowFor(input.CityName)
+	}
+	if !ok || (after == "" && before == "") {
+		return 0.5
+	}
+	if input.ArrivalTime == "" {
+		return 0.5
+	}
+	arr := parseHHMM(input.ArrivalTime)
+	if arr < 0 {
+		return 0.5
+	}
+
+	a := -1
+	if after != "" {
+		a = parseHHMM(after)
+	}
+	b := -1
+	if before != "" {
+		b = parseHHMM(before)
+	}
+
+	if a >= 0 && b >= 0 {
+		if a > b {
+			// wrap-around midnight
+			if arr >= a || arr <= b {
+				return 1.0
+			}
+			return 0.25
+		}
+		// normal range
+		if arr >= a && arr <= b {
+			return 1.0
+		}
+		return 0.25
+	}
+	if a >= 0 {
+		// only After bound
+		if arr >= a {
+			return 1.0
+		}
+		return 0.25
+	}
+	if b >= 0 {
+		// only Before bound
+		if arr <= b {
+			return 1.0
+		}
+		return 0.25
+	}
+	return 0.5
 }
 
 // scoreDirectness: prefer direct flights when prefs.PreferDirect is set.

@@ -190,3 +190,14 @@ func TestProgramNameForOneworld(t *testing.T) {
 		}
 	}
 }
+
+// SK SkyTeam earn: SK segment with skyteam alliance earns toward Flying Blue.
+func TestEstimateMilesEarned_SK_SkyTeam_FlyingBlue(t *testing.T) {
+	est := EstimateMilesEarned("AMS", "CPH", "economy", "SK", "skyteam", 150)
+	if est.Program != "Flying Blue" {
+		t.Errorf("SK skyteam: Program = %q, want Flying Blue", est.Program)
+	}
+	if est.Miles <= 0 {
+		t.Errorf("SK skyteam: expected positive miles, got %d", est.Miles)
+	}
+}

@@ -7,13 +7,15 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-// nativeRTFare builds an outbound-only native round-trip fare, mirroring what
-// tagNativeRoundTrip produces when a provider prices the return "at booking":
-// FareRoundTrip, a single outbound-tagged leg, and the booking-time warning.
+// nativeRTFare builds an outbound-only native round-trip fare shell
+// (post-tagNativeRoundTrip for the "return selected at booking" case).
+// Per #468: outbound-only shells are NOT tagged FareRoundTrip (empty FareType)
+// to avoid misleading users; the tag is applied only after a real inbound leg
+// is attached by enrichment (or was present at tag time).
 func nativeRTFare(price float64, warning string) models.FlightResult {
 	return models.FlightResult{
 		Price: price, Currency: "EUR", Provider: "Google Flights",
-		FareType: models.FareRoundTrip,
+		// FareType left unset for outbound-only shell (new tagging rule)
 		Legs: []models.FlightLeg{{
 			DepartureAirport: models.AirportInfo{Code: "HEL"},
 			ArrivalAirport:   models.AirportInfo{Code: "BCN"},

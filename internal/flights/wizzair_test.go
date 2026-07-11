@@ -22,7 +22,11 @@ func TestWizzDefaultVersionWellFormed(t *testing.T) {
 	if !regexp.MustCompile(`^\d+\.\d+\.\d+$`).MatchString(wizzDefaultVersion) {
 		t.Fatalf("wizzDefaultVersion = %q, want a bare semver like \"29.4.0\"", wizzDefaultVersion)
 	}
-	// The resolved version must land in the timetable URL path verbatim.
+	// Snapshot/restore the runtime version var: other tests in suite may have
+	// self-healed it to a newer value; this test must validate the *default const*.
+	orig := wizzVersion
+	wizzVersion = wizzDefaultVersion
+	defer func() { wizzVersion = orig }()
 	if got := wizzTimetableURL(); !strings.Contains(got, "/"+wizzDefaultVersion+"/Api/") {
 		t.Fatalf("wizzTimetableURL() = %q, expected to contain /%s/Api/", got, wizzDefaultVersion)
 	}

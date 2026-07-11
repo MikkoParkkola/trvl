@@ -63,7 +63,7 @@ func BestSaving(ctx context.Context, in DetectorInput, detect DetectFunc) *model
 	price := roundSavings(in.NaivePrice - best.Savings)
 	pct := math.Round(best.Savings/in.NaivePrice*1000) / 10
 
-	return &models.HackSaving{
+	s := &models.HackSaving{
 		Type:        best.Type,
 		Title:       best.Title,
 		Description: best.Description,
@@ -76,4 +76,8 @@ func BestSaving(ctx context.Context, in DetectorInput, detect DetectFunc) *model
 		Steps:       best.Steps,
 		Citations:   best.Citations,
 	}
+	if len(best.ConcreteCandidates) > 0 {
+		s.Candidates = append([]models.FlightResult(nil), best.ConcreteCandidates...)
+	}
+	return s
 }

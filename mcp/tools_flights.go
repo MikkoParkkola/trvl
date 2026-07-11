@@ -169,6 +169,9 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		opts.SortBy = parsed
 	}
 
+	prefsForSuppression, _ := preferences.Load() //nolint:errcheck
+	opts.SuppressedHacks = prefsForSuppression.SuppressedHacks
+
 	// Apply travel-profile hints as pre-search defaults — only when the caller
 	// has not set the corresponding parameter explicitly.
 	//
@@ -540,11 +543,12 @@ func applyFlightProfileHints(opts flights.SearchOptions, args map[string]any, hi
 // dispatchFlightSearch routes a search_flights call to the right
 // provider based on the optional `provider` argument. Empty (or one
 // of the legacy aliases) goes through the default Google Flights +
-// Kiwi merge in `flights.SearchFlights`. `provider="skiplagged"`
-// dispatches to the Skiplagged MCP-backed provider and
-// `provider="afklm"` (aliases af-klm, airfranceklm) to the
-// Air France-KLM Offers API; both are opt-in only and never
-// participate in the default-on path. New providers must explicitly
+// Kiwi + Skiplagged merge in `flights.SearchFlights` (AFKLM is
+// opportunistically merged for round-trips when a credential is
+// present via the standard resolution; see searchRoundTripComposed).
+// `provider="skiplagged"` dispatches Skiplagged solo;
+// `provider="afklm"` (aliases...) forces AFKLM only (still requires
+// credential and errors if absent). New providers must explicitly
 // register here so the dispatcher remains the single switchboard.
 func dispatchFlightSearch(ctx context.Context, args map[string]any, origin, dest, date string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
 	provider := strings.ToLower(strings.TrimSpace(argString(args, "provider")))

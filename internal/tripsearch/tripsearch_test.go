@@ -55,7 +55,7 @@ func TestExpandOrigins_ExplicitStillFans(t *testing.T) {
 
 func TestAddRailFlyOrigins_AMSAddsBelgium(t *testing.T) {
 	out := AddRailFlyOrigins([]string{"AMS"})
-	want := map[string]bool{"AMS": true, "ZYR": true, "ANR": true, "BRU": true}
+	want := map[string]bool{"AMS": true, "ZYR": true, "ZWE": true}
 	for k := range want {
 		found := false
 		for _, o := range out {
@@ -166,13 +166,13 @@ func TestSearch_FullPipelineWithFakeSearch(t *testing.T) {
 		t.Errorf("cheapest should rank first, got %.0f", res.Flights[0].Price)
 	}
 	// Origins should include rail-fly expansion since AMS is in home prefs.
-	haveBRU := false
+	haveZWE := false
 	for _, o := range res.Origins {
-		if o == "BRU" {
-			haveBRU = true
+		if o == "ZWE" {
+			haveZWE = true
 		}
 	}
-	if !haveBRU {
+	if !haveZWE {
 		t.Errorf("rail-fly expansion missing from Origins: %v", res.Origins)
 	}
 	if len(progressSeen) < 3 {
@@ -230,9 +230,9 @@ func TestRouteSummary(t *testing.T) {
 
 func TestAnnotations_RailFlyTagged(t *testing.T) {
 	f := models.FlightResult{Legs: []models.FlightLeg{
-		{DepartureAirport: models.AirportInfo{Code: "BRU"}, ArrivalAirport: models.AirportInfo{Code: "PRG"}},
+		{DepartureAirport: models.AirportInfo{Code: "ZWE"}, ArrivalAirport: models.AirportInfo{Code: "PRG"}},
 	}}
-	if got := Annotations(f, []string{"AMS", "BRU"}); got != "[rail+fly]" {
+	if got := Annotations(f, []string{"AMS", "ZWE"}); got != "[rail+fly]" {
 		t.Errorf("expected [rail+fly], got %q", got)
 	}
 }

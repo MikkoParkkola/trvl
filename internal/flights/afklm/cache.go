@@ -23,10 +23,11 @@ type cacheEntry struct {
 	Body       []byte    `json:"body"`
 }
 
-// quotaEntry is the on-disk representation of the daily quota counter.
-type quotaEntry struct {
-	Count    int       `json:"count"`
-	LastCall time.Time `json:"last_call"`
+// dailyQuota is the on-disk representation for the persistent daily quota
+// counter (single file afklm_daily_quota.json in the cache dir root).
+type dailyQuota struct {
+	Date  string `json:"date"`
+	Count int    `json:"count"`
 }
 
 // lastRequestEntry records debug info about the most recent request.
@@ -57,7 +58,7 @@ type Cache struct {
 // The directory hierarchy is created if absent.
 func NewCache(dir string, now func() time.Time) (*Cache, error) {
 	if now == nil {
-		now = time.Now
+		now = nowFunc
 	}
 	for _, sub := range []string{"entries", "quota"} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o700); err != nil {
@@ -145,9 +146,22 @@ func (c *Cache) Put(key string, body []byte, ttl time.Duration) error {
 	return c.atomicWrite(c.entryPath(key), data)
 }
 
-// QuotaUsed returns the number of API calls made on the given calendar day.
+// QuotaUsed returns the number of API calls made on the calendar day
+// corresponding to the provided time. Uses the single afklm_daily_quota.json
+// file (date-keyed); if stored date != the day's date key, reports 0 (reset).
+//
+// The day key is UTC on purpose — do NOT switch to local time. AFKLM's Offers
+// API runs on Apigee; the "100 calls allowed for the day" limit is an Apigee
+// `calendar`-type quota, and Apigee reads its <StartTime> as GMT ("The time
+// value is the GMT time, not local time"), resetting at a fixed offset from it.
+// So the daily boundary is UTC by the platform's documented default. AFKLM emits
+// no reset headers, so this local counter cannot follow a server signal; a UTC
+// calendar-day counter is the correct mirror. (Residual: AFKLM could override
+// StartTime to a non-midnight-GMT instant; unprovable from public data, midnight
+// UTC is the default + safe model. See hebb decision memory:ftx667ta99vjvhepd61q.)
 func (c *Cache) QuotaUsed(day time.Time) (int, error) {
-	path := c.quotaPath(day)
+	dayKey := day.UTC().Format("2006-01-02")
+	path := c.quotaFile()
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return 0, nil
@@ -155,25 +169,31 @@ func (c *Cache) QuotaUsed(day time.Time) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("afklm quota read: %w", err)
 	}
-	var qe quotaEntry
-	if err := json.Unmarshal(data, &qe); err != nil {
+	var q dailyQuota
+	if err := json.Unmarshal(data, &q); err != nil {
 		return 0, nil
 	}
-	return qe.Count, nil
+	if q.Date != dayKey {
+		return 0, nil
+	}
+	return q.Count, nil
 }
 
-// IncQuota increments the quota counter for the given day.
+// IncQuota increments the quota counter for the given day's key. If the
+// on-disk date differs from the day's key, the count is reset to 0 first
+// (new calendar day). Persists to afklm_daily_quota.json .
 func (c *Cache) IncQuota(day time.Time) error {
-	path := c.quotaPath(day)
+	dayKey := day.UTC().Format("2006-01-02")
+	path := c.quotaFile()
 	count := 0
 	if data, err := os.ReadFile(path); err == nil {
-		var qe quotaEntry
-		if json.Unmarshal(data, &qe) == nil {
-			count = qe.Count
+		var q dailyQuota
+		if json.Unmarshal(data, &q) == nil && q.Date == dayKey {
+			count = q.Count
 		}
 	}
-	qe := quotaEntry{Count: count + 1, LastCall: c.now()}
-	data, err := json.Marshal(qe)
+	q := dailyQuota{Date: dayKey, Count: count + 1}
+	data, err := json.Marshal(q)
 	if err != nil {
 		return fmt.Errorf("afklm quota inc: %w", err)
 	}
@@ -230,9 +250,9 @@ func (c *Cache) entryPath(key string) string {
 	return filepath.Join(c.dir, "entries", key+".json")
 }
 
-// quotaPath returns the file path for a day's quota file.
-func (c *Cache) quotaPath(day time.Time) string {
-	return filepath.Join(c.dir, "quota", day.UTC().Format("2006-01-02")+".json")
+// quotaFile returns the path to the single daily quota file per spec.
+func (c *Cache) quotaFile() string {
+	return filepath.Join(c.dir, "afklm_daily_quota.json")
 }
 
 // atomicWrite writes data to path atomically via a temp file + rename.

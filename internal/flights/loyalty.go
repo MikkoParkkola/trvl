@@ -28,6 +28,7 @@ var allianceMembership = map[string]string{
 	// SkyTeam
 	"AF": "skyteam", // Air France
 	"KL": "skyteam", // KLM
+	"SK": "skyteam", // SAS
 	"DL": "skyteam", // Delta Air Lines
 	"KE": "skyteam", // Korean Air
 	"AZ": "skyteam", // ITA Airways (ex-Alitalia)
@@ -53,7 +54,6 @@ var allianceMembership = map[string]string{
 	"NH": "star_alliance", // ANA
 	"OS": "star_alliance", // Austrian Airlines
 	"LO": "star_alliance", // LOT Polish Airlines
-	"SK": "star_alliance", // SAS Scandinavian Airlines
 	"TP": "star_alliance", // TAP Air Portugal
 	"TK": "star_alliance", // Turkish Airlines
 	"MS": "star_alliance", // EgyptAir

@@ -6,13 +6,17 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-// FilterFlightsByTimePreference drops flights whose first-leg departure time
-// falls outside the [earliest, latest] window. Both bounds are "HH:MM" strings
+// FilterFlightsByTimePreference drops flights whose directional departure time(s)
+// fall outside the [earliest, latest] window. Both bounds are "HH:MM" strings
 // in 24-hour format (e.g. "06:00", "23:00"). An empty string means no bound.
 //
-// The departure time is extracted from the first leg's DepartureTime field,
-// which is formatted as "YYYY-MM-DDTHH:MM" or "HH:MM" (we parse the last 5
-// characters in either case).
+// For one-way results (or untagged legs) the first leg's departure is checked.
+// For round-trips, both the outbound start (first leg) departure and the first
+// inbound (return) leg's departure are checked; the flight is dropped if either
+// violates the window. This ensures the return leg is not a second-class citizen.
+//
+// The departure time is extracted from a leg's DepartureTime field, which may be
+// formatted as "YYYY-MM-DDTHH:MM" or "HH:MM" (we parse the clock portion).
 //
 // The function never mutates the input slice and always returns a valid
 // (possibly empty) slice.
@@ -23,16 +27,7 @@ func FilterFlightsByTimePreference(flights []models.FlightResult, earliest, late
 
 	out := make([]models.FlightResult, 0, len(flights))
 	for _, f := range flights {
-		depTime := extractDepartureHHMM(f)
-		if depTime == "" {
-			// Can't determine time — keep the flight rather than wrongly exclude.
-			out = append(out, f)
-			continue
-		}
-		if earliest != "" && depTime < earliest {
-			continue
-		}
-		if latest != "" && depTime > latest {
+		if !directionalDeparturesInWindow(f, earliest, latest) {
 			continue
 		}
 		out = append(out, f)
@@ -105,11 +100,16 @@ func FirstPricedResult(flights []models.FlightResult) []models.FlightResult {
 
 // extractDepartureHHMM extracts the "HH:MM" departure time from the first leg.
 // Returns "" if the flight has no legs or the time cannot be parsed.
+// (Preserved for existing callers and tests; now one-way behaviour is unchanged.)
 func extractDepartureHHMM(f models.FlightResult) string {
 	if len(f.Legs) == 0 {
 		return ""
 	}
-	dt := f.Legs[0].DepartureTime
+	return extractHHMM(f.Legs[0].DepartureTime)
+}
+
+// extractHHMM parses clock portion from a time string (shared by directional checks).
+func extractHHMM(dt string) string {
 	if dt == "" {
 		return ""
 	}
@@ -125,4 +125,50 @@ func extractDepartureHHMM(f models.FlightResult) string {
 		return dt
 	}
 	return ""
+}
+
+// directionalDeparturesInWindow returns true if all checked directional
+// departure times are inside the window (or no times to check).
+// Checks outbound/first leg + first inbound leg (if present).
+func directionalDeparturesInWindow(f models.FlightResult, earliest, latest string) bool {
+	if len(f.Legs) == 0 {
+		return true // keep as before
+	}
+	ts := collectDirectionalDepTimes(f)
+	for _, t := range ts {
+		if t == "" {
+			continue
+		}
+		if earliest != "" && t < earliest {
+			return false
+		}
+		if latest != "" && t > latest {
+			return false
+		}
+	}
+	return true
+}
+
+// collectDirectionalDepTimes returns the HH:MM strings for the legs that
+// represent journey starts: the first leg (outbound/one-way) and the first
+// inbound leg if the result is a round-trip.
+func collectDirectionalDepTimes(f models.FlightResult) []string {
+	var ts []string
+	if len(f.Legs) == 0 {
+		return ts
+	}
+	// Outbound or one-way start: first leg.
+	if d := extractHHMM(f.Legs[0].DepartureTime); d != "" {
+		ts = append(ts, d)
+	}
+	// First inbound (return) departure, if present.
+	for _, leg := range f.Legs {
+		if leg.Direction == "inbound" {
+			if d := extractHHMM(leg.DepartureTime); d != "" {
+				ts = append(ts, d)
+			}
+			break
+		}
+	}
+	return ts
 }

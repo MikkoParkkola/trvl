@@ -88,28 +88,28 @@ func TestDetectFlightCombo_defaultCurrency(t *testing.T) {
 // --- cheapestFlightInfo helper ---
 
 func TestCheapestFlightInfo_nil(t *testing.T) {
-	price, cur, airline := cheapestFlightInfo(nil, nil)
+	price, cur, airline, _ := cheapestFlightInfo(nil, nil)
 	if price != 0 || cur != "" || airline != "" {
 		t.Errorf("expected zeros for nil result, got price=%v cur=%q airline=%q", price, cur, airline)
 	}
 }
 
 func TestCheapestFlightInfo_error(t *testing.T) {
-	price, _, _ := cheapestFlightInfo(nil, context.DeadlineExceeded)
+	price, _, _, _ := cheapestFlightInfo(nil, context.DeadlineExceeded)
 	if price != 0 {
 		t.Errorf("expected 0 price on error, got %v", price)
 	}
 }
 
 func TestCheapestFlightInfo_unsuccessful(t *testing.T) {
-	price, _, _ := cheapestFlightInfo(&models.FlightSearchResult{Success: false}, nil)
+	price, _, _, _ := cheapestFlightInfo(&models.FlightSearchResult{Success: false}, nil)
 	if price != 0 {
 		t.Errorf("expected 0 price for unsuccessful result, got %v", price)
 	}
 }
 
 func TestCheapestFlightInfo_emptyFlights(t *testing.T) {
-	price, _, _ := cheapestFlightInfo(&models.FlightSearchResult{
+	price, _, _, _ := cheapestFlightInfo(&models.FlightSearchResult{
 		Success: true,
 		Flights: []models.FlightResult{},
 	}, nil)
@@ -119,7 +119,7 @@ func TestCheapestFlightInfo_emptyFlights(t *testing.T) {
 }
 
 func TestCheapestFlightInfo_singleFlight(t *testing.T) {
-	price, cur, airline := cheapestFlightInfo(&models.FlightSearchResult{
+	price, cur, airline, _ := cheapestFlightInfo(&models.FlightSearchResult{
 		Success: true,
 		Flights: []models.FlightResult{
 			{
@@ -141,7 +141,7 @@ func TestCheapestFlightInfo_singleFlight(t *testing.T) {
 }
 
 func TestCheapestFlightInfo_picksCheapest(t *testing.T) {
-	price, _, airline := cheapestFlightInfo(&models.FlightSearchResult{
+	price, _, airline, _ := cheapestFlightInfo(&models.FlightSearchResult{
 		Success: true,
 		Flights: []models.FlightResult{
 			{Price: 300, Currency: "EUR", Legs: []models.FlightLeg{{Airline: "Lufthansa"}}},
@@ -158,7 +158,7 @@ func TestCheapestFlightInfo_picksCheapest(t *testing.T) {
 }
 
 func TestCheapestFlightInfo_skipsZeroPrice(t *testing.T) {
-	price, _, _ := cheapestFlightInfo(&models.FlightSearchResult{
+	price, _, _, _ := cheapestFlightInfo(&models.FlightSearchResult{
 		Success: true,
 		Flights: []models.FlightResult{
 			{Price: 0, Currency: "EUR"},
@@ -171,7 +171,7 @@ func TestCheapestFlightInfo_skipsZeroPrice(t *testing.T) {
 }
 
 func TestCheapestFlightInfo_allZero(t *testing.T) {
-	price, _, _ := cheapestFlightInfo(&models.FlightSearchResult{
+	price, _, _, _ := cheapestFlightInfo(&models.FlightSearchResult{
 		Success: true,
 		Flights: []models.FlightResult{
 			{Price: 0},
@@ -184,7 +184,7 @@ func TestCheapestFlightInfo_allZero(t *testing.T) {
 }
 
 func TestCheapestFlightInfo_noLegs(t *testing.T) {
-	_, _, airline := cheapestFlightInfo(&models.FlightSearchResult{
+	_, _, airline, _ := cheapestFlightInfo(&models.FlightSearchResult{
 		Success: true,
 		Flights: []models.FlightResult{
 			{Price: 100, Currency: "EUR", Legs: nil},
@@ -196,7 +196,7 @@ func TestCheapestFlightInfo_noLegs(t *testing.T) {
 }
 
 func TestCheapestFlightInfo_fallbackToAirlineCode(t *testing.T) {
-	_, _, airline := cheapestFlightInfo(&models.FlightSearchResult{
+	_, _, airline, _ := cheapestFlightInfo(&models.FlightSearchResult{
 		Success: true,
 		Flights: []models.FlightResult{
 			{Price: 100, Currency: "EUR", Legs: []models.FlightLeg{{Airline: "", AirlineCode: "AY"}}},

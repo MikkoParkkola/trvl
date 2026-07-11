@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -28,8 +29,15 @@ import (
 
 const ryanairFarfndDefault = "https" + "://" + "services-api.ryanair.com/farfnd/v4/oneWayFares"
 
-// ryanairBaseURL is overridable in tests.
-var ryanairBaseURL = ryanairFarfndDefault
+// ryanairBaseURL is overridable in tests. Accessed atomically: the default
+// suite runs live concurrent-provider searches under -race, whose in-flight
+// goroutines read this while ryanair unit tests swap it (see ryanair_test.go).
+var ryanairBaseURL atomic.Value // holds string
+
+func init() { ryanairBaseURL.Store(ryanairFarfndDefault) }
+
+// ryanairURL returns the current base URL.
+func ryanairURL() string { return ryanairBaseURL.Load().(string) }
 
 var (
 	ryanairLimiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 1)
@@ -80,7 +88,7 @@ func SearchRyanair(ctx context.Context, origin, destination, date, currency stri
 	q.Set("outboundDepartureDateFrom", date)
 	q.Set("outboundDepartureDateTo", date)
 	q.Set("currency", currency)
-	reqURL := ryanairBaseURL + "?" + q.Encode()
+	reqURL := ryanairURL() + "?" + q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {

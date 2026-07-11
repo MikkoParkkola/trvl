@@ -18,6 +18,9 @@ func TestIsAllianceMember(t *testing.T) {
 		{"kl", "skyteam", true}, // case-insensitive airline
 		{"KL", "oneworld", false},
 		{"KL", "star_alliance", false},
+		{"SK", "skyteam", true},
+		{"SK", "star_alliance", false},
+		{"SK", "oneworld", false},
 		{"BA", "oneworld", true},
 		{"BA", "skyteam", false},
 		{"LH", "star_alliance", true},
@@ -52,6 +55,7 @@ func TestAllianceForAirline(t *testing.T) {
 		{"KL", "skyteam"},
 		{"AF", "skyteam"},
 		{"DL", "skyteam"},
+		{"SK", "skyteam"},
 		{"BA", "oneworld"},
 		{"AA", "oneworld"},
 		{"QF", "oneworld"},

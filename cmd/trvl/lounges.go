@@ -199,5 +199,5 @@ var loungeAirlineProgramNames = map[string]string{
 	"AF": "Flying Blue", "KL": "Flying Blue", "DL": "Delta SkyMiles",
 	"KE": "Korean Air SKYPASS", "LH": "Miles & More", "UA": "MileagePlus",
 	"SQ": "KrisFlyer", "TG": "Royal Orchid Plus", "NH": "ANA Mileage Club",
-	"AC": "Aeroplan", "TK": "Miles&Smiles", "SK": "EuroBonus",
+	"AC": "Aeroplan", "TK": "Miles&Smiles", "SK": "Flying Blue",
 }

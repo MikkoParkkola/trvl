@@ -17,6 +17,13 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
+// ArrivalWindow describes a per-destination preferred arrival clock window.
+// "after" and "before" are "HH:MM" bounds (empty means unbounded on that side).
+type ArrivalWindow struct {
+	After  string `json:"after,omitempty"`
+	Before string `json:"before,omitempty"`
+}
+
 // Preferences holds all personal travel preferences for the user.
 type Preferences struct {
 	// Identity
@@ -37,6 +44,11 @@ type Preferences struct {
 	// Preferred districts/neighborhoods per city.
 	// e.g. {"Prague": ["Prague 1", "Prague 2"], "Helsinki": ["Kallio", "Punavuori"]}
 	PreferredDistricts map[string][]string `json:"preferred_districts,omitempty"`
+
+	// Per-destination arrival time windows (profile-driven). Mirrors
+	// PreferredDistricts pattern. Key may be airport code (e.g. "HEL") or city.
+	// Example: {"HEL": {"after": "00:00", "before": "02:00"}}
+	ArrivalWindows map[string]ArrivalWindow `json:"arrival_windows,omitempty"`
 
 	// Currency & locale
 	DisplayCurrency string `json:"display_currency"` // "EUR"
@@ -118,6 +130,14 @@ type Preferences struct {
 	// hard-excluded from all results (ProfileMatch returns 0 for these).
 	// The warsaw_filter factor reflects this exclusion in the score breakdown.
 	ExcludedDestinations []string `json:"excluded_destinations,omitempty"`
+
+	// SuppressedHacks lists hack categories (e.g. "rail_fly", "hidden_city",
+	// "throwaway") that the user does not want surfaced as injected bookable
+	// candidates (per #469 / #464: opt-OUT, not opt-in). When a category is
+	// present, its concrete candidates are not appended to results; the
+	// advisory HackSaving and tips may still appear unless NoHacks. Absent
+	// or empty means show all by default.
+	SuppressedHacks []string `json:"suppressed_hacks,omitempty"`
 }
 
 // FamilyMember represents a person the user may book travel for.
@@ -357,6 +377,52 @@ func (p *Preferences) DistrictsFor(city string) []string {
 		}
 	}
 	return nil
+}
+
+// ArrivalWindowFor returns the (after, before, ok) for the given destination
+// (airport code or city name). Matches exact then case-insensitive.
+// Returns ok=false (and empty strings) when no window is configured for it.
+func (p *Preferences) ArrivalWindowFor(dest string) (after, before string, ok bool) {
+	if p.ArrivalWindows == nil {
+		return "", "", false
+	}
+	// Exact match first.
+	if w, found := p.ArrivalWindows[dest]; found && (w.After != "" || w.Before != "") {
+		return w.After, w.Before, true
+	}
+	// Case-insensitive fallback.
+	destLower := lowerStr(dest)
+	for k, w := range p.ArrivalWindows {
+		if lowerStr(k) == destLower && (w.After != "" || w.Before != "") {
+			return w.After, w.Before, true
+		}
+	}
+	return "", "", false
+}
+
+// HackSuppressed returns whether the named hack category (e.g. "rail_fly",
+// "hidden_city") is listed in SuppressedHacks (case-insensitive match).
+// Shorthand categories (e.g. "rail_fly") match full detector types
+// (e.g. "rail_fly_arbitrage") via substring. Returns false when p is nil
+// or the list is empty (default: show everything).
+func (p *Preferences) HackSuppressed(category string) bool {
+	if p == nil || len(p.SuppressedHacks) == 0 {
+		return false
+	}
+	want := strings.ToLower(strings.TrimSpace(category))
+	if want == "" {
+		return false
+	}
+	for _, s := range p.SuppressedHacks {
+		sup := strings.ToLower(strings.TrimSpace(s))
+		if sup == "" {
+			continue
+		}
+		if sup == want || strings.Contains(want, sup) || strings.Contains(sup, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func lowerStr(s string) string {
@@ -618,7 +684,7 @@ func prioritiseByDistrict(hotels []models.HotelResult, districts []string) []mod
 const affinityMaxScore = 100.0
 
 // railFlyOrigins is the set of rail+fly airports reachable from AMS.
-var railFlyOrigins = map[string]bool{"ZYR": true, "ANR": true, "BRU": true}
+var railFlyOrigins = map[string]bool{"ZYR": true, "ZWE": true, "BRU": true}
 
 // RecordWinningOrigin increments the affinity score for the given IATA code
 // and persists the change.
@@ -670,7 +736,7 @@ func RecordWinningOrigin(iata string) error {
 // defaultNearbyAirports returns the built-in nearby-airport seed.
 func defaultNearbyAirports() map[string][]string {
 	return map[string][]string{
-		"AMS": {"EIN", "BRU", "ANR", "ZYR"},
+		"AMS": {"EIN", "BRU", "ZWE", "ZYR"},
 		"HEL": {"TKU", "TMP", "TLL", "ARN"},
 	}
 }

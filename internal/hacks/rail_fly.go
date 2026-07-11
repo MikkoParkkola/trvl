@@ -78,7 +78,7 @@ func DetectRailFlyArbitrage(ctx context.Context, origin, destination, departDate
 	}
 
 	baseResult, baseErr := railFlyFlightSearcher(ctx, client, origin, destination, departDate, baseOpts)
-	basePrice, baseCurrency, _ := cheapestFlightInfo(baseResult, baseErr)
+	basePrice, baseCurrency, _, _ := cheapestFlightInfo(baseResult, baseErr)
 	if basePrice <= 0 {
 		return nil
 	}
@@ -88,6 +88,7 @@ func DetectRailFlyArbitrage(ctx context.Context, origin, destination, departDate
 		station  railFlyStation
 		price    float64
 		currency string
+		flight   *models.FlightResult // cheapest concrete itinerary from this rail station search (for candidate injection)
 	}
 
 	results := make(chan railResult, len(stations))
@@ -105,8 +106,8 @@ func DetectRailFlyArbitrage(ctx context.Context, origin, destination, departDate
 				opts.ReturnDate = returnDate
 			}
 			res, err := railFlyFlightSearcher(ctx, client, st.IATA, destination, departDate, opts)
-			p, c, _ := cheapestFlightInfo(res, err)
-			results <- railResult{station: st, price: p, currency: c}
+			p, c, _, fl := cheapestFlightInfo(res, err)
+			results <- railResult{station: st, price: p, currency: c, flight: fl}
 		}()
 	}
 
@@ -119,6 +120,7 @@ func DetectRailFlyArbitrage(ctx context.Context, origin, destination, departDate
 	var bestStation *railFlyStation
 	bestPrice := basePrice
 	bestCurrency := baseCurrency
+	var bestFlight *models.FlightResult
 
 	for r := range results {
 		if r.price > 0 && r.price < bestPrice {
@@ -126,6 +128,7 @@ func DetectRailFlyArbitrage(ctx context.Context, origin, destination, departDate
 			bestCurrency = r.currency
 			st := r.station
 			bestStation = &st
+			bestFlight = r.flight
 		}
 	}
 
@@ -160,6 +163,17 @@ func DetectRailFlyArbitrage(ctx context.Context, origin, destination, departDate
 	// and the connection-guarantee status.
 	bundle := composeRailFlyBundle(ctx, origin, destination, departDate, returnDate, *bestStation, bestPrice, basePrice, bestCurrency)
 	hack.Bundle = bundle.Bundle
+
+	// Capture the real flight result from the rail-station search as a
+	// bookable candidate. Annotate with [rail+fly] + tradeoff note. This is
+	// the only path that injects real (non-fabricated) itineraries for
+	// rail+fly. The policy layer will promote when not suppressed.
+	if bestFlight != nil {
+		cand := *bestFlight // copy value
+		cand.Warnings = append([]string(nil), cand.Warnings...)
+		cand.Warnings = append(cand.Warnings, "[rail+fly] throwaway train leg; board/exit at the hub airport")
+		hack.ConcreteCandidates = append(hack.ConcreteCandidates, cand)
+	}
 
 	out := []Hack{hack}
 

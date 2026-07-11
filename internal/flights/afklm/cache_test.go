@@ -131,7 +131,8 @@ func TestCachePurgeOldQuotaFiles(t *testing.T) {
 		t.Fatalf("NewCache: %v", err)
 	}
 
-	// Write quota files for 40 days ago, 10 days ago, and today.
+	// With single-file daily quota design (afklm_daily_quota.json), only the
+	// "current" day's count (per now) is retained; non-matching date keys report 0.
 	for _, daysAgo := range []int{40, 10, 0} {
 		day := now.AddDate(0, 0, -daysAgo)
 		if err := c.IncQuota(day); err != nil {
@@ -139,29 +140,38 @@ func TestCachePurgeOldQuotaFiles(t *testing.T) {
 		}
 	}
 
-	// Purge files older than 30 days.
+	// Purge (best-effort; single file never accumulates per-day files).
 	if err := c.Purge(30 * 24 * time.Hour); err != nil {
 		t.Fatalf("Purge: %v", err)
 	}
 
-	// 40-days-ago file should be gone.
+	// Non-today days report 0 (date key mismatch in single file).
 	oldDay := now.AddDate(0, 0, -40)
 	used, err := c.QuotaUsed(oldDay)
 	if err != nil {
 		t.Fatalf("QuotaUsed: %v", err)
 	}
 	if used != 0 {
-		t.Error("old quota file should have been purged")
+		t.Error("non-current day must report 0")
 	}
 
-	// 10-days-ago file should survive.
 	recentDay := now.AddDate(0, 0, -10)
 	used2, err := c.QuotaUsed(recentDay)
 	if err != nil {
 		t.Fatalf("QuotaUsed recent: %v", err)
 	}
-	if used2 != 1 {
-		t.Errorf("recent quota file should survive, got %d", used2)
+	if used2 != 0 {
+		t.Errorf("non-current day must report 0, got %d", used2)
+	}
+
+	// Today (last inc key) reports its count.
+	today := now
+	usedToday, err := c.QuotaUsed(today)
+	if err != nil {
+		t.Fatalf("QuotaUsed today: %v", err)
+	}
+	if usedToday != 1 {
+		t.Errorf("current day should have count 1, got %d", usedToday)
 	}
 }
 
