@@ -149,6 +149,16 @@ func (c *Cache) Put(key string, body []byte, ttl time.Duration) error {
 // QuotaUsed returns the number of API calls made on the calendar day
 // corresponding to the provided time. Uses the single afklm_daily_quota.json
 // file (date-keyed); if stored date != the day's date key, reports 0 (reset).
+//
+// The day key is UTC on purpose — do NOT switch to local time. AFKLM's Offers
+// API runs on Apigee; the "100 calls allowed for the day" limit is an Apigee
+// `calendar`-type quota, and Apigee reads its <StartTime> as GMT ("The time
+// value is the GMT time, not local time"), resetting at a fixed offset from it.
+// So the daily boundary is UTC by the platform's documented default. AFKLM emits
+// no reset headers, so this local counter cannot follow a server signal; a UTC
+// calendar-day counter is the correct mirror. (Residual: AFKLM could override
+// StartTime to a non-midnight-GMT instant; unprovable from public data, midnight
+// UTC is the default + safe model. See hebb decision memory:ftx667ta99vjvhepd61q.)
 func (c *Cache) QuotaUsed(day time.Time) (int, error) {
 	dayKey := day.UTC().Format("2006-01-02")
 	path := c.quotaFile()
