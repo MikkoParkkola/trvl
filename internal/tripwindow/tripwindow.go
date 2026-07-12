@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -138,6 +139,7 @@ func Find(ctx context.Context, in Input) ([]Candidate, error) {
 		flightCost float64
 		hotelCost  float64
 		hotelName  string
+		hotelCurr  string
 		curr       string
 	}
 	results := make([]priceResult, len(candidates))
@@ -164,7 +166,7 @@ func Find(ctx context.Context, in Input) ([]Candidate, error) {
 			retDate := c.end.Format(dateLayout)
 
 			var flightCost, hotelCost float64
-			var curr, hotelName string
+			var curr, hotelName, hotelCurr string
 
 			// Determine flight budget cap from preferences.
 			var flightBudget float64
@@ -181,11 +183,11 @@ func Find(ctx context.Context, in Input) ([]Candidate, error) {
 			}()
 			go func() {
 				defer sub.Done()
-				hotelCost, hotelName = cheapestHotel(ctx, dest, depDate, retDate, c.nights, prefs)
+				hotelCost, hotelName, hotelCurr = cheapestHotel(ctx, dest, depDate, retDate, c.nights, prefs)
 			}()
 			sub.Wait()
 
-			results[i] = priceResult{i, flightCost, hotelCost, hotelName, curr}
+			results[i] = priceResult{i, flightCost, hotelCost, hotelName, hotelCurr, curr}
 		}()
 	}
 	wg.Wait()
@@ -194,13 +196,17 @@ func Find(ctx context.Context, in Input) ([]Candidate, error) {
 	var out []Candidate
 	for i, c := range candidates {
 		pr := results[i]
-		total := pr.flightCost + pr.hotelCost
+		// Normalize flight + hotel into one currency (EUR, matching Input.BudgetEUR)
+		// before summing, filtering, and ranking. A leg that cannot be brought into
+		// EUR yields an unknown total (0, "") rather than a fabricated mixed-currency
+		// sum, so the window sorts last and escapes the budget filter.
+		total, totalCurr := normalizeTripTotalEUR(ctx, destinations.ConvertCurrency, pr.flightCost, pr.curr, pr.hotelCost, pr.hotelCurr)
 		if in.BudgetEUR > 0 && total > 0 && total > in.BudgetEUR {
 			continue
 		}
 
 		overlaps := overlapsAny(c.start, c.end, preferred)
-		reasoning := buildReasoning(c.start, c.end, c.nights, total, pr.curr, overlaps)
+		reasoning := buildReasoning(c.start, c.end, c.nights, total, totalCurr, overlaps)
 
 		out = append(out, Candidate{
 			Start:             c.start.Format(dateLayout),
@@ -210,7 +216,7 @@ func Find(ctx context.Context, in Input) ([]Candidate, error) {
 			FlightCost:        pr.flightCost,
 			HotelCost:         pr.hotelCost,
 			HotelName:         pr.hotelName,
-			Currency:          pr.curr,
+			Currency:          totalCurr,
 			OverlapsPreferred: overlaps,
 			Reasoning:         reasoning,
 		})
@@ -271,9 +277,44 @@ func overlapsAny(start, end time.Time, ivs []parsedInterval) bool {
 // cheapestHotel searches for the cheapest qualifying hotel at the destination
 // for the given check-in/check-out dates, applying preferences filters. Returns
 // (total_for_stay, hotel_name). Returns (0, "") on any error.
-func cheapestHotel(ctx context.Context, dest, checkIn, checkOut string, nights int, prefs *preferences.Preferences) (float64, string) {
-	if dest == "" || checkIn == "" || checkOut == "" || nights <= 0 {
+// currencyConverter converts amount from one currency to another, returning the
+// converted amount and the currency actually produced. On failure it returns a
+// currency other than the requested target (mirrors destinations.ConvertCurrency,
+// which returns the source currency when no rate is available).
+type currencyConverter func(ctx context.Context, amount float64, from, to string) (float64, string)
+
+// normalizeTripTotalEUR sums a flight and a hotel cost in EUR, converting foreign
+// legs via convert. Target is EUR to match Input.BudgetEUR. A leg priced 0
+// contributes nothing. A leg priced >0 that cannot be brought into EUR makes the
+// whole total unknown (0, "") — the window is never shown a fabricated
+// mixed-currency total, sorts last, and escapes the EUR budget filter. Returns
+// (totalEUR, "EUR") when at least one leg is priced and every priced leg reached
+// EUR.
+func normalizeTripTotalEUR(ctx context.Context, convert currencyConverter, flightCost float64, flightCurr string, hotelCost float64, hotelCurr string) (float64, string) {
+	legs := [...]struct {
+		cost float64
+		curr string
+	}{{flightCost, flightCurr}, {hotelCost, hotelCurr}}
+	total := 0.0
+	for _, leg := range legs {
+		if leg.cost <= 0 {
+			continue
+		}
+		eur, cur := convert(ctx, leg.cost, leg.curr, "EUR")
+		if cur != "EUR" || eur <= 0 {
+			return 0, "" // this leg cannot be summed honestly
+		}
+		total += eur
+	}
+	if total <= 0 {
 		return 0, ""
+	}
+	return total, "EUR"
+}
+
+func cheapestHotel(ctx context.Context, dest, checkIn, checkOut string, nights int, prefs *preferences.Preferences) (float64, string, string) {
+	if dest == "" || checkIn == "" || checkOut == "" || nights <= 0 {
+		return 0, "", ""
 	}
 
 	hotelLocation := models.ResolveHotelCity(dest)
@@ -297,7 +338,7 @@ func cheapestHotel(ctx context.Context, dest, checkIn, checkOut string, nights i
 
 	result, err := hotels.SearchHotels(ctx, hotelLocation, opts)
 	if err != nil || result == nil || !result.Success || len(result.Hotels) == 0 {
-		return 0, ""
+		return 0, "", ""
 	}
 
 	filtered := result.Hotels
@@ -305,9 +346,13 @@ func cheapestHotel(ctx context.Context, dest, checkIn, checkOut string, nights i
 		filtered = preferences.FilterHotels(filtered, hotelLocation, prefs)
 	}
 	if len(filtered) == 0 {
-		return 0, ""
+		return 0, "", ""
 	}
 
+	// ponytail: min-by-raw-price can pick a cheaper foreign hotel over a pricier
+	// local one across mixed currencies; the caller normalizes the chosen price to
+	// EUR, so the total stays honest, but cross-currency hotel *selection* is a
+	// follow-up (compare by ComparablePrice cohort like pricefeed.CheapestHotel).
 	cheapest := filtered[0]
 	for _, h := range filtered[1:] {
 		if h.Price > 0 && h.Price < cheapest.Price {
@@ -315,9 +360,9 @@ func cheapestHotel(ctx context.Context, dest, checkIn, checkOut string, nights i
 		}
 	}
 	if cheapest.Price <= 0 {
-		return 0, ""
+		return 0, "", ""
 	}
-	return cheapest.Price * float64(nights), cheapest.Name
+	return cheapest.Price * float64(nights), cheapest.Name, cheapest.Currency
 }
 
 // cheapestFlightWithBudget returns the cheapest round-trip price and currency
