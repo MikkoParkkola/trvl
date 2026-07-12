@@ -3,15 +3,29 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
 )
 
+// returnSplitFlightSearch is the flight search seam (overridable in tests).
+// Mirrors splitSearchFunc.
+var returnSplitFlightSearch = flights.SearchFlights
+
+// returnSplitGroundSearch is the ground search seam (overridable in tests).
+var returnSplitGroundSearch = ground.SearchByName
+
 // detectMultiModalReturnSplit checks whether an open-jaw with a mode swap
 // (fly out, return by ground or vice versa) is cheaper than a round-trip.
 //
 // Saving threshold: EUR 50, consistent with other multimodal detectors.
+//
+// Cross-currency honesty (mirrors detectSplit): a saving is emitted only when
+// the baseline currency is known and the round-trip flight, the one-way flight
+// used in that direction, and the ground leg all share it. Otherwise the
+// direction is skipped — no conversion, no mislabelled total. The EUR hotel
+// bonus is only folded in when the shared currency is itself EUR.
 func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 	if !in.valid() || in.Date == "" || in.ReturnDate == "" {
 		return nil
@@ -19,55 +33,66 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 
 	originCity := cityFromCode(in.Origin)
 	destCity := cityFromCode(in.Destination)
+	baseCur := strings.ToUpper(strings.TrimSpace(in.Currency))
 
 	// Baseline: cheapest round-trip flight.
-	rtResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{
+	rtResult, err := returnSplitFlightSearch(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{
 		ReturnDate: in.ReturnDate,
 	})
-	if err != nil || !rtResult.Success || len(rtResult.Flights) == 0 {
+	if err != nil || rtResult == nil || !rtResult.Success || len(rtResult.Flights) == 0 {
 		return nil
 	}
-	rtPrice := minFlightPrice(rtResult)
+	// Compare only against a round-trip fare in the baseline currency. A
+	// cheaper foreign-currency fare must not suppress a valid same-currency
+	// one (that would silently discard an honest saving).
+	rtPrice, rtCur := minFlightPriceInCurrency(rtResult, baseCur)
 	if rtPrice <= 0 {
-		return nil
-	}
-	currency := flightCurrency(rtResult, in.currency())
-
-	// One-way outbound flight.
-	owOutResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
-	if err != nil || !owOutResult.Success || len(owOutResult.Flights) == 0 {
-		return nil
-	}
-	owOutPrice := minFlightPrice(owOutResult)
-	if owOutPrice <= 0 {
-		return nil
+		return nil // no round-trip in the baseline currency to compare against
 	}
 
-	// One-way return flight (destination → origin).
-	owRetResult, err := flights.SearchFlights(ctx, in.Destination, in.Origin, in.ReturnDate, flights.SearchOptions{})
-	if err != nil || !owRetResult.Success || len(owRetResult.Flights) == 0 {
+	// One-way outbound flight (used only by direction 1).
+	owOutResult, err := returnSplitFlightSearch(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
+	if err != nil || owOutResult == nil || !owOutResult.Success || len(owOutResult.Flights) == 0 {
 		return nil
 	}
-	owRetPrice := minFlightPrice(owRetResult)
-	if owRetPrice <= 0 {
-		return nil
-	}
+	// No early return on a missing baseline fare here: owOut gates only
+	// direction 1 (owOutCur != baseCur below), leaving direction 2 viable.
+	owOutPrice, owOutCur := minFlightPriceInCurrency(owOutResult, baseCur)
 
-	// Ground return: destination → origin.
-	groundResult, err := ground.SearchByName(ctx, destCity, originCity, in.ReturnDate, ground.SearchOptions{
+	// One-way return flight, destination → origin (used only by direction 2).
+	owRetResult, err := returnSplitFlightSearch(ctx, in.Destination, in.Origin, in.ReturnDate, flights.SearchOptions{})
+	if err != nil || owRetResult == nil || !owRetResult.Success || len(owRetResult.Flights) == 0 {
+		return nil
+	}
+	owRetPrice, owRetCur := minFlightPriceInCurrency(owRetResult, baseCur)
+
+	// Normalize currencies for the per-direction guards below.
+	rtCur = strings.ToUpper(strings.TrimSpace(rtCur))
+	owOutCur = strings.ToUpper(strings.TrimSpace(owOutCur))
+	owRetCur = strings.ToUpper(strings.TrimSpace(owRetCur))
+
+	// Ground return: destination → origin. The request stays EUR; the guard
+	// checks the route's own reported Currency, never the requested one.
+	groundResult, err := returnSplitGroundSearch(ctx, destCity, originCity, in.ReturnDate, ground.SearchOptions{
 		Currency: "EUR",
 	})
 
 	var hacks []Hack
 
 	// Direction 1: fly out, return by ground.
-	if err == nil && groundResult.Success && len(groundResult.Routes) > 0 {
+	if err == nil && groundResult != nil && groundResult.Success && len(groundResult.Routes) > 0 {
 		var bestGroundPrice float64
 		var bestRoute *groundRoute
 
 		for i := range groundResult.Routes {
 			r := &groundResult.Routes[i]
 			if r.Price <= 0 {
+				continue
+			}
+			// Only consider routes in the baseline currency. Selecting the
+			// cheapest route across currencies then failing the guard would
+			// silently discard a qualifying same-currency route.
+			if baseCur == "" || strings.ToUpper(strings.TrimSpace(r.Currency)) != baseCur {
 				continue
 			}
 			if bestRoute == nil || r.Price < bestGroundPrice {
@@ -86,10 +111,15 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 			}
 		}
 
+		groundCur := ""
 		if bestRoute != nil {
+			groundCur = strings.ToUpper(strings.TrimSpace(bestRoute.currency))
+		}
+		if bestRoute != nil && baseCur != "" && rtCur == baseCur && owOutCur == baseCur && groundCur == baseCur {
+			currency := baseCur
 			overnight := isOvernightRoute(bestRoute.depTime, bestRoute.arrTime)
 			hotelBonus := 0.0
-			if overnight {
+			if overnight && baseCur == "EUR" {
 				hotelBonus = averageHotelCost
 			}
 
@@ -97,7 +127,7 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 			savings := rtPrice - totalMixed + hotelBonus
 			if savings >= 50 {
 				overnightNote := ""
-				if overnight {
+				if hotelBonus > 0 {
 					overnightNote = fmt.Sprintf(" (overnight %s — saves ~%.0f hotel)", bestRoute.routeType, averageHotelCost)
 				}
 
@@ -134,16 +164,20 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 
 	// Direction 2: take ground out, fly back.
 	// Only viable when there is a known ground route origin→destination.
-	groundOutResult, gerr := ground.SearchByName(ctx, originCity, destCity, in.Date, ground.SearchOptions{
+	groundOutResult, gerr := returnSplitGroundSearch(ctx, originCity, destCity, in.Date, ground.SearchOptions{
 		Currency: "EUR",
 	})
-	if gerr == nil && groundOutResult.Success && len(groundOutResult.Routes) > 0 {
+	if gerr == nil && groundOutResult != nil && groundOutResult.Success && len(groundOutResult.Routes) > 0 {
 		var bestGroundPrice float64
 		var bestRoute *groundRoute
 
 		for i := range groundOutResult.Routes {
 			r := &groundOutResult.Routes[i]
 			if r.Price <= 0 {
+				continue
+			}
+			// Only consider routes in the baseline currency (see dir1).
+			if baseCur == "" || strings.ToUpper(strings.TrimSpace(r.Currency)) != baseCur {
 				continue
 			}
 			if bestRoute == nil || r.Price < bestGroundPrice {
@@ -162,10 +196,15 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 			}
 		}
 
+		groundCur := ""
 		if bestRoute != nil {
+			groundCur = strings.ToUpper(strings.TrimSpace(bestRoute.currency))
+		}
+		if bestRoute != nil && baseCur != "" && rtCur == baseCur && owRetCur == baseCur && groundCur == baseCur {
+			currency := baseCur
 			overnight := isOvernightRoute(bestRoute.depTime, bestRoute.arrTime)
 			hotelBonus := 0.0
-			if overnight {
+			if overnight && baseCur == "EUR" {
 				hotelBonus = averageHotelCost
 			}
 
@@ -173,7 +212,7 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 			savings := rtPrice - totalMixed + hotelBonus
 			if savings >= 50 {
 				overnightNote := ""
-				if overnight {
+				if hotelBonus > 0 {
 					overnightNote = fmt.Sprintf(" (overnight %s — saves ~%.0f hotel)", bestRoute.routeType, averageHotelCost)
 				}
 
