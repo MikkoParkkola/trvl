@@ -48,6 +48,7 @@ func TestDetectSplit_currencyMismatch_returnsNil(t *testing.T) {
 		Destination: "BCN",
 		Date:        "2026-07-01",
 		ReturnDate:  "2026-07-08",
+		Currency:    "EUR",
 	})
 	if len(hacks) != 0 {
 		t.Errorf("expected 0 hacks for currency mismatch, got %d", len(hacks))
@@ -70,6 +71,7 @@ func TestDetectSplit_allEmptyCurrency_returnsNil(t *testing.T) {
 		Destination: "BCN",
 		Date:        "2026-07-01",
 		ReturnDate:  "2026-07-08",
+		Currency:    "EUR",
 	})
 	if len(hacks) != 0 {
 		t.Errorf("expected 0 hacks when all currencies empty, got %d", len(hacks))
@@ -131,6 +133,7 @@ func TestDetectSplit_cheapestFlightCurrencyMismatch_returnsNil(t *testing.T) {
 		Destination: "BCN",
 		Date:        "2026-07-01",
 		ReturnDate:  "2026-07-08",
+		Currency:    "EUR",
 	})
 	if len(hacks) != 0 {
 		t.Errorf("expected 0 hacks for cheapest-flight currency mismatch, got %d", len(hacks))
