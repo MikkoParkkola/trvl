@@ -578,8 +578,8 @@ func TestApplyTripCostCurrencyAndTotals_MixedCurrencyFlightFailsToConvert(t *tes
 	if !strings.Contains(result.Error, "needs_price_verification") {
 		t.Errorf("error = %q, want contains 'needs_price_verification'", result.Error)
 	}
-	if strings.Contains(result.Error, "EUR") && strings.Contains(result.Error, "JPY") {
-		// at least the example phrasing
+	if !strings.Contains(result.Error, "EUR") || !strings.Contains(result.Error, "JPY") {
+		t.Errorf("error = %q, want it to name both the source (JPY) and target (EUR) currencies", result.Error)
 	}
 	// Total must not be a clean sum presented as EUR (we zero it on dishonesty)
 	if result.Total != 0 {
