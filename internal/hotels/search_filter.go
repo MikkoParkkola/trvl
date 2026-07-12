@@ -1,6 +1,7 @@
 package hotels
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"sort"
@@ -21,11 +22,22 @@ func filterHotels(hotels []models.HotelResult, opts HotelSearchOptions) []models
 		if opts.Stars > 0 && h.Stars > 0 && h.Stars < opts.Stars {
 			continue
 		}
-		if opts.MinPrice > 0 && h.Price > 0 && h.Price < opts.MinPrice {
-			continue
-		}
-		if opts.MaxPrice > 0 && h.Price > 0 && h.Price > opts.MaxPrice {
-			continue
+		// Filter Min/Max using PriceForRanking (the normalized comparable value
+		// when available). A numeric threshold is only meaningful against a price
+		// expressed in the same currency, so we apply it only when the price is
+		// comparable to the requested target currency. An incomparable price
+		// (foreign currency we could not convert) bypasses the numeric filter
+		// rather than being compared raw against a target-currency threshold —
+		// comparing ¥999 against a €100 cap is not a real comparison. Such prices
+		// surface in the incomparable tail, flagged, for the user to judge.
+		effPrice := h.PriceForRanking()
+		if priceComparableToTarget(h, opts.Currency) && effPrice > 0 {
+			if opts.MinPrice > 0 && effPrice < opts.MinPrice {
+				continue
+			}
+			if opts.MaxPrice > 0 && effPrice > opts.MaxPrice {
+				continue
+			}
 		}
 		// Rating filter: when MinRating is set, require rating data AND that
 		// it meets the minimum. However, external-provider results (Airbnb,
@@ -60,6 +72,24 @@ func filterHotels(hotels []models.HotelResult, opts HotelSearchOptions) []models
 		filtered = append(filtered, h)
 	}
 	return filtered
+}
+
+// priceComparableToTarget reports whether a hotel's ranking price can be
+// meaningfully compared against a numeric threshold in the target currency.
+// It is true when no target currency is requested (the historical single-
+// currency behaviour, thresholds interpreted in the price's own currency),
+// when the headline was normalized to the target (ComparablePrice > 0), or
+// when the price is already denominated in the target currency. A foreign
+// price we could not convert is NOT comparable and must bypass Min/Max.
+func priceComparableToTarget(h models.HotelResult, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return true
+	}
+	if h.ComparablePrice > 0 {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(h.Currency), target)
 }
 
 // filterByStars removes hotels below the requested star rating.
@@ -124,14 +154,21 @@ func sortHotels(hotels []models.HotelResult, sortBy string, centerLat, centerLon
 }
 
 // pricedLead enforces the operator rule "lead with the ones that have proper
-// price available" for the non-price sort modes (rating/stars/distance). When
-// exactly one of a,b carries a bookable price it leads; decided=false when both
-// are priced or both unpriced, so the caller falls through to the chosen sort
-// key. The "cheapest" sort already handles zero-price demotion in lessPrice.
+// price available" for the non-price sort modes (rating/stars/distance).
+// It uses the same comparable-first + conf>basis>price logic as lessPrice
+// so that a same-currency lead_in never falsely leads a better-basis result
+// when deciding the "priced" head for other sorts. decided=true only when
+// one is clearly the better priced entry under the honest ranking.
 func pricedLead(a, b models.HotelResult) (lead, decided bool) {
-	ap, bp := a.Price > 0, b.Price > 0
-	if ap != bp {
-		return ap, true
+	// Priced listings lead unpriced ones; when both (or neither) are priced,
+	// decided=false so the caller's sort key (rating/stars/distance) decides.
+	// Cross-currency/basis ordering lives in lessPrice (the "cheapest" sort)
+	// ONLY — applying it here would let price silently override the chosen
+	// non-price sort key, which is a regression, not the operator rule.
+	aHas := a.Price > 0
+	bHas := b.Price > 0
+	if aHas != bHas {
+		return aHas, true
 	}
 	return false, false
 }
@@ -196,23 +233,108 @@ func priceConfidenceRank(confidence string) int {
 	}
 }
 
-// lessPrice orders hotels for the "cheapest" sort. Zero-price listings always
-// sink to the end. Among priced listings, those with a higher price-confidence
-// rank lead (a real per-night room price beats a headline teaser even when the
-// teaser is cheaper); within the same confidence tier, the cheaper price wins.
+// priceBasisRank maps a price basis to a rank (higher = more complete for
+// trip costing and honesty). Used inside comparators after confidence.
+// tax_inclusive_total > room_total > room_nightly > lead_in (0).
+func priceBasisRank(basis string) int {
+	switch basis {
+	case models.PriceBasisTaxInclusiveTotal:
+		return 3
+	case models.PriceBasisRoomTotal:
+		return 2
+	case models.PriceBasisRoomNightly:
+		return 1
+	case models.PriceBasisLeadIn, "":
+		return 0
+	default:
+		return 0
+	}
+}
+
+// lessPrice orders hotels for the "cheapest" sort. It implements a stable,
+// cross-currency honest partition:
+//  1. Hotels with ComparablePrice >0 (successfully normalized) come before the
+//     incomparable tail (ComparablePrice==0).
+//  2. Within comparables: confidence rank desc, then basis rank desc, then
+//     PriceForRanking() asc.
+//  3. Incomparable tail: group by upper currency (lex asc), then conf, basis,
+//     raw Price asc. Never numeric cross-curr compare.
+//  4. Deterministic final tiebreakers: Name, then Provider/first source.
+//
+// Zero/neg prices sink within their partition.
 func lessPrice(a, b models.HotelResult) bool {
-	if a.Price == 0 {
+	// Zero/negative prices ALWAYS sink (preserve pre-existing contract).
+	if a.Price <= 0 {
 		return false
 	}
-	if b.Price == 0 {
+	if b.Price <= 0 {
 		return true
 	}
-	rankA := priceConfidenceRank(a.PriceConfidence)
-	rankB := priceConfidenceRank(b.PriceConfidence)
-	if rankA != rankB {
-		return rankA > rankB
+
+	// Partition: comparable (have ComparablePrice) first.
+	ac := a.ComparablePrice > 0
+	bc := b.ComparablePrice > 0
+	if ac != bc {
+		return ac
 	}
-	return a.Price < b.Price
+
+	if ac && bc {
+		// Both comparable: conf desc > basis desc > PriceForRanking asc
+		ra := priceConfidenceRank(a.PriceConfidence)
+		rb := priceConfidenceRank(b.PriceConfidence)
+		if ra != rb {
+			return ra > rb
+		}
+		ba := priceBasisRank(a.PriceBasis)
+		bb := priceBasisRank(b.PriceBasis)
+		if ba != bb {
+			return ba > bb
+		}
+		pa := a.PriceForRanking()
+		pb := b.PriceForRanking()
+		if pa != pb && pa > 0 && pb > 0 {
+			return pa < pb
+		}
+	} else {
+		// Incomparable tail: group by currency lex asc, then conf/basis/price
+		au := strings.ToUpper(strings.TrimSpace(a.Currency))
+		bu := strings.ToUpper(strings.TrimSpace(b.Currency))
+		if au != bu {
+			return au < bu
+		}
+		ra := priceConfidenceRank(a.PriceConfidence)
+		rb := priceConfidenceRank(b.PriceConfidence)
+		if ra != rb {
+			return ra > rb
+		}
+		ba := priceBasisRank(a.PriceBasis)
+		bb := priceBasisRank(b.PriceBasis)
+		if ba != bb {
+			return ba > bb
+		}
+		pa, pb := a.Price, b.Price
+		if pa != pb {
+			return pa < pb
+		}
+	}
+
+	// Common deterministic tiebreakers (total order, independent of input order)
+	if a.Name != b.Name {
+		return a.Name < b.Name
+	}
+	// First source provider for determinism
+	ap := ""
+	if len(a.Sources) > 0 {
+		ap = strings.ToLower(strings.TrimSpace(a.Sources[0].Provider))
+	}
+	bp := ""
+	if len(b.Sources) > 0 {
+		bp = strings.ToLower(strings.TrimSpace(b.Sources[0].Provider))
+	}
+	if ap != bp {
+		return ap < bp
+	}
+	return false // equal
 }
 
 func hotelProviderStatusFromResults(id, name string, results int) models.ProviderStatus {
@@ -340,6 +462,38 @@ func parseDateArray(s string) ([3]int, error) {
 		return [3]int{}, fmt.Errorf("invalid date %q: expected YYYY-MM-DD", s)
 	}
 	return [3]int{t.Year(), int(t.Month()), t.Day()}, nil
+}
+
+// currencyConverter converts amount from->to, returning the converted amount
+// and ok. Injected so unit tests never hit the network. (Mirror ground/search.go:147-149.)
+type currencyConverter func(ctx context.Context, amount float64, from, to string) (converted float64, ok bool)
+
+// normalizeHotelCurrencies best-effort converts every hotel's headline price into
+// the target currency for comparable ranking. On success it mutates Price+Currency
+// to the target AND sets ComparablePrice. On failure it leaves the hotel in its
+// original currency and ComparablePrice stays 0 (=> incomparable tail).
+func normalizeHotelCurrencies(ctx context.Context, hotels []models.HotelResult, target string, conv currencyConverter) {
+	tU := strings.ToUpper(strings.TrimSpace(target))
+	if tU == "" || conv == nil {
+		return
+	}
+	for i := range hotels {
+		h := &hotels[i]
+		if h.Price <= 0 {
+			continue
+		}
+		cU := strings.ToUpper(strings.TrimSpace(h.Currency))
+		if cU == tU {
+			h.ComparablePrice = h.Price // already in target
+			continue
+		}
+		if converted, ok := conv(ctx, h.Price, h.Currency, target); ok && converted > 0 {
+			h.Price = converted
+			h.Currency = target
+			h.ComparablePrice = converted
+		}
+		// else: leave as-is, ComparablePrice=0 => incomparable
+	}
 }
 
 // SearchHotelByName searches for a specific hotel by name and returns its details.

@@ -75,6 +75,9 @@ type FlightResult struct {
 	// applicable frequent-flyer benefits), in the same currency as Price. It is
 	// what ranking should use so low-cost-carrier base fares are not unfairly
 	// favoured over fares that already include a bag. 0 = not computed (use Price).
+	// NOTE: this is a FEES axis. HotelResult/GroundRoute.ComparablePrice is a
+	// CURRENCY axis (converted headline price). Same json tag, different meaning;
+	// do not read comparable_price generically across result types.
 	ComparablePrice     float64 `json:"comparable_price,omitempty"`
 	ComparableBreakdown string  `json:"comparable_breakdown,omitempty"`
 

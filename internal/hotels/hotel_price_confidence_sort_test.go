@@ -107,6 +107,23 @@ func TestSortHotelsKeySortWithinPricedGroup(t *testing.T) {
 	}
 }
 
+// TestSortHotelsKeyBeatsPriceWithinPricedGroup is the regression guard for the
+// pricedLead over-reach: when two listings are BOTH priced, the chosen non-price
+// key (rating/stars/distance) must decide their order, even when price order
+// points the other way. The earlier same-price test passed by luck (name-lex
+// tiebreak aligned with rating); here the cheaper hotel is the lower-rated one,
+// so a pricedLead that leaks price ordering into the rating sort is caught.
+func TestSortHotelsKeyBeatsPriceWithinPricedGroup(t *testing.T) {
+	hotels := []models.HotelResult{
+		{Name: "Cheap low-rating", Price: 80, Rating: 7.0, PriceConfidence: models.PriceConfidenceRoomLevel},
+		{Name: "Pricey high-rating", Price: 120, Rating: 9.0, PriceConfidence: models.PriceConfidenceRoomLevel},
+	}
+	sortHotels(hotels, "rating", 0, 0)
+	if hotels[0].Name != "Pricey high-rating" {
+		t.Errorf("rating sort must beat price within priced group: lead = %q, want Pricey high-rating (price must not decide)", hotels[0].Name)
+	}
+}
+
 // TestLessPriceConfidenceTiers checks the comparator directly across tiers.
 func TestLessPriceConfidenceTiers(t *testing.T) {
 	roomLevel := models.HotelResult{Price: 110, PriceConfidence: models.PriceConfidenceRoomLevel}

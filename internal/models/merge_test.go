@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -695,5 +696,41 @@ func TestInferHotelPropertyTypeFromProviderAndName(t *testing.T) {
 		if got := InferHotelPropertyType(tt.hotel); got != tt.want {
 			t.Errorf("InferHotelPropertyType(%q) = %q, want %q", tt.hotel.Name, got, tt.want)
 		}
+	}
+}
+
+// --- determinism for ComputeSavings + mostRepresented (cross-curr fix) ---
+
+func TestMostRepresentedSourceCurrency_LexTiebreak(t *testing.T) {
+	// equal counts: should pick lex-smallest upper code, stable across order
+	s1 := []PriceSource{{Price: 10, Currency: "USD"}, {Price: 20, Currency: "EUR"}, {Price: 30, Currency: "usd"}, {Price: 40, Currency: "eur"}}
+	c1 := mostRepresentedSourceCurrency(s1)
+	s2 := []PriceSource{{Price: 40, Currency: "eur"}, {Price: 30, Currency: "usd"}, {Price: 20, Currency: "EUR"}, {Price: 10, Currency: "USD"}}
+	c2 := mostRepresentedSourceCurrency(s2)
+	// dominant picks lex smallest among max-count (here 2 for USD/EUR) -> EUR
+	if c1 == "" || c2 == "" {
+		t.Fatal("expected non-empty")
+	}
+	u1 := strings.ToUpper(c1)
+	u2 := strings.ToUpper(c2)
+	if u1 != "EUR" || u2 != "EUR" {
+		t.Errorf("tie should pick EUR group (lex), got %s / %s", c1, c2)
+	}
+}
+
+func TestComputeSavings_DeterministicOnEqualGroups(t *testing.T) {
+	// Two currencies with same #sources; must pick lex group and stable cheapest provider
+	hotels := []HotelResult{{
+		Sources: []PriceSource{
+			{Provider: "bprov", Price: 120, Currency: "USD"},
+			{Provider: "aprov", Price: 100, Currency: "USD"},
+			{Provider: "xprov", Price: 90, Currency: "EUR"},
+			{Provider: "zprov", Price: 110, Currency: "EUR"},
+		},
+	}}
+	ComputeSavings(hotels)
+	// equal size 2/2, lex "EUR" < "USD" so savings within EUR: 110-90=20 , cheapest "xprov"
+	if hotels[0].Savings != 20 || hotels[0].CheapestSource != "xprov" {
+		t.Errorf("savings/cheapest = %.0f/%s want 20/xprov (lex EUR group)", hotels[0].Savings, hotels[0].CheapestSource)
 	}
 }
