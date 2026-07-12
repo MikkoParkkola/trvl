@@ -90,6 +90,12 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 			if r.Price <= 0 {
 				continue
 			}
+			// Only consider routes in the baseline currency. Selecting the
+			// cheapest route across currencies then failing the guard would
+			// silently discard a qualifying same-currency route.
+			if baseCur == "" || strings.ToUpper(strings.TrimSpace(r.Currency)) != baseCur {
+				continue
+			}
 			if bestRoute == nil || r.Price < bestGroundPrice {
 				bestGroundPrice = r.Price
 				bestRoute = &groundRoute{
@@ -169,6 +175,10 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 		for i := range groundOutResult.Routes {
 			r := &groundOutResult.Routes[i]
 			if r.Price <= 0 {
+				continue
+			}
+			// Only consider routes in the baseline currency (see dir1).
+			if baseCur == "" || strings.ToUpper(strings.TrimSpace(r.Currency)) != baseCur {
 				continue
 			}
 			if bestRoute == nil || r.Price < bestGroundPrice {

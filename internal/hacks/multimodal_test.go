@@ -713,6 +713,75 @@ func TestDetectMultiModalReturnSplit_eachNilGuardPinned(t *testing.T) {
 	}
 }
 
+// twoRouteGround builds a ground result with a cheaper wrong-currency route
+// listed before a pricier baseline-currency route, to check the detector picks
+// the cheapest ELIGIBLE route rather than the cheapest overall.
+func twoRouteGround(cheapCur string, cheapPrice float64, eligiblePrice float64, depCity, arrCity string) *models.GroundSearchResult {
+	return &models.GroundSearchResult{Success: true, Routes: []models.GroundRoute{
+		{Provider: "x", Type: "bus", Price: cheapPrice, Currency: cheapCur,
+			Departure: models.GroundStop{City: depCity, Time: "2026-07-01T10:00"},
+			Arrival:   models.GroundStop{City: arrCity, Time: "2026-07-01T20:00"}, BookingURL: "u1"},
+		{Provider: "y", Type: "bus", Price: eligiblePrice, Currency: "EUR",
+			Departure: models.GroundStop{City: depCity, Time: "2026-07-01T10:00"},
+			Arrival:   models.GroundStop{City: arrCity, Time: "2026-07-01T20:00"}, BookingURL: "u2"},
+	}}
+}
+
+// TestDetectMultiModalReturnSplit_dir1_cheaperMismatchedRouteSkipped: a 50-SEK
+// route is cheaper than a 60-EUR route but SEK != EUR baseline; the detector
+// must select the 60-EUR route and still emit (previously emitted nothing).
+func TestDetectMultiModalReturnSplit_dir1_cheaperMismatchedRouteSkipped(t *testing.T) {
+	withReturnSplitFlightSearch(t, func(_ context.Context, _, _, _ string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if opts.ReturnDate != "" {
+			return returnSplitMakeFlight(269, "EUR"), nil
+		}
+		return returnSplitMakeFlight(145, "EUR"), nil
+	})
+	withReturnSplitGroundSearch(t, func(_ context.Context, from, to, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		if from == "Prague" && to == "Helsinki" { // dir1 ground return
+			return twoRouteGround("SEK", 50, 60, "Prague", "Helsinki"), nil
+		}
+		return emptyGround(), nil
+	})
+	hacks := detectMultiModalReturnSplit(context.Background(), DetectorInput{
+		Origin: "HEL", Destination: "PRG", Date: "2026-07-01", ReturnDate: "2026-07-08", Currency: "EUR",
+	})
+	if len(hacks) != 1 {
+		t.Fatalf("expected 1 dir1 hack using the eligible EUR route, got %d", len(hacks))
+	}
+	if hacks[0].Currency != "EUR" || hacks[0].Savings != 64 { // 269-(145+60)=64
+		t.Errorf("dir1 hack Currency=%q Savings=%v, want EUR/64", hacks[0].Currency, hacks[0].Savings)
+	}
+}
+
+// TestDetectMultiModalReturnSplit_dir2_cheaperMismatchedRouteSkipped: same, dir2.
+func TestDetectMultiModalReturnSplit_dir2_cheaperMismatchedRouteSkipped(t *testing.T) {
+	withReturnSplitFlightSearch(t, func(_ context.Context, origin, dest, _ string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if opts.ReturnDate != "" {
+			return returnSplitMakeFlight(269, "EUR"), nil
+		}
+		if origin == "PRG" && dest == "HEL" {
+			return returnSplitMakeFlight(145, "EUR"), nil // owRet
+		}
+		return returnSplitMakeFlight(145, "EUR"), nil // owOut
+	})
+	withReturnSplitGroundSearch(t, func(_ context.Context, from, to, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		if from == "Helsinki" && to == "Prague" { // dir2 ground out
+			return twoRouteGround("SEK", 50, 60, "Helsinki", "Prague"), nil
+		}
+		return emptyGround(), nil // dir1 empty so only dir2 emits
+	})
+	hacks := detectMultiModalReturnSplit(context.Background(), DetectorInput{
+		Origin: "HEL", Destination: "PRG", Date: "2026-07-01", ReturnDate: "2026-07-08", Currency: "EUR",
+	})
+	if len(hacks) != 1 {
+		t.Fatalf("expected 1 dir2 hack using the eligible EUR route, got %d", len(hacks))
+	}
+	if hacks[0].Currency != "EUR" || hacks[0].Savings != 64 {
+		t.Errorf("dir2 hack Currency=%q Savings=%v, want EUR/64", hacks[0].Currency, hacks[0].Savings)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Integration: DetectAll includes multimodal types
 // ---------------------------------------------------------------------------
