@@ -63,9 +63,10 @@ func FlightIdentityKey(f FlightResult) string {
 		code := strings.ToUpper(strings.TrimSpace(leg.AirlineCode))
 		num := strings.TrimSpace(leg.FlightNumber)
 		if code == "" && num == "" {
-			// No carrier identity on this leg — fall back to route+time so we
-			// never collapse genuinely different itineraries.
-			parts = append(parts, canonPlaceKey(leg.DepartureAirport.Code)+">"+canonPlaceKey(leg.ArrivalAirport.Code)+"@"+canonTimeKey(leg.DepartureTime))
+			// No carrier identity on this leg — fall back to route+dep-arr time so we
+			// never collapse genuinely different itineraries (arrival time included
+			// so distinct routings on the same dep-minute don't collapse).
+			parts = append(parts, canonPlaceKey(leg.DepartureAirport.Code)+">"+canonPlaceKey(leg.ArrivalAirport.Code)+"@"+canonTimeKey(leg.DepartureTime)+"-"+canonTimeKey(leg.ArrivalTime))
 			continue
 		}
 		parts = append(parts, code+num+"@"+canonTimeKey(leg.DepartureTime))
