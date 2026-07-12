@@ -50,12 +50,19 @@ func normalizeBatchesToTarget(ctx context.Context, batches [][]models.HotelResul
 	}
 }
 
-// ensureComparableInTargetCurrency keeps ComparablePrice populated for any
-// headline already expressed in the requested target currency. Merge sets it
-// pre-normalization, but FinalizeHotelPriceTrust and room enrichment can refresh
-// Price/Currency from a source; this re-asserts the invariant so PriceForRanking,
-// sort and filters stay cross-currency honest instead of falling back to a raw
-// foreign-currency number.
+// ensureComparableInTargetCurrency enforces the hotel ComparablePrice invariant:
+// a hotel is comparable iff it is expressed in the requested target currency, and
+// then its comparable value just is its Price. Merge sets ComparablePrice
+// pre-normalization, but FinalizeHotelPriceTrust re-derives Price AND Currency
+// from the raw provider sources afterwards (an EUR80 lead-in becomes an EUR200
+// verified room; a hotel normalized to EUR can even be flipped back to a verified
+// USD source) without touching ComparablePrice. Filling only zero values would
+// leave a stale ComparablePrice that makes PriceForRanking, sort, filters and the
+// summary headline select on a phantom number while displaying a different one.
+// So we re-assert the invariant both ways: sync ComparablePrice to Price for
+// target-currency hotels, and zero it for anything now in a foreign currency
+// (its target-currency comparable no longer exists — it stays in results with its
+// real foreign price but cannot win a cross-currency "cheapest" headline).
 func ensureComparableInTargetCurrency(hotels []models.HotelResult, optsCurrency string) {
 	tc := strings.TrimSpace(optsCurrency)
 	if tc == "" {
@@ -63,9 +70,11 @@ func ensureComparableInTargetCurrency(hotels []models.HotelResult, optsCurrency 
 	}
 	tU := strings.ToUpper(tc)
 	for i := range hotels {
-		if hotels[i].Price > 0 && hotels[i].ComparablePrice == 0 &&
+		if hotels[i].Price > 0 &&
 			strings.ToUpper(strings.TrimSpace(hotels[i].Currency)) == tU {
 			hotels[i].ComparablePrice = hotels[i].Price
+		} else {
+			hotels[i].ComparablePrice = 0
 		}
 	}
 }
