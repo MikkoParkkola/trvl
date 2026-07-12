@@ -68,6 +68,31 @@ func TestHotelSummary_WithHotels(t *testing.T) {
 	}
 }
 
+// TestHotelSummary_HeadlineExcludesForeignCohort is the load-bearing honesty
+// test at the mcp layer: the foreign JPY quote is the nominally-smallest number,
+// so a raw-Price scan would crown it in the "Lowest lead-in" headline. The
+// normalized EUR cohort (ComparablePrice set) must win instead, and the raw
+// foreign number must never appear in the headline.
+func TestHotelSummary_HeadlineExcludesForeignCohort(t *testing.T) {
+	t.Parallel()
+	result := &models.HotelSearchResult{
+		Success: true,
+		Count:   3,
+		Hotels: []models.HotelResult{
+			{Name: "Alpha", Price: 100, Currency: "EUR", ComparablePrice: 100},
+			{Name: "Beta", Price: 90, Currency: "EUR", ComparablePrice: 90},
+			{Name: "Yen Deal", Price: 50, Currency: "JPY"}, // FX failed, nominally cheapest
+		},
+	}
+	summary := hotelSummary(result, "Tokyo")
+	if !strings.Contains(summary, "Lowest lead-in: EUR90/night (Beta)") {
+		t.Errorf("headline must pick the comparable cohort minimum (Beta 90 EUR); summary = %q", summary)
+	}
+	if strings.Contains(summary, "Lowest lead-in: JPY50") {
+		t.Errorf("headline must not crown the nominally-small foreign quote; summary = %q", summary)
+	}
+}
+
 func TestHotelSummary_WithBookingMatches(t *testing.T) {
 	t.Parallel()
 	result := &models.HotelSearchResult{
