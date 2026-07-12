@@ -16,6 +16,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/breaker"
 	"github.com/MikkoParkkola/trvl/internal/cache"
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/searchctx"
 	"golang.org/x/sync/singleflight"
@@ -141,6 +142,96 @@ func providerEnabled(name string, include, exclude []string) bool {
 		}
 	}
 	return false
+}
+
+// currencyConverter converts amount from->to, returning the converted amount
+// and a non-empty status/ok signal. Injected so unit tests never hit the network.
+type currencyConverter func(ctx context.Context, amount float64, from, to string) (converted float64, ok bool)
+
+// normalizeGroundCurrencies best-effort converts every route's price into the
+// target currency for comparable ranking. On success it mutates Price+Currency
+// to the target AND sets ComparablePrice. On failure it leaves the route in its
+// original currency and ComparablePrice stays 0 (=> incomparable).
+func normalizeGroundCurrencies(ctx context.Context, routes []models.GroundRoute, target string, conv currencyConverter) {
+	tU := strings.ToUpper(strings.TrimSpace(target))
+	if tU == "" || conv == nil {
+		return
+	}
+	for i := range routes {
+		r := &routes[i]
+		if r.Price <= 0 {
+			continue
+		}
+		cU := strings.ToUpper(strings.TrimSpace(r.Currency))
+		if cU == tU {
+			r.ComparablePrice = r.Price // already in target
+			continue
+		}
+		if converted, ok := conv(ctx, r.Price, r.Currency, target); ok && converted > 0 {
+			r.Price = converted
+			r.Currency = target
+			r.ComparablePrice = converted
+		}
+		// else: leave as-is, ComparablePrice=0 => incomparable tail
+	}
+}
+
+// sortGroundRoutes performs the stable cross-currency comparable-price sort
+// (used by search and directly by unit tests for determinism verification).
+func sortGroundRoutes(routes []models.GroundRoute) {
+	sort.SliceStable(routes, func(i, j int) bool {
+		a, b := routes[i], routes[j]
+		ac, bc := a.ComparablePrice > 0, b.ComparablePrice > 0
+		if ac != bc {
+			return ac
+		}
+		if ac && bc {
+			pa := a.PriceForRanking()
+			pb := b.PriceForRanking()
+			ra, rb := pa > 0, pb > 0
+			if ra != rb {
+				return ra
+			}
+			if ra && pa != pb {
+				return pa < pb
+			}
+		} else {
+			au, bu := strings.ToUpper(strings.TrimSpace(a.Currency)), strings.ToUpper(strings.TrimSpace(b.Currency))
+			if au != bu {
+				return au < bu
+			}
+			pa, pb := a.Price, b.Price
+			ra, rb := pa > 0, pb > 0
+			if ra != rb {
+				return ra
+			}
+			if ra && pa != pb {
+				return pa < pb
+			}
+		}
+		if a.Duration != b.Duration {
+			return a.Duration < b.Duration
+		}
+		if a.Departure.Time != b.Departure.Time {
+			return a.Departure.Time < b.Departure.Time
+		}
+		if a.Arrival.Time != b.Arrival.Time {
+			return a.Arrival.Time < b.Arrival.Time
+		}
+		if a.Provider != b.Provider {
+			return a.Provider < b.Provider
+		}
+		if a.BookingURL != b.BookingURL {
+			return a.BookingURL < b.BookingURL
+		}
+		if a.Transfers != b.Transfers {
+			return a.Transfers < b.Transfers
+		}
+		if a.Type != b.Type {
+			return a.Type < b.Type
+		}
+		return false
+	})
 }
 
 // SearchByName searches all providers for ground transport between two cities
@@ -587,6 +678,32 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	// stable JSON output (and stable tests).
 	sort.Slice(statuses, func(i, j int) bool { return statuses[i].ID < statuses[j].ID })
 
+	// Normalize currencies for truthful cross-currency ranking BEFORE filter
+	// (so MaxPrice uses comparable numbers) and BEFORE resolve. Target mirrors
+	// the flights derivation (opts.Currency if set, else first currency observed
+	// from raw results). Never hardcodes EUR here.
+	target := strings.TrimSpace(opts.Currency)
+	if target == "" {
+		for _, r := range allRoutes {
+			if c := strings.TrimSpace(r.Currency); c != "" {
+				target = c
+				break
+			}
+		}
+	}
+	if target != "" {
+		conv := func(ctx context.Context, amount float64, from, to string) (float64, bool) {
+			amt, status := destinations.ConvertCurrency(ctx, amount, from, to)
+			// Faithful adaptation of ConvertCurrency + flights normalize convention:
+			// success when returned status matches the requested to-currency and amt > 0.
+			if amt > 0 && strings.EqualFold(strings.TrimSpace(status), strings.TrimSpace(to)) {
+				return amt, true
+			}
+			return amt, false
+		}
+		normalizeGroundCurrencies(ctx, allRoutes, target, conv)
+	}
+
 	// Filter/deduplicate in one pass while preserving the current semantics:
 	// unavailable routes are removed first, then duplicate routes are suppressed
 	// before MaxPrice and Type filters are applied.
@@ -596,10 +713,8 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	// one route carrying every provider as a PriceSource (cheapest headline).
 	allRoutes = models.ResolveGroundSources(allRoutes)
 
-	// Sort by price
-	sort.Slice(allRoutes, func(i, j int) bool {
-		return allRoutes[i].Price < allRoutes[j].Price
-	})
+	// Sort by comparable price (cross-currency truthful). See sortGroundRoutes.
+	sortGroundRoutes(allRoutes)
 
 	annotateGroundConfidence(allRoutes, time.Now())
 

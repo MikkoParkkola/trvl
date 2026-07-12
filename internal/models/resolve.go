@@ -238,6 +238,7 @@ func foldGroundSource(dst *GroundRoute, src GroundRoute) {
 			dst.Amenities = src.Amenities
 			dst.SeatsLeft = src.SeatsLeft
 			dst.Confidence = src.Confidence
+			dst.ComparablePrice = src.ComparablePrice
 		}
 	}
 	dst.CheapestSource = prov
