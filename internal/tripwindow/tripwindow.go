@@ -296,6 +296,9 @@ func normalizeTripTotalEUR(ctx context.Context, convert currencyConverter, fligh
 		if cost <= 0 {
 			return 0, true
 		}
+		if curr == "" {
+			return 0, false // positive cost with unknown currency: ConvertCurrency would stamp it "EUR", so refuse rather than mislabel
+		}
 		eur, cur := convert(ctx, cost, curr, "EUR")
 		if cur != "EUR" || eur <= 0 || math.IsInf(eur, 0) || math.IsNaN(eur) {
 			return 0, false // cannot express this leg in EUR (unconvertible or non-finite)

@@ -94,6 +94,19 @@ func TestNormalizeTripTotalEUR_ForeignFlightConverts(t *testing.T) {
 	}
 }
 
+// TestNormalizeTripTotalEUR_RefusesUnknownCurrency: a positive leg cost with an
+// empty currency must be refused, not silently counted as EUR. The real
+// ConvertCurrency returns (amount, "EUR") for an empty source currency (it
+// treats "" as a no-op), so without an explicit guard an unknown-currency
+// amount would be relabelled EUR — the exact mislabelling this file prevents.
+func TestNormalizeTripTotalEUR_RefusesUnknownCurrency(t *testing.T) {
+	conv := stubConverter(nil)
+	total, flightEUR, hotelEUR, cur := normalizeTripTotalEUR(context.Background(), conv, 200, "EUR", 100, "")
+	if total != 0 || cur != "" || flightEUR != 0 || hotelEUR != 0 {
+		t.Fatalf("positive cost with empty currency must be refused: got total=%v flight=%v hotel=%v cur=%q, want all zero", total, flightEUR, hotelEUR, cur)
+	}
+}
+
 // TestNormalizeTripTotalEUR_RefusesNonFinite: a converter that yields NaN or
 // +Inf (corrupt/overflowing rate) must be refused, not summed. A non-finite
 // total would slip past the eur<=0 guard, bypass the budget filter, corrupt the
