@@ -256,6 +256,50 @@ func dominantProviderCurrency(providers []models.ProviderPrice) string {
 	return best
 }
 
+// CheapestHotel returns the lowest positive-priced hotel within a single
+// currency cohort — the most common currency among priced hotels — or a zero
+// value. The hotel summary headline ("Lowest lead-in") must not let a
+// nominally-small unconverted-foreign price win dishonestly; hotels outside the
+// dominant currency cohort (the incomparable tail left by normalizeHotelCurrencies
+// when FX conversion fails) are excluded from the superlative, not compared.
+// Full payload is retained elsewhere; only the headline pick is guarded. When
+// no hotel carries a currency it falls back to the lowest positive price.
+func CheapestHotel(hotels []models.HotelResult) models.HotelResult {
+	cohort := dominantHotelCurrency(hotels)
+	var best models.HotelResult
+	for _, h := range hotels {
+		if h.Price <= 0 {
+			continue
+		}
+		if cohort != "" && h.Currency != cohort {
+			continue
+		}
+		if best.Price == 0 || h.Price < best.Price {
+			best = h
+		}
+	}
+	return best
+}
+
+// dominantHotelCurrency returns the most frequently occurring non-empty
+// currency among positive-priced hotels, with a deterministic first-seen
+// tie-break, or "" when none carry a currency.
+func dominantHotelCurrency(hotels []models.HotelResult) string {
+	counts := make(map[string]int)
+	best := ""
+	bestN := 0
+	for _, h := range hotels {
+		if h.Price <= 0 || h.Currency == "" {
+			continue
+		}
+		counts[h.Currency]++
+		if counts[h.Currency] > bestN {
+			best, bestN = h.Currency, counts[h.Currency]
+		}
+	}
+	return best
+}
+
 func cheapestFlight(flights []models.FlightResult) (float64, string) {
 	var price float64
 	var currency string
