@@ -58,7 +58,7 @@ func TestPlan_TwoLegChain_SummedRealPrice(t *testing.T) {
 	}
 	p := plannerWith(discoverFixed(r), pricer.price)
 
-	plan, err := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01")
+	plan, err := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01", "EUR")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestPlan_RankByTrueTotal(t *testing.T) {
 	}
 	p := plannerWith(discoverFixed(expensive, cheap), pricer.price)
 
-	plan, _ := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01")
+	plan, _ := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01", "EUR")
 	if len(plan.Itineraries) != 2 {
 		t.Fatalf("expected 2 itineraries, got %d", len(plan.Itineraries))
 	}
@@ -121,7 +121,7 @@ func TestPlan_EstimateFallback_WhenLegUnpriceable(t *testing.T) {
 	}
 	p := plannerWith(discoverFixed(r), pricer.price)
 
-	plan, _ := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01")
+	plan, _ := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01", "EUR")
 	if len(plan.Itineraries) != 1 {
 		t.Fatalf("expected 1 itinerary, got %d", len(plan.Itineraries))
 	}
@@ -157,7 +157,7 @@ func TestPlan_EstimateFallback_WhenLegUnpriceable(t *testing.T) {
 
 func TestPlan_EmptyDiscovery_Graceful(t *testing.T) {
 	p := plannerWith(discoverFixed(), fakePricer{}.price)
-	plan, err := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01")
+	plan, err := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01", "EUR")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestPlan_DiscoveryError_Degrades(t *testing.T) {
 		return nil, context.DeadlineExceeded
 	}
 	p := plannerWith(disc, fakePricer{}.price)
-	plan, err := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01")
+	plan, err := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01", "EUR")
 	if err != nil {
 		t.Fatalf("discovery error must degrade, not propagate: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestPlan_HackAnnotation_OnCheapest(t *testing.T) {
 		return &models.HackSaving{Type: "multimodal_skip_flight", Savings: 20, Price: 110, NaivePrice: naive, Currency: cur}
 	}
 
-	plan, _ := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01")
+	plan, _ := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01", "EUR")
 	if len(plan.Itineraries) != 1 || plan.Itineraries[0].HackSaving == nil {
 		t.Fatalf("expected a hack saving annotated on the cheapest itinerary")
 	}
@@ -214,7 +214,7 @@ func TestPlan_HackAnnotation_OnCheapest(t *testing.T) {
 
 func TestPlan_MissingArgs(t *testing.T) {
 	p := plannerWith(discoverFixed(), fakePricer{}.price)
-	plan, _ := p.Plan(context.Background(), "", "London", "2026-07-01")
+	plan, _ := p.Plan(context.Background(), "", "London", "2026-07-01", "EUR")
 	if plan.Error == "" {
 		t.Errorf("expected an error for missing origin")
 	}
@@ -375,7 +375,7 @@ func TestPlan_BoundsLargeDiscoverySet(t *testing.T) {
 		"train": {Price: 20, Currency: "EUR"},
 	}.price)
 
-	plan, err := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01")
+	plan, err := p.Plan(context.Background(), "Helsinki", "London", "2026-07-01", "EUR")
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -384,5 +384,31 @@ func TestPlan_BoundsLargeDiscoverySet(t *testing.T) {
 	}
 	if len(plan.Notes) == 0 {
 		t.Fatalf("expected truncation note for large discovery set")
+	}
+}
+
+// TestCheapestSelectorsExcludeForeignStragglers proves the currency-cohort honesty
+// fix: a nominally-small fare in a minority currency must not win over the cheapest
+// fare in the dominant cohort. Without cohort ranking, the raw numeric minimum would
+// pick the foreign straggler and lie about which option is actually cheapest.
+func TestCheapestSelectorsExcludeForeignStragglers(t *testing.T) {
+	// GBP 5 is nominally the smallest number but is a lone straggler; the EUR cohort
+	// (two entries) is dominant and its cheapest real fare is EUR 60.
+	best, ok := cheapestFlight([]models.FlightResult{
+		{Price: 60, Currency: "EUR", Provider: "eur-cheap"},
+		{Price: 90, Currency: "EUR", Provider: "eur-dear"},
+		{Price: 5, Currency: "GBP", Provider: "gbp-straggler"},
+	})
+	if !ok || best.Provider != "eur-cheap" {
+		t.Fatalf("cheapestFlight picked %#v/%v; want eur-cheap (GBP straggler must not win)", best, ok)
+	}
+
+	route, ok := cheapestRoute([]models.GroundRoute{
+		{Price: 45, Currency: "EUR", Provider: "eur-cheap"},
+		{Price: 70, Currency: "EUR", Provider: "eur-dear"},
+		{Price: 3, Currency: "GBP", Provider: "gbp-straggler"},
+	})
+	if !ok || route.Provider != "eur-cheap" {
+		t.Fatalf("cheapestRoute picked %#v/%v; want eur-cheap (GBP straggler must not win)", route, ok)
 	}
 }

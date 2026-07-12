@@ -11,6 +11,7 @@ import (
 
 func multimodalPlanCmd() *cobra.Command {
 	var allowBrowserFallbacks bool
+	var currency string
 
 	cmd := &cobra.Command{
 		Use:     "multimodal FROM TO DATE",
@@ -40,7 +41,7 @@ Examples:
 			from, to, date := args[0], args[1], args[2]
 
 			planner := multimodal.NewPlanner(allowBrowserFallbacks)
-			plan, err := planner.Plan(cmd.Context(), from, to, date)
+			plan, err := planner.Plan(cmd.Context(), from, to, date, currency)
 			if err != nil {
 				return err
 			}
@@ -58,6 +59,7 @@ Examples:
 	}
 
 	cmd.Flags().BoolVar(&allowBrowserFallbacks, "allow-browser-fallbacks", false, "Allow browser/cookie-assisted Rome2Rio discovery + ground leg pricing")
+	cmd.Flags().StringVar(&currency, "currency", "", "Target currency for all legs (e.g. EUR, GBP); defaults to EUR. Keeps flight and ground prices comparable.")
 	return cmd
 }
 

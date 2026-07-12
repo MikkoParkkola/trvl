@@ -77,7 +77,7 @@ func priceFlightLeg(ctx context.Context, spec LegSpec) (PricedLeg, bool) {
 	if !ok {
 		return PricedLeg{}, false
 	}
-	res, err := flights.SearchFlights(ctx, origin, dest, spec.Date, flights.SearchOptions{NoHacks: true})
+	res, err := flights.SearchFlights(ctx, origin, dest, spec.Date, flights.SearchOptions{NoHacks: true, Currency: spec.Currency})
 	if err != nil || res == nil || !res.Success {
 		return PricedLeg{}, false
 	}
@@ -115,6 +115,7 @@ func priceGroundLeg(ctx context.Context, spec LegSpec, allowBrowser bool) (Price
 	opts := ground.SearchOptions{
 		NoHacks:               true,
 		AllowBrowserFallbacks: allowBrowser,
+		Currency:              spec.Currency, // price this leg in the plan's target currency
 		// Rome2Rio is the DISCOVERY source; its prices are indicative ranges, not
 		// confirmed fares. Excluding it from per-leg pricing keeps a "real" leg
 		// price honest (a bookable provider only) and avoids a redundant Cloudflare
@@ -202,11 +203,21 @@ func resolveAirport(place string) (string, bool) {
 	return "", false
 }
 
+// cheapestFlight returns the lowest-ranking-price flight within the most common
+// currency cohort. Ranking a nominal minimum across mixed currencies would let a
+// nominally-small foreign fare win dishonestly, so stragglers in a minority
+// currency are excluded rather than compared. Mirrors internal/trip cost ranking.
 func cheapestFlight(fs []models.FlightResult) (models.FlightResult, bool) {
+	cohort := dominantCurrency(len(fs), func(i int) (string, bool) {
+		return fs[i].Currency, fs[i].PriceForRanking() > 0
+	})
+	if cohort == "" {
+		return models.FlightResult{}, false
+	}
 	var best models.FlightResult
 	found := false
 	for _, f := range fs {
-		if f.PriceForRanking() <= 0 || f.Currency == "" {
+		if f.PriceForRanking() <= 0 || f.Currency != cohort {
 			continue
 		}
 		if !found || f.PriceForRanking() < best.PriceForRanking() {
@@ -216,11 +227,19 @@ func cheapestFlight(fs []models.FlightResult) (models.FlightResult, bool) {
 	return best, found
 }
 
+// cheapestRoute returns the lowest-price ground route within the most common
+// currency cohort, for the same honesty reason as cheapestFlight.
 func cheapestRoute(rs []models.GroundRoute) (models.GroundRoute, bool) {
+	cohort := dominantCurrency(len(rs), func(i int) (string, bool) {
+		return rs[i].Currency, rs[i].Price > 0
+	})
+	if cohort == "" {
+		return models.GroundRoute{}, false
+	}
 	var best models.GroundRoute
 	found := false
 	for _, r := range rs {
-		if r.Price <= 0 || r.Currency == "" {
+		if r.Price <= 0 || r.Currency != cohort {
 			continue
 		}
 		if !found || r.Price < best.Price {
@@ -228,6 +247,27 @@ func cheapestRoute(rs []models.GroundRoute) (models.GroundRoute, bool) {
 		}
 	}
 	return best, found
+}
+
+// dominantCurrency returns the most frequently occurring currency among the n
+// entries whose (currency, priced) pair reports priced==true and a non-empty
+// currency. Ties resolve to the first currency to reach the max count, keeping
+// selection deterministic across slice order. Returns "" when nothing qualifies.
+func dominantCurrency(n int, at func(i int) (currency string, priced bool)) string {
+	counts := make(map[string]int)
+	best := ""
+	bestN := 0
+	for i := 0; i < n; i++ {
+		cur, priced := at(i)
+		if !priced || cur == "" {
+			continue
+		}
+		counts[cur]++
+		if counts[cur] > bestN {
+			best, bestN = cur, counts[cur]
+		}
+	}
+	return best
 }
 
 func flightProvider(f models.FlightResult) string {

@@ -94,9 +94,10 @@ func handlePlanMultimodal(ctx context.Context, args map[string]any, elicit Elici
 		return nil, nil, fmt.Errorf("from, to, and date are required")
 	}
 	allowBrowser := argBool(args, "allow_browser_fallbacks", false)
+	currency := argString(args, "currency")
 
 	planner := multimodal.NewPlanner(allowBrowser)
-	plan, err := planner.Plan(ctx, from, to, date)
+	plan, err := planner.Plan(ctx, from, to, date, currency)
 	if err != nil {
 		return nil, nil, toolExecutionError("Multimodal plan", err)
 	}
