@@ -60,6 +60,10 @@ type LegSpec struct {
 	From string
 	To   string
 	Date string
+	// Currency is the single target currency every leg of the plan is priced in,
+	// so flight and ground legs are comparable and itinerary totals can be ranked
+	// honestly. Empty falls back to each provider's own default.
+	Currency string
 }
 
 // PricedLeg is one leg of an assembled itinerary after pricing (or estimation).
@@ -160,7 +164,7 @@ func (p *Planner) planTimeout() time.Duration {
 // for from→to on date. It never returns a nil Plan on a non-empty query; a
 // discovery failure or an empty discovery degrades to an empty (but described)
 // plan rather than an error so callers can always render something honest.
-func (p *Planner) Plan(ctx context.Context, from, to, date string) (*Plan, error) {
+func (p *Planner) Plan(ctx context.Context, from, to, date, currency string) (*Plan, error) {
 	plan := &Plan{From: from, To: to, Date: date}
 	if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" || strings.TrimSpace(date) == "" {
 		plan.Error = "from, to, and date are required"
@@ -169,6 +173,11 @@ func (p *Planner) Plan(ctx context.Context, from, to, date string) (*Plan, error
 	if p.Discover == nil || p.Price == nil {
 		plan.Error = "multimodal planner is not configured"
 		return plan, nil
+	}
+	// One target currency for every leg so flight and ground prices are comparable
+	// and itinerary totals rank honestly. Default matches the ground search default.
+	if strings.TrimSpace(currency) == "" {
+		currency = "EUR"
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, p.planTimeout())
@@ -195,7 +204,7 @@ func (p *Planner) Plan(ctx context.Context, from, to, date string) (*Plan, error
 			"priced the "+itoa(len(routes))+" most promising of "+itoa(plan.Discovered)+" discovered chains")
 	}
 
-	itineraries := p.priceRoutes(ctx, from, to, date, routes)
+	itineraries := p.priceRoutes(ctx, from, to, date, currency, routes)
 	plan.Priced = len(itineraries)
 
 	rankItineraries(itineraries)
@@ -225,7 +234,7 @@ func (p *Planner) Plan(ctx context.Context, from, to, date string) (*Plan, error
 // priceRoutes prices every leg of every route with bounded parallelism, then
 // assembles each route into an itinerary. A route whose legs all fail to price
 // (and which has no indicative range to estimate from) is dropped with no panic.
-func (p *Planner) priceRoutes(ctx context.Context, from, to, date string, routes []models.GroundRoute) []Itinerary {
+func (p *Planner) priceRoutes(ctx context.Context, from, to, date, currency string, routes []models.GroundRoute) []Itinerary {
 	sem := make(chan struct{}, maxParallelLegs)
 	var mu sync.Mutex
 	out := make([]Itinerary, 0, len(routes))
@@ -234,6 +243,9 @@ func (p *Planner) priceRoutes(ctx context.Context, from, to, date string, routes
 	for i := range routes {
 		route := routes[i]
 		specs := legSpecsForRoute(route, from, to, date)
+		for j := range specs {
+			specs[j].Currency = currency // one target currency for every leg
+		}
 		priced := make([]PricedLeg, len(specs))
 		var legWG sync.WaitGroup
 		for j := range specs {
