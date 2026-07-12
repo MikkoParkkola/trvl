@@ -80,6 +80,13 @@ type PricedLeg struct {
 	Provider   string `json:"provider"`
 	BookingURL string `json:"booking_url,omitempty"`
 	Detail     string `json:"detail,omitempty"`
+	// OriginalPrice and OriginalCurrency preserve a foreign leg's own fare when
+	// the assembler converts it into the itinerary's headline currency at a
+	// reference rate. They are zero/empty unless a conversion happened, so the
+	// original quote is never lost and a caller can recompute the applied rate
+	// (Price / OriginalPrice). Disclosure of the conversion also lands in Detail.
+	OriginalPrice    float64 `json:"original_price,omitempty"`
+	OriginalCurrency string  `json:"original_currency,omitempty"`
 }
 
 // Itinerary is an end-to-end multimodal journey with a single true total.
@@ -126,13 +133,23 @@ type LegPricer func(ctx context.Context, spec LegSpec) (PricedLeg, bool)
 // Returns nil when no genuinely cheaper option exists. Optional (may be nil).
 type HackAnnotator func(ctx context.Context, from, to, date string, naivePrice float64, currency string) *models.HackSaving
 
+// CurrencyConverter converts amount from one currency to another, returning the
+// converted amount and the resulting currency. It mirrors
+// destinations.ConvertCurrency: on an unknown rate it returns the amount in the
+// ORIGINAL currency (result currency != target), which the assembler reads as
+// "conversion unavailable" and keeps the conservative exclusion. Optional (may
+// be nil): a nil converter leaves foreign legs excluded from the sum rather than
+// normalised.
+type CurrencyConverter func(ctx context.Context, amount float64, from, to string) (float64, string)
+
 // Planner composes multimodal itineraries from injected seams. The zero value is
 // not usable; construct via NewPlanner (production) or set the seams directly
 // (tests).
 type Planner struct {
 	Discover       Discoverer
 	Price          LegPricer
-	Hacks          HackAnnotator // optional
+	Hacks          HackAnnotator     // optional
+	Convert        CurrencyConverter // optional; nil = foreign legs excluded from the sum, not normalised
 	AllowBrowser   bool
 	MaxItineraries int
 	LegTimeout     time.Duration
@@ -272,7 +289,7 @@ func (p *Planner) priceRoutes(ctx context.Context, from, to, date, currency stri
 		go func(r models.GroundRoute, legs *[]PricedLeg, wgLeg *sync.WaitGroup) {
 			defer wg.Done()
 			wgLeg.Wait()
-			if it, ok := assembleItinerary(r, from, to, date, *legs); ok {
+			if it, ok := assembleItinerary(ctx, p.Convert, r, from, to, date, *legs); ok {
 				mu.Lock()
 				out = append(out, it)
 				mu.Unlock()

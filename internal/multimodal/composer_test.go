@@ -2,6 +2,7 @@ package multimodal
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -226,7 +227,8 @@ func TestAssemble_CurrencyMismatchDemotesToEstimate(t *testing.T) {
 		{Mode: "ferry", Price: 40, Currency: "EUR"},
 		{Mode: "fly", Price: 100, Currency: "GBP"}, // mismatched real fare
 	}
-	it, ok := assembleItinerary(r, "Helsinki", "London", "2026-07-01", legs)
+	// nil converter → conservative exclusion (the pre-lever#4 behaviour).
+	it, ok := assembleItinerary(context.Background(), nil, r, "Helsinki", "London", "2026-07-01", legs)
 	if !ok {
 		t.Fatal("expected an assembled itinerary")
 	}
@@ -239,6 +241,79 @@ func TestAssemble_CurrencyMismatchDemotesToEstimate(t *testing.T) {
 	// remainder = 200 - 40 = 160 on the demoted fly leg → total 200.
 	if it.TotalPrice != 200 {
 		t.Errorf("expected total 200, got %v", it.TotalPrice)
+	}
+}
+
+func TestAssemble_ConvertsForeignLegWithDisclosure(t *testing.T) {
+	r := route2("ferry", "Hub", "fly", "Helsinki", "London", 200, "EUR")
+	legs := []PricedLeg{
+		{Mode: "ferry", Price: 40, Currency: "EUR"},
+		{Mode: "fly", Price: 100, Currency: "GBP"}, // foreign real fare
+	}
+	// Stub converter: GBP->EUR at 0.90, everything else "unavailable" (returns the
+	// original currency, mirroring destinations.ConvertCurrency). NEVER calls the
+	// real converter.
+	convert := func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == "GBP" && to == "EUR" {
+			return amount * 0.90, "EUR"
+		}
+		return amount, from
+	}
+	it, ok := assembleItinerary(context.Background(), convert, r, "Helsinki", "London", "2026-07-01", legs)
+	if !ok {
+		t.Fatal("expected an assembled itinerary")
+	}
+	// GBP 100 -> EUR 90, summed with the EUR 40 ferry leg -> 130. No estimate.
+	if it.Estimated {
+		t.Errorf("a converted real leg must not demote the itinerary to estimated")
+	}
+	if it.Currency != "EUR" {
+		t.Errorf("headline currency should be EUR, got %q", it.Currency)
+	}
+	if it.TotalPrice != 130 {
+		t.Errorf("expected converted total 40 + 90 = 130, got %v", it.TotalPrice)
+	}
+	fly := it.Legs[1]
+	if fly.Currency != "EUR" || fly.Price != 90 {
+		t.Errorf("fly leg should be normalised to EUR 90, got %s %v", fly.Currency, fly.Price)
+	}
+	if fly.OriginalCurrency != "GBP" || fly.OriginalPrice != 100 {
+		t.Errorf("original GBP 100 must be preserved, got %s %v", fly.OriginalCurrency, fly.OriginalPrice)
+	}
+	if !strings.Contains(fly.Detail, "converted from 100.00 GBP") {
+		t.Errorf("leg detail must disclose the conversion, got %q", fly.Detail)
+	}
+	foundWarn := false
+	for _, w := range it.Warnings {
+		if strings.Contains(w, "reference exchange rate") {
+			foundWarn = true
+		}
+	}
+	if !foundWarn {
+		t.Errorf("itinerary must warn that a reference rate (not checkout-final) was used, got %v", it.Warnings)
+	}
+}
+
+func TestAssemble_NilConverterExcludesForeignLeg(t *testing.T) {
+	r := route2("ferry", "Hub", "fly", "Helsinki", "London", 200, "EUR")
+	legs := []PricedLeg{
+		{Mode: "ferry", Price: 40, Currency: "EUR"},
+		{Mode: "fly", Price: 100, Currency: "GBP"},
+	}
+	// Converter present but reports the pair unavailable -> conservative exclusion,
+	// identical to the nil path.
+	convert := func(_ context.Context, amount float64, from, _ string) (float64, string) {
+		return amount, from
+	}
+	it, ok := assembleItinerary(context.Background(), convert, r, "Helsinki", "London", "2026-07-01", legs)
+	if !ok {
+		t.Fatal("expected an assembled itinerary")
+	}
+	if !it.Estimated {
+		t.Errorf("an unconvertible foreign leg must demote to estimate")
+	}
+	if it.Legs[1].OriginalCurrency != "" {
+		t.Errorf("no conversion happened; original fields must stay empty, got %q", it.Legs[1].OriginalCurrency)
 	}
 }
 

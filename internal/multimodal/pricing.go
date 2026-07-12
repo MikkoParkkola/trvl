@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/hacks"
@@ -24,6 +25,7 @@ func NewPlanner(allowBrowser bool) *Planner {
 		Discover:     ground.SearchRome2Rio,
 		Price:        productionLegPricer(allowBrowser),
 		Hacks:        productionHackAnnotator,
+		Convert:      destinations.ConvertCurrency,
 		AllowBrowser: allowBrowser,
 	}
 }
