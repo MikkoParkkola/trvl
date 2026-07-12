@@ -3,6 +3,7 @@ package hacks
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -44,6 +45,37 @@ func minFlightPriceWithCurrency(r *models.FlightSearchResult) (float64, string) 
 	found := false
 	for _, f := range r.Flights {
 		if f.Price > 0 && f.Price < min {
+			min = f.Price
+			currency = f.Currency
+			found = true
+		}
+	}
+	if !found {
+		return 0, ""
+	}
+	return min, currency
+}
+
+// minFlightPriceInCurrency returns the cheapest positive-priced flight whose
+// Currency matches baseCur (case/space-insensitive), and that flight's currency.
+// Unlike minFlightPriceWithCurrency it never lets a cheaper foreign-currency
+// fare suppress a valid baseline-currency fare that a later currency guard
+// would have accepted. Returns (0, "") when baseCur is empty or nothing matches.
+func minFlightPriceInCurrency(r *models.FlightSearchResult, baseCur string) (float64, string) {
+	if r == nil || !r.Success || baseCur == "" {
+		return 0, ""
+	}
+	min := math.MaxFloat64
+	var currency string
+	found := false
+	for _, f := range r.Flights {
+		if f.Price <= 0 {
+			continue
+		}
+		if strings.ToUpper(strings.TrimSpace(f.Currency)) != baseCur {
+			continue
+		}
+		if f.Price < min {
 			min = f.Price
 			currency = f.Currency
 			found = true

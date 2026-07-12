@@ -782,6 +782,75 @@ func TestDetectMultiModalReturnSplit_dir2_cheaperMismatchedRouteSkipped(t *testi
 	}
 }
 
+// twoFareRoundTrip builds a round-trip result with a cheaper foreign-currency
+// fare listed before a pricier baseline (EUR) fare, to check the detector picks
+// the cheapest ELIGIBLE fare rather than the cheapest overall.
+func twoFareRoundTrip(cheapCur string, cheapPrice, eligibleEUR float64) *models.FlightSearchResult {
+	return &models.FlightSearchResult{Success: true, Flights: []models.FlightResult{
+		{Price: cheapPrice, Currency: cheapCur},
+		{Price: eligibleEUR, Currency: "EUR"},
+	}}
+}
+
+// TestDetectMultiModalReturnSplit_cheaperForeignFlightNotSuppressing: a 200-SEK
+// round-trip is cheaper than the 269-EUR round-trip, but SEK != EUR baseline.
+// The detector must compare against the 269-EUR fare and still emit, rather than
+// letting the cheaper foreign fare fail the currency guard and emit nothing.
+func TestDetectMultiModalReturnSplit_cheaperForeignFlightNotSuppressing(t *testing.T) {
+	withReturnSplitFlightSearch(t, func(_ context.Context, _, _, _ string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if opts.ReturnDate != "" {
+			return twoFareRoundTrip("SEK", 200, 269), nil // cheaper SEK, eligible EUR
+		}
+		return returnSplitMakeFlight(145, "EUR"), nil // owOut + owRet EUR
+	})
+	withReturnSplitGroundSearch(t, func(_ context.Context, from, to, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		if from == "Prague" && to == "Helsinki" { // dir1 ground return
+			return returnSplitMakeGround(60, "EUR", "bus", "Prague", "Helsinki", "2026-07-01T10:00", "2026-07-01T20:00", "u"), nil
+		}
+		return emptyGround(), nil
+	})
+	hacks := detectMultiModalReturnSplit(context.Background(), DetectorInput{
+		Origin: "HEL", Destination: "PRG", Date: "2026-07-01", ReturnDate: "2026-07-08", Currency: "EUR",
+	})
+	if len(hacks) != 1 {
+		t.Fatalf("expected 1 hack using the eligible EUR round-trip, got %d", len(hacks))
+	}
+	if hacks[0].Currency != "EUR" || hacks[0].Savings != 64 { // 269-(145+60)=64
+		t.Errorf("hack Currency=%q Savings=%v, want EUR/64", hacks[0].Currency, hacks[0].Savings)
+	}
+}
+
+// TestDetectMultiModalReturnSplit_foreignOWOut_dir2StillEmits: the outbound
+// one-way exists only in a foreign currency (gates direction 1), but the return
+// one-way and the direction-2 ground leg are in the baseline currency. Direction
+// 2 must remain viable — a missing baseline owOut fare must not kill it.
+func TestDetectMultiModalReturnSplit_foreignOWOut_dir2StillEmits(t *testing.T) {
+	withReturnSplitFlightSearch(t, func(_ context.Context, origin, dest, _ string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if opts.ReturnDate != "" {
+			return returnSplitMakeFlight(269, "EUR"), nil // round-trip EUR
+		}
+		if origin == "HEL" && dest == "PRG" {
+			return returnSplitMakeFlight(145, "SEK"), nil // owOut foreign only
+		}
+		return returnSplitMakeFlight(145, "EUR"), nil // owRet EUR
+	})
+	withReturnSplitGroundSearch(t, func(_ context.Context, from, to, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		if from == "Helsinki" && to == "Prague" { // dir2 ground out
+			return returnSplitMakeGround(60, "EUR", "bus", "Helsinki", "Prague", "2026-07-01T10:00", "2026-07-01T20:00", "u"), nil
+		}
+		return emptyGround(), nil // dir1 ground empty
+	})
+	hacks := detectMultiModalReturnSplit(context.Background(), DetectorInput{
+		Origin: "HEL", Destination: "PRG", Date: "2026-07-01", ReturnDate: "2026-07-08", Currency: "EUR",
+	})
+	if len(hacks) != 1 {
+		t.Fatalf("expected 1 dir2 hack (dir1 dead on foreign owOut), got %d", len(hacks))
+	}
+	if hacks[0].Currency != "EUR" || hacks[0].Savings != 64 {
+		t.Errorf("dir2 hack Currency=%q Savings=%v, want EUR/64", hacks[0].Currency, hacks[0].Savings)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Integration: DetectAll includes multimodal types
 // ---------------------------------------------------------------------------

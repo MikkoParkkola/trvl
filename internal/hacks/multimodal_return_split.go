@@ -33,6 +33,7 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 
 	originCity := cityFromCode(in.Origin)
 	destCity := cityFromCode(in.Destination)
+	baseCur := strings.ToUpper(strings.TrimSpace(in.Currency))
 
 	// Baseline: cheapest round-trip flight.
 	rtResult, err := returnSplitFlightSearch(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{
@@ -41,36 +42,34 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 	if err != nil || rtResult == nil || !rtResult.Success || len(rtResult.Flights) == 0 {
 		return nil
 	}
-	rtPrice, rtCur := minFlightPriceWithCurrency(rtResult)
+	// Compare only against a round-trip fare in the baseline currency. A
+	// cheaper foreign-currency fare must not suppress a valid same-currency
+	// one (that would silently discard an honest saving).
+	rtPrice, rtCur := minFlightPriceInCurrency(rtResult, baseCur)
 	if rtPrice <= 0 {
-		return nil
+		return nil // no round-trip in the baseline currency to compare against
 	}
 
-	// One-way outbound flight.
+	// One-way outbound flight (used only by direction 1).
 	owOutResult, err := returnSplitFlightSearch(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
 	if err != nil || owOutResult == nil || !owOutResult.Success || len(owOutResult.Flights) == 0 {
 		return nil
 	}
-	owOutPrice, owOutCur := minFlightPriceWithCurrency(owOutResult)
-	if owOutPrice <= 0 {
-		return nil
-	}
+	// No early return on a missing baseline fare here: owOut gates only
+	// direction 1 (owOutCur != baseCur below), leaving direction 2 viable.
+	owOutPrice, owOutCur := minFlightPriceInCurrency(owOutResult, baseCur)
 
-	// One-way return flight (destination → origin).
+	// One-way return flight, destination → origin (used only by direction 2).
 	owRetResult, err := returnSplitFlightSearch(ctx, in.Destination, in.Origin, in.ReturnDate, flights.SearchOptions{})
 	if err != nil || owRetResult == nil || !owRetResult.Success || len(owRetResult.Flights) == 0 {
 		return nil
 	}
-	owRetPrice, owRetCur := minFlightPriceWithCurrency(owRetResult)
-	if owRetPrice <= 0 {
-		return nil
-	}
+	owRetPrice, owRetCur := minFlightPriceInCurrency(owRetResult, baseCur)
 
-	// Currency normalization + baseline (same discipline as detectSplit).
+	// Normalize currencies for the per-direction guards below.
 	rtCur = strings.ToUpper(strings.TrimSpace(rtCur))
 	owOutCur = strings.ToUpper(strings.TrimSpace(owOutCur))
 	owRetCur = strings.ToUpper(strings.TrimSpace(owRetCur))
-	baseCur := strings.ToUpper(strings.TrimSpace(in.Currency))
 
 	// Ground return: destination → origin. The request stays EUR; the guard
 	// checks the route's own reported Currency, never the requested one.
