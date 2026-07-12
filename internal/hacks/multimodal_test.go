@@ -556,6 +556,102 @@ func TestDetectMultiModalReturnSplit_dir2_onlyOWRetCurrencyDiffers_skips(t *test
 	}
 }
 
+// dir2Base wires a direction-2-only scenario: ground-out (HEL->PRG) present,
+// ground-return (PRG->HEL) empty so dir1 cannot emit. All fares/ground EUR by
+// default; each isolation test flips exactly one currency. rt 269, owRet 145,
+// ground-out 60 -> savings 64 -> emits when all currencies agree.
+func dir2Base(t *testing.T, rtCur, owRetCur, groundCur string) []Hack {
+	t.Helper()
+	withReturnSplitFlightSearch(t, func(_ context.Context, origin, dest, _ string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if opts.ReturnDate != "" {
+			return returnSplitMakeFlight(269, rtCur), nil
+		}
+		if origin == "PRG" && dest == "HEL" {
+			return returnSplitMakeFlight(145, owRetCur), nil // owRet
+		}
+		return returnSplitMakeFlight(145, "EUR"), nil // owOut
+	})
+	withReturnSplitGroundSearch(t, func(_ context.Context, from, to, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		if from == "Helsinki" && to == "Prague" {
+			return returnSplitMakeGround(60, groundCur, "bus", "Helsinki", "Prague", "2026-07-01T10:00", "2026-07-01T20:00", "u"), nil
+		}
+		return emptyGround(), nil
+	})
+	return detectMultiModalReturnSplit(context.Background(), DetectorInput{
+		Origin: "HEL", Destination: "PRG", Date: "2026-07-01", ReturnDate: "2026-07-08", Currency: "EUR",
+	})
+}
+
+// TestDetectMultiModalReturnSplit_dir2_allEUR_emits is the dir2 positive control.
+func TestDetectMultiModalReturnSplit_dir2_allEUR_emits(t *testing.T) {
+	hacks := dir2Base(t, "EUR", "EUR", "EUR")
+	if len(hacks) != 1 {
+		t.Fatalf("expected 1 dir2 hack for all-EUR, got %d", len(hacks))
+	}
+	if hacks[0].Currency != "EUR" || hacks[0].Savings != 64 {
+		t.Errorf("dir2 hack Currency=%q Savings=%v, want EUR/64", hacks[0].Currency, hacks[0].Savings)
+	}
+	if !strings.Contains(hacks[0].Description, "EUR") {
+		t.Errorf("dir2 desc missing EUR label: %q", hacks[0].Description)
+	}
+}
+
+// TestDetectMultiModalReturnSplit_dir2_onlyGroundCurrencyDiffers_skips pins the
+// dir2 groundCur clause (previously unpinned; mislabelled EUR total would emit).
+func TestDetectMultiModalReturnSplit_dir2_onlyGroundCurrencyDiffers_skips(t *testing.T) {
+	if hacks := dir2Base(t, "EUR", "EUR", "SEK"); len(hacks) != 0 {
+		t.Errorf("expected 0 when only dir2 ground currency differs, got %d", len(hacks))
+	}
+}
+
+// TestDetectMultiModalReturnSplit_dir2_onlyRTCurrencyDiffers_skips pins the dir2 rtCur clause.
+func TestDetectMultiModalReturnSplit_dir2_onlyRTCurrencyDiffers_skips(t *testing.T) {
+	if hacks := dir2Base(t, "USD", "EUR", "EUR"); len(hacks) != 0 {
+		t.Errorf("expected 0 when only dir2 round-trip currency differs, got %d", len(hacks))
+	}
+}
+
+// TestDetectMultiModalReturnSplit_dir2_emptyBaseCurrency_skips pins the dir2
+// baseCur != "" clause: all currencies empty (equality passes) but empty
+// baseline must still suppress the emit.
+func TestDetectMultiModalReturnSplit_dir2_emptyBaseCurrency_skips(t *testing.T) {
+	withReturnSplitFlightSearch(t, func(_ context.Context, origin, dest, _ string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if opts.ReturnDate != "" {
+			return returnSplitMakeFlight(269, ""), nil
+		}
+		return returnSplitMakeFlight(145, ""), nil
+	})
+	withReturnSplitGroundSearch(t, func(_ context.Context, from, to, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		if from == "Helsinki" && to == "Prague" {
+			return returnSplitMakeGround(60, "", "bus", "Helsinki", "Prague", "2026-07-01T10:00", "2026-07-01T20:00", "u"), nil
+		}
+		return emptyGround(), nil
+	})
+	hacks := detectMultiModalReturnSplit(context.Background(), DetectorInput{
+		Origin: "HEL", Destination: "PRG", Date: "2026-07-01", ReturnDate: "2026-07-08", Currency: "",
+	})
+	if len(hacks) != 0 {
+		t.Errorf("expected 0 when dir2 baseline currency empty, got %d", len(hacks))
+	}
+}
+
+// TestDetectMultiModalReturnSplit_nilResultsNoPanic verifies a search seam
+// returning (nil, nil) is skipped safely rather than panicking (mirrors split.go).
+func TestDetectMultiModalReturnSplit_nilResultsNoPanic(t *testing.T) {
+	withReturnSplitFlightSearch(t, func(_ context.Context, _, _, _ string, _ flights.SearchOptions) (*models.FlightSearchResult, error) {
+		return nil, nil
+	})
+	withReturnSplitGroundSearch(t, func(_ context.Context, _, _, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		return nil, nil
+	})
+	hacks := detectMultiModalReturnSplit(context.Background(), DetectorInput{
+		Origin: "HEL", Destination: "PRG", Date: "2026-07-01", ReturnDate: "2026-07-08", Currency: "EUR",
+	})
+	if len(hacks) != 0 {
+		t.Errorf("expected 0 hacks on nil results, got %d", len(hacks))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Integration: DetectAll includes multimodal types
 // ---------------------------------------------------------------------------

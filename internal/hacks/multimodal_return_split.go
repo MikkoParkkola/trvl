@@ -38,7 +38,7 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 	rtResult, err := returnSplitFlightSearch(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{
 		ReturnDate: in.ReturnDate,
 	})
-	if err != nil || !rtResult.Success || len(rtResult.Flights) == 0 {
+	if err != nil || rtResult == nil || !rtResult.Success || len(rtResult.Flights) == 0 {
 		return nil
 	}
 	rtPrice, rtCur := minFlightPriceWithCurrency(rtResult)
@@ -48,7 +48,7 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 
 	// One-way outbound flight.
 	owOutResult, err := returnSplitFlightSearch(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
-	if err != nil || !owOutResult.Success || len(owOutResult.Flights) == 0 {
+	if err != nil || owOutResult == nil || !owOutResult.Success || len(owOutResult.Flights) == 0 {
 		return nil
 	}
 	owOutPrice, owOutCur := minFlightPriceWithCurrency(owOutResult)
@@ -58,7 +58,7 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 
 	// One-way return flight (destination → origin).
 	owRetResult, err := returnSplitFlightSearch(ctx, in.Destination, in.Origin, in.ReturnDate, flights.SearchOptions{})
-	if err != nil || !owRetResult.Success || len(owRetResult.Flights) == 0 {
+	if err != nil || owRetResult == nil || !owRetResult.Success || len(owRetResult.Flights) == 0 {
 		return nil
 	}
 	owRetPrice, owRetCur := minFlightPriceWithCurrency(owRetResult)
@@ -81,7 +81,7 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 	var hacks []Hack
 
 	// Direction 1: fly out, return by ground.
-	if err == nil && groundResult.Success && len(groundResult.Routes) > 0 {
+	if err == nil && groundResult != nil && groundResult.Success && len(groundResult.Routes) > 0 {
 		var bestGroundPrice float64
 		var bestRoute *groundRoute
 
@@ -162,7 +162,7 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 	groundOutResult, gerr := returnSplitGroundSearch(ctx, originCity, destCity, in.Date, ground.SearchOptions{
 		Currency: "EUR",
 	})
-	if gerr == nil && groundOutResult.Success && len(groundOutResult.Routes) > 0 {
+	if gerr == nil && groundOutResult != nil && groundOutResult.Success && len(groundOutResult.Routes) > 0 {
 		var bestGroundPrice float64
 		var bestRoute *groundRoute
 
