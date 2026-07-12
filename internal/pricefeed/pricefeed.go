@@ -256,17 +256,44 @@ func dominantProviderCurrency(providers []models.ProviderPrice) string {
 	return best
 }
 
-// CheapestHotel returns the lowest positive-priced hotel within a single
-// currency cohort — the most common currency among priced hotels — or a zero
-// value. The hotel summary headline ("Lowest lead-in") must not let a
-// nominally-small unconverted-foreign price win dishonestly; hotels outside the
-// dominant currency cohort (the incomparable tail left by normalizeHotelCurrencies
-// when FX conversion fails) are excluded from the superlative, not compared.
-// Full payload is retained elsewhere; only the headline pick is guarded. When
-// no hotel carries a currency it falls back to the lowest positive price.
+// CheapestHotel returns the honest headline pick for the hotel summary's
+// "Lowest lead-in" line, or a zero value when nothing qualifies.
+//
+// The comparability signal is ComparablePrice, not currency frequency:
+// normalizeHotelCurrencies sets ComparablePrice on exactly the hotels it could
+// express in the target currency (native or FX-converted), and leaves the
+// incomparable tail (FX conversion failed) at ComparablePrice == 0. When any
+// comparable hotel exists, the pick comes only from that cohort, by lowest
+// ComparablePrice. Frequency would be wrong here: if the majority of hotels
+// fail conversion, the foreign tail could form a bogus "dominant" cohort and
+// reintroduce the nominally-small dishonest winner (e.g. JPY 50 beating EUR 90).
+//
+// Only when no hotel was normalized at all (no derivable target => every
+// ComparablePrice is 0) does it fall back to the dominant currency cohort and
+// then lowest price, mirroring CheapestProvider. Full payload is retained
+// elsewhere; only the headline pick is guarded.
 func CheapestHotel(hotels []models.HotelResult) models.HotelResult {
-	cohort := dominantHotelCurrency(hotels)
 	var best models.HotelResult
+	comparableExists := false
+	for _, h := range hotels {
+		if h.Price > 0 && h.ComparablePrice > 0 {
+			comparableExists = true
+			break
+		}
+	}
+	if comparableExists {
+		for _, h := range hotels {
+			if h.Price <= 0 || h.ComparablePrice <= 0 {
+				continue
+			}
+			if best.ComparablePrice == 0 || h.ComparablePrice < best.ComparablePrice {
+				best = h
+			}
+		}
+		return best
+	}
+	// No normalization occurred: fall back to the dominant currency cohort.
+	cohort := dominantHotelCurrency(hotels)
 	for _, h := range hotels {
 		if h.Price <= 0 {
 			continue
@@ -282,8 +309,9 @@ func CheapestHotel(hotels []models.HotelResult) models.HotelResult {
 }
 
 // dominantHotelCurrency returns the most frequently occurring non-empty
-// currency among positive-priced hotels, with a deterministic first-seen
-// tie-break, or "" when none carry a currency.
+// currency among positive-priced hotels. The tie-break is deterministic: the
+// currency that first reaches the maximum running count wins. Returns "" when
+// none carry a currency.
 func dominantHotelCurrency(hotels []models.HotelResult) string {
 	counts := make(map[string]int)
 	best := ""

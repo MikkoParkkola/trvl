@@ -24,6 +24,37 @@ func TestCheapestHotel_ExcludesForeignCohort(t *testing.T) {
 	}
 }
 
+// TestCheapestHotel_MajorityForeignFXFailure is the §12 regression: the foreign
+// hotels are BOTH the majority AND nominally cheaper, but their FX conversion
+// failed (ComparablePrice == 0). A frequency-based cohort would crown JPY 50;
+// the comparability cohort must pick the lone normalized EUR hotel.
+func TestCheapestHotel_MajorityForeignFXFailure(t *testing.T) {
+	hotels := []models.HotelResult{
+		{Name: "Euro", Price: 90, Currency: "EUR", ComparablePrice: 90},
+		{Name: "YenA", Price: 50, Currency: "JPY"},
+		{Name: "YenB", Price: 60, Currency: "JPY"},
+	}
+	got := CheapestHotel(hotels)
+	if got.Name != "Euro" || got.ComparablePrice != 90 {
+		t.Fatalf("want Euro (comparable cohort, not majority JPY), got %+v", got)
+	}
+}
+
+// TestCheapestHotel_PicksMinComparable: among normalized hotels the pick is the
+// lowest ComparablePrice; an FX-failed foreign quote is excluded even if raw
+// price is smaller.
+func TestCheapestHotel_PicksMinComparable(t *testing.T) {
+	hotels := []models.HotelResult{
+		{Name: "A", Price: 120, Currency: "EUR", ComparablePrice: 120},
+		{Name: "B", Price: 95, Currency: "EUR", ComparablePrice: 95},
+		{Name: "C", Price: 40, Currency: "JPY"}, // FX failed, ComparablePrice 0
+	}
+	got := CheapestHotel(hotels)
+	if got.Name != "B" || got.ComparablePrice != 95 {
+		t.Fatalf("want B 95 (min comparable, JPY 40 excluded), got %+v", got)
+	}
+}
+
 func TestCheapestHotel_Empty(t *testing.T) {
 	got := CheapestHotel(nil)
 	if got.Price != 0 || got.Name != "" || got.Currency != "" {
