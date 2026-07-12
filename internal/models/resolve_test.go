@@ -119,11 +119,11 @@ func TestResolveFlightSources_Frankenfare_CheaperSourceFareFieldsTravel(t *testi
 		in := []FlightResult{
 			{
 				Price: 180, Currency: "EUR", Provider: "google_flights", BookingURL: "g",
-				Legs: leg(), CheckedBagsIncluded: ptrInt(1),
+				Legs: leg(), CheckedBagsIncluded: ptrInt(1), CarryOnIncluded: ptrBool(true),
 			},
 			{
 				Price: 120, Currency: "EUR", Provider: "kiwi", BookingURL: "k",
-				Legs: leg(), CheckedBagsIncluded: ptrInt(0),
+				Legs: leg(), CheckedBagsIncluded: ptrInt(0), CarryOnIncluded: ptrBool(false),
 			},
 		}
 		out := ResolveFlightSources(in)
@@ -140,6 +140,9 @@ func TestResolveFlightSources_Frankenfare_CheaperSourceFareFieldsTravel(t *testi
 				got = *r.CheckedBagsIncluded
 			}
 			t.Errorf("CheckedBagsIncluded = %d, want deref 0 (not 1 from expensive source)", got)
+		}
+		if r.CarryOnIncluded == nil || *r.CarryOnIncluded {
+			t.Errorf("CarryOnIncluded = %v, want deref false (from cheaper source, not true from expensive)", r.CarryOnIncluded)
 		}
 		if len(r.Sources) != 2 {
 			t.Errorf("len(Sources)=%d want 2", len(r.Sources))
