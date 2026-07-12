@@ -404,3 +404,92 @@ func TestFlightIdentityKey_CarrierlessFallback(t *testing.T) {
 		// Full shape roughly: KL1001@...|ams>lhr@...-...
 	})
 }
+
+// TestResolveFlightSources_HeadlineDeterministicAcrossOrder proves that
+// recomputeSourceEconomics (via ResolveFlightSources) selects the headline
+// currency deterministically (most-represented, lex tie-break) independent
+// of provider slice order. Same physical itinerary, reversed order must
+// produce identical Price/Currency/CheapestSource/Savings.
+func TestResolveFlightSources_HeadlineDeterministicAcrossOrder(t *testing.T) {
+	leg := []FlightLeg{{AirlineCode: "AF", FlightNumber: "1234", DepartureTime: "2026-06-01T08:00:00Z"}}
+	// Same two sources, different currencies, counts 1 each.
+	srcEUR := FlightResult{Price: 210, Currency: "EUR", Provider: "kiwi", Legs: leg}
+	srcUSD := FlightResult{Price: 119, Currency: "USD", Provider: "skiplagged", Legs: leg}
+
+	orderA := []FlightResult{srcEUR, srcUSD} // EUR first
+	orderB := []FlightResult{srcUSD, srcEUR} // USD first
+
+	ra := ResolveFlightSources(orderA)[0]
+	rb := ResolveFlightSources(orderB)[0]
+
+	if ra.Price != rb.Price || ra.Currency != rb.Currency || ra.CheapestSource != rb.CheapestSource || ra.Savings != rb.Savings {
+		t.Errorf("headlines differ by order: A(price=%v cur=%s prov=%s sav=%v) B(price=%v cur=%s prov=%s sav=%v)",
+			ra.Price, ra.Currency, ra.CheapestSource, ra.Savings,
+			rb.Price, rb.Currency, rb.CheapestSource, rb.Savings)
+	}
+
+	// Tie (1 EUR, 1 USD) -> lex smallest "EUR" wins. Savings=0 (no same-currency pair).
+	if ra.Currency != "EUR" || ra.Price != 210 || ra.Savings != 0 {
+		t.Errorf("tie lex pick wrong: got cur=%s price=%v sav=%v want EUR/210/0", ra.Currency, ra.Price, ra.Savings)
+	}
+	if len(ra.Sources) != 2 || len(rb.Sources) != 2 {
+		t.Errorf("expected both sources retained, got A:%d B:%d", len(ra.Sources), len(rb.Sources))
+	}
+}
+
+// TestResolveGroundSources_HeadlineDeterministicAcrossOrder is the ground mirror.
+func TestResolveGroundSources_HeadlineDeterministicAcrossOrder(t *testing.T) {
+	mk := func(provider string, price float64, cur string) GroundRoute {
+		return GroundRoute{
+			Provider:  provider,
+			Type:      "train",
+			Price:     price,
+			Currency:  cur,
+			Departure: GroundStop{City: "Paris", Station: "Gare de Lyon", Time: "2026-06-01T10:00:00Z"},
+			Arrival:   GroundStop{City: "Lyon", Station: "Part-Dieu", Time: "2026-06-01T12:00:00Z"},
+			Legs:      []GroundLeg{{Provider: "sncf", Type: "train"}},
+		}
+	}
+	srcEUR := mk("trainline", 210, "EUR")
+	srcUSD := mk("sncf", 119, "USD")
+
+	orderA := []GroundRoute{srcEUR, srcUSD}
+	orderB := []GroundRoute{srcUSD, srcEUR}
+
+	ra := ResolveGroundSources(orderA)[0]
+	rb := ResolveGroundSources(orderB)[0]
+
+	if ra.Price != rb.Price || ra.Currency != rb.Currency || ra.CheapestSource != rb.CheapestSource || ra.Savings != rb.Savings {
+		t.Errorf("ground headlines differ by order: A(price=%v cur=%s prov=%s sav=%v) B(price=%v cur=%s prov=%s sav=%v)",
+			ra.Price, ra.Currency, ra.CheapestSource, ra.Savings,
+			rb.Price, rb.Currency, rb.CheapestSource, rb.Savings)
+	}
+
+	if ra.Currency != "EUR" || ra.Price != 210 || ra.Savings != 0 {
+		t.Errorf("ground tie lex pick wrong: got cur=%s price=%v sav=%v want EUR/210/0", ra.Currency, ra.Price, ra.Savings)
+	}
+	if len(ra.Sources) != 2 || len(rb.Sources) != 2 {
+		t.Errorf("expected both ground sources retained, got A:%d B:%d", len(ra.Sources), len(rb.Sources))
+	}
+}
+
+// TestResolveFlightSources_DominantCurrencyMajority proves most-represented
+// currency wins even when it is not first in slice.
+func TestResolveFlightSources_DominantCurrencyMajority(t *testing.T) {
+	leg := []FlightLeg{{AirlineCode: "AF", FlightNumber: "1234", DepartureTime: "2026-06-01T08:00:00Z"}}
+	// Two USD, one EUR — USD must win regardless of order.
+	s1 := FlightResult{Price: 100, Currency: "USD", Provider: "a", Legs: leg}
+	s2 := FlightResult{Price: 110, Currency: "USD", Provider: "b", Legs: leg}
+	s3 := FlightResult{Price: 120, Currency: "EUR", Provider: "c", Legs: leg}
+
+	// Shuffled orders
+	for _, order := range [][]FlightResult{{s3, s1, s2}, {s1, s3, s2}, {s2, s3, s1}} {
+		r := ResolveFlightSources(order)[0]
+		if r.Currency != "USD" || r.Price != 100 {
+			t.Errorf("majority failed for order %v: got cur=%s price=%v want USD/100", providers(order), r.Currency, r.Price)
+		}
+		if r.Savings != 10 {
+			t.Errorf("majority savings=%v want 10 (110-100 within USD)", r.Savings)
+		}
+	}
+}
