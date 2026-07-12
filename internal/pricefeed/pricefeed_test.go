@@ -145,3 +145,18 @@ func TestCheapestProvider(t *testing.T) {
 		t.Fatalf("want 150, got %v", got.Price)
 	}
 }
+
+// TestCheapestProvider_ExcludesForeignCohort proves a nominally-smaller foreign
+// price cannot win across currencies: with two EUR providers and one JPY, the
+// dominant EUR cohort is ranked and the 5 JPY quote is excluded rather than
+// compared against 80 EUR.
+func TestCheapestProvider_ExcludesForeignCohort(t *testing.T) {
+	got := CheapestProvider([]models.ProviderPrice{
+		{Provider: "a", Price: 90, Currency: "EUR"},
+		{Provider: "b", Price: 80, Currency: "EUR"},
+		{Provider: "c", Price: 5, Currency: "JPY"},
+	})
+	if got.Price != 80 || got.Currency != "EUR" {
+		t.Fatalf("want 80 EUR (JPY excluded), got %v %s", got.Price, got.Currency)
+	}
+}

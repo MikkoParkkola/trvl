@@ -212,12 +212,45 @@ func optionURLs(r hotels.RoomType) []string {
 	return out
 }
 
-// CheapestProvider returns the lowest positive-priced provider, or a zero value.
+// CheapestProvider returns the lowest positive-priced provider within a single
+// currency cohort — the most common currency among priced providers — or a zero
+// value. Ranking a nominal minimum across mixed currencies would let a
+// nominally-small foreign price win dishonestly (100 JPY beating 90 EUR just
+// because 100 < 90 is false economics), so providers outside the dominant cohort
+// are excluded rather than compared. When no provider carries a currency it falls
+// back to the lowest positive price. Mirrors the cohort rule already enforced in
+// internal/multimodal and internal/trip.
 func CheapestProvider(providers []models.ProviderPrice) models.ProviderPrice {
+	cohort := dominantProviderCurrency(providers)
 	var best models.ProviderPrice
 	for _, p := range providers {
-		if p.Price > 0 && (best.Price == 0 || p.Price < best.Price) {
+		if p.Price <= 0 {
+			continue
+		}
+		if cohort != "" && p.Currency != cohort {
+			continue
+		}
+		if best.Price == 0 || p.Price < best.Price {
 			best = p
+		}
+	}
+	return best
+}
+
+// dominantProviderCurrency returns the most frequently occurring non-empty
+// currency among positive-priced providers, with a deterministic first-seen
+// tie-break, or "" when none carry a currency.
+func dominantProviderCurrency(providers []models.ProviderPrice) string {
+	counts := make(map[string]int)
+	best := ""
+	bestN := 0
+	for _, p := range providers {
+		if p.Price <= 0 || p.Currency == "" {
+			continue
+		}
+		counts[p.Currency]++
+		if counts[p.Currency] > bestN {
+			best, bestN = p.Currency, counts[p.Currency]
 		}
 	}
 	return best
