@@ -114,12 +114,14 @@ func TestDetectSplit_positiveControl_emitsWithVerifiedCurrency(t *testing.T) {
 func TestDetectSplit_cheapestFlightCurrencyMismatch_returnsNil(t *testing.T) {
 	// Result whose Flights[0] is EUR but the cheapest flight is USD must be
 	// read as USD (proves minFlightPriceWithCurrency uses the min flight's
-	// currency, not [0]). This drives a currency mismatch -> nil.
+	// currency, not [0]). Numbers chosen so the buggy [0]=EUR path would clear
+	// the savings threshold and emit (250 rt - 200 ow = 50) — the test only
+	// passes because the correct USD read drives a currency mismatch -> nil.
 	withSplitMockSearch(t, func(_ context.Context, origin, dest, date string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
 		if opts.ReturnDate != "" {
 			return splitMakeMulti([]models.FlightResult{
-				{Price: 250, Currency: "EUR"},
-				{Price: 200, Currency: "USD"},
+				{Price: 300, Currency: "EUR"},
+				{Price: 250, Currency: "USD"},
 			}), nil
 		}
 		if origin == "HEL" && dest == "BCN" && date == "2026-07-01" {
