@@ -3,6 +3,7 @@ package trip
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -530,5 +531,142 @@ func TestApplyTripCostCurrencyAndTotals_UsesAvailableCurrencyWhenUnrequested(t *
 	}
 	if result.Total != 270 {
 		t.Errorf("total = %v, want 270", result.Total)
+	}
+}
+
+// ============================================================
+// Currency honesty tests for applyTripCostCurrencyAndTotals (conversion failure)
+// ============================================================
+
+func TestApplyTripCostCurrencyAndTotals_MixedCurrencyFlightFailsToConvert(t *testing.T) {
+	// Flight in JPY, stub fails convert (returns orig amount + from), hotel EUR succeeds.
+	result := &TripCostResult{
+		Flights: FlightCost{
+			Outbound: 100,
+			Return:   120,
+			Currency: "JPY",
+		},
+		Hotels: HotelCost{
+			PerNight: 50,
+			Total:    100,
+			Currency: "EUR",
+		},
+		Nights: 2,
+	}
+
+	applyTripCostCurrencyAndTotals(
+		context.Background(),
+		result,
+		"EUR",
+		2,
+		1,
+		func(_ context.Context, amount float64, from, to string) (float64, string) {
+			if from == to || to == "" {
+				return amount, from
+			}
+			if from == "EUR" && to == "EUR" {
+				return amount, "EUR"
+			}
+			// JPY to EUR: simulate unknown rate -> return orig, from (as destinations.ConvertCurrency does)
+			return amount, from
+		},
+	)
+
+	if result.Success {
+		t.Fatal("expected Success==false when a component could not be converted to target")
+	}
+	if !strings.Contains(result.Error, "needs_price_verification") {
+		t.Errorf("error = %q, want contains 'needs_price_verification'", result.Error)
+	}
+	if strings.Contains(result.Error, "EUR") && strings.Contains(result.Error, "JPY") {
+		// at least the example phrasing
+	}
+	// Total must not be a clean sum presented as EUR (we zero it on dishonesty)
+	if result.Total != 0 {
+		t.Errorf("Total = %v, want 0 (no clean total when not all in target)", result.Total)
+	}
+	if result.Currency != "" {
+		t.Errorf("Currency = %q, want empty (not falsely claiming EUR)", result.Currency)
+	}
+	// per-component left intact with real currencies
+	if result.Flights.Outbound != 100 || result.Flights.Currency != "JPY" {
+		t.Errorf("flight kept as 100 JPY, got %v %s", result.Flights.Outbound, result.Flights.Currency)
+	}
+	if result.Hotels.Total != 100 || result.Hotels.Currency != "EUR" {
+		t.Errorf("hotel kept as 100 EUR, got %v %s", result.Hotels.Total, result.Hotels.Currency)
+	}
+}
+
+func TestApplyTripCostCurrencyAndTotals_AllComponentsConvertSuccessfully(t *testing.T) {
+	result := &TripCostResult{
+		Flights: FlightCost{
+			Outbound: 150,
+			Return:   300,
+			Currency: "JPY",
+		},
+		Hotels: HotelCost{
+			PerNight: 50,
+			Total:    100,
+			Currency: "EUR",
+		},
+		Nights: 2,
+	}
+
+	applyTripCostCurrencyAndTotals(
+		context.Background(),
+		result,
+		"EUR",
+		2,
+		1,
+		func(_ context.Context, amount float64, from, to string) (float64, string) {
+			if from == to || to == "" {
+				return amount, from
+			}
+			if from == "JPY" && to == "EUR" {
+				return amount / 150, "EUR" // fake rate: 150JPY=1EUR
+			}
+			if from == "EUR" && to == "EUR" {
+				return amount, "EUR"
+			}
+			return amount, from
+		},
+	)
+
+	if !result.Success {
+		t.Fatal("expected Success==true when all convert to target")
+	}
+	if result.Currency != "EUR" {
+		t.Errorf("currency = %q, want EUR", result.Currency)
+	}
+	// Outbound 150/150=1, return 300/150=2, hotel 100; total per person flights 3 + hotel 100 = 103
+	if result.Total != 103 {
+		t.Errorf("total = %v, want 103 (sum of converted amounts)", result.Total)
+	}
+}
+
+func TestCheapestHotel_UsesPriceForRankingAcrossCurrencies(t *testing.T) {
+	// Both must be eligible per HotelPriceEligibleForFinalTripCost rules.
+	// Use explicit valid basis/conf so fixtures are production-like.
+	htls := []models.HotelResult{
+		{
+			Price:           15000,
+			Currency:        "JPY",
+			Name:            "CheapInComparable JPY",
+			ComparablePrice: 90,
+			PriceBasis:      models.PriceBasisRoomTotal,
+			PriceConfidence: models.PriceConfidenceRoomLevel,
+		},
+		{
+			Price:           100,
+			Currency:        "EUR",
+			Name:            "EUR ExpensiveOnComparable",
+			ComparablePrice: 100,
+			PriceBasis:      models.PriceBasisRoomTotal,
+			PriceConfidence: models.PriceConfidenceRoomLevel,
+		},
+	}
+	best := cheapestHotel(htls)
+	if best.Name != "CheapInComparable JPY" {
+		t.Errorf("cheapestHotel picked %q, want the JPY one (PriceForRanking 90 < 100)", best.Name)
 	}
 }
