@@ -8,6 +8,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
+	"github.com/MikkoParkkola/trvl/internal/pricefeed"
 	"github.com/MikkoParkkola/trvl/internal/pricesignal"
 	"github.com/MikkoParkkola/trvl/internal/profile"
 )
@@ -304,13 +305,7 @@ func handleHotelPrices(ctx context.Context, args map[string]any, elicit ElicitFu
 
 	summary := fmt.Sprintf("Found %d booking providers for hotel %s (%s to %s).",
 		len(result.Providers), hotelID, checkIn, checkOut)
-	if len(result.Providers) > 0 {
-		cheapest := result.Providers[0]
-		for _, p := range result.Providers[1:] {
-			if p.Price > 0 && p.Price < cheapest.Price {
-				cheapest = p
-			}
-		}
+	if cheapest := pricefeed.CheapestProvider(result.Providers); cheapest.Price > 0 {
 		summary += fmt.Sprintf(" Cheapest: %s %.0f via %s.", cheapest.Currency, cheapest.Price, cheapest.Provider)
 	}
 
