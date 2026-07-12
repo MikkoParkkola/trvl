@@ -253,7 +253,7 @@ func TestBuildReasoning_AllCases(t *testing.T) {
 func TestCheapestHotel_EmptyDestination(t *testing.T) {
 	t.Parallel()
 	// Empty dest causes immediate (0, "") return without any HTTP call.
-	price, name := cheapestHotel(context.Background(), "", "2026-05-01", "2026-05-05", 4, nil)
+	price, name, _ := cheapestHotel(context.Background(), "", "2026-05-01", "2026-05-05", 4, nil)
 	if price != 0 || name != "" {
 		t.Errorf("expected (0, '') for empty dest, got (%v, %q)", price, name)
 	}
@@ -261,7 +261,7 @@ func TestCheapestHotel_EmptyDestination(t *testing.T) {
 
 func TestCheapestHotel_EmptyCheckIn(t *testing.T) {
 	t.Parallel()
-	price, name := cheapestHotel(context.Background(), "PRG", "", "2026-05-05", 4, nil)
+	price, name, _ := cheapestHotel(context.Background(), "PRG", "", "2026-05-05", 4, nil)
 	if price != 0 || name != "" {
 		t.Errorf("expected (0, '') for empty checkIn, got (%v, %q)", price, name)
 	}
@@ -269,7 +269,7 @@ func TestCheapestHotel_EmptyCheckIn(t *testing.T) {
 
 func TestCheapestHotel_EmptyCheckOut(t *testing.T) {
 	t.Parallel()
-	price, name := cheapestHotel(context.Background(), "PRG", "2026-05-01", "", 4, nil)
+	price, name, _ := cheapestHotel(context.Background(), "PRG", "2026-05-01", "", 4, nil)
 	if price != 0 || name != "" {
 		t.Errorf("expected (0, '') for empty checkOut, got (%v, %q)", price, name)
 	}
@@ -277,7 +277,7 @@ func TestCheapestHotel_EmptyCheckOut(t *testing.T) {
 
 func TestCheapestHotel_ZeroNights(t *testing.T) {
 	t.Parallel()
-	price, name := cheapestHotel(context.Background(), "PRG", "2026-05-01", "2026-05-05", 0, nil)
+	price, name, _ := cheapestHotel(context.Background(), "PRG", "2026-05-01", "2026-05-05", 0, nil)
 	if price != 0 || name != "" {
 		t.Errorf("expected (0, '') for zero nights, got (%v, %q)", price, name)
 	}

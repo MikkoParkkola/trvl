@@ -249,7 +249,7 @@ func TestCheapestFlightWithBudget_NegativeBudget(t *testing.T) {
 
 func TestCheapestHotel_NegativeNights(t *testing.T) {
 	t.Parallel()
-	price, name := cheapestHotel(context.Background(), "PRG", "2026-05-01", "2026-05-05", -1, nil)
+	price, name, _ := cheapestHotel(context.Background(), "PRG", "2026-05-01", "2026-05-05", -1, nil)
 	if price != 0 || name != "" {
 		t.Errorf("expected (0, '') for negative nights, got (%v, %q)", price, name)
 	}
