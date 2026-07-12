@@ -652,6 +652,67 @@ func TestDetectMultiModalReturnSplit_nilResultsNoPanic(t *testing.T) {
 	}
 }
 
+// returnSplitNilCase runs the detector with every provider call valid EXCEPT
+// the one named by nilTarget, which returns (nil, nil). It isolates each nil
+// guard: drop that guard and the detector dereferences nil -> panic -> the
+// subtest fails. Ground calls return emptyGround() so no hack emits and the
+// assertion stays a uniform len==0 + no-panic.
+func returnSplitNilCase(t *testing.T, nilTarget string) []Hack {
+	t.Helper()
+	withReturnSplitFlightSearch(t, func(_ context.Context, origin, dest, _ string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
+		switch {
+		case opts.ReturnDate != "": // round-trip baseline
+			if nilTarget == "rt" {
+				return nil, nil
+			}
+			return returnSplitMakeFlight(269, "EUR"), nil
+		case origin == "PRG" && dest == "HEL": // one-way return
+			if nilTarget == "owRet" {
+				return nil, nil
+			}
+			return returnSplitMakeFlight(145, "EUR"), nil
+		default: // one-way outbound HEL->PRG
+			if nilTarget == "owOut" {
+				return nil, nil
+			}
+			return returnSplitMakeFlight(145, "EUR"), nil
+		}
+	})
+	withReturnSplitGroundSearch(t, func(_ context.Context, from, to, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		switch {
+		case from == "Prague" && to == "Helsinki": // dir1 ground return
+			if nilTarget == "groundDir1" {
+				return nil, nil
+			}
+			return emptyGround(), nil
+		case from == "Helsinki" && to == "Prague": // dir2 ground out
+			if nilTarget == "groundDir2" {
+				return nil, nil
+			}
+			return emptyGround(), nil
+		default:
+			return emptyGround(), nil
+		}
+	})
+	return detectMultiModalReturnSplit(context.Background(), DetectorInput{
+		Origin: "HEL", Destination: "PRG", Date: "2026-07-01", ReturnDate: "2026-07-08", Currency: "EUR",
+	})
+}
+
+// TestDetectMultiModalReturnSplit_eachNilGuardPinned pins all five provider
+// nil guards individually (the earlier smoke test only reached the first). Each
+// subtest lets prior calls succeed and returns nil for exactly one provider
+// result; removing that result's nil guard makes the detector panic here.
+func TestDetectMultiModalReturnSplit_eachNilGuardPinned(t *testing.T) {
+	for _, target := range []string{"rt", "owOut", "owRet", "groundDir1", "groundDir2"} {
+		t.Run(target, func(t *testing.T) {
+			if hacks := returnSplitNilCase(t, target); len(hacks) != 0 {
+				t.Errorf("nil %s result: expected 0 hacks, got %d", target, len(hacks))
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Integration: DetectAll includes multimodal types
 // ---------------------------------------------------------------------------
