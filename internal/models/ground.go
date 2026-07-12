@@ -44,6 +44,11 @@ type GroundRoute struct {
 	Price      float64     `json:"price"`
 	PriceMax   float64     `json:"price_max,omitempty"` // RegioJet gives price ranges
 	Currency   string      `json:"currency"`
+	// ComparablePrice is the price converted to a common target currency for
+	// cross-currency ranking and MaxPrice filtering (and for PriceForRanking).
+	// Set by the normalize pass in ground search when conversion succeeds.
+	// 0 means "use raw Price" (incomparable across currencies).
+	ComparablePrice float64 `json:"comparable_price,omitempty"`
 	Duration   int         `json:"duration_minutes"`
 	Departure  GroundStop  `json:"departure"`
 	Arrival    GroundStop  `json:"arrival"`
@@ -96,4 +101,13 @@ type GroundLeg struct {
 	Arrival   GroundStop `json:"arrival"`
 	Duration  int        `json:"duration_minutes"`
 	Amenities []string   `json:"amenities,omitempty"`
+}
+
+// PriceForRanking returns the normalized comparable price when available,
+// falling back to the raw Price. Used for cross-currency-safe ranking.
+func (r GroundRoute) PriceForRanking() float64 {
+	if r.ComparablePrice > 0 {
+		return r.ComparablePrice
+	}
+	return r.Price
 }
