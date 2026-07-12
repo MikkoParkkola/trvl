@@ -149,6 +149,19 @@ func foldFlightSource(dst *FlightResult, src FlightResult) {
 		dst.Currency = cur
 		dst.Provider = prov
 		dst.BookingURL = url
+		// Fare-risk attributes must travel with the cheapest headline price so a
+		// consumer never ranks the cheapest provider while reading another
+		// provider's baggage / self-connect / fare terms (Frankenfare fix).
+		if prov == src.Provider {
+			dst.SelfConnect = src.SelfConnect
+			dst.FareType = src.FareType
+			dst.Warnings = src.Warnings
+			dst.CarryOnIncluded = src.CarryOnIncluded
+			dst.CheckedBagsIncluded = src.CheckedBagsIncluded
+			dst.ComparablePrice = src.ComparablePrice
+			dst.ComparableBreakdown = src.ComparableBreakdown
+			dst.Confidence = src.Confidence
+		}
 	}
 	dst.CheapestSource = prov
 	dst.Savings = savings
@@ -171,6 +184,15 @@ func foldGroundSource(dst *GroundRoute, src GroundRoute) {
 		dst.Currency = cur
 		dst.Provider = prov
 		dst.BookingURL = url
+		// Fare-risk attributes must travel with the cheapest headline price so a
+		// consumer never ranks the cheapest provider while reading another
+		// provider's amenities / seats / terms (Frankenfare fix).
+		if prov == src.Provider {
+			dst.PriceMax = src.PriceMax
+			dst.Amenities = src.Amenities
+			dst.SeatsLeft = src.SeatsLeft
+			dst.Confidence = src.Confidence
+		}
 	}
 	dst.CheapestSource = prov
 	dst.Savings = savings
