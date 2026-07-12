@@ -87,6 +87,14 @@ type HotelResult struct {
 	Stars           int           `json:"stars"`
 	Price           float64       `json:"price"` // Lowest price across all sources
 	Currency        string        `json:"currency"`
+	// ComparablePrice is the headline price converted to a common target currency
+	// for cross-currency ranking and Min/MaxPrice filtering (and PriceForRanking).
+	// 0 means the price could not be converted (incomparable across currencies).
+	// NOTE: this is a CURRENCY axis (matches GroundRoute.ComparablePrice). It is
+	// NOT the same as FlightResult.ComparablePrice, which is a FEES axis (all-in
+	// cost, same currency). Do not read comparable_price generically across the
+	// three result types — the semantics differ by type.
+	ComparablePrice float64       `json:"comparable_price,omitempty"`
 	Address         string        `json:"address"`
 	Description     string        `json:"description,omitempty"` // property tagline or summary
 	ImageURL        string        `json:"image_url,omitempty"`   // main property image
@@ -186,4 +194,13 @@ type HotelPriceResult struct {
 	// only — never a numeric estimate, and never folded into ranking, since it
 	// is roughly equal across candidates at a destination. See #169.
 	TouristTaxNote string `json:"tourist_tax_note,omitempty"`
+}
+
+// PriceForRanking returns the normalized comparable price when available,
+// falling back to raw Price. Cross-currency-safe ranking uses this.
+func (h HotelResult) PriceForRanking() float64 {
+	if h.ComparablePrice > 0 {
+		return h.ComparablePrice
+	}
+	return h.Price
 }

@@ -349,6 +349,14 @@ func (o AccommodationOffer) FinalTripCostReady() bool {
 // prices from final trip totals. Empty trust fields are allowed for older test
 // fixtures, but production search paths should set PriceBasis/PriceConfidence
 // via FinalizeHotelPriceTrust.
+//
+// KNOWN GAP (not addressed here; the comparable-price PR was display-only):
+// room_nightly / room_total / tax_inclusive_total all pass this gate, but only
+// tax_inclusive_total actually proves taxes+fees are included. A room_total that
+// omits taxes still counts toward the final trip cost, so the total can under-
+// state the real spend — unlike the flight-side bookability check, which proves
+// all-in cost before it trusts a fare. Tightening this to require an explicit
+// taxes-included signal (or a separate eligibility tier) is deferred follow-up.
 func HotelPriceEligibleForFinalTripCost(h HotelResult) bool {
 	if h.Price <= 0 {
 		return false

@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 )
@@ -104,11 +105,22 @@ func MergeHotelResults(sources ...[]HotelResult) []HotelResult {
 				// entries with the same (provider, price, currency) tuple.
 				existing.Sources = deduplicateSources(append(existing.Sources, buildSources(h)...))
 
-				// Update primary price to the lowest.
-				if h.Price > 0 && (existing.Price == 0 || h.Price < existing.Price) {
+				// Update primary price to the lowest, but only within the same currency.
+				// This is safe because normalization (when performed) has already made
+				// comparable batches share a target currency; cross-currency raw numbers
+				// must never be compared here. Also propagate ComparablePrice for the
+				// comparable set.
+				if h.Price > 0 && strings.EqualFold(h.Currency, existing.Currency) &&
+					(existing.Price == 0 || h.Price < existing.Price) {
 					existing.Price = h.Price
 					existing.Currency = h.Currency
 					existing.BookingURL = h.BookingURL
+					if h.ComparablePrice > 0 {
+						existing.ComparablePrice = h.ComparablePrice
+					}
+					// Note: when normalization ran before merge, target-currency
+					// entries already carry ComparablePrice set. We do not fabricate
+					// it here for un-normalized/incomparable entries.
 				}
 
 				// Merge fields that the primary might be missing.
@@ -232,27 +244,42 @@ func ComputeSavings(hotels []HotelResult) {
 		}
 
 		// Find the currency group with the most sources (best comparison).
-		var bestCurrency string
+		// Iterate keys in sorted order so equal-sized groups are deterministic
+		// (lex smallest uppercased key wins on tie).
 		var bestSources []PriceSource
-		for currency, sources := range byCurrency {
-			if len(sources) > len(bestSources) {
-				bestCurrency = currency
-				bestSources = sources
+		if len(byCurrency) > 0 {
+			keys := make([]string, 0, len(byCurrency))
+			for k := range byCurrency {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			bestK := ""
+			for _, k := range keys {
+				sources := byCurrency[k]
+				if len(sources) > len(bestSources) ||
+					(len(sources) == len(bestSources) && (bestK == "" || k < bestK)) {
+					bestK = k
+					bestSources = sources
+				}
 			}
 		}
-		_ = bestCurrency
 
 		if len(bestSources) < 2 {
 			continue
 		}
 
+		// Find min within the chosen group; on equal price take the lex-smallest
+		// provider for order-independence (not first in map iteration order).
 		minPrice := math.MaxFloat64
 		maxPrice := 0.0
 		cheapest := ""
+		cheapestProvKey := ""
 		for _, s := range bestSources {
-			if s.Price < minPrice {
+			pkey := strings.ToLower(strings.TrimSpace(s.Provider))
+			if s.Price < minPrice || (s.Price == minPrice && (cheapestProvKey == "" || pkey < cheapestProvKey)) {
 				minPrice = s.Price
 				cheapest = s.Provider
+				cheapestProvKey = pkey
 			}
 			if s.Price > maxPrice {
 				maxPrice = s.Price

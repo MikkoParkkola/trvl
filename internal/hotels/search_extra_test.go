@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 
@@ -649,3 +650,113 @@ func TestResolveLocation_MockServer(t *testing.T) {
 }
 
 // --- SearchHotels validation ---
+
+// --- comparable price, basis tier, determinism (hotel cross-currency fix) ---
+
+func makeStubConv(rates map[string]float64) currencyConverter {
+	return func(ctx context.Context, amount float64, from, to string) (float64, bool) {
+		fu := strings.ToUpper(strings.TrimSpace(from))
+		tu := strings.ToUpper(strings.TrimSpace(to))
+		if fu == tu {
+			return amount, true
+		}
+		if r, ok := rates[fu+"->"+tu]; ok && r > 0 {
+			return amount * r, true
+		}
+		return 0, false
+	}
+}
+
+func TestNormalizeHotelCurrencies_CrossCurrencyHeadline(t *testing.T) {
+	ctx := context.Background()
+	// Target EUR. 95 USD @ 0.9 = 85.5 EUR (cheaper than 110 EUR after norm)
+	// Give both same conf so price decides (raw trap test independent of conf).
+	hEUR := models.HotelResult{Name: "Nice-EUR", Price: 110, Currency: "EUR", PriceBasis: models.PriceBasisLeadIn, PriceConfidence: models.PriceConfidenceUnverified}
+	hUSD := models.HotelResult{Name: "Cheap-USD-raw", Price: 95, Currency: "USD", PriceBasis: models.PriceBasisLeadIn, PriceConfidence: models.PriceConfidenceUnverified}
+	conv := makeStubConv(map[string]float64{"USD->EUR": 0.9})
+	hs := []models.HotelResult{hEUR, hUSD}
+	normalizeHotelCurrencies(ctx, hs, "EUR", conv)
+
+	sort.SliceStable(hs, func(i, j int) bool { return lessPrice(hs[i], hs[j]) })
+	if hs[0].Name != "Cheap-USD-raw" || hs[0].PriceForRanking() >= hs[1].PriceForRanking() {
+		t.Errorf("expected converted USD (85.5) to rank before 110 EUR; order=%s,%s prices=%.1f,%.1f",
+			hs[0].Name, hs[1].Name, hs[0].PriceForRanking(), hs[1].PriceForRanking())
+	}
+	if hs[0].ComparablePrice <= 0 || hs[1].ComparablePrice <= 0 {
+		t.Error("both should have positive ComparablePrice after successful norm")
+	}
+}
+
+func TestNormalizeHotelCurrencies_FXUnavailableIncomparableTail(t *testing.T) {
+	ctx := context.Background()
+	hTarget := models.HotelResult{Name: "Target", Price: 100, Currency: "EUR", PriceConfidence: models.PriceConfidenceVerified, PriceBasis: models.PriceBasisTaxInclusiveTotal}
+	hForeign1 := models.HotelResult{Name: "F1", Price: 80, Currency: "USD"}
+	hForeign2 := models.HotelResult{Name: "F2", Price: 90, Currency: "USD"}
+	hOther := models.HotelResult{Name: "GBP", Price: 70, Currency: "GBP"}
+
+	conv := makeStubConv(map[string]float64{}) // always fail
+	hs := []models.HotelResult{hForeign1, hTarget, hOther, hForeign2}
+	normalizeHotelCurrencies(ctx, hs, "EUR", conv)
+
+	// sort must put comparable (target) first, tail grouped by curr lex (GBP before USD), no raw cross compare
+	sort.SliceStable(hs, func(i, j int) bool { return lessPrice(hs[i], hs[j]) })
+
+	if hs[0].Name != "Target" || hs[0].ComparablePrice == 0 {
+		t.Errorf("target should lead: %+v", hs[0])
+	}
+	// tail starts at 1
+	if hs[1].Currency != "GBP" {
+		t.Errorf("first in tail should be GBP group, got %s", hs[1].Currency)
+	}
+	// within USD group, cheaper raw first
+	foundUSD := false
+	for _, h := range hs {
+		if h.Currency == "USD" {
+			foundUSD = true
+			break
+		}
+	}
+	if !foundUSD {
+		t.Error("USD tail entries missing")
+	}
+	// ensure no cross curr numeric decision happened (we can't easily assert the compare, but order is by curr then price)
+}
+
+func TestLessPrice_BasisTierAndConfidencePrecedence(t *testing.T) {
+	// same currency: room_total 92 must beat lead_in 85 (basis > price)
+	roomTotal := models.HotelResult{Name: "RoomTotal92", Price: 92, Currency: "EUR", PriceBasis: models.PriceBasisRoomTotal, PriceConfidence: models.PriceConfidenceRoomLevel}
+	leadIn := models.HotelResult{Name: "LeadIn85", Price: 85, Currency: "EUR", PriceBasis: models.PriceBasisLeadIn, PriceConfidence: models.PriceConfidenceUnverified}
+	if !lessPrice(roomTotal, leadIn) {
+		t.Error("room_total 92 should rank before lead_in 85 (basis rank wins)")
+	}
+	if lessPrice(leadIn, roomTotal) {
+		t.Error("lead_in should not win over better basis")
+	}
+
+	// confidence outranks basis: verified lead_in beats unverified room_total
+	vLead := models.HotelResult{Name: "VLead", Price: 90, Currency: "EUR", PriceBasis: models.PriceBasisLeadIn, PriceConfidence: models.PriceConfidenceVerified}
+	uvRoom := models.HotelResult{Name: "UVRoom", Price: 80, Currency: "EUR", PriceBasis: models.PriceBasisRoomTotal, PriceConfidence: models.PriceConfidenceUnverified}
+	if !lessPrice(vLead, uvRoom) {
+		t.Error("verified lead_in must beat unverified room_total (conf > basis)")
+	}
+}
+
+func TestFilterHotels_MinMaxUseComparablePrice(t *testing.T) {
+	hs := []models.HotelResult{
+		{Name: "NormedCheap", Price: 120, Currency: "USD", ComparablePrice: 95}, // after norm 95 target
+		{Name: "NormedExp", Price: 200, Currency: "USD", ComparablePrice: 180},
+		{Name: "Incomp", Price: 999, Currency: "JPY"}, // incomparable: no target conversion, must bypass the EUR filter
+	}
+	opts := HotelSearchOptions{Currency: "EUR", MaxPrice: 100}
+	filtered := filterHotels(hs, opts)
+	kept := map[string]bool{}
+	for _, h := range filtered {
+		kept[h.Name] = true
+	}
+	// Comparable-in-target: 95 kept, 180 excluded. The incomparable JPY price
+	// is kept (it surfaces in the incomparable tail) rather than dropped on a
+	// cross-currency comparison (999 JPY vs 100 EUR) we cannot honestly make.
+	if !kept["NormedCheap"] || !kept["Incomp"] || kept["NormedExp"] {
+		t.Errorf("want NormedCheap+Incomp kept, NormedExp excluded; got %v", kept)
+	}
+}

@@ -581,6 +581,11 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	if len(externalResults) > 0 {
 		slog.Info("external providers contributed results", "count", len(externalResults))
 	}
+
+	// Normalize currencies for truthful cross-currency ranking BEFORE merge (so
+	// the merge headline compares within one currency) and before Min/Max filters.
+	normalizeBatchesToTarget(ctx, allBatches, opts.Currency)
+
 	hotels := models.MergeHotelResults(allBatches...)
 
 	// If Google's primary fetch failed AND no other provider returned anything,
@@ -591,6 +596,9 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	}
 
 	models.FinalizeHotelPriceTrust(hotels, opts.Currency, time.Now())
+	// FinalizeHotelPriceTrust may refresh Price/Currency from a source, so
+	// re-assert ComparablePrice for any headline already in the target currency.
+	ensureComparableInTargetCurrency(hotels, opts.Currency)
 
 	// Resolve city center coordinates. Used for distance filter/sort and
 	// for computing DistanceKm on every hotel (useful info for the user
@@ -659,6 +667,9 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		// initial finalize+sort, so re-run both: the verified room price wins
 		// the headline (verified leads) and re-ranks ahead of cheaper teasers.
 		models.FinalizeHotelPriceTrust(hotels, opts.Currency, time.Now())
+		// Enrichment may have adopted a verified price in the target currency;
+		// re-assert ComparablePrice so ranking stays cross-currency honest.
+		ensureComparableInTargetCurrency(hotels, opts.Currency)
 		sortHotels(hotels, opts.Sort, opts.CenterLat, opts.CenterLon)
 	}
 

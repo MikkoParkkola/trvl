@@ -114,6 +114,23 @@ func priceConfidenceRank(confidence string) int {
 	}
 }
 
+// priceBasisRank maps basis to a sort rank (higher = more complete). Mirrors
+// the definition in search_filter.go for determinism in source selection.
+func priceBasisRank(basis string) int {
+	switch basis {
+	case PriceBasisTaxInclusiveTotal:
+		return 3
+	case PriceBasisRoomTotal:
+		return 2
+	case PriceBasisRoomNightly:
+		return 1
+	case PriceBasisLeadIn, "":
+		return 0
+	default:
+		return 0
+	}
+}
+
 func selectPrimaryHotelSource(sources []PriceSource, preferredCurrency, currentCurrency string) (PriceSource, bool) {
 	preferredCurrency = strings.ToUpper(strings.TrimSpace(preferredCurrency))
 	currentCurrency = strings.ToUpper(strings.TrimSpace(currentCurrency))
@@ -139,17 +156,26 @@ func bestSourceInCurrency(sources []PriceSource, currency string) (PriceSource, 
 	if currency == "" {
 		return PriceSource{}, false
 	}
+	cU := strings.ToUpper(strings.TrimSpace(currency))
 	var selected PriceSource
-	selectedRank := 0
+	selectedConfRank := 0
+	selectedBasisRank := -1
 	found := false
 	for _, s := range sources {
-		if s.Price <= 0 || strings.ToUpper(s.Currency) != currency {
+		if s.Price <= 0 || strings.ToUpper(strings.TrimSpace(s.Currency)) != cU {
 			continue
 		}
-		rank := priceConfidenceRank(s.PriceConfidence)
-		if !found || rank > selectedRank || (rank == selectedRank && s.Price < selected.Price) {
+		confRank := priceConfidenceRank(s.PriceConfidence)
+		basisR := priceBasisRank(s.PriceBasis)
+		prov := strings.ToLower(strings.TrimSpace(s.Provider))
+		if !found ||
+			confRank > selectedConfRank ||
+			(confRank == selectedConfRank && basisR > selectedBasisRank) ||
+			(confRank == selectedConfRank && basisR == selectedBasisRank && s.Price < selected.Price) ||
+			(confRank == selectedConfRank && basisR == selectedBasisRank && s.Price == selected.Price && (prov < strings.ToLower(strings.TrimSpace(selected.Provider)) || selected.Provider == "")) {
 			selected = s
-			selectedRank = rank
+			selectedConfRank = confRank
+			selectedBasisRank = basisR
 			found = true
 		}
 	}
@@ -157,26 +183,9 @@ func bestSourceInCurrency(sources []PriceSource, currency string) (PriceSource, 
 }
 
 func mostRepresentedSourceCurrency(sources []PriceSource) string {
-	counts := make(map[string]int)
-	firstSeen := make(map[string]int)
-	bestCurrency := ""
-	bestCount := 0
-	for i, s := range sources {
-		if s.Price <= 0 || s.Currency == "" {
-			continue
-		}
-		currency := strings.ToUpper(s.Currency)
-		counts[currency]++
-		if _, ok := firstSeen[currency]; !ok {
-			firstSeen[currency] = i
-		}
-		if counts[currency] > bestCount ||
-			(counts[currency] == bestCount && bestCurrency != "" && firstSeen[currency] < firstSeen[bestCurrency]) {
-			bestCurrency = currency
-			bestCount = counts[currency]
-		}
-	}
-	return bestCurrency
+	// Delegate to the order-independent lex-tiebreak implementation in resolve.go
+	// (dominantCurrency) so equal-sized groups produce a stable, lex-smallest pick.
+	return dominantCurrency(sources)
 }
 
 func hasMixedSourceCurrencies(sources []PriceSource) bool {

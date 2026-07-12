@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"testing"
 
@@ -649,5 +650,80 @@ func TestBuildTravelURL_PartialFilters(t *testing.T) {
 	}
 	if strings.Contains(u, "lrad=") {
 		t.Errorf("URL should not contain lrad when zero: %s", u)
+	}
+}
+
+func TestNormalizeMergeSort_PermutationIndependence(t *testing.T) {
+	ctx := context.Background()
+	base := []models.HotelResult{
+		{Name: "A", Price: 200, Currency: "USD"},
+		{Name: "B", Price: 180, Currency: "EUR"},
+		{Name: "C", Price: 190, Currency: "USD"},
+	}
+	conv := makeStubConv(map[string]float64{"USD->EUR": 0.9}) // 200->180, 190->171
+
+	// multiple input orders
+	orders := [][]models.HotelResult{
+		{base[0], base[1], base[2]},
+		{base[2], base[0], base[1]},
+		{base[1], base[2], base[0]},
+	}
+	var results [][]models.HotelResult
+	for _, o := range orders {
+		cp := append([]models.HotelResult(nil), o...)
+		normalizeHotelCurrencies(ctx, cp, "EUR", conv)
+		// simulate merge (here just one batch for simplicity) + sort
+		sort.SliceStable(cp, func(i, j int) bool { return lessPrice(cp[i], cp[j]) })
+		results = append(results, cp)
+	}
+	// all should produce identical ordering by name after norm+sort
+	for i := 1; i < len(results); i++ {
+		for j := range results[0] {
+			if results[0][j].Name != results[i][j].Name || results[0][j].PriceForRanking() != results[i][j].PriceForRanking() {
+				t.Errorf("perm %d differs at %d: %s vs %s", i, j, results[0][j].Name, results[i][j].Name)
+			}
+		}
+	}
+}
+
+func TestMaxPrice_NormalizedExclusion(t *testing.T) {
+	ctx := context.Background()
+	// raw cheap foreign but expensive in target should be excluded
+	h := models.HotelResult{Name: "ForeignExpInTarget", Price: 50, Currency: "JPY"}
+	conv := makeStubConv(map[string]float64{"JPY->EUR": 2.5}) // 50*2.5=125
+	hs := []models.HotelResult{h}
+	normalizeHotelCurrencies(ctx, hs, "EUR", conv)
+	opts := HotelSearchOptions{MaxPrice: 100}
+	filtered := filterHotels(hs, opts)
+	if len(filtered) != 0 {
+		t.Errorf("should exclude 125 target price, kept %+v", filtered)
+	}
+}
+
+// TestFilterHotels_IncomparableBypassesCurrencyThreshold pins the codex review
+// finding: a foreign-currency price that could not be converted to the target
+// must NOT be compared raw against a target-currency Min/Max threshold. It
+// bypasses the numeric filter; a same-currency-as-target price is still
+// filtered because that comparison is meaningful.
+func TestFilterHotels_IncomparableBypassesCurrencyThreshold(t *testing.T) {
+	hs := []models.HotelResult{
+		{Name: "IncompCheapRaw", Price: 50, Currency: "JPY"},  // raw < MinPrice but incomparable -> keep
+		{Name: "IncompExpRaw", Price: 99999, Currency: "JPY"}, // raw > MaxPrice but incomparable -> keep
+		{Name: "TargetOverMax", Price: 500, Currency: "EUR"},  // in target, over cap -> drop
+		{Name: "TargetInBudget", Price: 120, Currency: "EUR"}, // in target, within band -> keep
+	}
+	opts := HotelSearchOptions{Currency: "EUR", MinPrice: 80, MaxPrice: 300}
+	kept := map[string]bool{}
+	for _, h := range filterHotels(hs, opts) {
+		kept[h.Name] = true
+	}
+	if !kept["IncompCheapRaw"] || !kept["IncompExpRaw"] {
+		t.Errorf("incomparable foreign prices must bypass the EUR threshold; kept=%v", kept)
+	}
+	if kept["TargetOverMax"] {
+		t.Errorf("EUR 500 over MaxPrice 300 must be excluded; kept=%v", kept)
+	}
+	if !kept["TargetInBudget"] {
+		t.Errorf("EUR 120 within band must be kept; kept=%v", kept)
 	}
 }

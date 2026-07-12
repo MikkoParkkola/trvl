@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -124,6 +125,35 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 	}
 	if len(batches) == 0 {
 		return nil, fmt.Errorf("no results from any provider for %q", name)
+	}
+
+	// Normalize before merge so headline adoption is cross-currency safe.
+	// Use provided currency (already defaulted to USD by caller) or first observed.
+	normTarget := strings.TrimSpace(currency)
+	if normTarget == "" {
+		for _, b := range batches {
+			for _, h := range b {
+				if c := strings.TrimSpace(h.Currency); c != "" {
+					normTarget = c
+					break
+				}
+			}
+			if normTarget != "" {
+				break
+			}
+		}
+	}
+	if normTarget != "" {
+		conv := func(ctx context.Context, amount float64, from, to string) (float64, bool) {
+			amt, status := destinations.ConvertCurrency(ctx, amount, from, to)
+			if amt > 0 && strings.EqualFold(strings.TrimSpace(status), strings.TrimSpace(to)) {
+				return amt, true
+			}
+			return amt, false
+		}
+		for _, b := range batches {
+			normalizeHotelCurrencies(ctx, b, normTarget, conv)
+		}
 	}
 
 	merged := models.MergeHotelResults(batches...)
