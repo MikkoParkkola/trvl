@@ -97,27 +97,72 @@ func GroundIdentityKey(r GroundRoute) string {
 		"|" + strings.Join(ops, ",")
 }
 
+// dominantCurrency selects the currency for headline cheapest computation
+// in an order-independent way: the currency with the highest number of
+// Price>0 sources (most-represented). Ties are broken by the
+// lexicographically smallest uppercased currency code (not first-seen order).
+// Currency grouping is case-insensitive; the returned string is taken from
+// a source's Currency value (as-is) to preserve existing casing style in results.
+func dominantCurrency(sources []PriceSource) string {
+	if len(sources) == 0 {
+		return ""
+	}
+	count := map[string]int{}
+	orig := map[string]string{} // upper -> a source's original Currency for that group
+	for _, s := range sources {
+		if s.Price <= 0 {
+			continue
+		}
+		u := strings.ToUpper(strings.TrimSpace(s.Currency))
+		if u == "" {
+			continue
+		}
+		count[u]++
+		if _, ok := orig[u]; !ok {
+			orig[u] = s.Currency
+		}
+	}
+	if len(count) == 0 {
+		return ""
+	}
+	maxC := 0
+	for _, c := range count {
+		if c > maxC {
+			maxC = c
+		}
+	}
+	var best []string
+	for u, c := range count {
+		if c == maxC {
+			best = append(best, u)
+		}
+	}
+	sort.Strings(best)
+	chosenU := best[0]
+	if o, ok := orig[chosenU]; ok && o != "" {
+		return o
+	}
+	return chosenU
+}
+
 // recomputeSourceEconomics sets the headline price to the cheapest source and
 // fills Savings (dearest - cheapest) and the cheapest provider name. To avoid a
 // false "cheapest" across currencies, comparison is restricted to sources that
-// share the currency of the first priced source; differently-priced-currency
+// share the (now deterministically chosen) currency; differently-currency
 // sources are kept in Sources but excluded from the min/savings math.
 func recomputeSourceEconomics(sources []PriceSource) (cheapest float64, currency, cheapestProvider, bookingURL string, savings float64) {
 	if len(sources) == 0 {
 		return 0, "", "", "", 0
 	}
-	// Pick the comparison currency: the first source with a positive price.
-	cmpCur := ""
-	for _, s := range sources {
-		if s.Price > 0 {
-			cmpCur = s.Currency
-			break
-		}
-	}
+	cmpCur := dominantCurrency(sources)
+	// Use case-insensitive compare for the group (per spec); return values
+	// come from the actual min source's fields (as-is).
+	cmpU := strings.ToUpper(strings.TrimSpace(cmpCur))
 	minIdx := -1
 	var maxPrice float64
 	for i, s := range sources {
-		if s.Price <= 0 || s.Currency != cmpCur {
+		su := strings.ToUpper(strings.TrimSpace(s.Currency))
+		if s.Price <= 0 || su != cmpU {
 			continue
 		}
 		if minIdx == -1 || s.Price < sources[minIdx].Price {
