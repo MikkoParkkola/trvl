@@ -53,26 +53,20 @@ func detectSplit(ctx context.Context, in DetectorInput) []Hack {
 		return nil
 	}
 
-	// Currency honesty: the split saving sums two one-way prices and subtracts
-	// them from a round-trip price — three independently searched numbers. Only
-	// emit a saving if all three priced flights are in the same, known currency.
-	// Otherwise the "Saves X" headline would be arithmetic across currencies
-	// wearing a single label — refuse rather than lie. (Empty currency is never
-	// inferred to EUR; that is treated as unknown and refused.)
-	//
-	// The Savings is also subtracted from in.NaivePrice by BestSaving, so it must
-	// match in.Currency (the baseline fare's currency) too — otherwise a EUR
-	// saving would be deducted from a USD baseline and mislabeled downstream.
+	// Emit only when the baseline currency is known and every searched fare is
+	// in that same currency. Comparing each leg against a non-empty baseCur
+	// covers the empty-currency case too (empty != a known currency), so no
+	// separate empty checks are needed. baseCur is also what BestSaving
+	// subtracts the saving from, so matching it prevents a cross-currency,
+	// mislabeled total downstream. Empty currency is unknown, never EUR.
 	rtCur = strings.ToUpper(strings.TrimSpace(rtCur))
 	owOutCur = strings.ToUpper(strings.TrimSpace(owOutCur))
 	owRetCur = strings.ToUpper(strings.TrimSpace(owRetCur))
 	baseCur := strings.ToUpper(strings.TrimSpace(in.Currency))
-	if rtCur == "" || owOutCur == "" || owRetCur == "" ||
-		rtCur != owOutCur || rtCur != owRetCur ||
-		baseCur == "" || rtCur != baseCur {
+	if baseCur == "" || rtCur != baseCur || owOutCur != baseCur || owRetCur != baseCur {
 		return nil
 	}
-	currency := rtCur
+	currency := baseCur
 
 	splitTotal := owOutPrice + owRetPrice
 	savings := rtPrice - splitTotal

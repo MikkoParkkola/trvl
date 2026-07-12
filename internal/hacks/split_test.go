@@ -56,14 +56,18 @@ func TestDetectSplit_currencyMismatch_returnsNil(t *testing.T) {
 }
 
 func TestDetectSplit_allEmptyCurrency_returnsNil(t *testing.T) {
+	// Every searched fare AND the baseline currency empty -> unknown -> refuse.
+	// Isolates the baseCur=="" guard: with all four empty, the equality checks
+	// ("" == "") would pass, so only the empty-baseline check prevents emitting
+	// a saving in an unknown currency.
 	withSplitMockSearch(t, func(_ context.Context, origin, dest, date string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
 		if opts.ReturnDate != "" {
-			return splitMakeResult(200, ""), nil
+			return splitMakeResult(300, ""), nil
 		}
 		if origin == "HEL" && dest == "BCN" {
-			return splitMakeResult(85, ""), nil
+			return splitMakeResult(100, ""), nil
 		}
-		return splitMakeResult(85, ""), nil
+		return splitMakeResult(100, ""), nil
 	})
 
 	hacks := detectSplit(context.Background(), DetectorInput{
@@ -71,7 +75,7 @@ func TestDetectSplit_allEmptyCurrency_returnsNil(t *testing.T) {
 		Destination: "BCN",
 		Date:        "2026-07-01",
 		ReturnDate:  "2026-07-08",
-		Currency:    "EUR",
+		Currency:    "",
 	})
 	if len(hacks) != 0 {
 		t.Errorf("expected 0 hacks when all currencies empty, got %d", len(hacks))
