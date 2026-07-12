@@ -329,20 +329,17 @@ func hotelSummary(result *models.HotelSearchResult, location string) string {
 
 	summary := fmt.Sprintf("Found %d hotels in %s.", result.Count, location)
 
-	// Find cheapest.
-	var cheapest *models.HotelResult
-	for i := range result.Hotels {
-		if result.Hotels[i].Price > 0 {
-			if cheapest == nil || result.Hotels[i].Price < cheapest.Price {
-				cheapest = &result.Hotels[i]
-			}
-		}
-	}
+	// Cheapest headline goes through the currency-cohort guard: a nominally-small
+	// unconverted foreign price must not crown the "Lowest lead-in" line ahead of
+	// the true comparable minimum.
+	cheapest := pricefeed.CheapestHotel(result.Hotels)
+	hasCheapest := cheapest.Price > 0
+
 	if note := result.Completeness.IncompleteNote(); note != "" {
 		summary = note + " " + summary
 	}
 
-	if cheapest != nil {
+	if hasCheapest {
 		summary += fmt.Sprintf(" Lowest lead-in: %s%.0f/night (%s).",
 			cheapest.Currency, cheapest.Price, cheapest.Name)
 	}
@@ -356,7 +353,7 @@ func hotelSummary(result *models.HotelSearchResult, location string) string {
 			}
 		}
 	}
-	if bestRated != nil && (cheapest == nil || bestRated.Name != cheapest.Name) {
+	if bestRated != nil && (!hasCheapest || bestRated.Name != cheapest.Name) {
 		summary += fmt.Sprintf(" Highest rated: %s (%.1f/10).", bestRated.Name, bestRated.Rating)
 	}
 	if bookingCount := countHotelsWithProvider(result.Hotels, "booking"); bookingCount > 0 {
