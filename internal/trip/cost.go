@@ -210,7 +210,18 @@ func assembleTripCost(ctx context.Context, result *TripCostResult, requestedCurr
 	}
 
 	applyTripCostCurrencyAndTotals(ctx, result, requestedCurrency, nights, guests, destinations.ConvertCurrency)
-	result.Error = formatTripCostError(errors, result.Success)
+	// Compose conversion-failure marker with any search errors. When currency
+	// honesty forces !success we still surface the search error text (using
+	// partial-failure form when price data was present) without clobber.
+	if result.Error != "" {
+		usePartial := len(errors) > 0 && (result.Flights.Outbound > 0 || result.Flights.Return > 0 || result.Hotels.PerNight > 0 || result.Hotels.Total > 0)
+		searchErr := formatTripCostError(errors, usePartial)
+		if searchErr != "" {
+			result.Error = result.Error + "; " + searchErr
+		}
+	} else {
+		result.Error = formatTripCostError(errors, result.Success)
+	}
 }
 
 type tripCostCurrencyConverter func(context.Context, float64, string, string) (float64, string)
@@ -235,57 +246,100 @@ func applyTripCostCurrencyAndTotals(
 	flightCurrency := result.Flights.Currency
 	hotelCurrency := result.Hotels.Currency
 
+	var currencyFailures []string
 	if targetCurrency != "" {
 		if result.Flights.Outbound > 0 {
-			result.Flights.Outbound, result.Flights.Currency = convertedTripCostAmount(
+			amt, cur := convertedTripCostAmount(
 				ctx,
 				result.Flights.Outbound,
 				flightCurrency,
 				targetCurrency,
 				convert,
 			)
+			result.Flights.Outbound = amt
+			result.Flights.Currency = cur
+			if cur != targetCurrency {
+				currencyFailures = append(currencyFailures, fmt.Sprintf("flight price in %s could not be converted to %s", flightCurrency, targetCurrency))
+			}
 		}
 		if result.Flights.Return > 0 {
-			result.Flights.Return, result.Flights.Currency = convertedTripCostAmount(
+			amt, cur := convertedTripCostAmount(
 				ctx,
 				result.Flights.Return,
 				flightCurrency,
 				targetCurrency,
 				convert,
 			)
+			result.Flights.Return = amt
+			result.Flights.Currency = cur
+			if cur != targetCurrency {
+				currencyFailures = append(currencyFailures, fmt.Sprintf("flight price in %s could not be converted to %s", flightCurrency, targetCurrency))
+			}
 		}
 		if result.Hotels.PerNight > 0 {
-			result.Hotels.PerNight, result.Hotels.Currency = convertedTripCostAmount(
+			amt, cur := convertedTripCostAmount(
 				ctx,
 				result.Hotels.PerNight,
 				hotelCurrency,
 				targetCurrency,
 				convert,
 			)
+			result.Hotels.PerNight = amt
+			result.Hotels.Currency = cur
+			if cur != targetCurrency {
+				currencyFailures = append(currencyFailures, fmt.Sprintf("hotel price in %s could not be converted to %s", hotelCurrency, targetCurrency))
+			}
 		}
 		if result.Hotels.Total > 0 {
-			result.Hotels.Total, result.Hotels.Currency = convertedTripCostAmount(
+			amt, cur := convertedTripCostAmount(
 				ctx,
 				result.Hotels.Total,
 				hotelCurrency,
 				targetCurrency,
 				convert,
 			)
+			result.Hotels.Total = amt
+			result.Hotels.Currency = cur
+			if cur != targetCurrency {
+				currencyFailures = append(currencyFailures, fmt.Sprintf("hotel price in %s could not be converted to %s", hotelCurrency, targetCurrency))
+			}
 		}
+	}
+
+	// Set claimed currency only when no conversion failures (keeps existing
+	// behavior when target=="").
+	if targetCurrency != "" && len(currencyFailures) == 0 {
 		result.Currency = targetCurrency
+	} else if targetCurrency != "" {
+		result.Currency = ""
 	}
 
 	// Flights are per person, hotels are per room.
 	flightPerPerson := result.Flights.Outbound + result.Flights.Return
 	flightTotal := flightPerPerson * float64(guests)
-	result.Total = flightTotal + result.Hotels.Total
+	computedTotal := flightTotal + result.Hotels.Total
 
-	if result.Total > 0 {
+	if len(currencyFailures) == 0 && computedTotal > 0 {
+		result.Total = computedTotal
 		result.Success = true
 		result.PerPerson = result.Total / float64(guests)
 		if nights > 0 {
 			result.PerDay = result.Total / float64(nights)
 		}
+	} else {
+		result.Total = 0
+	}
+
+	if len(currencyFailures) > 0 {
+		seen := map[string]bool{}
+		var uniq []string
+		for _, f := range currencyFailures {
+			if !seen[f] {
+				seen[f] = true
+				uniq = append(uniq, f)
+			}
+		}
+		result.Error = "needs_price_verification: " + strings.Join(uniq, "; ")
 	}
 }
 
@@ -320,7 +374,7 @@ func cheapestHotel(htls []models.HotelResult) models.HotelResult {
 		if !models.HotelPriceEligibleForFinalTripCost(h) {
 			continue
 		}
-		if best.Price <= 0 || h.Price < best.Price {
+		if best.Price <= 0 || h.PriceForRanking() < best.PriceForRanking() {
 			best = h
 		}
 	}
