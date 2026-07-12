@@ -31,16 +31,17 @@ func withSplitMockSearch(t *testing.T, fn func(context.Context, string, string, 
 }
 
 func TestDetectSplit_currencyMismatch_returnsNil(t *testing.T) {
-	// RED core: rt EUR 200, owOut USD 85, owRet USD 85 → detectSplit returns nil
-	// (would have lied "Saves EUR 30" before the fix).
+	// Only the outbound one-way differs (USD) from the EUR rt+baseline+return.
+	// Isolates the owOutCur!=baseCur clause: numbers emit if that check is
+	// dropped (300 rt - 200 ow = 100 saving).
 	withSplitMockSearch(t, func(_ context.Context, origin, dest, date string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
 		if opts.ReturnDate != "" {
-			return splitMakeResult(200, "EUR"), nil
+			return splitMakeResult(300, "EUR"), nil
 		}
 		if origin == "HEL" && dest == "BCN" {
-			return splitMakeResult(85, "USD"), nil
+			return splitMakeResult(100, "USD"), nil
 		}
-		return splitMakeResult(85, "USD"), nil
+		return splitMakeResult(100, "EUR"), nil
 	})
 
 	hacks := detectSplit(context.Background(), DetectorInput{
@@ -51,7 +52,31 @@ func TestDetectSplit_currencyMismatch_returnsNil(t *testing.T) {
 		Currency:    "EUR",
 	})
 	if len(hacks) != 0 {
-		t.Errorf("expected 0 hacks for currency mismatch, got %d", len(hacks))
+		t.Errorf("expected 0 hacks for outbound currency mismatch, got %d", len(hacks))
+	}
+}
+
+func TestDetectSplit_returnCurrencyMismatch_returnsNil(t *testing.T) {
+	// Only the return one-way differs (USD). Isolates owRetCur!=baseCur.
+	withSplitMockSearch(t, func(_ context.Context, origin, dest, date string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if opts.ReturnDate != "" {
+			return splitMakeResult(300, "EUR"), nil
+		}
+		if origin == "HEL" && dest == "BCN" {
+			return splitMakeResult(100, "EUR"), nil
+		}
+		return splitMakeResult(100, "USD"), nil
+	})
+
+	hacks := detectSplit(context.Background(), DetectorInput{
+		Origin:      "HEL",
+		Destination: "BCN",
+		Date:        "2026-07-01",
+		ReturnDate:  "2026-07-08",
+		Currency:    "EUR",
+	})
+	if len(hacks) != 0 {
+		t.Errorf("expected 0 hacks for return currency mismatch, got %d", len(hacks))
 	}
 }
 
