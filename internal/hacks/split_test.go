@@ -92,6 +92,7 @@ func TestDetectSplit_positiveControl_emitsWithVerifiedCurrency(t *testing.T) {
 		Destination: "BCN",
 		Date:        "2026-07-01",
 		ReturnDate:  "2026-07-08",
+		Currency:    "EUR",
 	})
 	if len(hacks) != 1 {
 		t.Fatalf("expected 1 hack, got %d", len(hacks))
@@ -152,8 +153,35 @@ func TestDetectSplit_belowThreshold_returnsNil(t *testing.T) {
 		Destination: "BCN",
 		Date:        "2026-07-01",
 		ReturnDate:  "2026-07-08",
+		Currency:    "EUR",
 	})
 	if len(hacks) != 0 {
 		t.Errorf("expected 0 hacks for savings below threshold, got %d", len(hacks))
+	}
+}
+
+func TestDetectSplit_baselineCurrencyMismatch_returnsNil(t *testing.T) {
+	// All three searched fares agree (EUR), but the naive baseline (in.Currency)
+	// is USD. BestSaving subtracts Savings from NaivePrice, so an EUR saving
+	// against a USD baseline would be a cross-currency lie -> refuse.
+	withSplitMockSearch(t, func(_ context.Context, origin, dest, date string, opts flights.SearchOptions) (*models.FlightSearchResult, error) {
+		if opts.ReturnDate != "" {
+			return splitMakeResult(300, "EUR"), nil
+		}
+		if origin == "HEL" && dest == "BCN" {
+			return splitMakeResult(100, "EUR"), nil
+		}
+		return splitMakeResult(100, "EUR"), nil
+	})
+
+	hacks := detectSplit(context.Background(), DetectorInput{
+		Origin:      "HEL",
+		Destination: "BCN",
+		Date:        "2026-07-01",
+		ReturnDate:  "2026-07-08",
+		Currency:    "USD",
+	})
+	if len(hacks) != 0 {
+		t.Errorf("expected 0 hacks when baseline currency differs, got %d", len(hacks))
 	}
 }

@@ -59,10 +59,17 @@ func detectSplit(ctx context.Context, in DetectorInput) []Hack {
 	// Otherwise the "Saves X" headline would be arithmetic across currencies
 	// wearing a single label — refuse rather than lie. (Empty currency is never
 	// inferred to EUR; that is treated as unknown and refused.)
+	//
+	// The Savings is also subtracted from in.NaivePrice by BestSaving, so it must
+	// match in.Currency (the baseline fare's currency) too — otherwise a EUR
+	// saving would be deducted from a USD baseline and mislabeled downstream.
 	rtCur = strings.ToUpper(strings.TrimSpace(rtCur))
 	owOutCur = strings.ToUpper(strings.TrimSpace(owOutCur))
 	owRetCur = strings.ToUpper(strings.TrimSpace(owRetCur))
-	if rtCur == "" || owOutCur == "" || owRetCur == "" || rtCur != owOutCur || rtCur != owRetCur {
+	baseCur := strings.ToUpper(strings.TrimSpace(in.Currency))
+	if rtCur == "" || owOutCur == "" || owRetCur == "" ||
+		rtCur != owOutCur || rtCur != owRetCur ||
+		baseCur == "" || rtCur != baseCur {
 		return nil
 	}
 	currency := rtCur
