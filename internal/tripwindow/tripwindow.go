@@ -11,6 +11,7 @@ package tripwindow
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -296,8 +297,8 @@ func normalizeTripTotalEUR(ctx context.Context, convert currencyConverter, fligh
 			return 0, true
 		}
 		eur, cur := convert(ctx, cost, curr, "EUR")
-		if cur != "EUR" || eur <= 0 {
-			return 0, false // cannot express this leg in EUR
+		if cur != "EUR" || eur <= 0 || math.IsInf(eur, 0) || math.IsNaN(eur) {
+			return 0, false // cannot express this leg in EUR (unconvertible or non-finite)
 		}
 		return eur, true
 	}
@@ -307,7 +308,7 @@ func normalizeTripTotalEUR(ctx context.Context, convert currencyConverter, fligh
 		return 0, 0, 0, ""
 	}
 	sum := fEUR + hEUR
-	if sum <= 0 {
+	if sum <= 0 || math.IsInf(sum, 0) || math.IsNaN(sum) {
 		return 0, 0, 0, ""
 	}
 	return sum, fEUR, hEUR, "EUR"

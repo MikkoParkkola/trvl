@@ -2,6 +2,7 @@ package tripwindow
 
 import (
 	"context"
+	"math"
 	"testing"
 )
 
@@ -90,5 +91,27 @@ func TestNormalizeTripTotalEUR_ForeignFlightConverts(t *testing.T) {
 	total, _, _, cur := normalizeTripTotalEUR(context.Background(), conv, 500, "USD", 0, "")
 	if cur != "EUR" || total != 500*0.92 {
 		t.Fatalf("convertible flight + zero hotel: got %v %s, want %v EUR", total, cur, 500*0.92)
+	}
+}
+
+// TestNormalizeTripTotalEUR_RefusesNonFinite: a converter that yields NaN or
+// +Inf (corrupt/overflowing rate) must be refused, not summed. A non-finite
+// total would slip past the eur<=0 guard, bypass the budget filter, corrupt the
+// ascending-price ranking, and break JSON encoding of the whole MCP response.
+func TestNormalizeTripTotalEUR_RefusesNonFinite(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rate float64
+	}{
+		{"NaN", math.NaN()},
+		{"PosInf", math.Inf(1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conv := stubConverter(map[string]float64{"XXX": tc.rate})
+			total, flightEUR, hotelEUR, cur := normalizeTripTotalEUR(context.Background(), conv, 200, "EUR", 100, "XXX")
+			if total != 0 || cur != "" || flightEUR != 0 || hotelEUR != 0 {
+				t.Fatalf("non-finite %s rate must be refused: got total=%v flight=%v hotel=%v cur=%q, want all zero", tc.name, total, flightEUR, hotelEUR, cur)
+			}
+		})
 	}
 }
