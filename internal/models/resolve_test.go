@@ -1,6 +1,9 @@
 package models
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestResolveFlightSources_CollapsesDuplicate(t *testing.T) {
 	leg := func() []FlightLeg {
@@ -279,5 +282,125 @@ func TestResolveGroundSources_Frankenfare_CheaperSourceFieldsTravel(t *testing.T
 		if r.PriceMax != 25 {
 			t.Errorf("PriceMax=%v want 25 (from cheapest)", r.PriceMax)
 		}
+	})
+}
+
+// TestFlightIdentityKey_CarrierlessFallback exercises the carrier-less fallback
+// path in FlightIdentityKey (empty AirlineCode + FlightNumber). These legs are
+// emitted by Google adapter (multimodal) and Kiwi. The key must now include
+// arrival time (matching GroundIdentityKey) so distinct routings sharing dep
+// airport+arr airport+dep time are not collapsed.
+func TestFlightIdentityKey_CarrierlessFallback(t *testing.T) {
+	// Helper to build a minimal carrierless leg.
+	carrierlessLeg := func(depApt, arrApt, depTime, arrTime string) FlightLeg {
+		return FlightLeg{
+			AirlineCode:      "",
+			FlightNumber:     "",
+			DepartureAirport: AirportInfo{Code: depApt},
+			ArrivalAirport:   AirportInfo{Code: arrApt},
+			DepartureTime:    depTime,
+			ArrivalTime:      arrTime,
+		}
+	}
+	// Helper for a carriered leg (for mixed and collision cases).
+	carrieredLeg := func(depApt, arrApt, depTime, arrTime, code, num string) FlightLeg {
+		return FlightLeg{
+			AirlineCode:      code,
+			FlightNumber:     num,
+			DepartureAirport: AirportInfo{Code: depApt},
+			ArrivalAirport:   AirportInfo{Code: arrApt},
+			DepartureTime:    depTime,
+			ArrivalTime:      arrTime,
+		}
+	}
+
+	t.Run("two_distinct_carrierless_same_dep_diff_arrival", func(t *testing.T) {
+		// Two carrier-less legs, identical dep airport, arr airport, dep time,
+		// but different arrival times → MUST produce different keys and both
+		// survive ResolveFlightSources (no silent loss).
+		legA := carrierlessLeg("HEL", "LHR", "2026-07-12T10:00:00Z", "2026-07-12T11:30:00Z")
+		legB := carrierlessLeg("HEL", "LHR", "2026-07-12T10:00:00Z", "2026-07-12T12:45:00Z")
+		frA := FlightResult{Price: 99, Currency: "EUR", Provider: "google", Legs: []FlightLeg{legA}}
+		frB := FlightResult{Price: 105, Currency: "EUR", Provider: "kiwi", Legs: []FlightLeg{legB}}
+
+		keyA := FlightIdentityKey(frA)
+		keyB := FlightIdentityKey(frB)
+		if keyA == keyB {
+			t.Fatalf("keys must differ for different arrival times: %q == %q", keyA, keyB)
+		}
+		// Canon shape: route@depMinute-arrMinute (UTC minute, no seconds).
+		if want := "hel>lhr@2026-07-12T10:00-2026-07-12T11:30"; keyA != want {
+			t.Errorf("keyA shape = %q, want %q", keyA, want)
+		}
+
+		out := ResolveFlightSources([]FlightResult{frA, frB})
+		if len(out) != 2 {
+			t.Fatalf("expected 2 distinct flights to survive resolve, got %d", len(out))
+		}
+	})
+
+	t.Run("true_duplicate_carrierless_all_same", func(t *testing.T) {
+		// Identical carrier-less legs (dep+arr+times) → same key, collapse to 1
+		// result with 2 sources (true dedup still works).
+		leg := carrierlessLeg("AMS", "BRU", "2026-07-12T14:00:00Z", "2026-07-12T15:30:00Z")
+		fr1 := FlightResult{Price: 45, Currency: "EUR", Provider: "a", Legs: []FlightLeg{leg}}
+		fr2 := FlightResult{Price: 42, Currency: "EUR", Provider: "b", Legs: []FlightLeg{leg}}
+
+		key1 := FlightIdentityKey(fr1)
+		key2 := FlightIdentityKey(fr2)
+		if key1 != key2 {
+			t.Fatalf("identical carrierless must have same key: %q != %q", key1, key2)
+		}
+
+		out := ResolveFlightSources([]FlightResult{fr1, fr2})
+		if len(out) != 1 {
+			t.Fatalf("expected 1 collapsed, got %d", len(out))
+		}
+		if len(out[0].Sources) != 2 {
+			t.Errorf("expected 2 sources after collapse, got %d", len(out[0].Sources))
+		}
+	})
+
+	t.Run("carrierless_vs_carriered_never_collide", func(t *testing.T) {
+		// A carrierless leg and a carriered leg on same route+dep time must
+		// produce different keys (carrier identity branch vs fallback).
+		legCL := carrierlessLeg("HEL", "CDG", "2026-07-12T08:00:00Z", "2026-07-12T10:00:00Z")
+		legC := carrieredLeg("HEL", "CDG", "2026-07-12T08:00:00Z", "2026-07-12T10:00:00Z", "AF", "1234")
+		frCL := FlightResult{Price: 80, Provider: "g", Legs: []FlightLeg{legCL}}
+		frC := FlightResult{Price: 85, Provider: "k", Legs: []FlightLeg{legC}}
+
+		keyCL := FlightIdentityKey(frCL)
+		keyC := FlightIdentityKey(frC)
+		if keyCL == keyC {
+			t.Fatalf("carrierless and carriered on same route/time must differ: both %q", keyCL)
+		}
+		// Sanity: carrierless key has no airline prefix, uses >@ pattern.
+		if strings.Contains(keyCL, "AF") || strings.Contains(keyCL, "1234") {
+			t.Errorf("carrierless key should not contain carrier: %s", keyCL)
+		}
+		if !strings.Contains(keyCL, ">") || !strings.Contains(keyCL, "@") {
+			t.Errorf("carrierless key should use route@time form: %s", keyCL)
+		}
+	})
+
+	t.Run("mixed_multi_leg", func(t *testing.T) {
+		// 2-leg: leg1 carriered (code+num@dep), leg2 carrierless (dep>arr@dep-arr)
+		// The joined key must contain BOTH patterns separated by "|".
+		leg1 := carrieredLeg("HEL", "AMS", "2026-07-12T06:00:00Z", "2026-07-12T07:30:00Z", "KL", "1001")
+		leg2 := carrierlessLeg("AMS", "LHR", "2026-07-12T08:15:00Z", "2026-07-12T08:45:00Z")
+		fr := FlightResult{Price: 150, Provider: "multi", Legs: []FlightLeg{leg1, leg2}}
+
+		key := FlightIdentityKey(fr)
+		// Must contain the carriered part and the carrierless fallback part.
+		if !strings.Contains(key, "KL1001@") {
+			t.Errorf("mixed key missing carriered leg part: %s", key)
+		}
+		if !strings.Contains(key, "ams>lhr@") {
+			t.Errorf("mixed key missing carrierless leg part: %s", key)
+		}
+		if !strings.Contains(key, "|") {
+			t.Errorf("mixed key missing leg separator: %s", key)
+		}
+		// Full shape roughly: KL1001@...|ams>lhr@...-...
 	})
 }
