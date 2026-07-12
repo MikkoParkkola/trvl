@@ -81,7 +81,7 @@ func priceFlightLeg(ctx context.Context, spec LegSpec) (PricedLeg, bool) {
 	if err != nil || res == nil || !res.Success {
 		return PricedLeg{}, false
 	}
-	best, ok := cheapestFlight(res.Flights)
+	best, ok := cheapestFlight(res.Flights, spec.Currency)
 	if !ok {
 		return PricedLeg{}, false
 	}
@@ -131,7 +131,7 @@ func priceGroundLeg(ctx context.Context, spec LegSpec, allowBrowser bool) (Price
 	if err != nil || res == nil || !res.Success {
 		return PricedLeg{}, false
 	}
-	best, ok := cheapestRoute(res.Routes)
+	best, ok := cheapestRoute(res.Routes, spec.Currency)
 	if !ok {
 		return PricedLeg{}, false
 	}
@@ -203,12 +203,15 @@ func resolveAirport(place string) (string, bool) {
 	return "", false
 }
 
-// cheapestFlight returns the lowest-ranking-price flight within the most common
-// currency cohort. Ranking a nominal minimum across mixed currencies would let a
-// nominally-small foreign fare win dishonestly, so stragglers in a minority
-// currency are excluded rather than compared. Mirrors internal/trip cost ranking.
-func cheapestFlight(fs []models.FlightResult) (models.FlightResult, bool) {
-	cohort := dominantCurrency(len(fs), func(i int) (string, bool) {
+// cheapestFlight returns the lowest-ranking-price flight within a single currency
+// cohort. It prefers the target currency (prefer) when at least one priced flight
+// is quoted in it, so a provider that returns the target only as a minority is
+// still honoured; otherwise it falls back to the most common currency. Ranking a
+// nominal minimum across mixed currencies would let a nominally-small foreign fare
+// win dishonestly, so stragglers outside the cohort are excluded rather than
+// compared. Mirrors internal/trip cost ranking.
+func cheapestFlight(fs []models.FlightResult, prefer string) (models.FlightResult, bool) {
+	cohort := cohortCurrency(prefer, len(fs), func(i int) (string, bool) {
 		return fs[i].Currency, fs[i].PriceForRanking() > 0
 	})
 	if cohort == "" {
@@ -227,10 +230,11 @@ func cheapestFlight(fs []models.FlightResult) (models.FlightResult, bool) {
 	return best, found
 }
 
-// cheapestRoute returns the lowest-price ground route within the most common
-// currency cohort, for the same honesty reason as cheapestFlight.
-func cheapestRoute(rs []models.GroundRoute) (models.GroundRoute, bool) {
-	cohort := dominantCurrency(len(rs), func(i int) (string, bool) {
+// cheapestRoute returns the lowest-price ground route within a single currency
+// cohort, preferring the target currency, for the same honesty reason as
+// cheapestFlight.
+func cheapestRoute(rs []models.GroundRoute, prefer string) (models.GroundRoute, bool) {
+	cohort := cohortCurrency(prefer, len(rs), func(i int) (string, bool) {
 		return rs[i].Currency, rs[i].Price > 0
 	})
 	if cohort == "" {
@@ -247,6 +251,22 @@ func cheapestRoute(rs []models.GroundRoute) (models.GroundRoute, bool) {
 		}
 	}
 	return best, found
+}
+
+// cohortCurrency picks the currency the cheapest-selector should rank within. A
+// non-empty prefer wins whenever at least one priced entry is quoted in it, so a
+// leg is kept in the plan's target currency rather than silently repriced into
+// whatever a provider happened to return most of. When prefer is empty or absent
+// from the priced entries, it falls back to the most common currency.
+func cohortCurrency(prefer string, n int, at func(i int) (currency string, priced bool)) string {
+	if prefer != "" {
+		for i := 0; i < n; i++ {
+			if cur, priced := at(i); priced && cur == prefer {
+				return prefer
+			}
+		}
+	}
+	return dominantCurrency(n, at)
 }
 
 // dominantCurrency returns the most frequently occurring currency among the n

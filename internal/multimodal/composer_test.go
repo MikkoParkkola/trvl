@@ -305,11 +305,11 @@ func TestProductionSeamsAndPurePickers(t *testing.T) {
 		{Price: 200, Currency: ""},
 		{Price: 300, ComparablePrice: 180, Currency: "EUR", Provider: "google"},
 		{Price: 190, Currency: "EUR", Provider: "kiwi"},
-	})
+	}, "")
 	if !ok || bestFlight.Provider != "google" {
 		t.Fatalf("cheapestFlight = %#v/%v", bestFlight, ok)
 	}
-	if _, ok := cheapestFlight([]models.FlightResult{{Price: 0, Currency: "EUR"}}); ok {
+	if _, ok := cheapestFlight([]models.FlightResult{{Price: 0, Currency: "EUR"}}, ""); ok {
 		t.Fatal("empty priced flight set should not produce a cheapest flight")
 	}
 
@@ -318,11 +318,11 @@ func TestProductionSeamsAndPurePickers(t *testing.T) {
 		{Price: 40, Currency: ""},
 		{Price: 55, Currency: "EUR", Provider: "flixbus"},
 		{Price: 45, Currency: "EUR", Provider: "sncf"},
-	})
+	}, "")
 	if !ok || bestRoute.Provider != "sncf" {
 		t.Fatalf("cheapestRoute = %#v/%v", bestRoute, ok)
 	}
-	if _, ok := cheapestRoute([]models.GroundRoute{{Price: 0, Currency: "EUR"}}); ok {
+	if _, ok := cheapestRoute([]models.GroundRoute{{Price: 0, Currency: "EUR"}}, ""); ok {
 		t.Fatal("empty priced route set should not produce a cheapest route")
 	}
 
@@ -398,7 +398,7 @@ func TestCheapestSelectorsExcludeForeignStragglers(t *testing.T) {
 		{Price: 60, Currency: "EUR", Provider: "eur-cheap"},
 		{Price: 90, Currency: "EUR", Provider: "eur-dear"},
 		{Price: 5, Currency: "GBP", Provider: "gbp-straggler"},
-	})
+	}, "")
 	if !ok || best.Provider != "eur-cheap" {
 		t.Fatalf("cheapestFlight picked %#v/%v; want eur-cheap (GBP straggler must not win)", best, ok)
 	}
@@ -407,8 +407,45 @@ func TestCheapestSelectorsExcludeForeignStragglers(t *testing.T) {
 		{Price: 45, Currency: "EUR", Provider: "eur-cheap"},
 		{Price: 70, Currency: "EUR", Provider: "eur-dear"},
 		{Price: 3, Currency: "GBP", Provider: "gbp-straggler"},
-	})
+	}, "")
 	if !ok || route.Provider != "eur-cheap" {
 		t.Fatalf("cheapestRoute picked %#v/%v; want eur-cheap (GBP straggler must not win)", route, ok)
+	}
+}
+
+// TestCheapestSelectorsPreferTargetCurrency proves the second honesty guarantee:
+// when the plan's target currency is present only as a minority (a provider mostly
+// returned another currency), the selector still ranks within the target cohort so
+// the leg stays in the requested currency instead of being repriced into whatever
+// the provider returned most of. The dominant-currency fallback only applies when
+// the target is absent.
+func TestCheapestSelectorsPreferTargetCurrency(t *testing.T) {
+	// GBP dominates (two entries) but the plan targets EUR, present as one entry.
+	// Prefer must pick the EUR entry, not the cheaper-looking dominant GBP fare.
+	best, ok := cheapestFlight([]models.FlightResult{
+		{Price: 40, Currency: "GBP", Provider: "gbp-cheap"},
+		{Price: 50, Currency: "GBP", Provider: "gbp-dear"},
+		{Price: 70, Currency: "EUR", Provider: "eur-target"},
+	}, "EUR")
+	if !ok || best.Provider != "eur-target" {
+		t.Fatalf("cheapestFlight picked %#v/%v; want eur-target (target currency must win over dominant GBP)", best, ok)
+	}
+
+	route, ok := cheapestRoute([]models.GroundRoute{
+		{Price: 30, Currency: "GBP", Provider: "gbp-cheap"},
+		{Price: 35, Currency: "GBP", Provider: "gbp-dear"},
+		{Price: 55, Currency: "EUR", Provider: "eur-target"},
+	}, "EUR")
+	if !ok || route.Provider != "eur-target" {
+		t.Fatalf("cheapestRoute picked %#v/%v; want eur-target (target currency must win over dominant GBP)", route, ok)
+	}
+
+	// When the target is absent, fall back to the dominant cohort.
+	fallback, ok := cheapestFlight([]models.FlightResult{
+		{Price: 40, Currency: "GBP", Provider: "gbp-cheap"},
+		{Price: 50, Currency: "GBP", Provider: "gbp-dear"},
+	}, "EUR")
+	if !ok || fallback.Provider != "gbp-cheap" {
+		t.Fatalf("cheapestFlight fallback picked %#v/%v; want gbp-cheap (dominant cohort when target absent)", fallback, ok)
 	}
 }
