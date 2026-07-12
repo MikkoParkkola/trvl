@@ -28,7 +28,7 @@ func stubConverter(rates map[string]float64) currencyConverter {
 // TestNormalizeTripTotalEUR_SameCurrency: both legs already EUR -> plain sum.
 func TestNormalizeTripTotalEUR_SameCurrency(t *testing.T) {
 	conv := stubConverter(nil)
-	total, cur := normalizeTripTotalEUR(context.Background(), conv, 200, "EUR", 300, "EUR")
+	total, _, _, cur := normalizeTripTotalEUR(context.Background(), conv, 200, "EUR", 300, "EUR")
 	if cur != "EUR" || total != 500 {
 		t.Fatalf("same-currency sum: got %v %s, want 500 EUR", total, cur)
 	}
@@ -38,12 +38,20 @@ func TestNormalizeTripTotalEUR_SameCurrency(t *testing.T) {
 // live rate -> both normalized to EUR before summation (the honest total).
 func TestNormalizeTripTotalEUR_ConvertsForeignHotel(t *testing.T) {
 	conv := stubConverter(map[string]float64{"GBP": 1.16})
-	total, cur := normalizeTripTotalEUR(context.Background(), conv, 200, "EUR", 450, "GBP")
+	total, flightEUR, hotelEUR, cur := normalizeTripTotalEUR(context.Background(), conv, 200, "EUR", 450, "GBP")
 	if cur != "EUR" {
 		t.Fatalf("currency: got %s, want EUR", cur)
 	}
 	if want := 200.0 + 450.0*1.16; total != want {
 		t.Fatalf("converted total: got %v, want %v", total, want)
+	}
+	// Components must be the converted EUR amounts, not the native quotes, so
+	// the response never labels a GBP hotel price as EUR.
+	if flightEUR != 200.0 {
+		t.Fatalf("flight component: got %v, want 200 (already EUR)", flightEUR)
+	}
+	if want := 450.0 * 1.16; hotelEUR != want {
+		t.Fatalf("hotel component: got %v, want %v (converted to EUR)", hotelEUR, want)
 	}
 }
 
@@ -55,9 +63,13 @@ func TestNormalizeTripTotalEUR_ConvertsForeignHotel(t *testing.T) {
 // silently admit an over-budget or mis-ranked trip.
 func TestNormalizeTripTotalEUR_RefusesUnconvertibleMix(t *testing.T) {
 	conv := stubConverter(nil) // GBP has no rate -> conversion fails
-	total, cur := normalizeTripTotalEUR(context.Background(), conv, 200, "EUR", 450, "GBP")
+	total, flightEUR, hotelEUR, cur := normalizeTripTotalEUR(context.Background(), conv, 200, "EUR", 450, "GBP")
 	if total != 0 || cur != "" {
 		t.Fatalf("unconvertible mix must be refused: got %v %q, want 0 \"\"", total, cur)
+	}
+	// A refused total must not leak partial component amounts either.
+	if flightEUR != 0 || hotelEUR != 0 {
+		t.Fatalf("refused mix must zero components: got flight=%v hotel=%v, want 0 0", flightEUR, hotelEUR)
 	}
 }
 
@@ -66,7 +78,7 @@ func TestNormalizeTripTotalEUR_RefusesUnconvertibleMix(t *testing.T) {
 // the other, convertible leg still yields an honest EUR total.
 func TestNormalizeTripTotalEUR_ZeroComponentDoesNotBlock(t *testing.T) {
 	conv := stubConverter(map[string]float64{"USD": 0.92})
-	total, cur := normalizeTripTotalEUR(context.Background(), conv, 0, "", 500, "USD")
+	total, _, _, cur := normalizeTripTotalEUR(context.Background(), conv, 0, "", 500, "USD")
 	if cur != "EUR" || total != 500*0.92 {
 		t.Fatalf("zero flight + convertible hotel: got %v %s, want %v EUR", total, cur, 500*0.92)
 	}
@@ -75,7 +87,7 @@ func TestNormalizeTripTotalEUR_ZeroComponentDoesNotBlock(t *testing.T) {
 // TestNormalizeTripTotalEUR_ForeignFlightConverts: flight USD converts, hotel 0.
 func TestNormalizeTripTotalEUR_ForeignFlightConverts(t *testing.T) {
 	conv := stubConverter(map[string]float64{"USD": 0.92})
-	total, cur := normalizeTripTotalEUR(context.Background(), conv, 500, "USD", 0, "")
+	total, _, _, cur := normalizeTripTotalEUR(context.Background(), conv, 500, "USD", 0, "")
 	if cur != "EUR" || total != 500*0.92 {
 		t.Fatalf("convertible flight + zero hotel: got %v %s, want %v EUR", total, cur, 500*0.92)
 	}

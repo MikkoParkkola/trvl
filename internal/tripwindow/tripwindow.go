@@ -200,7 +200,7 @@ func Find(ctx context.Context, in Input) ([]Candidate, error) {
 		// before summing, filtering, and ranking. A leg that cannot be brought into
 		// EUR yields an unknown total (0, "") rather than a fabricated mixed-currency
 		// sum, so the window sorts last and escapes the budget filter.
-		total, totalCurr := normalizeTripTotalEUR(ctx, destinations.ConvertCurrency, pr.flightCost, pr.curr, pr.hotelCost, pr.hotelCurr)
+		total, flightEUR, hotelEUR, totalCurr := normalizeTripTotalEUR(ctx, destinations.ConvertCurrency, pr.flightCost, pr.curr, pr.hotelCost, pr.hotelCurr)
 		if in.BudgetEUR > 0 && total > 0 && total > in.BudgetEUR {
 			continue
 		}
@@ -213,8 +213,8 @@ func Find(ctx context.Context, in Input) ([]Candidate, error) {
 			End:               c.end.Format(dateLayout),
 			Nights:            c.nights,
 			EstimatedCost:     total,
-			FlightCost:        pr.flightCost,
-			HotelCost:         pr.hotelCost,
+			FlightCost:        flightEUR,
+			HotelCost:         hotelEUR,
 			HotelName:         pr.hotelName,
 			Currency:          totalCurr,
 			OverlapsPreferred: overlaps,
@@ -283,33 +283,34 @@ func overlapsAny(start, end time.Time, ivs []parsedInterval) bool {
 // which returns the source currency when no rate is available).
 type currencyConverter func(ctx context.Context, amount float64, from, to string) (float64, string)
 
-// normalizeTripTotalEUR sums a flight and a hotel cost in EUR, converting foreign
-// legs via convert. Target is EUR to match Input.BudgetEUR. A leg priced 0
-// contributes nothing. A leg priced >0 that cannot be brought into EUR makes the
-// whole total unknown (0, "") — the window is never shown a fabricated
-// mixed-currency total, sorts last, and escapes the EUR budget filter. Returns
-// (totalEUR, "EUR") when at least one leg is priced and every priced leg reached
-// EUR.
-func normalizeTripTotalEUR(ctx context.Context, convert currencyConverter, flightCost float64, flightCurr string, hotelCost float64, hotelCurr string) (float64, string) {
-	legs := [...]struct {
-		cost float64
-		curr string
-	}{{flightCost, flightCurr}, {hotelCost, hotelCurr}}
-	total := 0.0
-	for _, leg := range legs {
-		if leg.cost <= 0 {
-			continue
+// normalizeTripTotalEUR converts a flight and a hotel cost into EUR (the currency
+// Input.BudgetEUR is denominated in) via convert, returning the EUR total and each
+// leg's EUR amount so the caller can expose consistent, honestly-labelled
+// components. A leg priced 0 contributes nothing. A leg priced >0 that cannot be
+// brought into EUR makes the whole result unknown (all zeros, "") — the window is
+// never shown a fabricated mixed-currency total, sorts last, and escapes the EUR
+// budget filter. Returns (totalEUR, flightEUR, hotelEUR, "EUR") on success.
+func normalizeTripTotalEUR(ctx context.Context, convert currencyConverter, flightCost float64, flightCurr string, hotelCost float64, hotelCurr string) (total, flightEUR, hotelEUR float64, currency string) {
+	toEUR := func(cost float64, curr string) (float64, bool) {
+		if cost <= 0 {
+			return 0, true
 		}
-		eur, cur := convert(ctx, leg.cost, leg.curr, "EUR")
+		eur, cur := convert(ctx, cost, curr, "EUR")
 		if cur != "EUR" || eur <= 0 {
-			return 0, "" // this leg cannot be summed honestly
+			return 0, false // cannot express this leg in EUR
 		}
-		total += eur
+		return eur, true
 	}
-	if total <= 0 {
-		return 0, ""
+	fEUR, okF := toEUR(flightCost, flightCurr)
+	hEUR, okH := toEUR(hotelCost, hotelCurr)
+	if !okF || !okH {
+		return 0, 0, 0, ""
 	}
-	return total, "EUR"
+	sum := fEUR + hEUR
+	if sum <= 0 {
+		return 0, 0, 0, ""
+	}
+	return sum, fEUR, hEUR, "EUR"
 }
 
 func cheapestHotel(ctx context.Context, dest, checkIn, checkOut string, nights int, prefs *preferences.Preferences) (float64, string, string) {
