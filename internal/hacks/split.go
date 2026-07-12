@@ -3,9 +3,14 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/flights"
 )
+
+// splitSearchFunc is the flight search seam (overridable in tests). Mirrors the
+// backToBackSearchFunc / railFlyFlightSearcher house pattern.
+var splitSearchFunc = flights.SearchFlights
 
 // detectSplit compares a round-trip ticket against the sum of two separate
 // one-way tickets (one each direction, potentially different airlines).
@@ -16,37 +21,52 @@ func detectSplit(ctx context.Context, in DetectorInput) []Hack {
 		return nil
 	}
 
-	// Round-trip price.
-	rtResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{
+	// Round-trip price + the currency of the exact flight that set the price.
+	rtResult, err := splitSearchFunc(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{
 		ReturnDate: in.ReturnDate,
 	})
-	if err != nil || !rtResult.Success || len(rtResult.Flights) == 0 {
+	if err != nil || rtResult == nil || !rtResult.Success || len(rtResult.Flights) == 0 {
 		return nil
 	}
-	rtPrice := minFlightPrice(rtResult)
+	rtPrice, rtCur := minFlightPriceWithCurrency(rtResult)
 	if rtPrice <= 0 {
 		return nil
 	}
 
 	// Cheapest one-way outbound.
-	owOutResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
-	if err != nil || !owOutResult.Success || len(owOutResult.Flights) == 0 {
+	owOutResult, err := splitSearchFunc(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
+	if err != nil || owOutResult == nil || !owOutResult.Success || len(owOutResult.Flights) == 0 {
 		return nil
 	}
-	owOutPrice := minFlightPrice(owOutResult)
+	owOutPrice, owOutCur := minFlightPriceWithCurrency(owOutResult)
 	if owOutPrice <= 0 {
 		return nil
 	}
 
 	// Cheapest one-way return.
-	owRetResult, err := flights.SearchFlights(ctx, in.Destination, in.Origin, in.ReturnDate, flights.SearchOptions{})
-	if err != nil || !owRetResult.Success || len(owRetResult.Flights) == 0 {
+	owRetResult, err := splitSearchFunc(ctx, in.Destination, in.Origin, in.ReturnDate, flights.SearchOptions{})
+	if err != nil || owRetResult == nil || !owRetResult.Success || len(owRetResult.Flights) == 0 {
 		return nil
 	}
-	owRetPrice := minFlightPrice(owRetResult)
+	owRetPrice, owRetCur := minFlightPriceWithCurrency(owRetResult)
 	if owRetPrice <= 0 {
 		return nil
 	}
+
+	// Emit only when the baseline currency is known and every searched fare is
+	// in that same currency. Comparing each leg against a non-empty baseCur
+	// covers the empty-currency case too (empty != a known currency), so no
+	// separate empty checks are needed. baseCur is also what BestSaving
+	// subtracts the saving from, so matching it prevents a cross-currency,
+	// mislabeled total downstream. Empty currency is unknown, never EUR.
+	rtCur = strings.ToUpper(strings.TrimSpace(rtCur))
+	owOutCur = strings.ToUpper(strings.TrimSpace(owOutCur))
+	owRetCur = strings.ToUpper(strings.TrimSpace(owRetCur))
+	baseCur := strings.ToUpper(strings.TrimSpace(in.Currency))
+	if baseCur == "" || rtCur != baseCur || owOutCur != baseCur || owRetCur != baseCur {
+		return nil
+	}
+	currency := baseCur
 
 	splitTotal := owOutPrice + owRetPrice
 	savings := rtPrice - splitTotal
@@ -55,8 +75,6 @@ func detectSplit(ctx context.Context, in DetectorInput) []Hack {
 	if savings < 15 {
 		return nil
 	}
-
-	currency := flightCurrency(rtResult, in.currency())
 
 	return []Hack{{
 		Type:     "split",

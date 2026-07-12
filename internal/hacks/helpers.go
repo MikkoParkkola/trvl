@@ -33,6 +33,28 @@ func minFlightPrice(r *models.FlightSearchResult) float64 {
 	return min
 }
 
+// minFlightPriceWithCurrency returns the cheapest positive price AND the
+// Currency of THAT SAME flight (not Flights[0]). Returns (0, "") if none.
+func minFlightPriceWithCurrency(r *models.FlightSearchResult) (float64, string) {
+	if r == nil || !r.Success {
+		return 0, ""
+	}
+	min := math.MaxFloat64
+	var currency string
+	found := false
+	for _, f := range r.Flights {
+		if f.Price > 0 && f.Price < min {
+			min = f.Price
+			currency = f.Currency
+			found = true
+		}
+	}
+	if !found {
+		return 0, ""
+	}
+	return min, currency
+}
+
 // flightCurrency returns the currency of the first flight result, or a fallback.
 func flightCurrency(r *models.FlightSearchResult, fallback string) string {
 	if r == nil || !r.Success || len(r.Flights) == 0 {
