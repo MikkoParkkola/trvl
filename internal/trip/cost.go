@@ -137,15 +137,17 @@ func CalculateTripCost(ctx context.Context, input TripCostInput) (*TripCostResul
 	go func() {
 		defer wg.Done()
 		outResult, outErr = flights.SearchFlightsWithClient(ctx, client, input.Origin, input.Destination, input.DepartDate, flights.SearchOptions{
-			SortBy: models.SortCheapest,
-			Adults: 1,
+			SortBy:   models.SortCheapest,
+			Adults:   1,
+			Currency: input.Currency,
 		})
 	}()
 	go func() {
 		defer wg.Done()
 		retResult, retErr = flights.SearchFlightsWithClient(ctx, client, input.Destination, input.Origin, input.ReturnDate, flights.SearchOptions{
-			SortBy: models.SortCheapest,
-			Adults: 1,
+			SortBy:   models.SortCheapest,
+			Adults:   1,
+			Currency: input.Currency,
 		})
 	}()
 	go func() {
@@ -356,11 +358,34 @@ func formatTripCostError(errors []string, partial bool) string {
 	return joined
 }
 
-// cheapestFlight returns the flight with the lowest positive price.
+// cheapestFlight returns the lowest-priced flight within the most common
+// currency cohort. normalizeFlightCurrencies (search.go) rewrites successfully
+// converted flights to the session/requested currency, so the largest
+// same-currency bucket is the comparable set; conversion-failure stragglers
+// left in a foreign currency are excluded so a nominally-small foreign number
+// can't win the ranking on raw magnitude alone.
 func cheapestFlight(flts []models.FlightResult) models.FlightResult {
-	best := flts[0]
-	for _, f := range flts[1:] {
-		if f.Price > 0 && (best.Price <= 0 || f.Price < best.Price) {
+	// Tally currencies among positive-price entries and pick the most frequent.
+	// Ties resolve to the first currency to reach the max count (slice order),
+	// keeping selection deterministic.
+	counts := make(map[string]int)
+	cohort, cohortCount := "", 0
+	for _, f := range flts {
+		if f.Price <= 0 {
+			continue
+		}
+		counts[f.Currency]++
+		if counts[f.Currency] > cohortCount {
+			cohortCount, cohort = counts[f.Currency], f.Currency
+		}
+	}
+	if cohortCount == 0 {
+		// No positive-price entry; preserve prior behavior.
+		return flts[0]
+	}
+	var best models.FlightResult
+	for _, f := range flts {
+		if f.Price > 0 && f.Currency == cohort && (best.Price <= 0 || f.Price < best.Price) {
 			best = f
 		}
 	}

@@ -89,6 +89,50 @@ func TestCheapestFlight_SkipsZero(t *testing.T) {
 	}
 }
 
+// TestCheapestFlight_PicksMinWithinMajorityCurrency verifies that ranking stays
+// inside the majority currency cohort: a nominally-large foreign straggler that
+// normalizeFlightCurrencies could not convert must not be compared on raw
+// magnitude against the comparable (majority-currency) flights.
+func TestCheapestFlight_PicksMinWithinMajorityCurrency(t *testing.T) {
+	flts := []models.FlightResult{
+		{Price: 100, Currency: "EUR"},
+		{Price: 90, Currency: "EUR"},
+		{Price: 500, Currency: "JPY"}, // unconverted straggler, ignored
+	}
+	best := cheapestFlight(flts)
+	if best.Price != 90 || best.Currency != "EUR" {
+		t.Errorf("cheapestFlight = %v %s, want 90 EUR", best.Price, best.Currency)
+	}
+}
+
+// TestCheapestFlight_AllSameCurrency_UnchangedBehavior confirms no regression on
+// the common case where every candidate shares one currency.
+func TestCheapestFlight_AllSameCurrency_UnchangedBehavior(t *testing.T) {
+	flts := []models.FlightResult{
+		{Price: 300, Currency: "EUR"},
+		{Price: 150, Currency: "EUR"},
+		{Price: 220, Currency: "EUR"},
+	}
+	best := cheapestFlight(flts)
+	if best.Price != 150 {
+		t.Errorf("cheapestFlight = %v, want 150", best.Price)
+	}
+}
+
+// TestCheapestFlight_SingleStragglerIgnored verifies a lone minority-currency
+// entry is excluded from the comparison even when its raw number is smallest.
+func TestCheapestFlight_SingleStragglerIgnored(t *testing.T) {
+	flts := []models.FlightResult{
+		{Price: 200, Currency: "USD"},
+		{Price: 150, Currency: "USD"},
+		{Price: 100, Currency: "GBP"}, // minority straggler, ignored
+	}
+	best := cheapestFlight(flts)
+	if best.Price != 150 || best.Currency != "USD" {
+		t.Errorf("cheapestFlight = %v %s, want 150 USD", best.Price, best.Currency)
+	}
+}
+
 func TestCheapestHotel(t *testing.T) {
 	htls := []models.HotelResult{
 		{Price: 120, Currency: "EUR", Name: "Hotel A"},
