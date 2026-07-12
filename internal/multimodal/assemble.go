@@ -1,6 +1,8 @@
 package multimodal
 
 import (
+	"context"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,8 +60,11 @@ func legSpecsForRoute(route models.GroundRoute, from, to, date string) []LegSpec
 // Currency discipline (mirrors flights round-trip composition): legs are summed
 // only in a single currency. The headline currency is the first real priced
 // leg's currency, falling back to the route's indicative currency. A real leg in
-// a different currency cannot be summed honestly, so it is demoted to an
-// estimate with a warning rather than fabricating a converted total.
+// a different currency is first offered to convert (via the injected converter)
+// into the headline currency at a reference rate, disclosing the original quote;
+// only when that conversion is unavailable is the leg demoted to an estimate
+// (never a fabricated converted total). A nil converter keeps the conservative
+// exclusion for every foreign leg.
 //
 // Estimate fallback: any leg that could not be priced (or was demoted) shares
 // the route's indicative remainder — max(0, indicativeLow - realSum) split
@@ -67,11 +72,12 @@ func legSpecsForRoute(route models.GroundRoute, from, to, date string) []LegSpec
 //
 // Returns ok=false when the route yields neither a real nor an indicative total
 // (nothing honest to show).
-func assembleItinerary(route models.GroundRoute, from, to, date string, legs []PricedLeg) (Itinerary, bool) {
+func assembleItinerary(ctx context.Context, convert CurrencyConverter, route models.GroundRoute, from, to, date string, legs []PricedLeg) (Itinerary, bool) {
 	currency := headlineCurrency(legs, route.Currency)
 
 	realSum := 0.0
 	unpriced := 0
+	converted := false
 	for i := range legs {
 		l := &legs[i]
 		if !l.Estimated && l.Price > 0 && l.Currency == currency {
@@ -79,7 +85,25 @@ func assembleItinerary(route models.GroundRoute, from, to, date string, legs []P
 			continue
 		}
 		if !l.Estimated && l.Price > 0 && l.Currency != currency {
-			// Real fare in a non-matching currency: cannot be summed honestly.
+			// Real fare in a foreign currency. Prefer an honest reference-rate
+			// conversion into the headline currency so the leg is compared and
+			// summed rather than silently discarded; preserve the original quote
+			// and disclose the conversion. Fall back to the conservative
+			// demote-to-estimate only when conversion is unavailable.
+			if convert != nil {
+				if conv, cur := convert(ctx, l.Price, l.Currency, currency); cur == currency && conv > 0 {
+					conv = round2(conv)
+					l.OriginalPrice = l.Price
+					l.OriginalCurrency = l.Currency
+					l.Detail = strings.TrimSpace(l.Detail + fmt.Sprintf(" (converted from %.2f %s at a reference rate; not a checkout-final rate)", l.Price, l.Currency))
+					l.Price = conv
+					l.Currency = currency
+					realSum += conv
+					converted = true
+					continue
+				}
+			}
+			// Conversion unavailable: cannot be summed honestly.
 			l.Estimated = true
 			l.Detail = strings.TrimSpace(l.Detail + " (priced in " + l.Currency + "; not summed)")
 		}
@@ -136,6 +160,9 @@ func assembleItinerary(route models.GroundRoute, from, to, date string, legs []P
 
 	if estimated {
 		warnings = append(warnings, "total includes an estimate: one or more legs use Rome2Rio's indicative price, not a confirmed fare — verify before booking")
+	}
+	if converted {
+		warnings = append(warnings, "total includes a leg converted at a reference exchange rate (not a checkout-final rate); card fees and spreads may change the amount actually charged")
 	}
 	if route.Type != "" {
 		// Preserve discovery risk caveats if the route carried any amenity/notes.
