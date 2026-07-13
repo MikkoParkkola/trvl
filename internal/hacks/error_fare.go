@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 )
 
 // expectedPriceRange defines the typical EUR price range for a route class.
@@ -96,7 +98,7 @@ func CheckErrorFare(origin, dest string, price float64, isRoundTrip bool) (hackT
 // expected floor for the route distance. Error fares are mispriced tickets
 // that airlines sometimes honour — they should be booked immediately.
 // Purely advisory — zero API calls.
-func detectErrorFare(_ context.Context, in DetectorInput) []Hack {
+func detectErrorFare(ctx context.Context, in DetectorInput) []Hack {
 	if !in.valid() || in.NaivePrice <= 0 {
 		return nil
 	}
@@ -144,6 +146,22 @@ func detectErrorFare(_ context.Context, in DetectorInput) []Hack {
 		return nil // price is normal
 	}
 
+	// ponytail: NaivePrice/floorEUR/typicalEUR stay EUR-internal for
+	// classification (fixed EUR bands); only the display values below get
+	// converted to the target currency.
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
+	dispPrice, pcur := destinations.ConvertCurrency(ctx, price, "EUR", target)
+	if pcur != target {
+		return nil
+	}
+	dispTypical, tcur := destinations.ConvertCurrency(ctx, expected.typicalEUR, "EUR", target)
+	if tcur != target {
+		return nil
+	}
+
 	tripType := "one-way"
 	if isRoundTrip {
 		tripType = "round-trip"
@@ -154,13 +172,13 @@ func detectErrorFare(_ context.Context, in DetectorInput) []Hack {
 		discount := math.Round(((expected.typicalEUR - price) / expected.typicalEUR) * 100)
 		return []Hack{{
 			Type:  "error_fare",
-			Title: fmt.Sprintf("Possible error fare: €%.0f for %s %s (%s)", price, expected.label, tripType, fmt.Sprintf("%.0f km", dist)),
+			Title: fmt.Sprintf("Possible error fare: %s %.0f for %s %s (%.0f km)", target, dispPrice, expected.label, tripType, dist),
 			Description: fmt.Sprintf(
-				"€%.0f is %.0f%% below the typical €%.0f for %s %s routes (%.0f km). "+
+				"%s %.0f is %.0f%% below the typical %s %.0f for %s %s routes (%.0f km). "+
 					"This may be an error fare — airlines sometimes honour mispriced tickets. Book immediately if interested.",
-				price, discount, expected.typicalEUR, expected.label, tripType, dist),
-			Savings:  math.Round(expected.typicalEUR - price),
-			Currency: in.currency(),
+				target, dispPrice, discount, target, dispTypical, expected.label, tripType, dist),
+			Savings:  roundSavings(dispTypical - dispPrice),
+			Currency: target,
 			Steps: []string{
 				"Book immediately — error fares get corrected within hours",
 				"Pay with a card that has travel protection (chargeback if cancelled)",
@@ -176,16 +194,20 @@ func detectErrorFare(_ context.Context, in DetectorInput) []Hack {
 	}
 
 	// Flash sale — unusually cheap but not error-level.
+	dispFloor, fcur := destinations.ConvertCurrency(ctx, expected.floorEUR, "EUR", target)
+	if fcur != target {
+		return nil
+	}
 	discount := math.Round(((expected.typicalEUR - price) / expected.typicalEUR) * 100)
 	return []Hack{{
 		Type:  "flash_sale",
-		Title: fmt.Sprintf("Flash sale: €%.0f for %s %s (%.0f%% below average)", price, expected.label, tripType, discount),
+		Title: fmt.Sprintf("Flash sale: %s %.0f for %s %s (%.0f%% below average)", target, dispPrice, expected.label, tripType, discount),
 		Description: fmt.Sprintf(
-			"€%.0f is below the typical floor of €%.0f for %s %s routes (%.0f km). "+
+			"%s %.0f is below the typical floor of %s %.0f for %s %s routes (%.0f km). "+
 				"This is likely a legitimate flash sale or promotional fare — good deal, book soon.",
-			price, expected.floorEUR, expected.label, tripType, dist),
-		Savings:  math.Round(expected.typicalEUR - price),
-		Currency: in.currency(),
+			target, dispPrice, target, dispFloor, expected.label, tripType, dist),
+		Savings:  roundSavings(dispTypical - dispPrice),
+		Currency: target,
 		Steps: []string{
 			"Book soon — flash sale inventory is limited",
 			"Check if the fare includes baggage or is basic economy",

@@ -129,17 +129,41 @@ func TestDetectDepartureTax_currencyDefault(t *testing.T) {
 	}
 }
 
-func TestDetectDepartureTax_customCurrency(t *testing.T) {
+// TestDetectDepartureTax_eurTarget_labelsEURAndConverts proves cases (a)
+// and (c) explicitly: EUR passes through untouched (no network —
+// ConvertCurrency short-circuits on from==to) and the surfaced hack's
+// Currency matches the target.
+func TestDetectDepartureTax_eurTarget_labelsEURAndConverts(t *testing.T) {
 	hacks := detectDepartureTax(context.Background(), DetectorInput{
 		Origin:      "CPH",
 		Destination: "BCN",
-		Currency:    "DKK",
+		Currency:    "EUR",
 	})
 	if len(hacks) == 0 {
 		t.Fatal("expected at least one hack")
 	}
-	if hacks[0].Currency != "DKK" {
-		t.Errorf("currency = %q, want DKK", hacks[0].Currency)
+	if hacks[0].Currency != "EUR" {
+		t.Errorf("Currency = %q, want EUR", hacks[0].Currency)
+	}
+	if hacks[0].Savings <= 0 {
+		t.Errorf("savings should be > 0, got %.0f", hacks[0].Savings)
+	}
+}
+
+// TestDetectDepartureTax_nonEURTarget_suppressedWhenInconvertible proves
+// case (b): a non-EUR target currency that can't be honestly converted (XXX
+// is the ISO 4217 "no currency" placeholder — it will never appear in a
+// real exchange-rate table) suppresses the hack rather than labeling
+// EUR-denominated tax/ground-cost figures with the wrong currency.
+// Deterministic — no live network required.
+func TestDetectDepartureTax_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
+	hacks := detectDepartureTax(context.Background(), DetectorInput{
+		Origin:      "CPH",
+		Destination: "BCN",
+		Currency:    "XXX",
+	})
+	if len(hacks) != 0 {
+		t.Errorf("expected no hacks for inconvertible target currency, got %d", len(hacks))
 	}
 }
 

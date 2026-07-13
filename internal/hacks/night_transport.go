@@ -3,7 +3,9 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"golang.org/x/text/cases"
@@ -21,6 +23,22 @@ func detectNightTransport(ctx context.Context, in DetectorInput) []Hack {
 		return nil
 	}
 
+	// ponytail: in.currency() doesn't normalize/default; do it here so the
+	// conversion guard below compares like-for-like against the target.
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
+
+	// Convert the notional hotel-night saving (a fixed EUR estimate) into the
+	// target currency before we spend an API call. If we can't honestly
+	// convert it, suppress the whole hack rather than label a EUR number
+	// with the wrong currency.
+	hotelSaving, cur := destinations.ConvertCurrency(ctx, averageHotelCost, "EUR", target)
+	if cur != target {
+		return nil
+	}
+
 	result, err := ground.SearchByName(ctx, cityFromCode(in.Origin), cityFromCode(in.Destination), in.Date, ground.SearchOptions{
 		Currency: in.currency(),
 	})
@@ -34,8 +52,8 @@ func detectNightTransport(ctx context.Context, in DetectorInput) []Hack {
 			continue
 		}
 
-		totalBenefit := averageHotelCost
-		h := buildNightHack(in, r, totalBenefit)
+		r.Currency = target // buildNightHack trusts r.Currency when set
+		h := buildNightHack(in, r, hotelSaving)
 		hacks = append(hacks, h)
 
 		// Report only the best (cheapest) night option.

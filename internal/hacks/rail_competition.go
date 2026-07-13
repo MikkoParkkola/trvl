@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 )
 
 // railCorridor describes a route with multiple competing rail operators,
@@ -59,7 +61,7 @@ var railCityMap = map[string]string{
 // detectRailCompetition fires when origin and destination match a known
 // competitive rail corridor where multiple operators drive down prices.
 // Purely advisory — zero API calls.
-func detectRailCompetition(_ context.Context, in DetectorInput) []Hack {
+func detectRailCompetition(ctx context.Context, in DetectorInput) []Hack {
 	if !in.valid() {
 		return nil
 	}
@@ -67,30 +69,42 @@ func detectRailCompetition(_ context.Context, in DetectorInput) []Hack {
 	origin := strings.ToUpper(in.Origin)
 	dest := strings.ToUpper(in.Destination)
 
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
+
 	var hacks []Hack
 
 	for _, c := range competitiveCorridors {
 		// Match in either direction.
 		if (c.From == origin && c.To == dest) || (c.From == dest && c.To == origin) {
+			minFare, mcur := destinations.ConvertCurrency(ctx, c.MinFareEUR, "EUR", target)
+			if mcur != target {
+				// Can't honestly convert the fare — suppress rather than
+				// mislabel it.
+				break
+			}
+
 			fromCity := railCityName(c.From)
 			toCity := railCityName(c.To)
 			operators := strings.Join(c.Operators, ", ")
 
 			notes := c.Notes
 			if notes == "" {
-				notes = fmt.Sprintf("Book advance tickets for fares from EUR %.0f", c.MinFareEUR)
+				notes = fmt.Sprintf("Book advance tickets for fares from %s %.0f", target, minFare)
 			}
 
 			hack := Hack{
 				Type: "rail_competition",
-				Title: fmt.Sprintf("%s to %s — %d competing rail operators (from EUR %.0f)",
-					fromCity, toCity, len(c.Operators), c.MinFareEUR),
+				Title: fmt.Sprintf("%s to %s — %d competing rail operators (from %s %.0f)",
+					fromCity, toCity, len(c.Operators), target, minFare),
 				Description: fmt.Sprintf(
 					"%s to %s has %d competing operators: %s. "+
-						"Competition keeps advance fares as low as EUR %.0f. %s.",
-					fromCity, toCity, len(c.Operators), operators, c.MinFareEUR, notes),
+						"Competition keeps advance fares as low as %s %.0f. %s.",
+					fromCity, toCity, len(c.Operators), operators, target, minFare, notes),
 				Savings:  0, // advisory — no concrete savings without flight price comparison
-				Currency: in.currency(),
+				Currency: target,
 				Steps: []string{
 					fmt.Sprintf("Compare prices across all operators: %s", operators),
 					"Book 30+ days in advance for the lowest fares",
@@ -103,15 +117,18 @@ func detectRailCompetition(_ context.Context, in DetectorInput) []Hack {
 			}
 
 			// If we have a flight price to compare against, note the potential saving.
-			if in.NaivePrice > 0 && in.NaivePrice > c.MinFareEUR {
-				saving := in.NaivePrice - c.MinFareEUR
-				hack.Savings = roundSavings(saving)
-				hack.Description += fmt.Sprintf(
-					" Your flight costs EUR %.0f — rail from EUR %.0f saves up to EUR %.0f.",
-					in.NaivePrice, c.MinFareEUR, saving)
-				hack.Steps = append(hack.Steps,
-					fmt.Sprintf("Flight costs EUR %.0f; cheapest rail is EUR %.0f — consider the trade-off (rail is slower but cheaper and city-centre to city-centre)",
-						in.NaivePrice, c.MinFareEUR))
+			if in.NaivePrice > 0 {
+				naivePrice, ncur := destinations.ConvertCurrency(ctx, in.NaivePrice, "EUR", target)
+				if ncur == target && naivePrice > minFare {
+					saving := naivePrice - minFare
+					hack.Savings = roundSavings(saving)
+					hack.Description += fmt.Sprintf(
+						" Your flight costs %s %.0f — rail from %s %.0f saves up to %s %.0f.",
+						target, naivePrice, target, minFare, target, saving)
+					hack.Steps = append(hack.Steps,
+						fmt.Sprintf("Flight costs %s %.0f; cheapest rail is %s %.0f — consider the trade-off (rail is slower but cheaper and city-centre to city-centre)",
+							target, naivePrice, target, minFare))
+				}
 			}
 
 			hacks = append(hacks, hack)

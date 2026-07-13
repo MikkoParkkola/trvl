@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
@@ -52,7 +53,7 @@ func DetectAccommodationSplit(ctx context.Context, in AccommodationSplitInput) [
 	if in.Guests <= 0 {
 		in.Guests = 2
 	}
-	currency := in.Currency
+	currency := strings.ToUpper(strings.TrimSpace(in.Currency))
 	if currency == "" {
 		currency = "EUR"
 	}
@@ -71,6 +72,15 @@ func DetectAccommodationSplit(ctx context.Context, in AccommodationSplitInput) [
 		return nil
 	}
 
+	// Convert the fixed EUR per-move friction cost into the target currency
+	// before doing any hotel search. If we can't honestly convert it,
+	// suppress the whole detector rather than mix EUR moving costs into a
+	// non-EUR total.
+	movingCost, mcur := destinations.ConvertCurrency(ctx, movingCostEUR, "EUR", currency)
+	if mcur != currency {
+		return nil
+	}
+
 	// Load user preferences for hotel filtering.
 	prefs, _ := preferences.Load()
 
@@ -82,7 +92,7 @@ func DetectAccommodationSplit(ctx context.Context, in AccommodationSplitInput) [
 	baselineTotal := baseline.Price * float64(totalNights)
 
 	// 2. Find the best split (2-way first, 3-way if MaxSplits >= 3).
-	best := findBestSplit(ctx, in, checkIn, totalNights, currency, baselineTotal, prefs)
+	best := findBestSplit(ctx, in, checkIn, totalNights, currency, movingCost, baselineTotal, prefs)
 	if best == nil {
 		return nil
 	}
@@ -106,6 +116,7 @@ func findBestSplit(
 	checkIn time.Time,
 	totalNights int,
 	currency string,
+	movingCost float64,
 	baselineTotal float64,
 	prefs *preferences.Preferences,
 ) *Hack {
@@ -157,12 +168,12 @@ func findBestSplit(
 			}
 
 			moves := len(j.splitPoints)
-			movingCost := float64(moves) * movingCostEUR
+			jobMovingCost := float64(moves) * movingCost
 			totalCost := 0.0
 			for _, s := range segments {
 				totalCost += s.TotalCost
 			}
-			totalCost += movingCost
+			totalCost += jobMovingCost
 
 			mu.Lock()
 			defer mu.Unlock()
@@ -187,7 +198,7 @@ func findBestSplit(
 		return nil
 	}
 
-	return buildAccommodationHack(in.City, best.segments, best.moves, netSavings, baselineTotal, currency)
+	return buildAccommodationHack(in.City, best.segments, best.moves, netSavings, baselineTotal, movingCost, currency)
 }
 
 // evaluateSplit searches for the cheapest hotel for each segment defined by
@@ -307,7 +318,7 @@ func searchBestHotel(ctx context.Context, city, checkIn, checkOut string, guests
 }
 
 // buildAccommodationHack assembles the Hack from evaluated segments.
-func buildAccommodationHack(city string, segments []splitSegment, moves int, netSavings, baselineTotal float64, currency string) *Hack {
+func buildAccommodationHack(city string, segments []splitSegment, moves int, netSavings, baselineTotal, movingCost float64, currency string) *Hack {
 	n := len(segments)
 	propertiesWord := "properties"
 	if n == 2 {
@@ -344,7 +355,7 @@ func buildAccommodationHack(city string, segments []splitSegment, moves int, net
 		currency, roundSavings(splitCost), currency, roundSavings(baselineTotal),
 	))
 	if moves > 0 {
-		moveCost := float64(moves) * movingCostEUR
+		moveCost := float64(moves) * movingCost
 		if moves == 1 {
 			steps = append(steps, fmt.Sprintf("Move between hotels on %s (~%s %.0f taxi)", formatDate(segments[0].CheckOut), currency, moveCost))
 		} else {

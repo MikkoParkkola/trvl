@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 )
 
 // departureTaxEUR maps country ISO codes to approximate aviation departure tax
@@ -49,7 +51,7 @@ func countryName(cc string) string {
 // detectDepartureTax fires when the origin airport is in a country with
 // significant aviation departure tax and a nearby alternative airport sits
 // in a zero-tax country. Purely advisory — zero API calls.
-func detectDepartureTax(_ context.Context, in DetectorInput) []Hack {
+func detectDepartureTax(ctx context.Context, in DetectorInput) []Hack {
 	if !in.valid() {
 		return nil
 	}
@@ -105,25 +107,39 @@ func detectDepartureTax(_ context.Context, in DetectorInput) []Hack {
 
 	savings := originTax // per person per departure
 
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
+	convTax, taxCur := destinations.ConvertCurrency(ctx, originTax, "EUR", target)
+	if taxCur != target {
+		return nil
+	}
+	convGround, groundCur := destinations.ConvertCurrency(ctx, best.groundCost, "EUR", target)
+	if groundCur != target {
+		return nil
+	}
+	savings = convTax
+
 	return []Hack{{
 		Type: "departure_tax",
-		Title: fmt.Sprintf("Save ~EUR %.0f tax — fly from %s (%s) instead",
-			savings, best.city, best.iata),
+		Title: fmt.Sprintf("Save ~%s %.0f tax — fly from %s (%s) instead",
+			target, savings, best.city, best.iata),
 		Description: fmt.Sprintf(
-			"%s charges EUR %.0f aviation tax per departure. %s (%s, %s) has zero aviation tax. "+
-				"Ground transport to %s costs ~EUR %.0f.",
-			countryName(originCountry), originTax,
+			"%s charges %s %.0f aviation tax per departure. %s (%s, %s) has zero aviation tax. "+
+				"Ground transport to %s costs ~%s %.0f.",
+			countryName(originCountry), target, convTax,
 			best.city, best.iata, countryName(best.country),
-			best.city, best.groundCost),
+			best.city, target, convGround),
 		Savings:  savings,
-		Currency: in.currency(),
+		Currency: target,
 		Steps: []string{
 			fmt.Sprintf("Compare flight prices from %s vs %s to %s",
 				strings.ToUpper(in.Origin), best.iata, strings.ToUpper(in.Destination)),
-			fmt.Sprintf("Add ~EUR %.0f ground transport cost from %s to %s",
-				best.groundCost, strings.ToUpper(in.Origin), best.iata),
-			fmt.Sprintf("Savings: EUR %.0f per person in avoided departure tax (minus transport cost)",
-				savings),
+			fmt.Sprintf("Add ~%s %.0f ground transport cost from %s to %s",
+				target, convGround, strings.ToUpper(in.Origin), best.iata),
+			fmt.Sprintf("Savings: %s %.0f per person in avoided departure tax (minus transport cost)",
+				target, savings),
 		},
 		Risks: []string{
 			"Ground transport adds travel time and complexity",

@@ -178,6 +178,47 @@ func TestCheckErrorFare_empty_input(t *testing.T) {
 	}
 }
 
+// TestDetectErrorFare_nonEURTarget_suppressedWhenInconvertible proves case
+// (b): a non-EUR target currency that can't be honestly converted (XXX is
+// the ISO 4217 "no currency" placeholder — it will never appear in a real
+// exchange-rate table) suppresses the hack rather than labeling EUR-priced
+// math with the wrong currency. Deterministic — no live network required.
+func TestDetectErrorFare_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
+	in := DetectorInput{
+		Origin:      "HEL",
+		Destination: "BCN",
+		NaivePrice:  20,
+		Currency:    "XXX",
+	}
+	hacks := detectErrorFare(context.Background(), in)
+	if len(hacks) != 0 {
+		t.Errorf("expected no hacks for inconvertible target currency, got %d", len(hacks))
+	}
+}
+
+// TestDetectErrorFare_eurTarget_labelsEURAndConverts proves cases (a) and
+// (c): EUR passes through untouched (no network — ConvertCurrency
+// short-circuits on from==to) and the surfaced hack's Currency matches the
+// target.
+func TestDetectErrorFare_eurTarget_labelsEURAndConverts(t *testing.T) {
+	in := DetectorInput{
+		Origin:      "HEL",
+		Destination: "BCN",
+		NaivePrice:  20,
+		Currency:    "EUR",
+	}
+	hacks := detectErrorFare(context.Background(), in)
+	if len(hacks) == 0 {
+		t.Fatal("expected error_fare hack for €20 HEL→BCN one-way")
+	}
+	if hacks[0].Currency != "EUR" {
+		t.Errorf("Currency = %q, want EUR", hacks[0].Currency)
+	}
+	if hacks[0].Savings <= 0 {
+		t.Error("expected positive savings")
+	}
+}
+
 func TestDetectErrorFare_intercontinental(t *testing.T) {
 	// LHR→JFK is ~5500 km. Intercontinental OW floor = €150, error = €75.
 	// €50 should trigger error_fare.
