@@ -154,3 +154,18 @@ Reviewer: codex gpt-5.6-sol, one runner subagent per branch (relays codex verdic
     the DetectAll branch (2491e91) fixes; C's worktree predates that merge, so they clear
     on lever11 post-merge. Confirmed pre-existing on base 6fdbb13 via git stash. codex
     round-4 review of 9b45942+fc84d96 DISPATCHED.
+
+## Merge status (2026-07-13, lever11)
+
+- MERGED into lever11 (each --no-ff): E (worktree-agent-a5c9cd49f837d79c7), DetectAll
+  (worktree-agent-a0782756f2ea57762), C (worktree-agent-a72b5bd61b7d22fe9). All three
+  merged clean, no conflicts. currency.go seam now on lever11.
+- codex round-4 on C's 9b45942+fc84d96: currency dimension CLEAN (thresholds target-
+  denominated, all conversions via seam, accommodation test offline, no new mixing). Its
+  lone CHANGES-REQUIRED blocker was the DetectAll ctx issue (hacks.go:370) — resolved by
+  the DetectAll merge. Confirmed: post-merge `go test ./internal/hacks/ -race -count=1`
+  = ok 32.6s (the two TestDetectAll_* failures now pass).
+- PENDING: B (worktree-agent-a4e242c0a9b4c4733) — 4-detector fix agent running; must
+  rebase onto lever11 (currency.go now exists there) then codex review before merge.
+- REMAINING before v1.20.0: B merge + cross-detector non-EUR sweep test + full-repo DoD
+  (go test ./... -race, staticcheck ./..., govulncheck, coverage>=80%) + release.
