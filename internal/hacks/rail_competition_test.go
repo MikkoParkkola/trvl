@@ -183,14 +183,14 @@ func TestDetectRailCompetition_currencyDefault(t *testing.T) {
 // of dialing the live rates table. No t.Parallel — the seam var is shared
 // package state, set/restored sequentially like railGroundSearcher.
 func TestDetectRailCompetition_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
-	orig := convertCurrency
-	convertCurrency = func(_ context.Context, amount float64, from, to string) (float64, string) {
+	orig := convertCurrencyFn
+	convertCurrencyFn = func(_ context.Context, amount float64, from, to string) (float64, string) {
 		if from == to {
 			return amount, to
 		}
 		return amount, from // can't convert — same contract as the real function
 	}
-	t.Cleanup(func() { convertCurrency = orig })
+	t.Cleanup(func() { convertCurrencyFn = orig })
 
 	hacks := detectRailCompetition(context.Background(), DetectorInput{
 		Origin:      "MAD",

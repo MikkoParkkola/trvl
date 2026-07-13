@@ -77,8 +77,8 @@ func detectRailCompetition(ctx context.Context, in DetectorInput) []Hack {
 	for _, c := range competitiveCorridors {
 		// Match in either direction.
 		if (c.From == origin && c.To == dest) || (c.From == dest && c.To == origin) {
-			minFare, mcur := convertCurrency(ctx, c.MinFareEUR, "EUR", target)
-			if mcur != target {
+			minFare, mok := convertCurrency(ctx, c.MinFareEUR, "EUR", target)
+			if !mok {
 				// Can't honestly convert the fare — suppress rather than
 				// mislabel it.
 				break

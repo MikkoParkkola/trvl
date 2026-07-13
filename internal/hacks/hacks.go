@@ -179,6 +179,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/flights"
+	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
@@ -241,6 +243,23 @@ type DetectorInput struct {
 	// The zero value preserves pre-loyalty behaviour (no regression): detectors
 	// fall back to surfacing every opportunity. See loyalty.go.
 	Loyalty LoyaltyProfile
+
+	// SearchOverride, when non-nil, is threaded into every flights.SearchOptions
+	// this detector builds so tests can inject synthetic search results. Nil
+	// (the default) runs the real flights.SearchFlights. This replaces the old
+	// pattern of mutable package-level function variables (positioningSearchFunc,
+	// openJawSearchFunc), which raced when parallel detector or test calls read
+	// and wrote the same shared global; carrying the override as ordinary
+	// per-call data instead removes the shared mutable state entirely. See
+	// flights.SearchOptions.SearchOverride.
+	SearchOverride flights.SearchFunc
+
+	// GroundSearchOverride, when non-nil, is threaded into every
+	// ground.SearchOptions this detector builds so tests can inject synthetic
+	// ground-transport (ferry/bus/train) results. Nil (the default) runs the
+	// real ground.SearchByName. Mirrors SearchOverride above for the ground
+	// package. See ground.SearchOptions.SearchOverride.
+	GroundSearchOverride ground.SearchFunc
 }
 
 // currency returns the display currency for this search: the explicit request

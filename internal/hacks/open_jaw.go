@@ -3,7 +3,9 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
@@ -47,26 +49,36 @@ func detectOpenJaw(ctx context.Context, in DetectorInput) []Hack {
 	// Check if origin is a home airport — the strongest open-jaw signal.
 	isHome := isHomeAirport(in.Origin, prefs)
 
+	// All user-visible prices (round-trip baseline, one-way legs, and the
+	// EUR-denominated ground-cost estimate) are converted into the requested
+	// currency; anything that cannot be converted is suppressed rather than
+	// shown unconverted or mislabelled.
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
+
 	// Baseline: round-trip from origin to destination.
 	rtResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{
-		ReturnDate: in.ReturnDate,
+		ReturnDate:     in.ReturnDate,
+		SearchOverride: in.SearchOverride,
 	})
 	if err != nil || !rtResult.Success || len(rtResult.Flights) == 0 {
 		return nil
 	}
-	rtPrice := minFlightPrice(rtResult)
-	if rtPrice <= 0 {
+	rtPrice, ok := cheapestFlightPriceIn(ctx, rtResult, target)
+	if !ok {
 		return nil
 	}
-	currency := flightCurrency(rtResult, in.currency())
+	currency := target
 
 	// One-way outbound (origin → destination).
-	owOutResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
+	owOutResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{SearchOverride: in.SearchOverride})
 	if err != nil || !owOutResult.Success || len(owOutResult.Flights) == 0 {
 		return nil
 	}
-	owOutPrice := minFlightPrice(owOutResult)
-	if owOutPrice <= 0 {
+	owOutPrice, ok := cheapestFlightPriceIn(ctx, owOutResult, target)
+	if !ok {
 		return nil
 	}
 
@@ -79,6 +91,7 @@ func detectOpenJaw(ctx context.Context, in DetectorInput) []Hack {
 	type ch struct {
 		alt   string
 		price float64
+		ok    bool
 	}
 	results := make(chan ch, len(alts))
 
@@ -88,24 +101,31 @@ func detectOpenJaw(ctx context.Context, in DetectorInput) []Hack {
 		}
 		alt := alt
 		go func() {
-			r, err := flights.SearchFlights(ctx, alt, in.Origin, in.ReturnDate, flights.SearchOptions{})
+			r, err := flights.SearchFlights(ctx, alt, in.Origin, in.ReturnDate, flights.SearchOptions{SearchOverride: in.SearchOverride})
 			if err != nil || !r.Success || len(r.Flights) == 0 {
-				results <- ch{alt: alt, price: 0}
+				results <- ch{alt: alt}
 				return
 			}
-			results <- ch{alt: alt, price: minFlightPrice(r)}
+			price, ok := cheapestFlightPriceIn(ctx, r, target)
+			results <- ch{alt: alt, price: price, ok: ok}
 		}()
 	}
 
 	var hacks []Hack
 	for range alts {
 		res := <-results
-		if res.price <= 0 {
+		if !res.ok || res.price <= 0 {
 			continue
 		}
 
-		// Estimated ground cost to reach alternate return city (conservative).
-		groundCost := groundCostBetween(in.Destination, res.alt)
+		// Estimated ground cost (EUR) to reach alternate return city, converted
+		// into the requested currency; suppress this candidate rather than mix
+		// currencies when it cannot be converted.
+		groundCostEUR := groundCostBetween(in.Destination, res.alt)
+		groundCost, gcur := destinations.ConvertCurrency(ctx, groundCostEUR, "EUR", target)
+		if gcur != target {
+			continue
+		}
 		totalOpenJaw := owOutPrice + res.price + groundCost
 		savings := rtPrice - totalOpenJaw
 

@@ -33,8 +33,8 @@ func detectNightTransport(ctx context.Context, in DetectorInput) []Hack {
 	// target currency before we spend an API call. If we can't honestly
 	// convert it, suppress the whole hack rather than label a EUR number
 	// with the wrong currency.
-	hotelSaving, cur := convertCurrency(ctx, averageHotelCost, "EUR", target)
-	if cur != target {
+	hotelSaving, cok := convertCurrency(ctx, averageHotelCost, "EUR", target)
+	if !cok {
 		return nil
 	}
 

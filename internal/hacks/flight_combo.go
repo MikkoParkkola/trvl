@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -72,7 +74,7 @@ func DetectFlightCombo(ctx context.Context, in FlightComboInput) []Hack {
 		return nil
 	}
 
-	currency := in.Currency
+	currency := strings.ToUpper(strings.TrimSpace(in.Currency))
 	if currency == "" {
 		currency = "EUR"
 	}
@@ -111,8 +113,27 @@ func cheapestFlightInfo(result *models.FlightSearchResult, err error) (price flo
 	return best.Price, best.Currency, air, &best
 }
 
+// cheapestFlightPriceInCurrency picks the cheapest flight via cheapestFlightInfo
+// and converts its price into target. Returns (0, false) when there is no
+// priced flight or its price cannot be converted into target — callers must
+// suppress rather than show an unconverted or mislabelled figure. Shared by
+// the currency-honesty fix across flight_combo.go and back_to_back.go.
+func cheapestFlightPriceInCurrency(ctx context.Context, result *models.FlightSearchResult, err error, target string) (float64, bool) {
+	price, cur, _, _ := cheapestFlightInfo(result, err)
+	if price <= 0 {
+		return 0, false
+	}
+	conv, gotCur := destinations.ConvertCurrency(ctx, price, cur, target)
+	if gotCur != target {
+		return 0, false
+	}
+	return conv, true
+}
+
 // detectSingleTripCombo compares a round-trip price against the sum of two
-// one-way tickets (potentially on different airlines).
+// one-way tickets (potentially on different airlines). currency is the
+// requested display (target) currency; every price is converted into it and
+// suppressed rather than shown unconverted when conversion fails.
 func detectSingleTripCombo(ctx context.Context, origin, dest string, trip TripLeg, currency string) []Hack {
 	client := batchexec.NewClient()
 
@@ -145,22 +166,20 @@ func detectSingleTripCombo(ctx context.Context, origin, dest string, trip TripLe
 	}()
 	wg.Wait()
 
-	rtPrice, rtCurrency, _, _ := cheapestFlightInfo(rtResult, rtErr)
-	owOutPrice, _, owOutAirline, _ := cheapestFlightInfo(owOutResult, owOutErr)
-	owRetPrice, _, owRetAirline, _ := cheapestFlightInfo(owRetResult, owRetErr)
+	_, _, owOutAirline, _ := cheapestFlightInfo(owOutResult, owOutErr)
+	_, _, owRetAirline, _ := cheapestFlightInfo(owRetResult, owRetErr)
 
-	if rtCurrency != "" {
-		currency = rtCurrency
-	}
+	rtPrice, validRT := cheapestFlightPriceInCurrency(ctx, rtResult, rtErr, currency)
+	owOutPrice, okOut := cheapestFlightPriceInCurrency(ctx, owOutResult, owOutErr, currency)
+	owRetPrice, okRet := cheapestFlightPriceInCurrency(ctx, owRetResult, owRetErr, currency)
+	validSplit := okOut && okRet
 
 	// Need at least one valid strategy.
-	if rtPrice <= 0 && (owOutPrice <= 0 || owRetPrice <= 0) {
+	if !validRT && !validSplit {
 		return nil
 	}
 
 	splitTotal := owOutPrice + owRetPrice
-	validRT := rtPrice > 0
-	validSplit := owOutPrice > 0 && owRetPrice > 0
 
 	// Determine the better option and compute savings.
 	if validRT && validSplit {
@@ -178,6 +197,9 @@ func detectSingleTripCombo(ctx context.Context, origin, dest string, trip TripLe
 }
 
 // detectMultiTripCombo finds the optimal ticket assignment for multiple trips.
+// currency is the requested display (target) currency; every price is
+// converted into it and a trip whose price cannot be converted suppresses
+// the whole comparison (baseline is required for every trip).
 func detectMultiTripCombo(ctx context.Context, origin, dest string, trips []TripLeg, currency string) []Hack {
 	if len(trips) > maxComboTrips {
 		trips = trips[:maxComboTrips]
@@ -187,11 +209,7 @@ func detectMultiTripCombo(ctx context.Context, origin, dest string, trips []Trip
 	n := len(trips)
 
 	// Step 1: get baseline (N separate round-trips).
-	type rtInfo struct {
-		price    float64
-		currency string
-	}
-	baselinePrices := make([]rtInfo, n)
+	baselinePrices := make([]float64, n)
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 3) // limit concurrency
 
@@ -206,21 +224,21 @@ func detectMultiTripCombo(ctx context.Context, origin, dest string, trips []Trip
 				ReturnDate: t.ReturnDate,
 				SortBy:     models.SortCheapest,
 			})
-			p, c, _, _ := cheapestFlightInfo(result, err)
-			baselinePrices[i] = rtInfo{price: p, currency: c}
+			p, ok := cheapestFlightPriceInCurrency(ctx, result, err, currency)
+			if !ok {
+				p = 0
+			}
+			baselinePrices[i] = p
 		}()
 	}
 	wg.Wait()
 
 	baseline := 0.0
 	for _, p := range baselinePrices {
-		if p.price <= 0 {
+		if p <= 0 {
 			return nil // can't compute baseline
 		}
-		baseline += p.price
-		if p.currency != "" {
-			currency = p.currency
-		}
+		baseline += p
 	}
 
 	// Step 2: try all permutations of pairing outbound[i] with return[perm[i]].
@@ -261,8 +279,8 @@ func detectMultiTripCombo(ctx context.Context, origin, dest string, trips []Trip
 				})
 				<-sem
 
-				p, _, _, _ := cheapestFlightInfo(result, err)
-				if p <= 0 {
+				p, ok := cheapestFlightPriceInCurrency(ctx, result, err, currency)
+				if !ok {
 					return // this permutation is invalid
 				}
 				totalCost += p

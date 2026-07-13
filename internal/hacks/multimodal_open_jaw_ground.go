@@ -6,9 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
-	"github.com/MikkoParkkola/trvl/internal/ground"
 )
 
 // nearbyHub describes a major airport near a regional destination. Flying into
@@ -106,6 +104,17 @@ var nearbyHubs = map[string][]nearbyHub{
 	},
 }
 
+// openJawGroundCandidate is the result of pricing one hub-then-ground route:
+// the positioning flight and the ground leg, both already converted into the
+// detector's requested target currency, plus the hotel-night bonus (also
+// pre-converted, only set when the ground leg is overnight).
+type openJawGroundCandidate struct {
+	hub         nearbyHub
+	groundPrice float64
+	flightPrice float64
+	hotelBonus  float64
+}
+
 // detectMultiModalOpenJawGround checks whether flying to a nearby hub airport
 // and completing the journey by ground transport is cheaper than flying directly
 // to the destination.
@@ -119,33 +128,27 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 		return nil
 	}
 
-	// Ground legs here are EUR-denominated static estimates; each is converted
-	// via FX into the traveller's requested currency so the whole itinerary is
-	// labelled honestly in that one currency. A candidate whose ground estimate
-	// cannot be converted is skipped rather than mislabelled.
+	// All user-visible prices (direct flight, positioning flight, ground leg,
+	// and the hotel-night bonus) are converted into the requested currency
+	// before being combined; a leg that cannot be converted drops its
+	// candidate rather than mixing currencies in the total.
 	target := strings.ToUpper(strings.TrimSpace(in.currency()))
 	if target == "" {
 		target = "EUR"
 	}
 
-	// Baseline: direct flight to destination, converted into the requested currency.
-	directResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
+	// Baseline: direct flight to destination.
+	directResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{SearchOverride: in.SearchOverride})
 	if err != nil || !directResult.Success || len(directResult.Flights) == 0 {
 		return nil
 	}
-	directPrice, ok := minFlightPriceConverted(ctx, directResult, target)
+	directPrice, ok := cheapestFlightPriceInTarget(ctx, directResult, target)
 	if !ok {
 		return nil
 	}
 	currency := target
 
-	type candidate struct {
-		hub       nearbyHub
-		groundEUR float64
-		flightEUR float64
-	}
-
-	ch := make(chan candidate, len(hubs))
+	ch := make(chan openJawGroundCandidate, len(hubs))
 	var wg sync.WaitGroup
 
 	for _, h := range hubs {
@@ -154,44 +157,38 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 		go func() {
 			defer wg.Done()
 
-			// Prefer a live ground price (converted into target); fall back to the
-			// static EUR estimate converted into target. Suppress the candidate
-			// only when NEITHER the live route nor the static estimate can be
-			// shown in the requested currency. Cheapest convertible price wins.
-			groundConv := 0.0
-			haveGround := false
-			gr, gerr := ground.SearchByName(ctx, h.HubCity, h.DestCity, in.Date, ground.SearchOptions{
-				Currency: "EUR",
-			})
-			if gerr == nil && gr.Success {
-				if _, live, lok := selectCheapestGroundConverted(ctx, gr.Routes, target, false); lok && live > 0 {
-					groundConv = live
-					haveGround = true
-				}
-			}
-			if est, gec := destinations.ConvertCurrency(ctx, h.StaticGroundEUR, "EUR", target); gec == target {
-				if !haveGround || est < groundConv {
-					groundConv = est
-					haveGround = true
-				}
-			}
-			if !haveGround {
-				ch <- candidate{}
+			groundPrice, ok := groundLegPriceInTarget(ctx, h.HubCity, h.DestCity, in.Date, "", h.StaticGroundEUR, target, in.GroundSearchOverride)
+			if !ok {
+				ch <- openJawGroundCandidate{}
 				return
 			}
 
-			// Flight from origin to hub, converted into the requested currency.
-			fr, ferr := flights.SearchFlights(ctx, in.Origin, h.HubCode, in.Date, flights.SearchOptions{})
+			// Flight from origin to hub.
+			fr, ferr := flights.SearchFlights(ctx, in.Origin, h.HubCode, in.Date, flights.SearchOptions{SearchOverride: in.SearchOverride})
 			if ferr != nil || !fr.Success || len(fr.Flights) == 0 {
-				ch <- candidate{}
+				ch <- openJawGroundCandidate{}
 				return
 			}
-			flightPrice, fok := minFlightPriceConverted(ctx, fr, target)
-			if !fok {
-				ch <- candidate{}
+			flightPrice, ok := cheapestFlightPriceInTarget(ctx, fr, target)
+			if !ok {
+				ch <- openJawGroundCandidate{}
 				return
 			}
-			ch <- candidate{hub: h, groundEUR: groundConv, flightEUR: flightPrice}
+
+			hotelBonus := 0.0
+			if h.Overnight {
+				bonus, ok := convertCurrency(ctx, averageHotelCost, "EUR", target)
+				if !ok {
+					// The hotel-night saving cannot be honestly expressed in
+					// target; drop the candidate rather than silently omit it
+					// or mix currencies in the displayed saving.
+					ch <- openJawGroundCandidate{}
+					return
+				}
+				hotelBonus = bonus
+			}
+
+			ch <- openJawGroundCandidate{hub: h, groundPrice: groundPrice, flightPrice: flightPrice, hotelBonus: hotelBonus}
 		}()
 	}
 
@@ -200,23 +197,19 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 
 	var hacks []Hack
 	for c := range ch {
-		if c.flightEUR == 0 {
+		if c.flightPrice <= 0 {
 			continue
 		}
 
-		total := c.flightEUR + c.groundEUR
-		hotelBonus := 0.0
-		if c.hub.Overnight {
-			hotelBonus = averageHotelCost
-		}
-		savings := directPrice - total + hotelBonus
+		total := c.flightPrice + c.groundPrice
+		savings := directPrice - total + c.hotelBonus
 		if savings < 50 {
 			continue
 		}
 
 		overnightNote := ""
 		if c.hub.Overnight {
-			overnightNote = fmt.Sprintf(" + saves ~%.0f hotel night", averageHotelCost)
+			overnightNote = fmt.Sprintf(" + saves ~%.0f %s hotel night", c.hotelBonus, currency)
 		}
 
 		hacks = append(hacks, Hack{
@@ -225,10 +218,10 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 			Currency: currency,
 			Savings:  roundSavings(savings),
 			Description: fmt.Sprintf(
-				"Flight %s→%s (%.0f %s) + ground %s→%s (%.0f %s) = %.0f total%s, vs direct %s→%s %.0f %s. Saves %s %.0f.",
-				in.Origin, c.hub.HubCode, c.flightEUR, currency,
-				c.hub.HubCity, c.hub.DestCity, c.groundEUR, currency,
-				total, overnightNote,
+				"Flight %s→%s (%.0f %s) + ground %s→%s (%.0f %s) = %.0f %s total%s, vs direct %s→%s %.0f %s. Saves %s %.0f.",
+				in.Origin, c.hub.HubCode, c.flightPrice, currency,
+				c.hub.HubCity, c.hub.DestCity, c.groundPrice, currency,
+				total, currency, overnightNote,
 				in.Origin, in.Destination, directPrice, currency,
 				currency, savings,
 			),
@@ -238,9 +231,9 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 				"Checked luggage complicates ground connections — prefer carry-on",
 			},
 			Steps: []string{
-				fmt.Sprintf("Book flight %s→%s on %s (%s %.0f)", in.Origin, c.hub.HubCode, in.Date, currency, c.flightEUR),
+				fmt.Sprintf("Book flight %s→%s on %s (%s %.0f)", in.Origin, c.hub.HubCode, in.Date, currency, c.flightPrice),
 				fmt.Sprintf("Ground transfer: %s", c.hub.Notes),
-				fmt.Sprintf("Arrive at %s (~%.0f %s ground cost)", c.hub.DestCity, c.groundEUR, currency),
+				fmt.Sprintf("Arrive at %s (~%s %.0f ground cost)", c.hub.DestCity, currency, c.groundPrice),
 			},
 			Citations: []string{
 				googleFlightsURL(c.hub.HubCode, in.Origin, in.Date),

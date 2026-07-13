@@ -6,9 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
-	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
 
@@ -103,6 +101,15 @@ var multiModalHubs = map[string][]multiModalHub{
 // multi-modal positioning hack is surfaced.
 const minSavingsFraction = 0.20
 
+// multiModalCandidate is the result of pricing one cross-modal positioning
+// route: the ground leg and the onward flight leg, both already converted
+// into the detector's requested target currency.
+type multiModalCandidate struct {
+	hub         multiModalHub
+	groundPrice float64
+	flightPrice float64
+}
+
 // detectMultiModalPositioning checks whether taking ground transport to a
 // nearby hub airport and flying from there is cheaper than flying directly,
 // by more than 20 %.
@@ -121,33 +128,27 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 		return nil
 	}
 
-	// Ground legs here are EUR-denominated static estimates; each is converted
-	// via FX into the traveller's requested currency so the itinerary is
-	// labelled honestly in that one currency. A candidate whose ground estimate
-	// cannot be converted is skipped rather than mislabelled.
+	// All user-visible prices (direct flight, ground leg, and positioning
+	// flight leg) are converted into the requested currency before being
+	// combined; a leg that cannot be converted drops its candidate rather
+	// than mixing currencies in the total.
 	target := strings.ToUpper(strings.TrimSpace(in.currency()))
 	if target == "" {
 		target = "EUR"
 	}
 
-	// Baseline: cheapest direct flight from origin, converted into the requested currency.
-	directResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
+	// Baseline: cheapest direct flight from origin.
+	directResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{SearchOverride: in.SearchOverride})
 	if err != nil || !directResult.Success || len(directResult.Flights) == 0 {
 		return nil
 	}
-	directPrice, ok := minFlightPriceConverted(ctx, directResult, target)
+	directPrice, ok := cheapestFlightPriceInTarget(ctx, directResult, target)
 	if !ok {
 		return nil
 	}
 	currency := target
 
-	type candidate struct {
-		hub       multiModalHub
-		groundEUR float64
-		flightEUR float64
-	}
-
-	ch := make(chan candidate, len(hubs))
+	ch := make(chan multiModalCandidate, len(hubs))
 	var wg sync.WaitGroup
 
 	for _, h := range hubs {
@@ -156,45 +157,24 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 		go func() {
 			defer wg.Done()
 
-			// Prefer a live ground price (converted into target); fall back to the
-			// static EUR estimate converted into target. Suppress the candidate
-			// only when NEITHER the live route nor the static estimate can be
-			// shown in the requested currency. Cheapest convertible price wins.
-			groundConv := 0.0
-			haveGround := false
-			gr, gerr := ground.SearchByName(ctx, h.OriginCity, h.HubCity, in.Date, ground.SearchOptions{
-				Currency: "EUR",
-				Type:     h.GroundType,
-			})
-			if gerr == nil && gr.Success {
-				if _, live, lok := selectCheapestGroundConverted(ctx, gr.Routes, target, false); lok && live > 0 {
-					groundConv = live
-					haveGround = true
-				}
-			}
-			if est, gec := destinations.ConvertCurrency(ctx, h.StaticGroundEUR, "EUR", target); gec == target {
-				if !haveGround || est < groundConv {
-					groundConv = est
-					haveGround = true
-				}
-			}
-			if !haveGround {
-				ch <- candidate{}
+			groundPrice, ok := groundLegPriceInTarget(ctx, h.OriginCity, h.HubCity, in.Date, h.GroundType, h.StaticGroundEUR, target, in.GroundSearchOverride)
+			if !ok {
+				ch <- multiModalCandidate{}
 				return
 			}
 
-			// Flight from hub to destination, converted into the requested currency.
-			fr, ferr := flights.SearchFlights(ctx, h.HubCode, in.Destination, in.Date, flights.SearchOptions{})
+			// Flight from hub to destination.
+			fr, ferr := flights.SearchFlights(ctx, h.HubCode, in.Destination, in.Date, flights.SearchOptions{SearchOverride: in.SearchOverride})
 			if ferr != nil || !fr.Success || len(fr.Flights) == 0 {
-				ch <- candidate{}
+				ch <- multiModalCandidate{}
 				return
 			}
-			flightPrice, fok := minFlightPriceConverted(ctx, fr, target)
-			if !fok {
-				ch <- candidate{}
+			flightPrice, ok := cheapestFlightPriceInTarget(ctx, fr, target)
+			if !ok {
+				ch <- multiModalCandidate{}
 				return
 			}
-			ch <- candidate{hub: h, groundEUR: groundConv, flightEUR: flightPrice}
+			ch <- multiModalCandidate{hub: h, groundPrice: groundPrice, flightPrice: flightPrice}
 		}()
 	}
 
@@ -203,12 +183,12 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 
 	var hacks []Hack
 	for c := range ch {
-		if c.flightEUR == 0 {
+		if c.flightPrice <= 0 {
 			continue
 		}
-		total := c.groundEUR + c.flightEUR
+		total := c.groundPrice + c.flightPrice
 		savings := directPrice - total
-		// Require both an absolute saving of EUR 10 and a relative saving of 20 %.
+		// Require both an absolute saving of 10 and a relative saving of 20 %.
 		if savings < 10 || savings/directPrice < minSavingsFraction {
 			continue
 		}
@@ -220,8 +200,8 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 			Savings:  roundSavings(savings),
 			Description: fmt.Sprintf(
 				"%s to %s (%.0f %s) + flight %s→%s (%.0f %s) = %.0f %s total, vs direct flight %.0f %s. Saves %s %.0f (%.0f%%).",
-				c.hub.OriginCity, c.hub.HubCity, c.groundEUR, currency,
-				c.hub.HubCode, in.Destination, c.flightEUR, currency,
+				c.hub.OriginCity, c.hub.HubCity, c.groundPrice, currency,
+				c.hub.HubCode, in.Destination, c.flightPrice, currency,
 				total, currency, directPrice, currency,
 				currency, savings, 100*savings/directPrice,
 			),
@@ -232,9 +212,9 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 				"Overnight ground legs add travel time; factor in comfort",
 			},
 			Steps: []string{
-				fmt.Sprintf("%s (%s %.0f)", c.hub.Notes, currency, c.groundEUR),
+				fmt.Sprintf("%s (%s %.0f)", c.hub.Notes, currency, c.groundPrice),
 				fmt.Sprintf("Transfer from %s to %s airport", c.hub.HubCity, c.hub.HubCode),
-				fmt.Sprintf("Book flight %s→%s on %s (%s %.0f)", c.hub.HubCode, in.Destination, in.Date, currency, c.flightEUR),
+				fmt.Sprintf("Book flight %s→%s on %s (%s %.0f)", c.hub.HubCode, in.Destination, in.Date, currency, c.flightPrice),
 				"Allow at least 2 hours between ground arrival and flight departure",
 			},
 			Citations: []string{

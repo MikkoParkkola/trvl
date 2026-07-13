@@ -152,12 +152,12 @@ func detectErrorFare(ctx context.Context, in DetectorInput) []Hack {
 	// currency before any comparison against price. If we can't honestly
 	// convert, suppress the whole detector rather than compare a
 	// target-currency price against a mislabeled EUR threshold.
-	convFloor, fcur := convertCurrency(ctx, expected.floorEUR, "EUR", target)
-	if fcur != target {
+	convFloor, fok := convertCurrency(ctx, expected.floorEUR, "EUR", target)
+	if !fok {
 		return nil
 	}
-	dispTypical, tcur := convertCurrency(ctx, expected.typicalEUR, "EUR", target)
-	if tcur != target {
+	dispTypical, tok := convertCurrency(ctx, expected.typicalEUR, "EUR", target)
+	if !tok {
 		return nil
 	}
 

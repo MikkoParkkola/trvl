@@ -107,12 +107,12 @@ func detectDepartureTax(ctx context.Context, in DetectorInput) []Hack {
 	if target == "" {
 		target = "EUR"
 	}
-	convTax, taxCur := convertCurrency(ctx, originTax, "EUR", target)
-	if taxCur != target {
+	convTax, taxOk := convertCurrency(ctx, originTax, "EUR", target)
+	if !taxOk {
 		return nil
 	}
-	convGround, groundCur := convertCurrency(ctx, best.groundCost, "EUR", target)
-	if groundCur != target {
+	convGround, groundOk := convertCurrency(ctx, best.groundCost, "EUR", target)
+	if !groundOk {
 		return nil
 	}
 	// Savings must be net of the cost of actually reaching the alternative

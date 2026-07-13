@@ -509,3 +509,81 @@ func TestBackToBackOverlapDays(t *testing.T) {
 		t.Errorf("expected backToBackOverlapDays=14, got %d", backToBackOverlapDays)
 	}
 }
+
+// --- currency honesty (display-currency conversion) ---
+
+// TestDetectBackToBack_livePrices_eurTargetPassthrough covers currency
+// honesty case (a): an EUR target with EUR-denominated flights passes
+// through labelled EUR.
+func TestDetectBackToBack_livePrices_eurTargetPassthrough(t *testing.T) {
+	withMockSearch(t, mockSearchWithPrices(200, 180, 130, 120))
+
+	hacks := detectBackToBack(context.Background(), DetectorInput{
+		Origin:      "HEL",
+		Destination: "BCN",
+		Date:        "2026-06-01",
+		ReturnDate:  "2026-06-04",
+		Currency:    "EUR",
+	})
+	if len(hacks) != 1 {
+		t.Fatalf("expected 1 hack with savings, got %d", len(hacks))
+	}
+	if hacks[0].Currency != "EUR" {
+		t.Errorf("expected Currency=EUR, got %q", hacks[0].Currency)
+	}
+}
+
+// TestDetectBackToBack_livePrices_nonEURTargetFallsBackToAdvisory covers case
+// (b): a non-EUR target with no usable rate table must suppress the priced
+// figure rather than show an unconverted or mislabelled one. The detector's
+// existing search-failure fallback (advisory, Savings=0, no concrete price)
+// is the honest suppression path here. Placeholder currency codes (ZZZ/ZZY)
+// are used by convention (see currency_sweep_test.go) since they appear in no
+// real exchange-rate table, and the context is cancelled so no live FX fetch
+// can populate the cache either.
+func TestDetectBackToBack_livePrices_nonEURTargetFallsBackToAdvisory(t *testing.T) {
+	withMockSearch(t, func(_ context.Context, _ *batchexec.Client, _, _, _ string, _ flights.SearchOptions) (*models.FlightSearchResult, error) {
+		return makeFlightResult(200, "ZZZ", "Finnair"), nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	hacks := detectBackToBack(ctx, DetectorInput{
+		Origin:      "HEL",
+		Destination: "BCN",
+		Date:        "2026-06-01",
+		ReturnDate:  "2026-06-04",
+		Currency:    "ZZY",
+	})
+	if len(hacks) != 1 {
+		t.Fatalf("expected 1 advisory hack (suppressed price), got %d", len(hacks))
+	}
+	if hacks[0].Savings != 0 {
+		t.Errorf("expected advisory fallback with 0 savings when inconvertible, got %.0f", hacks[0].Savings)
+	}
+	if hacks[0].Currency != "ZZY" {
+		t.Errorf("expected Currency=ZZY (normalized target), got %q", hacks[0].Currency)
+	}
+}
+
+// TestDetectBackToBack_livePrices_hackCurrencyMatchesTarget covers case (c):
+// whenever a live-priced hack surfaces, its Currency field equals the
+// normalized target currency.
+func TestDetectBackToBack_livePrices_hackCurrencyMatchesTarget(t *testing.T) {
+	withMockSearch(t, mockSearchWithPrices(200, 180, 130, 120))
+
+	hacks := detectBackToBack(context.Background(), DetectorInput{
+		Origin:      "HEL",
+		Destination: "BCN",
+		Date:        "2026-06-01",
+		ReturnDate:  "2026-06-04",
+		Currency:    "eur", // lower-case input must normalize to EUR
+	})
+	if len(hacks) != 1 {
+		t.Fatalf("expected 1 hack, got %d", len(hacks))
+	}
+	if hacks[0].Currency != "EUR" {
+		t.Errorf("expected Hack.Currency == target EUR, got %q", hacks[0].Currency)
+	}
+}
