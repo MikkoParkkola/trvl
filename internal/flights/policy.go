@@ -30,7 +30,15 @@ func ApplySharedFlightPolicy(result *models.FlightSearchResult, prefs *preferenc
 	if !skipBudgetPref {
 		result.Flights = FilterFlightsByBudget(result.Flights, prefs.BudgetFlightMax)
 	}
-	result.Flights = FilterFlightsByTimePreference(result.Flights, prefs.FlightTimeEarliest, prefs.FlightTimeLatest)
+	// #473: split the time-of-day window into a SOFT window plus a hard-floor
+	// tolerance. Flights just outside the window are KEPT (near-misses) rather
+	// than silently dropped; only flights beyond the tolerance are removed. The
+	// near-misses are down-ranked by the scoring factor
+	// FactorTimeHardFloorCompliance, so the honest set is surfaced without a
+	// synthetic provider status muddying the raw provider counts.
+	kept, _, _ := FilterFlightsByTimeWindow(
+		result.Flights, prefs.FlightTimeEarliest, prefs.FlightTimeLatest, prefs.FlightTimeHardFloor)
+	result.Flights = kept
 	result.Flights = AdjustBagAllowance(result.Flights, prefs.FrequentFlyerPrograms)
 
 	// #469: inject concrete, bookable hack-derived candidates (e.g. rail+fly

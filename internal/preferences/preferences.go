@@ -82,9 +82,18 @@ type Preferences struct {
 	DealTolerance     string  `json:"deal_tolerance"`       // "price", "comfort", "balanced"
 
 	// Flight preferences
-	FlightTimeEarliest string `json:"flight_time_earliest"` // "06:00" — won't take flights before this
-	FlightTimeLatest   string `json:"flight_time_latest"`   // "23:00" — won't take flights after this
-	RedEyeOK           bool   `json:"red_eye_ok"`           // overnight flights acceptable?
+	FlightTimeEarliest string `json:"flight_time_earliest"` // "06:00" — SOFT window start
+	FlightTimeLatest   string `json:"flight_time_latest"`   // "23:00" — SOFT window end
+
+	// FlightTimeHardFloor is the tolerance, in MINUTES, by which a flight's
+	// departure may fall outside the [FlightTimeEarliest, FlightTimeLatest] SOFT
+	// window and still be KEPT — ranked lower (soft-penalised) rather than
+	// dropped. Only flights that fall MORE than this many minutes outside the
+	// soft window are hard-dropped. 0 (the default) preserves the legacy
+	// behaviour: any flight outside the soft window is dropped.
+	FlightTimeHardFloor int `json:"flight_time_hard_floor,omitempty"`
+
+	RedEyeOK bool `json:"red_eye_ok"` // overnight flights acceptable?
 
 	// Identity
 	Nationality string   `json:"nationality"`         // ISO 3166-1 alpha-2 (e.g. "FI") — for visa warnings

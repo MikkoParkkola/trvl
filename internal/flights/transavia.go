@@ -42,8 +42,19 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// transaviaHost is overridable in tests (httptest server).
-var transaviaHost = "https" + "://" + "api.transavia.com"
+// transaviaDefaultHost is the production base URL. Tests override it per-call
+// via SearchOptions.transaviaHost (see (SearchOptions).transaviaBaseHost),
+// rather than swapping a shared package global that would race across searches.
+const transaviaDefaultHost = "https" + "://" + "api.transavia.com"
+
+// transaviaBaseHost returns the Transavia base URL for this search: the per-call
+// test override when set, else the production host.
+func (o SearchOptions) transaviaBaseHost() string {
+	if o.transaviaHost != "" {
+		return o.transaviaHost
+	}
+	return transaviaDefaultHost
+}
 
 var (
 	transaviaLimiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 1)
@@ -124,7 +135,7 @@ func SearchTransavia(ctx context.Context, origin, destination, date, currency st
 	q.Set("originDepartureDate", depDate)
 	q.Set("adultCount", fmt.Sprintf("%d", max(opts.Adults, 1)))
 	q.Set("directFlight", "true")
-	reqURL := transaviaHost + "/v1/flightoffers/?" + q.Encode()
+	reqURL := opts.transaviaBaseHost() + "/v1/flightoffers/?" + q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
