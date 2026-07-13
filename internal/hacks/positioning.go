@@ -75,10 +75,6 @@ type nearbyEntry struct {
 	Description string
 }
 
-// positioningSearchFunc is the function used to search flights. Package-level
-// variable allows test injection without modifying the detector signature.
-var positioningSearchFunc = flights.SearchFlights
-
 // cheapestFlightPriceIn returns the cheapest positive flight price after
 // converting every flight's price into target, together with an ok flag.
 // Flights are skipped when non-positive or when their price cannot be
@@ -133,7 +129,7 @@ func detectPositioning(ctx context.Context, in DetectorInput) []Hack {
 	}
 
 	// Baseline: direct flight from origin, converted into the requested currency.
-	directResult, err := positioningSearchFunc(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
+	directResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{SearchOverride: in.SearchOverride})
 	if err != nil || !directResult.Success || len(directResult.Flights) == 0 {
 		return nil
 	}
@@ -145,7 +141,7 @@ func detectPositioning(ctx context.Context, in DetectorInput) []Hack {
 
 	var hacks []Hack
 	for _, entry := range candidates {
-		altResult, err := positioningSearchFunc(ctx, entry.Code, in.Destination, in.Date, flights.SearchOptions{})
+		altResult, err := flights.SearchFlights(ctx, entry.Code, in.Destination, in.Date, flights.SearchOptions{SearchOverride: in.SearchOverride})
 		if err != nil || !altResult.Success || len(altResult.Flights) == 0 {
 			continue
 		}

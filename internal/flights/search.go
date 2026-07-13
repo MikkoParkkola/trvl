@@ -97,7 +97,24 @@ type SearchOptions struct {
 	// mutated package global (which raced under concurrent SearchMultiAirport
 	// calls). Unexported: internal fanout control, not a user-facing knob.
 	suppressAFKLM bool
+
+	// SearchOverride replaces the real flight search for this single call.
+	// Nil (the default) runs the production search. This is the same
+	// dependency-injection pattern used for the AFKLM/Wizz Air/Transavia
+	// seams above (see commit "inject provider and host seams through
+	// SearchOptions"), extended to the top-level search entry point so
+	// callers in OTHER packages — today internal/hacks' positioning and
+	// open-jaw detectors — can inject synthetic results for tests without
+	// mutating a shared package-level function variable. Each call carries
+	// its own override value, so concurrent detector/test calls never race
+	// on shared mutable state the way the old package-level var did.
+	SearchOverride SearchFunc
 }
+
+// SearchFunc matches the signature of SearchFlights. It is the type of
+// SearchOptions.SearchOverride and lets external packages inject a
+// replacement search implementation per call.
+type SearchFunc func(ctx context.Context, origin, destination, date string, opts SearchOptions) (*models.FlightSearchResult, error)
 
 // defaults fills in zero-value fields with sensible defaults.
 func (o *SearchOptions) defaults() {
@@ -153,6 +170,14 @@ func canonicalStringSlice(values []string) string {
 // SearchFlightsWithClient is like SearchFlights but accepts a pre-built client,
 // useful for reusing connections across multiple requests.
 func SearchFlightsWithClient(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) (*models.FlightSearchResult, error) {
+	// A per-call override takes over entirely, bypassing validation, caching,
+	// and every provider — the same contract the old package-level function
+	// variables in internal/hacks gave test callers, but carried as ordinary
+	// call data instead of shared mutable state. See SearchOptions.SearchOverride.
+	if opts.SearchOverride != nil {
+		return opts.SearchOverride(ctx, origin, destination, date, opts)
+	}
+
 	opts.defaults()
 
 	if origin == "" || destination == "" || date == "" {

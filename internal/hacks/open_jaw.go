@@ -10,10 +10,6 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
 
-// openJawSearchFunc is the function used to search flights. Package-level
-// variable allows test injection without modifying the detector signature.
-var openJawSearchFunc = flights.SearchFlights
-
 // openJawAlternates lists nearby airports that are reasonable alternate return
 // points for an open-jaw itinerary. Keyed by the destination airport: if
 // you fly OUT→DEST, you could return from one of these instead.
@@ -63,8 +59,9 @@ func detectOpenJaw(ctx context.Context, in DetectorInput) []Hack {
 	}
 
 	// Baseline: round-trip from origin to destination.
-	rtResult, err := openJawSearchFunc(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{
-		ReturnDate: in.ReturnDate,
+	rtResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{
+		ReturnDate:     in.ReturnDate,
+		SearchOverride: in.SearchOverride,
 	})
 	if err != nil || !rtResult.Success || len(rtResult.Flights) == 0 {
 		return nil
@@ -76,7 +73,7 @@ func detectOpenJaw(ctx context.Context, in DetectorInput) []Hack {
 	currency := target
 
 	// One-way outbound (origin → destination).
-	owOutResult, err := openJawSearchFunc(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
+	owOutResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{SearchOverride: in.SearchOverride})
 	if err != nil || !owOutResult.Success || len(owOutResult.Flights) == 0 {
 		return nil
 	}
@@ -104,7 +101,7 @@ func detectOpenJaw(ctx context.Context, in DetectorInput) []Hack {
 		}
 		alt := alt
 		go func() {
-			r, err := openJawSearchFunc(ctx, alt, in.Origin, in.ReturnDate, flights.SearchOptions{})
+			r, err := flights.SearchFlights(ctx, alt, in.Origin, in.ReturnDate, flights.SearchOptions{SearchOverride: in.SearchOverride})
 			if err != nil || !r.Success || len(r.Flights) == 0 {
 				results <- ch{alt: alt}
 				return

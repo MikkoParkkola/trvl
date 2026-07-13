@@ -179,6 +179,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -240,6 +241,16 @@ type DetectorInput struct {
 	// The zero value preserves pre-loyalty behaviour (no regression): detectors
 	// fall back to surfacing every opportunity. See loyalty.go.
 	Loyalty LoyaltyProfile
+
+	// SearchOverride, when non-nil, is threaded into every flights.SearchOptions
+	// this detector builds so tests can inject synthetic search results. Nil
+	// (the default) runs the real flights.SearchFlights. This replaces the old
+	// pattern of mutable package-level function variables (positioningSearchFunc,
+	// openJawSearchFunc), which raced when parallel detector or test calls read
+	// and wrote the same shared global; carrying the override as ordinary
+	// per-call data instead removes the shared mutable state entirely. See
+	// flights.SearchOptions.SearchOverride.
+	SearchOverride flights.SearchFunc
 }
 
 func (in *DetectorInput) currency() string {
