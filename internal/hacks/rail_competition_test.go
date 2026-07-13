@@ -173,6 +173,57 @@ func TestDetectRailCompetition_currencyDefault(t *testing.T) {
 	}
 }
 
+// TestDetectRailCompetition_nonEURTarget_suppressedWhenInconvertible proves
+// case (b): a non-EUR target currency that can't be honestly converted (XXX
+// is the ISO 4217 "no currency" placeholder — it will never appear in a
+// real exchange-rate table) suppresses the hack rather than labeling the
+// EUR-denominated MinFareEUR with the wrong currency. Deterministic — no
+// live network required: a fake convertCurrency is injected via the seam in
+// currency.go so the "can't convert" contract is exercised offline instead
+// of dialing the live rates table. No t.Parallel — the seam var is shared
+// package state, set/restored sequentially like railGroundSearcher.
+func TestDetectRailCompetition_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
+	orig := convertCurrency
+	convertCurrency = func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == to {
+			return amount, to
+		}
+		return amount, from // can't convert — same contract as the real function
+	}
+	t.Cleanup(func() { convertCurrency = orig })
+
+	hacks := detectRailCompetition(context.Background(), DetectorInput{
+		Origin:      "MAD",
+		Destination: "BCN",
+		Currency:    "XXX",
+	})
+	if len(hacks) != 0 {
+		t.Errorf("expected no hacks for inconvertible target currency, got %d", len(hacks))
+	}
+}
+
+// TestDetectRailCompetition_eurTarget_labelsEURAndConverts proves cases (a)
+// and (c) explicitly, including the NaivePrice comparison path: EUR passes
+// through untouched (no network — ConvertCurrency short-circuits on
+// from==to) and the surfaced hack's Currency matches the target.
+func TestDetectRailCompetition_eurTarget_labelsEURAndConverts(t *testing.T) {
+	hacks := detectRailCompetition(context.Background(), DetectorInput{
+		Origin:      "MAD",
+		Destination: "BCN",
+		Currency:    "EUR",
+		NaivePrice:  80,
+	})
+	if len(hacks) != 1 {
+		t.Fatalf("expected 1 hack, got %d", len(hacks))
+	}
+	if hacks[0].Currency != "EUR" {
+		t.Errorf("Currency = %q, want EUR", hacks[0].Currency)
+	}
+	if hacks[0].Savings != 73 {
+		t.Errorf("Savings = %.0f, want 73", hacks[0].Savings)
+	}
+}
+
 // --- Static data tests ---
 
 func TestCompetitiveCorridors_populated(t *testing.T) {

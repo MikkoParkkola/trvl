@@ -64,7 +64,7 @@ func TestBuildAccommodationHack_twoSegments(t *testing.T) {
 	}
 	// Baseline: 49/night × 7 = 343; moving costs: 1 × 15 = 15; split: 135 + 152 + 15 = 302; savings = 343 - 302 = 41
 	// (below 50 threshold — we test the struct assembly regardless)
-	hack := buildAccommodationHack("Prague", segments, 1, 100, 402, "EUR")
+	hack := buildAccommodationHack("Prague", segments, 1, 100, 402, 15, "EUR")
 
 	if hack == nil {
 		t.Fatal("expected non-nil hack")
@@ -97,7 +97,7 @@ func TestBuildAccommodationHack_threeSegments(t *testing.T) {
 		{Hotel: makeHotel("B", 35), CheckIn: "2026-04-15", CheckOut: "2026-04-17", Nights: 2, TotalCost: 70},
 		{Hotel: makeHotel("C", 30), CheckIn: "2026-04-17", CheckOut: "2026-04-19", Nights: 2, TotalCost: 60},
 	}
-	hack := buildAccommodationHack("Prague", segments, 2, 150, 400, "EUR")
+	hack := buildAccommodationHack("Prague", segments, 2, 150, 400, 15, "EUR")
 	if hack == nil {
 		t.Fatal("expected non-nil hack")
 	}
@@ -142,6 +142,67 @@ func TestDetectAccommodationSplit_tooShortStay(t *testing.T) {
 	}
 }
 
+// TestDetectAccommodationSplit_nonEURTarget_suppressedWhenInconvertible proves
+// case (b): a non-EUR target currency that can't be honestly converted (XXX
+// is the ISO 4217 "no currency" placeholder — it will never appear in a
+// real exchange-rate table) suppresses the whole detector before any hotel
+// search runs, rather than mixing the EUR-denominated moving-cost constant
+// into a mislabeled total. Deterministic — no live network required: the
+// fake seam below always reports "can't convert" without ever dialing out
+// (the prior version of this test relied on the live default seam despite
+// its doc comment's claim otherwise — convertCurrency(ctx, movingCostEUR,
+// "EUR", "XXX") does not short-circuit on from==to, so it reached the live
+// destinations.ConvertCurrency). Mirrors the seam-injection pattern in
+// night_transport_test.go / rail_competition_test.go — no t.Parallel, the
+// seam var is shared package state, set/restored sequentially.
+func TestDetectAccommodationSplit_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
+	orig := convertCurrency
+	convertCurrency = func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == to {
+			return amount, to
+		}
+		return amount, from // can't convert — same contract as the real function
+	}
+	t.Cleanup(func() { convertCurrency = orig })
+
+	in := AccommodationSplitInput{
+		City:     "Prague",
+		CheckIn:  "2026-04-12",
+		CheckOut: "2026-04-19",
+		Currency: "XXX",
+	}
+	got := DetectAccommodationSplit(context.Background(), in)
+	if got != nil {
+		t.Errorf("expected nil for inconvertible target currency, got %v", got)
+	}
+}
+
+// TestDetectAccommodationSplit_eurTarget_labelsEURAndConverts proves cases
+// (a) and (c): EUR passes through untouched (the EUR->EUR moving-cost
+// conversion short-circuits, no network) and, when the live hotel search
+// actually surfaces a split hack, its Currency matches the target. Gated
+// behind TRVL_TEST_LIVE_INTEGRATIONS since DetectAccommodationSplit needs a
+// live hotel search to produce a hack at all — the default suite must stay
+// deterministic and offline (see TestBoundaryDates above for the same
+// pattern in this file).
+func TestDetectAccommodationSplit_eurTarget_labelsEURAndConverts(t *testing.T) {
+	if os.Getenv("TRVL_TEST_LIVE_INTEGRATIONS") == "" {
+		t.Skip("skipping live-API test; set TRVL_TEST_LIVE_INTEGRATIONS=1 to run")
+	}
+	in := AccommodationSplitInput{
+		City:     "Prague",
+		CheckIn:  "2026-04-12",
+		CheckOut: "2026-04-19",
+		Currency: "EUR",
+	}
+	hacks := DetectAccommodationSplit(context.Background(), in)
+	for _, h := range hacks {
+		if h.Currency != "EUR" {
+			t.Errorf("Currency = %q, want EUR", h.Currency)
+		}
+	}
+}
+
 // TestMinSavingsFilter verifies the EUR 50 minimum net savings filter.
 func TestMinSavingsFilter(t *testing.T) {
 	// Net savings below 50 must not produce a hack.
@@ -156,7 +217,7 @@ func TestMinSavingsFilter(t *testing.T) {
 	}
 	// Sanity-check via buildAccommodationHack (it does NOT apply the threshold —
 	// that's the responsibility of findBestSplit). We verify the values are correct.
-	hack := buildAccommodationHack("Prague", segments, 1, netSavings, baseline, "EUR")
+	hack := buildAccommodationHack("Prague", segments, 1, netSavings, baseline, 15, "EUR")
 	if hack.Savings != roundSavings(netSavings) {
 		t.Errorf("Savings = %v, want %v", hack.Savings, roundSavings(netSavings))
 	}
@@ -285,7 +346,7 @@ func TestHackType(t *testing.T) {
 			{Hotel: makeHotel("X", 100), CheckIn: "2026-04-12", CheckOut: "2026-04-16", Nights: 4, TotalCost: 400},
 			{Hotel: makeHotel("Y", 80), CheckIn: "2026-04-16", CheckOut: "2026-04-19", Nights: 3, TotalCost: 240},
 		},
-		1, 60, 700, "EUR",
+		1, 60, 700, 15, "EUR",
 	)
 	if hack.Type != "accommodation_split" {
 		t.Errorf("Type = %q, want accommodation_split", hack.Type)
@@ -314,7 +375,7 @@ func TestStepContainsHotelName(t *testing.T) {
 		{Hotel: makeHotel("Grand Hyatt", 120), CheckIn: "2026-04-12", CheckOut: "2026-04-15", Nights: 3, TotalCost: 360},
 		{Hotel: makeHotel("Budget Inn", 55), CheckIn: "2026-04-15", CheckOut: "2026-04-19", Nights: 4, TotalCost: 220},
 	}
-	hack := buildAccommodationHack("Berlin", segments, 1, 200, 760, "EUR")
+	hack := buildAccommodationHack("Berlin", segments, 1, 200, 760, 15, "EUR")
 	found := false
 	for _, s := range hack.Steps {
 		if containsSubstring(s, "Grand Hyatt") {
@@ -335,7 +396,7 @@ func TestCitationsNonEmpty(t *testing.T) {
 		{Hotel: hotel, CheckIn: "2026-04-12", CheckOut: "2026-04-15", Nights: 3, TotalCost: 150},
 		{Hotel: makeHotel("B", 40), CheckIn: "2026-04-15", CheckOut: "2026-04-19", Nights: 4, TotalCost: 160},
 	}
-	hack := buildAccommodationHack("Paris", segments, 1, 100, 410, "EUR")
+	hack := buildAccommodationHack("Paris", segments, 1, 100, 410, 15, "EUR")
 	if len(hack.Citations) == 0 {
 		t.Error("expected non-empty Citations")
 	}
@@ -359,7 +420,7 @@ func TestSplitDescriptionContainsCity(t *testing.T) {
 		{Hotel: makeHotel("A", 50), CheckIn: "2026-04-12", CheckOut: "2026-04-15", Nights: 3, TotalCost: 150},
 		{Hotel: makeHotel("B", 40), CheckIn: "2026-04-15", CheckOut: "2026-04-19", Nights: 4, TotalCost: 160},
 	}
-	hack := buildAccommodationHack("Tokyo", segments, 1, 90, 400, "EUR")
+	hack := buildAccommodationHack("Tokyo", segments, 1, 90, 400, 15, "EUR")
 	if !containsSubstring(hack.Description, "Tokyo") {
 		t.Errorf("Description should contain city name, got: %q", hack.Description)
 	}
