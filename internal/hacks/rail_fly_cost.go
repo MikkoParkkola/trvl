@@ -3,10 +3,34 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
+
+// convertRailLeg re-denominates a priced rail leg into target so its cost can be
+// honestly summed with, or subtracted from, target-denominated flight fares. A
+// bundled 0-cost leg carries no FX risk and is simply relabelled. An
+// inconvertible currency keeps its original denomination (rare — the FX table is
+// EUR-based and every caller has already proven EUR↔target convertibility) so a
+// number is never silently relabelled into a currency it was not priced in.
+func convertRailLeg(ctx context.Context, leg railLegCost, target string) railLegCost {
+	target = strings.ToUpper(strings.TrimSpace(target))
+	if target == "" || leg.Cost == 0 || leg.Currency == "" || strings.EqualFold(leg.Currency, target) {
+		if target != "" {
+			leg.Currency = target
+		}
+		return leg
+	}
+	c, cur := destinations.ConvertCurrency(ctx, leg.Cost, leg.Currency, target)
+	if cur != target {
+		return leg // inconvertible: keep the honest original denomination
+	}
+	leg.Cost, leg.Currency = c, target
+	return leg
+}
 
 // railLegCost is the resolved cost of the rail segment of a rail-fly hack.
 type railLegCost struct {

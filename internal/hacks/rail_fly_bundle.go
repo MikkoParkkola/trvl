@@ -72,7 +72,7 @@ func composeRailFlyBundle(ctx context.Context, origin, destination, departDate, 
 		flightCurrency = "EUR"
 	}
 
-	railLeg := resolveRailLegCost(ctx, origin, st, departDate)
+	railLeg := convertRailLeg(ctx, resolveRailLegCost(ctx, origin, st, departDate), flightCurrency)
 	roundTrip := returnDate != ""
 	// bundled is true when the search origin IS the airline hub, so the Air&Rail
 	// train is included in (and protected by) the ticket.
@@ -183,7 +183,7 @@ func composeOpenJawRailReturn(ctx context.Context, origin, flyInto, trainOutOf s
 		currency = "EUR"
 	}
 
-	railReturn := openJawRailReturnQuote(ctx, trainOutOf, origin, returnDate)
+	railReturn := convertRailLeg(ctx, openJawRailReturnQuote(ctx, trainOutOf, origin, returnDate), currency)
 
 	legs := []BundleLeg{
 		{
