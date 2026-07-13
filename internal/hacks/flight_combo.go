@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -119,15 +118,14 @@ func cheapestFlightInfo(result *models.FlightSearchResult, err error) (price flo
 // suppress rather than show an unconverted or mislabelled figure. Shared by
 // the currency-honesty fix across flight_combo.go and back_to_back.go.
 func cheapestFlightPriceInCurrency(ctx context.Context, result *models.FlightSearchResult, err error, target string) (float64, bool) {
-	price, cur, _, _ := cheapestFlightInfo(result, err)
-	if price <= 0 {
+	if err != nil {
 		return 0, false
 	}
-	conv, gotCur := destinations.ConvertCurrency(ctx, price, cur, target)
-	if gotCur != target {
-		return 0, false
-	}
-	return conv, true
+	// Convert every fare into target FIRST, then pick the minimum, so a
+	// numerically-smaller raw fare in a stronger currency can't masquerade as
+	// the cheapest (e.g. 90 GBP beating 100 USD). Routes through the
+	// convertCurrencyFn seam so tests can inject rates deterministically.
+	return cheapestFlightPriceInTarget(ctx, result, target)
 }
 
 // detectSingleTripCombo compares a round-trip price against the sum of two
