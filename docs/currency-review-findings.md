@@ -49,6 +49,23 @@ STATUS: fixing inline this session (my own code).
   Hack.Currency, never the rendered numeric price/savings. Non-blocking (D only adds
   coverage) but the added tests should assert amounts too.
 
+## G — DetectAll context-honoring + live-call leak (found via self-review, pre-existing)
+Discovered 2026-07-13 running `go test ./internal/hacks/ -race` on lever11 base.
+- [BLOCKER] internal/hacks/benchmark_test.go:207 TestDetectAll_CancelledContext and
+  :233 TestDetectAll_DeadlineExceeded FAIL: DetectAll with an already-cancelled /
+  1ms-deadline context takes ~820ms (expected <500ms). DetectAll does not check
+  ctx.Err() before dispatching detectors, so live provider calls (skiplagged,
+  wizzair, rome2rio, agoda, spotahome, ferryhopper, wunderflats) still fire.
+- [LOCK VIOLATION] the default (non-live-env) hacks suite makes real network calls
+  via DetectAll → non-deterministic; skiplagged 429s (self-inflicted rate-limit)
+  push elapsed over the 500ms bar. LOCK: default suite must be offline/deterministic.
+- Root fix: DetectAll must short-circuit on ctx.Err() before/inside the dispatch
+  loop so a cancelled/expired context returns promptly and issues no provider calls.
+  This also makes the two context tests deterministic + offline.
+- Likely CI-green today (CI egress to these hosts fast-fails <500ms); real bug is
+  masked by environment. Separate from the currency theme; fixed in its own branch.
+STATUS: dispatched dedicated fix agent (own worktree off lever11), codex re-review after.
+
 ## Cross-cutting root cause (biggest potential)
 Multiple detectors treat NaivePrice / provider prices as EUR and convert FROM EUR
 to target, when the value is ALREADY in the requested currency. Fix once, verify
