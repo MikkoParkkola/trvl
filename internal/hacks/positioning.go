@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -73,6 +75,42 @@ type nearbyEntry struct {
 	Description string
 }
 
+// positioningSearchFunc is the function used to search flights. Package-level
+// variable allows test injection without modifying the detector signature.
+var positioningSearchFunc = flights.SearchFlights
+
+// cheapestFlightPriceIn returns the cheapest positive flight price after
+// converting every flight's price into target, together with an ok flag.
+// Flights are skipped when non-positive or when their price cannot be
+// converted into target (destinations.ConvertCurrency returns a currency
+// string != target). Returns (0, false) when nothing is convertible. Shared
+// by the currency-honesty fix across positioning.go, open_jaw.go,
+// back_to_back.go, and flight_combo.go.
+func cheapestFlightPriceIn(ctx context.Context, r *models.FlightSearchResult, target string) (float64, bool) {
+	if r == nil || !r.Success {
+		return 0, false
+	}
+	min := math.MaxFloat64
+	found := false
+	for _, f := range r.Flights {
+		if f.Price <= 0 {
+			continue
+		}
+		conv, cur := destinations.ConvertCurrency(ctx, f.Price, f.Currency, target)
+		if cur != target {
+			continue
+		}
+		if conv < min {
+			min = conv
+			found = true
+		}
+	}
+	if !found {
+		return 0, false
+	}
+	return min, found
+}
+
 // detectPositioning checks whether flying from a nearby airport is cheaper
 // even after adding ground-transit costs.
 func detectPositioning(ctx context.Context, in DetectorInput) []Hack {
@@ -85,31 +123,47 @@ func detectPositioning(ctx context.Context, in DetectorInput) []Hack {
 		return nil
 	}
 
-	// Baseline: direct flight from origin.
-	directResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
+	// All user-visible prices here (direct flight, alt flight, and the static
+	// EUR ground-cost estimate) are converted into the requested currency; a
+	// candidate whose price cannot be converted is skipped rather than shown
+	// unconverted or mislabelled.
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
+
+	// Baseline: direct flight from origin, converted into the requested currency.
+	directResult, err := positioningSearchFunc(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
 	if err != nil || !directResult.Success || len(directResult.Flights) == 0 {
 		return nil
 	}
-	directPrice := minFlightPrice(directResult)
-	if directPrice <= 0 {
+	directPrice, ok := cheapestFlightPriceIn(ctx, directResult, target)
+	if !ok {
 		return nil
 	}
-	currency := flightCurrency(directResult, in.currency())
+	currency := target
 
 	var hacks []Hack
 	for _, entry := range candidates {
-		altResult, err := flights.SearchFlights(ctx, entry.Code, in.Destination, in.Date, flights.SearchOptions{})
+		altResult, err := positioningSearchFunc(ctx, entry.Code, in.Destination, in.Date, flights.SearchOptions{})
 		if err != nil || !altResult.Success || len(altResult.Flights) == 0 {
 			continue
 		}
-		altPrice := minFlightPrice(altResult)
-		if altPrice <= 0 {
+		altPrice, ok := cheapestFlightPriceIn(ctx, altResult, target)
+		if !ok {
 			continue
 		}
 
-		totalCost := altPrice + entry.GroundCost
+		// entry.GroundCost is an EUR-denominated static estimate; suppress this
+		// candidate rather than mixing currencies when it cannot be converted.
+		groundCost, gcur := destinations.ConvertCurrency(ctx, entry.GroundCost, "EUR", target)
+		if gcur != target {
+			continue
+		}
+
+		totalCost := altPrice + groundCost
 		savings := directPrice - totalCost
-		if savings < 10 { // require at least EUR 10 net saving
+		if savings < 10 { // require at least 10 units net saving
 			continue
 		}
 
@@ -121,7 +175,7 @@ func detectPositioning(ctx context.Context, in DetectorInput) []Hack {
 			Description: fmt.Sprintf(
 				"Fly from %s (%s) instead of %s: flight %.0f + transit %.0f = %.0f total vs %.0f direct. Saves %s %.0f.",
 				entry.Code, entry.City, in.Origin,
-				altPrice, entry.GroundCost, totalCost,
+				altPrice, groundCost, totalCost,
 				directPrice, currency, math.Round(savings),
 			),
 			Risks: []string{
