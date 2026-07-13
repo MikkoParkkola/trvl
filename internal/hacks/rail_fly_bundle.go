@@ -72,7 +72,12 @@ func composeRailFlyBundle(ctx context.Context, origin, destination, departDate, 
 		flightCurrency = "EUR"
 	}
 
-	railLeg := resolveRailLegCost(ctx, origin, st, departDate)
+	railLeg, railOK := convertRailLeg(ctx, resolveRailLegCost(ctx, origin, st, departDate), flightCurrency)
+	if !railOK {
+		// Rail leg inconvertible to the bundle currency: a single honest total is
+		// impossible, so emit no bundle rather than a mixed-denomination one.
+		return Hack{}
+	}
 	roundTrip := returnDate != ""
 	// bundled is true when the search origin IS the airline hub, so the Air&Rail
 	// train is included in (and protected by) the ticket.
@@ -183,7 +188,13 @@ func composeOpenJawRailReturn(ctx context.Context, origin, flyInto, trainOutOf s
 		currency = "EUR"
 	}
 
-	railReturn := openJawRailReturnQuote(ctx, trainOutOf, origin, returnDate)
+	railReturn, railOK := convertRailLeg(ctx, openJawRailReturnQuote(ctx, trainOutOf, origin, returnDate), currency)
+	if !railOK {
+		// Return rail leg inconvertible to the display currency: drop the open-jaw
+		// variant rather than report a mixed-denomination total. Zero Savings keeps
+		// the caller's `oj.Savings > 0` guard from surfacing it.
+		return Hack{}
+	}
 
 	legs := []BundleLeg{
 		{

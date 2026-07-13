@@ -36,11 +36,8 @@ func TestSearchTransavia_MapsOffers(t *testing.T) {
 	defer srv.Close()
 
 	t.Setenv("TRANSAVIA_API_KEY", "test-key")
-	orig := transaviaHost
-	transaviaHost = srv.URL
-	defer func() { transaviaHost = orig }()
 
-	out, err := SearchTransavia(context.Background(), "AMS", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
+	out, err := SearchTransavia(context.Background(), "AMS", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1, transaviaHost: srv.URL})
 	if err != nil {
 		t.Fatalf("SearchTransavia error: %v", err)
 	}
@@ -90,11 +87,8 @@ func TestSearchTransavia_Unauthorized(t *testing.T) {
 	defer srv.Close()
 
 	t.Setenv("TRANSAVIA_API_KEY", "bad-key")
-	orig := transaviaHost
-	transaviaHost = srv.URL
-	defer func() { transaviaHost = orig }()
 
-	_, err := SearchTransavia(context.Background(), "AMS", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
+	_, err := SearchTransavia(context.Background(), "AMS", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1, transaviaHost: srv.URL})
 	if err == nil {
 		t.Fatal("want error on 401, got nil")
 	}

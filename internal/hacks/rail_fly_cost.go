@@ -3,10 +3,36 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
+
+// convertRailLeg re-denominates a priced rail leg into target so its cost can be
+// honestly summed with, or subtracted from, target-denominated flight fares. It
+// returns ok=false when a non-zero cost cannot be expressed in target: the caller
+// MUST then drop the whole hack, because subtracting or summing a foreign-priced
+// leg against target fares — and labelling the result target — is exactly the
+// mixed-denomination lie this sweep exists to kill. A bundled 0-cost leg carries
+// no FX risk and is simply relabelled (ok=true).
+func convertRailLeg(ctx context.Context, leg railLegCost, target string) (railLegCost, bool) {
+	target = strings.ToUpper(strings.TrimSpace(target))
+	cur := strings.ToUpper(strings.TrimSpace(leg.Currency))
+	if target == "" || leg.Cost == 0 || cur == "" || cur == target {
+		if target != "" {
+			leg.Currency = target
+		}
+		return leg, true
+	}
+	c, got := destinations.ConvertCurrency(ctx, leg.Cost, cur, target)
+	if got != target {
+		return leg, false // inconvertible: caller must drop; mixing denominations would lie
+	}
+	leg.Cost, leg.Currency = c, target
+	return leg, true
+}
 
 // railLegCost is the resolved cost of the rail segment of a rail-fly hack.
 type railLegCost struct {

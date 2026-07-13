@@ -392,7 +392,8 @@ func TestComposedProviderLabel(t *testing.T) {
 
 // --- AFKLM opportunistic in default RT merge (credential = enable) + no-cred silent + tag correctness ---
 
-// (var afklmTestFlights lives in roundtrip.go as package-level seam)
+// (AFKLM constructor + synthetic-flight seams are injected via SearchOptions:
+// opts.afklmNewProvider / opts.afklmTestFlights — no package-level globals)
 
 func TestSearchRoundTrip_DefaultMerge_IncludesAFKLMWhenCredential(t *testing.T) {
 	sample := models.FlightResult{
@@ -402,21 +403,17 @@ func TestSearchRoundTrip_DefaultMerge_IncludesAFKLMWhenCredential(t *testing.T) 
 			{DepartureAirport: models.AirportInfo{Code: "PRG"}, ArrivalAirport: models.AirportInfo{Code: "AMS"}, DepartureTime: "2026-05-22T20:55", Direction: "inbound"},
 		},
 	}
-	origF := afklmTestFlights
-	afklmTestFlights = []models.FlightResult{sample}
-	defer func() { afklmTestFlights = origF }()
-
-	// stub NewProvider too (seam takes precedence inside search func)
-	origNew := afklmNewProvider
-	afklmNewProvider = func() (*afklm.AFKLMProvider, error) { return nil, nil }
-	defer func() { afklmNewProvider = origNew }()
-
 	body := makeTestFlightBody(t)
 	ts := makeTestFlightServer(t, 200, body)
 	defer ts.Close()
 	bx := batchexec.NewTestClient(ts.URL)
 
-	res, err := SearchFlightsWithClient(context.Background(), bx, "AMS", "PRG", "2026-05-15", SearchOptions{ReturnDate: "2026-05-22"})
+	res, err := SearchFlightsWithClient(context.Background(), bx, "AMS", "PRG", "2026-05-15", SearchOptions{
+		ReturnDate:       "2026-05-22",
+		afklmTestFlights: []models.FlightResult{sample},
+		// stub NewProvider too (seam takes precedence inside search func)
+		afklmNewProvider: func() (*afklm.AFKLMProvider, error) { return nil, nil },
+	})
 	if err != nil {
 		t.Fatalf("default RT must succeed: %v", err)
 	}
@@ -433,20 +430,15 @@ func TestSearchRoundTrip_DefaultMerge_IncludesAFKLMWhenCredential(t *testing.T) 
 }
 
 func TestSearchRoundTrip_DefaultMerge_SilentSkipNoCredential(t *testing.T) {
-	origNew := afklmNewProvider
-	afklmNewProvider = func() (*afklm.AFKLMProvider, error) { return nil, afklm.ErrNoCredential }
-	defer func() { afklmNewProvider = origNew }()
-
-	origF := afklmTestFlights
-	afklmTestFlights = nil
-	defer func() { afklmTestFlights = origF }()
-
 	body := makeTestFlightBody(t)
 	ts := makeTestFlightServer(t, 200, body)
 	defer ts.Close()
 	bx := batchexec.NewTestClient(ts.URL)
 
-	res, err := SearchFlightsWithClient(context.Background(), bx, "HEL", "NRT", "2026-06-15", SearchOptions{ReturnDate: "2026-06-22"})
+	res, err := SearchFlightsWithClient(context.Background(), bx, "HEL", "NRT", "2026-06-15", SearchOptions{
+		ReturnDate:       "2026-06-22",
+		afklmNewProvider: func() (*afklm.AFKLMProvider, error) { return nil, afklm.ErrNoCredential },
+	})
 	if err != nil {
 		t.Fatalf("no-cred must not fail the merge: %v", err)
 	}
@@ -485,15 +477,9 @@ func TestSearchRoundTrip_DefaultMerge_SilentSkipDailyQuota(t *testing.T) {
 
 	p := afklm.NewProviderWithClient(cli)
 
-	origNew := afklmNewProvider
-	afklmNewProvider = func() (*afklm.AFKLMProvider, error) { return p, nil }
-	defer func() { afklmNewProvider = origNew }()
-
-	origF := afklmTestFlights
-	afklmTestFlights = nil
-	defer func() { afklmTestFlights = origF }()
-
-	flights, statuses := searchAFKLMNativeRoundTrip(context.Background(), "AMS", "PRG", "2026-08-01", "2026-08-08", SearchOptions{})
+	flights, statuses := searchAFKLMNativeRoundTrip(context.Background(), "AMS", "PRG", "2026-08-01", "2026-08-08", SearchOptions{
+		afklmNewProvider: func() (*afklm.AFKLMProvider, error) { return p, nil },
+	})
 	if flights != nil || statuses != nil {
 		t.Errorf("searchAFKLMNativeRoundTrip must return nil,nil on daily quota (like ErrNoCredential); got %d/%d", len(flights), len(statuses))
 	}
@@ -504,27 +490,22 @@ func TestSearchRoundTrip_DefaultMerge_SilentSkipDailyQuota(t *testing.T) {
 // fans multiple origins, AFKLM default-merge path issues at most 1 seam call
 // (hence at most 1 query) thanks to the primary-only + seam-suppression logic.
 func TestSearchMultiAirport_Spread_AFKLMAtMostOnePerLogicalSearch(t *testing.T) {
-	origNew := afklmNewProvider
-	defer func() { afklmNewProvider = origNew }()
-
 	var calls int32
-	afklmNewProvider = func() (*afklm.AFKLMProvider, error) {
-		atomic.AddInt32(&calls, 1)
-		// Return non-NoCredential err so searchAFKLM skips without calling SearchFlights on a nil p
-		// and without network.
-		return nil, fmt.Errorf("afklm test: no real call")
-	}
-
-	origF := afklmTestFlights
-	afklmTestFlights = nil
-	defer func() { afklmTestFlights = origF }()
 
 	// RT + multiple origins exercises the spread + primary AFKLM restriction.
 	// Other providers fan normally; AFKLM must not.
 	// Use short ctx so parallel sub-searches (google etc) fail fast instead of hanging on net.
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	opts := SearchOptions{ReturnDate: "2026-07-10"}
+	opts := SearchOptions{
+		ReturnDate: "2026-07-10",
+		afklmNewProvider: func() (*afklm.AFKLMProvider, error) {
+			atomic.AddInt32(&calls, 1)
+			// Return non-NoCredential err so searchAFKLM skips without calling SearchFlights on a nil p
+			// and without network.
+			return nil, fmt.Errorf("afklm test: no real call")
+		},
+	}
 	_, err := SearchMultiAirport(ctx, []string{"HEL", "AMS"}, []string{"BCN"}, "2026-07-01", opts)
 	if err != nil {
 		// SearchMultiAirport itself does not error on provider failures (they are silent-skipped).
@@ -548,21 +529,18 @@ func TestSearchMultiAirport_Spread_AFKLMAtMostOnePerLogicalSearch(t *testing.T) 
 // primary pair) even under concurrency — fanout subs stay suppressed. With N
 // concurrent SearchMultiAirport calls the seam count must equal N, not N×combos.
 func TestSearchMultiAirport_ConcurrentRoundTrips_NoDataRace(t *testing.T) {
-	origNew := afklmNewProvider
-	defer func() { afklmNewProvider = origNew }()
 	var seamCalls int32
-	// Non-network stub so the primary AFKLM read resolves without credentials/net.
-	afklmNewProvider = func() (*afklm.AFKLMProvider, error) {
-		atomic.AddInt32(&seamCalls, 1)
-		return nil, afklm.ErrNoCredential
-	}
-	origF := afklmTestFlights
-	afklmTestFlights = nil
-	defer func() { afklmTestFlights = origF }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	opts := SearchOptions{ReturnDate: "2026-07-10"}
+	opts := SearchOptions{
+		ReturnDate: "2026-07-10",
+		// Non-network stub so the primary AFKLM read resolves without credentials/net.
+		afklmNewProvider: func() (*afklm.AFKLMProvider, error) {
+			atomic.AddInt32(&seamCalls, 1)
+			return nil, afklm.ErrNoCredential
+		},
+	}
 
 	const n = 4
 	var wg sync.WaitGroup

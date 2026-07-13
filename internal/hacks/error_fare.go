@@ -96,7 +96,7 @@ func CheckErrorFare(origin, dest string, price float64, isRoundTrip bool) (hackT
 // expected floor for the route distance. Error fares are mispriced tickets
 // that airlines sometimes honour — they should be booked immediately.
 // Purely advisory — zero API calls.
-func detectErrorFare(_ context.Context, in DetectorInput) []Hack {
+func detectErrorFare(ctx context.Context, in DetectorInput) []Hack {
 	if !in.valid() || in.NaivePrice <= 0 {
 		return nil
 	}
@@ -134,15 +134,45 @@ func detectErrorFare(_ context.Context, in DetectorInput) []Hack {
 
 	price := in.NaivePrice
 
+	// price (== in.NaivePrice) is already denominated in the caller's
+	// requested currency (see DetectorInput.NaivePrice / DetectorInput.Currency
+	// contract) — it must NOT be converted again from EUR, or every non-EUR
+	// request would show a double-converted figure. But the classification
+	// thresholds below (errorThreshold/flashThreshold) start out as fixed EUR
+	// constants, so THEY must be converted into the target currency before
+	// being compared against price — otherwise a target-currency price is
+	// compared against a raw EUR threshold, and for e.g. JPY (large nominal
+	// values) the detector silently never fires.
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
+
+	// Convert the fixed EUR classification constants into the target
+	// currency before any comparison against price. If we can't honestly
+	// convert, suppress the whole detector rather than compare a
+	// target-currency price against a mislabeled EUR threshold.
+	convFloor, fok := convertCurrency(ctx, expected.floorEUR, "EUR", target)
+	if !fok {
+		return nil
+	}
+	dispTypical, tok := convertCurrency(ctx, expected.typicalEUR, "EUR", target)
+	if !tok {
+		return nil
+	}
+
 	// Error fare threshold: price is below 50% of the floor for this route class.
 	// This is aggressive — we want to catch genuine anomalies, not just sales.
-	errorThreshold := expected.floorEUR * 0.5
+	errorThreshold := convFloor * 0.5
 	// Flash sale threshold: price is below the floor but above the error threshold.
-	flashThreshold := expected.floorEUR
+	flashThreshold := convFloor
 
 	if price >= flashThreshold {
 		return nil // price is normal
 	}
+
+	dispPrice := price
+	dispFloor := convFloor
 
 	tripType := "one-way"
 	if isRoundTrip {
@@ -150,17 +180,20 @@ func detectErrorFare(_ context.Context, in DetectorInput) []Hack {
 	}
 
 	if price <= errorThreshold {
-		// Likely error fare — book immediately.
-		discount := math.Round(((expected.typicalEUR - price) / expected.typicalEUR) * 100)
+		// Likely error fare — book immediately. dispTypical (already in the
+		// target currency) is used for both the discount percentage and the
+		// display text — never the raw EUR expected.typicalEUR mixed with a
+		// target-currency price.
+		discount := math.Round(((dispTypical - price) / dispTypical) * 100)
 		return []Hack{{
 			Type:  "error_fare",
-			Title: fmt.Sprintf("Possible error fare: €%.0f for %s %s (%s)", price, expected.label, tripType, fmt.Sprintf("%.0f km", dist)),
+			Title: fmt.Sprintf("Possible error fare: %s %.0f for %s %s (%.0f km)", target, dispPrice, expected.label, tripType, dist),
 			Description: fmt.Sprintf(
-				"€%.0f is %.0f%% below the typical €%.0f for %s %s routes (%.0f km). "+
+				"%s %.0f is %.0f%% below the typical %s %.0f for %s %s routes (%.0f km). "+
 					"This may be an error fare — airlines sometimes honour mispriced tickets. Book immediately if interested.",
-				price, discount, expected.typicalEUR, expected.label, tripType, dist),
-			Savings:  math.Round(expected.typicalEUR - price),
-			Currency: in.currency(),
+				target, dispPrice, discount, target, dispTypical, expected.label, tripType, dist),
+			Savings:  roundSavings(dispTypical - dispPrice),
+			Currency: target,
 			Steps: []string{
 				"Book immediately — error fares get corrected within hours",
 				"Pay with a card that has travel protection (chargeback if cancelled)",
@@ -175,17 +208,19 @@ func detectErrorFare(_ context.Context, in DetectorInput) []Hack {
 		}}
 	}
 
-	// Flash sale — unusually cheap but not error-level.
-	discount := math.Round(((expected.typicalEUR - price) / expected.typicalEUR) * 100)
+	// Flash sale — unusually cheap but not error-level. dispFloor was already
+	// converted above (shared with the threshold comparison) — no second
+	// conversion call needed.
+	discount := math.Round(((dispTypical - price) / dispTypical) * 100)
 	return []Hack{{
 		Type:  "flash_sale",
-		Title: fmt.Sprintf("Flash sale: €%.0f for %s %s (%.0f%% below average)", price, expected.label, tripType, discount),
+		Title: fmt.Sprintf("Flash sale: %s %.0f for %s %s (%.0f%% below average)", target, dispPrice, expected.label, tripType, discount),
 		Description: fmt.Sprintf(
-			"€%.0f is below the typical floor of €%.0f for %s %s routes (%.0f km). "+
+			"%s %.0f is below the typical floor of %s %.0f for %s %s routes (%.0f km). "+
 				"This is likely a legitimate flash sale or promotional fare — good deal, book soon.",
-			price, expected.floorEUR, expected.label, tripType, dist),
-		Savings:  math.Round(expected.typicalEUR - price),
-		Currency: in.currency(),
+			target, dispPrice, target, dispFloor, expected.label, tripType, dist),
+		Savings:  roundSavings(dispTypical - dispPrice),
+		Currency: target,
 		Steps: []string{
 			"Book soon — flash sale inventory is limited",
 			"Check if the fare includes baggage or is basic economy",

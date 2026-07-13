@@ -1,11 +1,13 @@
 package hacks
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -85,6 +87,82 @@ func minFlightPriceInCurrency(r *models.FlightSearchResult, baseCur string) (flo
 		return 0, ""
 	}
 	return min, currency
+}
+
+// selectCheapestGroundConverted returns the cheapest ground route after
+// converting every route's price into the target currency, together with that
+// converted price and an ok flag. Routes are skipped when non-positive, when
+// overnightOnly is set and the route is not overnight, or when their price
+// cannot be converted into target (rates missing/offline/uncovered) — the
+// latter signalled by ConvertCurrency returning a currency string != target.
+//
+// The returned groundRoute carries price=convertedPrice and currency=target so
+// the caller can label the leg honestly in the traveller's requested currency.
+// Returns (nil, 0, false) when nothing is convertible/eligible.
+func selectCheapestGroundConverted(ctx context.Context, routes []models.GroundRoute, target string, overnightOnly bool) (*groundRoute, float64, bool) {
+	min := math.MaxFloat64
+	var best *groundRoute
+	for i := range routes {
+		r := &routes[i]
+		if r.Price <= 0 {
+			continue
+		}
+		if overnightOnly && !isOvernightRoute(r.Departure.Time, r.Arrival.Time) {
+			continue
+		}
+		conv, cur := destinations.ConvertCurrency(ctx, r.Price, r.Currency, target)
+		if cur != target {
+			continue // inconvertible — cannot be shown in target
+		}
+		if conv < min {
+			min = conv
+			best = &groundRoute{
+				provider:   r.Provider,
+				routeType:  r.Type,
+				price:      conv,
+				currency:   target,
+				depCity:    r.Departure.City,
+				arrCity:    r.Arrival.City,
+				depTime:    r.Departure.Time,
+				arrTime:    r.Arrival.Time,
+				bookingURL: r.BookingURL,
+			}
+		}
+	}
+	if best == nil {
+		return nil, 0, false
+	}
+	return best, min, true
+}
+
+// minFlightPriceConverted returns the cheapest flight price after converting
+// every flight's price into target, together with an ok flag. Flights are
+// skipped when non-positive or when their price cannot be converted into target
+// (ConvertCurrency returns a currency string != target). Returns (0, false)
+// when the result is nil/unsuccessful or nothing is convertible.
+func minFlightPriceConverted(ctx context.Context, r *models.FlightSearchResult, target string) (float64, bool) {
+	if r == nil || !r.Success {
+		return 0, false
+	}
+	min := math.MaxFloat64
+	found := false
+	for _, f := range r.Flights {
+		if f.Price <= 0 {
+			continue
+		}
+		conv, cur := destinations.ConvertCurrency(ctx, f.Price, f.Currency, target)
+		if cur != target {
+			continue
+		}
+		if conv < min {
+			min = conv
+			found = true
+		}
+	}
+	if !found {
+		return 0, false
+	}
+	return min, found
 }
 
 // flightCurrency returns the currency of the first flight result, or a fallback.

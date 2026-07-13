@@ -3,10 +3,10 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/MikkoParkkola/trvl/internal/flights"
-	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
 
@@ -101,6 +101,16 @@ var multiModalHubs = map[string][]multiModalHub{
 // multi-modal positioning hack is surfaced.
 const minSavingsFraction = 0.20
 
+// multiModalCandidate is the result of pricing one cross-modal positioning
+// route: the ground leg and the onward flight leg, both already converted
+// into the detector's requested target currency.
+type multiModalCandidate struct {
+	hub         multiModalHub
+	groundPrice float64
+	flightPrice float64
+	estimated   bool
+}
+
 // detectMultiModalPositioning checks whether taking ground transport to a
 // nearby hub airport and flying from there is cheaper than flying directly,
 // by more than 20 %.
@@ -119,24 +129,27 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 		return nil
 	}
 
+	// All user-visible prices (direct flight, ground leg, and positioning
+	// flight leg) are converted into the requested currency before being
+	// combined; a leg that cannot be converted drops its candidate rather
+	// than mixing currencies in the total.
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
+
 	// Baseline: cheapest direct flight from origin.
-	directResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
+	directResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{SearchOverride: in.SearchOverride})
 	if err != nil || !directResult.Success || len(directResult.Flights) == 0 {
 		return nil
 	}
-	directPrice := minFlightPrice(directResult)
-	if directPrice <= 0 {
+	directPrice, ok := cheapestFlightPriceInTarget(ctx, directResult, target)
+	if !ok {
 		return nil
 	}
-	currency := flightCurrency(directResult, in.currency())
+	currency := target
 
-	type candidate struct {
-		hub       multiModalHub
-		groundEUR float64
-		flightEUR float64
-	}
-
-	ch := make(chan candidate, len(hubs))
+	ch := make(chan multiModalCandidate, len(hubs))
 	var wg sync.WaitGroup
 
 	for _, h := range hubs {
@@ -145,32 +158,24 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 		go func() {
 			defer wg.Done()
 
-			// Live ground price (fallback to static estimate).
-			groundEUR := h.StaticGroundEUR
-			gr, gerr := ground.SearchByName(ctx, h.OriginCity, h.HubCity, in.Date, ground.SearchOptions{
-				Currency: "EUR",
-				Type:     h.GroundType,
-			})
-			if gerr == nil && gr.Success {
-				for _, r := range gr.Routes {
-					if r.Price > 0 && r.Price < groundEUR {
-						groundEUR = r.Price
-					}
-				}
+			groundPrice, ok, estimated := groundLegPriceInTarget(ctx, h.OriginCity, h.HubCity, in.Date, h.GroundType, h.StaticGroundEUR, target, in.GroundSearchOverride)
+			if !ok {
+				ch <- multiModalCandidate{}
+				return
 			}
 
 			// Flight from hub to destination.
-			fr, ferr := flights.SearchFlights(ctx, h.HubCode, in.Destination, in.Date, flights.SearchOptions{})
+			fr, ferr := flights.SearchFlights(ctx, h.HubCode, in.Destination, in.Date, flights.SearchOptions{SearchOverride: in.SearchOverride})
 			if ferr != nil || !fr.Success || len(fr.Flights) == 0 {
-				ch <- candidate{}
+				ch <- multiModalCandidate{}
 				return
 			}
-			flightPrice := minFlightPrice(fr)
-			if flightPrice <= 0 {
-				ch <- candidate{}
+			flightPrice, ok := cheapestFlightPriceInTarget(ctx, fr, target)
+			if !ok {
+				ch <- multiModalCandidate{}
 				return
 			}
-			ch <- candidate{hub: h, groundEUR: groundEUR, flightEUR: flightPrice}
+			ch <- multiModalCandidate{hub: h, groundPrice: groundPrice, flightPrice: flightPrice, estimated: estimated}
 		}()
 	}
 
@@ -179,14 +184,19 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 
 	var hacks []Hack
 	for c := range ch {
-		if c.flightEUR == 0 {
+		if c.flightPrice <= 0 {
 			continue
 		}
-		total := c.groundEUR + c.flightEUR
+		total := c.groundPrice + c.flightPrice
 		savings := directPrice - total
-		// Require both an absolute saving of EUR 10 and a relative saving of 20 %.
+		// Require both an absolute saving of 10 and a relative saving of 20 %.
 		if savings < 10 || savings/directPrice < minSavingsFraction {
 			continue
+		}
+
+		groundFareNote := ""
+		if c.estimated {
+			groundFareNote = ", estimated fare"
 		}
 
 		hacks = append(hacks, Hack{
@@ -195,10 +205,10 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 			Currency: currency,
 			Savings:  roundSavings(savings),
 			Description: fmt.Sprintf(
-				"%s to %s (%.0f EUR) + flight %s→%s (%.0f EUR) = %.0f EUR total, vs direct flight %.0f EUR. Saves %s %.0f (%.0f%%).",
-				c.hub.OriginCity, c.hub.HubCity, c.groundEUR,
-				c.hub.HubCode, in.Destination, c.flightEUR,
-				total, directPrice,
+				"%s to %s (%.0f %s%s) + flight %s→%s (%.0f %s) = %.0f %s total, vs direct flight %.0f %s. Saves %s %.0f (%.0f%%).",
+				c.hub.OriginCity, c.hub.HubCity, c.groundPrice, currency, groundFareNote,
+				c.hub.HubCode, in.Destination, c.flightPrice, currency,
+				total, currency, directPrice, currency,
 				currency, savings, 100*savings/directPrice,
 			),
 			Risks: []string{
@@ -208,9 +218,9 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 				"Overnight ground legs add travel time; factor in comfort",
 			},
 			Steps: []string{
-				fmt.Sprintf("%s (%s %.0f)", c.hub.Notes, currency, c.groundEUR),
+				fmt.Sprintf("%s (%s %.0f%s)", c.hub.Notes, currency, c.groundPrice, groundFareNote),
 				fmt.Sprintf("Transfer from %s to %s airport", c.hub.HubCity, c.hub.HubCode),
-				fmt.Sprintf("Book flight %s→%s on %s (%s %.0f)", c.hub.HubCode, in.Destination, in.Date, currency, c.flightEUR),
+				fmt.Sprintf("Book flight %s→%s on %s (%s %.0f)", c.hub.HubCode, in.Destination, in.Date, currency, c.flightPrice),
 				"Allow at least 2 hours between ground arrival and flight departure",
 			},
 			Citations: []string{

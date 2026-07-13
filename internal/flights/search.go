@@ -16,6 +16,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/cache"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/fareintel"
+	"github.com/MikkoParkkola/trvl/internal/flights/afklm"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/searchctx"
 	"golang.org/x/sync/singleflight"
@@ -97,7 +98,41 @@ type SearchOptions struct {
 	// mutated package global (which raced under concurrent SearchMultiAirport
 	// calls). Unexported: internal fanout control, not a user-facing knob.
 	suppressAFKLM bool
+
+	// Dependency-injection seams (unexported: test-only wiring, not user knobs).
+	// They replace the mutable package-level globals that tests previously
+	// swapped in place — swapping a shared global races the moment two searches
+	// run concurrently (the exact class of bug PR #476/#477 fixed for AFKLM).
+	// Threading them through the per-call SearchOptions gives each search its own
+	// isolated wiring, so there is no shared mutable provider seam left to race.
+	//
+	// afklmNewProvider overrides the AFKLM constructor used by the native
+	// round-trip merge; nil falls back to afklm.NewProvider (production default).
+	afklmNewProvider func() (*afklm.AFKLMProvider, error)
+	// afklmTestFlights injects synthetic AFKLM round-trip results so the
+	// default-merge inclusion can be exercised without a real client or network.
+	afklmTestFlights []models.FlightResult
+	// wizzHost / transaviaHost override the provider base URL (tests point them
+	// at an httptest server). Empty means the real production host.
+	wizzHost      string
+	transaviaHost string
+	// SearchOverride replaces the real flight search for this single call.
+	// Nil (the default) runs the production search. This is the same
+	// dependency-injection pattern used for the AFKLM/Wizz Air/Transavia
+	// seams above (see commit "inject provider and host seams through
+	// SearchOptions"), extended to the top-level search entry point so
+	// callers in OTHER packages — today internal/hacks' positioning and
+	// open-jaw detectors — can inject synthetic results for tests without
+	// mutating a shared package-level function variable. Each call carries
+	// its own override value, so concurrent detector/test calls never race
+	// on shared mutable state the way the old package-level var did.
+	SearchOverride SearchFunc
 }
+
+// SearchFunc matches the signature of SearchFlights. It is the type of
+// SearchOptions.SearchOverride and lets external packages inject a
+// replacement search implementation per call.
+type SearchFunc func(ctx context.Context, origin, destination, date string, opts SearchOptions) (*models.FlightSearchResult, error)
 
 // defaults fills in zero-value fields with sensible defaults.
 func (o *SearchOptions) defaults() {
@@ -153,6 +188,14 @@ func canonicalStringSlice(values []string) string {
 // SearchFlightsWithClient is like SearchFlights but accepts a pre-built client,
 // useful for reusing connections across multiple requests.
 func SearchFlightsWithClient(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) (*models.FlightSearchResult, error) {
+	// A per-call override takes over entirely, bypassing validation, caching,
+	// and every provider — the same contract the old package-level function
+	// variables in internal/hacks gave test callers, but carried as ordinary
+	// call data instead of shared mutable state. See SearchOptions.SearchOverride.
+	if opts.SearchOverride != nil {
+		return opts.SearchOverride(ctx, origin, destination, date, opts)
+	}
+
 	opts.defaults()
 
 	if origin == "" || destination == "" || date == "" {

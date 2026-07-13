@@ -22,6 +22,7 @@ const (
 	FactorBudgetFit                 = "budget_fit"
 	FactorLoyaltyEarn               = "loyalty_earn"
 	FactorTimeWindowFit             = "time_window_fit"
+	FactorTimeHardFloorCompliance   = "time_hard_floor_compliance"
 	FactorArrivalWindowFit          = "arrival_window_fit"
 	FactorDirectness                = "directness"
 	FactorDistrictMatch             = "district_match"
@@ -42,6 +43,7 @@ func DefaultWeights() map[string]float64 {
 		FactorBudgetFit:                 25.0,
 		FactorLoyaltyEarn:               12.0,
 		FactorTimeWindowFit:             8.0,
+		FactorTimeHardFloorCompliance:   6.0,
 		FactorArrivalWindowFit:          6.0,
 		FactorDirectness:                10.0,
 		FactorDistrictMatch:             8.0,
@@ -114,6 +116,7 @@ func ComputeProfileMatch(prefs *preferences.Preferences, input DiscoverInput) (s
 	breakdown[FactorBudgetFit] = scoreBudgetFit(input)
 	breakdown[FactorLoyaltyEarn] = scoreLoyaltyEarn(prefs, input)
 	breakdown[FactorTimeWindowFit] = scoreTimeWindowFit(prefs, input)
+	breakdown[FactorTimeHardFloorCompliance] = scoreTimeHardFloorCompliance(prefs, input)
 	breakdown[FactorArrivalWindowFit] = scoreArrivalWindowFit(prefs, input)
 	breakdown[FactorDirectness] = scoreDirectness(prefs, input)
 	breakdown[FactorDistrictMatch] = scoreDistrictMatch(prefs, input)
@@ -218,6 +221,53 @@ func scoreTimeWindowFit(prefs *preferences.Preferences, input DiscoverInput) flo
 		}
 	}
 	return 1.0
+}
+
+// scoreTimeHardFloorCompliance scores a departure against the SOFT time window
+// PLUS the FlightTimeHardFloor tolerance (in minutes). It distinguishes three
+// tiers so the ranking rewards flights that respect the tolerance and punishes
+// those that blow past it:
+//
+//   - 1.0 — departure is inside the [earliest, latest] soft window.
+//   - 0.3 — departure is outside the window but within the hard-floor tolerance
+//     (a soft near-miss: kept by the policy filter, but ranked lower here).
+//   - 0.0 — departure is more than the tolerance outside the window.
+//
+// Returns 0.5 (neutral) when the departure time is unknown, no window is set, or
+// no hard floor is configured (FlightTimeHardFloor <= 0) — in which case the soft
+// band does not exist and this factor carries no signal.
+func scoreTimeHardFloorCompliance(prefs *preferences.Preferences, input DiscoverInput) float64 {
+	if input.DepartTime == "" || prefs.FlightTimeHardFloor <= 0 {
+		return 0.5
+	}
+	earliest := prefs.FlightTimeEarliest
+	latest := prefs.FlightTimeLatest
+	if earliest == "" && latest == "" {
+		return 0.5
+	}
+	dep := parseHHMM(input.DepartTime)
+	if dep < 0 {
+		return 0.5
+	}
+	dev := 0
+	if earliest != "" {
+		if e := parseHHMM(earliest); e >= 0 && dep < e {
+			dev = e - dep
+		}
+	}
+	if latest != "" {
+		if l := parseHHMM(latest); l >= 0 && dep > l {
+			dev = dep - l
+		}
+	}
+	switch {
+	case dev == 0:
+		return 1.0 // inside the soft window
+	case dev <= prefs.FlightTimeHardFloor:
+		return 0.3 // soft near-miss within tolerance
+	default:
+		return 0.0 // beyond the hard floor
+	}
 }
 
 // scoreArrivalWindowFit scores the flight's arrival time at destination against

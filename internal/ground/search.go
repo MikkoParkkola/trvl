@@ -122,7 +122,20 @@ type SearchOptions struct {
 	// cheaper synthesized option (multimodal, cross-border rail, …) in
 	// result.HackSaving. Set NoHacks to run a pure naive search.
 	NoHacks bool
+
+	// SearchOverride replaces the real ground-transport search for this single
+	// call. Nil (the default) runs the production search. Mirrors
+	// flights.SearchOptions.SearchOverride: callers in other packages — today
+	// internal/hacks' positioning/ferry/open-jaw-ground detectors — inject a
+	// synthetic result per call, so tests never depend on live providers and
+	// concurrent calls never race on shared mutable state.
+	SearchOverride SearchFunc
 }
+
+// SearchFunc matches the signature of SearchByName. It is the type of
+// SearchOptions.SearchOverride and lets external packages inject a
+// replacement ground-search implementation per call.
+type SearchFunc func(ctx context.Context, from, to, date string, opts SearchOptions) (*models.GroundSearchResult, error)
 
 // providerEnabled reports whether a provider should run given an optional
 // allow-list (include; empty means all) and a deny-list (exclude, which always
@@ -237,6 +250,13 @@ func sortGroundRoutes(routes []models.GroundRoute) {
 // SearchByName searches all providers for ground transport between two cities
 // given by name. Resolves city names to provider-specific IDs automatically.
 func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions) (*models.GroundSearchResult, error) {
+	// A per-call override takes over entirely, bypassing defaults, caching,
+	// and every provider — the same contract flights.SearchOptions.SearchOverride
+	// gives test callers. See SearchOptions.SearchOverride.
+	if opts.SearchOverride != nil {
+		return opts.SearchOverride(ctx, from, to, date, opts)
+	}
+
 	if opts.Currency == "" {
 		opts.Currency = "EUR"
 	}

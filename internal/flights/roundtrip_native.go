@@ -13,17 +13,6 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-// afklmNewProvider is the constructor used to opportunistically include
-// AFKLM native round-trips in the default merge. It is overridden in tests
-// to inject a pre-configured provider (via NewProviderWithClient) without
-// depending on real credentials or network for credential resolution.
-var afklmNewProvider = afklm.NewProvider
-
-// afklmTestFlights is a test seam (prod code never sets it) allowing
-// deterministic injection of AFKLM results for testing default-merge
-// inclusion without cross-package client construction.
-var afklmTestFlights []models.FlightResult
-
 // searchNativeRoundTrip queries providers that price a return trip as a single
 // native fare (Skiplagged today) and returns only genuine round-trip itineraries
 // (FareRoundTrip, both legs present). It is rate-conscious: the composer has
@@ -271,8 +260,8 @@ func searchKiwiNativeRoundTrip(ctx context.Context, client *batchexec.Client, or
 // full both-leg round-trips when ReturnDate is supplied.
 func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, returnDate string, opts SearchOptions) ([]models.FlightResult, []models.ProviderStatus) {
 	// test seam: synthetic results (used by unit tests for deterministic AFKLM merge coverage)
-	if len(afklmTestFlights) > 0 {
-		native := append([]models.FlightResult(nil), afklmTestFlights...)
+	if len(opts.afklmTestFlights) > 0 {
+		native := append([]models.FlightResult(nil), opts.afklmTestFlights...)
 		target := nativeRoundTripCurrency(opts, nil, nil)
 		normalizeFlightCurrencies(ctx, native, target, destinations.ConvertCurrency)
 		return native, []models.ProviderStatus{{
@@ -286,7 +275,11 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 		return nil, nil
 	}
 
-	p, err := afklmNewProvider()
+	newProvider := opts.afklmNewProvider
+	if newProvider == nil {
+		newProvider = afklm.NewProvider // production default
+	}
+	p, err := newProvider()
 	if errors.Is(err, afklm.ErrNoCredential) {
 		return nil, nil // silent, zero latency, zero user signal
 	}
@@ -335,6 +328,61 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 		Results: len(native),
 	}
 	return native, []models.ProviderStatus{st}
+}
+
+// retainCompliantNativeRoundTrip truncates a merged round-trip candidate list
+// (already sorted cheapest-first by the caller) to at most max entries, but
+// guarantees the cheapest window-compliant native round-trip survives the cut
+// even when it would otherwise fall beyond the price cutoff.
+//
+// This addresses #472: the pre-filter truncation runs BEFORE the departure-time
+// window filter. When the cheapest native round-trips violate the window and the
+// only compliant native fare is pricier (beyond the cutoff), truncation discards
+// it, so the later window filter drops the cheap non-compliant fares and leaves
+// only composed multi-stops — the user loses the preferred-carrier product. By
+// retaining the cheapest compliant native fare here, that fare is still present
+// for the window filter to keep and rank.
+//
+// Compliance uses the same directional-departure window check as the post-search
+// filter (earliest/latest are "HH:MM"; an empty bound means no constraint on that
+// side). When the window is unset, no native fare is compliant, nothing is
+// truncated, or a compliant native fare already survives, this is a plain
+// cheapest-max truncation. The retained fare displaces the most expensive kept
+// slot, then the kept slice is re-sorted cheapest-first so the returned list
+// stays in the same sorted order the caller (and downstream ranking/truncation)
+// expects — a raw swap into the last slot would otherwise leave the displaced
+// fare out of price order. The input slice is not mutated.
+func retainCompliantNativeRoundTrip(merged []models.FlightResult, earliest, latest string, max int) []models.FlightResult {
+	if max <= 0 || len(merged) <= max {
+		return merged
+	}
+	head := merged[:max]
+	if earliest == "" && latest == "" {
+		return head
+	}
+	for _, f := range head {
+		if isCompliantNativeRoundTrip(f, earliest, latest) {
+			return head // a compliant native fare already survives
+		}
+	}
+	for i := max; i < len(merged); i++ {
+		if isCompliantNativeRoundTrip(merged[i], earliest, latest) {
+			out := make([]models.FlightResult, max)
+			copy(out, head)
+			out[max-1] = merged[i] // displace the most expensive kept slot
+			sort.SliceStable(out, func(a, b int) bool {
+				return compareFlightPrices(out[a].PriceForRanking(), out[b].PriceForRanking()) < 0
+			})
+			return out
+		}
+	}
+	return head
+}
+
+// isCompliantNativeRoundTrip reports whether f is a genuine native round-trip
+// fare (FareRoundTrip) whose directional departures all fall inside the window.
+func isCompliantNativeRoundTrip(f models.FlightResult, earliest, latest string) bool {
+	return f.FareType == models.FareRoundTrip && directionalDeparturesInWindow(f, earliest, latest)
 }
 
 // nativeRoundTripCurrency picks the currency to normalise native round-trip fares

@@ -179,7 +179,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/flights"
+	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
 
 // Hack represents a detected travel optimization opportunity.
@@ -240,11 +243,34 @@ type DetectorInput struct {
 	// The zero value preserves pre-loyalty behaviour (no regression): detectors
 	// fall back to surfacing every opportunity. See loyalty.go.
 	Loyalty LoyaltyProfile
+
+	// SearchOverride, when non-nil, is threaded into every flights.SearchOptions
+	// this detector builds so tests can inject synthetic search results. Nil
+	// (the default) runs the real flights.SearchFlights. This replaces the old
+	// pattern of mutable package-level function variables (positioningSearchFunc,
+	// openJawSearchFunc), which raced when parallel detector or test calls read
+	// and wrote the same shared global; carrying the override as ordinary
+	// per-call data instead removes the shared mutable state entirely. See
+	// flights.SearchOptions.SearchOverride.
+	SearchOverride flights.SearchFunc
+
+	// GroundSearchOverride, when non-nil, is threaded into every
+	// ground.SearchOptions this detector builds so tests can inject synthetic
+	// ground-transport (ferry/bus/train) results. Nil (the default) runs the
+	// real ground.SearchByName. Mirrors SearchOverride above for the ground
+	// package. See ground.SearchOptions.SearchOverride.
+	GroundSearchOverride ground.SearchFunc
 }
 
+// currency returns the display currency for this search: the explicit request
+// currency if set, else the user's saved profile preference
+// (preferences.DisplayCurrency), else EUR as a last-resort fallback.
 func (in *DetectorInput) currency() string {
 	if in.Currency != "" {
 		return in.Currency
+	}
+	if p, err := preferences.Load(); err == nil && p != nil && p.DisplayCurrency != "" {
+		return p.DisplayCurrency
 	}
 	return "EUR"
 }
@@ -334,11 +360,26 @@ func RegisteredDetectorCount() int {
 // DetectAll runs all detectors in parallel and returns every hack found.
 // It respects ctx cancellation; detectors that finish after cancellation
 // are discarded.
+//
+// A cancelled or already-expired ctx short-circuits before any detector is
+// dispatched: several detectors make live provider calls (Google Flights,
+// Kiwi, ground transport providers such as rome2rio/ferryhopper/skiplagged),
+// and there is no point paying for a network round trip whose result nobody
+// can use. This keeps a cancelled MCP request response-fast and keeps the
+// default (offline) test suite free of live provider traffic.
 func DetectAll(ctx context.Context, in DetectorInput) []Hack {
+	// Fast path: ctx is already done (cancelled or deadline already passed).
+	// Don't launch a single detector goroutine.
+	if ctx.Err() != nil {
+		return nil
+	}
+
 	detectors := allDetectors()
 
 	// Each detector gets a child context with a per-detector timeout so a
-	// slow API call cannot block the entire hacks response.
+	// slow API call cannot block the entire hacks response. context.WithTimeout
+	// inherits ctx's deadline if it is earlier than detectorTimeout, so a
+	// tight parent deadline still propagates into every detector's HTTP path.
 	const detectorTimeout = 20 * time.Second
 
 	type result struct {
@@ -349,10 +390,22 @@ func DetectAll(ctx context.Context, in DetectorInput) []Hack {
 	var wg sync.WaitGroup
 
 	for _, fn := range detectors {
+		// ctx can expire mid fan-out (e.g. a parent deadline of a few ms
+		// elapses while we're still iterating the detector roster). Stop
+		// dispatching further detectors the moment that happens rather than
+		// firing off calls that are already doomed to fail.
+		if ctx.Err() != nil {
+			break
+		}
 		fn := fn
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// Defensive re-check: ctx may expire between the dispatch-loop
+			// check above and this goroutine actually getting scheduled.
+			if ctx.Err() != nil {
+				return
+			}
 			dCtx, cancel := context.WithTimeout(ctx, detectorTimeout)
 			defer cancel()
 			h := fn(dCtx, in)

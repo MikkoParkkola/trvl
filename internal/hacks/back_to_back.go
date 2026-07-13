@@ -3,16 +3,13 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
-
-// backToBackSearchFunc is the function used to search flights. Package-level
-// variable allows test injection without modifying the detectFn signature.
-var backToBackSearchFunc = flights.SearchFlightsWithClient
 
 // backToBackOverlapDays is the offset for the dummy return leg of each
 // overlapping round-trip. 14 days is long enough to trigger the cheaper
@@ -83,7 +80,10 @@ func backToBackLivePrices(ctx context.Context, in DetectorInput) ([]Hack, bool) 
 	dest := in.Destination
 	departDate := in.Date
 	returnDate := in.ReturnDate
-	currency := in.currency()
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
 
 	// Dummy return dates for the overlapping round-trips.
 	rtFromOriginDummyReturn := addDays(departDate, backToBackOverlapDays)
@@ -107,55 +107,56 @@ func backToBackLivePrices(ctx context.Context, in DetectorInput) ([]Hack, bool) 
 	// 1. One-way: origin -> dest on depart_date
 	go func() {
 		defer wg.Done()
-		owOutResult, owOutErr = backToBackSearchFunc(ctx, client, origin, dest, departDate, flights.SearchOptions{
-			SortBy: models.SortCheapest,
+		owOutResult, owOutErr = flights.SearchFlightsWithClient(ctx, client, origin, dest, departDate, flights.SearchOptions{
+			SortBy:         models.SortCheapest,
+			SearchOverride: in.SearchOverride,
 		})
 	}()
 
 	// 2. One-way: dest -> origin on return_date
 	go func() {
 		defer wg.Done()
-		owRetResult, owRetErr = backToBackSearchFunc(ctx, client, dest, origin, returnDate, flights.SearchOptions{
-			SortBy: models.SortCheapest,
+		owRetResult, owRetErr = flights.SearchFlightsWithClient(ctx, client, dest, origin, returnDate, flights.SearchOptions{
+			SortBy:         models.SortCheapest,
+			SearchOverride: in.SearchOverride,
 		})
 	}()
 
 	// 3. Overlapping RT from origin: origin->dest depart + dest->origin (depart+14d)
 	go func() {
 		defer wg.Done()
-		rtOriginResult, rtOriginErr = backToBackSearchFunc(ctx, client, origin, dest, departDate, flights.SearchOptions{
-			ReturnDate: rtFromOriginDummyReturn,
-			SortBy:     models.SortCheapest,
+		rtOriginResult, rtOriginErr = flights.SearchFlightsWithClient(ctx, client, origin, dest, departDate, flights.SearchOptions{
+			ReturnDate:     rtFromOriginDummyReturn,
+			SortBy:         models.SortCheapest,
+			SearchOverride: in.SearchOverride,
 		})
 	}()
 
 	// 4. Overlapping RT from dest: dest->origin return + origin->dest (return+14d)
 	go func() {
 		defer wg.Done()
-		rtDestResult, rtDestErr = backToBackSearchFunc(ctx, client, dest, origin, returnDate, flights.SearchOptions{
-			ReturnDate: rtFromDestDummyReturn,
-			SortBy:     models.SortCheapest,
+		rtDestResult, rtDestErr = flights.SearchFlightsWithClient(ctx, client, dest, origin, returnDate, flights.SearchOptions{
+			ReturnDate:     rtFromDestDummyReturn,
+			SortBy:         models.SortCheapest,
+			SearchOverride: in.SearchOverride,
 		})
 	}()
 
 	wg.Wait()
 
-	// All 4 must succeed for a valid comparison.
-	owOutPrice, owOutCur, _, _ := cheapestFlightInfo(owOutResult, owOutErr)
-	owRetPrice, _, _, _ := cheapestFlightInfo(owRetResult, owRetErr)
-	rtOriginPrice, rtCur, _, _ := cheapestFlightInfo(rtOriginResult, rtOriginErr)
-	rtDestPrice, _, _, _ := cheapestFlightInfo(rtDestResult, rtDestErr)
+	// All 4 must succeed for a valid comparison, and every price must be
+	// convertible into the requested display currency — suppress rather than
+	// show an unconverted or mislabelled figure.
+	owOutPrice, okOwOut := cheapestFlightPriceInCurrency(ctx, owOutResult, owOutErr, target)
+	owRetPrice, okOwRet := cheapestFlightPriceInCurrency(ctx, owRetResult, owRetErr, target)
+	rtOriginPrice, okRtOrigin := cheapestFlightPriceInCurrency(ctx, rtOriginResult, rtOriginErr, target)
+	rtDestPrice, okRtDest := cheapestFlightPriceInCurrency(ctx, rtDestResult, rtDestErr, target)
 
-	if owOutPrice <= 0 || owRetPrice <= 0 || rtOriginPrice <= 0 || rtDestPrice <= 0 {
+	if !okOwOut || !okOwRet || !okRtOrigin || !okRtDest {
 		return nil, false
 	}
 
-	// Pick currency from whichever result provided one.
-	if rtCur != "" {
-		currency = rtCur
-	} else if owOutCur != "" {
-		currency = owOutCur
-	}
+	currency := target
 
 	oneWayTotal := owOutPrice + owRetPrice
 	rtTotal := rtOriginPrice + rtDestPrice
@@ -199,7 +200,13 @@ func backToBackLivePrices(ctx context.Context, in DetectorInput) ([]Hack, bool) 
 }
 
 // backToBackAdvisory returns the original advisory-only hack with no prices.
+// Currency is normalized to the requested target even though no amount is
+// converted (there is nothing to convert — Savings is 0).
 func backToBackAdvisory(in DetectorInput) []Hack {
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
 	return []Hack{{
 		Type:  "back_to_back",
 		Title: "Frequent route? Back-to-back round-trips beat one-ways",
@@ -209,7 +216,7 @@ func backToBackAdvisory(in DetectorInput) []Hack {
 				"20-40%% cheaper than individual one-ways because airlines discount returns.",
 			in.Origin, in.Destination),
 		Savings:  0, // advisory — no concrete savings estimate
-		Currency: in.currency(),
+		Currency: target,
 		Steps: []string{
 			fmt.Sprintf("For your next 2 trips %s→%s:", in.Origin, in.Destination),
 			"Ticket A: round-trip starting from " + in.Origin + " (use outbound only)",

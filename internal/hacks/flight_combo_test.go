@@ -101,6 +101,61 @@ func TestCheapestFlightInfo_error(t *testing.T) {
 	}
 }
 
+// --- cheapestFlightPriceInCurrency: currency honesty (display-currency conversion) ---
+
+// TestCheapestFlightPriceInCurrency_eurTargetPassthrough covers currency
+// honesty case (a): an EUR target with an EUR-denominated flight passes
+// through labelled EUR (identity conversion).
+func TestCheapestFlightPriceInCurrency_eurTargetPassthrough(t *testing.T) {
+	result := &models.FlightSearchResult{
+		Success: true,
+		Flights: []models.FlightResult{{Price: 200, Currency: "EUR"}},
+	}
+	price, ok := cheapestFlightPriceInCurrency(context.Background(), result, nil, "EUR")
+	if !ok {
+		t.Fatalf("expected ok=true for EUR->EUR conversion")
+	}
+	if price != 200 {
+		t.Errorf("expected price=200, got %v", price)
+	}
+}
+
+// TestCheapestFlightPriceInCurrency_nonEURTargetSuppressedWhenInconvertible
+// covers case (b): a non-EUR target with no usable rate table must suppress
+// (ok=false) rather than return an unconverted or mislabelled figure.
+// Placeholder currency codes (ZZZ/ZZY) are used by convention since they
+// appear in no real exchange-rate table, and the context is cancelled so no
+// live FX fetch can populate the cache either.
+func TestCheapestFlightPriceInCurrency_nonEURTargetSuppressedWhenInconvertible(t *testing.T) {
+	result := &models.FlightSearchResult{
+		Success: true,
+		Flights: []models.FlightResult{{Price: 200, Currency: "ZZZ"}},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	price, ok := cheapestFlightPriceInCurrency(ctx, result, nil, "ZZY")
+	if ok {
+		t.Errorf("expected ok=false when inconvertible to target, got price=%v", price)
+	}
+	if price != 0 {
+		t.Errorf("expected price=0 when suppressed, got %v", price)
+	}
+}
+
+// TestCheapestFlightPriceInCurrency_errorOrEmptyIsSuppressed covers the
+// pass-through error/empty-result cases (mirrors cheapestFlightInfo's own
+// zero-value contract): callers must treat these as suppression, not as a
+// false "0-priced" hack.
+func TestCheapestFlightPriceInCurrency_errorOrEmptyIsSuppressed(t *testing.T) {
+	if _, ok := cheapestFlightPriceInCurrency(context.Background(), nil, context.DeadlineExceeded, "EUR"); ok {
+		t.Errorf("expected ok=false on search error")
+	}
+	if _, ok := cheapestFlightPriceInCurrency(context.Background(), &models.FlightSearchResult{Success: false}, nil, "EUR"); ok {
+		t.Errorf("expected ok=false on unsuccessful result")
+	}
+}
+
 func TestCheapestFlightInfo_unsuccessful(t *testing.T) {
 	price, _, _, _ := cheapestFlightInfo(&models.FlightSearchResult{Success: false}, nil)
 	if price != 0 {

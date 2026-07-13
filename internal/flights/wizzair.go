@@ -112,27 +112,44 @@ const wizzDefaultVersion = "29.4.0"
 // WIZZAIR_API_VERSION takes precedence at request time via wizzResolvedVersion.
 var wizzVersion = wizzDefaultVersion
 
-// wizzHost is overridable in tests (httptest server).
-var wizzHost = "https" + "://" + "be.wizzair.com"
+// wizzDefaultHost is the production base URL. Tests override it per-call via
+// SearchOptions.wizzHost (see (SearchOptions).wizzBaseHost), rather than
+// swapping a shared package global that would race across concurrent searches.
+const wizzDefaultHost = "https" + "://" + "be.wizzair.com"
+
+// wizzBaseHost returns the Wizz base URL for this search: the per-call test
+// override when set, else the production host.
+func (o SearchOptions) wizzBaseHost() string {
+	if o.wizzHost != "" {
+		return o.wizzHost
+	}
+	return wizzDefaultHost
+}
 
 var (
 	wizzLimiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 1)
 	wizzClient  = &http.Client{Timeout: 25 * time.Second}
 )
 
-// wizzResolvedVersion returns the API version to use, preferring the env
-// override so operators can react to a rotation without a redeploy.
-func wizzResolvedVersion() string {
+// wizzResolvedVersion returns the API version to use for host, preferring the
+// env override so operators can react to a rotation without a redeploy. The
+// version is scoped by host: the production host (wizzDefaultHost) reads the
+// shared wizzVersion global (self-healed and persisted across restarts); any
+// other host (a per-call SearchOptions.wizzHost override) reads its own healed
+// entry when one exists, else falls back to wizzVersion as the starting point —
+// so a heal against that host can never be observed by, or overwrite, a
+// concurrent search against a different host.
+func wizzResolvedVersion(host string) string {
 	if v := strings.TrimSpace(os.Getenv("WIZZAIR_API_VERSION")); v != "" {
 		return v
 	}
 	wizzVersionMu.RLock()
 	defer wizzVersionMu.RUnlock()
-	return wizzVersion
+	return wizzLockedVersion(host)
 }
 
-func wizzTimetableURL() string {
-	return wizzHost + "/" + wizzResolvedVersion() + "/Api/search/timetable"
+func wizzTimetableURL(host string) string {
+	return host + "/" + wizzResolvedVersion(host) + "/Api/search/timetable"
 }
 
 type wizzFlightLeg struct {
@@ -189,9 +206,9 @@ type wizzValidationError struct {
 //
 // The (bounded, whitespace-collapsed) body is echoed into the message so an
 // operator can see exactly what Wizz said without re-running with a capture.
-func classifyWizzStatus(status int, body []byte) error {
+func classifyWizzStatus(host string, status int, body []byte) error {
 	if status == http.StatusNotFound {
-		return fmt.Errorf("wizzair: tried API version %q: %w", wizzResolvedVersion(), ErrWizzVersionRotated)
+		return fmt.Errorf("wizzair: tried API version %q: %w", wizzResolvedVersion(host), ErrWizzVersionRotated)
 	}
 	trimmed := bytes.TrimSpace(body)
 	if len(trimmed) > 0 && trimmed[0] == '{' {
@@ -225,8 +242,9 @@ func SearchWizzair(ctx context.Context, origin, destination, date, currency stri
 	if currency == "" {
 		currency = "EUR"
 	}
+	host := opts.wizzBaseHost()
 	// Adopt a previously-healed version (if any) before the first request.
-	wizzMaybeLoadCache()
+	wizzMaybeLoadCache(host)
 	if err := wizzLimiter.Wait(ctx); err != nil {
 		return nil, err
 	}
@@ -252,16 +270,16 @@ func SearchWizzair(ctx context.Context, origin, destination, date, currency stri
 	// concurrent heal between the failure and the heal call can't make us walk
 	// past an already-working version (we'd otherwise treat the healed version as
 	// the stale one and probe its successors).
-	used := wizzResolvedVersion()
-	results, err := wizzSearchOnce(ctx, payload, date, currency)
+	used := wizzResolvedVersion(host)
+	results, err := wizzSearchOnce(ctx, host, payload, date, currency)
 	// Self-heal on a version rotation: discover the new version, swap it in, and
 	// retry once. The retry IS the end-to-end verification — it only succeeds if
 	// the discovered version actually serves a priced timetable response.
 	if errors.Is(err, ErrWizzVersionRotated) && wizzHealEnabled() {
-		if newV, ok := wizzHeal(ctx, used); ok && newV != used {
+		if newV, ok := wizzHeal(ctx, host, used); ok && newV != used {
 			slog.Warn("wizzair self-healed API version after rotation", "from", used, "to", newV)
 			if werr := wizzLimiter.Wait(ctx); werr == nil {
-				results, err = wizzSearchOnce(ctx, payload, date, currency)
+				results, err = wizzSearchOnce(ctx, host, payload, date, currency)
 			}
 		}
 	}
@@ -271,8 +289,8 @@ func SearchWizzair(ctx context.Context, origin, destination, date, currency stri
 // wizzSearchOnce performs one timetable request at the currently-resolved
 // version and maps the response. A rotated version surfaces as
 // ErrWizzVersionRotated (404) for the caller to optionally heal and retry.
-func wizzSearchOnce(ctx context.Context, payload []byte, date, currency string) ([]models.FlightResult, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, wizzTimetableURL(), bytes.NewReader(payload))
+func wizzSearchOnce(ctx context.Context, host string, payload []byte, date, currency string) ([]models.FlightResult, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, wizzTimetableURL(host), bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("wizzair: build request: %w", err)
 	}
@@ -294,7 +312,7 @@ func wizzSearchOnce(ctx context.Context, payload []byte, date, currency string) 
 		// bot-walls (non-JSON 4xx). The search continues and returns other
 		// providers' results regardless of which typed error we surface here.
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		return nil, classifyWizzStatus(resp.StatusCode, errBody)
+		return nil, classifyWizzStatus(host, resp.StatusCode, errBody)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
@@ -378,14 +396,17 @@ func wizzDisplayTime(s string) string {
 	return s
 }
 
-// wizzairFailureStatus maps a SearchWizzair error to a typed ProviderStatus.
-// A version-rotation 404 (ErrWizzVersionRotated) renders an actionable status
-// carrying a typed FixHintCode and a hint naming the WIZZAIR_API_VERSION env
-// override plus the last-known-good version, so an operator or orchestrating LLM
-// can restore the provider without a code change. All other errors fall through
-// to the standard classification (timeout vs failed). This helper is pure so it
-// can be unit-tested offline, independent of the live aggregate search.
-func wizzairFailureStatus(err error) models.ProviderStatus {
+// wizzairFailureStatus maps a SearchWizzair error to a typed ProviderStatus. The
+// host names which base URL this attempt used, so the version echoed in the
+// rotation fix hint reflects that host's own resolved version rather than
+// another concurrent search's. A version-rotation 404 (ErrWizzVersionRotated)
+// renders an actionable status carrying a typed FixHintCode and a hint naming
+// the WIZZAIR_API_VERSION env override plus the last-known-good version, so an
+// operator or orchestrating LLM can restore the provider without a code change.
+// All other errors fall through to the standard classification (timeout vs
+// failed). This helper is pure so it can be unit-tested offline, independent of
+// the live aggregate search.
+func wizzairFailureStatus(host string, err error) models.ProviderStatus {
 	st := models.ProviderStatus{
 		ID:     "wizzair",
 		Name:   "Wizz Air",
@@ -396,7 +417,7 @@ func wizzairFailureStatus(err error) models.ProviderStatus {
 		st.FixHintCode = "WIZZ_VERSION_ROTATED"
 		st.FixHint = fmt.Sprintf(
 			"Wizz API version path rotated; set WIZZAIR_API_VERSION=<current> to restore (tried %q; last-known-good: %s)",
-			wizzResolvedVersion(), wizzDefaultVersion,
+			wizzResolvedVersion(host), wizzDefaultVersion,
 		)
 	}
 	if errors.Is(err, ErrWizzBlocked) {

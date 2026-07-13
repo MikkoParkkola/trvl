@@ -36,7 +36,7 @@ func TestWizzairProbe(t *testing.T) {
 		// reports the actionable status rather than red-flagging a transport bug.
 		switch {
 		case errors.Is(err, ErrWizzVersionRotated):
-			st := wizzairFailureStatus(err)
+			st := wizzairFailureStatus(wizzDefaultHost, err)
 			t.Logf("Wizz API version rotated (expected, actionable): code=%s hint=%q",
 				st.FixHintCode, st.FixHint)
 			if st.FixHintCode != "WIZZ_VERSION_ROTATED" {
@@ -44,7 +44,7 @@ func TestWizzairProbe(t *testing.T) {
 			}
 			return
 		case errors.Is(err, ErrWizzBlocked):
-			st := wizzairFailureStatus(err)
+			st := wizzairFailureStatus(wizzDefaultHost, err)
 			t.Logf("Wizz edge-blocked this IP (expected from datacenter/CI; honest typed status): code=%s hint=%q err=%v",
 				st.FixHintCode, st.FixHint, err)
 			if st.FixHintCode != "WIZZ_BLOCKED" {
@@ -52,7 +52,7 @@ func TestWizzairProbe(t *testing.T) {
 			}
 			return
 		case errors.Is(err, ErrWizzRejected):
-			st := wizzairFailureStatus(err)
+			st := wizzairFailureStatus(wizzDefaultHost, err)
 			t.Logf("Wizz declined the route (validationCodes; honest typed status): code=%s hint=%q err=%v",
 				st.FixHintCode, st.FixHint, err)
 			if st.FixHintCode != "WIZZ_MARKET_REJECTED" {

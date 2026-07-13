@@ -3,6 +3,7 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
@@ -12,34 +13,45 @@ import (
 // taking an overnight ground option (bus or train) is cheaper, factoring in the
 // saved hotel night.
 //
-// Threshold: net saving must exceed EUR 50 before this hack is surfaced.
+// Threshold: net saving must exceed 50 (in the requested currency) before this
+// hack is surfaced.
 func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 	if !in.valid() || in.Date == "" {
 		return nil
 	}
 
+	// The flight price, every ground route's price, and the flat EUR hotel
+	// estimate are each converted into the requested target currency before
+	// being combined; anything that cannot be converted drops the whole
+	// candidate rather than mixing currencies in one saving figure.
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
+
 	// Baseline: cheapest direct flight.
-	flightResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
+	flightResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{SearchOverride: in.SearchOverride})
 	if err != nil || !flightResult.Success || len(flightResult.Flights) == 0 {
 		return nil
 	}
-	flightPrice := minFlightPrice(flightResult)
-	if flightPrice <= 0 {
+	flightPrice, ok := cheapestFlightPriceInTarget(ctx, flightResult, target)
+	if !ok {
 		return nil
 	}
-	currency := flightCurrency(flightResult, in.currency())
+	currency := target
 
 	// Ground search — any mode.
 	originCity := cityFromCode(in.Origin)
 	destCity := cityFromCode(in.Destination)
 	groundResult, err := ground.SearchByName(ctx, originCity, destCity, in.Date, ground.SearchOptions{
-		Currency: "EUR",
+		Currency:       target,
+		SearchOverride: in.GroundSearchOverride,
 	})
 	if err != nil || !groundResult.Success || len(groundResult.Routes) == 0 {
 		return nil
 	}
 
-	// Find the cheapest overnight route.
+	// Find the cheapest overnight route whose price converts into target.
 	var bestPrice float64
 	var bestRoute *groundRoute
 	for i := range groundResult.Routes {
@@ -50,13 +62,17 @@ func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 		if !isOvernightRoute(r.Departure.Time, r.Arrival.Time) {
 			continue
 		}
-		if bestRoute == nil || r.Price < bestPrice {
-			bestPrice = r.Price
+		conv, ok := convertCurrency(ctx, r.Price, r.Currency, target)
+		if !ok {
+			continue
+		}
+		if bestRoute == nil || conv < bestPrice {
+			bestPrice = conv
 			bestRoute = &groundRoute{
 				provider:   r.Provider,
 				routeType:  r.Type,
-				price:      r.Price,
-				currency:   r.Currency,
+				price:      conv,
+				currency:   target,
 				depCity:    r.Departure.City,
 				arrCity:    r.Arrival.City,
 				depTime:    r.Departure.Time,
@@ -70,32 +86,35 @@ func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 		return nil
 	}
 
-	// Total saving: flight price − ground price + saved hotel night.
-	savings := (flightPrice - bestPrice) + averageHotelCost
+	// The saved hotel night is a flat EUR estimate; convert it into target
+	// before adding it to a saving figure already expressed in target.
+	hotelBonus, ok := convertCurrency(ctx, averageHotelCost, "EUR", target)
+	if !ok {
+		return nil
+	}
+
+	// Total saving: flight price − ground price + saved hotel night, all in target.
+	savings := (flightPrice - bestPrice) + hotelBonus
 	if savings < 50 {
 		return nil
 	}
 
-	displayCurrency := currency
-	if bestRoute.currency != "" {
-		displayCurrency = bestRoute.currency
-	}
 	depTime := trimToHHMM(bestRoute.depTime)
 	arrTime := trimToHHMM(bestRoute.arrTime)
 
 	return []Hack{{
 		Type:     "multimodal_skip_flight",
-		Title:    fmt.Sprintf("Skip the flight — overnight %s saves EUR %.0f", bestRoute.routeType, savings),
-		Currency: displayCurrency,
+		Title:    fmt.Sprintf("Skip the flight — overnight %s saves %s %.0f", bestRoute.routeType, currency, savings),
+		Currency: currency,
 		Savings:  roundSavings(savings),
 		Description: fmt.Sprintf(
 			"Overnight %s %s→%s departs %s arrives %s (%.0f %s) vs flight %.0f %s. "+
 				"Ground saves %.0f on transport + ~%.0f saved hotel night = %.0f total saving.",
 			bestRoute.routeType, bestRoute.depCity, bestRoute.arrCity,
 			depTime, arrTime,
-			bestRoute.price, displayCurrency,
+			bestRoute.price, currency,
 			flightPrice, currency,
-			flightPrice-bestRoute.price, averageHotelCost, savings,
+			flightPrice-bestRoute.price, hotelBonus, savings,
 		),
 		Risks: []string{
 			"Overnight ground transport is slower; factor in comfort and rest quality",
@@ -106,7 +125,7 @@ func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 		Steps: []string{
 			fmt.Sprintf("Book overnight %s %s→%s departing %s on %s (%.0f %s)",
 				bestRoute.routeType, bestRoute.depCity, bestRoute.arrCity,
-				depTime, in.Date, bestRoute.price, displayCurrency),
+				depTime, in.Date, bestRoute.price, currency),
 			"Skip booking a hotel for that night — arrive early morning rested",
 			fmt.Sprintf("Check booking at: %s", bestRoute.bookingURL),
 		},
