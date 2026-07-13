@@ -24,9 +24,8 @@ func TestWizzDefaultVersionWellFormed(t *testing.T) {
 	}
 	// Snapshot/restore the runtime version var: other tests in suite may have
 	// self-healed it to a newer value; this test must validate the *default const*.
-	orig := wizzVersion
-	wizzVersion = wizzDefaultVersion
-	defer func() { wizzVersion = orig }()
+	orig := setWizzVersionForTest(wizzDefaultVersion)
+	defer setWizzVersionForTest(orig)
 	if got := wizzTimetableURL(wizzDefaultHost); !strings.Contains(got, "/"+wizzDefaultVersion+"/Api/") {
 		t.Fatalf("wizzTimetableURL() = %q, expected to contain /%s/Api/", got, wizzDefaultVersion)
 	}
@@ -56,9 +55,8 @@ func TestSearchWizzair_MapsFlight(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origVer := wizzVersion
-	wizzVersion = "10.1.0"
-	defer func() { wizzVersion = origVer }()
+	origVer := setWizzVersionForTest("10.1.0")
+	defer setWizzVersionForTest(origVer)
 
 	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
 	if err != nil {
@@ -91,9 +89,8 @@ func TestSearchWizzair_MapsFlight(t *testing.T) {
 }
 
 func TestWizzResolvedVersion_EnvOverride(t *testing.T) {
-	orig := wizzVersion
-	wizzVersion = "10.1.0"
-	defer func() { wizzVersion = orig }()
+	orig := setWizzVersionForTest("10.1.0")
+	defer setWizzVersionForTest(orig)
 
 	t.Setenv("WIZZAIR_API_VERSION", "")
 	if got := wizzResolvedVersion(wizzDefaultHost); got != "10.1.0" {
@@ -106,9 +103,8 @@ func TestWizzResolvedVersion_EnvOverride(t *testing.T) {
 }
 
 func TestWizzTimetableURL_IncludesVersion(t *testing.T) {
-	orig := wizzVersion
-	wizzVersion = "10.1.0"
-	defer func() { wizzVersion = orig }()
+	orig := setWizzVersionForTest("10.1.0")
+	defer setWizzVersionForTest(orig)
 	t.Setenv("WIZZAIR_API_VERSION", "")
 	got := wizzTimetableURL(wizzDefaultHost)
 	want := wizzDefaultHost + "/10.1.0/Api/search/timetable"
@@ -144,9 +140,8 @@ func TestSearchWizzair_404_VersionRotated(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origVer := wizzVersion
-	wizzVersion = "10.1.0"
-	defer func() { wizzVersion = origVer }()
+	origVer := setWizzVersionForTest("10.1.0")
+	defer setWizzVersionForTest(origVer)
 	t.Setenv("WIZZAIR_API_VERSION", "")
 
 	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
@@ -169,9 +164,8 @@ func TestSearchWizzair_404_VersionRotated(t *testing.T) {
 // error into an actionable ProviderStatus with the typed FixHintCode and a hint
 // naming the env override and last-known-good version. Pure / offline.
 func TestWizzairFailureStatus_TypedActionable(t *testing.T) {
-	orig := wizzVersion
-	wizzVersion = "10.1.0"
-	defer func() { wizzVersion = orig }()
+	orig := setWizzVersionForTest("10.1.0")
+	defer setWizzVersionForTest(orig)
 	t.Setenv("WIZZAIR_API_VERSION", "")
 
 	rotated := fmt.Errorf("wizzair: tried API version %q: %w", "10.1.0", ErrWizzVersionRotated)
@@ -227,9 +221,8 @@ func TestSearchWizzair_EnvOverrideRestores(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origVer := wizzVersion
-	wizzVersion = "10.1.0" // stale default would 404
-	defer func() { wizzVersion = origVer }()
+	origVer := setWizzVersionForTest("10.1.0") // stale default would 404
+	defer setWizzVersionForTest(origVer)
 
 	// Without the override: stale default 404s -> rotation sentinel.
 	t.Setenv("WIZZAIR_API_VERSION", "")
@@ -261,9 +254,8 @@ func TestSearchWizzair_LiveFixture_Parses(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origVer := wizzVersion
-	wizzVersion = "29.3.0"
-	defer func() { wizzVersion = origVer }()
+	origVer := setWizzVersionForTest("29.3.0")
+	defer setWizzVersionForTest(origVer)
 	t.Setenv("WIZZAIR_API_VERSION", "")
 
 	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-08-04", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
@@ -314,9 +306,8 @@ func TestSearchWizzair_400_InvalidMarket(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origVer := wizzVersion
-	wizzVersion = "29.3.0"
-	defer func() { wizzVersion = origVer }()
+	origVer := setWizzVersionForTest("29.3.0")
+	defer setWizzVersionForTest(origVer)
 	t.Setenv("WIZZAIR_API_VERSION", "")
 
 	out, err := SearchWizzair(context.Background(), "BUD", "JFK", "2026-08-04", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
@@ -350,9 +341,8 @@ func TestSearchWizzair_400_EdgeBlocked(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origVer := wizzVersion
-	wizzVersion = "29.3.0"
-	defer func() { wizzVersion = origVer }()
+	origVer := setWizzVersionForTest("29.3.0")
+	defer setWizzVersionForTest(origVer)
 	t.Setenv("WIZZAIR_API_VERSION", "")
 
 	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-08-04", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})

@@ -8,10 +8,20 @@ import (
 	"testing"
 )
 
+// setWizzVersionForTest sets the shared wizzVersion under the write lock so test
+// assignments don't race locked production readers (wizzResolvedVersion) or
+// leaked timeout-drain goroutines. Returns the previous value for restore.
+func setWizzVersionForTest(v string) string {
+	wizzVersionMu.Lock()
+	defer wizzVersionMu.Unlock()
+	old := wizzVersion
+	wizzVersion = v // setWizzVersionForTest: sole sanctioned locked writer
+	return old
+}
+
 // TestWizzNextCandidates checks the rotation-walk order: next minors first
 // (the common rotation), then patches, then the next majors.
-func TestWizzNextCandidates(t *testing.T) {
-	got := wizzNextCandidates("29.3.0")
+func TestWizzNextCandidates(t *testing.T) {	got := wizzNextCandidates("29.3.0")
 	if len(got) == 0 {
 		t.Fatal("no candidates generated")
 	}
@@ -85,9 +95,8 @@ func TestSearchWizzair_SelfHealsOnRotation(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origVer := wizzVersion
-	wizzVersion = stale
-	defer func() { wizzVersion = origVer }()
+	origVer := setWizzVersionForTest(stale)
+	defer setWizzVersionForTest(origVer)
 	t.Setenv("WIZZAIR_API_VERSION", "") // no operator pin
 	t.Setenv("WIZZAIR_NO_AUTOHEAL", "") // healing enabled
 
@@ -116,9 +125,8 @@ func TestSearchWizzair_NoHealWhenPinned(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origVer := wizzVersion
-	wizzVersion = "10.1.0"
-	defer func() { wizzVersion = origVer }()
+	origVer := setWizzVersionForTest("10.1.0")
+	defer setWizzVersionForTest(origVer)
 	t.Setenv("WIZZAIR_API_VERSION", "29.3.0") // operator pin -> healing disabled
 
 	_, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
