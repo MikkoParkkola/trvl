@@ -16,6 +16,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/cache"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/fareintel"
+	"github.com/MikkoParkkola/trvl/internal/flights/afklm"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/searchctx"
 	"golang.org/x/sync/singleflight"
@@ -97,6 +98,24 @@ type SearchOptions struct {
 	// mutated package global (which raced under concurrent SearchMultiAirport
 	// calls). Unexported: internal fanout control, not a user-facing knob.
 	suppressAFKLM bool
+
+	// Dependency-injection seams (unexported: test-only wiring, not user knobs).
+	// They replace the mutable package-level globals that tests previously
+	// swapped in place — swapping a shared global races the moment two searches
+	// run concurrently (the exact class of bug PR #476/#477 fixed for AFKLM).
+	// Threading them through the per-call SearchOptions gives each search its own
+	// isolated wiring, so there is no shared mutable provider seam left to race.
+	//
+	// afklmNewProvider overrides the AFKLM constructor used by the native
+	// round-trip merge; nil falls back to afklm.NewProvider (production default).
+	afklmNewProvider func() (*afklm.AFKLMProvider, error)
+	// afklmTestFlights injects synthetic AFKLM round-trip results so the
+	// default-merge inclusion can be exercised without a real client or network.
+	afklmTestFlights []models.FlightResult
+	// wizzHost / transaviaHost override the provider base URL (tests point them
+	// at an httptest server). Empty means the real production host.
+	wizzHost      string
+	transaviaHost string
 }
 
 // defaults fills in zero-value fields with sensible defaults.

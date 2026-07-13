@@ -63,15 +63,15 @@ func wizzHealEnabled() bool {
 	return os.Getenv("WIZZAIR_NO_AUTOHEAL") != "1"
 }
 
-// wizzRealHost reports whether requests target the real Wizz host (not an
-// httptest server). Cache load/persist only happen against the real host so unit
-// tests stay hermetic.
-func wizzRealHost() bool { return wizzHost == "https"+"://"+"be.wizzair.com" }
+// wizzRealHost reports whether host targets the real Wizz host (not an httptest
+// server). Cache load/persist only happen against the real host so unit tests
+// stay hermetic.
+func wizzRealHost(host string) bool { return host == wizzDefaultHost }
 
 // wizzProbeVersion classifies a version path via the asset/culture oracle:
 // "absent" (404), "live" (200/405), or "inconclusive" (transient/edge/transport).
-func wizzProbeVersion(ctx context.Context, v string) string {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, wizzHost+"/"+v+"/Api/asset/culture", nil)
+func wizzProbeVersion(ctx context.Context, host, v string) string {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, host+"/"+v+"/Api/asset/culture", nil)
 	if err != nil {
 		return "inconclusive"
 	}
@@ -148,7 +148,7 @@ func wizzVersionNewer(a, b string) bool {
 // caller arriving after another goroutine already healed gets the new version.
 // Returns ("", false) when no candidate in range is live (caller keeps the typed
 // rotation error — graceful degradation preserved).
-func wizzHeal(ctx context.Context, stale string) (string, bool) {
+func wizzHeal(ctx context.Context, host, stale string) (string, bool) {
 	wizzVersionMu.Lock()
 	defer wizzVersionMu.Unlock()
 	if wizzVersion != stale {
@@ -156,9 +156,9 @@ func wizzHeal(ctx context.Context, stale string) (string, bool) {
 	}
 	for _, c := range wizzNextCandidates(stale) {
 		_ = wizzHealLimiter.Wait(ctx)
-		if wizzProbeVersion(ctx, c) == "live" {
+		if wizzProbeVersion(ctx, host, c) == "live" {
 			wizzVersion = c
-			wizzPersistVersion(c)
+			wizzPersistVersion(host, c)
 			return c, true
 		}
 	}
@@ -181,8 +181,8 @@ func wizzCachePath() (string, bool) {
 // wizzPersistVersion best-effort writes the discovered version so a restart skips
 // rediscovery. No-op against a test host or on any I/O error (caching is an
 // optimisation, never load-bearing).
-func wizzPersistVersion(v string) {
-	if !wizzRealHost() {
+func wizzPersistVersion(host, v string) {
+	if !wizzRealHost(host) {
 		return
 	}
 	path, ok := wizzCachePath()
@@ -200,12 +200,12 @@ func wizzPersistVersion(v string) {
 // wizzMaybeLoadCache loads a previously-healed version once per process, so a
 // fresh run starts from the last-known-live version rather than the (possibly
 // stale) compiled-in default. Skipped under a test host or an operator pin.
-func wizzMaybeLoadCache() {
+func wizzMaybeLoadCache(host string) {
 	wizzHealCacheOnce.Do(func() {
 		// Skip under a test host or whenever healing is off (operator pin or
 		// WIZZAIR_NO_AUTOHEAL): the opt-out must fully restore fail-clean and must
 		// not silently adopt a previously-cached healed version.
-		if !wizzRealHost() || !wizzHealEnabled() {
+		if !wizzRealHost(host) || !wizzHealEnabled() {
 			return
 		}
 		path, ok := wizzCachePath()

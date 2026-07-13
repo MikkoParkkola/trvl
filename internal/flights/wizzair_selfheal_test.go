@@ -47,13 +47,10 @@ func TestWizzProbeVersion(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	orig := wizzHost
-	wizzHost = srv.URL
-	defer func() { wizzHost = orig }()
 
 	cases := map[string]string{"29.4.0": "live", "29.3.0": "absent", "29.9.9": "inconclusive"}
 	for v, want := range cases {
-		if got := wizzProbeVersion(context.Background(), v); got != want {
+		if got := wizzProbeVersion(context.Background(), srv.URL, v); got != want {
 			t.Errorf("probe(%s) = %q, want %q", v, got, want)
 		}
 	}
@@ -88,14 +85,13 @@ func TestSearchWizzair_SelfHealsOnRotation(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origHost, origVer := wizzHost, wizzVersion
-	wizzHost = srv.URL
+	origVer := wizzVersion
 	wizzVersion = stale
-	defer func() { wizzHost, wizzVersion = origHost, origVer }()
+	defer func() { wizzVersion = origVer }()
 	t.Setenv("WIZZAIR_API_VERSION", "") // no operator pin
 	t.Setenv("WIZZAIR_NO_AUTOHEAL", "") // healing enabled
 
-	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
+	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
 	if err != nil {
 		t.Fatalf("self-heal search should succeed, got error: %v", err)
 	}
@@ -120,13 +116,12 @@ func TestSearchWizzair_NoHealWhenPinned(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origHost, origVer := wizzHost, wizzVersion
-	wizzHost = srv.URL
+	origVer := wizzVersion
 	wizzVersion = "10.1.0"
-	defer func() { wizzHost, wizzVersion = origHost, origVer }()
+	defer func() { wizzVersion = origVer }()
 	t.Setenv("WIZZAIR_API_VERSION", "29.3.0") // operator pin -> healing disabled
 
-	_, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
+	_, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
 	if err == nil {
 		t.Fatal("want rotation error when pinned, got nil")
 	}

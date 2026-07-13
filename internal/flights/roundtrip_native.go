@@ -13,17 +13,6 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-// afklmNewProvider is the constructor used to opportunistically include
-// AFKLM native round-trips in the default merge. It is overridden in tests
-// to inject a pre-configured provider (via NewProviderWithClient) without
-// depending on real credentials or network for credential resolution.
-var afklmNewProvider = afklm.NewProvider
-
-// afklmTestFlights is a test seam (prod code never sets it) allowing
-// deterministic injection of AFKLM results for testing default-merge
-// inclusion without cross-package client construction.
-var afklmTestFlights []models.FlightResult
-
 // searchNativeRoundTrip queries providers that price a return trip as a single
 // native fare (Skiplagged today) and returns only genuine round-trip itineraries
 // (FareRoundTrip, both legs present). It is rate-conscious: the composer has
@@ -271,8 +260,8 @@ func searchKiwiNativeRoundTrip(ctx context.Context, client *batchexec.Client, or
 // full both-leg round-trips when ReturnDate is supplied.
 func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, returnDate string, opts SearchOptions) ([]models.FlightResult, []models.ProviderStatus) {
 	// test seam: synthetic results (used by unit tests for deterministic AFKLM merge coverage)
-	if len(afklmTestFlights) > 0 {
-		native := append([]models.FlightResult(nil), afklmTestFlights...)
+	if len(opts.afklmTestFlights) > 0 {
+		native := append([]models.FlightResult(nil), opts.afklmTestFlights...)
 		target := nativeRoundTripCurrency(opts, nil, nil)
 		normalizeFlightCurrencies(ctx, native, target, destinations.ConvertCurrency)
 		return native, []models.ProviderStatus{{
@@ -286,7 +275,11 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 		return nil, nil
 	}
 
-	p, err := afklmNewProvider()
+	newProvider := opts.afklmNewProvider
+	if newProvider == nil {
+		newProvider = afklm.NewProvider // production default
+	}
+	p, err := newProvider()
 	if errors.Is(err, afklm.ErrNoCredential) {
 		return nil, nil // silent, zero latency, zero user signal
 	}

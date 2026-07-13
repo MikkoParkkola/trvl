@@ -27,7 +27,7 @@ func TestWizzDefaultVersionWellFormed(t *testing.T) {
 	orig := wizzVersion
 	wizzVersion = wizzDefaultVersion
 	defer func() { wizzVersion = orig }()
-	if got := wizzTimetableURL(); !strings.Contains(got, "/"+wizzDefaultVersion+"/Api/") {
+	if got := wizzTimetableURL(wizzDefaultHost); !strings.Contains(got, "/"+wizzDefaultVersion+"/Api/") {
 		t.Fatalf("wizzTimetableURL() = %q, expected to contain /%s/Api/", got, wizzDefaultVersion)
 	}
 }
@@ -56,12 +56,11 @@ func TestSearchWizzair_MapsFlight(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origHost, origVer := wizzHost, wizzVersion
-	wizzHost = srv.URL
+	origVer := wizzVersion
 	wizzVersion = "10.1.0"
-	defer func() { wizzHost, wizzVersion = origHost, origVer }()
+	defer func() { wizzVersion = origVer }()
 
-	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
+	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
 	if err != nil {
 		t.Fatalf("SearchWizzair error: %v", err)
 	}
@@ -111,8 +110,8 @@ func TestWizzTimetableURL_IncludesVersion(t *testing.T) {
 	wizzVersion = "10.1.0"
 	defer func() { wizzVersion = orig }()
 	t.Setenv("WIZZAIR_API_VERSION", "")
-	got := wizzTimetableURL()
-	want := wizzHost + "/10.1.0/Api/search/timetable"
+	got := wizzTimetableURL(wizzDefaultHost)
+	want := wizzDefaultHost + "/10.1.0/Api/search/timetable"
 	if got != want {
 		t.Errorf("url = %q, want %q", got, want)
 	}
@@ -145,13 +144,12 @@ func TestSearchWizzair_404_VersionRotated(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origHost, origVer := wizzHost, wizzVersion
-	wizzHost = srv.URL
+	origVer := wizzVersion
 	wizzVersion = "10.1.0"
-	defer func() { wizzHost, wizzVersion = origHost, origVer }()
+	defer func() { wizzVersion = origVer }()
 	t.Setenv("WIZZAIR_API_VERSION", "")
 
-	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
+	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
 	if err == nil {
 		t.Fatal("want error on 404, got nil")
 	}
@@ -229,20 +227,19 @@ func TestSearchWizzair_EnvOverrideRestores(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origHost, origVer := wizzHost, wizzVersion
-	wizzHost = srv.URL
+	origVer := wizzVersion
 	wizzVersion = "10.1.0" // stale default would 404
-	defer func() { wizzHost, wizzVersion = origHost, origVer }()
+	defer func() { wizzVersion = origVer }()
 
 	// Without the override: stale default 404s -> rotation sentinel.
 	t.Setenv("WIZZAIR_API_VERSION", "")
-	if _, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1}); !errors.Is(err, ErrWizzVersionRotated) {
+	if _, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL}); !errors.Is(err, ErrWizzVersionRotated) {
 		t.Fatalf("stale default: err = %v, want ErrWizzVersionRotated", err)
 	}
 
 	// With the override: request path carries the good version -> results.
 	t.Setenv("WIZZAIR_API_VERSION", goodVersion)
-	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1})
+	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-07-07", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
 	if err != nil {
 		t.Fatalf("override should restore provider, got err: %v", err)
 	}
@@ -264,13 +261,12 @@ func TestSearchWizzair_LiveFixture_Parses(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origHost, origVer := wizzHost, wizzVersion
-	wizzHost = srv.URL
+	origVer := wizzVersion
 	wizzVersion = "29.3.0"
-	defer func() { wizzHost, wizzVersion = origHost, origVer }()
+	defer func() { wizzVersion = origVer }()
 	t.Setenv("WIZZAIR_API_VERSION", "")
 
-	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-08-04", "EUR", SearchOptions{Adults: 1})
+	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-08-04", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
 	if err != nil {
 		t.Fatalf("SearchWizzair error: %v", err)
 	}
@@ -318,13 +314,12 @@ func TestSearchWizzair_400_InvalidMarket(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origHost, origVer := wizzHost, wizzVersion
-	wizzHost = srv.URL
+	origVer := wizzVersion
 	wizzVersion = "29.3.0"
-	defer func() { wizzHost, wizzVersion = origHost, origVer }()
+	defer func() { wizzVersion = origVer }()
 	t.Setenv("WIZZAIR_API_VERSION", "")
 
-	out, err := SearchWizzair(context.Background(), "BUD", "JFK", "2026-08-04", "EUR", SearchOptions{Adults: 1})
+	out, err := SearchWizzair(context.Background(), "BUD", "JFK", "2026-08-04", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
 	if err == nil {
 		t.Fatal("want error on 400 validationCodes, got nil")
 	}
@@ -355,13 +350,12 @@ func TestSearchWizzair_400_EdgeBlocked(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origHost, origVer := wizzHost, wizzVersion
-	wizzHost = srv.URL
+	origVer := wizzVersion
 	wizzVersion = "29.3.0"
-	defer func() { wizzHost, wizzVersion = origHost, origVer }()
+	defer func() { wizzVersion = origVer }()
 	t.Setenv("WIZZAIR_API_VERSION", "")
 
-	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-08-04", "EUR", SearchOptions{Adults: 1})
+	out, err := SearchWizzair(context.Background(), "BUD", "BCN", "2026-08-04", "EUR", SearchOptions{Adults: 1, wizzHost: srv.URL})
 	if err == nil {
 		t.Fatal("want error on non-JSON 400, got nil")
 	}
