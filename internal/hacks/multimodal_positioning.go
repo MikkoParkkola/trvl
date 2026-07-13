@@ -218,7 +218,7 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 				"Overnight ground legs add travel time; factor in comfort",
 			},
 			Steps: []string{
-				fmt.Sprintf("%s (%s %.0f)", c.hub.Notes, currency, c.groundPrice),
+				fmt.Sprintf("%s (%s %.0f%s)", c.hub.Notes, currency, c.groundPrice, groundFareNote),
 				fmt.Sprintf("Transfer from %s to %s airport", c.hub.HubCity, c.hub.HubCode),
 				fmt.Sprintf("Book flight %s→%s on %s (%s %.0f)", c.hub.HubCode, in.Destination, in.Date, currency, c.flightPrice),
 				"Allow at least 2 hours between ground arrival and flight departure",

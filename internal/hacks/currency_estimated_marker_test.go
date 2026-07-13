@@ -61,6 +61,9 @@ func TestGroundLegEstimatedFareMarker_presentOnStaticFallback(t *testing.T) {
 	if !strings.Contains(hacks[0].Description, estimatedFareMarker) {
 		t.Errorf("static-estimate fare should be flagged %q; description = %q", estimatedFareMarker, hacks[0].Description)
 	}
+	if !containsMarker(hacks[0].Steps, estimatedFareMarker) {
+		t.Errorf("static-estimate fare should be flagged %q in steps too; steps = %q", estimatedFareMarker, hacks[0].Steps)
+	}
 }
 
 // TestGroundLegEstimatedFareMarker_absentOnLiveQuote: a live provider quote
@@ -85,4 +88,17 @@ func TestGroundLegEstimatedFareMarker_absentOnLiveQuote(t *testing.T) {
 	if strings.Contains(hacks[0].Description, estimatedFareMarker) {
 		t.Errorf("live-quote fare must not be flagged as estimated; description = %q", hacks[0].Description)
 	}
+	if containsMarker(hacks[0].Steps, estimatedFareMarker) {
+		t.Errorf("live-quote fare must not be flagged as estimated in steps; steps = %q", hacks[0].Steps)
+	}
+}
+
+// containsMarker reports whether any step contains the given substring.
+func containsMarker(steps []string, marker string) bool {
+	for _, s := range steps {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
 }

@@ -200,7 +200,7 @@ func detectFerryPositioning(ctx context.Context, in DetectorInput) []Hack {
 				"Two separate tickets — no through-check protection",
 			},
 			Steps: []string{
-				fmt.Sprintf("Book ferry %s→%s on %s (%s: %.0f %s)", c.route.FerryFrom, c.route.FerryTo, in.Date, c.route.Notes, c.ferryPrice, currency),
+				fmt.Sprintf("Book ferry %s→%s on %s (%s: %.0f %s%s)", c.route.FerryFrom, c.route.FerryTo, in.Date, c.route.Notes, c.ferryPrice, currency, ferryFareNote),
 				fmt.Sprintf("Transfer from %s port to %s airport (see notes: %s)", c.route.FerryTo, c.route.AirportTo, c.route.Notes),
 				fmt.Sprintf("Book flight %s→%s (%s %.0f)", c.route.AirportTo, in.Destination, currency, c.flightPrice),
 				"Allow at least 3 hours between ferry arrival and flight departure",

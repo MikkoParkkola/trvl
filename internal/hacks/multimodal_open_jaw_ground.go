@@ -239,7 +239,7 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 			Steps: []string{
 				fmt.Sprintf("Book flight %s→%s on %s (%s %.0f)", in.Origin, c.hub.HubCode, in.Date, currency, c.flightPrice),
 				fmt.Sprintf("Ground transfer: %s", c.hub.Notes),
-				fmt.Sprintf("Arrive at %s (~%s %.0f ground cost)", c.hub.DestCity, currency, c.groundPrice),
+				fmt.Sprintf("Arrive at %s (~%s %.0f ground cost%s)", c.hub.DestCity, currency, c.groundPrice, groundFareNote),
 			},
 			Citations: []string{
 				googleFlightsURL(c.hub.HubCode, in.Origin, in.Date),
