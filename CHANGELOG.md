@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-07-13
+
+### Fixed
+
+- **Cross-currency display honesty across every hack detector.** When you
+  searched in a currency other than EUR, several detectors showed a
+  EUR-denominated number wearing your currency's label (for example a "£19"
+  ferry fare that was really €19). Positioning, open-jaw, flight-combo,
+  back-to-back, ferry-positioning, the multimodal routes, rail-competition,
+  accommodation-split, departure-tax, error-fare, and night-transport now
+  convert every leg into your requested display currency before they compare
+  or combine prices. A suggestion whose leg cannot be honestly converted is
+  dropped rather than shown with a misleading figure.
+- **Wrong cheapest flight in mixed-currency combos.** Flight-combo and
+  back-to-back savings picked the numerically smallest raw fare and only then
+  converted it, so a fare that merely looked cheaper in a stronger currency
+  (90 GBP) could beat a genuinely cheaper one (100 USD). Prices are now
+  converted first and the minimum taken in the target currency.
+- **Wizz Air self-heal no longer bleeds across hosts.** A discovered API
+  version healed against a test or override host is scoped to that host
+  instead of overwriting the shared production version, so concurrent
+  searches can't force each other's discovered version.
+- **Native round-trips retained through truncation** (#472, #473): a
+  window-compliant native round-trip is kept when results are trimmed rather
+  than displaced by a cheaper non-compliant option.
+
+### Changed
+
+- Hack detectors take their flight and ground searches through a per-call
+  `SearchOverride` seam on `SearchOptions`/`DetectorInput` instead of mutable
+  package globals (#478), making the offline test suite deterministic and
+  race-free.
+- `DetectAll` checks the context before dispatching detectors, so a cancelled
+  or timed-out request stops instead of leaking live provider calls.
+
 ## [1.19.1] - 2026-07-10
 
 ### Fixed
