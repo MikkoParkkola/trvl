@@ -180,6 +180,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/flights"
+	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -251,6 +252,13 @@ type DetectorInput struct {
 	// per-call data instead removes the shared mutable state entirely. See
 	// flights.SearchOptions.SearchOverride.
 	SearchOverride flights.SearchFunc
+
+	// GroundSearchOverride, when non-nil, is threaded into every
+	// ground.SearchOptions this detector builds so tests can inject synthetic
+	// ground-transport (ferry/bus/train) results. Nil (the default) runs the
+	// real ground.SearchByName. Mirrors SearchOverride above for the ground
+	// package. See ground.SearchOptions.SearchOverride.
+	GroundSearchOverride ground.SearchFunc
 }
 
 func (in *DetectorInput) currency() string {
