@@ -178,8 +178,20 @@ func TestDetectRailCompetition_currencyDefault(t *testing.T) {
 // is the ISO 4217 "no currency" placeholder — it will never appear in a
 // real exchange-rate table) suppresses the hack rather than labeling the
 // EUR-denominated MinFareEUR with the wrong currency. Deterministic — no
-// live network required.
+// live network required: a fake convertCurrency is injected via the seam in
+// currency.go so the "can't convert" contract is exercised offline instead
+// of dialing the live rates table. No t.Parallel — the seam var is shared
+// package state, set/restored sequentially like railGroundSearcher.
 func TestDetectRailCompetition_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
+	orig := convertCurrency
+	convertCurrency = func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == to {
+			return amount, to
+		}
+		return amount, from // can't convert — same contract as the real function
+	}
+	t.Cleanup(func() { convertCurrency = orig })
+
 	hacks := detectRailCompetition(context.Background(), DetectorInput{
 		Origin:      "MAD",
 		Destination: "BCN",

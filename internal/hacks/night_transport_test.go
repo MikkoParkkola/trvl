@@ -13,8 +13,22 @@ import (
 // a real exchange-rate table) suppresses the hack entirely instead of
 // labeling a EUR-denominated hotel-saving estimate with the wrong currency.
 // The guard runs before the ground-transport search, so this is
-// deterministic and network-independent.
+// deterministic and network-independent. Uses a fake convertCurrency
+// injected via the seam in currency.go so the "can't convert" contract is
+// exercised offline instead of dialing the live rates table (which would
+// otherwise be reached first to resolve EUR, before XXX is even considered).
+// No t.Parallel — the seam var is shared package state, set/restored
+// sequentially like railGroundSearcher.
 func TestDetectNightTransport_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
+	orig := convertCurrency
+	convertCurrency = func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == to {
+			return amount, to
+		}
+		return amount, from // can't convert — same contract as the real function
+	}
+	t.Cleanup(func() { convertCurrency = orig })
+
 	hacks := detectNightTransport(context.Background(), DetectorInput{
 		Origin:      "HEL",
 		Destination: "PRG",
