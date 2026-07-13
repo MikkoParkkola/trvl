@@ -180,6 +180,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
 
 // Hack represents a detected travel optimization opportunity.
@@ -242,9 +243,15 @@ type DetectorInput struct {
 	Loyalty LoyaltyProfile
 }
 
+// currency returns the display currency for this search: the explicit request
+// currency if set, else the user's saved profile preference
+// (preferences.DisplayCurrency), else EUR as a last-resort fallback.
 func (in *DetectorInput) currency() string {
 	if in.Currency != "" {
 		return in.Currency
+	}
+	if p, err := preferences.Load(); err == nil && p != nil && p.DisplayCurrency != "" {
+		return p.DisplayCurrency
 	}
 	return "EUR"
 }

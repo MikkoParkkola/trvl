@@ -3,8 +3,10 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
@@ -119,16 +121,25 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 		return nil
 	}
 
-	// Baseline: cheapest direct flight from origin.
+	// Ground legs here are EUR-denominated static estimates; each is converted
+	// via FX into the traveller's requested currency so the itinerary is
+	// labelled honestly in that one currency. A candidate whose ground estimate
+	// cannot be converted is skipped rather than mislabelled.
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
+
+	// Baseline: cheapest direct flight from origin, converted into the requested currency.
 	directResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
 	if err != nil || !directResult.Success || len(directResult.Flights) == 0 {
 		return nil
 	}
-	directPrice := minFlightPrice(directResult)
-	if directPrice <= 0 {
+	directPrice, ok := minFlightPriceConverted(ctx, directResult, target)
+	if !ok {
 		return nil
 	}
-	currency := flightCurrency(directResult, in.currency())
+	currency := target
 
 	type candidate struct {
 		hub       multiModalHub
@@ -145,32 +156,45 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 		go func() {
 			defer wg.Done()
 
-			// Live ground price (fallback to static estimate).
-			groundEUR := h.StaticGroundEUR
+			// Prefer a live ground price (converted into target); fall back to the
+			// static EUR estimate converted into target. Suppress the candidate
+			// only when NEITHER the live route nor the static estimate can be
+			// shown in the requested currency. Cheapest convertible price wins.
+			groundConv := 0.0
+			haveGround := false
 			gr, gerr := ground.SearchByName(ctx, h.OriginCity, h.HubCity, in.Date, ground.SearchOptions{
 				Currency: "EUR",
 				Type:     h.GroundType,
 			})
 			if gerr == nil && gr.Success {
-				for _, r := range gr.Routes {
-					if r.Price > 0 && r.Price < groundEUR {
-						groundEUR = r.Price
-					}
+				if _, live, lok := selectCheapestGroundConverted(ctx, gr.Routes, target, false); lok && live > 0 {
+					groundConv = live
+					haveGround = true
 				}
 			}
+			if est, gec := destinations.ConvertCurrency(ctx, h.StaticGroundEUR, "EUR", target); gec == target {
+				if !haveGround || est < groundConv {
+					groundConv = est
+					haveGround = true
+				}
+			}
+			if !haveGround {
+				ch <- candidate{}
+				return
+			}
 
-			// Flight from hub to destination.
+			// Flight from hub to destination, converted into the requested currency.
 			fr, ferr := flights.SearchFlights(ctx, h.HubCode, in.Destination, in.Date, flights.SearchOptions{})
 			if ferr != nil || !fr.Success || len(fr.Flights) == 0 {
 				ch <- candidate{}
 				return
 			}
-			flightPrice := minFlightPrice(fr)
-			if flightPrice <= 0 {
+			flightPrice, fok := minFlightPriceConverted(ctx, fr, target)
+			if !fok {
 				ch <- candidate{}
 				return
 			}
-			ch <- candidate{hub: h, groundEUR: groundEUR, flightEUR: flightPrice}
+			ch <- candidate{hub: h, groundEUR: groundConv, flightEUR: flightPrice}
 		}()
 	}
 
@@ -195,10 +219,10 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 			Currency: currency,
 			Savings:  roundSavings(savings),
 			Description: fmt.Sprintf(
-				"%s to %s (%.0f EUR) + flight %s→%s (%.0f EUR) = %.0f EUR total, vs direct flight %.0f EUR. Saves %s %.0f (%.0f%%).",
-				c.hub.OriginCity, c.hub.HubCity, c.groundEUR,
-				c.hub.HubCode, in.Destination, c.flightEUR,
-				total, directPrice,
+				"%s to %s (%.0f %s) + flight %s→%s (%.0f %s) = %.0f %s total, vs direct flight %.0f %s. Saves %s %.0f (%.0f%%).",
+				c.hub.OriginCity, c.hub.HubCity, c.groundEUR, currency,
+				c.hub.HubCode, in.Destination, c.flightEUR, currency,
+				total, currency, directPrice, currency,
 				currency, savings, 100*savings/directPrice,
 			),
 			Risks: []string{

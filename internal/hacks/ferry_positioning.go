@@ -3,7 +3,9 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
@@ -103,16 +105,25 @@ func detectFerryPositioning(ctx context.Context, in DetectorInput) []Hack {
 		return nil
 	}
 
-	// Baseline: cheapest direct flight from origin.
+	// Ferry legs are EUR-denominated static estimates; each is converted via FX
+	// into the traveller's requested currency so the itinerary is labelled
+	// honestly in that one currency. A candidate whose ferry estimate cannot be
+	// converted is skipped rather than mislabelled.
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
+
+	// Baseline: cheapest direct flight from origin, converted into the requested currency.
 	directResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{})
 	if err != nil || !directResult.Success || len(directResult.Flights) == 0 {
 		return nil
 	}
-	directPrice := minFlightPrice(directResult)
-	if directPrice <= 0 {
+	directPrice, ok := minFlightPriceConverted(ctx, directResult, target)
+	if !ok {
 		return nil
 	}
-	currency := flightCurrency(directResult, in.currency())
+	currency := target
 
 	type candidate struct {
 		route     ferryRoute
@@ -124,28 +135,41 @@ func detectFerryPositioning(ctx context.Context, in DetectorInput) []Hack {
 	for _, r := range routes {
 		r := r
 		go func() {
-			// Real ferry price (may override the static estimate).
-			ferryPrice := r.FerryEUR
+			// Prefer a live ferry price (converted into target); fall back to the
+			// static EUR estimate converted into target. Suppress the candidate
+			// only when NEITHER the live route nor the static estimate can be
+			// shown in the requested currency. Cheapest convertible price wins.
+			ferryPrice := 0.0
+			haveFerry := false
 			ferryResult, ferryErr := ground.SearchByName(ctx, r.FerryFrom, r.FerryTo, in.Date, ground.SearchOptions{
 				Currency: "EUR",
 				Type:     "ferry",
 			})
 			if ferryErr == nil && ferryResult.Success && len(ferryResult.Routes) > 0 {
-				for _, fr := range ferryResult.Routes {
-					if fr.Price > 0 && fr.Price < ferryPrice {
-						ferryPrice = fr.Price
-					}
+				if _, live, lok := selectCheapestGroundConverted(ctx, ferryResult.Routes, target, false); lok && live > 0 {
+					ferryPrice = live
+					haveFerry = true
 				}
 			}
+			if est, fec := destinations.ConvertCurrency(ctx, r.FerryEUR, "EUR", target); fec == target {
+				if !haveFerry || est < ferryPrice {
+					ferryPrice = est
+					haveFerry = true
+				}
+			}
+			if !haveFerry {
+				ch <- candidate{}
+				return
+			}
 
-			// Flight from the ferry destination airport.
+			// Flight from the ferry destination airport, converted into the requested currency.
 			flightResult, flightErr := flights.SearchFlights(ctx, r.AirportTo, in.Destination, in.Date, flights.SearchOptions{})
 			if flightErr != nil || !flightResult.Success || len(flightResult.Flights) == 0 {
 				ch <- candidate{}
 				return
 			}
-			flightPrice := minFlightPrice(flightResult)
-			if flightPrice <= 0 {
+			flightPrice, flok := minFlightPriceConverted(ctx, flightResult, target)
+			if !flok {
 				ch <- candidate{}
 				return
 			}
@@ -176,10 +200,10 @@ func detectFerryPositioning(ctx context.Context, in DetectorInput) []Hack {
 			Currency: currency,
 			Savings:  roundSavings(savings),
 			Description: fmt.Sprintf(
-				"Ferry %s→%s (%.0f%s) + flight %s→%s (%.0f) = %.0f total vs %.0f direct flight. Saves %s %.0f.",
-				c.route.FerryFrom, c.route.FerryTo, c.ferryEUR, overnightNote,
-				c.route.AirportTo, in.Destination, c.flightEUR,
-				total, directPrice, currency, savings,
+				"Ferry %s→%s (%.0f %s%s) + flight %s→%s (%.0f %s) = %.0f %s total vs %.0f %s direct flight. Saves %s %.0f.",
+				c.route.FerryFrom, c.route.FerryTo, c.ferryEUR, currency, overnightNote,
+				c.route.AirportTo, in.Destination, c.flightEUR, currency,
+				total, currency, directPrice, currency, currency, savings,
 			),
 			Risks: []string{
 				"Ferry schedule must align with your flight — check departure times carefully",
@@ -188,7 +212,7 @@ func detectFerryPositioning(ctx context.Context, in DetectorInput) []Hack {
 				"Two separate tickets — no through-check protection",
 			},
 			Steps: []string{
-				fmt.Sprintf("Book ferry %s→%s on %s (%s: %.0f EUR)", c.route.FerryFrom, c.route.FerryTo, in.Date, c.route.Notes, c.ferryEUR),
+				fmt.Sprintf("Book ferry %s→%s on %s (%s: %.0f %s)", c.route.FerryFrom, c.route.FerryTo, in.Date, c.route.Notes, c.ferryEUR, currency),
 				fmt.Sprintf("Transfer from %s port to %s airport (see notes: %s)", c.route.FerryTo, c.route.AirportTo, c.route.Notes),
 				fmt.Sprintf("Book flight %s→%s (%s %.0f)", c.route.AirportTo, in.Destination, currency, c.flightEUR),
 				"Allow at least 3 hours between ferry arrival and flight departure",
