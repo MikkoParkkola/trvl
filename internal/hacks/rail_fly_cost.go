@@ -11,25 +11,27 @@ import (
 )
 
 // convertRailLeg re-denominates a priced rail leg into target so its cost can be
-// honestly summed with, or subtracted from, target-denominated flight fares. A
-// bundled 0-cost leg carries no FX risk and is simply relabelled. An
-// inconvertible currency keeps its original denomination (rare — the FX table is
-// EUR-based and every caller has already proven EUR↔target convertibility) so a
-// number is never silently relabelled into a currency it was not priced in.
-func convertRailLeg(ctx context.Context, leg railLegCost, target string) railLegCost {
+// honestly summed with, or subtracted from, target-denominated flight fares. It
+// returns ok=false when a non-zero cost cannot be expressed in target: the caller
+// MUST then drop the whole hack, because subtracting or summing a foreign-priced
+// leg against target fares — and labelling the result target — is exactly the
+// mixed-denomination lie this sweep exists to kill. A bundled 0-cost leg carries
+// no FX risk and is simply relabelled (ok=true).
+func convertRailLeg(ctx context.Context, leg railLegCost, target string) (railLegCost, bool) {
 	target = strings.ToUpper(strings.TrimSpace(target))
-	if target == "" || leg.Cost == 0 || leg.Currency == "" || strings.EqualFold(leg.Currency, target) {
+	cur := strings.ToUpper(strings.TrimSpace(leg.Currency))
+	if target == "" || leg.Cost == 0 || cur == "" || cur == target {
 		if target != "" {
 			leg.Currency = target
 		}
-		return leg
+		return leg, true
 	}
-	c, cur := destinations.ConvertCurrency(ctx, leg.Cost, leg.Currency, target)
-	if cur != target {
-		return leg // inconvertible: keep the honest original denomination
+	c, got := destinations.ConvertCurrency(ctx, leg.Cost, cur, target)
+	if got != target {
+		return leg, false // inconvertible: caller must drop; mixing denominations would lie
 	}
 	leg.Cost, leg.Currency = c, target
-	return leg
+	return leg, true
 }
 
 // railLegCost is the resolved cost of the rail segment of a rail-fly hack.

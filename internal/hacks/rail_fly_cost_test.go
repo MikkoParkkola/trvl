@@ -265,3 +265,33 @@ func TestBuildRailFlyHack_hubOriginUnchangedBundledText(t *testing.T) {
 		t.Errorf("hub-origin description should keep bundled wording, got %q", h.Description)
 	}
 }
+
+// TestConvertRailLeg_honestyContract locks the cross-currency honesty boundary:
+// a non-zero cost that cannot be expressed in target must return ok=false so the
+// caller drops the whole hack rather than subtracting/summing a foreign-priced
+// leg against target fares under a target label. Offline (no FX table) any
+// cross-currency conversion is "unavailable", which is the exact failed-rail
+// -conversion path the codex review flagged as a BLOCKER.
+func TestConvertRailLeg_honestyContract(t *testing.T) {
+	ctx := context.Background()
+	// Non-zero foreign cost, inconvertible offline -> ok=false, leg unchanged.
+	got, ok := convertRailLeg(ctx, railLegCost{Cost: 39, Currency: "XXX"}, "EUR")
+	if ok {
+		t.Fatalf("inconvertible XXX->EUR: ok=true, want false (would mislabel)")
+	}
+	if got.Currency != "XXX" || got.Cost != 39 {
+		t.Fatalf("inconvertible leg mutated: %+v, want unchanged 39 XXX", got)
+	}
+	// Bundled 0-cost leg carries no FX risk: relabel to target, ok=true.
+	if g, ok := convertRailLeg(ctx, railLegCost{Cost: 0, Currency: "PLN"}, "EUR"); !ok || g.Currency != "EUR" {
+		t.Fatalf("bundled 0-cost leg: got %+v ok=%v, want EUR-relabelled ok=true", g, ok)
+	}
+	// Same-currency (case/space-insensitive) is a trivial relabel, ok=true.
+	if g, ok := convertRailLeg(ctx, railLegCost{Cost: 39, Currency: " eur "}, "EUR"); !ok || g.Currency != "EUR" || g.Cost != 39 {
+		t.Fatalf("same-currency leg: got %+v ok=%v, want 39 EUR ok=true", g, ok)
+	}
+	// Empty target never mutates currency and is a no-op success.
+	if g, ok := convertRailLeg(ctx, railLegCost{Cost: 39, Currency: "EUR"}, ""); !ok || g.Currency != "EUR" {
+		t.Fatalf("empty target: got %+v ok=%v, want unchanged EUR ok=true", g, ok)
+	}
+}

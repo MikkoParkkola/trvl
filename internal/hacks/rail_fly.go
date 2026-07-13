@@ -174,7 +174,13 @@ func detectRailFlyArb(ctx context.Context, origin, destination, departDate, retu
 	// is a different airport, so the rail leg is a real out-of-pocket cost that
 	// must be subtracted from net savings. A ground-provider error degrades
 	// gracefully to a conservative estimate; it never aborts the search.
-	railLeg := convertRailLeg(ctx, resolveRailLegCost(ctx, origin, *bestStation, departDate), target)
+	railLeg, railOK := convertRailLeg(ctx, resolveRailLegCost(ctx, origin, *bestStation, departDate), target)
+	if !railOK {
+		// The rail leg is priced in a currency that cannot be expressed in the
+		// traveller's display currency, so no honest single-denomination saving can
+		// be reported. Drop the hack rather than mix denominations under a target label.
+		return nil
+	}
 
 	// Net savings subtract any non-bundled rail cost (railLeg.Cost is 0 when the
 	// train is bundled in the airline ticket).
