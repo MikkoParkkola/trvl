@@ -3,6 +3,7 @@ package hacks
 import (
 	"context"
 	"math"
+	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -12,6 +13,14 @@ import (
 // deterministic detector so the savings-surfacing behaviour can be proven
 // offline without any network fan-out.
 type DetectFunc func(ctx context.Context, in DetectorInput) []Hack
+
+// isMoney reports whether v is a usable, finite, strictly-positive monetary
+// amount. NaN and +Inf are rejected here so a poisoned detector value can never
+// reach the JSON headline (encoding/json cannot marshal non-finite floats). The
+// v > 0 test already excludes NaN and negatives; the IsInf test rules out +Inf.
+func isMoney(v float64) bool {
+	return v > 0 && !math.IsInf(v, 0) && !math.IsNaN(v)
+}
 
 // BestSaving runs the hack detectors against the same route/date/naive-price as
 // a just-completed naive search and returns the single best money-saving option,
@@ -33,19 +42,55 @@ func BestSaving(ctx context.Context, in DetectorInput, detect DetectFunc) *model
 	if detect == nil {
 		detect = DetectAll
 	}
-	if in.NaivePrice <= 0 || !in.valid() {
+	if !isMoney(in.NaivePrice) || !in.valid() {
 		return nil
 	}
 
 	found := detect(ctx, in)
 
+	// The naive baseline (in.NaivePrice) is denominated in the requested
+	// currency. A hack's Savings is denominated in that hack's own Currency.
+	// Comparing or subtracting the two only tells the truth when both are the
+	// same currency, so we normalise to the requested currency and drop any
+	// candidate that reports a different one. Detectors are expected to emit
+	// their card in in.currency(); a candidate in a foreign currency signals a
+	// detector that has not been migrated to convert honestly, and surfacing it
+	// would mix currencies in the headline saving. Dropping it is the honest
+	// failure mode. ponytail: guard, not converter — conversion belongs in each
+	// detector, so the aggregator stays simple.
+	target := strings.ToUpper(strings.TrimSpace(in.currency()))
+	if target == "" {
+		target = "EUR"
+	}
+
 	var best *Hack
 	for i := range found {
 		h := &found[i]
-		// Only a hack with a real, strictly-positive saving represents a lower
-		// price. A saving at or above the whole naive fare cannot be real, so we
-		// drop it rather than surface a fabricated "free or negative" price.
-		if h.Savings <= 0 || h.Savings >= in.NaivePrice {
+		hc := strings.ToUpper(strings.TrimSpace(h.Currency))
+		if hc == "" {
+			// A blank currency is only trustworthy while EUR is the migration
+			// default. If the caller asked for anything else, an unlabelled EUR
+			// constant would be silently relabelled (e.g. shown as GBP), so we
+			// drop it rather than lie about the denomination.
+			if target != "EUR" {
+				continue
+			}
+			hc = target
+		}
+		if hc != target {
+			continue // foreign-currency saving cannot be honestly compared to the baseline
+		}
+		// Only a hack with a real, strictly-positive, finite saving represents a
+		// lower price. A saving at or above the whole naive fare cannot be real,
+		// and a non-finite value would poison the JSON headline, so both are
+		// dropped rather than surfaced as a fabricated "free or negative" price.
+		if !isMoney(h.Savings) || h.Savings >= in.NaivePrice {
+			continue
+		}
+		// Guard the rounding boundary: a saving that rounds the resulting price to
+		// zero-or-below (e.g. 100 - 99.6) is not an honest lower price. Skip it so
+		// a genuinely cheaper hack can still win.
+		if roundSavings(in.NaivePrice-h.Savings) <= 0 {
 			continue
 		}
 		if best == nil || h.Savings > best.Savings {
@@ -56,10 +101,7 @@ func BestSaving(ctx context.Context, in DetectorInput, detect DetectFunc) *model
 		return nil
 	}
 
-	currency := best.Currency
-	if currency == "" {
-		currency = in.currency()
-	}
+	currency := target
 	price := roundSavings(in.NaivePrice - best.Savings)
 	pct := math.Round(best.Savings/in.NaivePrice*1000) / 10
 
