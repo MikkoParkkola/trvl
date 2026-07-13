@@ -341,11 +341,26 @@ func RegisteredDetectorCount() int {
 // DetectAll runs all detectors in parallel and returns every hack found.
 // It respects ctx cancellation; detectors that finish after cancellation
 // are discarded.
+//
+// A cancelled or already-expired ctx short-circuits before any detector is
+// dispatched: several detectors make live provider calls (Google Flights,
+// Kiwi, ground transport providers such as rome2rio/ferryhopper/skiplagged),
+// and there is no point paying for a network round trip whose result nobody
+// can use. This keeps a cancelled MCP request response-fast and keeps the
+// default (offline) test suite free of live provider traffic.
 func DetectAll(ctx context.Context, in DetectorInput) []Hack {
+	// Fast path: ctx is already done (cancelled or deadline already passed).
+	// Don't launch a single detector goroutine.
+	if ctx.Err() != nil {
+		return nil
+	}
+
 	detectors := allDetectors()
 
 	// Each detector gets a child context with a per-detector timeout so a
-	// slow API call cannot block the entire hacks response.
+	// slow API call cannot block the entire hacks response. context.WithTimeout
+	// inherits ctx's deadline if it is earlier than detectorTimeout, so a
+	// tight parent deadline still propagates into every detector's HTTP path.
 	const detectorTimeout = 20 * time.Second
 
 	type result struct {
@@ -356,10 +371,22 @@ func DetectAll(ctx context.Context, in DetectorInput) []Hack {
 	var wg sync.WaitGroup
 
 	for _, fn := range detectors {
+		// ctx can expire mid fan-out (e.g. a parent deadline of a few ms
+		// elapses while we're still iterating the detector roster). Stop
+		// dispatching further detectors the moment that happens rather than
+		// firing off calls that are already doomed to fail.
+		if ctx.Err() != nil {
+			break
+		}
 		fn := fn
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// Defensive re-check: ctx may expire between the dispatch-loop
+			// check above and this goroutine actually getting scheduled.
+			if ctx.Err() != nil {
+				return
+			}
 			dCtx, cancel := context.WithTimeout(ctx, detectorTimeout)
 			defer cancel()
 			h := fn(dCtx, in)
