@@ -44,9 +44,17 @@ const wizzBrowserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537
 
 var (
 	// wizzVersionMu guards concurrent reads (wizzResolvedVersion) and heal-time
-	// writes of wizzVersion, so the aggregate's parallel provider goroutines stay
-	// race-free under -race.
+	// writes of wizzVersion and wizzHostVersions, so the aggregate's parallel
+	// provider goroutines stay race-free under -race.
 	wizzVersionMu sync.RWMutex
+	// wizzHostVersions holds healed versions for non-production host overrides
+	// (tests, or any explicit SearchOptions.wizzHost), keyed by host. A heal
+	// against a non-production host writes here instead of the shared
+	// wizzVersion global, so a search against one host can never heal-and-force
+	// its discovered version onto a concurrent search against a different host.
+	// The production host (wizzDefaultHost) always uses wizzVersion directly, so
+	// production behaviour and on-disk persistence are unaffected.
+	wizzHostVersions map[string]string
 	// wizzHealCacheOnce loads the on-disk cached version exactly once per process.
 	wizzHealCacheOnce sync.Once
 	// wizzHealLimiter throttles discovery probes so a rotation can't burst the edge.
@@ -148,21 +156,54 @@ func wizzVersionNewer(a, b string) bool {
 // caller arriving after another goroutine already healed gets the new version.
 // Returns ("", false) when no candidate in range is live (caller keeps the typed
 // rotation error — graceful degradation preserved).
+//
+// The healed version is scoped to host: a production-host (wizzDefaultHost) heal
+// updates the shared wizzVersion global and persists to disk, exactly as before.
+// A heal against any other host (a per-call SearchOptions.wizzHost override) only
+// ever writes wizzHostVersions[host] — it can never mutate the global, so a
+// concurrent search against a different host (production or another override)
+// cannot be healed onto a version that was only verified live against this one.
 func wizzHeal(ctx context.Context, host, stale string) (string, bool) {
 	wizzVersionMu.Lock()
 	defer wizzVersionMu.Unlock()
-	if wizzVersion != stale {
-		return wizzVersion, true // another goroutine already healed
+	if cur := wizzLockedVersion(host); cur != stale {
+		return cur, true // another goroutine already healed
 	}
 	for _, c := range wizzNextCandidates(stale) {
 		_ = wizzHealLimiter.Wait(ctx)
 		if wizzProbeVersion(ctx, host, c) == "live" {
-			wizzVersion = c
-			wizzPersistVersion(host, c)
+			wizzSetLockedVersion(host, c)
 			return c, true
 		}
 	}
 	return "", false
+}
+
+// wizzLockedVersion returns the currently-known version for host. Callers must
+// hold wizzVersionMu (read or write lock).
+func wizzLockedVersion(host string) string {
+	if !wizzRealHost(host) {
+		if v, ok := wizzHostVersions[host]; ok {
+			return v
+		}
+	}
+	return wizzVersion
+}
+
+// wizzSetLockedVersion records a newly-healed version for host. Callers must
+// hold wizzVersionMu for writing. Only the production host updates the shared
+// global and on-disk cache; any other host is scoped to wizzHostVersions so it
+// can never leak into production or into a different host override.
+func wizzSetLockedVersion(host, v string) {
+	if wizzRealHost(host) {
+		wizzVersion = v
+		wizzPersistVersion(host, v)
+		return
+	}
+	if wizzHostVersions == nil {
+		wizzHostVersions = make(map[string]string)
+	}
+	wizzHostVersions[host] = v
 }
 
 type wizzVersionCache struct {

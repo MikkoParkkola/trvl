@@ -133,7 +133,7 @@ func runWizzairProvider(ctx context.Context, client *batchexec.Client, origin, d
 		slog.Warn("wizzair flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
 		// wizzairFailureStatus renders a typed, actionable status; a 404
 		// version-rotation gets a WIZZ_VERSION_ROTATED fix hint.
-		return providerOutcome{err: err, status: wizzairFailureStatus(err)}
+		return providerOutcome{err: err, status: wizzairFailureStatus(opts.wizzBaseHost(), err)}
 	}
 	return providerOutcome{flights: flights, succeeded: true, status: models.ProviderStatus{
 		ID:      "wizzair",

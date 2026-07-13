@@ -96,11 +96,11 @@ func TestWizzResolvedVersion_EnvOverride(t *testing.T) {
 	defer func() { wizzVersion = orig }()
 
 	t.Setenv("WIZZAIR_API_VERSION", "")
-	if got := wizzResolvedVersion(); got != "10.1.0" {
+	if got := wizzResolvedVersion(wizzDefaultHost); got != "10.1.0" {
 		t.Errorf("default version = %q, want 10.1.0", got)
 	}
 	t.Setenv("WIZZAIR_API_VERSION", "27.5.0")
-	if got := wizzResolvedVersion(); got != "27.5.0" {
+	if got := wizzResolvedVersion(wizzDefaultHost); got != "27.5.0" {
 		t.Errorf("env-override version = %q, want 27.5.0", got)
 	}
 }
@@ -175,7 +175,7 @@ func TestWizzairFailureStatus_TypedActionable(t *testing.T) {
 	t.Setenv("WIZZAIR_API_VERSION", "")
 
 	rotated := fmt.Errorf("wizzair: tried API version %q: %w", "10.1.0", ErrWizzVersionRotated)
-	st := wizzairFailureStatus(rotated)
+	st := wizzairFailureStatus(wizzDefaultHost, rotated)
 
 	if st.ID != "wizzair" || st.Name != "Wizz Air" {
 		t.Errorf("bad identity: %+v", st)
@@ -200,7 +200,7 @@ func TestWizzairFailureStatus_TypedActionable(t *testing.T) {
 // TestWizzairFailureStatus_GenericError checks a non-rotation error gets no
 // version-rotation fix hint (no false actionability).
 func TestWizzairFailureStatus_GenericError(t *testing.T) {
-	st := wizzairFailureStatus(errors.New("wizzair: decode: boom"))
+	st := wizzairFailureStatus(wizzDefaultHost, errors.New("wizzair: decode: boom"))
 	if st.FixHintCode != "" {
 		t.Errorf("fix_hint_code = %q, want empty for generic error", st.FixHintCode)
 	}
@@ -332,7 +332,7 @@ func TestSearchWizzair_400_InvalidMarket(t *testing.T) {
 	if !strings.Contains(err.Error(), "InvalidMarket") {
 		t.Errorf("error %q should echo the validationCodes", err)
 	}
-	st := wizzairFailureStatus(err)
+	st := wizzairFailureStatus(srv.URL, err)
 	if st.FixHintCode != "WIZZ_MARKET_REJECTED" {
 		t.Errorf("fix_hint_code = %q, want WIZZ_MARKET_REJECTED", st.FixHintCode)
 	}
@@ -368,7 +368,7 @@ func TestSearchWizzair_400_EdgeBlocked(t *testing.T) {
 	if !strings.Contains(err.Error(), "CloudFront") {
 		t.Errorf("error %q should echo the edge body snippet", err)
 	}
-	st := wizzairFailureStatus(err)
+	st := wizzairFailureStatus(srv.URL, err)
 	if st.FixHintCode != "WIZZ_BLOCKED" {
 		t.Errorf("fix_hint_code = %q, want WIZZ_BLOCKED", st.FixHintCode)
 	}
@@ -394,7 +394,7 @@ func TestClassifyWizzStatus_Table(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			err := classifyWizzStatus(c.status, []byte(c.body))
+			err := classifyWizzStatus(wizzDefaultHost, c.status, []byte(c.body))
 			if !errors.Is(err, c.want) {
 				t.Fatalf("classifyWizzStatus(%d, %q) = %v, want errors.Is %v", c.status, c.body, err, c.want)
 			}

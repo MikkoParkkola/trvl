@@ -98,7 +98,7 @@ func TestSearchWizzair_SelfHealsOnRotation(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("want 1 result after self-heal, got %d", len(out))
 	}
-	if got := wizzResolvedVersion(); got != live {
+	if got := wizzResolvedVersion(srv.URL); got != live {
 		t.Errorf("version after heal = %q, want %q", got, live)
 	}
 }
