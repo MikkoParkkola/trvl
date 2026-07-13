@@ -91,6 +91,7 @@ type ferryCandidate struct {
 	route       ferryRoute
 	flightPrice float64
 	ferryPrice  float64
+	estimated   bool
 }
 
 
@@ -138,7 +139,7 @@ func detectFerryPositioning(ctx context.Context, in DetectorInput) []Hack {
 	for _, r := range routes {
 		r := r
 		go func() {
-			ferryPrice, ok := groundLegPriceInTarget(ctx, r.FerryFrom, r.FerryTo, in.Date, "ferry", r.FerryEUR, target, in.GroundSearchOverride)
+			ferryPrice, ok, estimated := groundLegPriceInTarget(ctx, r.FerryFrom, r.FerryTo, in.Date, "ferry", r.FerryEUR, target, in.GroundSearchOverride)
 			if !ok {
 				ch <- ferryCandidate{}
 				return
@@ -155,7 +156,7 @@ func detectFerryPositioning(ctx context.Context, in DetectorInput) []Hack {
 				ch <- ferryCandidate{}
 				return
 			}
-			ch <- ferryCandidate{route: r, flightPrice: flightPrice, ferryPrice: ferryPrice}
+			ch <- ferryCandidate{route: r, flightPrice: flightPrice, ferryPrice: ferryPrice, estimated: estimated}
 		}()
 	}
 
@@ -176,14 +177,19 @@ func detectFerryPositioning(ctx context.Context, in DetectorInput) []Hack {
 			overnightNote = " (overnight ferry — no hotel needed)"
 		}
 
+		ferryFareNote := ""
+		if c.estimated {
+			ferryFareNote = ", estimated fare"
+		}
+
 		hacks = append(hacks, Hack{
 			Type:     "ferry_positioning",
 			Title:    fmt.Sprintf("Ferry to %s then fly to %s", c.route.FerryTo, in.Destination),
 			Currency: currency,
 			Savings:  roundSavings(savings),
 			Description: fmt.Sprintf(
-				"Ferry %s→%s (%.0f %s%s) + flight %s→%s (%.0f %s) = %.0f %s total vs %.0f %s direct flight. Saves %s %.0f.",
-				c.route.FerryFrom, c.route.FerryTo, c.ferryPrice, currency, overnightNote,
+				"Ferry %s→%s (%.0f %s%s%s) + flight %s→%s (%.0f %s) = %.0f %s total vs %.0f %s direct flight. Saves %s %.0f.",
+				c.route.FerryFrom, c.route.FerryTo, c.ferryPrice, currency, ferryFareNote, overnightNote,
 				c.route.AirportTo, in.Destination, c.flightPrice, currency,
 				total, currency, directPrice, currency, currency, savings,
 			),

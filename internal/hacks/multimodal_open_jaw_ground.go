@@ -113,6 +113,7 @@ type openJawGroundCandidate struct {
 	groundPrice float64
 	flightPrice float64
 	hotelBonus  float64
+	estimated   bool
 }
 
 // detectMultiModalOpenJawGround checks whether flying to a nearby hub airport
@@ -157,7 +158,7 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 		go func() {
 			defer wg.Done()
 
-			groundPrice, ok := groundLegPriceInTarget(ctx, h.HubCity, h.DestCity, in.Date, "", h.StaticGroundEUR, target, in.GroundSearchOverride)
+			groundPrice, ok, estimated := groundLegPriceInTarget(ctx, h.HubCity, h.DestCity, in.Date, "", h.StaticGroundEUR, target, in.GroundSearchOverride)
 			if !ok {
 				ch <- openJawGroundCandidate{}
 				return
@@ -188,7 +189,7 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 				hotelBonus = bonus
 			}
 
-			ch <- openJawGroundCandidate{hub: h, groundPrice: groundPrice, flightPrice: flightPrice, hotelBonus: hotelBonus}
+			ch <- openJawGroundCandidate{hub: h, groundPrice: groundPrice, flightPrice: flightPrice, hotelBonus: hotelBonus, estimated: estimated}
 		}()
 	}
 
@@ -212,15 +213,20 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 			overnightNote = fmt.Sprintf(" + saves ~%.0f %s hotel night", c.hotelBonus, currency)
 		}
 
+		groundFareNote := ""
+		if c.estimated {
+			groundFareNote = ", estimated fare"
+		}
+
 		hacks = append(hacks, Hack{
 			Type:     "multimodal_open_jaw_ground",
 			Title:    fmt.Sprintf("Fly to %s, complete journey to %s by ground", c.hub.HubCity, cityFromCode(in.Destination)),
 			Currency: currency,
 			Savings:  roundSavings(savings),
 			Description: fmt.Sprintf(
-				"Flight %s→%s (%.0f %s) + ground %s→%s (%.0f %s) = %.0f %s total%s, vs direct %s→%s %.0f %s. Saves %s %.0f.",
+				"Flight %s→%s (%.0f %s) + ground %s→%s (%.0f %s%s) = %.0f %s total%s, vs direct %s→%s %.0f %s. Saves %s %.0f.",
 				in.Origin, c.hub.HubCode, c.flightPrice, currency,
-				c.hub.HubCity, c.hub.DestCity, c.groundPrice, currency,
+				c.hub.HubCity, c.hub.DestCity, c.groundPrice, currency, groundFareNote,
 				total, currency, overnightNote,
 				in.Origin, in.Destination, directPrice, currency,
 				currency, savings,

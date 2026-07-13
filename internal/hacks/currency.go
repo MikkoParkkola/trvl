@@ -66,14 +66,18 @@ func cheapestFlightPriceInTarget(ctx context.Context, r *models.FlightSearchResu
 // groundLegPriceInTarget returns the cheapest ground-transport price for a
 // from/to/date/groundType search, converted into target: a live quote when
 // ground.SearchByName returns one in a convertible currency, otherwise the
-// staticEUR fallback estimate converted into target. Returns (0, false) when
-// neither source can be expressed in target.
+// staticEUR fallback estimate converted into target. Returns (0, false, false)
+// when neither source can be expressed in target.
+//
+// The third return value, estimated, is true when the price came from the
+// static EUR fallback rather than a live provider quote — callers surface this
+// as an "(estimated fare)" marker so the number is honest about its provenance.
 //
 // Shared by ferry_positioning.go, multimodal_positioning.go, and
 // multimodal_open_jaw_ground.go — each prices a ground leg by preferring a
 // live provider quote over a conservative static EUR estimate, and each must
 // suppress the candidate rather than mix currencies when neither converts.
-func groundLegPriceInTarget(ctx context.Context, from, to, date, groundType string, staticEUR float64, target string, override ground.SearchFunc) (float64, bool) {
+func groundLegPriceInTarget(ctx context.Context, from, to, date, groundType string, staticEUR float64, target string, override ground.SearchFunc) (price float64, ok bool, estimated bool) {
 	best, found := 0.0, false
 	result, err := ground.SearchByName(ctx, from, to, date, ground.SearchOptions{
 		Currency:       target,
@@ -92,7 +96,8 @@ func groundLegPriceInTarget(ctx context.Context, from, to, date, groundType stri
 		}
 	}
 	if found {
-		return best, true
+		return best, true, false
 	}
-	return convertCurrency(ctx, staticEUR, "EUR", target)
+	est, converted := convertCurrency(ctx, staticEUR, "EUR", target)
+	return est, converted, converted
 }

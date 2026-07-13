@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   convert every leg into your requested display currency before they compare
   or combine prices. A suggestion whose leg cannot be honestly converted is
   dropped rather than shown with a misleading figure.
+- **Estimated ground fares are now labelled as such.** When a ferry or ground
+  leg falls back to trvl's built-in fare estimate because no live provider quote
+  is available, the ferry-positioning and multimodal routes mark it "(estimated
+  fare)" in the description, so a modelled number is no longer indistinguishable
+  from a real quote.
 - **Wrong cheapest flight in mixed-currency combos.** Flight-combo and
   back-to-back savings picked the numerically smallest raw fare and only then
   converted it, so a fare that merely looked cheaper in a stronger currency

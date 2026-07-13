@@ -108,6 +108,7 @@ type multiModalCandidate struct {
 	hub         multiModalHub
 	groundPrice float64
 	flightPrice float64
+	estimated   bool
 }
 
 // detectMultiModalPositioning checks whether taking ground transport to a
@@ -157,7 +158,7 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 		go func() {
 			defer wg.Done()
 
-			groundPrice, ok := groundLegPriceInTarget(ctx, h.OriginCity, h.HubCity, in.Date, h.GroundType, h.StaticGroundEUR, target, in.GroundSearchOverride)
+			groundPrice, ok, estimated := groundLegPriceInTarget(ctx, h.OriginCity, h.HubCity, in.Date, h.GroundType, h.StaticGroundEUR, target, in.GroundSearchOverride)
 			if !ok {
 				ch <- multiModalCandidate{}
 				return
@@ -174,7 +175,7 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 				ch <- multiModalCandidate{}
 				return
 			}
-			ch <- multiModalCandidate{hub: h, groundPrice: groundPrice, flightPrice: flightPrice}
+			ch <- multiModalCandidate{hub: h, groundPrice: groundPrice, flightPrice: flightPrice, estimated: estimated}
 		}()
 	}
 
@@ -193,14 +194,19 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 			continue
 		}
 
+		groundFareNote := ""
+		if c.estimated {
+			groundFareNote = ", estimated fare"
+		}
+
 		hacks = append(hacks, Hack{
 			Type:     "multimodal_positioning",
 			Title:    fmt.Sprintf("Ground to %s, then fly to %s cheaper", c.hub.HubCity, in.Destination),
 			Currency: currency,
 			Savings:  roundSavings(savings),
 			Description: fmt.Sprintf(
-				"%s to %s (%.0f %s) + flight %s→%s (%.0f %s) = %.0f %s total, vs direct flight %.0f %s. Saves %s %.0f (%.0f%%).",
-				c.hub.OriginCity, c.hub.HubCity, c.groundPrice, currency,
+				"%s to %s (%.0f %s%s) + flight %s→%s (%.0f %s) = %.0f %s total, vs direct flight %.0f %s. Saves %s %.0f (%.0f%%).",
+				c.hub.OriginCity, c.hub.HubCity, c.groundPrice, currency, groundFareNote,
 				c.hub.HubCode, in.Destination, c.flightPrice, currency,
 				total, currency, directPrice, currency,
 				currency, savings, 100*savings/directPrice,
