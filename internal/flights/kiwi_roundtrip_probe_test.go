@@ -2,9 +2,12 @@ package flights
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // TestProbeKiwiRoundTrip hits live Kiwi with a round-trip request (returnDate
@@ -32,6 +35,9 @@ func TestProbeKiwiRoundTrip(t *testing.T) {
 	results, err := SearchKiwiFlights(ctx, origin, destination, dep, "EUR", opts)
 	t.Logf("SearchKiwiFlights(returnDate=%s) -> %d results, err=%v", ret, len(results), err)
 	if err != nil {
+		if errors.Is(err, models.ErrRateLimited) {
+			t.Skipf("kiwi round-trip rate-limited/503 upstream (not a wire-format drift): %v", err)
+		}
 		t.Fatalf("kiwi round-trip request failed: %v", err)
 	}
 	for i, f := range results {
