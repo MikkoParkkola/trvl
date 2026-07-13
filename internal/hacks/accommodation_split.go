@@ -81,6 +81,15 @@ func DetectAccommodationSplit(ctx context.Context, in AccommodationSplitInput) [
 		return nil
 	}
 
+	// Convert the fixed EUR minimum-saving threshold into the target currency
+	// too — comparing a target-currency net saving against a raw EUR number
+	// would pass/fail the threshold on the wrong scale for every non-EUR
+	// target.
+	minSavings, scur := destinations.ConvertCurrency(ctx, minSavingsEUR, "EUR", currency)
+	if scur != currency {
+		return nil
+	}
+
 	// Load user preferences for hotel filtering.
 	prefs, _ := preferences.Load()
 
@@ -92,7 +101,7 @@ func DetectAccommodationSplit(ctx context.Context, in AccommodationSplitInput) [
 	baselineTotal := baseline.Price * float64(totalNights)
 
 	// 2. Find the best split (2-way first, 3-way if MaxSplits >= 3).
-	best := findBestSplit(ctx, in, checkIn, totalNights, currency, movingCost, baselineTotal, prefs)
+	best := findBestSplit(ctx, in, checkIn, totalNights, currency, movingCost, minSavings, baselineTotal, prefs)
 	if best == nil {
 		return nil
 	}
@@ -117,6 +126,7 @@ func findBestSplit(
 	totalNights int,
 	currency string,
 	movingCost float64,
+	minSavings float64,
 	baselineTotal float64,
 	prefs *preferences.Preferences,
 ) *Hack {
@@ -191,7 +201,7 @@ func findBestSplit(
 
 	// Net savings after moving costs are already baked into best.totalCost.
 	netSavings := baselineTotal - best.totalCost
-	if netSavings < minSavingsEUR {
+	if netSavings < minSavings {
 		return nil
 	}
 	if best.totalCost > baselineTotal*minSavingsRatio {
@@ -307,12 +317,19 @@ func searchBestHotel(ctx context.Context, city, checkIn, checkOut string, guests
 		return nil
 	}
 
-	// Return cheapest with a valid price.
+	// Return cheapest with a valid price that is actually denominated in the
+	// requested currency. A hotel priced in something else would silently
+	// corrupt the split-cost sum and get mislabeled with the wrong currency,
+	// so skip it and keep looking rather than trust it.
 	for _, h := range filtered {
-		if h.Price > 0 {
-			hCopy := h
-			return &hCopy
+		if h.Price <= 0 {
+			continue
 		}
+		if h.Currency != "" && !strings.EqualFold(h.Currency, currency) {
+			continue
+		}
+		hCopy := h
+		return &hCopy
 	}
 	return nil
 }

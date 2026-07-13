@@ -2,7 +2,11 @@ package hacks
 
 import (
 	"context"
+	"math"
+	"strings"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/destinations"
 )
 
 func TestDetectDepartureTax_emptyInput(t *testing.T) {
@@ -73,15 +77,65 @@ func TestDetectDepartureTax_highTaxNoAlternative(t *testing.T) {
 	}
 }
 
+// TestDetectDepartureTax_cphToHel proves the net-of-ground-cost fix: CPH
+// (DK) has only EUR 5 departure tax, and its cheapest zero-tax alternative
+// (MMX/Malmo) costs EUR 10 in ground transport to reach. Once Savings is
+// honestly netted against the transport cost (rather than reporting the
+// gross tax as if transport were free), that is not a real saving, so no
+// hack should surface.
 func TestDetectDepartureTax_cphToHel(t *testing.T) {
-	// CPH (DK) has EUR 5 tax. Nearby: MMX (SE, zero tax after 2025 abolition).
 	hacks := detectDepartureTax(context.Background(), DetectorInput{
 		Origin:      "CPH",
 		Destination: "BCN",
 	})
-	// CPH has nearby airports (MMX is SE = zero tax).
+	if len(hacks) != 0 {
+		t.Errorf("expected no hack once ground cost (EUR 10) is netted against the EUR 5 tax, got %d", len(hacks))
+	}
+}
+
+// syntheticTaxOrigin/syntheticTaxAlt are injected into the package-level
+// fixture tables for the duration of a test so the net-of-ground-cost
+// arithmetic and non-EUR currency conversion can be proven deterministically.
+// No route in the real fixture data has a ground cost cheaper than the tax
+// saved (see TestDetectDepartureTax_cphToHel), so a synthetic route is
+// required to exercise the surfaced-hack path at all.
+const (
+	syntheticTaxOrigin = "ZZ1"
+	syntheticTaxAlt    = "ZZ2"
+)
+
+// newSyntheticTaxRoute registers a high-tax origin (EUR 20) with a single
+// zero-tax alternative reachable for EUR 6 ground transport — a genuine net
+// saving of EUR 14 — and removes the fixture entries when the test ends.
+func newSyntheticTaxRoute(t *testing.T) {
+	t.Helper()
+	iataToCountry[syntheticTaxOrigin] = "Z1"
+	iataToCountry[syntheticTaxAlt] = "Z2"
+	departureTaxEUR["Z1"] = 20
+	departureTaxEUR["Z2"] = 0
+	nearbyAirports[syntheticTaxOrigin] = []nearbyEntry{
+		{Code: syntheticTaxAlt, City: "Zed City", GroundCost: 6, GroundMins: 30, Description: "Bus"},
+	}
+	t.Cleanup(func() {
+		delete(iataToCountry, syntheticTaxOrigin)
+		delete(iataToCountry, syntheticTaxAlt)
+		delete(departureTaxEUR, "Z1")
+		delete(departureTaxEUR, "Z2")
+		delete(nearbyAirports, syntheticTaxOrigin)
+	})
+}
+
+// TestDetectDepartureTax_fieldsPopulated proves the surfaced hack carries a
+// full set of user-facing fields, using the synthetic route so a genuine net
+// saving actually exists to surface.
+func TestDetectDepartureTax_fieldsPopulated(t *testing.T) {
+	newSyntheticTaxRoute(t)
+	hacks := detectDepartureTax(context.Background(), DetectorInput{
+		Origin:      syntheticTaxOrigin,
+		Destination: "BCN",
+	})
 	if len(hacks) == 0 {
-		t.Fatal("expected a hack for CPH (DK tax) with MMX (SE zero tax) alternative")
+		t.Fatal("expected a hack for the synthetic high-tax route")
 	}
 	h := hacks[0]
 	if h.Type != "departure_tax" {
@@ -105,20 +159,21 @@ func TestDetectDepartureTax_cphToHel(t *testing.T) {
 }
 
 func TestDetectDepartureTax_caseInsensitive(t *testing.T) {
+	newSyntheticTaxRoute(t)
 	// Lowercase input should work.
 	hacks := detectDepartureTax(context.Background(), DetectorInput{
-		Origin:      "cph",
+		Origin:      strings.ToLower(syntheticTaxOrigin),
 		Destination: "bcn",
 	})
-	// CPH has nearby zero-tax alternatives.
 	if len(hacks) == 0 {
-		t.Fatal("expected hack for lowercase cph")
+		t.Fatal("expected hack for lowercase origin")
 	}
 }
 
 func TestDetectDepartureTax_currencyDefault(t *testing.T) {
+	newSyntheticTaxRoute(t)
 	hacks := detectDepartureTax(context.Background(), DetectorInput{
-		Origin:      "CPH",
+		Origin:      syntheticTaxOrigin,
 		Destination: "BCN",
 	})
 	if len(hacks) == 0 {
@@ -127,15 +182,20 @@ func TestDetectDepartureTax_currencyDefault(t *testing.T) {
 	if hacks[0].Currency != "EUR" {
 		t.Errorf("currency = %q, want EUR", hacks[0].Currency)
 	}
+	if hacks[0].Savings <= 0 {
+		t.Errorf("savings should be > 0, got %.0f", hacks[0].Savings)
+	}
 }
 
 // TestDetectDepartureTax_eurTarget_labelsEURAndConverts proves cases (a)
 // and (c) explicitly: EUR passes through untouched (no network —
-// ConvertCurrency short-circuits on from==to) and the surfaced hack's
-// Currency matches the target.
+// ConvertCurrency short-circuits on from==to), the surfaced hack's Currency
+// matches the target, and Savings is net of the EUR 6 ground cost (finding
+// #6): 20 - 6 = 14.
 func TestDetectDepartureTax_eurTarget_labelsEURAndConverts(t *testing.T) {
+	newSyntheticTaxRoute(t)
 	hacks := detectDepartureTax(context.Background(), DetectorInput{
-		Origin:      "CPH",
+		Origin:      syntheticTaxOrigin,
 		Destination: "BCN",
 		Currency:    "EUR",
 	})
@@ -145,8 +205,41 @@ func TestDetectDepartureTax_eurTarget_labelsEURAndConverts(t *testing.T) {
 	if hacks[0].Currency != "EUR" {
 		t.Errorf("Currency = %q, want EUR", hacks[0].Currency)
 	}
-	if hacks[0].Savings <= 0 {
-		t.Errorf("savings should be > 0, got %.0f", hacks[0].Savings)
+	if hacks[0].Savings != 14 {
+		t.Errorf("Savings = %.2f, want 14 (net of the EUR 6 ground cost)", hacks[0].Savings)
+	}
+}
+
+// TestDetectDepartureTax_nonEURTarget_netsGroundCostAndConverts proves
+// finding #6 (Savings must be net of ground cost, not the gross tax) AND
+// asserts both the converted numeric amount and the currency label for a
+// non-EUR target, per the review's coverage requirement.
+func TestDetectDepartureTax_nonEURTarget_netsGroundCostAndConverts(t *testing.T) {
+	newSyntheticTaxRoute(t)
+	ctx := context.Background()
+	hacks := detectDepartureTax(ctx, DetectorInput{
+		Origin:      syntheticTaxOrigin,
+		Destination: "BCN",
+		Currency:    "GBP",
+	})
+	if len(hacks) == 0 {
+		t.Fatal("expected at least one hack")
+	}
+	h := hacks[0]
+	if h.Currency != "GBP" {
+		t.Errorf("Currency = %q, want GBP", h.Currency)
+	}
+	// Net EUR 14 (20 tax - 6 ground cost) converted to GBP.
+	wantSavings, cur := destinations.ConvertCurrency(ctx, 14, "EUR", "GBP")
+	if cur != "GBP" {
+		t.Fatalf("test setup: EUR->GBP should be convertible offline, got currency %q", cur)
+	}
+	wantSavings = roundSavings(wantSavings)
+	if math.Abs(h.Savings-wantSavings) > 1 {
+		t.Errorf("Savings = %.2f, want ~%.2f (net EUR 14 converted to GBP)", h.Savings, wantSavings)
+	}
+	if h.Savings == 20 {
+		t.Error("Savings equals the gross tax — ground cost was not netted out")
 	}
 }
 

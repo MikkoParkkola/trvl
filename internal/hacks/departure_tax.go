@@ -105,8 +105,6 @@ func detectDepartureTax(ctx context.Context, in DetectorInput) []Hack {
 		}
 	}
 
-	savings := originTax // per person per departure
-
 	target := strings.ToUpper(strings.TrimSpace(in.currency()))
 	if target == "" {
 		target = "EUR"
@@ -119,11 +117,18 @@ func detectDepartureTax(ctx context.Context, in DetectorInput) []Hack {
 	if groundCur != target {
 		return nil
 	}
-	savings = convTax
+	// Savings must be net of the cost of actually reaching the alternative
+	// airport — the Steps text below says "minus transport cost", so the
+	// number has to match, not report the gross tax figure as if transport
+	// were free.
+	savings := roundSavings(convTax - convGround)
+	if savings <= 0 {
+		return nil
+	}
 
 	return []Hack{{
 		Type: "departure_tax",
-		Title: fmt.Sprintf("Save ~%s %.0f tax — fly from %s (%s) instead",
+		Title: fmt.Sprintf("Save ~%s %.0f (net of transport) — fly from %s (%s) instead",
 			target, savings, best.city, best.iata),
 		Description: fmt.Sprintf(
 			"%s charges %s %.0f aviation tax per departure. %s (%s, %s) has zero aviation tax. "+

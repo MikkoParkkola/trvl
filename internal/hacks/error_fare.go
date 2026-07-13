@@ -146,17 +146,17 @@ func detectErrorFare(ctx context.Context, in DetectorInput) []Hack {
 		return nil // price is normal
 	}
 
-	// ponytail: NaivePrice/floorEUR/typicalEUR stay EUR-internal for
-	// classification (fixed EUR bands); only the display values below get
-	// converted to the target currency.
+	// price (== in.NaivePrice) is already denominated in the caller's
+	// requested currency (see DetectorInput.NaivePrice / DetectorInput.Currency
+	// contract) — it must NOT be converted again from EUR, or every non-EUR
+	// request would show a double-converted figure. Only the fixed EUR
+	// classification constants (typicalEUR/floorEUR) need conversion for
+	// display.
 	target := strings.ToUpper(strings.TrimSpace(in.currency()))
 	if target == "" {
 		target = "EUR"
 	}
-	dispPrice, pcur := destinations.ConvertCurrency(ctx, price, "EUR", target)
-	if pcur != target {
-		return nil
-	}
+	dispPrice := price
 	dispTypical, tcur := destinations.ConvertCurrency(ctx, expected.typicalEUR, "EUR", target)
 	if tcur != target {
 		return nil

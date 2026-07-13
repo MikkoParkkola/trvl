@@ -52,7 +52,15 @@ func detectNightTransport(ctx context.Context, in DetectorInput) []Hack {
 			continue
 		}
 
-		r.Currency = target // buildNightHack trusts r.Currency when set
+		// The route was requested in target, but a provider that ignores the
+		// requested currency and returns its own can't be honestly relabeled
+		// as target without converting the route's own price — and this hack
+		// doesn't carry a converted route price to fall back on, so skip
+		// rather than mislabel.
+		if r.Currency != "" && !strings.EqualFold(r.Currency, target) {
+			continue
+		}
+		r.Currency = target // provider echoed target (or left it unset)
 		h := buildNightHack(in, r, hotelSaving)
 		hacks = append(hacks, h)
 

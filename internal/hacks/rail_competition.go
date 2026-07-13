@@ -116,10 +116,14 @@ func detectRailCompetition(ctx context.Context, in DetectorInput) []Hack {
 				},
 			}
 
-			// If we have a flight price to compare against, note the potential saving.
+			// If we have a flight price to compare against, note the potential
+			// saving. in.NaivePrice is already denominated in target (see
+			// DetectorInput.NaivePrice contract) — converting it again from EUR
+			// would double-convert and corrupt the comparison for every
+			// non-EUR request.
 			if in.NaivePrice > 0 {
-				naivePrice, ncur := destinations.ConvertCurrency(ctx, in.NaivePrice, "EUR", target)
-				if ncur == target && naivePrice > minFare {
+				naivePrice := in.NaivePrice
+				if naivePrice > minFare {
 					saving := naivePrice - minFare
 					hack.Savings = roundSavings(saving)
 					hack.Description += fmt.Sprintf(
