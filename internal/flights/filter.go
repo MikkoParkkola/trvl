@@ -2,6 +2,7 @@ package flights
 
 import (
 	"strings"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -20,19 +21,52 @@ import (
 //
 // The function never mutates the input slice and always returns a valid
 // (possibly empty) slice.
+//
+// This is a thin backward-compatible wrapper over FilterFlightsByTimeWindow with
+// a zero tolerance: every flight outside the window is hard-dropped, so the
+// returned set is exactly the flights inside the window (legacy semantics).
 func FilterFlightsByTimePreference(flights []models.FlightResult, earliest, latest string) []models.FlightResult {
 	if earliest == "" && latest == "" {
 		return flights
 	}
+	kept, _, _ := FilterFlightsByTimeWindow(flights, earliest, latest, 0)
+	return kept
+}
 
-	out := make([]models.FlightResult, 0, len(flights))
+// FilterFlightsByTimeWindow partitions flights by how their directional departure
+// time(s) relate to the SOFT [earliest, latest] window, with a tolerance of
+// hardFloorMinutes:
+//
+//   - kept          — every flight that is NOT hard-dropped, in input order. This
+//     is the set callers should carry forward; it is the union of the flights
+//     fully inside the window and the soft-penalised near-misses.
+//   - softPenalised — the subset of kept whose worst directional departure falls
+//     OUTSIDE the window but within hardFloorMinutes of it (a near-miss). These
+//     are surfaced separately so a caller can down-rank them.
+//   - hardDropped    — flights whose worst directional departure falls MORE than
+//     hardFloorMinutes outside the window. These are excluded from kept.
+//
+// hardFloorMinutes == 0 reproduces the legacy hard cutoff: any departure outside
+// the window is hard-dropped and softPenalised is always empty. Bounds are
+// "HH:MM" 24-hour strings; an empty bound means no constraint on that side. The
+// function never mutates the input slice and always returns valid (possibly
+// empty, non-nil) slices.
+func FilterFlightsByTimeWindow(flights []models.FlightResult, earliest, latest string, hardFloorMinutes int) (kept, softPenalised, hardDropped []models.FlightResult) {
+	kept = make([]models.FlightResult, 0, len(flights))
+	softPenalised = make([]models.FlightResult, 0)
+	hardDropped = make([]models.FlightResult, 0)
 	for _, f := range flights {
-		if !directionalDeparturesInWindow(f, earliest, latest) {
-			continue
+		switch timeWindowClass(f, earliest, latest, hardFloorMinutes) {
+		case 2:
+			hardDropped = append(hardDropped, f)
+		case 1:
+			kept = append(kept, f)
+			softPenalised = append(softPenalised, f)
+		default:
+			kept = append(kept, f)
 		}
-		out = append(out, f)
 	}
-	return out
+	return kept, softPenalised, hardDropped
 }
 
 // FilterFlightsByBudget drops flights whose price exceeds maxPrice.
@@ -147,6 +181,71 @@ func directionalDeparturesInWindow(f models.FlightResult, earliest, latest strin
 		}
 	}
 	return true
+}
+
+// timeWindowClass classifies a flight against the SOFT [earliest, latest] window
+// with a tolerance of hardFloorMinutes, returning:
+//
+//	0 — every checked directional departure is inside the window
+//	1 — at least one departure is outside the window but within the tolerance
+//	    (a soft near-miss; the flight is kept but should be down-ranked)
+//	2 — at least one departure is more than the tolerance outside the window
+//	    (a hard miss; the flight should be dropped)
+//
+// The worst (largest) deviation across the checked directional departures wins,
+// so a flight is only class 0 when BOTH its outbound and return starts are inside
+// the window. A flight with no parseable departure times is class 0 (kept), which
+// preserves the legacy "keep when we cannot tell" behaviour.
+func timeWindowClass(f models.FlightResult, earliest, latest string, hardFloorMinutes int) int {
+	if earliest == "" && latest == "" {
+		return 0
+	}
+	worst := 0
+	for _, t := range collectDirectionalDepTimes(f) {
+		dev := windowDeviationMinutes(t, earliest, latest)
+		if dev <= 0 {
+			continue
+		}
+		class := 1
+		if dev > hardFloorMinutes {
+			class = 2
+		}
+		if class > worst {
+			worst = class
+		}
+	}
+	return worst
+}
+
+// windowDeviationMinutes returns how many minutes the "HH:MM" time t falls
+// outside the [earliest, latest] window (0 when inside, or when t cannot be
+// parsed — an unparseable time never triggers a penalty). Bounds are optional.
+func windowDeviationMinutes(t, earliest, latest string) int {
+	tm, ok := clockToMinutes(t)
+	if !ok {
+		return 0
+	}
+	if earliest != "" {
+		if em, ok := clockToMinutes(earliest); ok && tm < em {
+			return em - tm
+		}
+	}
+	if latest != "" {
+		if lm, ok := clockToMinutes(latest); ok && tm > lm {
+			return tm - lm
+		}
+	}
+	return 0
+}
+
+// clockToMinutes parses an "HH:MM" 24-hour string into minutes-since-midnight.
+// Returns ok=false for any malformed input.
+func clockToMinutes(hhmm string) (int, bool) {
+	tm, err := time.Parse("15:04", hhmm)
+	if err != nil {
+		return 0, false
+	}
+	return tm.Hour()*60 + tm.Minute(), true
 }
 
 // collectDirectionalDepTimes returns the HH:MM strings for the legs that
