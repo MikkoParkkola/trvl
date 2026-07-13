@@ -147,9 +147,24 @@ func TestDetectAccommodationSplit_tooShortStay(t *testing.T) {
 // is the ISO 4217 "no currency" placeholder — it will never appear in a
 // real exchange-rate table) suppresses the whole detector before any hotel
 // search runs, rather than mixing the EUR-denominated moving-cost constant
-// into a mislabeled total. Deterministic — no live network required (the
-// currency check runs before baseline hotel search).
+// into a mislabeled total. Deterministic — no live network required: the
+// fake seam below always reports "can't convert" without ever dialing out
+// (the prior version of this test relied on the live default seam despite
+// its doc comment's claim otherwise — convertCurrency(ctx, movingCostEUR,
+// "EUR", "XXX") does not short-circuit on from==to, so it reached the live
+// destinations.ConvertCurrency). Mirrors the seam-injection pattern in
+// night_transport_test.go / rail_competition_test.go — no t.Parallel, the
+// seam var is shared package state, set/restored sequentially.
 func TestDetectAccommodationSplit_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
+	orig := convertCurrency
+	convertCurrency = func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == to {
+			return amount, to
+		}
+		return amount, from // can't convert — same contract as the real function
+	}
+	t.Cleanup(func() { convertCurrency = orig })
+
 	in := AccommodationSplitInput{
 		City:     "Prague",
 		CheckIn:  "2026-04-12",
