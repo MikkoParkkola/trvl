@@ -2,11 +2,8 @@ package hacks
 
 import (
 	"context"
-	"math"
 	"strings"
 	"testing"
-
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 )
 
 func TestDetectDepartureTax_emptyInput(t *testing.T) {
@@ -214,10 +211,35 @@ func TestDetectDepartureTax_eurTarget_labelsEURAndConverts(t *testing.T) {
 // finding #6 (Savings must be net of ground cost, not the gross tax) AND
 // asserts both the converted numeric amount and the currency label for a
 // non-EUR target, per the review's coverage requirement.
+//
+// codex CHANGES-REQUIRED: the prior version of this test called
+// destinations.ConvertCurrency BOTH to exercise the detector (via the
+// package-level default) and to derive its own expected value — a live
+// network call on each side that proved nothing offline and could not fail
+// deterministically. This version injects a fake convertCurrency at a fixed,
+// known rate (EUR->GBP @ 0.85) via the seam in currency.go, and computes the
+// expected savings independently from that same fixed rate rather than by
+// calling the production converter. No t.Parallel — the seam var is shared
+// package state, set/restored sequentially like railGroundSearcher.
 func TestDetectDepartureTax_nonEURTarget_netsGroundCostAndConverts(t *testing.T) {
 	newSyntheticTaxRoute(t)
-	ctx := context.Background()
-	hacks := detectDepartureTax(ctx, DetectorInput{
+
+	const fakeRate = 0.85
+	orig := convertCurrency
+	convertCurrency = func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == to {
+			return amount, to
+		}
+		if from == "EUR" && to == "GBP" {
+			return amount * fakeRate, "GBP"
+		}
+		// Mirror destinations.ConvertCurrency's "can't convert" contract:
+		// return the original amount/currency unchanged.
+		return amount, from
+	}
+	t.Cleanup(func() { convertCurrency = orig })
+
+	hacks := detectDepartureTax(context.Background(), DetectorInput{
 		Origin:      syntheticTaxOrigin,
 		Destination: "BCN",
 		Currency:    "GBP",
@@ -229,14 +251,13 @@ func TestDetectDepartureTax_nonEURTarget_netsGroundCostAndConverts(t *testing.T)
 	if h.Currency != "GBP" {
 		t.Errorf("Currency = %q, want GBP", h.Currency)
 	}
-	// Net EUR 14 (20 tax - 6 ground cost) converted to GBP.
-	wantSavings, cur := destinations.ConvertCurrency(ctx, 14, "EUR", "GBP")
-	if cur != "GBP" {
-		t.Fatalf("test setup: EUR->GBP should be convertible offline, got currency %q", cur)
-	}
-	wantSavings = roundSavings(wantSavings)
-	if math.Abs(h.Savings-wantSavings) > 1 {
-		t.Errorf("Savings = %.2f, want ~%.2f (net EUR 14 converted to GBP)", h.Savings, wantSavings)
+	// Independently computed: EUR 20 tax and EUR 6 ground cost (the synthetic
+	// route's fixtures), each converted at the fixed fake rate, then netted —
+	// the same arithmetic detectDepartureTax performs, but derived here from
+	// known constants rather than by calling the seam under test.
+	wantSavings := roundSavings(20*fakeRate - 6*fakeRate)
+	if h.Savings != wantSavings {
+		t.Errorf("Savings = %.2f, want %.2f (net EUR 14 converted to GBP @ %.2f)", h.Savings, wantSavings, fakeRate)
 	}
 	if h.Savings == 20 {
 		t.Error("Savings equals the gross tax — ground cost was not netted out")
@@ -248,8 +269,22 @@ func TestDetectDepartureTax_nonEURTarget_netsGroundCostAndConverts(t *testing.T)
 // is the ISO 4217 "no currency" placeholder — it will never appear in a
 // real exchange-rate table) suppresses the hack rather than labeling
 // EUR-denominated tax/ground-cost figures with the wrong currency.
-// Deterministic — no live network required.
+// Deterministic — no live network required: the fake seam below always
+// reports "can't convert" (mirroring destinations.ConvertCurrency's real
+// contract for an inconvertible target) without ever dialing out. Prior to
+// this fix the doc comment claimed "no live network required" while the
+// test actually fell through to the live default seam — verified via timing
+// (0.57s vs 0.00s for an offline call) during this seam's introduction.
 func TestDetectDepartureTax_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
+	orig := convertCurrency
+	convertCurrency = func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == to {
+			return amount, to
+		}
+		return amount, from // can't convert — same contract as the real function
+	}
+	t.Cleanup(func() { convertCurrency = orig })
+
 	hacks := detectDepartureTax(context.Background(), DetectorInput{
 		Origin:      "CPH",
 		Destination: "BCN",

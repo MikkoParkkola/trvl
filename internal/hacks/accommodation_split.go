@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
@@ -76,7 +75,7 @@ func DetectAccommodationSplit(ctx context.Context, in AccommodationSplitInput) [
 	// before doing any hotel search. If we can't honestly convert it,
 	// suppress the whole detector rather than mix EUR moving costs into a
 	// non-EUR total.
-	movingCost, mcur := destinations.ConvertCurrency(ctx, movingCostEUR, "EUR", currency)
+	movingCost, mcur := convertCurrency(ctx, movingCostEUR, "EUR", currency)
 	if mcur != currency {
 		return nil
 	}
@@ -85,7 +84,7 @@ func DetectAccommodationSplit(ctx context.Context, in AccommodationSplitInput) [
 	// too — comparing a target-currency net saving against a raw EUR number
 	// would pass/fail the threshold on the wrong scale for every non-EUR
 	// target.
-	minSavings, scur := destinations.ConvertCurrency(ctx, minSavingsEUR, "EUR", currency)
+	minSavings, scur := convertCurrency(ctx, minSavingsEUR, "EUR", currency)
 	if scur != currency {
 		return nil
 	}

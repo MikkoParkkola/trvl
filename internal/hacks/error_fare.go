@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 )
 
 // expectedPriceRange defines the typical EUR price range for a route class.
@@ -157,7 +155,7 @@ func detectErrorFare(ctx context.Context, in DetectorInput) []Hack {
 		target = "EUR"
 	}
 	dispPrice := price
-	dispTypical, tcur := destinations.ConvertCurrency(ctx, expected.typicalEUR, "EUR", target)
+	dispTypical, tcur := convertCurrency(ctx, expected.typicalEUR, "EUR", target)
 	if tcur != target {
 		return nil
 	}
@@ -194,7 +192,7 @@ func detectErrorFare(ctx context.Context, in DetectorInput) []Hack {
 	}
 
 	// Flash sale — unusually cheap but not error-level.
-	dispFloor, fcur := destinations.ConvertCurrency(ctx, expected.floorEUR, "EUR", target)
+	dispFloor, fcur := convertCurrency(ctx, expected.floorEUR, "EUR", target)
 	if fcur != target {
 		return nil
 	}

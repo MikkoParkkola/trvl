@@ -2,6 +2,8 @@ package hacks
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -182,8 +184,20 @@ func TestCheckErrorFare_empty_input(t *testing.T) {
 // (b): a non-EUR target currency that can't be honestly converted (XXX is
 // the ISO 4217 "no currency" placeholder — it will never appear in a real
 // exchange-rate table) suppresses the hack rather than labeling EUR-priced
-// math with the wrong currency. Deterministic — no live network required.
+// math with the wrong currency. Deterministic — no live network required:
+// the fake seam below always reports "can't convert" without ever dialing
+// out (the prior version of this test relied on the live default seam
+// despite its doc comment's claim otherwise).
 func TestDetectErrorFare_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
+	orig := convertCurrency
+	convertCurrency = func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == to {
+			return amount, to
+		}
+		return amount, from // can't convert — same contract as the real function
+	}
+	t.Cleanup(func() { convertCurrency = orig })
+
 	in := DetectorInput{
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -216,6 +230,70 @@ func TestDetectErrorFare_eurTarget_labelsEURAndConverts(t *testing.T) {
 	}
 	if hacks[0].Savings <= 0 {
 		t.Error("expected positive savings")
+	}
+}
+
+// TestDetectErrorFare_nonEURTarget_noDoubleConversion is a deterministic
+// regression test for the double-conversion bug: in.NaivePrice is already
+// denominated in the caller's requested currency (per the
+// DetectorInput.NaivePrice/Currency contract), so it must be displayed
+// as-is — NOT converted again from EUR. Only the fixed EUR classification
+// constant (typicalEUR) needs conversion for display.
+//
+// Uses a fake convertCurrency injected via the seam in currency.go at a
+// fixed, known rate (EUR->GBP @ 0.85) so the assertion is computed
+// independently of the live destinations.ConvertCurrency — no network
+// required, no t.Parallel (seam var is shared package state, set/restored
+// sequentially like railGroundSearcher).
+func TestDetectErrorFare_nonEURTarget_noDoubleConversion(t *testing.T) {
+	const fakeRate = 0.85
+	orig := convertCurrency
+	convertCurrency = func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == to {
+			return amount, to
+		}
+		if from == "EUR" && to == "GBP" {
+			return amount * fakeRate, "GBP"
+		}
+		return amount, from
+	}
+	t.Cleanup(func() { convertCurrency = orig })
+
+	// HEL->BCN is ~2900 km (long-haul). One-way floor = EUR 60, typical =
+	// EUR 250, error threshold = EUR 30. NaivePrice 20 (already in GBP, per
+	// contract) is below the error threshold, so error_fare fires.
+	const naivePriceGBP = 20.0
+	in := DetectorInput{
+		Origin:      "HEL",
+		Destination: "BCN",
+		NaivePrice:  naivePriceGBP,
+		Currency:    "GBP",
+	}
+	hacks := detectErrorFare(context.Background(), in)
+	if len(hacks) == 0 {
+		t.Fatal("expected error_fare hack for GBP 20 HEL->BCN one-way")
+	}
+	h := hacks[0]
+
+	if h.Currency != "GBP" {
+		t.Errorf("Currency = %q, want GBP", h.Currency)
+	}
+
+	displayedPrice := fmt.Sprintf("GBP %.0f", naivePriceGBP)
+	if !strings.Contains(h.Title, displayedPrice) {
+		t.Errorf("Title = %q, want it to contain %q (raw NaivePrice, not re-converted)", h.Title, displayedPrice)
+	}
+	if !strings.Contains(h.Description, displayedPrice) {
+		t.Errorf("Description = %q, want it to contain %q (raw NaivePrice, not re-converted)", h.Description, displayedPrice)
+	}
+
+	// typicalEUR for long-haul one-way is 250 (routePriceRanges in
+	// error_fare.go); converted at the fixed fake rate, independent of the
+	// seam under test.
+	const typicalEUR = 250.0
+	wantSavings := roundSavings(typicalEUR*fakeRate - naivePriceGBP)
+	if h.Savings != wantSavings {
+		t.Errorf("Savings = %.2f, want %.2f (typicalEUR converted to GBP minus raw NaivePrice)", h.Savings, wantSavings)
 	}
 }
 

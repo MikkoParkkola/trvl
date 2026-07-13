@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 )
 
 // railCorridor describes a route with multiple competing rail operators,
@@ -79,7 +77,7 @@ func detectRailCompetition(ctx context.Context, in DetectorInput) []Hack {
 	for _, c := range competitiveCorridors {
 		// Match in either direction.
 		if (c.From == origin && c.To == dest) || (c.From == dest && c.To == origin) {
-			minFare, mcur := destinations.ConvertCurrency(ctx, c.MinFareEUR, "EUR", target)
+			minFare, mcur := convertCurrency(ctx, c.MinFareEUR, "EUR", target)
 			if mcur != target {
 				// Can't honestly convert the fare — suppress rather than
 				// mislabel it.

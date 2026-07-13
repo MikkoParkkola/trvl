@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 )
 
 // departureTaxEUR maps country ISO codes to approximate aviation departure tax
@@ -109,11 +107,11 @@ func detectDepartureTax(ctx context.Context, in DetectorInput) []Hack {
 	if target == "" {
 		target = "EUR"
 	}
-	convTax, taxCur := destinations.ConvertCurrency(ctx, originTax, "EUR", target)
+	convTax, taxCur := convertCurrency(ctx, originTax, "EUR", target)
 	if taxCur != target {
 		return nil
 	}
-	convGround, groundCur := destinations.ConvertCurrency(ctx, best.groundCost, "EUR", target)
+	convGround, groundCur := convertCurrency(ctx, best.groundCost, "EUR", target)
 	if groundCur != target {
 		return nil
 	}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"golang.org/x/text/cases"
@@ -34,7 +33,7 @@ func detectNightTransport(ctx context.Context, in DetectorInput) []Hack {
 	// target currency before we spend an API call. If we can't honestly
 	// convert it, suppress the whole hack rather than label a EUR number
 	// with the wrong currency.
-	hotelSaving, cur := destinations.ConvertCurrency(ctx, averageHotelCost, "EUR", target)
+	hotelSaving, cur := convertCurrency(ctx, averageHotelCost, "EUR", target)
 	if cur != target {
 		return nil
 	}
