@@ -347,8 +347,11 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 // filter (earliest/latest are "HH:MM"; an empty bound means no constraint on that
 // side). When the window is unset, no native fare is compliant, nothing is
 // truncated, or a compliant native fare already survives, this is a plain
-// cheapest-max truncation. The retained fare replaces the last (most expensive)
-// kept slot so the length is unchanged. The input slice is not mutated.
+// cheapest-max truncation. The retained fare displaces the most expensive kept
+// slot, then the kept slice is re-sorted cheapest-first so the returned list
+// stays in the same sorted order the caller (and downstream ranking/truncation)
+// expects — a raw swap into the last slot would otherwise leave the displaced
+// fare out of price order. The input slice is not mutated.
 func retainCompliantNativeRoundTrip(merged []models.FlightResult, earliest, latest string, max int) []models.FlightResult {
 	if max <= 0 || len(merged) <= max {
 		return merged
@@ -366,7 +369,10 @@ func retainCompliantNativeRoundTrip(merged []models.FlightResult, earliest, late
 		if isCompliantNativeRoundTrip(merged[i], earliest, latest) {
 			out := make([]models.FlightResult, max)
 			copy(out, head)
-			out[max-1] = merged[i] // swap into the last (cheapest-displaced) slot
+			out[max-1] = merged[i] // displace the most expensive kept slot
+			sort.SliceStable(out, func(a, b int) bool {
+				return compareFlightPrices(out[a].PriceForRanking(), out[b].PriceForRanking()) < 0
+			})
 			return out
 		}
 	}
