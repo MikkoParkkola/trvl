@@ -3,6 +3,7 @@ package hacks
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 )
@@ -294,6 +295,90 @@ func TestDetectErrorFare_nonEURTarget_noDoubleConversion(t *testing.T) {
 	wantSavings := roundSavings(typicalEUR*fakeRate - naivePriceGBP)
 	if h.Savings != wantSavings {
 		t.Errorf("Savings = %.2f, want %.2f (typicalEUR converted to GBP minus raw NaivePrice)", h.Savings, wantSavings)
+	}
+}
+
+// TestDetectErrorFare_nonEURTarget_JPY_classifiesCorrectly is a deterministic
+// regression test for the threshold-currency-mismatch bug: in.NaivePrice is
+// denominated in the caller's requested currency (target), but the
+// classification thresholds (errorThreshold/flashThreshold) started life as
+// fixed EUR constants. Before the fix, those EUR thresholds were compared
+// directly against a target-currency price with no conversion — for a
+// large-nominal currency like JPY, a EUR 15 flashThreshold is tiny next to
+// any realistic JPY price, so `price >= flashThreshold` was always true and
+// the detector never fired for JPY (or any non-EUR currency).
+//
+// Uses a fake convertCurrency injected via the seam in currency.go at a
+// fixed, known rate (EUR->JPY @ 130) so the assertion is computed
+// independently of the live destinations.ConvertCurrency — no network
+// required, no t.Parallel (seam var is shared package state, set/restored
+// sequentially like railGroundSearcher).
+func TestDetectErrorFare_nonEURTarget_JPY_classifiesCorrectly(t *testing.T) {
+	const fakeRate = 130.0
+	orig := convertCurrency
+	convertCurrency = func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == to {
+			return amount, to
+		}
+		if from == "EUR" && to == "JPY" {
+			return amount * fakeRate, "JPY"
+		}
+		return amount, from
+	}
+	t.Cleanup(func() { convertCurrency = orig })
+
+	// HEL->BCN is ~2900 km (long-haul). One-way floor = EUR 60, typical =
+	// EUR 250. Converted at the fake rate: floor = JPY 7800, typical =
+	// JPY 32500, error threshold = JPY 3900 (50% of floor).
+	//
+	// NaivePrice 2000 (already in JPY, per contract) is below the JPY error
+	// threshold (3900) but was NEVER below the buggy raw-EUR flashThreshold
+	// comparison (JPY 2000 >= EUR 60 is always true in float terms) — so the
+	// pre-fix detector silently returned nil for this input.
+	const naivePriceJPY = 2000.0
+	in := DetectorInput{
+		Origin:      "HEL",
+		Destination: "BCN",
+		NaivePrice:  naivePriceJPY,
+		Currency:    "JPY",
+	}
+	hacks := detectErrorFare(context.Background(), in)
+	if len(hacks) == 0 {
+		t.Fatal("expected error_fare hack for JPY 2000 HEL->BCN one-way (threshold must be converted to JPY, not compared raw EUR)")
+	}
+	h := hacks[0]
+
+	if h.Type != "error_fare" {
+		t.Errorf("Type = %q, want error_fare", h.Type)
+	}
+	if h.Currency != "JPY" {
+		t.Errorf("Currency = %q, want JPY", h.Currency)
+	}
+
+	const typicalEUR = 250.0
+	const floorEUR = 60.0
+	dispTypical := typicalEUR * fakeRate // JPY 32500
+	convFloor := floorEUR * fakeRate     // JPY 7800
+	errorThreshold := convFloor * 0.5    // JPY 3900
+
+	if naivePriceJPY > errorThreshold {
+		t.Fatalf("test precondition failed: naivePriceJPY (%.0f) must be <= errorThreshold (%.0f)", naivePriceJPY, errorThreshold)
+	}
+
+	wantSavings := roundSavings(dispTypical - naivePriceJPY)
+	if h.Savings != wantSavings {
+		t.Errorf("Savings = %.2f, want %.2f (JPY typical minus JPY price)", h.Savings, wantSavings)
+	}
+
+	wantDiscount := math.Round(((dispTypical - naivePriceJPY) / dispTypical) * 100)
+	wantDiscountStr := fmt.Sprintf("%.0f%%", wantDiscount)
+	if !strings.Contains(h.Description, wantDiscountStr) {
+		t.Errorf("Description = %q, want it to contain discount %q computed in JPY (not mixed with raw EUR typical)", h.Description, wantDiscountStr)
+	}
+
+	wantPriceStr := fmt.Sprintf("JPY %.0f", naivePriceJPY)
+	if !strings.Contains(h.Title, wantPriceStr) {
+		t.Errorf("Title = %q, want it to contain %q (raw NaivePrice, not re-converted)", h.Title, wantPriceStr)
 	}
 }
 
