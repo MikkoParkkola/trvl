@@ -169,3 +169,18 @@ Reviewer: codex gpt-5.6-sol, one runner subagent per branch (relays codex verdic
   rebase onto lever11 (currency.go now exists there) then codex review before merge.
 - REMAINING before v1.20.0: B merge + cross-detector non-EUR sweep test + full-repo DoD
   (go test ./... -race, staticcheck ./..., govulncheck, coverage>=80%) + release.
+
+## B redo landed + round-1 codex dispatched (2026-07-13)
+- B redo committed b39f69a (on f482228): 4 detectors fixed (ferry_positioning,
+  multimodal_positioning, multimodal_open_jaw_ground, multimodal_skip_flight) convert-
+  before-arithmetic + drop-on-inconvertible; currency_honesty_test.go (8 offline tests
+  0.00s); ground GroundSearchOverride seam already existed; staticcheck clean.
+- MERGE WRINKLE: B built its OWN internal/hacks/currency.go with extra helpers
+  (convertCurrencyFn, cheapestFlightPriceInTarget, groundLegPriceInTarget); lever11 now
+  has C's simpler currency.go (var convertCurrency = destinations.ConvertCurrency). MERGE
+  WILL CONFLICT on currency.go -> resolve by UNION (single convertCurrency var + B's
+  helpers), then re-run full hacks+ground -race + staticcheck.
+- codex round-1 review of B stack (1024877^..b39f69a) DISPATCHED (agent ace76cf7).
+- ORDER: await codex-clean B -> merge B into lever11 (resolve currency.go union) ->
+  cross-detector non-EUR sweep test -> full-repo DoD (go test ./... -race, staticcheck
+  ./..., govulncheck, coverage>=80%) -> release v1.20.0.
