@@ -176,7 +176,7 @@ func TestDetectTuesdayBooking_saturdayNotExpensive(t *testing.T) {
 // --- detectMultiTripCombo: 0% coverage, test input guard ---
 
 func TestDetectMultiTripCombo_empty(t *testing.T) {
-	h := detectMultiTripCombo(context.Background(), "", "", nil, "EUR")
+	h := detectMultiTripCombo(context.Background(), "", "", nil, "EUR", nil)
 	if h != nil {
 		t.Error("expected nil for empty inputs")
 	}

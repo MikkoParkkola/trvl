@@ -11,10 +11,6 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-// backToBackSearchFunc is the function used to search flights. Package-level
-// variable allows test injection without modifying the detectFn signature.
-var backToBackSearchFunc = flights.SearchFlightsWithClient
-
 // backToBackOverlapDays is the offset for the dummy return leg of each
 // overlapping round-trip. 14 days is long enough to trigger the cheaper
 // long-stay round-trip pricing that makes back-to-back work.
@@ -111,34 +107,38 @@ func backToBackLivePrices(ctx context.Context, in DetectorInput) ([]Hack, bool) 
 	// 1. One-way: origin -> dest on depart_date
 	go func() {
 		defer wg.Done()
-		owOutResult, owOutErr = backToBackSearchFunc(ctx, client, origin, dest, departDate, flights.SearchOptions{
-			SortBy: models.SortCheapest,
+		owOutResult, owOutErr = flights.SearchFlightsWithClient(ctx, client, origin, dest, departDate, flights.SearchOptions{
+			SortBy:         models.SortCheapest,
+			SearchOverride: in.SearchOverride,
 		})
 	}()
 
 	// 2. One-way: dest -> origin on return_date
 	go func() {
 		defer wg.Done()
-		owRetResult, owRetErr = backToBackSearchFunc(ctx, client, dest, origin, returnDate, flights.SearchOptions{
-			SortBy: models.SortCheapest,
+		owRetResult, owRetErr = flights.SearchFlightsWithClient(ctx, client, dest, origin, returnDate, flights.SearchOptions{
+			SortBy:         models.SortCheapest,
+			SearchOverride: in.SearchOverride,
 		})
 	}()
 
 	// 3. Overlapping RT from origin: origin->dest depart + dest->origin (depart+14d)
 	go func() {
 		defer wg.Done()
-		rtOriginResult, rtOriginErr = backToBackSearchFunc(ctx, client, origin, dest, departDate, flights.SearchOptions{
-			ReturnDate: rtFromOriginDummyReturn,
-			SortBy:     models.SortCheapest,
+		rtOriginResult, rtOriginErr = flights.SearchFlightsWithClient(ctx, client, origin, dest, departDate, flights.SearchOptions{
+			ReturnDate:     rtFromOriginDummyReturn,
+			SortBy:         models.SortCheapest,
+			SearchOverride: in.SearchOverride,
 		})
 	}()
 
 	// 4. Overlapping RT from dest: dest->origin return + origin->dest (return+14d)
 	go func() {
 		defer wg.Done()
-		rtDestResult, rtDestErr = backToBackSearchFunc(ctx, client, dest, origin, returnDate, flights.SearchOptions{
-			ReturnDate: rtFromDestDummyReturn,
-			SortBy:     models.SortCheapest,
+		rtDestResult, rtDestErr = flights.SearchFlightsWithClient(ctx, client, dest, origin, returnDate, flights.SearchOptions{
+			ReturnDate:     rtFromDestDummyReturn,
+			SortBy:         models.SortCheapest,
+			SearchOverride: in.SearchOverride,
 		})
 	}()
 

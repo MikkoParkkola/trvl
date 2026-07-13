@@ -374,7 +374,7 @@ func TestDetectMultiTripCombo_validTwoTrips(t *testing.T) {
 		{DepartDate: "2026-06-01", ReturnDate: "2026-06-08"},
 		{DepartDate: "2026-07-01", ReturnDate: "2026-07-08"},
 	}
-	h := detectMultiTripCombo(context.Background(), "HEL", "BCN", trips, "EUR")
+	h := detectMultiTripCombo(context.Background(), "HEL", "BCN", trips, "EUR", nil)
 	_ = h
 }
 
@@ -388,7 +388,7 @@ func TestDetectMultiTripCombo_moreThanMax(t *testing.T) {
 			ReturnDate: "2026-06-08",
 		}
 	}
-	h := detectMultiTripCombo(context.Background(), "HEL", "BCN", trips, "EUR")
+	h := detectMultiTripCombo(context.Background(), "HEL", "BCN", trips, "EUR", nil)
 	_ = h
 }
 

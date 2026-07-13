@@ -9,7 +9,7 @@ import (
 )
 
 // splitSearchFunc is the flight search seam (overridable in tests). Mirrors the
-// backToBackSearchFunc / railFlyFlightSearcher house pattern.
+// railFlyFlightSearcher house pattern.
 var splitSearchFunc = flights.SearchFlights
 
 // detectSplit compares a round-trip ticket against the sum of two separate

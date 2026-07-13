@@ -20,6 +20,13 @@ type FlightComboInput struct {
 	ReturnDate  string    // YYYY-MM-DD (first/only trip)
 	Trips       []TripLeg // multiple trips (overrides DepartDate/ReturnDate if non-empty)
 	Currency    string
+
+	// SearchOverride, when non-nil, is threaded into every
+	// flights.SearchOptions built by this detector, replacing the real
+	// flights.SearchFlightsWithClient call for the duration of one
+	// DetectFlightCombo invocation. Nil (the default) runs live search.
+	// Optional test/DI seam; mirrors DetectorInput.SearchOverride.
+	SearchOverride flights.SearchFunc
 }
 
 // TripLeg represents one trip's dates.
@@ -79,9 +86,9 @@ func DetectFlightCombo(ctx context.Context, in FlightComboInput) []Hack {
 	}
 
 	if len(trips) == 1 {
-		return detectSingleTripCombo(ctx, in.Origin, in.Destination, trips[0], currency)
+		return detectSingleTripCombo(ctx, in.Origin, in.Destination, trips[0], currency, in.SearchOverride)
 	}
-	return detectMultiTripCombo(ctx, in.Origin, in.Destination, trips, currency)
+	return detectMultiTripCombo(ctx, in.Origin, in.Destination, trips, currency, in.SearchOverride)
 }
 
 // cheapestFlightInfo extracts the cheapest price, currency, and airline from a
@@ -132,7 +139,7 @@ func cheapestFlightPriceInCurrency(ctx context.Context, result *models.FlightSea
 // one-way tickets (potentially on different airlines). currency is the
 // requested display (target) currency; every price is converted into it and
 // suppressed rather than shown unconverted when conversion fails.
-func detectSingleTripCombo(ctx context.Context, origin, dest string, trip TripLeg, currency string) []Hack {
+func detectSingleTripCombo(ctx context.Context, origin, dest string, trip TripLeg, currency string, searchOverride flights.SearchFunc) []Hack {
 	client := batchexec.NewClient()
 
 	var (
@@ -146,20 +153,23 @@ func detectSingleTripCombo(ctx context.Context, origin, dest string, trip TripLe
 	go func() {
 		defer wg.Done()
 		rtResult, rtErr = flights.SearchFlightsWithClient(ctx, client, origin, dest, trip.DepartDate, flights.SearchOptions{
-			ReturnDate: trip.ReturnDate,
-			SortBy:     models.SortCheapest,
+			ReturnDate:     trip.ReturnDate,
+			SortBy:         models.SortCheapest,
+			SearchOverride: searchOverride,
 		})
 	}()
 	go func() {
 		defer wg.Done()
 		owOutResult, owOutErr = flights.SearchFlightsWithClient(ctx, client, origin, dest, trip.DepartDate, flights.SearchOptions{
-			SortBy: models.SortCheapest,
+			SortBy:         models.SortCheapest,
+			SearchOverride: searchOverride,
 		})
 	}()
 	go func() {
 		defer wg.Done()
 		owRetResult, owRetErr = flights.SearchFlightsWithClient(ctx, client, dest, origin, trip.ReturnDate, flights.SearchOptions{
-			SortBy: models.SortCheapest,
+			SortBy:         models.SortCheapest,
+			SearchOverride: searchOverride,
 		})
 	}()
 	wg.Wait()
@@ -198,7 +208,7 @@ func detectSingleTripCombo(ctx context.Context, origin, dest string, trip TripLe
 // currency is the requested display (target) currency; every price is
 // converted into it and a trip whose price cannot be converted suppresses
 // the whole comparison (baseline is required for every trip).
-func detectMultiTripCombo(ctx context.Context, origin, dest string, trips []TripLeg, currency string) []Hack {
+func detectMultiTripCombo(ctx context.Context, origin, dest string, trips []TripLeg, currency string, searchOverride flights.SearchFunc) []Hack {
 	if len(trips) > maxComboTrips {
 		trips = trips[:maxComboTrips]
 	}
@@ -219,8 +229,9 @@ func detectMultiTripCombo(ctx context.Context, origin, dest string, trips []Trip
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			result, err := flights.SearchFlightsWithClient(ctx, client, origin, dest, t.DepartDate, flights.SearchOptions{
-				ReturnDate: t.ReturnDate,
-				SortBy:     models.SortCheapest,
+				ReturnDate:     t.ReturnDate,
+				SortBy:         models.SortCheapest,
+				SearchOverride: searchOverride,
 			})
 			p, ok := cheapestFlightPriceInCurrency(ctx, result, err, currency)
 			if !ok {
@@ -272,8 +283,9 @@ func detectMultiTripCombo(ctx context.Context, origin, dest string, trips []Trip
 			for i := 0; i < n; i++ {
 				sem <- struct{}{}
 				result, err := flights.SearchFlightsWithClient(ctx, client, origin, dest, trips[i].DepartDate, flights.SearchOptions{
-					ReturnDate: trips[perm[i]].ReturnDate,
-					SortBy:     models.SortCheapest,
+					ReturnDate:     trips[perm[i]].ReturnDate,
+					SortBy:         models.SortCheapest,
+					SearchOverride: searchOverride,
 				})
 				<-sem
 
