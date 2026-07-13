@@ -143,7 +143,13 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 		merged = append(merged, composed...)
 		sortFlightResults(merged, opts.SortBy)
 		if len(merged) > roundTripMaxResults {
-			merged = merged[:roundTripMaxResults]
+			// #472: window-aware truncation — keep the cheapest window-compliant
+			// native round-trip even if it falls beyond the price cutoff, so the
+			// post-search time-window filter still has a compliant native fare to
+			// surface instead of falling back to composed multi-stops. When no
+			// departure-time window is requested at the search layer this is a
+			// plain cheapest-max truncation.
+			merged = retainCompliantNativeRoundTrip(merged, opts.DepartAfter, opts.DepartBefore, roundTripMaxResults)
 			truncated = true
 		}
 		composed = merged
