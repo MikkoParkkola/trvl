@@ -27,11 +27,10 @@ var Programs = []Program{
 		Slug: "finnair-plus", Name: "Finnair Plus",
 		FloorCPP: 1.0, CeilingCPP: 2.2, Category: "airline",
 	},
-	// NOTE: SK (SAS) now SkyTeam; earning maps to Flying Blue. EuroBonus slug kept for compatibility.
-	{
-		Slug: "sas-eurobonus", Name: "SAS EuroBonus",
-		FloorCPP: 1.0, CeilingCPP: 2.1, Category: "airline",
-	},
+	// SK (SAS) joined SkyTeam in 2024; SAS SkyTeam segments earn into Flying Blue
+	// (see the "flying-blue" entry below). The retired "SAS EuroBonus" catalog
+	// row was removed — SAS is no longer modelled as a Star Alliance/EuroBonus
+	// program (issue #466).
 	{
 		Slug: "british-airways-avios", Name: "British Airways Avios",
 		FloorCPP: 1.2, CeilingCPP: 2.0, Category: "airline",
