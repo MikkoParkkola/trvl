@@ -156,14 +156,13 @@ func TestDetectAccommodationSplit_tooShortStay(t *testing.T) {
 // night_transport_test.go / rail_competition_test.go — no t.Parallel, the
 // seam var is shared package state, set/restored sequentially.
 func TestDetectAccommodationSplit_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
-	orig := convertCurrencyFn
-	convertCurrencyFn = func(_ context.Context, amount float64, from, to string) (float64, string) {
+
+	swapCurrencyConverter(t, func(_ context.Context, amount float64, from, to string) (float64, string) {
 		if from == to {
 			return amount, to
 		}
 		return amount, from // can't convert — same contract as the real function
-	}
-	t.Cleanup(func() { convertCurrencyFn = orig })
+	})
 
 	in := AccommodationSplitInput{
 		City:     "Prague",

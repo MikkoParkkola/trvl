@@ -13,7 +13,7 @@ import (
 // Shared currency-honesty test seams for ferry_positioning, multimodal_positioning,
 // multimodal_open_jaw_ground, and multimodal_skip_flight — the four detectors
 // that route every leg through convertCurrency/cheapestFlightPriceInTarget/
-// groundLegPriceInTarget (see currency.go). No t.Parallel: convertCurrencyFn is
+// groundLegPriceInTarget (see currency.go). No t.Parallel: the currency seam is
 // a shared package-level var, restored sequentially via t.Cleanup.
 // ---------------------------------------------------------------------------
 
@@ -21,9 +21,9 @@ import (
 // the duration of a test and restores the original on cleanup.
 func withConvertCurrencyFn(t *testing.T, fn func(ctx context.Context, amount float64, from, to string) (float64, string)) {
 	t.Helper()
-	original := convertCurrencyFn
-	convertCurrencyFn = fn
-	t.Cleanup(func() { convertCurrencyFn = original })
+
+	swapCurrencyConverter(t, fn)
+
 }
 
 // eurToUSDConvert converts EUR->USD at a fixed 1.1 rate and refuses everything

@@ -131,7 +131,7 @@ func cheapestFlightPriceInCurrency(ctx context.Context, result *models.FlightSea
 	// Convert every fare into target FIRST, then pick the minimum, so a
 	// numerically-smaller raw fare in a stronger currency can't masquerade as
 	// the cheapest (e.g. 90 GBP beating 100 USD). Routes through the
-	// convertCurrencyFn seam so tests can inject rates deterministically.
+	// currency seam so tests can inject rates deterministically.
 	return cheapestFlightPriceInTarget(ctx, result, target)
 }
 

@@ -14,7 +14,7 @@ import (
 // Estimated-fare provenance marker (see groundLegPriceInTarget in currency.go).
 // A ground/ferry leg priced from the static EUR fallback must render an
 // "(estimated fare)" marker; a live provider quote must not. No t.Parallel:
-// convertCurrencyFn is a shared package-level var restored via t.Cleanup.
+// the currency seam is shared package state, swapped via swapCurrencyConverter.
 // ---------------------------------------------------------------------------
 
 const estimatedFareMarker = "estimated fare"
