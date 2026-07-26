@@ -177,6 +177,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/flights"
@@ -314,13 +315,46 @@ type detectFn func(ctx context.Context, in DetectorInput) []Hack
 // cooperative detector still gets its full allowance; the margin exists only to
 // stop an uncooperative one holding the response open forever.
 //
-// A var so tests can shrink it; production never reassigns it.
-var sweepTimeout = 25 * time.Second
+// Atomic because a test that shrinks it does so while goroutines from an earlier
+// abandoned sweep may still be live. The same reasoning as the currency seam: a
+// straggler is not under the writing test's control, so sequencing writes is no
+// defence. Production never reassigns it.
+var sweepTimeoutNanos atomic.Int64
+
+func init() {
+	sweepTimeoutNanos.Store(int64(25 * time.Second))
+}
+
+func currentSweepTimeout() time.Duration {
+	return time.Duration(sweepTimeoutNanos.Load())
+}
+
+func setSweepTimeout(d time.Duration) {
+	sweepTimeoutNanos.Store(int64(d))
+}
 
 // detectorRoster is the seam tests use to supply deterministic detectors.
 // Production always uses the real roster; only tests reassign it, so that a test
 // of DetectAll's own control flow does not depend on live providers.
-var detectorRoster = allDetectors
+//
+// Atomic for the same reason as the currency seam and the sweep timeout: a test's
+// cleanup restores it while detector goroutines from an abandoned sweep can still
+// be reading, and those goroutines are not under the test's control.
+type rosterFn func() []detectFn
+
+var detectorRosterSeam atomic.Pointer[rosterFn]
+
+func init() {
+	setDetectorRoster(allDetectors)
+}
+
+func currentDetectorRoster() rosterFn {
+	return *detectorRosterSeam.Load()
+}
+
+func setDetectorRoster(fn rosterFn) {
+	detectorRosterSeam.Store(&fn)
+}
 
 func allDetectors() []detectFn {
 	return []detectFn{
@@ -395,7 +429,7 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 		return nil, false
 	}
 
-	detectors := detectorRoster()
+	detectors := currentDetectorRoster()()
 
 	// Each detector gets a child context with a per-detector timeout so a
 	// slow API call cannot block the entire hacks response. context.WithTimeout
@@ -463,7 +497,7 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 	// that sets none — plus a single detector that ignores cancellation left
 	// DetectAll blocked forever. Cancellation being cooperative means we cannot
 	// make that detector stop; it does not mean the response has to wait for it.
-	sweep := time.NewTimer(sweepTimeout)
+	sweep := time.NewTimer(currentSweepTimeout())
 	defer sweep.Stop()
 
 	var all []Hack

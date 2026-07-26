@@ -11,9 +11,9 @@ import (
 // DetectAll's own control flow can be tested without touching live providers.
 func withDetectors(t *testing.T, fns ...detectFn) {
 	t.Helper()
-	prev := detectorRoster
-	detectorRoster = func() []detectFn { return fns }
-	t.Cleanup(func() { detectorRoster = prev })
+	prev := currentDetectorRoster()
+	setDetectorRoster(func() []detectFn { return fns })
+	t.Cleanup(func() { setDetectorRoster(prev) })
 }
 
 // TestDetectAll_ReturnsAtDeadlineWithPartialFlag covers the whole contract
@@ -136,9 +136,9 @@ func TestDetectAll_AbandonedDetectorsDoNotBlockForever(t *testing.T) {
 // forced complete=false through the ctx.Done() case, so the test passed even with
 // the delivered-result accounting removed.
 func TestDetectAll_BoundedWithoutACallerDeadline(t *testing.T) {
-	prev := sweepTimeout
-	sweepTimeout = 300 * time.Millisecond
-	t.Cleanup(func() { sweepTimeout = prev })
+	prev := currentSweepTimeout()
+	setSweepTimeout(300 * time.Millisecond)
+	t.Cleanup(func() { setSweepTimeout(prev) })
 
 	quick := func(context.Context, DetectorInput) []Hack {
 		return []Hack{{Type: "quick", Savings: 10, Currency: "EUR"}}
