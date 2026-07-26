@@ -52,10 +52,15 @@ func TestDetectTravelHacks_ReportsPartialSweep(t *testing.T) {
 	}
 }
 
-// TestDetectTravelHacks_ReportsCompleteSweep is the other half: an ordinary
-// search must not carry a partial warning, or the flag becomes noise that
-// readers learn to ignore.
-func TestDetectTravelHacks_ReportsCompleteSweep(t *testing.T) {
+// TestDetectTravelHacks_FlagAndNoteAgree pins the contract that is actually
+// environment-independent: whatever `complete` says, the note must agree with it.
+//
+// An earlier version asserted complete=true for an ordinary search. That premise
+// was wrong once a detector cut short by its own allowance began counting against
+// completeness — against live providers, one reliably does, so `false` is the
+// honest answer and the test was asserting a fiction. What must always hold is
+// that the two fields cannot contradict each other.
+func TestDetectTravelHacks_FlagAndNoteAgree(t *testing.T) {
 	_, result, err := handleDetectTravelHacks(context.Background(), map[string]any{
 		"origin":      "HEL",
 		"destination": "BCN",
@@ -74,11 +79,14 @@ func TestDetectTravelHacks_ReportsCompleteSweep(t *testing.T) {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 
-	if payload.Complete == nil || !*payload.Complete {
-		t.Fatalf("expected complete=true for an uninterrupted sweep, got %v", payload.Complete)
+	if payload.Complete == nil {
+		t.Fatal("the response omits `complete`; an agent cannot tell a full sweep from a truncated one")
 	}
-	if payload.Note != "" {
-		t.Fatalf("a completed sweep must carry no truncation note, got %q", payload.Note)
+	if *payload.Complete && payload.Note != "" {
+		t.Fatalf("a complete sweep carried a truncation note: %q", payload.Note)
+	}
+	if !*payload.Complete && !strings.Contains(payload.Note, "partial") {
+		t.Fatalf("an incomplete sweep carried no explanation, note was %q", payload.Note)
 	}
 }
 

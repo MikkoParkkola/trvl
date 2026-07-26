@@ -165,3 +165,54 @@ func TestDetectAll_BoundedWithoutACallerDeadline(t *testing.T) {
 		t.Fatal("expected the detector that did finish to be kept")
 	}
 }
+
+// TestDetectAll_DetectorTimeoutCountsAsIncomplete closes the gap where a detector
+// cut off by its own deadline still made the sweep look finished.
+//
+// A timed-out detector returns whatever it had and sends it, so counting
+// deliveries reported complete=true while one detector had in fact been cut off
+// mid-work. The CLI and MCP then suppressed their partial warnings, and a caller
+// with no deadline of its own — the common case — was told a truncated sweep was
+// the whole answer.
+func TestDetectAll_DetectorTimeoutCountsAsIncomplete(t *testing.T) {
+	prevDet := currentDetectorTimeout()
+	setDetectorTimeout(100 * time.Millisecond)
+	t.Cleanup(func() { setDetectorTimeout(prevDet) })
+
+	quick := func(context.Context, DetectorInput) []Hack {
+		return []Hack{{Type: "quick", Savings: 10, Currency: "EUR"}}
+	}
+	// Cooperative, but slower than its own allowance: it observes the deadline
+	// and returns, which is exactly the case that used to look complete.
+	slow := func(ctx context.Context, _ DetectorInput) []Hack {
+		<-ctx.Done()
+		return nil
+	}
+	withDetectors(t, quick, slow)
+
+	// No caller deadline at all: the only thing cutting anything short is the
+	// per-detector allowance.
+	found, complete := DetectAll(context.Background(), DetectorInput{Origin: "HEL", Destination: "BCN", Date: "2026-09-01"})
+
+	if complete {
+		t.Fatal("reported complete although a detector was cut off by its own deadline; delivery is not the same as finishing")
+	}
+	if len(found) == 0 {
+		t.Fatal("expected the detector that finished in time to be kept")
+	}
+}
+
+// TestDetectAll_CompleteWhenNothingIsCutShort keeps the flag from becoming noise:
+// a sweep where every detector finishes inside its allowance must report complete.
+func TestDetectAll_CompleteWhenNothingIsCutShort(t *testing.T) {
+	quick := func(context.Context, DetectorInput) []Hack {
+		return []Hack{{Type: "quick", Savings: 10, Currency: "EUR"}}
+	}
+	withDetectors(t, quick, quick, quick)
+
+	_, complete := DetectAll(context.Background(), DetectorInput{Origin: "HEL", Destination: "BCN", Date: "2026-09-01"})
+
+	if !complete {
+		t.Fatal("a sweep where every detector finished must report complete, or the warning appears on every ordinary search")
+	}
+}

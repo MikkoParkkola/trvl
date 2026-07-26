@@ -323,6 +323,20 @@ var sweepTimeoutNanos atomic.Int64
 
 func init() {
 	sweepTimeoutNanos.Store(int64(25 * time.Second))
+	detectorTimeoutNanos.Store(int64(20 * time.Second))
+}
+
+// detectorTimeoutNanos bounds a single detector. Atomic for the same reason as
+// the other seams here: a test that shrinks it does so while goroutines from an
+// earlier sweep may still be reading.
+var detectorTimeoutNanos atomic.Int64
+
+func currentDetectorTimeout() time.Duration {
+	return time.Duration(detectorTimeoutNanos.Load())
+}
+
+func setDetectorTimeout(d time.Duration) {
+	detectorTimeoutNanos.Store(int64(d))
 }
 
 func currentSweepTimeout() time.Duration {
@@ -435,10 +449,13 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 	// slow API call cannot block the entire hacks response. context.WithTimeout
 	// inherits ctx's deadline if it is earlier than detectorTimeout, so a
 	// tight parent deadline still propagates into every detector's HTTP path.
-	const detectorTimeout = 20 * time.Second
-
 	type result struct {
 		hacks []Hack
+		// cutShort reports that this detector's own deadline fired rather than
+		// the detector finishing. Delivery alone was not enough: a timed-out
+		// detector still sends whatever it had, so counting deliveries reported
+		// the sweep complete while one detector had in fact been cut off.
+		cutShort bool
 	}
 
 	ch := make(chan result, len(detectors))
@@ -463,10 +480,10 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 			if ctx.Err() != nil {
 				return
 			}
-			dCtx, cancel := context.WithTimeout(ctx, detectorTimeout)
+			dCtx, cancel := context.WithTimeout(ctx, currentDetectorTimeout())
 			defer cancel()
 			h := fn(dCtx, in)
-			ch <- result{hacks: h}
+			ch <- result{hacks: h, cutShort: dCtx.Err() != nil}
 		}()
 	}
 
@@ -502,6 +519,7 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 
 	var all []Hack
 	received := 0
+	anyCutShort := false
 	for {
 		select {
 		case r, ok := <-ch:
@@ -521,9 +539,12 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 				// channel and the select happens to pick this case — select is
 				// random when both are ready. Cheap, and the alternative is
 				// reporting a sweep complete that never ran.
-				return dedupHacks(all), received == dispatched && dispatched == len(detectors)
+				return dedupHacks(all), received == dispatched && dispatched == len(detectors) && !anyCutShort
 			}
 			received++
+			if r.cutShort {
+				anyCutShort = true
+			}
 			all = append(all, r.hacks...)
 		case <-ctx.Done():
 			// Return what arrived in time rather than nothing: partial results
