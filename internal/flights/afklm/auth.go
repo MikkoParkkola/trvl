@@ -167,26 +167,40 @@ var (
 	negCache   = map[string]negEntry{}
 )
 
-// externalCacheKey identifies a lookup by the configuration it will use.
+// externalConfig is one snapshot of everything that decides what an external
+// lookup does.
 //
-// Every input that changes what the lookup does belongs here, or a user who
-// corrects one of them sits behind a suppression earned by the value they just
-// replaced. On Darwin that includes the Keychain service, not just the
-// 1Password reference.
-func externalCacheKey() string {
-	ref := strings.TrimSpace(os.Getenv(EnvOpRef))
-	if runtime.GOOS != "darwin" {
-		return ref
-	}
-	return ref + "\x00" + keychainService()
+// It is read once per resolution and threaded through, rather than each backend
+// consulting the environment when it happens to run. Re-reading meant a
+// concurrent change could execute configuration B while the result was filed
+// against configuration A's cache key — the opposite of the guarantee the keyed
+// cache is supposed to give.
+type externalConfig struct {
+	opRef           string
+	keychainService string
 }
 
-// keychainService is the Keychain service name this process will query.
-func keychainService() string {
-	if s := strings.TrimSpace(os.Getenv(EnvKeychainService)); s != "" {
-		return s
+// snapshotExternalConfig captures the current configuration.
+func snapshotExternalConfig() externalConfig {
+	svc := strings.TrimSpace(os.Getenv(EnvKeychainService))
+	if svc == "" {
+		svc = defaultKeychainService
 	}
-	return defaultKeychainService
+	return externalConfig{
+		opRef:           strings.TrimSpace(os.Getenv(EnvOpRef)),
+		keychainService: svc,
+	}
+}
+
+// cacheKey identifies a lookup by the configuration it will use. Every input
+// that changes what the lookup does belongs here, or a user who corrects one of
+// them sits behind a suppression earned by the value they just replaced. On
+// Darwin that includes the Keychain service, not just the 1Password reference.
+func (c externalConfig) cacheKey() string {
+	if runtime.GOOS != "darwin" {
+		return c.opRef
+	}
+	return c.opRef + "\x00" + c.keychainService
 }
 
 // resetExternalCache clears the negative cache and drops any in-flight lookup
@@ -205,7 +219,7 @@ func resetExternalCache() {
 	negCache = map[string]negEntry{}
 	extCacheMu.Unlock()
 
-	keys = append(keys, externalCacheKey())
+	keys = append(keys, snapshotExternalConfig().cacheKey())
 	for _, k := range keys {
 		extGroup.Forget(k)
 	}
@@ -227,8 +241,8 @@ func resolveExternal(ctx context.Context) (string, error) {
 	// the singleflight key, and the lookup itself. Reading the environment
 	// again inside the lookup would let a concurrent change execute reference B
 	// under key A, and file the result against the wrong configuration.
-	cacheKey := externalCacheKey()
-	ref := strings.TrimSpace(os.Getenv(EnvOpRef))
+	cfg := snapshotExternalConfig()
+	cacheKey := cfg.cacheKey()
 
 	if err, ok := suppressed(cacheKey); ok {
 		return "", err
@@ -261,13 +275,13 @@ func resolveExternal(ctx context.Context) (string, error) {
 			return "", err
 		}
 
-		val, err := resolveExternalUncached(lookupCtx, ref)
+		val, err := resolveExternalUncached(lookupCtx, cfg)
 		if err != nil && !isContextError(err) {
 			// A user staring at "no API key found" needs some way to tell a
 			// wedged helper from an absent one. The classified error is safe to
 			// log; the helper's own output is not, since it echoes the secret
 			// reference and sometimes more of the item.
-			slog.Debug("afklm: external credential lookup failed", "err", err, "ref_configured", ref != "")
+			slog.Debug("afklm: external credential lookup failed", "err", err, "ref_configured", cfg.opRef != "")
 
 			// Published inside the flight, before the result becomes visible, so
 			// a caller arriving after this call leaves the group cannot pass the
@@ -307,9 +321,9 @@ func isContextError(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
-func resolveExternalUncached(ctx context.Context, ref string) (string, error) {
+func resolveExternalUncached(ctx context.Context, cfg externalConfig) (string, error) {
 	if runtime.GOOS == "darwin" {
-		key, err := keychainLookup(ctx)
+		key, err := keychainLookup(ctx, cfg.keychainService)
 		if err == nil {
 			return key, nil
 		}
@@ -323,19 +337,19 @@ func resolveExternalUncached(ctx context.Context, ref string) (string, error) {
 		}
 	}
 
-	if ref == "" {
+	if cfg.opRef == "" {
 		return "", ErrNoCredential
 	}
 	if _, err := exec.LookPath("op"); err != nil {
 		return "", ErrNoCredential
 	}
-	return opLookup(ctx, ref)
+	return opLookup(ctx, cfg.opRef)
 }
 
 // keychainLookup reads from the macOS Keychain using the security CLI. Bounded
 // and detached: `security` can raise a GUI unlock dialog on a locked keychain,
 // which is acceptable only because this runs under PolicyExternal.
-func keychainLookup(ctx context.Context) (string, error) {
+func keychainLookup(ctx context.Context, service string) (string, error) {
 	u, err := user.Current()
 	if err != nil {
 		return "", err
@@ -343,7 +357,7 @@ func keychainLookup(ctx context.Context) (string, error) {
 	cmd, cmdCtx, cancel := credentialCommand(ctx, "security",
 		"find-generic-password",
 		"-a", u.Username,
-		"-s", keychainService(),
+		"-s", service,
 		"-w",
 	)
 	defer cancel()

@@ -56,6 +56,14 @@ func BrowserCookiesContext(ctx context.Context, domain string) string {
 		return ""
 	}
 
+	// A caller that is already gone gets nothing started on its behalf. Without
+	// this, entering the flight below would launch a helper for a request nobody
+	// is waiting on — and a client that cancels and retries could do it again on
+	// every attempt.
+	if ctx.Err() != nil {
+		return ""
+	}
+
 	// Collapse concurrent extraction for the same domain. A WAF challenge fires
 	// for every property in a result set at once, so without this a single
 	// search could start two nab process trees per property — the accumulation

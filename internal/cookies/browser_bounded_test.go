@@ -71,11 +71,16 @@ func TestBrowserCookies_SuppressesRepeatAfterFailure(t *testing.T) {
 }
 
 // TestBrowserCookiesContext_HonoursCancellation proves a caller that has gone
-// away stops waiting immediately, rather than sitting out the shared budget.
-// The extraction itself continues for whoever is left — it is deliberately
-// detached — but nobody is held hostage to it.
+// away neither waits nor causes work. Returning quickly is not enough on its own
+// — the point is that no helper is launched for a request nobody wants, so the
+// test asserts nab was never invoked.
 func TestBrowserCookiesContext_HonoursCancellation(t *testing.T) {
-	writeFakeNab(t, "sleep 30")
+	dir := writeFakeNab(t, "echo ran >> \""+filepath.Join(t.TempDir(), "unused")+"\"; sleep 30")
+	marker := filepath.Join(dir, "invoked")
+	if err := os.WriteFile(filepath.Join(dir, "nab"),
+		[]byte("#!/bin/sh\necho ran >> \""+marker+"\"\nsleep 30\n"), 0o755); err != nil {
+		t.Fatalf("rewrite fake nab: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -89,6 +94,15 @@ func TestBrowserCookiesContext_HonoursCancellation(t *testing.T) {
 	}
 	if elapsed > 2*time.Second {
 		t.Fatalf("a cancelled caller waited %v; it must return at once, not sit out the %v budget", elapsed, nabCookieBudget)
+	}
+
+	// Give a flight that should never have started time to launch its helper.
+	// Checking the marker immediately would pass by luck: the caller returns
+	// instantly either way, and the race would hide the defect.
+	time.Sleep(time.Second)
+
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a helper was launched for an already-cancelled request; nobody is waiting for its answer")
 	}
 }
 

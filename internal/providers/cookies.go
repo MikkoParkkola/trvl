@@ -86,25 +86,30 @@ type openerFunc func(goos, browserPreference, targetURL string) error
 // is a child of `xdg-open`, so killing the group would shut the window in the
 // user's face. Start reports the failure that actually matters (no such
 // command); the exit status of a launcher carries nothing worth waiting for.
+//
+// Started, but still reaped. A child that is never waited on stays a zombie for
+// the life of the parent, and trvl's MCP server is long-lived, so that would be
+// one dead entry per challenge. startAndReap hands the wait to a goroutine: the
+// caller is not blocked and the process table stays clean.
 func defaultOpenURL(goos, browserPreference, targetURL string) error {
 	switch goos {
 	case "darwin":
 		if browserPreference != "" {
-			if err := exec.Command("open", "-a", browserPreference, targetURL).Start(); err == nil {
+			if err := startAndReap(exec.Command("open", "-a", browserPreference, targetURL)); err == nil {
 				return nil
 			}
 		}
-		if err := exec.Command("open", targetURL).Start(); err != nil {
+		if err := startAndReap(exec.Command("open", targetURL)); err != nil {
 			return fmt.Errorf("open: %w", err)
 		}
 		return nil
 	case "linux":
-		if err := exec.Command("xdg-open", targetURL).Start(); err != nil {
+		if err := startAndReap(exec.Command("xdg-open", targetURL)); err != nil {
 			return fmt.Errorf("xdg-open: %w", err)
 		}
 		return nil
 	case "windows":
-		if err := exec.Command("cmd", "/c", "start", "", targetURL).Start(); err != nil {
+		if err := startAndReap(exec.Command("cmd", "/c", "start", "", targetURL)); err != nil {
 			return fmt.Errorf("start: %w", err)
 		}
 		return nil
@@ -611,4 +616,14 @@ func isTestBinary() bool {
 		}
 	}
 	return false
+}
+
+// startAndReap starts cmd without waiting for it, then reaps it in the
+// background so the finished child does not linger as a zombie.
+func startAndReap(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
