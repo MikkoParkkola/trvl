@@ -1,6 +1,9 @@
 package watch
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -13,13 +16,13 @@ import (
 func TestStoreAddIsIdempotentOnTarget(t *testing.T) {
 	s := NewStore(t.TempDir())
 
-	first, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
+	first, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
 	if err != nil {
 		t.Fatalf("first add: %v", err)
 	}
 
 	// Same route asked for again: same intent, not a second watch.
-	second, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
+	second, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
 	if err != nil {
 		t.Fatalf("second add: %v", err)
 	}
@@ -37,7 +40,7 @@ func TestStoreAddIsIdempotentOnTarget(t *testing.T) {
 func TestStoreAddPreservesAccumulatedStateOnRewatch(t *testing.T) {
 	s := NewStore(t.TempDir())
 
-	id, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
+	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
@@ -54,7 +57,7 @@ func TestStoreAddPreservesAccumulatedStateOnRewatch(t *testing.T) {
 	}
 	created := s.watches[0].CreatedAt
 
-	if _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 150, Currency: "EUR"}); err != nil {
+	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 150, Currency: "EUR"}); err != nil {
 		t.Fatalf("re-add: %v", err)
 	}
 
@@ -79,14 +82,14 @@ func TestStoreAddPreservesAccumulatedStateOnRewatch(t *testing.T) {
 func TestStoreAddRewatchDoesNotClearOmittedSettings(t *testing.T) {
 	s := NewStore(t.TempDir())
 
-	if _, err := s.Add(Watch{
+	if _, _, err := s.Add(Watch{
 		Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR",
 		WebhookURL: "https://example.test/hook", AlertDropPct: 15,
 	}); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 
-	if _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
+	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
 		t.Fatalf("re-add: %v", err)
 	}
 
@@ -114,7 +117,7 @@ func TestStoreAddKeepsDistinctTargetsSeparate(t *testing.T) {
 		{Type: "room", Destination: "AMS", HotelName: "Marriott", RoomKeywords: []string{"king"}, DepartDate: "2026-06-15", ReturnDate: "2026-06-18", BelowPrice: 200, Currency: "EUR"},
 	}
 	for i, w := range distinct {
-		if _, err := s.Add(w); err != nil {
+		if _, _, err := s.Add(w); err != nil {
 			t.Fatalf("add %d: %v", i, err)
 		}
 	}
@@ -137,10 +140,10 @@ func TestStoreAddRoomKeywordOrderDoesNotSplitWatches(t *testing.T) {
 	b := base
 	b.RoomKeywords = []string{"balcony", "king"}
 
-	if _, err := s.Add(a); err != nil {
+	if _, _, err := s.Add(a); err != nil {
 		t.Fatalf("add a: %v", err)
 	}
-	if _, err := s.Add(b); err != nil {
+	if _, _, err := s.Add(b); err != nil {
 		t.Fatalf("add b: %v", err)
 	}
 
@@ -156,7 +159,7 @@ func TestStoreAddDedupesOpportunityWatchesByWindow(t *testing.T) {
 	opp := Watch{Type: "opportunity", WindowFrom: "next_30d", WindowTo: "next_90d", MinScore: 85, MinNights: 3, MaxNights: 14}
 
 	for i := 0; i < 10; i++ {
-		if _, err := s.Add(opp); err != nil {
+		if _, _, err := s.Add(opp); err != nil {
 			t.Fatalf("add %d: %v", i, err)
 		}
 	}
@@ -166,7 +169,7 @@ func TestStoreAddDedupesOpportunityWatchesByWindow(t *testing.T) {
 
 	different := opp
 	different.MinScore = 90
-	if _, err := s.Add(different); err != nil {
+	if _, _, err := s.Add(different); err != nil {
 		t.Fatalf("add different: %v", err)
 	}
 	if got := len(s.List()); got != 2 {
@@ -182,7 +185,7 @@ func TestStoreAddDoesNotAccumulateAcrossSessions(t *testing.T) {
 
 	for session := 0; session < 200; session++ {
 		for _, r := range routes {
-			if _, err := s.Add(Watch{
+			if _, _, err := s.Add(Watch{
 				Type: "flight", Origin: r[0], Destination: r[1], BelowPrice: 200, Currency: "EUR",
 			}); err != nil {
 				t.Fatalf("session %d: %v", session, err)
@@ -202,7 +205,7 @@ func TestStoreAddDoesNotAccumulateAcrossSessions(t *testing.T) {
 // `trvl mcp` process cost ~686MB resident.
 func TestRecordPriceIsBoundedPerWatch(t *testing.T) {
 	s := NewStore(t.TempDir())
-	id, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
+	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
@@ -226,7 +229,7 @@ func TestRecordPriceIsBoundedPerWatch(t *testing.T) {
 // drop detection read.
 func TestRecordPriceEvictsOldestFirst(t *testing.T) {
 	s := NewStore(t.TempDir())
-	id, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
+	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
@@ -256,7 +259,7 @@ func TestRecordPriceEvictsOldestFirst(t *testing.T) {
 // lose it. This is what makes eviction safe.
 func TestWatchLowestPriceSurvivesHistoryEviction(t *testing.T) {
 	s := NewStore(t.TempDir())
-	id, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
+	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
@@ -283,7 +286,7 @@ func TestWatchLowestPriceSurvivesHistoryEviction(t *testing.T) {
 // Bounding watch history must not disturb the separately-capped route corpus.
 func TestWatchEvictionLeavesRouteObservationsAlone(t *testing.T) {
 	s := NewStore(t.TempDir())
-	id, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
+	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
@@ -321,7 +324,7 @@ func TestRouteWatchExpiresAfterTTL(t *testing.T) {
 // Re-watching is the renewal signal: a route in active use never ages out.
 func TestRewatchRenewsRouteWatch(t *testing.T) {
 	s := NewStore(t.TempDir())
-	if _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
+	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	// Age it past the TTL.
@@ -331,7 +334,7 @@ func TestRewatchRenewsRouteWatch(t *testing.T) {
 		t.Fatal("precondition: aged watch should be inactive")
 	}
 
-	if _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
+	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
 		t.Fatalf("re-add: %v", err)
 	}
 	if !isActive(s.watches[0], today) {
@@ -365,7 +368,7 @@ func TestDatedWatchExpiryIsUnchangedByRouteTTL(t *testing.T) {
 func TestLoadGrantsLegacyWatchesAFreshTTL(t *testing.T) {
 	dir := t.TempDir()
 	s := NewStore(dir)
-	if _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
+	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	// Simulate a pre-upgrade record: created long ago, no renewal stamp.
@@ -379,8 +382,11 @@ func TestLoadGrantsLegacyWatchesAFreshTTL(t *testing.T) {
 	if err := fresh.Load(); err != nil {
 		t.Fatalf("load: %v", err)
 	}
+	if _, err := fresh.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
 	if !isActive(fresh.List()[0], time.Now().Format("2006-01-02")) {
-		t.Error("upgrade mass-expired a legacy route watch instead of granting a fresh TTL")
+		t.Error("migration mass-expired a legacy route watch instead of granting a fresh TTL")
 	}
 }
 
@@ -489,7 +495,7 @@ func TestSchedulerStopReturnsWhenLockNotHeld(t *testing.T) {
 func TestLoadPersistsRenewedAtMigration(t *testing.T) {
 	dir := t.TempDir()
 	s := NewStore(dir)
-	if _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
+	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	s.watches[0].RenewedAt = time.Time{} // pre-upgrade record
@@ -497,18 +503,21 @@ func TestLoadPersistsRenewedAtMigration(t *testing.T) {
 		t.Fatalf("save: %v", err)
 	}
 
-	// First load stamps and should write back.
+	// Migrate stamps and writes back.
 	first := NewStore(dir)
 	if err := first.Load(); err != nil {
 		t.Fatalf("first load: %v", err)
+	}
+	if _, err := first.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
 	stamped := first.List()[0].RenewedAt
 	if stamped.IsZero() {
 		t.Fatal("migration did not stamp RenewedAt")
 	}
 
-	// A later load must see the SAME stamp, not a new one. If it re-grants, the
-	// TTL clock resets forever and route watches never expire.
+	// A later load must see the SAME stamp, not a new one. If the stamp were not
+	// persisted, the TTL clock would reset forever and route watches never expire.
 	time.Sleep(10 * time.Millisecond)
 	second := NewStore(dir)
 	if err := second.Load(); err != nil {
@@ -517,5 +526,212 @@ func TestLoadPersistsRenewedAtMigration(t *testing.T) {
 	got := second.List()[0].RenewedAt
 	if !got.Equal(stamped) {
 		t.Errorf("RenewedAt re-granted on reload (%v -> %v): the TTL would never fire", stamped, got)
+	}
+}
+
+// Migrate must collapse duplicates the ad-hoc cleanup missed: DATED watches too,
+// not just dateless route ones. A real store kept 380 copies of one room watch
+// because the earlier pass only handled route watches.
+func TestMigrateCollapsesDatedDuplicates(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+	room := Watch{
+		Type: "room", Destination: "AMS", HotelName: "Hilton",
+		RoomKeywords: []string{"king"}, DepartDate: "2026-06-15", ReturnDate: "2026-06-18",
+		BelowPrice: 200, Currency: "EUR",
+	}
+	// Bypass Add's dedup to build a pre-fix store.
+	for i := 0; i < 380; i++ {
+		w := room
+		w.ID = shortID()
+		w.CreatedAt = time.Now()
+		s.watches = append(s.watches, w)
+	}
+	if err := s.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	rep, err := s.Migrate()
+	if err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if got := len(s.List()); got != 1 {
+		t.Errorf("380 identical room watches collapsed to %d, want 1", got)
+	}
+	if rep.DuplicatesRemoved != 379 {
+		t.Errorf("reported %d duplicates removed, want 379", rep.DuplicatesRemoved)
+	}
+}
+
+// The surviving record must be the richest one, so collapsing never trades away
+// accumulated price history for an empty newer copy.
+func TestMigrateKeepsRichestDuplicate(t *testing.T) {
+	s := NewStore(t.TempDir())
+	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}
+
+	empty := base
+	empty.ID = "empty"
+	empty.CreatedAt = time.Now()
+
+	rich := base
+	rich.ID = "rich"
+	rich.LowestPrice = 85
+	rich.LastCheck = time.Now()
+	rich.CreatedAt = time.Now().Add(-90 * 24 * time.Hour)
+
+	s.watches = []Watch{empty, rich}
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	got := s.List()[0]
+	if got.ID != "rich" {
+		t.Errorf("collapse kept %q, want the record carrying price history", got.ID)
+	}
+	if got.LowestPrice != 85 {
+		t.Errorf("collapse lost the all-time low: %v", got.LowestPrice)
+	}
+}
+
+// Compaction is what actually recovers the memory: the retention caps otherwise
+// apply only to NEW writes, leaving an existing 39MB / 320k-point file exactly
+// as large as it was.
+func TestMigrateCompactsExistingHistory(t *testing.T) {
+	s := NewStore(t.TempDir())
+	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	// Build an oversized history directly, as a pre-fix store would have.
+	for i := 0; i < maxObservationsPerWatch*3; i++ {
+		s.history = append(s.history, PricePoint{WatchID: id, Price: float64(i), Currency: "EUR", Timestamp: time.Now()})
+	}
+	before := len(s.history)
+
+	rep, err := s.Migrate()
+	if err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if got := len(s.History(id)); got > maxObservationsPerWatch {
+		t.Errorf("history still %d points after compaction, cap is %d", got, maxObservationsPerWatch)
+	}
+	if rep.HistoryCompacted <= 0 {
+		t.Errorf("report claims %d compacted from %d points", rep.HistoryCompacted, before)
+	}
+	// Newest points survive.
+	h := s.History(id)
+	if h[len(h)-1].Price != float64(before-1) {
+		t.Errorf("compaction dropped the newest point: got %v", h[len(h)-1].Price)
+	}
+}
+
+// History belonging to collapsed-away duplicates must not linger.
+func TestMigrateDropsOrphanedHistory(t *testing.T) {
+	s := NewStore(t.TempDir())
+	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}
+	a, b := base, base
+	a.ID, b.ID = "keeper", "dupe"
+	a.LowestPrice = 85
+	a.CreatedAt, b.CreatedAt = time.Now(), time.Now()
+	s.watches = []Watch{a, b}
+	s.history = []PricePoint{
+		{WatchID: "keeper", Price: 100, Timestamp: time.Now()},
+		{WatchID: "dupe", Price: 200, Timestamp: time.Now()},
+	}
+
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	for _, p := range s.history {
+		if p.WatchID == "dupe" {
+			t.Error("history for a collapsed duplicate was left behind")
+		}
+	}
+}
+
+// Safe to run repeatedly: a clean store reports no changes and is not rewritten.
+func TestMigrateIsIdempotent(t *testing.T) {
+	s := NewStore(t.TempDir())
+	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("first migrate: %v", err)
+	}
+	second, err := s.Migrate()
+	if err != nil {
+		t.Fatalf("second migrate: %v", err)
+	}
+	if second.Changed() {
+		t.Errorf("re-running migrate on a clean store reported changes: %s", second.Summary())
+	}
+}
+
+// Migrate must back up before it writes: it deletes records.
+func TestMigrateBacksUpBeforeWriting(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}
+	for i := 0; i < 3; i++ {
+		w := base
+		w.ID = shortID()
+		w.CreatedAt = time.Now()
+		s.watches = append(s.watches, w)
+	}
+	if err := s.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	var backups int
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".bak-") {
+			backups++
+		}
+	}
+	if backups == 0 {
+		t.Error("migrate deleted records without writing a backup first")
+	}
+}
+
+// Load must never write. Migrating inside Load made every process rewrite the
+// whole store at startup - the last-writer-wins hazard this store cannot survive.
+func TestLoadNeverWrites(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	s.watches[0].RenewedAt = time.Time{} // legacy record that Load used to stamp
+	if err := s.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	path := filepath.Join(dir, "watches.json")
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		fresh := NewStore(dir)
+		if err := fresh.Load(); err != nil {
+			t.Fatalf("load %d: %v", i, err)
+		}
+	}
+
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat after: %v", err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
+		t.Error("Load wrote to the store; readers must be pure-read")
 	}
 }

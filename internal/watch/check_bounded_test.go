@@ -46,7 +46,7 @@ func (c *boundedCountChecker) CheckPrice(ctx context.Context, _ Watch) (float64,
 
 func addFlightWatch(t *testing.T, store *Store, origin, dest string) {
 	t.Helper()
-	if _, err := store.Add(Watch{
+	if _, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      origin,
 		Destination: dest,

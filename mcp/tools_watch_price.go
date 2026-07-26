@@ -167,7 +167,7 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 		return nil, nil, fmt.Errorf("load watch store: %w", err)
 	}
 
-	id, err := store.Add(w)
+	id, created, err := store.Add(w)
 	if err != nil {
 		return nil, nil, fmt.Errorf("add watch: %w", err)
 	}
@@ -182,10 +182,15 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 		TargetPrice float64 `json:"target_price"`
 		Currency    string  `json:"currency"`
 		CreatedAt   string  `json:"created_at"`
+		// False when an existing watch for the same target was updated instead.
+		// Add is idempotent, so re-watching returns the ORIGINAL id; reporting it
+		// as newly created would be a falsehood the agent then repeats to the user.
+		Created bool `json:"created"`
 	}
 
 	resp := watchResponse{
 		Success:     true,
+		Created:     created,
 		WatchID:     id,
 		Type:        watchType,
 		TargetPrice: targetPrice,

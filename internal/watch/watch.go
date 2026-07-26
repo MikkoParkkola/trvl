@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -430,27 +429,14 @@ func (s *Store) Load() error {
 	if err := loadJSON(s.historyPath(), &s.history); err != nil {
 		return fmt.Errorf("load history: %w", err)
 	}
-	// Watches written before RenewedAt existed have no renewal stamp. Falling
-	// back to CreatedAt would retroactively expire watches an upgrading user
-	// still wants, so grant them a full TTL from first sight instead.
+	// Load is PURE READ. It deliberately performs no migration and never writes.
 	//
-	// This MUST be persisted. Stamping only in memory would re-grant a fresh TTL
-	// on every load, so a legacy watch could never age out and routeWatchTTL
-	// would be dead code for exactly the users who need it. Best-effort: a
-	// read-only or full disk must not turn Load into a failure.
-	now := time.Now()
-	migrated := 0
-	for i := range s.watches {
-		if s.watches[i].RenewedAt.IsZero() {
-			s.watches[i].RenewedAt = now
-			migrated++
-		}
-	}
-	if migrated > 0 {
-		if err := s.persistLocked(); err != nil {
-			slog.Warn("watch: persist RenewedAt migration", "watches", migrated, "err", err)
-		}
-	}
+	// An earlier revision stamped RenewedAt here and persisted it, which made
+	// every process rewrite the whole store at startup — reintroducing exactly
+	// the last-writer-wins hazard that batching was rejected for, on a hotter
+	// path. Migration now lives in an explicit, reviewable command
+	// (Store.Migrate, exposed as `trvl watch migrate`) that backs up first and
+	// runs once, rather than implicitly in every reader.
 	return nil
 }
 
@@ -488,13 +474,18 @@ func (s *Store) persistLocked() error {
 	return nil
 }
 
-// Add inserts a new watch and persists to disk. Returns the assigned ID.
-func (s *Store) Add(w Watch) (string, error) {
+// Add inserts a watch, or updates the existing watch for the same target, and
+// persists. Returns the watch ID and whether a NEW watch was created.
+//
+// The `created` flag matters because Add is idempotent: callers used to report
+// "Added watch <id>" unconditionally and hand back an ID that was not new, which
+// is simply false on every re-watch.
+func (s *Store) Add(w Watch) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if err := w.Validate(); err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	// Idempotent on target: re-watching something already watched updates the
@@ -507,9 +498,9 @@ func (s *Store) Add(w Watch) (string, error) {
 		}
 		s.watches[i].applyIntent(w)
 		if err := s.saveLocked(); err != nil {
-			return "", err
+			return "", false, err
 		}
-		return s.watches[i].ID, nil
+		return s.watches[i].ID, false, nil
 	}
 
 	w.ID = shortID()
@@ -518,9 +509,9 @@ func (s *Store) Add(w Watch) (string, error) {
 	s.watches = append(s.watches, w)
 
 	if err := s.saveLocked(); err != nil {
-		return "", err
+		return "", false, err
 	}
-	return w.ID, nil
+	return w.ID, true, nil
 }
 
 // applyIntent copies the caller-adjustable fields of `next` onto an existing
@@ -870,3 +861,6 @@ func loadJSON(path string, dst interface{}) error {
 func saveJSON(path string, data interface{}) error {
 	return atomicjson.Write(path, data)
 }
+
+// Dir returns the directory backing this store.
+func (s *Store) Dir() string { return s.dir }

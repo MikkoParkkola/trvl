@@ -200,7 +200,7 @@ func TestScheduler_CallsCheckerForActiveWatches(t *testing.T) {
 	store := NewStore(dir)
 
 	// Add an active flight watch (future date).
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -238,7 +238,7 @@ func TestScheduler_StopCancelsInflightChecks(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -287,7 +287,7 @@ func TestScheduler_SkipsPastDateWatches(t *testing.T) {
 	store := NewStore(dir)
 
 	// Add a watch with a date in the past.
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -319,7 +319,7 @@ func TestScheduler_SkipsPastDateRangeWatches(t *testing.T) {
 	store := NewStore(dir)
 
 	// Date range fully in the past.
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "NRT",
@@ -348,7 +348,7 @@ func TestScheduler_ChecksOnlyActiveWatchesWhenStoreContainsPastEntries(t *testin
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	activeID, err := store.Add(Watch{
+	activeID, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -360,7 +360,7 @@ func TestScheduler_ChecksOnlyActiveWatchesWhenStoreContainsPastEntries(t *testin
 		t.Fatalf("Add active watch: %v", err)
 	}
 
-	_, err = store.Add(Watch{
+	_, _, err = store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "NRT",
@@ -411,7 +411,7 @@ func TestScheduler_AlwaysChecksRouteWatches(t *testing.T) {
 	store := NewStore(dir)
 
 	// Route watch: no dates.
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",

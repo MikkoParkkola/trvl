@@ -83,7 +83,7 @@ func TestCheckOne_WebhookUsesCallerContext(t *testing.T) {
 		LastPrice:   500,
 		WebhookURL:  "http://example.test/webhook",
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestCheckRoom_WebhookUsesCallerContext(t *testing.T) {
 		LastPrice:    250,
 		WebhookURL:   "http://example.test/webhook",
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestSchedulerRunOnce_WebhookUsesSchedulerContext(t *testing.T) {
 
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "NRT",
@@ -184,7 +184,7 @@ func TestSchedulerRunOnce_WebhookUsesSchedulerContext(t *testing.T) {
 func TestCheckAllWithRooms_NilContextFallsBackToBackgroundForPriceChecks(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "NRT",
@@ -210,7 +210,7 @@ func TestCheckAllWithRooms_NilContextFallsBackToBackgroundForPriceChecks(t *test
 func TestCheckAllWithRooms_NilContextFallsBackToBackgroundForRoomChecks(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:         "room",
 		HotelName:    "Test Hotel",
 		RoomKeywords: []string{"suite"},

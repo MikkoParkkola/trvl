@@ -32,7 +32,7 @@ func TestHandleCheckWatches_ReturnsLivePrice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultStore: %v", err)
 	}
-	if _, err := store.Add(watch.Watch{
+	if _, _, err := store.Add(watch.Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "CDG",

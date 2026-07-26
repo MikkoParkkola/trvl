@@ -548,7 +548,7 @@ func TestReadWatchByID_WithEntry(t *testing.T) {
 		CreatedAt:   time.Now(),
 		LastCheck:   time.Now(),
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("add watch error: %v", err)
 	}
@@ -611,7 +611,7 @@ func TestReadWatchesList_WithEntries(t *testing.T) {
 		CreatedAt:   time.Now(),
 		LastCheck:   time.Now(),
 	}
-	_, err := store.Add(w)
+	_, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("add watch error: %v", err)
 	}
@@ -644,7 +644,7 @@ func TestReadWatchResource_WatchStoreID(t *testing.T) {
 		LastPrice:   400,
 		CreatedAt:   time.Now(),
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("add watch error: %v", err)
 	}

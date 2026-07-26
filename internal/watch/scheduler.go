@@ -285,3 +285,23 @@ func isActive(w Watch, today string) bool {
 
 	return true
 }
+
+// ActiveWatches filters to watches that should still be checked: travel date not
+// passed, and dateless route watches renewed within routeWatchTTL.
+//
+// Exported so the CLI and daemon apply the SAME rule as the in-process
+// scheduler. They previously checked every stored watch, so a route watch the
+// scheduler had aged out was still being re-priced by the daemon — the expiry
+// held in one path and not the others.
+func ActiveWatches(watches []Watch) []Watch {
+	return activeWatches(watches)
+}
+
+// IsActiveNow reports whether a watch is still being checked, as of now.
+//
+// Exposed so user-facing surfaces can show expiry rather than let it be silent:
+// an expired watch otherwise renders identically to a healthy one while no price
+// is ever fetched for it again.
+func IsActiveNow(w Watch) bool {
+	return isActive(w, time.Now().Format("2006-01-02"))
+}

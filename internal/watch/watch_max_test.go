@@ -42,7 +42,7 @@ func TestCheckRoom_Error(t *testing.T) {
 		DepartDate:   "2026-07-01",
 		ReturnDate:   "2026-07-08",
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestCheckRoom_NoMatches(t *testing.T) {
 		DepartDate:   "2026-07-01",
 		ReturnDate:   "2026-07-08",
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestCheckRoom_SingleMatch(t *testing.T) {
 		BelowPrice:   200,
 		Currency:     "EUR",
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestCheckRoom_MultipleMatchesCheapest(t *testing.T) {
 		DepartDate:   "2026-07-01",
 		ReturnDate:   "2026-07-08",
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestCheckRoom_PriceDropTracking(t *testing.T) {
 		LastPrice:    250,
 		LowestPrice:  250,
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestCheckAllWithRooms_DispatchesRoomWatch(t *testing.T) {
 		DepartDate:   "2026-08-01",
 		ReturnDate:   "2026-08-05",
 	}
-	_, err := store.Add(w)
+	_, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestCheckAllWithRooms_NilRoomChecker(t *testing.T) {
 		DepartDate:   "2026-08-01",
 		ReturnDate:   "2026-08-05",
 	}
-	_, err := store.Add(w)
+	_, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -287,10 +287,10 @@ func TestCheckAllWithRooms_ContextCancellation(t *testing.T) {
 	// Add two watches so the inter-check pause fires.
 	w1 := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartDate: "2026-07-01"}
 	w2 := Watch{Type: "flight", Origin: "HEL", Destination: "NRT", DepartDate: "2026-07-01"}
-	if _, err := store.Add(w1); err != nil {
+	if _, _, err := store.Add(w1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Add(w2); err != nil {
+	if _, _, err := store.Add(w2); err != nil {
 		t.Fatal(err)
 	}
 
@@ -314,7 +314,7 @@ func TestCheckOne_ZeroPrice(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartDate: "2026-07-01"}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestCheckOne_UpdatesCheapestDate(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartFrom: "2026-07-01", DepartTo: "2026-07-31"}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +365,7 @@ func TestCheckOne_TracksLowestPrice(t *testing.T) {
 		LowestPrice: 300,
 		LastPrice:   300,
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatal(err)
 	}
