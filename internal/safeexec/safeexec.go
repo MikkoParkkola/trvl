@@ -23,7 +23,9 @@
 package safeexec
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"os/exec"
 	"time"
 )
@@ -38,6 +40,9 @@ const waitDelay = time.Second
 // "this helper timed out" apart from "the caller went away" — two conditions
 // that need different responses. The returned CancelFunc must be called.
 //
+// Run the result with Output rather than cmd.Output: some containment can only
+// be installed once the process exists.
+//
 // Callers should treat a non-nil error from the command as untrusted for
 // logging: a credential helper's stderr routinely echoes secret references.
 func Command(ctx context.Context, timeout time.Duration, name string, args ...string) (*exec.Cmd, context.Context, context.CancelFunc) {
@@ -50,4 +55,31 @@ func Command(ctx context.Context, timeout time.Duration, name string, args ...st
 	harden(cmd)
 
 	return cmd, tctx, cancel
+}
+
+// Output runs cmd and returns its standard output.
+//
+// It exists because containment is not uniform across platforms. On Unix,
+// Setsid is applied at fork and the process is contained before it can do
+// anything. On Windows there is no equivalent fork-time hook: a job object can
+// only be assigned to a process that already exists, so it has to happen
+// between Start and Wait. That leaves a narrow window in which a child spawned
+// immediately at startup escapes the job. Go does not expose the thread handle
+// needed for the CREATE_SUSPENDED-assign-resume sequence that would close it,
+// so the window is accepted and documented rather than hidden.
+//
+// Standard error is discarded, not captured: the helpers this package runs echo
+// secret references in their diagnostics, and an error string tends to end up
+// in a log.
+func Output(cmd *exec.Cmd) ([]byte, error) {
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = io.Discard
+
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	contain(cmd)
+	err := cmd.Wait()
+	return stdout.Bytes(), err
 }

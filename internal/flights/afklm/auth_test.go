@@ -1,3 +1,5 @@
+//go:build unix
+
 package afklm
 
 import (
@@ -32,6 +34,18 @@ func invocations(t *testing.T, marker string) int {
 		return 0
 	}
 	return len(strings.Fields(string(data)))
+}
+
+// testRef gives each test its own 1Password reference.
+//
+// The reference is the cache and singleflight key, and a lookup detached from
+// its caller (see resolveExternal) keeps running after the test that started it
+// returns. A hung helper from one test would otherwise publish its failure into
+// a later test's cache under a shared key. Distinct refs keep them apart, and
+// the need for them is itself a property worth knowing about.
+func testRef(t *testing.T) string {
+	t.Helper()
+	return "op://Private/" + t.Name() + "/credential"
 }
 
 // stubExternalHelpers puts fake `op` and `security` binaries first on PATH so
@@ -76,7 +90,7 @@ func TestResolveCredential_EnvFirst(t *testing.T) {
 func TestResolveCredential_EnvOnlySpawnsNothing(t *testing.T) {
 	opMarker, secMarker := stubExternalHelpers(t, "sleep 30", "sleep 30")
 	t.Setenv(EnvKey, "")
-	t.Setenv(EnvOpRef, "op://Private/AF-KLM/credential")
+	t.Setenv(EnvOpRef, testRef(t))
 
 	start := time.Now()
 	_, err := ResolveCredential(context.Background(), PolicyEnvOnly)
@@ -115,7 +129,7 @@ func TestResolveCredential_ExternalRequiresOpRef(t *testing.T) {
 }
 
 func TestResolveCredential_ExternalUsesConfiguredRef(t *testing.T) {
-	ref := "op://Private/AF-KLM/credential"
+	ref := testRef(t)
 	// The fake asserts it received the configured reference verbatim.
 	_, _ = stubExternalHelpers(t,
 		`if [ "$2" = "`+ref+`" ]; then echo key-from-op; exit 0; fi
@@ -144,7 +158,7 @@ exit 1`,
 func TestResolveCredential_ExternalIsBounded(t *testing.T) {
 	_, _ = stubExternalHelpers(t, "sleep 30", "exit 1")
 	t.Setenv(EnvKey, "")
-	t.Setenv(EnvOpRef, "op://Private/AF-KLM/credential")
+	t.Setenv(EnvOpRef, testRef(t))
 
 	start := time.Now()
 	_, err := ResolveCredential(context.Background(), PolicyExternal)
@@ -162,19 +176,51 @@ func TestResolveCredential_ExternalIsBounded(t *testing.T) {
 // helper IS negative-cached, unlike a cancelled caller. #507 was helpers
 // accumulating because every search re-paid a lookup that never returned;
 // leaving timeouts uncached would restore that at two seconds per search.
+//
+// The cached answer must stay ErrHelperTimedOut. Caching only an expiry would
+// report the timeout correctly once and then call it "not configured" for the
+// rest of the TTL, which is the misdiagnosis the distinct error exists to stop.
 func TestResolveCredential_TimeoutIsCached(t *testing.T) {
 	opMarker, _ := stubExternalHelpers(t, "sleep 30", "exit 1")
 	t.Setenv(EnvKey, "")
-	t.Setenv(EnvOpRef, "op://Private/AF-KLM/credential")
+	t.Setenv(EnvOpRef, testRef(t))
 
 	for i := range 2 {
-		if _, err := ResolveCredential(context.Background(), PolicyExternal); err == nil {
-			t.Fatalf("call %d: expected a failure from the hung helper", i)
+		_, err := ResolveCredential(context.Background(), PolicyExternal)
+		if !errors.Is(err, ErrHelperTimedOut) {
+			t.Fatalf("call %d: expected ErrHelperTimedOut, got %v", i, err)
 		}
 	}
 
 	if got := invocations(t, opMarker); got != 1 {
 		t.Fatalf("op invoked %d times across 2 resolves; a timeout must be cached like any other lookup failure", got)
+	}
+}
+
+// TestResolveCredential_KeychainTimeoutIsNotSwallowed covers the macOS path. A
+// Keychain that hangs is not a Keychain that said "no": falling through to
+// 1Password would spend a second deadline and then report "not configured", so
+// the user waits twice as long to be told to fix the wrong thing.
+func TestResolveCredential_KeychainTimeoutIsNotSwallowed(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the Keychain backend is Darwin-only")
+	}
+	opMarker, _ := stubExternalHelpers(t, "echo key-from-op", "sleep 30")
+	t.Setenv(EnvKey, "")
+	t.Setenv(EnvOpRef, testRef(t))
+
+	start := time.Now()
+	_, err := ResolveCredential(context.Background(), PolicyExternal)
+	elapsed := time.Since(start)
+
+	if !errors.Is(err, ErrHelperTimedOut) {
+		t.Fatalf("a hung Keychain must surface as a timeout, got %v", err)
+	}
+	if invocations(t, opMarker) > 0 {
+		t.Fatal("1Password was consulted after the Keychain hung; that spends a second deadline for an answer the user cannot use")
+	}
+	if elapsed > externalLookupTimeout+3*time.Second {
+		t.Fatalf("took %v; one hung backend must not cost more than one deadline", elapsed)
 	}
 }
 
@@ -184,7 +230,7 @@ func TestResolveCredential_TimeoutIsCached(t *testing.T) {
 func TestResolveCredential_NegativeCacheSuppressesRespawn(t *testing.T) {
 	opMarker, _ := stubExternalHelpers(t, "exit 1", "exit 1")
 	t.Setenv(EnvKey, "")
-	t.Setenv(EnvOpRef, "op://Private/AF-KLM/credential")
+	t.Setenv(EnvOpRef, testRef(t))
 
 	for i := range 3 {
 		if _, err := ResolveCredential(context.Background(), PolicyExternal); err != ErrNoCredential {
@@ -203,7 +249,7 @@ func TestResolveCredential_NegativeCacheSuppressesRespawn(t *testing.T) {
 func TestResolveCredential_EnvBeatsNegativeCache(t *testing.T) {
 	_, _ = stubExternalHelpers(t, "exit 1", "exit 1")
 	t.Setenv(EnvKey, "")
-	t.Setenv(EnvOpRef, "op://Private/AF-KLM/credential")
+	t.Setenv(EnvOpRef, testRef(t))
 
 	if _, err := ResolveCredential(context.Background(), PolicyExternal); err != ErrNoCredential {
 		t.Fatalf("expected ErrNoCredential to prime the cache, got %v", err)
@@ -236,9 +282,6 @@ func TestConfigured(t *testing.T) {
 }
 
 func TestCredentialCommand_IsIsolatedAndBounded(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("process sessions are a Unix concept")
-	}
 	cmd, _, cancel := credentialCommand(context.Background(), "true")
 	defer cancel()
 
@@ -265,7 +308,7 @@ func TestResolveCredential_CancelledCallerDoesNotPoisonCache(t *testing.T) {
 	// The helper would succeed if it were ever allowed to run.
 	_, _ = stubExternalHelpers(t, "echo key-from-op", "exit 1")
 	t.Setenv(EnvKey, "")
-	t.Setenv(EnvOpRef, "op://Private/AF-KLM/credential")
+	t.Setenv(EnvOpRef, testRef(t))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -294,7 +337,7 @@ func TestResolveCredential_ExternalUsesKeychainFirst(t *testing.T) {
 	}
 	opMarker, _ := stubExternalHelpers(t, "echo key-from-op", "echo key-from-keychain")
 	t.Setenv(EnvKey, "")
-	t.Setenv(EnvOpRef, "op://Private/AF-KLM/credential")
+	t.Setenv(EnvOpRef, testRef(t))
 
 	key, err := ResolveCredential(context.Background(), PolicyExternal)
 	if err != nil {
@@ -318,7 +361,7 @@ func TestResolveCredential_ExternalSkipsOpWhenAbsent(t *testing.T) {
 	t.Setenv("PATH", dir)
 	resetExternalCache()
 	t.Setenv(EnvKey, "")
-	t.Setenv(EnvOpRef, "op://Private/AF-KLM/credential")
+	t.Setenv(EnvOpRef, testRef(t))
 
 	if _, err := ResolveCredential(context.Background(), PolicyExternal); err != ErrNoCredential {
 		t.Fatalf("expected ErrNoCredential when op is not installed, got %v", err)
@@ -331,7 +374,7 @@ func TestResolveCredential_ExternalSkipsOpWhenAbsent(t *testing.T) {
 // up to a minute, while the error text tells them to go set a variable, is a fix
 // that appears not to work.
 func TestResolveCredential_CorrectedRefBypassesCache(t *testing.T) {
-	good := "op://Private/AF-KLM/credential"
+	good := testRef(t)
 	_, _ = stubExternalHelpers(t,
 		`if [ "$2" = "`+good+`" ]; then echo key-from-op; exit 0; fi
 exit 1`,
@@ -339,7 +382,7 @@ exit 1`,
 	t.Setenv(EnvKey, "")
 
 	// A wrong reference fails and primes the cache for that reference.
-	t.Setenv(EnvOpRef, "op://Private/typo/credential")
+	t.Setenv(EnvOpRef, testRef(t)+"-typo")
 	if _, err := ResolveCredential(context.Background(), PolicyExternal); err == nil {
 		t.Fatal("expected the wrong reference to fail")
 	}

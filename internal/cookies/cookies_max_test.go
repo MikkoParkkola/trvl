@@ -501,20 +501,20 @@ func TestBrowserCookies_NonexistentDomainReturnsEmpty(t *testing.T) {
 
 func TestExtractViaNab_NoNab(t *testing.T) {
 	// When nab is not on PATH, extractViaNab returns "".
-	got := extractViaNab("brave", "example.invalid")
+	got := extractViaNab(context.Background(), "brave", "example.invalid")
 	// Don't assert the value since it depends on whether nab is installed.
 	// The main goal is ensuring no panic.
 	_ = got
 }
 
 func TestExtractViaNab_EmptyDomain(t *testing.T) {
-	got := extractViaNab("chrome", "")
+	got := extractViaNab(context.Background(), "chrome", "")
 	// With empty domain, should not panic.
 	_ = got
 }
 
 func TestExtractViaNab_UnknownBrowser(t *testing.T) {
-	got := extractViaNab("firefox", "example.com")
+	got := extractViaNab(context.Background(), "firefox", "example.com")
 	// With unknown browser, nab may or may not support it.
 	_ = got
 }

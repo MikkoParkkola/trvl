@@ -6,6 +6,7 @@ package cookies
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -24,6 +25,10 @@ import (
 // search the user is waiting on.
 const nabCookieTimeout = 5 * time.Second
 
+// nabCookieBudget caps the whole attempt across every browser tried, so a
+// wedged helper cannot be paid for twice in one search.
+const nabCookieBudget = 6 * time.Second
+
 var (
 	browserAuthNow   = time.Now
 	browserAuthStart = func(name string, args ...string) error {
@@ -35,15 +40,75 @@ var (
 // It tries Brave first, then Chrome.
 // Returns a Cookie header value (e.g. "datadome=abc; _session=xyz").
 // Returns empty string if no cookies found or nab is not available.
+//
+// The whole attempt, across both browsers, shares one budget. Trying them in
+// sequence with a per-browser deadline would let a wedged nab cost twice over,
+// on a search the user is waiting on and did not ask to spend on cookies.
 func BrowserCookies(domain string) string {
+	return BrowserCookiesContext(context.Background(), domain)
+}
+
+// BrowserCookiesContext is BrowserCookies with caller cancellation honoured.
+// A request that has gone away must not keep a helper running on its behalf.
+func BrowserCookiesContext(ctx context.Context, domain string) string {
+	if err, ok := cookieSuppressed(domain); ok && err != nil {
+		return ""
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, nabCookieBudget)
+	defer cancel()
+
 	for _, browser := range []string{"brave", "chrome"} {
-		if c := extractViaNab(browser, domain); c != "" {
+		if ctx.Err() != nil {
+			break
+		}
+		if c := extractViaNab(ctx, browser, domain); c != "" {
 			slog.Debug("browser cookies found", "browser", browser, "domain", domain)
 			return c
 		}
 	}
+
+	// Nothing usable. Suppress retries briefly: a WAF challenge repeats across
+	// every property in a result set, and without this each one re-pays the
+	// full budget for the same answer.
+	noteCookieFailure(domain)
 	return ""
 }
+
+// cookieNegTTL suppresses repeated extraction attempts for a domain after a
+// failure. Short, because a user who unlocks their browser mid-session should
+// not have to wait out a long penalty.
+const cookieNegTTL = 30 * time.Second
+
+var (
+	cookieNegMu    sync.Mutex
+	cookieNegUntil = map[string]time.Time{}
+)
+
+func cookieSuppressed(domain string) (error, bool) {
+	cookieNegMu.Lock()
+	defer cookieNegMu.Unlock()
+	until, ok := cookieNegUntil[domain]
+	if !ok || !time.Now().Before(until) {
+		return nil, false
+	}
+	return errCookieSuppressed, true
+}
+
+func noteCookieFailure(domain string) {
+	cookieNegMu.Lock()
+	cookieNegUntil[domain] = time.Now().Add(cookieNegTTL)
+	cookieNegMu.Unlock()
+}
+
+// resetCookieCache clears the suppression map. Test-only.
+func resetCookieCache() {
+	cookieNegMu.Lock()
+	cookieNegUntil = map[string]time.Time{}
+	cookieNegMu.Unlock()
+}
+
+var errCookieSuppressed = errors.New("cookie extraction suppressed after a recent failure")
 
 // extractViaNab uses the nab CLI to export cookies for the given browser and domain.
 // nab handles keychain access and AES decryption transparently.
@@ -56,17 +121,17 @@ func BrowserCookies(domain string) string {
 // own permission prompt; unbounded and terminal-attached, that is the exact
 // shape that produced #507: a credential prompt appearing mid-search and a
 // helper that never returns.
-func extractViaNab(browser, domain string) string {
+func extractViaNab(ctx context.Context, browser, domain string) string {
 	nabPath, err := trvlnab.LookupPath()
 	if err != nil {
 		return ""
 	}
 
-	cmd, _, cancel := safeexec.Command(context.Background(), nabCookieTimeout,
+	cmd, _, cancel := safeexec.Command(ctx, nabCookieTimeout,
 		nabPath, "cookies", "export", domain, "--cookies", browser)
 	defer cancel()
 
-	out, err := cmd.Output()
+	out, err := safeexec.Output(cmd)
 	if err != nil || len(out) == 0 {
 		return ""
 	}

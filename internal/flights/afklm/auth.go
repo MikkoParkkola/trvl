@@ -26,7 +26,19 @@ const (
 	// this is set: trvl must not guess where a user keeps their secrets, and a
 	// guessed reference costs a subprocess that can block or prompt (#507).
 	EnvOpRef = "AFKLM_OP_REF"
+
+	// EnvKeychainService overrides the macOS Keychain service name. Unlike the
+	// 1Password reference this has a default, because the two are not the same
+	// kind of thing: a service name is a convention any user can create
+	// (`security add-generic-password -s afklm-api-key -w <key>`), whereas the
+	// old hardcoded op:// reference named one specific item in one specific
+	// vault that only its author possessed. The override exists so a user who
+	// files the key elsewhere is not forced to adopt trvl's naming.
+	EnvKeychainService = "AFKLM_KEYCHAIN_SERVICE"
 )
+
+// defaultKeychainService is the documented service name for the AF-KLM key.
+const defaultKeychainService = "afklm-api-key"
 
 // externalLookupTimeout bounds each external backend individually. `op` and
 // `security` are third-party binaries that may wait on a daemon, a network
@@ -110,15 +122,26 @@ func Configured(ctx context.Context, policy Policy) bool {
 
 // External-lookup memoisation. The singleflight group collapses concurrent
 // lookups (an agent fanning out parallel searches would otherwise spawn one
-// subprocess each); extNegUntil suppresses retries for a while after a failure.
+// subprocess each); negCache suppresses retries for a while after a failure.
 //
 // Both are keyed on the configuration that produced the result. A user who
 // corrects a bad AFKLM_OP_REF should see the correction take effect at once,
 // not sit behind a suppression earned by the value they just replaced.
+//
+// The cache stores the failure itself, not merely its expiry. Storing only a
+// deadline would answer every suppressed call with ErrNoCredential, so a wedged
+// helper would be reported correctly once and then misreported as "not
+// configured" for the rest of the minute — losing exactly the distinction
+// ErrHelperTimedOut exists to make.
+type negEntry struct {
+	until time.Time
+	err   error
+}
+
 var (
-	extGroup    singleflight.Group
-	extCacheMu  sync.Mutex
-	extNegUntil = map[string]time.Time{}
+	extGroup   singleflight.Group
+	extCacheMu sync.Mutex
+	negCache   = map[string]negEntry{}
 )
 
 // externalCacheKey identifies a lookup by the configuration it will use.
@@ -135,11 +158,11 @@ func externalCacheKey() string {
 // lock instead.
 func resetExternalCache() {
 	extCacheMu.Lock()
-	keys := make([]string, 0, len(extNegUntil))
-	for k := range extNegUntil {
+	keys := make([]string, 0, len(negCache))
+	for k := range negCache {
 		keys = append(keys, k)
 	}
-	extNegUntil = map[string]time.Time{}
+	negCache = map[string]negEntry{}
 	extCacheMu.Unlock()
 
 	keys = append(keys, externalCacheKey())
@@ -148,14 +171,26 @@ func resetExternalCache() {
 	}
 }
 
-func resolveExternal(ctx context.Context) (string, error) {
-	key := externalCacheKey()
-
+// suppressed reports the cached failure for key, if one is still in force.
+func suppressed(key string) (error, bool) {
 	extCacheMu.Lock()
-	suppressed := time.Now().Before(extNegUntil[key])
-	extCacheMu.Unlock()
-	if suppressed {
-		return "", ErrNoCredential
+	defer extCacheMu.Unlock()
+	e, ok := negCache[key]
+	if !ok || !time.Now().Before(e.until) {
+		return nil, false
+	}
+	return e.err, true
+}
+
+func resolveExternal(ctx context.Context) (string, error) {
+	// Snapshot the reference once and use that same value for the cache key,
+	// the singleflight key, and the lookup itself. Reading the environment
+	// again inside the lookup would let a concurrent change execute reference B
+	// under key A, and file the result against the wrong configuration.
+	ref := externalCacheKey()
+
+	if err, ok := suppressed(ref); ok {
+		return "", err
 	}
 
 	// A caller that is already gone gets nothing started on its behalf.
@@ -175,32 +210,29 @@ func resolveExternal(ctx context.Context) (string, error) {
 	// uncancellable context cannot mean an unbounded one.
 	lookupCtx := context.WithoutCancel(ctx)
 
-	ch := extGroup.DoChan(key, func() (any, error) {
+	ch := extGroup.DoChan(ref, func() (any, error) {
 		// Re-check under the lock at callback entry. The outer check happens
 		// before joining the group, so a flight that finished in between could
 		// otherwise be re-run: caller A reads "not suppressed", flight B
 		// publishes a failure, then A enters the group and spawns a second
 		// helper. Re-checking here closes that window.
-		extCacheMu.Lock()
-		stillSuppressed := time.Now().Before(extNegUntil[key])
-		extCacheMu.Unlock()
-		if stillSuppressed {
-			return "", ErrNoCredential
+		if err, ok := suppressed(ref); ok {
+			return "", err
 		}
 
-		val, err := resolveExternalUncached(lookupCtx)
+		val, err := resolveExternalUncached(lookupCtx, ref)
 		if err != nil && !isContextError(err) {
 			// A user staring at "no API key found" needs some way to tell a
 			// wedged helper from an absent one. The classified error is safe to
 			// log; the helper's own output is not, since it echoes the secret
 			// reference and sometimes more of the item.
-			slog.Debug("afklm: external credential lookup failed", "err", err, "ref_configured", key != "")
+			slog.Debug("afklm: external credential lookup failed", "err", err, "ref_configured", ref != "")
 
 			// Published inside the flight, before the result becomes visible, so
 			// a caller arriving after this call leaves the group cannot pass the
 			// cache check and spawn a second helper.
 			extCacheMu.Lock()
-			extNegUntil[key] = time.Now().Add(negativeCacheTTL)
+			negCache[ref] = negEntry{until: time.Now().Add(negativeCacheTTL), err: err}
 			extCacheMu.Unlock()
 		}
 		return val, err
@@ -234,14 +266,22 @@ func isContextError(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
-func resolveExternalUncached(ctx context.Context) (string, error) {
+func resolveExternalUncached(ctx context.Context, ref string) (string, error) {
 	if runtime.GOOS == "darwin" {
-		if key, err := keychainLookup(ctx); err == nil {
+		key, err := keychainLookup(ctx)
+		if err == nil {
 			return key, nil
+		}
+		// A Keychain that timed out is not a Keychain that said "no". Falling
+		// through would spend a second backend deadline on 1Password and then
+		// report "not configured", so the user would be told to set a variable
+		// while the real problem was a wedged helper — and the caller would wait
+		// twice as long to hear it.
+		if errors.Is(err, ErrHelperTimedOut) || isContextError(err) {
+			return "", err
 		}
 	}
 
-	ref := strings.TrimSpace(os.Getenv(EnvOpRef))
 	if ref == "" {
 		return "", ErrNoCredential
 	}
@@ -259,15 +299,20 @@ func keychainLookup(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	service := strings.TrimSpace(os.Getenv(EnvKeychainService))
+	if service == "" {
+		service = defaultKeychainService
+	}
+
 	cmd, cmdCtx, cancel := credentialCommand(ctx, "security",
 		"find-generic-password",
 		"-a", u.Username,
-		"-s", "afklm-api-key",
+		"-s", service,
 		"-w",
 	)
 	defer cancel()
 
-	out, err := cmd.Output()
+	out, err := safeexec.Output(cmd)
 	if err != nil {
 		return "", classifyHelperFailure(ctx, cmdCtx)
 	}
@@ -283,11 +328,11 @@ func opLookup(ctx context.Context, ref string) (string, error) {
 	cmd, cmdCtx, cancel := credentialCommand(ctx, "op", "read", ref)
 	defer cancel()
 
-	out, err := cmd.Output()
+	out, err := safeexec.Output(cmd)
 	if err != nil {
-		// The underlying error is deliberately dropped rather than wrapped:
-		// `op`'s stderr echoes the secret reference and, on some failures, more
-		// of the item than belongs in a log line.
+		// safeexec.Output discards the helper's stderr rather than returning it:
+		// `op` echoes the secret reference there and, on some failures, more of
+		// the item than belongs in a log line.
 		return "", classifyHelperFailure(ctx, cmdCtx)
 	}
 	key := strings.TrimSpace(string(out))

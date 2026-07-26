@@ -5,14 +5,7 @@ package safeexec
 import (
 	"os/exec"
 	"syscall"
-	"time"
 )
-
-// killGrace is how long a signalled helper group has to exit on its own
-// before it is killed outright. Short, because nothing is waiting on a graceful
-// shutdown; non-zero, because a helper may have started a daemon of its own
-// that has state to flush.
-const killGrace = 250 * time.Millisecond
 
 // harden detaches a helper process from the terminal and
 // from trvl's process group.
@@ -51,22 +44,23 @@ func harden(cmd *exec.Cmd) {
 		}
 		// Negative PID addresses the process group. A pre-existing, user-owned
 		// daemon is not in this group and is deliberately left alone: trvl must
-		// not disrupt a 1Password agent it did not start.
-		pgid := -cmd.Process.Pid
-
-		// Ask first, insist second. `op read` itself has nothing to clean up,
-		// but it may have started a 1Password daemon that does, and that daemon
-		// is inside the group we are signalling. SIGKILL with no warning could
-		// leave its socket or lock behind for the user's next, unrelated `op`
-		// invocation to trip over.
-		if err := syscall.Kill(pgid, syscall.SIGTERM); err != nil {
+		// not disrupt an agent it did not start.
+		//
+		// This kills outright rather than escalating SIGTERM to SIGKILL. An
+		// earlier version did escalate, on the theory that a daemon inside the
+		// group might have state to flush, but the grace period needed a timer
+		// that outlived the process — and a PGID is reusable, so a timer firing
+		// after the group had already exited could signal an unrelated one.
+		// Everything in this group is something we started and can restart, so
+		// the risk was bought for nothing.
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
 			return cmd.Process.Kill()
 		}
-		time.AfterFunc(killGrace, func() {
-			// Ignoring the error is deliberate: by now the group is usually
-			// gone, and ESRCH is the success case.
-			_ = syscall.Kill(pgid, syscall.SIGKILL)
-		})
 		return nil
 	}
 }
+
+// contain is a no-op on Unix: Setsid is applied at fork, so the process is
+// already a group leader before it can spawn anything. Nothing is left to do
+// once it is running.
+func contain(_ *exec.Cmd) {}
