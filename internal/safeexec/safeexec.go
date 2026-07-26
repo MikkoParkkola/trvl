@@ -64,9 +64,17 @@ func Command(ctx context.Context, timeout time.Duration, name string, args ...st
 // anything and this adds nothing. On Windows there is no fork-time hook: a job
 // object can only be assigned to a process that already exists, so it has to
 // happen between Start and Wait. That leaves a narrow window in which a child
-// spawned immediately at startup escapes the job. Go does not expose the thread
-// handle needed for the CREATE_SUSPENDED-assign-resume sequence that would close
-// it, so the window is accepted and documented rather than hidden.
+// spawned in that interval escapes the job.
+//
+// That window is left open deliberately. Closing it means starting the process
+// suspended, finding its initial thread through a toolhelp snapshot and resuming
+// it by hand, because Go does not expose the thread handle. If any step of that
+// dance fails the helper never runs at all, which turns a narrow resource risk
+// into a certain loss of function on a platform this code cannot be exercised on
+// outside CI. The helpers in question — a credential read, a cookie export —
+// parse arguments and read config before they spawn anything, so the interval
+// they could exploit is microseconds. Reassess if a helper ever forks that
+// early.
 //
 // The containment is closed unconditionally, on success as well as failure: on
 // Windows the job holds a kernel handle, and a long-lived MCP server that leaked

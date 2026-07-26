@@ -3,6 +3,7 @@
 package safeexec
 
 import (
+	"log/slog"
 	"os"
 	"os/exec"
 	"syscall"
@@ -65,20 +66,28 @@ func newContainment() *containment {
 
 // hold assigns a started process to the job.
 //
-// Failure is deliberately silent: containment is hardening, and a helper that
-// cannot be contained is still bounded by the deadline set in Command. Losing
-// the job is worse than having it, and far better than failing the search that
-// needed the helper.
+// A failure here is logged rather than returned. Containment is hardening: a
+// helper that cannot be contained is still bounded by the deadline set in
+// Command, so failing the search that needed it would trade a small resource
+// risk for a certain loss of function. Logging is the compromise — silence
+// would mean nobody ever learns the containment is not working.
 func (c *containment) hold(p *os.Process) {
-	if c == nil || c.job == 0 || p == nil {
+	if c == nil || p == nil {
+		return
+	}
+	if c.job == 0 {
+		slog.Debug("safeexec: no job object; helper descendants will not be contained", "pid", p.Pid)
 		return
 	}
 	ph, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(p.Pid))
 	if err != nil {
+		slog.Debug("safeexec: could not open helper process for containment", "pid", p.Pid, "err", err)
 		return
 	}
 	defer windows.CloseHandle(ph)
-	_ = windows.AssignProcessToJobObject(c.job, ph)
+	if err := windows.AssignProcessToJobObject(c.job, ph); err != nil {
+		slog.Debug("safeexec: could not assign helper to job object", "pid", p.Pid, "err", err)
+	}
 }
 
 // close terminates anything still in the job and releases the handle. It runs on

@@ -77,25 +77,34 @@ type openerFunc func(goos, browserPreference, targetURL string) error
 
 // defaultOpenURL is the production openerFunc — it dispatches to the
 // platform-native "open this URL" command.
+//
+// These are started, not waited on. Waiting was a latent hang on a search path:
+// `xdg-open` in particular can block for as long as the browser it launched
+// stays open, and the whole point of this call is that the browser stays open
+// long enough for a human to solve a challenge. Bounding it the way trvl bounds
+// its credential helpers would be worse than the disease — on Linux the browser
+// is a child of `xdg-open`, so killing the group would shut the window in the
+// user's face. Start reports the failure that actually matters (no such
+// command); the exit status of a launcher carries nothing worth waiting for.
 func defaultOpenURL(goos, browserPreference, targetURL string) error {
 	switch goos {
 	case "darwin":
 		if browserPreference != "" {
-			if err := exec.Command("open", "-a", browserPreference, targetURL).Run(); err == nil {
+			if err := exec.Command("open", "-a", browserPreference, targetURL).Start(); err == nil {
 				return nil
 			}
 		}
-		if err := exec.Command("open", targetURL).Run(); err != nil {
+		if err := exec.Command("open", targetURL).Start(); err != nil {
 			return fmt.Errorf("open: %w", err)
 		}
 		return nil
 	case "linux":
-		if err := exec.Command("xdg-open", targetURL).Run(); err != nil {
+		if err := exec.Command("xdg-open", targetURL).Start(); err != nil {
 			return fmt.Errorf("xdg-open: %w", err)
 		}
 		return nil
 	case "windows":
-		if err := exec.Command("cmd", "/c", "start", "", targetURL).Run(); err != nil {
+		if err := exec.Command("cmd", "/c", "start", "", targetURL).Start(); err != nil {
 			return fmt.Errorf("start: %w", err)
 		}
 		return nil

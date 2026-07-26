@@ -70,6 +70,28 @@ func TestBrowserCookies_SuppressesRepeatAfterFailure(t *testing.T) {
 	}
 }
 
+// TestBrowserCookiesContext_HonoursCancellation proves a caller that has gone
+// away stops waiting immediately, rather than sitting out the shared budget.
+// The extraction itself continues for whoever is left — it is deliberately
+// detached — but nobody is held hostage to it.
+func TestBrowserCookiesContext_HonoursCancellation(t *testing.T) {
+	writeFakeNab(t, "sleep 30")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	got := BrowserCookiesContext(ctx, testDomain)
+	elapsed := time.Since(start)
+
+	if got != "" {
+		t.Fatalf("expected no cookies for a cancelled caller, got %q", got)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("a cancelled caller waited %v; it must return at once, not sit out the %v budget", elapsed, nabCookieBudget)
+	}
+}
+
 // TestExtractViaNab_BoundedAndDetached is the regression test for the sibling of
 // issue #507 found in the same audit.
 //

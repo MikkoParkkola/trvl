@@ -60,11 +60,16 @@ func BrowserCookiesContext(ctx context.Context, domain string) string {
 	// for every property in a result set at once, so without this a single
 	// search could start two nab process trees per property — the accumulation
 	// this whole change exists to stop.
-	v, _, _ := cookieGroup.Do(domain, func() (any, error) {
+	//
+	// DoChan rather than Do: Do blocks, so a caller that had gone away would
+	// still sit here for the full budget before anyone noticed.
+	ch := cookieGroup.DoChan(domain, func() (any, error) {
 		if _, ok := cookieSuppressed(domain); ok {
 			return "", nil
 		}
 
+		// The shared extraction outlives any single caller, so it must not
+		// inherit one caller's cancellation; its own budget bounds it.
 		bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), nabCookieBudget)
 		defer cancel()
 
@@ -85,16 +90,15 @@ func BrowserCookiesContext(ctx context.Context, domain string) string {
 		return "", nil
 	})
 
-	// A caller that has gone away stops waiting; the flight continues for
-	// whoever is left, and its result still populates the suppression map.
 	select {
 	case <-ctx.Done():
+		// This caller stops waiting immediately. The extraction continues for
+		// whoever is left, and its result still populates the suppression map.
 		return ""
-	default:
+	case res := <-ch:
+		c, _ := res.Val.(string)
+		return c
 	}
-
-	c, _ := v.(string)
-	return c
 }
 
 // cookieNegTTL suppresses repeated extraction attempts for a domain after a
