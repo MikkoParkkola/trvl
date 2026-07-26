@@ -56,6 +56,15 @@ func stubExternalHelpers(t *testing.T, opBody, securityBody string) (opMarker, s
 	opMarker = fakeBin(t, dir, "op", opBody)
 	secMarker = fakeBin(t, dir, "security", securityBody)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	// Widen the per-backend deadline for fixtures. The tests that assert
+	// bounding measure against this value, so they still hold; what goes away
+	// is a fast fixture being scored as a timeout because the host was saturated
+	// running the rest of the suite.
+	prev := externalLookupTimeout
+	externalLookupTimeout = 5 * time.Second
+	t.Cleanup(func() { externalLookupTimeout = prev })
+
 	resetExternalCache()
 	return opMarker, secMarker
 }
@@ -265,19 +274,19 @@ func TestResolveCredential_EnvBeatsNegativeCache(t *testing.T) {
 	}
 }
 
-func TestConfigured(t *testing.T) {
+func TestResolveCredential_NoCredentialConfigured(t *testing.T) {
 	_, _ = stubExternalHelpers(t, "exit 1", "exit 1")
 
 	t.Setenv(EnvKey, "test-key")
-	if !Configured(context.Background(), PolicyEnvOnly) {
-		t.Fatalf("expected Configured to be true when %s is set", EnvKey)
+	if _, err := ResolveCredential(context.Background(), PolicyEnvOnly); err != nil {
+		t.Fatalf("expected success when %s is set, got %v", EnvKey, err)
 	}
 
 	t.Setenv(EnvKey, "")
 	t.Setenv(EnvOpRef, "")
 	resetExternalCache()
-	if Configured(context.Background(), PolicyEnvOnly) {
-		t.Fatal("expected Configured to be false with no credential configured")
+	if _, err := ResolveCredential(context.Background(), PolicyEnvOnly); err != ErrNoCredential {
+		t.Fatalf("expected ErrNoCredential with nothing configured, got %v", err)
 	}
 }
 

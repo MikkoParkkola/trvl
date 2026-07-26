@@ -43,7 +43,12 @@ const defaultKeychainService = "afklm-api-key"
 // externalLookupTimeout bounds each external backend individually. `op` and
 // `security` are third-party binaries that may wait on a daemon, a network
 // round-trip, or a user gesture; without a bound they wait forever (#507).
-const externalLookupTimeout = 2 * time.Second
+//
+// A var rather than a const solely so tests can widen it. Two seconds is
+// generous for a real helper but tight for a shell fixture on a machine running
+// the whole suite in parallel, and a test that fails because the host was busy
+// teaches nobody anything.
+var externalLookupTimeout = 2 * time.Second
 
 // negativeCacheTTL suppresses repeated external lookups after a failure. trvl
 // runs as a long-lived MCP server, so an uncached miss is re-paid on every
@@ -109,15 +114,31 @@ func ResolveCredential(ctx context.Context, policy Policy) (string, error) {
 	return resolveExternal(ctx)
 }
 
-// Configured reports whether a credential resolves under the given policy.
+// DefaultPathSkipHint explains why AF-KLM was left out of a default search,
+// when the reason is worth saying out loud.
 //
-// Prefer calling ResolveCredential once and passing the key into
-// ClientOptions.Credential: asking Configured and then constructing a client
-// resolves twice, which doubles the subprocess cost under PolicyExternal and
-// leaves a window where the answer changes between the two calls.
-func Configured(ctx context.Context, policy Policy) bool {
-	_, err := ResolveCredential(ctx, policy)
-	return err == nil
+// It returns empty for the ordinary case. Most users never enabled AF-KLM, and
+// a line about a provider they have never heard of is noise on every search.
+//
+// It returns a hint when the user demonstrably did configure the provider:
+// AFKLM_OP_REF names where their key lives, but the default path will not read
+// an external store (#507), so AF-KLM is absent from results the user has every
+// reason to expect it in. Staying silent there would look like the provider had
+// simply stopped working — and trvl's own rule is never to dress an omission up
+// as "nothing found".
+//
+// Costs one environment read. It must stay that cheap: this runs on every
+// round-trip search.
+func DefaultPathSkipHint() string {
+	if strings.TrimSpace(os.Getenv(EnvKey)) != "" {
+		return "" // configured and used; nothing to explain
+	}
+	if strings.TrimSpace(os.Getenv(EnvOpRef)) == "" {
+		return "" // never configured; not this user's concern
+	}
+	return "AF-KLM is configured via " + EnvOpRef + ", which a default search does not read: " +
+		"reading a password manager on every search could block it or raise a prompt. " +
+		"Export " + EnvKey + " to include AF-KLM automatically, or run --provider afklm for this search."
 }
 
 // External-lookup memoisation. The singleflight group collapses concurrent

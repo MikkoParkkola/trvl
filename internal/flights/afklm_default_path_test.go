@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -66,7 +67,36 @@ func TestDefaultRoundTripMergeSpawnsNoCredentialHelper(t *testing.T) {
 	if len(flights) != 0 {
 		t.Fatalf("expected no AF-KLM flights when unconfigured, got %d", len(flights))
 	}
-	if len(statuses) != 0 {
-		t.Fatalf("expected a silent skip when unconfigured, got statuses: %v", statuses)
+
+	// AFKLM_OP_REF is set above, so this user has configured AF-KLM somewhere
+	// the default path deliberately will not read. That is worth saying: an
+	// unexplained absence looks like the provider broke.
+	if len(statuses) != 1 {
+		t.Fatalf("expected one explanatory status when %s is set, got %v", "AFKLM_OP_REF", statuses)
+	}
+	if statuses[0].FixHint == "" {
+		t.Fatal("the status must carry a fix hint; a bare 'not configured' does not tell the user what to do")
+	}
+	if !strings.Contains(statuses[0].FixHint, "AFKLM_KEY") {
+		t.Fatalf("the hint must name the variable that fixes it, got %q", statuses[0].FixHint)
+	}
+}
+
+// TestDefaultRoundTripMergeStaysSilentWhenUnconfigured is the other half of the
+// contract. A user who never enabled AF-KLM must not see a status line about it
+// on every round-trip search.
+func TestDefaultRoundTripMergeStaysSilentWhenUnconfigured(t *testing.T) {
+	t.Setenv("AFKLM_KEY", "")
+	t.Setenv("AFKLM_OP_REF", "")
+
+	flights, statuses := searchAFKLMNativeRoundTrip(
+		context.Background(),
+		"AMS", "HEL",
+		"2026-09-01", "2026-09-08",
+		SearchOptions{ReturnDate: "2026-09-08"},
+	)
+
+	if len(flights) != 0 || len(statuses) != 0 {
+		t.Fatalf("expected a fully silent skip for a user who never configured AF-KLM, got %d flights and %v", len(flights), statuses)
 	}
 }

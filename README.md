@@ -186,6 +186,9 @@ AF-KLM is the single exception, and it is worth explaining. Ordinary round-trips
 | --- | --- |
 | `AFKLM_KEY` | The API key itself. Once set, AF-KLM native round-trips join your default searches automatically. |
 | `AFKLM_OP_REF` | A 1Password secret reference, e.g. `op://Private/AF-KLM/credential`. Read via the `op` CLI **only** when you run `--provider afklm` explicitly. |
+| `AFKLM_KEYCHAIN_SERVICE` | Overrides the macOS Keychain service name (default `afklm-api-key`). Read under `--provider afklm` only. |
+
+Set `AFKLM_OP_REF` without `AFKLM_KEY` and a default search will tell you AF-KLM was skipped and why, rather than quietly leaving it out.
 
 The rule, and why it exists: a search you didn't ask for never runs a credential helper. `op` and `security` are third-party programs that can block, can pop an interactive prompt, and can leave stray processes behind — so an opportunistic lookup on the default path is limited to reading an environment variable, which costs nothing and cannot prompt. Only an explicit `--provider afklm` may reach an external store, where a prompt is something you asked for. Reported as [#507](https://github.com/MikkoParkkola/trvl/issues/507).
 

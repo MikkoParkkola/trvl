@@ -32,6 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   process group so nothing they spawn is left behind. ([#507](https://github.com/MikkoParkkola/trvl/issues/507))
 - A helper that exceeds its deadline now reports that it timed out, instead of
   reporting that no credential is configured.
+- Browser-cookie extraction, reached from ordinary hotel and rail searches, had the
+  same defect: an unbounded `nab` could stall a search and leave helpers behind. It is
+  now bounded, detached, shares one budget across browsers, and stops retrying a
+  domain that has just failed.
+- A search that skips AF-KLM because `AFKLM_OP_REF` is set but `AFKLM_KEY` is not now
+  says so, with a hint naming the fix. Silently dropping a provider the user had
+  configured looked like a broken provider.
+
+### Added
+
+- `AFKLM_KEYCHAIN_SERVICE` overrides the macOS Keychain service name, so a user who
+  files the key under their own name is not forced to adopt trvl's.
 
 ## [1.20.0] - 2026-07-13
 
