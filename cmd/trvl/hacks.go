@@ -72,7 +72,10 @@ Examples:
 				input.Loyalty = hacks.LoyaltyFromPreferences(prefs)
 			}
 
-			detected := hacks.DetectAll(ctx, input)
+			detected, complete := hacks.DetectAll(ctx, input)
+			if !complete {
+				fmt.Fprintln(os.Stderr, "Note: the deadline expired before every detector finished; results below are partial.")
+			}
 
 			if format == "json" {
 				return models.FormatJSON(os.Stdout, map[string]interface{}{
@@ -80,6 +83,7 @@ Examples:
 					"destination": dest,
 					"date":        date,
 					"count":       len(detected),
+					"complete":    complete,
 					"hacks":       detected,
 				})
 			}

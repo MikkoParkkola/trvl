@@ -253,7 +253,13 @@ Examples:
 						Passengers:  adults,
 					}
 					probed, st := cfprobe.Default().Probe(now, func() []hacks.Hack {
-						return hacks.DetectAll(cmd.Context(), in)
+						// Partial-sweep signalling is surfaced by `trvl hacks`;
+						// here the hacks are supplementary savings notes on a
+						// flight search, so a short sweep silently contributes
+						// fewer of them rather than warning about a feature the
+						// user did not ask for.
+						found, _ := hacks.DetectAll(cmd.Context(), in)
+						return found
 					})
 					savings = append(savings, probed...)
 					if st == cfprobe.StatusBudgetExhausted {

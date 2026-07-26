@@ -309,6 +309,11 @@ type detectFn func(ctx context.Context, in DetectorInput) []Hack
 // RegisteredDetectorCount() reports len(allDetectors()), and the public docs
 // detector count is pinned to it by a tripwire test so a claim can never drift
 // from the implementation.
+// detectorRoster is the seam tests use to supply deterministic detectors.
+// Production always uses the real roster; only tests reassign it, so that a test
+// of DetectAll's own control flow does not depend on live providers.
+var detectorRoster = allDetectors
+
 func allDetectors() []detectFn {
 	return []detectFn{
 		detectThrowaway,
@@ -367,14 +372,22 @@ func RegisteredDetectorCount() int {
 // and there is no point paying for a network round trip whose result nobody
 // can use. This keeps a cancelled MCP request response-fast and keeps the
 // default (offline) test suite free of live provider traffic.
-func DetectAll(ctx context.Context, in DetectorInput) []Hack {
+// DetectAll runs every detector and returns the hacks they found, plus whether
+// the sweep actually finished.
+//
+// The second return value is not decoration. When a deadline expires mid-sweep
+// DetectAll returns what arrived in time, and a caller that cannot tell that
+// apart from a completed sweep will present a truncated list as the whole
+// answer — which is precisely the "empty result dressed up as nothing found"
+// this project refuses to do elsewhere. Callers must surface false.
+func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bool) {
 	// Fast path: ctx is already done (cancelled or deadline already passed).
 	// Don't launch a single detector goroutine.
 	if ctx.Err() != nil {
-		return nil
+		return nil, false
 	}
 
-	detectors := allDetectors()
+	detectors := detectorRoster()
 
 	// Each detector gets a child context with a per-detector timeout so a
 	// slow API call cannot block the entire hacks response. context.WithTimeout
@@ -388,6 +401,7 @@ func DetectAll(ctx context.Context, in DetectorInput) []Hack {
 
 	ch := make(chan result, len(detectors))
 	var wg sync.WaitGroup
+	dispatchedAll := true
 
 	for _, fn := range detectors {
 		// ctx can expire mid fan-out (e.g. a parent deadline of a few ms
@@ -395,6 +409,7 @@ func DetectAll(ctx context.Context, in DetectorInput) []Hack {
 		// dispatching further detectors the moment that happens rather than
 		// firing off calls that are already doomed to fail.
 		if ctx.Err() != nil {
+			dispatchedAll = false
 			break
 		}
 		fn := fn
@@ -438,14 +453,15 @@ func DetectAll(ctx context.Context, in DetectorInput) []Hack {
 		select {
 		case r, ok := <-ch:
 			if !ok {
-				return dedupHacks(all)
+				return dedupHacks(all), dispatchedAll
 			}
 			all = append(all, r.hacks...)
 		case <-ctx.Done():
 			// Return what arrived in time rather than nothing: partial results
 			// beat an empty answer, and this matches how the rest of trvl
-			// degrades when a provider is slow.
-			return dedupHacks(all)
+			// degrades when a provider is slow. The caller is told it is
+			// partial so it cannot present this as the full sweep.
+			return dedupHacks(all), false
 		}
 	}
 }

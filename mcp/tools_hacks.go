@@ -121,9 +121,13 @@ func handleDetectTravelHacks(ctx context.Context, args map[string]any, _ ElicitF
 		sendProgress(progress, float64(i+1)/n*80, 100, fmt.Sprintf("Checking %s...", name))
 	}
 
-	detected := hacks.DetectAll(ctx, input)
+	detected, complete := hacks.DetectAll(ctx, input)
 
-	sendProgress(progress, 90, 100, "Scoring and filtering results...")
+	if !complete {
+		sendProgress(progress, 90, 100, "Deadline reached; scoring the detectors that finished...")
+	} else {
+		sendProgress(progress, 90, 100, "Scoring and filtering results...")
+	}
 
 	type response struct {
 		Origin      string       `json:"origin"`
@@ -131,6 +135,12 @@ func handleDetectTravelHacks(ctx context.Context, args map[string]any, _ ElicitF
 		Date        string       `json:"date"`
 		Count       int          `json:"count"`
 		Hacks       []hacks.Hack `json:"hacks"`
+		// Complete is false when the deadline expired before every detector
+		// finished. An agent reading this response would otherwise present a
+		// truncated list as the full answer, which is the one thing trvl's
+		// provider statuses exist to prevent.
+		Complete bool   `json:"complete"`
+		Note     string `json:"note,omitempty"`
 	}
 
 	resp := response{
@@ -139,12 +149,20 @@ func handleDetectTravelHacks(ctx context.Context, args map[string]any, _ ElicitF
 		Date:        date,
 		Count:       len(detected),
 		Hacks:       detected,
+		Complete:    complete,
+	}
+	if !complete {
+		resp.Note = "partial: the deadline expired before every detector finished, so more hacks may exist"
 	}
 	if resp.Hacks == nil {
 		resp.Hacks = []hacks.Hack{}
 	}
 
-	sendProgress(progress, 100, 100, fmt.Sprintf("Found %d hacks", len(detected)))
+	if complete {
+		sendProgress(progress, 100, 100, fmt.Sprintf("Found %d hacks", len(detected)))
+	} else {
+		sendProgress(progress, 100, 100, fmt.Sprintf("Found %d hacks (partial: deadline reached)", len(detected)))
+	}
 
 	summary := buildHacksSummary(origin, destination, date, detected)
 	content, err := buildAnnotatedContentBlocks(summary, resp)
