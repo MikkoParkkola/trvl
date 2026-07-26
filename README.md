@@ -83,7 +83,7 @@ More starter prompts and what good answers look like: [docs/DEMO.md](docs/DEMO.m
 ## Why trvl, not the alternatives
 
 - **Whole journey, door to door.** It plans the entire trip across modes — home to airport, flight, arrival transfer, hotel, onward train — and prices each leg in its real mode. Most tools stop at one flight, one hotel.
-- **No API keys, no signup, no bill.** Works the moment you install it. No Amadeus key to apply for, no subscription, no per-call cost.
+- **No API keys, no signup, no bill.** Every core source works the moment you install it — no Amadeus key to apply for, no subscription, no per-call cost. Some optional providers can be switched on with a key of your own (AF-KLM, SerpAPI, Travelpayouts and others); none of them is required, and a search never goes looking for credentials on your machine that you haven't pointed it at. See [Optional credentialed providers](#optional-credentialed-providers).
 - **Your assistant, your machine.** One local binary, any MCP client. Not locked to a vendor; your trips and preferences never leave your computer.
 - **It optimizes, not just lists.** Shift-day pricing, split-airline routing, hidden-city checks, award sweet spots, round-trip fares. It hands back the cheaper option and shows what it saved.
 - **It is honest when a source fails.** Typed statuses and labelled estimates, never an empty result dressed up as "nothing found."
@@ -159,6 +159,37 @@ Local stdio is the default and safest transport. `trvl mcp --http` binds to `127
 - **Ground transport times out?** Rail/ferry providers throttle; retry after 30s or pass `--timeout 3m`.
 
 Full troubleshooting: [docs/CLI.md](docs/CLI.md).
+
+## Optional credentialed providers
+
+Every source trvl uses by default is free and needs no account. A number of extras switch on only if you supply a key of your own, and stay silent otherwise:
+
+| Variable | Enables |
+| --- | --- |
+| `AFKLM_KEY` | AF-KLM native round-trip fares (see below) |
+| `AFKL_KLM_COOKIES` | AF-KLM Flying Blue award / miles search |
+| `SERPAPI_KEY` | Detail-verified hotel provider prices (`trvl serpapi`) |
+| `TRAVELPAYOUTS_TOKEN` | Historical price trends |
+| `TRANSAVIA_API_KEY` | Transavia flights |
+| `DISTRIBUSION_API_KEY` | Bus and coach ground legs |
+| `FOURSQUARE_API_KEY` | Nearby places |
+| `GEOAPIFY_API_KEY` | Destination geo data |
+| `OPENTRIPMAP_API_KEY` | Attractions |
+| `TICKETMASTER_API_KEY` | Events |
+| `TRVL_GMAIL_APP_PASSWORD` | Emailing trip digests |
+
+Every one of these reads its key from the environment and nowhere else. trvl does not search your machine for credentials.
+
+AF-KLM is the single exception, and it is worth explaining. Google and Kiwi already return genuine native round-trip fares in the default merge, so AF-KLM is not there to price ordinary flights. It is there for the rail+fly itineraries AF-KLM sells and nobody else exposes: a train leg from Brussels Midi, Antwerp or Brussels ticketed as part of the flight, rather than a separate rail booking you have to make and risk yourself. It also returns both legs of a round-trip in full detail on KL/AF metal. It is the only provider that can read from a credential store, under tight rules:
+
+| Variable | Effect |
+| --- | --- |
+| `AFKLM_KEY` | The API key itself. Once set, AF-KLM native round-trips join your default searches automatically. |
+| `AFKLM_OP_REF` | A 1Password secret reference, e.g. `op://Private/AF-KLM/credential`. Read via the `op` CLI **only** when you run `--provider afklm` explicitly. |
+
+The rule, and why it exists: a search you didn't ask for never runs a credential helper. `op` and `security` are third-party programs that can block, can pop an interactive prompt, and can leave stray processes behind — so an opportunistic lookup on the default path is limited to reading an environment variable, which costs nothing and cannot prompt. Only an explicit `--provider afklm` may reach an external store, where a prompt is something you asked for. Reported as [#507](https://github.com/MikkoParkkola/trvl/issues/507).
+
+If you use the macOS Keychain (`security add-generic-password -a "$USER" -s afklm-api-key -w <key>`), it is consulted under `--provider afklm` only, for the same reason.
 
 ## Ecosystem
 

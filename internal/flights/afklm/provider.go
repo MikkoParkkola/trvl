@@ -56,10 +56,14 @@ type AFKLMProvider struct {
 	client *Client
 }
 
-// NewProvider creates an AFKLMProvider. Returns ErrNoCredential if the
-// provider is not configured.
-func NewProvider() (*AFKLMProvider, error) {
-	client, err := NewClient(ClientOptions{})
+// NewProvider creates an AFKLMProvider, resolving a credential under the given
+// policy. Returns ErrNoCredential if the provider is not configured.
+//
+// Use PolicyEnvOnly on any path the user did not explicitly ask for: it cannot
+// spawn a subprocess, so it cannot block, prompt, or leak helper processes.
+// PolicyExternal is for explicit `--provider afklm` use only.
+func NewProvider(ctx context.Context, policy Policy) (*AFKLMProvider, error) {
+	client, err := NewClient(ctx, ClientOptions{Policy: policy})
 	if err != nil {
 		return nil, err
 	}

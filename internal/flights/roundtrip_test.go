@@ -459,7 +459,7 @@ func TestSearchRoundTrip_DefaultMerge_SilentSkipDailyQuota(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cli, err := afklm.NewClient(afklm.ClientOptions{
+	cli, err := afklm.NewClient(context.Background(), afklm.ClientOptions{
 		Credential: "dummy",
 		CacheDir:   d,
 		BaseURL:    srv.URL,

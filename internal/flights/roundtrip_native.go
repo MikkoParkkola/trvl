@@ -277,7 +277,14 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 
 	newProvider := opts.afklmNewProvider
 	if newProvider == nil {
-		newProvider = afklm.NewProvider // production default
+		// PolicyEnvOnly: this is the DEFAULT merge, which the user did not ask
+		// for. It reads AFKLM_KEY and nothing else — no Keychain, no 1Password,
+		// no subprocess of any kind. An opportunistic provider must not be able
+		// to block a search or surface a credential prompt (#507). Users who
+		// keep the key in an external store opt in with `--provider afklm`.
+		newProvider = func() (*afklm.AFKLMProvider, error) {
+			return afklm.NewProvider(ctx, afklm.PolicyEnvOnly)
+		}
 	}
 	p, err := newProvider()
 	if errors.Is(err, afklm.ErrNoCredential) {

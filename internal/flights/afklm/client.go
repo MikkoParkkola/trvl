@@ -54,7 +54,8 @@ func getSharedLimiter() *rate.Limiter {
 type ClientOptions struct {
 	BaseURL    string           // default "https://api.airfranceklm.com"
 	Host       string           // "KL" (default) or "AF"
-	Credential string           // if empty, resolved via auth.ResolveCredential
+	Credential string           // if empty, resolved via ResolveCredential under Policy
+	Policy     Policy           // credential backends the client may consult; zero value is env-only
 	CacheDir   string           // default ~/.trvl/cache/afklm
 	HTTPClient *http.Client     // default: stdlib default
 	Now        func() time.Time // injectable for tests
@@ -73,10 +74,15 @@ type Client struct {
 	mu         sync.Mutex // serialises quota check + increment
 }
 
-// NewClient creates a new Client. If opts.Credential is empty it resolves
-// credentials via auth.ResolveCredential. Returns ErrNoCredential if no
-// credential can be found.
-func NewClient(opts ClientOptions) (*Client, error) {
+// NewClient creates a new Client. If opts.Credential is empty it resolves one
+// via ResolveCredential under opts.Policy, bounded by ctx. Returns
+// ErrNoCredential if no credential can be found.
+//
+// ctx is required rather than optional: an earlier version resolved with
+// context.Background(), which meant a credential helper could block the caller
+// forever and could not be cancelled when the request that needed it went away
+// (#507).
+func NewClient(ctx context.Context, opts ClientOptions) (*Client, error) {
 	if opts.BaseURL == "" {
 		opts.BaseURL = defaultBaseURL
 	}
@@ -93,7 +99,7 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	key := opts.Credential
 	if key == "" {
 		var err error
-		key, err = ResolveCredential(context.Background())
+		key, err = ResolveCredential(ctx, opts.Policy)
 		if err != nil {
 			return nil, err
 		}

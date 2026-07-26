@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING — AF-KLM credentials are no longer discovered automatically.** A default
+  flight search now reads the `AFKLM_KEY` environment variable and nothing else. It no
+  longer consults the macOS Keychain or 1Password, so it starts no subprocess, cannot
+  block a search, and cannot surface a credential prompt. If you relied on a Keychain
+  entry or a 1Password item, export `AFKLM_KEY` to restore AF-KLM in default searches,
+  or run `--provider afklm` explicitly. This matters most for AF-KLM's rail+fly
+  itineraries (a train leg from Brussels Midi, Antwerp or Brussels ticketed as part of
+  the flight), which no other provider exposes. External credential stores are now
+  reachable only under the explicit flag.
+  ([#507](https://github.com/MikkoParkkola/trvl/issues/507))
+- The 1Password lookup requires a secret reference you supply in `AFKLM_OP_REF`, e.g.
+  `op://Private/AF-KLM/credential`. The previously hardcoded reference was a leftover
+  from experimental work and named an item only the maintainer had.
+
+### Fixed
+
+- A credential lookup on the default search path could hang forever and accumulate
+  stalled helper processes, and could surface an interactive 1Password account-setup
+  prompt in the terminal hosting an MCP session. Helper invocations are now bounded,
+  detached from the controlling terminal so they cannot prompt, and signalled by
+  process group so nothing they spawn is left behind. ([#507](https://github.com/MikkoParkkola/trvl/issues/507))
+- A helper that exceeds its deadline now reports that it timed out, instead of
+  reporting that no credential is configured.
+
 ## [1.20.0] - 2026-07-13
 
 ### Fixed

@@ -19,7 +19,7 @@ import (
 // when the environment is genuinely unconfigured (the CI default).
 func TestSearchAFKLM_UnconfiguredReturnsClearError(t *testing.T) {
 	t.Setenv("AFKLM_KEY", "")
-	if afklm.Configured(context.Background()) {
+	if afklm.Configured(context.Background(), afklm.PolicyExternal) {
 		t.Skip("an AF-KLM credential is resolvable in this environment; unconfigured-path test is CI-only")
 	}
 
