@@ -122,3 +122,34 @@ func TestDetectAll_AbandonedDetectorsDoNotBlockForever(t *testing.T) {
 		"Each is parked on a send nobody will receive, so every timed-out search leaks one per detector",
 		baseline, runtime.NumGoroutine())
 }
+
+// TestDetectAll_NotCompleteWhenADispatchedDetectorSkipsItself guards the
+// accounting, which counting dispatches alone got wrong.
+//
+// A detector dispatched just before cancellation reaches its own defensive
+// context check, returns without sending, and the channel closes. Judged by
+// dispatch count the sweep looks complete, but one detector never ran. Only
+// matching delivered results against dispatched ones tells the truth.
+func TestDetectAll_NotCompleteWhenADispatchedDetectorSkipsItself(t *testing.T) {
+	// The first detector blocks long enough for the context to expire, so those
+	// dispatched behind it observe cancellation and return without a result.
+	blocker := func(ctx context.Context, _ DetectorInput) []Hack {
+		<-ctx.Done()
+		return nil
+	}
+	fns := []detectFn{blocker}
+	for range 6 {
+		fns = append(fns, func(context.Context, DetectorInput) []Hack {
+			return []Hack{{Type: "x", Savings: 1, Currency: "EUR"}}
+		})
+	}
+	withDetectors(t, fns...)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+
+	_, complete := DetectAll(ctx, DetectorInput{Origin: "HEL", Destination: "BCN", Date: "2026-09-01"})
+	if complete {
+		t.Fatal("reported complete although the deadline expired mid-sweep; dispatch count is not evidence a detector ran")
+	}
+}

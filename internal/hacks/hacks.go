@@ -401,7 +401,7 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 
 	ch := make(chan result, len(detectors))
 	var wg sync.WaitGroup
-	dispatchedAll := true
+	dispatched := 0
 
 	for _, fn := range detectors {
 		// ctx can expire mid fan-out (e.g. a parent deadline of a few ms
@@ -409,9 +409,9 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 		// dispatching further detectors the moment that happens rather than
 		// firing off calls that are already doomed to fail.
 		if ctx.Err() != nil {
-			dispatchedAll = false
 			break
 		}
+		dispatched++
 		fn := fn
 		wg.Add(1)
 		go func() {
@@ -449,12 +449,20 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 	// Their results are discarded, which is the correct answer for a caller that
 	// has already given up on them.
 	var all []Hack
+	received := 0
 	for {
 		select {
 		case r, ok := <-ch:
 			if !ok {
-				return dedupHacks(all), dispatchedAll
+				// Every dispatched detector must have delivered, and every
+				// detector must have been dispatched. Counting dispatches alone
+				// was wrong: a detector dispatched just before cancellation hits
+				// its own defensive check, returns without sending, and the
+				// channel closes with the sweep looking complete when one
+				// detector never ran at all.
+				return dedupHacks(all), received == dispatched && dispatched == len(detectors)
 			}
+			received++
 			all = append(all, r.hacks...)
 		case <-ctx.Done():
 			// Return what arrived in time rather than nothing: partial results

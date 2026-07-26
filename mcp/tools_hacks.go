@@ -164,7 +164,7 @@ func handleDetectTravelHacks(ctx context.Context, args map[string]any, _ ElicitF
 		sendProgress(progress, 100, 100, fmt.Sprintf("Found %d hacks (partial: deadline reached)", len(detected)))
 	}
 
-	summary := buildHacksSummary(origin, destination, date, detected)
+	summary := buildHacksSummary(origin, destination, date, detected, complete)
 	content, err := buildAnnotatedContentBlocks(summary, resp)
 	if err != nil {
 		return nil, nil, err
@@ -172,12 +172,28 @@ func handleDetectTravelHacks(ctx context.Context, args map[string]any, _ ElicitF
 	return content, resp, nil
 }
 
-func buildHacksSummary(origin, destination, date string, detected []hacks.Hack) string {
+// buildHacksSummary writes the human-readable half of the response.
+//
+// It takes complete because the prose has to agree with the structured data. An
+// empty partial sweep read "No travel hacks detected", which states a finding the
+// sweep never made: nothing was detected because it ran out of time, not because
+// there was nothing there. A reader acting on that text would conclude the route
+// has no savings.
+func buildHacksSummary(origin, destination, date string, detected []hacks.Hack, complete bool) string {
+	route := origin + "→" + destination + " on " + date
 	if len(detected) == 0 {
-		return "No travel hacks detected for " + origin + "→" + destination + " on " + date + "."
+		if !complete {
+			return "No travel hacks found for " + route + " before the deadline. " +
+				"The sweep did not finish, so this is not a finding that none exist — retry with more time."
+		}
+		return "No travel hacks detected for " + route + "."
 	}
 	var sb strings.Builder
-	sb.WriteString("Travel hacks for " + origin + "→" + destination + " on " + date + ":\n\n")
+	if complete {
+		sb.WriteString("Travel hacks for " + route + ":\n\n")
+	} else {
+		sb.WriteString("Travel hacks for " + route + " (partial: the deadline cut the sweep short, so more may exist):\n\n")
+	}
 	for i, h := range detected {
 		_, _ = fmt.Fprintf(&sb, "%d. %s", i+1, h.Title)
 		if h.Savings > 0 {

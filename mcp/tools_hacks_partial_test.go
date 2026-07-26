@@ -81,3 +81,27 @@ func TestDetectTravelHacks_ReportsCompleteSweep(t *testing.T) {
 		t.Fatalf("a completed sweep must carry no truncation note, got %q", payload.Note)
 	}
 }
+
+// TestBuildHacksSummary_EmptyPartialDoesNotClaimNoneExist pins that the prose
+// agrees with the structured flag.
+//
+// An empty partial sweep used to read "No travel hacks detected", which states a
+// finding the sweep never made: nothing was found because it ran out of time, not
+// because the route has no savings. A reader acting on that text draws the wrong
+// conclusion, and the structured complete=false beside it does not help anyone
+// reading the sentence.
+func TestBuildHacksSummary_EmptyPartialDoesNotClaimNoneExist(t *testing.T) {
+	partial := buildHacksSummary("HEL", "BCN", "2026-09-01", nil, false)
+
+	if strings.Contains(partial, "No travel hacks detected") {
+		t.Fatalf("an unfinished sweep reported as a finding: %q", partial)
+	}
+	if !strings.Contains(partial, "did not finish") {
+		t.Fatalf("expected the text to say the sweep was cut short, got %q", partial)
+	}
+
+	complete := buildHacksSummary("HEL", "BCN", "2026-09-01", nil, true)
+	if !strings.Contains(complete, "No travel hacks detected") {
+		t.Fatalf("a finished sweep with no results should say so plainly, got %q", complete)
+	}
+}
