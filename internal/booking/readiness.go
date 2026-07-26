@@ -10,9 +10,18 @@
 //	Any signal false (regardless of unknowns)    → Caution
 //	All signals unknown (no information at all)  → Unverified
 //
-// The defining invariant: unknown is never treated as true. An absence of
-// evidence is never elevated to a positive assertion. The only path to Ready
+// The defining invariant: an absent signal is never treated as true. An absence
+// of evidence is never elevated to a positive assertion. The only path to Ready
 // is four explicit "yes" values.
+//
+// Not every data source can supply every signal. The hotel-prices endpoint
+// carries no cancellation terms at all, so refundability there is not "we looked
+// and found nothing" but "this source has nothing to look at" - and a verdict
+// that reports both the same way tells a reader a property was assessed and
+// found wanting when in fact the path itself is capped. Availability lets a
+// caller declare that ceiling so the verdict can state it, which is the
+// difference between honest uncertainty and a silent two-tier scale wearing a
+// three-tier label.
 package booking
 
 import "strings"
@@ -78,14 +87,57 @@ type Input struct {
 	RefundabilityKnown Signal
 }
 
+// Availability declares which signals a data source is capable of supplying.
+//
+// The zero value claims everything is obtainable, which is the honest claim for
+// a room-level source. A source that structurally cannot produce a signal must
+// say so, or its verdict implies a judgement it never made.
+type Availability struct {
+	NoVerification   bool // cannot establish whether a price is verified
+	NoLinkDurability bool // cannot classify a booking link as durable
+	NoIdentity       bool // cannot confirm the property or fare identity
+	NoRefundability  bool // carries no cancellation or refund terms
+}
+
+// beyondReach reports whether the named signal is out of reach for this source.
+func (a Availability) beyondReach(label string) bool {
+	switch label {
+	case "verified":
+		return a.NoVerification
+	case "link_stable":
+		return a.NoLinkDurability
+	case "identity_confirmed":
+		return a.NoIdentity
+	case "refundability_known":
+		return a.NoRefundability
+	}
+	return false
+}
+
 // Verdict is the output of Evaluate: a coarse Readiness level and a slice of
 // human-readable reasons explaining any downgrade.
 type Verdict struct {
 	Readiness Readiness
 	// Reasons lists the signals that caused a downgrade, e.g.
-	// ["refundability unknown → downgraded to caution"].
+	// ["refundability_known absent → downgraded"].
 	// Empty when Readiness is Ready.
 	Reasons []string
+
+	// Ceiling is the best readiness this data source could ever report. When it
+	// is below Ready, a Caution verdict is not a finding about the property: the
+	// path cannot do better for anything. Callers should say so rather than
+	// leaving a reader to infer a problem that is not there.
+	Ceiling Readiness
+
+	// CeilingReasons names the signals the source cannot supply at all, as
+	// distinct from ones it looked for and did not find.
+	CeilingReasons []string
+}
+
+// Capped reports whether this verdict came from a source that could not have
+// reached Ready regardless of the property.
+func (v Verdict) Capped() bool {
+	return v.Ceiling != "" && v.Ceiling != Ready
 }
 
 // named bundles a signal with its display name for uniform reason generation.
@@ -104,6 +156,13 @@ type named struct {
 //   - Any signal unknown        → Caution (unless all unknown → Unverified), reason per unknown signal.
 //   - All signals unknown       → Unverified, reasons for each.
 func Evaluate(in Input) Verdict {
+	return EvaluateWith(in, Availability{})
+}
+
+// EvaluateWith is Evaluate for a source that cannot supply every signal. The
+// resulting Verdict carries the ceiling, so a caller can distinguish "this
+// property is uncertain" from "this path never says better than caution".
+func EvaluateWith(in Input, av Availability) Verdict {
 	signals := [4]named{
 		{"verified", in.Verified},
 		{"link_stable", in.LinkStable},
@@ -112,10 +171,14 @@ func Evaluate(in Input) Verdict {
 	}
 
 	var reasons []string
+	var ceilingReasons []string
 	allUnknown := true
 	anyFalseOrUnknown := false
 
 	for _, s := range signals {
+		if av.beyondReach(s.label) {
+			ceilingReasons = append(ceilingReasons, s.label+" not available from this source")
+		}
 		switch {
 		case s.signal == nil:
 			reasons = append(reasons, s.label+" unknown → downgraded")
@@ -131,13 +194,21 @@ func Evaluate(in Input) Verdict {
 		}
 	}
 
-	if !anyFalseOrUnknown {
-		return Verdict{Readiness: Ready}
+	ceiling := Ready
+	if len(ceilingReasons) > 0 {
+		// A source missing any signal can never reach Ready, because Ready needs
+		// all four explicitly true.
+		ceiling = Caution
 	}
-	if allUnknown {
-		return Verdict{Readiness: Unverified, Reasons: reasons}
+
+	switch {
+	case !anyFalseOrUnknown:
+		return Verdict{Readiness: Ready, Ceiling: ceiling, CeilingReasons: ceilingReasons}
+	case allUnknown:
+		return Verdict{Readiness: Unverified, Reasons: reasons, Ceiling: ceiling, CeilingReasons: ceilingReasons}
+	default:
+		return Verdict{Readiness: Caution, Reasons: reasons, Ceiling: ceiling, CeilingReasons: ceilingReasons}
 	}
-	return Verdict{Readiness: Caution, Reasons: reasons}
 }
 
 // Label returns a short display string for embedding in CLI table cells or

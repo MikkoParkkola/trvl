@@ -1,0 +1,99 @@
+package booking
+
+import "testing"
+
+// TestEvaluateWith_DeclaredCeilingIsReported covers the distinction an external
+// tester surfaced: he ran six indexed properties through a path that returned
+// Caution every time and could not tell whether that meant six uncertain
+// properties or a scale that never says better. The verdict read identically
+// either way.
+//
+// A source that cannot supply a signal must say so, because Ready needs all four
+// true — so such a source is capped no matter how good the property's data is.
+func TestEvaluateWith_DeclaredCeilingIsReported(t *testing.T) {
+	// Everything obtainable is true except the one this source cannot see.
+	in := Input{
+		Verified:          True(),
+		LinkStable:        True(),
+		IdentityConfirmed: True(),
+		// RefundabilityKnown deliberately absent: unobtainable here.
+	}
+
+	v := EvaluateWith(in, Availability{NoRefundability: true})
+
+	if v.Readiness != Caution {
+		t.Fatalf("expected Caution, got %q", v.Readiness)
+	}
+	if !v.Capped() {
+		t.Fatal("a source missing a required signal must report a ceiling; without it Caution implies a finding about the property")
+	}
+	if v.Ceiling != Caution {
+		t.Fatalf("expected the ceiling to be Caution, got %q", v.Ceiling)
+	}
+	if len(v.CeilingReasons) != 1 {
+		t.Fatalf("expected one ceiling reason naming the unobtainable signal, got %v", v.CeilingReasons)
+	}
+}
+
+// TestEvaluateWith_FullSourceIsNotCapped is the half that keeps the flag
+// meaningful. A room-level source can reach Ready, so marking it capped would
+// train readers to ignore the signal.
+func TestEvaluateWith_FullSourceIsNotCapped(t *testing.T) {
+	in := Input{
+		Verified:           True(),
+		LinkStable:         True(),
+		IdentityConfirmed:  True(),
+		RefundabilityKnown: True(),
+	}
+
+	v := EvaluateWith(in, Availability{})
+
+	if v.Readiness != Ready {
+		t.Fatalf("expected Ready, got %q", v.Readiness)
+	}
+	if v.Capped() {
+		t.Fatalf("a source that can supply every signal must not be reported as capped, got ceiling %q", v.Ceiling)
+	}
+}
+
+// TestEvaluate_UnchangedForExistingCallers guards the migration: plain Evaluate
+// must keep behaving exactly as before, or every caller that has not opted in
+// starts claiming a ceiling it never declared.
+func TestEvaluate_UnchangedForExistingCallers(t *testing.T) {
+	in := Input{Verified: True()} // three signals absent
+
+	v := Evaluate(in)
+
+	if v.Readiness != Caution {
+		t.Fatalf("expected Caution, got %q", v.Readiness)
+	}
+	if v.Capped() {
+		t.Fatal("Evaluate must not imply a ceiling; only a caller that declares its limits gets one")
+	}
+}
+
+// TestEvaluateWith_CappedSourceStillDistinguishesTheProperty proves the ceiling
+// does not flatten real findings. A capped source that also has a false signal
+// must still list that as a reason, or the ceiling would mask a genuine problem.
+func TestEvaluateWith_CappedSourceStillDistinguishesTheProperty(t *testing.T) {
+	in := Input{
+		Verified:          True(),
+		LinkStable:        False(), // a real finding: the link expires
+		IdentityConfirmed: True(),
+	}
+
+	v := EvaluateWith(in, Availability{NoRefundability: true})
+
+	if !v.Capped() {
+		t.Fatal("expected the source to remain capped")
+	}
+	var sawLink bool
+	for _, r := range v.Reasons {
+		if r == "link_stable false → downgraded" {
+			sawLink = true
+		}
+	}
+	if !sawLink {
+		t.Fatalf("the ceiling swallowed a real finding about the property; reasons were %v", v.Reasons)
+	}
+}
