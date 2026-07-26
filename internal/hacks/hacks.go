@@ -309,6 +309,14 @@ type detectFn func(ctx context.Context, in DetectorInput) []Hack
 // RegisteredDetectorCount() reports len(allDetectors()), and the public docs
 // detector count is pinned to it by a tripwire test so a claim can never drift
 // from the implementation.
+// sweepTimeout caps how long DetectAll waits for the whole roster, independently
+// of any deadline the caller supplied. Set above the per-detector timeout so a
+// cooperative detector still gets its full allowance; the margin exists only to
+// stop an uncooperative one holding the response open forever.
+//
+// A var so tests can shrink it; production never reassigns it.
+var sweepTimeout = 25 * time.Second
+
 // detectorRoster is the seam tests use to supply deterministic detectors.
 // Production always uses the real roster; only tests reassign it, so that a test
 // of DetectAll's own control flow does not depend on live providers.
@@ -448,6 +456,16 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 	// goroutine completes its send and exits whether or not anyone is reading.
 	// Their results are discarded, which is the correct answer for a caller that
 	// has already given up on them.
+	// Bound the sweep itself, not just each detector.
+	//
+	// The per-detector timeout only reaches the detector; it does not stop the
+	// collector waiting. A caller with no deadline of its own — an MCP request
+	// that sets none — plus a single detector that ignores cancellation left
+	// DetectAll blocked forever. Cancellation being cooperative means we cannot
+	// make that detector stop; it does not mean the response has to wait for it.
+	sweep := time.NewTimer(sweepTimeout)
+	defer sweep.Stop()
+
 	var all []Hack
 	received := 0
 	for {
@@ -460,6 +478,15 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 				// its own defensive check, returns without sending, and the
 				// channel closes with the sweep looking complete when one
 				// detector never ran at all.
+				//
+				// This branch is a guard for a rare interleaving, and it is not
+				// deterministically reachable in a test: the only thing that makes
+				// a goroutine skip its send is a cancelled context, and that same
+				// condition normally satisfies the ctx.Done() case above. It
+				// matters when every goroutine skips fast enough to close the
+				// channel and the select happens to pick this case — select is
+				// random when both are ready. Cheap, and the alternative is
+				// reporting a sweep complete that never ran.
 				return dedupHacks(all), received == dispatched && dispatched == len(detectors)
 			}
 			received++
@@ -469,6 +496,10 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 			// beat an empty answer, and this matches how the rest of trvl
 			// degrades when a provider is slow. The caller is told it is
 			// partial so it cannot present this as the full sweep.
+			return dedupHacks(all), false
+		case <-sweep.C:
+			// No caller deadline, and something is not coming back. Same
+			// contract: hand over what arrived, marked partial.
 			return dedupHacks(all), false
 		}
 	}

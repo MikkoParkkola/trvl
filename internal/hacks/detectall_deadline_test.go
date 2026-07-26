@@ -123,33 +123,45 @@ func TestDetectAll_AbandonedDetectorsDoNotBlockForever(t *testing.T) {
 		baseline, runtime.NumGoroutine())
 }
 
-// TestDetectAll_NotCompleteWhenADispatchedDetectorSkipsItself guards the
-// accounting, which counting dispatches alone got wrong.
+// TestDetectAll_BoundedWithoutACallerDeadline is the availability guard.
 //
-// A detector dispatched just before cancellation reaches its own defensive
-// context check, returns without sending, and the channel closes. Judged by
-// dispatch count the sweep looks complete, but one detector never ran. Only
-// matching delivered results against dispatched ones tells the truth.
-func TestDetectAll_NotCompleteWhenADispatchedDetectorSkipsItself(t *testing.T) {
-	// The first detector blocks long enough for the context to expire, so those
-	// dispatched behind it observe cancellation and return without a result.
-	blocker := func(ctx context.Context, _ DetectorInput) []Hack {
-		<-ctx.Done()
+// The per-detector timeout only reaches the detector; it never stopped the
+// collector waiting. A caller that sets no deadline of its own — an MCP request
+// that supplies none — plus one detector that ignores cancellation left DetectAll
+// blocked forever. Cancellation being cooperative means such a detector cannot be
+// stopped; it does not mean the response has to wait for it.
+//
+// This also exercises the completeness accounting on a path with no cancellation
+// at all, which the previous version of this test could not: context expiry alone
+// forced complete=false through the ctx.Done() case, so the test passed even with
+// the delivered-result accounting removed.
+func TestDetectAll_BoundedWithoutACallerDeadline(t *testing.T) {
+	prev := sweepTimeout
+	sweepTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { sweepTimeout = prev })
+
+	quick := func(context.Context, DetectorInput) []Hack {
+		return []Hack{{Type: "quick", Savings: 10, Currency: "EUR"}}
+	}
+	// Ignores its context entirely, exactly like a detector stuck in
+	// non-context-aware work.
+	stuck := func(context.Context, DetectorInput) []Hack {
+		time.Sleep(30 * time.Second)
 		return nil
 	}
-	fns := []detectFn{blocker}
-	for range 6 {
-		fns = append(fns, func(context.Context, DetectorInput) []Hack {
-			return []Hack{{Type: "x", Savings: 1, Currency: "EUR"}}
-		})
+	withDetectors(t, quick, stuck)
+
+	start := time.Now()
+	found, complete := DetectAll(context.Background(), DetectorInput{Origin: "HEL", Destination: "BCN", Date: "2026-09-01"})
+	elapsed := time.Since(start)
+
+	if elapsed > 5*time.Second {
+		t.Fatalf("DetectAll blocked for %v with no caller deadline; an uncooperative detector must not hold the response open", elapsed)
 	}
-	withDetectors(t, fns...)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
-	defer cancel()
-
-	_, complete := DetectAll(ctx, DetectorInput{Origin: "HEL", Destination: "BCN", Date: "2026-09-01"})
 	if complete {
-		t.Fatal("reported complete although the deadline expired mid-sweep; dispatch count is not evidence a detector ran")
+		t.Fatal("reported complete although one detector never delivered; completeness must count results, not dispatches")
+	}
+	if len(found) == 0 {
+		t.Fatal("expected the detector that did finish to be kept")
 	}
 }
