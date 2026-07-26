@@ -17,6 +17,7 @@ import (
 
 	trvlnab "github.com/MikkoParkkola/trvl/internal/nab"
 	"github.com/MikkoParkkola/trvl/internal/safeexec"
+	"golang.org/x/sync/singleflight"
 	"os/exec"
 )
 
@@ -51,28 +52,49 @@ func BrowserCookies(domain string) string {
 // BrowserCookiesContext is BrowserCookies with caller cancellation honoured.
 // A request that has gone away must not keep a helper running on its behalf.
 func BrowserCookiesContext(ctx context.Context, domain string) string {
-	if err, ok := cookieSuppressed(domain); ok && err != nil {
+	if _, ok := cookieSuppressed(domain); ok {
 		return ""
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nabCookieBudget)
-	defer cancel()
+	// Collapse concurrent extraction for the same domain. A WAF challenge fires
+	// for every property in a result set at once, so without this a single
+	// search could start two nab process trees per property — the accumulation
+	// this whole change exists to stop.
+	v, _, _ := cookieGroup.Do(domain, func() (any, error) {
+		if _, ok := cookieSuppressed(domain); ok {
+			return "", nil
+		}
 
-	for _, browser := range []string{"brave", "chrome"} {
-		if ctx.Err() != nil {
-			break
+		bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), nabCookieBudget)
+		defer cancel()
+
+		for _, browser := range []string{"brave", "chrome"} {
+			if bctx.Err() != nil {
+				break
+			}
+			if c := extractViaNab(bctx, browser, domain); c != "" {
+				slog.Debug("browser cookies found", "browser", browser, "domain", domain)
+				return c, nil
+			}
 		}
-		if c := extractViaNab(ctx, browser, domain); c != "" {
-			slog.Debug("browser cookies found", "browser", browser, "domain", domain)
-			return c
-		}
+
+		// Nothing usable. Suppress retries briefly: a WAF challenge repeats
+		// across every property in a result set, and without this each one
+		// re-pays the full budget for the same answer.
+		noteCookieFailure(domain)
+		return "", nil
+	})
+
+	// A caller that has gone away stops waiting; the flight continues for
+	// whoever is left, and its result still populates the suppression map.
+	select {
+	case <-ctx.Done():
+		return ""
+	default:
 	}
 
-	// Nothing usable. Suppress retries briefly: a WAF challenge repeats across
-	// every property in a result set, and without this each one re-pays the
-	// full budget for the same answer.
-	noteCookieFailure(domain)
-	return ""
+	c, _ := v.(string)
+	return c
 }
 
 // cookieNegTTL suppresses repeated extraction attempts for a domain after a
@@ -81,6 +103,7 @@ func BrowserCookiesContext(ctx context.Context, domain string) string {
 const cookieNegTTL = 30 * time.Second
 
 var (
+	cookieGroup    singleflight.Group
 	cookieNegMu    sync.Mutex
 	cookieNegUntil = map[string]time.Time{}
 )
@@ -104,8 +127,15 @@ func noteCookieFailure(domain string) {
 // resetCookieCache clears the suppression map. Test-only.
 func resetCookieCache() {
 	cookieNegMu.Lock()
+	domains := make([]string, 0, len(cookieNegUntil))
+	for d := range cookieNegUntil {
+		domains = append(domains, d)
+	}
 	cookieNegUntil = map[string]time.Time{}
 	cookieNegMu.Unlock()
+	for _, d := range domains {
+		cookieGroup.Forget(d)
+	}
 }
 
 var errCookieSuppressed = errors.New("cookie extraction suppressed after a recent failure")
@@ -163,7 +193,9 @@ func parseNetscapeCookies(data string) string {
 // ApplyCookies adds browser cookies to an HTTP request for the given domain.
 // It is a no-op when no cookies are found.
 func ApplyCookies(req *http.Request, domain string) {
-	if c := BrowserCookies(domain); c != "" {
+	// The request carries the caller's context; use it rather than starting a
+	// detached lookup on behalf of a request that may already be cancelled.
+	if c := BrowserCookiesContext(req.Context(), domain); c != "" {
 		req.Header.Set("Cookie", c)
 	}
 }

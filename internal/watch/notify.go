@@ -1,12 +1,15 @@
 package watch
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
-	"os/exec"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/safeexec"
 )
 
 // Notifier formats and delivers price check results.
@@ -253,15 +256,22 @@ func (n *Notifier) desktopNotify(title, message string) {
 // channel. It is factored out (taking goos explicitly) so the dispatch logic is
 // testable without depending on the host OS, mirroring providers.defaultOpenURL.
 func desktopNotifyDispatch(goos, title, message string) {
+	// Bounded and detached like every other helper trvl shells out to (#507).
+	// This one runs inside the price-watch daemon, where the cost of a hang is
+	// not a slow search but a watch loop that silently stops checking: on macOS
+	// `osascript` can block on a notification-permission dialog or a locked
+	// display, and nothing here is waiting to answer it. A notification is
+	// fire-and-forget, so a few seconds is generous.
+	ctx := context.Background()
 	switch goos {
 	case "darwin":
 		script := fmt.Sprintf(`display notification %q with title %q`, message, title)
-		if err := exec.Command("osascript", "-e", script).Run(); err != nil {
+		if err := runNotifier(ctx, "osascript", "-e", script); err != nil {
 			slog.Debug("desktop notification unavailable", "goos", goos, "channel", "osascript", "err", err)
 		}
 	case "linux":
 		// notify-send is the standard libnotify CLI on Linux desktops.
-		if err := exec.Command("notify-send", title, message).Run(); err != nil {
+		if err := runNotifier(ctx, "notify-send", title, message); err != nil {
 			slog.Debug("desktop notification unavailable", "goos", goos, "channel", "notify-send", "err", err)
 		}
 	case "windows":
@@ -273,10 +283,23 @@ func desktopNotifyDispatch(goos, title, message string) {
 				`$n.BalloonTipTitle = %q; $n.BalloonTipText = %q; `+
 				`$n.Visible = $true; $n.ShowBalloonTip(5000)`,
 			title, message)
-		if err := exec.Command("powershell", "-NoProfile", "-Command", ps).Run(); err != nil {
+		if err := runNotifier(ctx, "powershell", "-NoProfile", "-Command", ps); err != nil {
 			slog.Debug("desktop notification unavailable", "goos", goos, "channel", "powershell", "err", err)
 		}
 	default:
 		slog.Debug("desktop notification unavailable", "goos", goos, "channel", "none")
 	}
+}
+
+// notifyTimeout bounds a desktop-notification helper. Generous for a call that
+// should return immediately, short enough that a wedged one cannot pause the
+// watch loop for long.
+const notifyTimeout = 5 * time.Second
+
+// runNotifier runs a notification helper bounded and terminal-detached.
+func runNotifier(ctx context.Context, name string, args ...string) error {
+	cmd, _, cancel := safeexec.Command(ctx, notifyTimeout, name, args...)
+	defer cancel()
+	_, err := safeexec.Output(cmd)
+	return err
 }

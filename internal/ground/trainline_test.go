@@ -294,7 +294,7 @@ func TestSearchTrainline_UsesNabFallbackOn403(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	}
-	trainlineBrowserCookies = func(string) string { return "" }
+	trainlineBrowserCookies = func(_ context.Context, _ string) string { return "" }
 	trainlineFetchViaNab = func(context.Context, []byte, string, string, string, string) ([]models.GroundRoute, error) {
 		return []models.GroundRoute{
 			{
@@ -401,7 +401,7 @@ func resetTrainlineSeams(t *testing.T) {
 		browserScraperNavigateText = origBrowserScraper
 	})
 	trainlineLimiter = rate.NewLimiter(rate.Inf, 1)
-	trainlineBrowserCookies = func(string) string { return "" }
+	trainlineBrowserCookies = func(_ context.Context, _ string) string { return "" }
 	trainlineTier1Cookies = func(string) []*http.Cookie { return nil }
 	trainlineFetchViaNab = func(context.Context, []byte, string, string, string, string) ([]models.GroundRoute, error) {
 		return nil, errStubbedFallback

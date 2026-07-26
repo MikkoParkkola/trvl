@@ -60,13 +60,22 @@ func Command(ctx context.Context, timeout time.Duration, name string, args ...st
 // Output runs cmd and returns its standard output.
 //
 // It exists because containment is not uniform across platforms. On Unix,
-// Setsid is applied at fork and the process is contained before it can do
-// anything. On Windows there is no equivalent fork-time hook: a job object can
-// only be assigned to a process that already exists, so it has to happen
-// between Start and Wait. That leaves a narrow window in which a child spawned
-// immediately at startup escapes the job. Go does not expose the thread handle
-// needed for the CREATE_SUSPENDED-assign-resume sequence that would close it,
-// so the window is accepted and documented rather than hidden.
+// Setsid is applied at fork, so the process is contained before it can do
+// anything and this adds nothing. On Windows there is no fork-time hook: a job
+// object can only be assigned to a process that already exists, so it has to
+// happen between Start and Wait. That leaves a narrow window in which a child
+// spawned immediately at startup escapes the job. Go does not expose the thread
+// handle needed for the CREATE_SUSPENDED-assign-resume sequence that would close
+// it, so the window is accepted and documented rather than hidden.
+//
+// The containment is closed unconditionally, on success as well as failure: on
+// Windows the job holds a kernel handle, and a long-lived MCP server that leaked
+// one per credential lookup would accumulate them for the life of the process.
+// Closing also kills anything the helper left running.
+//
+// Nothing here mutates cmd after Start. exec.Cmd's own cancellation watcher
+// reads cmd.Cancel from another goroutine once the process is running, so
+// assigning to it post-Start is a data race.
 //
 // Standard error is discarded, not captured: the helpers this package runs echo
 // secret references in their diagnostics, and an error string tends to end up
@@ -76,10 +85,14 @@ func Output(cmd *exec.Cmd) ([]byte, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = io.Discard
 
+	c := newContainment()
+	defer c.close()
+
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	contain(cmd)
+	c.hold(cmd.Process)
+
 	err := cmd.Wait()
 	return stdout.Bytes(), err
 }

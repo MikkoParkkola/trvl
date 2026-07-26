@@ -3,6 +3,7 @@
 package safeexec
 
 import (
+	"os"
 	"os/exec"
 	"syscall"
 )
@@ -60,7 +61,12 @@ func harden(cmd *exec.Cmd) {
 	}
 }
 
-// contain is a no-op on Unix: Setsid is applied at fork, so the process is
-// already a group leader before it can spawn anything. Nothing is left to do
-// once it is running.
-func contain(_ *exec.Cmd) {}
+// containment is a no-op on Unix. Setsid is applied at fork, so the process
+// leads its own group before it can spawn anything, and cmd.Cancel — installed
+// before Start, never mutated after — signals that group. Nothing is left to do
+// once the process is running.
+type containment struct{}
+
+func newContainment() *containment        { return &containment{} }
+func (c *containment) hold(_ *os.Process) {}
+func (c *containment) close()             {}

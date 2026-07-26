@@ -225,7 +225,7 @@ func TestSearchEurostar_UsesNabFallbackOn403(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	}
-	eurostarBrowserCookies = func(string) string { return "" }
+	eurostarBrowserCookies = func(_ context.Context, _ string) string { return "" }
 	eurostarFetchViaNab = func(context.Context, []byte, EurostarStation, EurostarStation, string, string, bool) ([]models.GroundRoute, error) {
 		return []models.GroundRoute{
 			{

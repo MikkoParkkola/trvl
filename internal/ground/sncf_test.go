@@ -212,7 +212,7 @@ func TestSearchSNCFCalendar_UsesNabFallbackOn403(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	}
-	sncfBrowserCookies = func(string) string { return "" }
+	sncfBrowserCookies = func(_ context.Context, _ string) string { return "" }
 	sncfFetchViaNab = func(context.Context, string, SNCFStation, SNCFStation, string, string) ([]models.GroundRoute, error) {
 		return []models.GroundRoute{
 			{
@@ -269,7 +269,7 @@ func resetSNCFSeams(t *testing.T) {
 		browserScraperSNCFResponses = origBrowserScraper
 	})
 	sncfLimiter = rate.NewLimiter(rate.Inf, 1)
-	sncfBrowserCookies = func(string) string { return "" }
+	sncfBrowserCookies = func(_ context.Context, _ string) string { return "" }
 	sncfFetchViaNab = func(context.Context, string, SNCFStation, SNCFStation, string, string) ([]models.GroundRoute, error) {
 		return nil, errStubbedFallback
 	}

@@ -522,7 +522,7 @@ func TestSearchSNCF_DI_CalendarHappyPath(t *testing.T) {
 		mockReq.Header = req.Header
 		return http.DefaultClient.Do(mockReq)
 	}
-	sncfBrowserCookies = func(string) string { return "" }
+	sncfBrowserCookies = func(_ context.Context, _ string) string { return "" }
 
 	routes, err := SearchSNCF(context.Background(), "Paris", "Marseille", "2026-08-15", "EUR", false)
 	if err != nil {

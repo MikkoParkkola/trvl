@@ -3,8 +3,8 @@
 package safeexec
 
 import (
+	"os"
 	"os/exec"
-	"sync"
 	"syscall"
 	"unsafe"
 
@@ -15,7 +15,7 @@ import (
 // ordinary search. It is not in the syscall package.
 const createNoWindow = 0x08000000
 
-// harden contains a helper process on Windows.
+// harden configures a helper process on Windows.
 //
 // The Unix defect this package exists for has two halves, and Windows shares
 // only one. There is no /dev/tty, and the child's stdin is the null device, so
@@ -24,66 +24,27 @@ const createNoWindow = 0x08000000
 // process does not kill what it spawned, so a helper that starts a daemon and is
 // then timed out leaves that daemon running.
 //
-// The containment itself is installed in contain(), after Start, because a job
-// object can only be assigned to a process that already exists.
+// Everything here is set before Start, because exec.Cmd's cancellation watcher
+// reads these fields from another goroutine once the process is running.
+// Descendant containment needs a live process and so lives in containment,
+// which Output drives.
 func harden(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | createNoWindow,
 	}
 }
 
-// jobs maps a running process to the job object holding it, so Cancel can close
-// the handle and take the whole tree down with it.
-var jobs sync.Map // pid -> windows.Handle
-
-// contain assigns the started process to a kill-on-close job object, the
-// Windows equivalent of the Unix process group. Every descendant created after
-// the assignment joins the job, and closing the handle terminates all of them.
-//
-// Failure is deliberately silent: containment is a hardening measure, and a
-// helper that cannot be contained is still bounded by the deadline set in
-// Command. Losing the job is worse than having it, but far better than failing
-// the search that needed the helper.
-func contain(cmd *exec.Cmd) {
-	if cmd.Process == nil {
-		return
-	}
-	job, err := createKillOnCloseJob()
-	if err != nil {
-		return
-	}
-	ph, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
-	if err != nil {
-		_ = windows.CloseHandle(job)
-		return
-	}
-	defer windows.CloseHandle(ph)
-
-	if err := windows.AssignProcessToJobObject(job, ph); err != nil {
-		_ = windows.CloseHandle(job)
-		return
-	}
-
-	pid := cmd.Process.Pid
-	jobs.Store(pid, job)
-	prev := cmd.Cancel
-	cmd.Cancel = func() error {
-		if h, ok := jobs.LoadAndDelete(pid); ok {
-			// Closing the job terminates every process still assigned to it,
-			// the direct child included, so no further signal is needed.
-			return windows.CloseHandle(h.(windows.Handle))
-		}
-		if prev != nil {
-			return prev()
-		}
-		return cmd.Process.Kill()
-	}
+// containment holds a kill-on-close job object, the Windows equivalent of the
+// Unix process group. Every descendant created after assignment joins the job,
+// and closing the handle terminates all of them.
+type containment struct {
+	job windows.Handle
 }
 
-func createKillOnCloseJob() (windows.Handle, error) {
-	h, err := windows.CreateJobObject(nil, nil)
+func newContainment() *containment {
+	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
-		return 0, err
+		return &containment{}
 	}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
 		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{
@@ -91,13 +52,42 @@ func createKillOnCloseJob() (windows.Handle, error) {
 		},
 	}
 	if _, err := windows.SetInformationJobObject(
-		h,
+		job,
 		windows.JobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&info)),
 		uint32(unsafe.Sizeof(info)),
 	); err != nil {
-		_ = windows.CloseHandle(h)
-		return 0, err
+		_ = windows.CloseHandle(job)
+		return &containment{}
 	}
-	return h, nil
+	return &containment{job: job}
+}
+
+// hold assigns a started process to the job.
+//
+// Failure is deliberately silent: containment is hardening, and a helper that
+// cannot be contained is still bounded by the deadline set in Command. Losing
+// the job is worse than having it, and far better than failing the search that
+// needed the helper.
+func (c *containment) hold(p *os.Process) {
+	if c == nil || c.job == 0 || p == nil {
+		return
+	}
+	ph, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(p.Pid))
+	if err != nil {
+		return
+	}
+	defer windows.CloseHandle(ph)
+	_ = windows.AssignProcessToJobObject(c.job, ph)
+}
+
+// close terminates anything still in the job and releases the handle. It runs on
+// every path, success included: the handle is a kernel resource, and one leaked
+// per credential lookup would accumulate for the life of an MCP server.
+func (c *containment) close() {
+	if c == nil || c.job == 0 {
+		return
+	}
+	_ = windows.CloseHandle(c.job)
+	c.job = 0
 }

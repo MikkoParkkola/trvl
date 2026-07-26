@@ -27,6 +27,15 @@ const trainlineSearchURL = "https://www.thetrainline.com/api/journey-search/"
 // (incl the datadome clearance) for the Tier-1 browser-impersonation fallback.
 const trainlineHomeURL = "https://www.thetrainline.com"
 
+// trainlineHelperBudget bounds the whole external-helper attempt (a seed request
+// plus the API call). Matched to sncf.go's equivalent so the two rail paths
+// behave the same under a stalled network.
+const trainlineHelperBudget = 35 * time.Second
+
+// trainlineHelperMaxTime is the per-invocation cap handed to the helper itself,
+// for the case where it ignores context cancellation.
+const trainlineHelperMaxTime = "20"
+
 // trainlineChromeUA must match the Chrome JA3 profile providers.NewTier1Client
 // presents (Chrome 146 — the tls-client default). Datadome binds its clearance
 // cookie to the (IP, UA, JA3) triple, so a mismatched UA causes the replayed
@@ -53,7 +62,7 @@ var trainlineAfter = time.After
 var (
 	trainlineDo             = func(req *http.Request) (*http.Response, error) { return trainlineClient.Do(req) }
 	trainlineFetchViaNab    = fetchTrainlineViaNab
-	trainlineBrowserCookies = cookies.BrowserCookies
+	trainlineBrowserCookies = cookies.BrowserCookiesContext
 	// trainlineViaCurlFn shells out to the system curl binary for the curl-assisted
 	// fallback. Overridable in tests so the 403 escalation chain runs offline.
 	trainlineViaCurlFn = trainlineViaCurl
@@ -239,6 +248,15 @@ type trainlinePrice struct {
 // check. We first visit the homepage with curl to seed the cookie jar (so the
 // datadome cookie is associated with the same TLS session), then POST to the API.
 func trainlineViaCurl(ctx context.Context, fromID, toID, date, currency string) ([]models.GroundRoute, error) {
+	// Bound the whole helper-assisted attempt. The helper applies no timeout of
+	// its own unless told to, so an unbounded context meant a stalled connection
+	// could hang a rail search indefinitely — the same defect as #507 wearing a
+	// different hat. sncf.go already bounds its equivalent at 35s; this path was
+	// missed. The per-invocation --max-time below is belt and braces for a
+	// process that ignores cancellation.
+	ctx, cancelBudget := context.WithTimeout(ctx, trainlineHelperBudget)
+	defer cancelBudget()
+
 	dateTime, err := models.ParseDate(date)
 	if err != nil {
 		return nil, fmt.Errorf("trainlineViaCurl invalid date %q: %w", date, err)
@@ -294,6 +312,7 @@ func trainlineViaCurl(ctx context.Context, fromID, toID, date, currency string) 
 	defer func() { _ = os.Remove(cookieJarFile) }()
 	seedArgs := append([]string{
 		"-s", "--http2",
+		"--max-time", trainlineHelperMaxTime,
 		"-L",                // follow redirects
 		"-c", cookieJarFile, // write cookies
 		"-b", cookieJarFile, // send cookies
@@ -316,6 +335,7 @@ func trainlineViaCurl(ctx context.Context, fromID, toID, date, currency string) 
 	// Step 2: POST to the journey-search API using the seeded cookie jar.
 	apiArgs := append([]string{
 		"-s", "--http2",
+		"--max-time", trainlineHelperMaxTime,
 		"-X", "POST",
 		"-c", cookieJarFile,
 		"-b", cookieJarFile,
@@ -506,7 +526,7 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 
 		// Try 2: use a real browser session cookie extracted from Brave/Chrome.
 		// Requires the user to have visited thetrainline.com in their browser.
-		cookieHeader := trainlineBrowserCookies("thetrainline.com")
+		cookieHeader := trainlineBrowserCookies(ctx, "thetrainline.com")
 		if cookieHeader != "" {
 			slog.Debug("retrying trainline with browser cookies")
 			req3, err3 := newTrainlineRequest(cookieHeader)

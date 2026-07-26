@@ -3,6 +3,8 @@ package afklm
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -166,8 +168,25 @@ var (
 )
 
 // externalCacheKey identifies a lookup by the configuration it will use.
+//
+// Every input that changes what the lookup does belongs here, or a user who
+// corrects one of them sits behind a suppression earned by the value they just
+// replaced. On Darwin that includes the Keychain service, not just the
+// 1Password reference.
 func externalCacheKey() string {
-	return strings.TrimSpace(os.Getenv(EnvOpRef))
+	ref := strings.TrimSpace(os.Getenv(EnvOpRef))
+	if runtime.GOOS != "darwin" {
+		return ref
+	}
+	return ref + "\x00" + keychainService()
+}
+
+// keychainService is the Keychain service name this process will query.
+func keychainService() string {
+	if s := strings.TrimSpace(os.Getenv(EnvKeychainService)); s != "" {
+		return s
+	}
+	return defaultKeychainService
 }
 
 // resetExternalCache clears the negative cache and drops any in-flight lookup
@@ -208,9 +227,10 @@ func resolveExternal(ctx context.Context) (string, error) {
 	// the singleflight key, and the lookup itself. Reading the environment
 	// again inside the lookup would let a concurrent change execute reference B
 	// under key A, and file the result against the wrong configuration.
-	ref := externalCacheKey()
+	cacheKey := externalCacheKey()
+	ref := strings.TrimSpace(os.Getenv(EnvOpRef))
 
-	if err, ok := suppressed(ref); ok {
+	if err, ok := suppressed(cacheKey); ok {
 		return "", err
 	}
 
@@ -231,13 +251,13 @@ func resolveExternal(ctx context.Context) (string, error) {
 	// uncancellable context cannot mean an unbounded one.
 	lookupCtx := context.WithoutCancel(ctx)
 
-	ch := extGroup.DoChan(ref, func() (any, error) {
+	ch := extGroup.DoChan(cacheKey, func() (any, error) {
 		// Re-check under the lock at callback entry. The outer check happens
 		// before joining the group, so a flight that finished in between could
 		// otherwise be re-run: caller A reads "not suppressed", flight B
 		// publishes a failure, then A enters the group and spawns a second
 		// helper. Re-checking here closes that window.
-		if err, ok := suppressed(ref); ok {
+		if err, ok := suppressed(cacheKey); ok {
 			return "", err
 		}
 
@@ -253,7 +273,7 @@ func resolveExternal(ctx context.Context) (string, error) {
 			// a caller arriving after this call leaves the group cannot pass the
 			// cache check and spawn a second helper.
 			extCacheMu.Lock()
-			negCache[ref] = negEntry{until: time.Now().Add(negativeCacheTTL), err: err}
+			negCache[cacheKey] = negEntry{until: time.Now().Add(negativeCacheTTL), err: err}
 			extCacheMu.Unlock()
 		}
 		return val, err
@@ -320,22 +340,17 @@ func keychainLookup(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	service := strings.TrimSpace(os.Getenv(EnvKeychainService))
-	if service == "" {
-		service = defaultKeychainService
-	}
-
 	cmd, cmdCtx, cancel := credentialCommand(ctx, "security",
 		"find-generic-password",
 		"-a", u.Username,
-		"-s", service,
+		"-s", keychainService(),
 		"-w",
 	)
 	defer cancel()
 
 	out, err := safeexec.Output(cmd)
 	if err != nil {
-		return "", classifyHelperFailure(ctx, cmdCtx)
+		return "", classifyHelperFailure(ctx, cmdCtx, err)
 	}
 	key := strings.TrimSpace(string(out))
 	if key == "" {
@@ -354,7 +369,7 @@ func opLookup(ctx context.Context, ref string) (string, error) {
 		// safeexec.Output discards the helper's stderr rather than returning it:
 		// `op` echoes the secret reference there and, on some failures, more of
 		// the item than belongs in a log line.
-		return "", classifyHelperFailure(ctx, cmdCtx)
+		return "", classifyHelperFailure(ctx, cmdCtx, err)
 	}
 	key := strings.TrimSpace(string(out))
 	if key == "" {
@@ -374,12 +389,21 @@ func credentialCommand(ctx context.Context, name string, args ...string) (*exec.
 // classifyHelperFailure maps a failed helper invocation onto the right error.
 // The three cases are genuinely different and callers act on them differently:
 // a caller that went away, a helper that hung, and a helper that answered "no".
-func classifyHelperFailure(parent, cmdCtx context.Context) error {
-	if err := parent.Err(); err != nil {
-		return err // the caller went away; not our failure and not cacheable
+func classifyHelperFailure(parent, cmdCtx context.Context, err error) error {
+	if cerr := parent.Err(); cerr != nil {
+		return cerr // the caller went away; not our failure and not cacheable
 	}
 	if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
 		return ErrHelperTimedOut
+	}
+	// A helper that never ran is not a helper that said "no credential here".
+	// Permission denied, a corrupt binary or exhausted process resources are
+	// operational faults, and reporting them as "not configured" sends the user
+	// to edit an environment variable that was never the problem.
+	var execErr *exec.Error
+	var pathErr *fs.PathError
+	if errors.As(err, &execErr) || errors.As(err, &pathErr) {
+		return fmt.Errorf("afklm: credential helper could not run: %w", err)
 	}
 	return ErrNoCredential
 }

@@ -125,7 +125,7 @@ func TestSearchTrainline_Tier1SkippedWithoutCookies(t *testing.T) {
 		}, nil
 	}
 	trainlineTier1Cookies = func(string) []*http.Cookie { return nil }
-	trainlineBrowserCookies = func(string) string { return "" }
+	trainlineBrowserCookies = func(_ context.Context, _ string) string { return "" }
 	trainlineFetchViaNab = func(context.Context, []byte, string, string, string, string) ([]models.GroundRoute, error) {
 		return nil, nil
 	}

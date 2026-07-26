@@ -41,7 +41,7 @@ var sncfClient = batchexec.ChromeHTTPClient()
 var (
 	sncfDo             = func(req *http.Request) (*http.Response, error) { return sncfClient.Do(req) }
 	sncfFetchViaNab    = fetchSNCFViaNab
-	sncfBrowserCookies = cookies.BrowserCookies
+	sncfBrowserCookies = cookies.BrowserCookiesContext
 	// sncfViaCurlFn shells out to the system curl binary for the curl-assisted BFF
 	// fallback. Overridable in tests so the browser-fallback chain runs offline.
 	sncfViaCurlFn = sncfViaCurl
@@ -569,7 +569,7 @@ func searchSNCFCalendar(ctx context.Context, fromStation, toStation SNCFStation,
 		_ = resp.Body.Close()
 
 		if allowBrowserCookies {
-			cookieHeader := sncfBrowserCookies("sncf-connect.com")
+			cookieHeader := sncfBrowserCookies(ctx, "sncf-connect.com")
 			if cookieHeader != "" {
 				slog.Debug("retrying sncf calendar api with browser cookies")
 				req2, err2 := newSNCFRequest(cookieHeader)
