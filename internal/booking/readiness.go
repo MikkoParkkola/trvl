@@ -189,7 +189,14 @@ func EvaluateWith(in Input, av Availability) Verdict {
 			// constrain anything. The declaration wins: the signal is treated as
 			// absent regardless of what was passed.
 			signals[i].signal = nil
-			s = signals[i]
+			// It constrains the verdict but does NOT appear in the ordinary
+			// reasons. Listing it there was the original complaint in a new
+			// costume: "refundability unknown → downgraded" reads as a finding
+			// about the property, when the truth is that this source has nothing
+			// to look at. The two lists mean different things and a signal
+			// belongs to exactly one of them.
+			anyFalseOrUnknown = true
+			continue
 		}
 		switch {
 		case s.signal == nil:

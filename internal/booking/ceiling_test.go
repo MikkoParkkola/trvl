@@ -1,6 +1,9 @@
 package booking
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestEvaluateWith_DeclaredCeilingIsReported covers the distinction an external
 // tester surfaced: he ran six indexed properties through a path that returned
@@ -134,5 +137,49 @@ func TestEvaluate_CarriesNoCeiling(t *testing.T) {
 	}
 	if len(v.CeilingReasons) != 0 {
 		t.Fatalf("Evaluate set ceiling reasons %v", v.CeilingReasons)
+	}
+}
+
+// TestEvaluateWith_UnavailableSignalIsNotAPropertyFinding keeps the two reason
+// lists meaning different things.
+//
+// Listing an unobtainable signal in the ordinary reasons was the reported problem
+// in a new costume: "refundability_known absent → downgraded" reads as a finding
+// about the property, when the truth is this source has nothing to look at. A
+// signal belongs to exactly one list — the ceiling explains the source, the
+// reasons explain the offer.
+func TestEvaluateWith_UnavailableSignalIsNotAPropertyFinding(t *testing.T) {
+	in := Input{
+		Verified:          True(),
+		LinkStable:        False(), // a real finding about this offer
+		IdentityConfirmed: True(),
+	}
+
+	v := EvaluateWith(in, Availability{NoRefundability: true})
+
+	for _, r := range v.Reasons {
+		if strings.Contains(r, "refundability_known") {
+			t.Fatalf("an unobtainable signal was reported as a property finding: %q", r)
+		}
+	}
+	var sawCeiling, sawLink bool
+	for _, r := range v.CeilingReasons {
+		if strings.Contains(r, "refundability_known") {
+			sawCeiling = true
+		}
+	}
+	for _, r := range v.Reasons {
+		if strings.Contains(r, "link_stable") {
+			sawLink = true
+		}
+	}
+	if !sawCeiling {
+		t.Fatalf("the unobtainable signal is missing from the ceiling reasons: %v", v.CeilingReasons)
+	}
+	if !sawLink {
+		t.Fatalf("the real finding about the offer was lost: %v", v.Reasons)
+	}
+	if !v.Capped() {
+		t.Fatal("expected the verdict to remain capped")
 	}
 }
