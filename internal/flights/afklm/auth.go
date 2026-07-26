@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/safeexec"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -299,21 +300,9 @@ func opLookup(ctx context.Context, ref string) (string, error) {
 // credentialCommand builds a bounded, terminal-detached command for reading a
 // secret from an external helper. It returns the command's own context so the
 // caller can tell a helper deadline apart from a caller cancellation, plus a
-// cancel func the caller must invoke. See hardenCredentialCommand for the
-// platform-specific isolation.
+// cancel func the caller must invoke.
 func credentialCommand(ctx context.Context, name string, args ...string) (*exec.Cmd, context.Context, context.CancelFunc) {
-	tctx, cancel := context.WithTimeout(ctx, externalLookupTimeout)
-
-	cmd := exec.CommandContext(tctx, name, args...)
-	cmd.Stdin = nil // explicit: the child reads from os.DevNull, never our stdin
-
-	// WaitDelay caps how long Wait blocks after the context is cancelled, so a
-	// helper that ignores its death signal cannot pin the calling goroutine.
-	cmd.WaitDelay = time.Second
-
-	hardenCredentialCommand(cmd)
-
-	return cmd, tctx, cancel
+	return safeexec.Command(ctx, externalLookupTimeout, name, args...)
 }
 
 // classifyHelperFailure maps a failed helper invocation onto the right error.

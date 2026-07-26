@@ -1,6 +1,6 @@
 //go:build unix
 
-package afklm
+package safeexec
 
 import (
 	"os/exec"
@@ -8,13 +8,13 @@ import (
 	"time"
 )
 
-// credentialKillGrace is how long a signalled helper group has to exit on its
-// own before it is killed outright. Short, because nothing is waiting on a
-// graceful shutdown here; non-zero, because a freshly-started 1Password daemon
-// inside the group may have state to flush.
-const credentialKillGrace = 250 * time.Millisecond
+// killGrace is how long a signalled helper group has to exit on its own
+// before it is killed outright. Short, because nothing is waiting on a graceful
+// shutdown; non-zero, because a helper may have started a daemon of its own
+// that has state to flush.
+const killGrace = 250 * time.Millisecond
 
-// hardenCredentialCommand detaches a credential helper from the terminal and
+// harden detaches a helper process from the terminal and
 // from trvl's process group.
 //
 // Setsid puts the child in a new session with no controlling terminal, so an
@@ -42,7 +42,7 @@ const credentialKillGrace = 250 * time.Millisecond
 // together are rejected. Because the child leads its own group, Cancel can
 // signal the whole group and take down helpers it spawned, instead of killing
 // only the direct child and leaving descendants to be reparented.
-func hardenCredentialCommand(cmd *exec.Cmd) {
+func harden(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	cmd.Cancel = func() error {
@@ -62,7 +62,7 @@ func hardenCredentialCommand(cmd *exec.Cmd) {
 		if err := syscall.Kill(pgid, syscall.SIGTERM); err != nil {
 			return cmd.Process.Kill()
 		}
-		time.AfterFunc(credentialKillGrace, func() {
+		time.AfterFunc(killGrace, func() {
 			// Ignoring the error is deliberate: by now the group is usually
 			// gone, and ESRCH is the success case.
 			_ = syscall.Kill(pgid, syscall.SIGKILL)

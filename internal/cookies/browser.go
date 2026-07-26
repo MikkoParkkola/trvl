@@ -5,6 +5,7 @@
 package cookies
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,8 +15,14 @@ import (
 	"time"
 
 	trvlnab "github.com/MikkoParkkola/trvl/internal/nab"
+	"github.com/MikkoParkkola/trvl/internal/safeexec"
 	"os/exec"
 )
+
+// nabCookieTimeout bounds a cookie export. Generous compared with a credential
+// read, because nab decrypts a whole cookie jar, but finite: this runs inside a
+// search the user is waiting on.
+const nabCookieTimeout = 5 * time.Second
 
 var (
 	browserAuthNow   = time.Now
@@ -40,12 +47,26 @@ func BrowserCookies(domain string) string {
 
 // extractViaNab uses the nab CLI to export cookies for the given browser and domain.
 // nab handles keychain access and AES decryption transparently.
+//
+// It runs bounded and terminal-detached for the same reason the AF-KLM
+// credential lookup does (#507). This is reached from ordinary hotel and rail
+// searches — a Booking.com WAF challenge triggers it, as do Trainline, Eurostar
+// and SNCF — so the user did not ask for it and must not pay for it. Decrypting
+// Chrome or Brave cookies requires macOS Keychain access, which can raise its
+// own permission prompt; unbounded and terminal-attached, that is the exact
+// shape that produced #507: a credential prompt appearing mid-search and a
+// helper that never returns.
 func extractViaNab(browser, domain string) string {
 	nabPath, err := trvlnab.LookupPath()
 	if err != nil {
 		return ""
 	}
-	out, err := exec.Command(nabPath, "cookies", "export", domain, "--cookies", browser).Output()
+
+	cmd, _, cancel := safeexec.Command(context.Background(), nabCookieTimeout,
+		nabPath, "cookies", "export", domain, "--cookies", browser)
+	defer cancel()
+
+	out, err := cmd.Output()
 	if err != nil || len(out) == 0 {
 		return ""
 	}

@@ -180,7 +180,7 @@ Every source trvl uses by default is free and needs no account. A number of extr
 
 Every one of these reads its key from the environment and nowhere else. trvl does not search your machine for credentials.
 
-AF-KLM is the single exception, and it is worth explaining. Google and Kiwi already return genuine native round-trip fares in the default merge, so AF-KLM is not there to price ordinary flights. It is there for the rail+fly itineraries AF-KLM sells and nobody else exposes: a train leg from Brussels Midi, Antwerp or Brussels ticketed as part of the flight, rather than a separate rail booking you have to make and risk yourself. It also returns both legs of a round-trip in full detail on KL/AF metal. It is the only provider that can read from a credential store, under tight rules:
+AF-KLM is the single exception, and it is worth explaining. Ordinary round-trips are already covered in the default merge: Kiwi returns both legs of a paired itinerary, and Google returns the genuine round-trip fare with the matching return chosen at booking. AF-KLM is there for what neither offers — the rail+fly itineraries it sells, where a train leg from Brussels Midi, Antwerp or Brussels is ticketed as part of the flight instead of being a separate rail booking you have to make and risk yourself. It also returns both legs on KL/AF metal in full detail. It is the only provider that can read from a credential store, under tight rules:
 
 | Variable | Effect |
 | --- | --- |
