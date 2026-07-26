@@ -419,11 +419,35 @@ func DetectAll(ctx context.Context, in DetectorInput) []Hack {
 		close(ch)
 	}()
 
+	// Collect until the detectors are done OR the caller's deadline passes,
+	// whichever comes first.
+	//
+	// Ranging over the channel alone was not enough. A detector that has already
+	// started cannot be interrupted mid-computation by a context — cancellation
+	// is cooperative, and a detector doing synchronous work only notices at its
+	// next check. Waiting for all 39 to notice meant a caller asking for results
+	// within 1ms waited 1.87s, so DetectAll silently broke the contract its own
+	// per-detector timeouts were there to keep.
+	//
+	// Stragglers are not leaked: ch is buffered to len(detectors), so a late
+	// goroutine completes its send and exits whether or not anyone is reading.
+	// Their results are discarded, which is the correct answer for a caller that
+	// has already given up on them.
 	var all []Hack
-	for r := range ch {
-		all = append(all, r.hacks...)
+	for {
+		select {
+		case r, ok := <-ch:
+			if !ok {
+				return dedupHacks(all)
+			}
+			all = append(all, r.hacks...)
+		case <-ctx.Done():
+			// Return what arrived in time rather than nothing: partial results
+			// beat an empty answer, and this matches how the rest of trvl
+			// degrades when a provider is slow.
+			return dedupHacks(all)
+		}
 	}
-	return dedupHacks(all)
 }
 
 // dedupHacks removes hacks that are functionally identical. Two hacks are
