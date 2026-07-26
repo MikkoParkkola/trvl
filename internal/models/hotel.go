@@ -80,13 +80,13 @@ type Room struct {
 
 // HotelResult represents a single hotel from a search.
 type HotelResult struct {
-	Name        string  `json:"name"`
-	HotelID     string  `json:"hotel_id"`
-	Rating      float64 `json:"rating"`
-	ReviewCount int     `json:"review_count"`
-	Stars       int     `json:"stars"`
-	Price       float64 `json:"price"` // Lowest price across all sources
-	Currency    string  `json:"currency"`
+	Name            string        `json:"name"`
+	HotelID         string        `json:"hotel_id"`
+	Rating          float64       `json:"rating"`
+	ReviewCount     int           `json:"review_count"`
+	Stars           int           `json:"stars"`
+	Price           float64       `json:"price"` // Lowest price across all sources
+	Currency        string        `json:"currency"`
 	// ComparablePrice is the headline price converted to a common target currency
 	// for cross-currency ranking and Min/MaxPrice filtering (and PriceForRanking).
 	// 0 means the price could not be converted (incomparable across currencies).

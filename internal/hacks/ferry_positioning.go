@@ -94,6 +94,7 @@ type ferryCandidate struct {
 	estimated   bool
 }
 
+
 // detectFerryPositioning checks whether taking a ferry to a nearby port and
 // then flying from there is cheaper than flying directly, even after adding
 // the ferry cost.

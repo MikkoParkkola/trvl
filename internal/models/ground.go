@@ -40,23 +40,23 @@ type GroundRoute struct {
 	// (destination->origin on the return date). Empty for one-way searches.
 	// Mirrors models.FlightLeg.Direction so round-trip ground results are
 	// honestly labelled rather than silently flattening the return leg away.
-	Direction string  `json:"direction,omitempty"`
-	Price     float64 `json:"price"`
-	PriceMax  float64 `json:"price_max,omitempty"` // RegioJet gives price ranges
-	Currency  string  `json:"currency"`
+	Direction  string      `json:"direction,omitempty"`
+	Price      float64     `json:"price"`
+	PriceMax   float64     `json:"price_max,omitempty"` // RegioJet gives price ranges
+	Currency   string      `json:"currency"`
 	// ComparablePrice is the price converted to a common target currency for
 	// cross-currency ranking and MaxPrice filtering (and for PriceForRanking).
 	// Set by the normalize pass in ground search when conversion succeeds.
 	// 0 means "use raw Price" (incomparable across currencies).
-	ComparablePrice float64     `json:"comparable_price,omitempty"`
-	Duration        int         `json:"duration_minutes"`
-	Departure       GroundStop  `json:"departure"`
-	Arrival         GroundStop  `json:"arrival"`
-	Transfers       int         `json:"transfers"`
-	Legs            []GroundLeg `json:"legs"`
-	Amenities       []string    `json:"amenities,omitempty"`
-	SeatsLeft       *int        `json:"seats_left,omitempty"`
-	BookingURL      string      `json:"booking_url"`
+	ComparablePrice float64 `json:"comparable_price,omitempty"`
+	Duration   int         `json:"duration_minutes"`
+	Departure  GroundStop  `json:"departure"`
+	Arrival    GroundStop  `json:"arrival"`
+	Transfers  int         `json:"transfers"`
+	Legs       []GroundLeg `json:"legs"`
+	Amenities  []string    `json:"amenities,omitempty"`
+	SeatsLeft  *int        `json:"seats_left,omitempty"`
+	BookingURL string      `json:"booking_url"`
 	// Sources lists every provider that returned this same physical connection
 	// (mirrors HotelResult). Populated by ResolveGroundSources. Headline Price
 	// is the cheapest across sources.
