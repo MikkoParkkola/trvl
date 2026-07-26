@@ -156,7 +156,12 @@ type named struct {
 //   - Any signal unknown        → Caution (unless all unknown → Unverified), reason per unknown signal.
 //   - All signals unknown       → Unverified, reasons for each.
 func Evaluate(in Input) Verdict {
-	return EvaluateWith(in, Availability{})
+	v := EvaluateWith(in, Availability{})
+	// Legacy callers get no ceiling at all, not a ceiling of Ready. A caller that
+	// has not declared its limits should be observably unchanged, or every
+	// existing consumer starts carrying a claim it never made.
+	v.Ceiling = ""
+	return v
 }
 
 // EvaluateWith is Evaluate for a source that cannot supply every signal. The
@@ -175,9 +180,16 @@ func EvaluateWith(in Input, av Availability) Verdict {
 	allUnknown := true
 	anyFalseOrUnknown := false
 
-	for _, s := range signals {
+	for i, s := range signals {
 		if av.beyondReach(s.label) {
 			ceilingReasons = append(ceilingReasons, s.label+" not available from this source")
+			// Declaring a signal unobtainable and then asserting it is a
+			// contradiction, and honouring the assertion would let Readiness
+			// reach Ready while Ceiling says Caution — a ceiling that does not
+			// constrain anything. The declaration wins: the signal is treated as
+			// absent regardless of what was passed.
+			signals[i].signal = nil
+			s = signals[i]
 		}
 		switch {
 		case s.signal == nil:

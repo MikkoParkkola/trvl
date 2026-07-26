@@ -97,3 +97,42 @@ func TestEvaluateWith_CappedSourceStillDistinguishesTheProperty(t *testing.T) {
 		t.Fatalf("the ceiling swallowed a real finding about the property; reasons were %v", v.Reasons)
 	}
 }
+
+// TestEvaluateWith_DeclaredUnavailableCannotBeAsserted closes the hole where a
+// ceiling did not constrain anything.
+//
+// Declaring a signal unobtainable and then passing it as true is a
+// contradiction, and honouring the assertion let Readiness reach Ready while the
+// Ceiling said Caution. The declaration wins: the signal is treated as absent
+// whatever was passed, so the ceiling actually caps the verdict.
+func TestEvaluateWith_DeclaredUnavailableCannotBeAsserted(t *testing.T) {
+	in := Input{
+		Verified:           True(),
+		LinkStable:         True(),
+		IdentityConfirmed:  True(),
+		RefundabilityKnown: True(), // contradicts the declaration below
+	}
+
+	v := EvaluateWith(in, Availability{NoRefundability: true})
+
+	if v.Readiness == Ready {
+		t.Fatal("reached Ready on a source that declared refundability unobtainable; the ceiling has to cap the verdict, not sit beside it")
+	}
+	if !v.Capped() {
+		t.Fatal("expected the verdict to remain capped")
+	}
+}
+
+// TestEvaluate_CarriesNoCeiling keeps legacy callers observably unchanged. A
+// caller that never declared a limit must not start reporting one, even a
+// permissive one.
+func TestEvaluate_CarriesNoCeiling(t *testing.T) {
+	v := Evaluate(Input{Verified: True()})
+
+	if v.Ceiling != "" {
+		t.Fatalf("Evaluate set a ceiling of %q; callers that declared nothing must carry nothing", v.Ceiling)
+	}
+	if len(v.CeilingReasons) != 0 {
+		t.Fatalf("Evaluate set ceiling reasons %v", v.CeilingReasons)
+	}
+}
