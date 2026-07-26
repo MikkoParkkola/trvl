@@ -21,7 +21,8 @@ func setWizzVersionForTest(v string) string {
 
 // TestWizzNextCandidates checks the rotation-walk order: next minors first
 // (the common rotation), then patches, then the next majors.
-func TestWizzNextCandidates(t *testing.T) {	got := wizzNextCandidates("29.3.0")
+func TestWizzNextCandidates(t *testing.T) {
+	got := wizzNextCandidates("29.3.0")
 	if len(got) == 0 {
 		t.Fatal("no candidates generated")
 	}
