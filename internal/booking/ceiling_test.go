@@ -183,3 +183,24 @@ func TestEvaluateWith_UnavailableSignalIsNotAPropertyFinding(t *testing.T) {
 		t.Fatal("expected the verdict to remain capped")
 	}
 }
+
+// TestSummary_CappedVerdictDoesNotClaimAllSignalsConfirmed catches the
+// contradiction that removing the ceiling signal from the ordinary reasons
+// created. With those reasons empty, Summary said "all signals confirmed", so the
+// CLI printed "Booking readiness: caution — all signals confirmed": a verdict that
+// is not ready, asserting that everything checked out.
+func TestSummary_CappedVerdictDoesNotClaimAllSignalsConfirmed(t *testing.T) {
+	in := Input{Verified: True(), LinkStable: True(), IdentityConfirmed: True()}
+	v := EvaluateWith(in, Availability{NoRefundability: true})
+
+	if len(v.Reasons) != 0 {
+		t.Fatalf("precondition: expected no ordinary reasons on a best-case capped verdict, got %v", v.Reasons)
+	}
+	got := v.Summary()
+	if strings.Contains(got, "all signals confirmed") {
+		t.Fatalf("a capped verdict claims every signal confirmed: %q", got)
+	}
+	if !strings.Contains(got, "refundability_known") {
+		t.Fatalf("the summary should name what could not be checked, got %q", got)
+	}
+}

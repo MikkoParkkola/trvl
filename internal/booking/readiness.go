@@ -243,6 +243,14 @@ func (v Verdict) Label() string {
 // suitable for a CLI footer or MCP annotation.
 func (v Verdict) Summary() string {
 	if len(v.Reasons) == 0 {
+		// "all signals confirmed" is only true when every signal was obtainable
+		// and confirmed. On a capped source the ordinary reasons are empty
+		// because the missing signal is a ceiling reason, not a property
+		// finding — and printing "caution — all signals confirmed" asserts
+		// something plainly false about a verdict that is not ready.
+		if v.Capped() {
+			return "every obtainable signal confirmed; " + strings.Join(v.CeilingReasons, "; ")
+		}
 		return "all signals confirmed"
 	}
 	return strings.Join(v.Reasons, "; ")
