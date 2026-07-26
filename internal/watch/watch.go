@@ -8,9 +8,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,10 +26,31 @@ const (
 	// price-history file to cap x number-of-routes.
 	maxObservationsPerRoute = 1000
 	// maxRouteObservations caps the TOTAL number of ad-hoc route-keyed points
-	// across all routes, evicting the oldest first. Watch-keyed points (which
-	// back the existing sparkline/fareintel features) are NEVER evicted here, so
-	// this bounds the new ad-hoc corpus without touching the watch corpus.
+	// across all routes, evicting the oldest first.
 	maxRouteObservations = 20000
+	// maxObservationsPerWatch caps retained points per watch. Watch-keyed points
+	// were originally exempt from every cap, which left the only truly unbounded
+	// corpus in the store: one real price-history.json reached 320,028 points in
+	// 41MB, of which 319,966 were watch-keyed and 36 were the capped route kind.
+	// Loading that into memory is what made each `trvl mcp` process cost ~686MB.
+	//
+	// Nothing needs the raw tail: Sparkline asks for 10-20 points, and a watch's
+	// all-time low is stored on the Watch record itself (LowestPrice /
+	// CheapestDate), so it survives eviction independently of history.
+	// At the 30-minute scheduler cadence this retains roughly three weeks of
+	// full-resolution history per watch.
+	maxObservationsPerWatch = 1000
+	// maxWatchObservations is the global backstop across all watches, evicting
+	// oldest first, so a large number of watches cannot multiply the per-watch
+	// cap into an unbounded file.
+	maxWatchObservations = 50000
+	// routeWatchTTL is how long a dateless route watch keeps being checked
+	// without the user re-expressing interest. Route watches have no travel date
+	// to expire against, so isActive returned true for them unconditionally and
+	// they accumulated forever: one real store carried 468 permanently-active
+	// route watches, every one re-checked against live providers every 30
+	// minutes. Re-watching a route renews it, so anything actually in use stays.
+	routeWatchTTL = 90 * 24 * time.Hour
 	// observationThrottle suppresses near-identical repeat observations for the
 	// same route+currency within this window.
 	observationThrottle = 15 * time.Minute
@@ -58,6 +81,13 @@ type Watch struct {
 	LastPrice    float64   `json:"last_price"`
 	LowestPrice  float64   `json:"lowest_price"`
 	CheapestDate string    `json:"cheapest_date,omitempty"` // which date had the lowest price
+
+	// RenewedAt is the last time a USER expressed interest in this watch: set on
+	// creation and refreshed whenever Store.Add is called for the same target.
+	// It is deliberately distinct from LastCheck, which the scheduler updates on
+	// its own and therefore never signals abandonment. Route watches age out
+	// against this (see isActive / routeWatchTTL).
+	RenewedAt time.Time `json:"renewed_at,omitempty"`
 
 	// Last-minute hotel mode flags sub-48h availability when the current price
 	// is materially below LastPrice. Drop threshold defaults to 25%.
@@ -92,6 +122,62 @@ type Watch struct {
 	MinScore   int      `json:"min_score,omitempty"`   // default 85
 	MinNights  int      `json:"min_nights,omitempty"`  // default 3
 	MaxNights  int      `json:"max_nights,omitempty"`  // default 14
+}
+
+// SameTarget reports whether two watches monitor the SAME thing, ignoring
+// accumulated state (prices, check times) and adjustable thresholds.
+//
+// This is watch identity. "Watch HEL->BCN" asked twice is one watch, not two:
+// re-asking expresses the same intent and should update it, not accumulate.
+// Without this, every agent session that called watch_price added another row.
+// One real store reached 468 permanently-active watches covering 4 distinct
+// routes — HEL->BCN alone was watched 319 times — and every one of them was
+// re-checked against live providers every 30 minutes, forever.
+//
+// BelowPrice, Currency, webhook and alert settings are deliberately NOT part of
+// identity: re-watching a route with a new target price updates the target
+// rather than creating a rival watch for the same route.
+func (w Watch) SameTarget(other Watch) bool {
+	if w.Type != other.Type {
+		return false
+	}
+	if w.IsOpportunityWatch() {
+		return w.WindowFrom == other.WindowFrom &&
+			w.WindowTo == other.WindowTo &&
+			w.MinScore == other.MinScore &&
+			w.MinNights == other.MinNights &&
+			w.MaxNights == other.MaxNights &&
+			equalStrings(w.Favourites, other.Favourites)
+	}
+	return w.Origin == other.Origin &&
+		w.Destination == other.Destination &&
+		w.DepartDate == other.DepartDate &&
+		w.ReturnDate == other.ReturnDate &&
+		w.DepartFrom == other.DepartFrom &&
+		w.DepartTo == other.DepartTo &&
+		w.HotelName == other.HotelName &&
+		equalStrings(w.RoomKeywords, other.RoomKeywords)
+}
+
+// equalStrings compares two string slices order-insensitively, treating nil and
+// empty as equal. Keyword order is not part of a watch's meaning.
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	if len(a) == 0 {
+		return true
+	}
+	x := append([]string(nil), a...)
+	y := append([]string(nil), b...)
+	sort.Strings(x)
+	sort.Strings(y)
+	for i := range x {
+		if x[i] != y[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // IsRouteWatch returns true if this watch monitors a route without specific dates.
@@ -344,6 +430,27 @@ func (s *Store) Load() error {
 	if err := loadJSON(s.historyPath(), &s.history); err != nil {
 		return fmt.Errorf("load history: %w", err)
 	}
+	// Watches written before RenewedAt existed have no renewal stamp. Falling
+	// back to CreatedAt would retroactively expire watches an upgrading user
+	// still wants, so grant them a full TTL from first sight instead.
+	//
+	// This MUST be persisted. Stamping only in memory would re-grant a fresh TTL
+	// on every load, so a legacy watch could never age out and routeWatchTTL
+	// would be dead code for exactly the users who need it. Best-effort: a
+	// read-only or full disk must not turn Load into a failure.
+	now := time.Now()
+	migrated := 0
+	for i := range s.watches {
+		if s.watches[i].RenewedAt.IsZero() {
+			s.watches[i].RenewedAt = now
+			migrated++
+		}
+	}
+	if migrated > 0 {
+		if err := s.persistLocked(); err != nil {
+			slog.Warn("watch: persist RenewedAt migration", "watches", migrated, "err", err)
+		}
+	}
 	return nil
 }
 
@@ -355,6 +462,20 @@ func (s *Store) Save() error {
 }
 
 func (s *Store) saveLocked() error {
+	return s.persistLocked()
+}
+
+// persistLocked writes both files. Caller holds s.mu.
+//
+// NOTE: this rewrites the store WHOLE. It is deliberately not batched across a
+// scheduler round: deferring the flush would hold a stale in-memory snapshot for
+// the length of the round, and another `trvl mcp` process persisting a new watch
+// in that window would be silently overwritten (the store is last-writer-wins
+// across processes). The write volume that motivated batching is already
+// addressed by watch dedup, the history cap, and the scheduler singleton —
+// together ~99.8%% — so batching bought ~25MB per round in exchange for a
+// multi-minute data-loss window. See docs/design for the store-coordination gap.
+func (s *Store) persistLocked() error {
 	if err := s.ensureDir(); err != nil {
 		return fmt.Errorf("create storage dir: %w", err)
 	}
@@ -376,14 +497,61 @@ func (s *Store) Add(w Watch) (string, error) {
 		return "", err
 	}
 
+	// Idempotent on target: re-watching something already watched updates the
+	// existing watch instead of appending a duplicate. Accumulated price history
+	// (LowestPrice, BaselinePrice, LastCheck, ...) is preserved — that history is
+	// the value of a long-running watch and must survive a re-watch.
+	for i := range s.watches {
+		if !s.watches[i].SameTarget(w) {
+			continue
+		}
+		s.watches[i].applyIntent(w)
+		if err := s.saveLocked(); err != nil {
+			return "", err
+		}
+		return s.watches[i].ID, nil
+	}
+
 	w.ID = shortID()
 	w.CreatedAt = time.Now()
+	w.RenewedAt = w.CreatedAt
 	s.watches = append(s.watches, w)
 
 	if err := s.saveLocked(); err != nil {
 		return "", err
 	}
 	return w.ID, nil
+}
+
+// applyIntent copies the caller-adjustable fields of `next` onto an existing
+// watch, leaving identity and accumulated observation state untouched.
+//
+// Zero values do not overwrite: a re-watch that omits a webhook must not silently
+// delete the webhook already configured on that route.
+func (w *Watch) applyIntent(next Watch) {
+	// Re-watching is the renewal signal that keeps a route watch alive.
+	w.RenewedAt = time.Now()
+	if next.BelowPrice > 0 {
+		w.BelowPrice = next.BelowPrice
+	}
+	if next.Currency != "" {
+		w.Currency = next.Currency
+	}
+	if next.WebhookURL != "" {
+		w.WebhookURL = next.WebhookURL
+	}
+	if next.AlertDropPct > 0 {
+		w.AlertDropPct = next.AlertDropPct
+	}
+	if next.AlertDropAbs > 0 {
+		w.AlertDropAbs = next.AlertDropAbs
+	}
+	if next.LastMinuteMode {
+		w.LastMinuteMode = true
+	}
+	if next.LastMinuteDropPct > 0 {
+		w.LastMinuteDropPct = next.LastMinuteDropPct
+	}
 }
 
 // List returns all active watches.
@@ -451,7 +619,54 @@ func (s *Store) RecordPrice(watchID string, price float64, currency string) erro
 		Currency:  currency,
 		Timestamp: time.Now(),
 	})
+	s.pruneWatchLocked(watchID)
+	s.pruneGlobalWatchLocked()
 	return s.saveLocked()
+}
+
+// pruneWatchLocked drops the oldest observations for watchID beyond
+// maxObservationsPerWatch, preserving order. Caller holds s.mu.
+func (s *Store) pruneWatchLocked(watchID string) {
+	s.evictOldestLocked(
+		func(p PricePoint) bool { return p.WatchID == watchID },
+		maxObservationsPerWatch,
+	)
+}
+
+// pruneGlobalWatchLocked evicts the oldest watch-keyed observations once their
+// total exceeds maxWatchObservations, so many watches cannot multiply the
+// per-watch cap into an unbounded file. Route-keyed points have their own cap
+// and are not touched here. Caller holds s.mu.
+func (s *Store) pruneGlobalWatchLocked() {
+	s.evictOldestLocked(
+		func(p PricePoint) bool { return p.WatchID != "" },
+		maxWatchObservations,
+	)
+}
+
+// evictOldestLocked keeps at most `limit` points matching `match`, dropping the
+// oldest first and preserving the order of everything else. Caller holds s.mu.
+func (s *Store) evictOldestLocked(match func(PricePoint) bool, limit int) {
+	var idx []int
+	for i, p := range s.history {
+		if match(p) {
+			idx = append(idx, i)
+		}
+	}
+	if len(idx) <= limit {
+		return
+	}
+	drop := make(map[int]bool, len(idx)-limit)
+	for _, i := range idx[:len(idx)-limit] {
+		drop[i] = true
+	}
+	kept := s.history[:0:0]
+	for i, p := range s.history {
+		if !drop[i] {
+			kept = append(kept, p)
+		}
+	}
+	s.history = kept
 }
 
 // History returns all price points for a given watch ID, ordered by time.

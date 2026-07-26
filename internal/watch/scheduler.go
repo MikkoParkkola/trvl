@@ -24,6 +24,10 @@ type Scheduler struct {
 	cancel    context.CancelFunc
 	done      chan struct{}
 
+	// lock is the cross-process scheduler singleton, held for the scheduler's
+	// lifetime. Nil when this process is not the scheduler.
+	lock *SchedulerLock
+
 	// probeHook, when set, runs after each check round with the active watches.
 	// It is the injection seam for the MIK-6234 Tier-1 scheduler-amortized
 	// counterfactual probe: the daemon wires a budget-gated probe here (the
@@ -73,6 +77,24 @@ func (s *Scheduler) Start() {
 		if s.stopped {
 			return
 		}
+		// At most one scheduler per ~/.trvl across all processes. MCP clients
+		// spawn a server per session and some leak them; without this, every
+		// live `trvl mcp` runs a full round against the same watches, multiplying
+		// provider load and racing on the same JSON files. A process that loses
+		// the race still serves tool calls, it just does not schedule.
+		lock, held, err := TryLockScheduler(s.dir)
+		if err != nil {
+			slog.Warn("scheduler: acquire singleton lock", "err", err)
+			s.closeDone()
+			return
+		}
+		if !held {
+			slog.Debug("scheduler: another process owns the scheduler; not scheduling here")
+			s.closeDone()
+			return
+		}
+		s.lock = lock
+
 		ctx, cancel := context.WithCancel(context.Background())
 		s.cancel = cancel
 		s.started = true
@@ -98,6 +120,12 @@ func (s *Scheduler) Stop() {
 		}
 	})
 	<-s.done
+
+	s.mu.Lock()
+	lock := s.lock
+	s.lock = nil
+	s.mu.Unlock()
+	lock.Release()
 }
 
 // run is the background loop. ctx is cancelled when Stop is called.
@@ -231,9 +259,18 @@ func activeWatches(watches []Watch) []Watch {
 
 // isActive returns true if the watch should still be checked.
 func isActive(w Watch, today string) bool {
-	// Route watches (no dates) are always active.
+	// Route watches have no travel date to expire against, so they age out on
+	// renewal instead: created or re-watched within routeWatchTTL. Without this
+	// they were active forever and accumulated indefinitely.
 	if w.IsRouteWatch() {
-		return true
+		renewed := w.RenewedAt
+		if renewed.IsZero() {
+			renewed = w.CreatedAt
+		}
+		if renewed.IsZero() {
+			return true // no timestamps at all: do not silently drop it
+		}
+		return time.Since(renewed) < routeWatchTTL
 	}
 
 	// Date-range watches: active if the range end is today or later.
