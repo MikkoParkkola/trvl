@@ -56,3 +56,63 @@ func TestHotelPricesReadiness_CeilingIsSerialisable(t *testing.T) {
 		t.Fatal("expected at least one reason naming the unobtainable signal")
 	}
 }
+
+// TestCappedVerdictStillCarriesPropertyFindings guards against the schema
+// telling an agent to ignore a real problem.
+//
+// An earlier version of the ceiling description said "do NOT read the verdict as
+// a finding about this hotel". That is false whenever a capped verdict also
+// carries a genuine failure: this endpoint can report an expiring link or an
+// unverified price, and an agent following that instruction would discard a
+// warning that matters more than the ceiling does. The two kinds of reason live
+// in separate fields precisely so both stay actionable.
+func TestCappedVerdictStillCarriesPropertyFindings(t *testing.T) {
+	// Expiring link: a real finding about this offer, on a path that is also capped.
+	providers := []models.ProviderPrice{{
+		Provider:        "Booking.com",
+		Price:           199,
+		Currency:        "EUR",
+		LinkDurability:  "expiring",
+		PriceConfidence: models.PriceConfidenceVerified,
+	}}
+
+	v := pricefeed.HotelPricesReadiness("google-hotel-id", providers)
+
+	if !v.Capped() {
+		t.Fatal("expected the path to remain capped")
+	}
+
+	var sawLink bool
+	for _, r := range v.Reasons {
+		if strings.Contains(r, "link_stable") && strings.Contains(r, "false") {
+			sawLink = true
+		}
+	}
+	if !sawLink {
+		t.Fatalf("the expiring link disappeared from the actionable reasons; reasons were %v", v.Reasons)
+	}
+
+	// The ceiling reasons must not absorb it: they name only what is unobtainable.
+	for _, r := range v.CeilingReasons {
+		if strings.Contains(r, "link_stable") {
+			t.Fatalf("a real finding was filed as a structural limit: %q", r)
+		}
+	}
+}
+
+// TestCeilingSchema_DoesNotTellAgentsToIgnoreFindings pins the wording itself,
+// since the defect was in the instruction rather than the data.
+func TestCeilingSchema_DoesNotTellAgentsToIgnoreFindings(t *testing.T) {
+	raw, err := json.Marshal(hotelPricesOutputSchema())
+	if err != nil {
+		t.Fatalf("marshal schema: %v", err)
+	}
+	s := string(raw)
+
+	if strings.Contains(s, "do NOT read the verdict as a finding about this hotel") {
+		t.Fatal("the schema tells agents to disregard the verdict when capped; a capped verdict can still carry a genuine expiring-link or price finding")
+	}
+	if !strings.Contains(s, "booking_readiness_reasons may still report") {
+		t.Fatal("the ceiling description should say other reasons remain actionable, or an agent has to infer it")
+	}
+}
