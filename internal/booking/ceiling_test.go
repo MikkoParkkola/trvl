@@ -204,3 +204,18 @@ func TestSummary_CappedVerdictDoesNotClaimAllSignalsConfirmed(t *testing.T) {
 		t.Fatalf("the summary should name what could not be checked, got %q", got)
 	}
 }
+
+// TestSummary_CeilingWithoutReasonsDoesNotDangle covers the decoded-Verdict case:
+// Verdict is exported and carries JSON tags, so a value arriving from a client can
+// hold a ceiling with no reasons. Joining an empty list would leave a trailing
+// separator in user-visible text.
+func TestSummary_CeilingWithoutReasonsDoesNotDangle(t *testing.T) {
+	v := Verdict{Readiness: Ready, Ceiling: Caution}
+	got := v.Summary()
+	if strings.HasSuffix(got, "; ") || strings.HasSuffix(got, ";") {
+		t.Fatalf("summary ends in a dangling separator: %q", got)
+	}
+	if got == "" {
+		t.Fatal("summary is empty")
+	}
+}

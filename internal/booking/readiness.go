@@ -248,7 +248,10 @@ func (v Verdict) Summary() string {
 		// because the missing signal is a ceiling reason, not a property
 		// finding — and printing "caution — all signals confirmed" asserts
 		// something plainly false about a verdict that is not ready.
-		if v.Capped() {
+		// The reasons guard matters because Verdict is exported and decodable:
+		// a value round-tripped through JSON can carry a ceiling with no reasons,
+		// and appending an empty join would emit a dangling separator.
+		if v.Capped() && len(v.CeilingReasons) > 0 {
 			return "every obtainable signal confirmed; " + strings.Join(v.CeilingReasons, "; ")
 		}
 		return "all signals confirmed"
