@@ -84,7 +84,7 @@ More starter prompts and what good answers look like: [docs/DEMO.md](docs/DEMO.m
 
 - **Whole journey, door to door.** It plans the entire trip across modes — home to airport, flight, arrival transfer, hotel, onward train — and prices each leg in its real mode. Most tools stop at one flight, one hotel.
 - **No API keys, no signup, no bill.** Every core source works the moment you install it — no Amadeus key to apply for, no subscription, no per-call cost. Some optional providers can be switched on with a key of your own (AF-KLM, SerpAPI, Travelpayouts and others); none of them is required. Separately from keys, trvl reads your browser's cookie stores to get past the bot protection that hotel and rail sites put in front of their search APIs: see [What trvl reads from your browser](#what-trvl-reads-from-your-browser).
-- **Your assistant, your machine.** One local binary, any MCP client, not locked to a vendor. Searching necessarily sends your query to the providers being searched, the same as any travel site: route, dates and traveller count go to Google, Kiwi, Booking and the rest. What stays local is everything trvl keeps: saved trips, preferences, watches and any credentials, all under `~/.trvl`, never uploaded. Two commands send data on purpose because that is what you ran them for: `trvl share` publishes a trip card as a **public** GitHub gist ([#527](https://github.com/MikkoParkkola/trvl/issues/527) asks whether that default is right), and the calendar helper writes an event to your Google calendar.
+- **Your assistant, your machine.** One local binary, any MCP client, not locked to a vendor. Where your data goes, stated plainly rather than promised away. Searching sends the query to the providers being searched, the same as any travel site: route, dates and traveller count go to Google, Kiwi, Booking and the rest. A key or cookie you have configured is sent to the service it authenticates, when that provider is used, because that is what authenticating means. What trvl keeps for itself stays under `~/.trvl` and is not sent anywhere: saved trips, preferences, watches, search history. Two commands publish deliberately, since that is what you ran them for: `trvl share` posts a trip card as a **public** GitHub gist ([#527](https://github.com/MikkoParkkola/trvl/issues/527) asks whether that default is right), and the calendar helper writes an event to your Google calendar.
 - **It optimizes, not just lists.** Shift-day pricing, split-airline routing, hidden-city checks, award sweet spots, round-trip fares. It hands back the cheaper option and shows what it saved.
 - **It is honest when a source fails.** Typed statuses and labelled estimates, never an empty result dressed up as "nothing found."
 
@@ -212,8 +212,10 @@ Three things follow, and they are the reason this section exists:
 - **Some of it persists and some of it launches a browser.** The Booking.com token is
   written to `~/.trvl/cookies`. The headless harvest starts your Chrome.
 
-Nothing is uploaded. Cookies go into requests to the same site they came from, and the
-only thing written to disk is that one token cache.
+Where those cookies go: into requests to the same site they came from, which is the
+point of reading them, and nowhere else. No third party receives them and no copy is
+sent to trvl or anyone operating it. The only thing written to disk is that one token
+cache.
 
 Documenting this took three attempts, and each earlier version claimed a narrower
 scope than the code has: first that trvl never looked at local credentials
@@ -256,7 +258,7 @@ trvl sends one anonymous heartbeat per install per day so the project knows roug
 - the Go runtime string (OS, architecture, Go version, e.g. `darwin/arm64/go1.26.5`)
 - a random install id generated locally on first run (stored in `~/.trvl/install-id`)
 
-It never sends your IP, hostname, username, search queries, or any travel data. The collector derives coarse geography server-side from the request and only reports it in aggregate, with a minimum group size of 5 (k-anonymity), so no single install is identifiable. The request has a 3-second timeout and fails silently. If the collector is down or slow, trvl behaves exactly as if telemetry were off.
+The payload contains nothing else: no hostname, no username, no search queries, no travel data. Two things the list above does not make obvious, stated rather than left to inference. Your IP is not in the payload, but the request reveals it as any HTTP request does, and the collector uses it server-side to derive coarse geography, which it reports only in aggregate with a minimum group size of 5. And the install id is stable, so repeated heartbeats from one machine are linkable to each other over time; it is random and contains nothing about you, but it is not a fresh value each time. The request has a 3-second timeout and fails silently. If the collector is down or slow, trvl behaves exactly as if telemetry were off.
 
 To turn it off, set any one of these before running trvl:
 
