@@ -82,7 +82,7 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 	// browser-derived — the conservative reading, and the one #534 exists to
 	// replace with a recorded one.
 	if loadCachedCookies(pc.client, resolvedURL) {
-		pc.browserSeeded = true
+		pc.browserSeeded.Store(true)
 	}
 
 	resp, body, err := doPreflightRequest(ctx, pc.client, &resolvedAuth)
@@ -108,7 +108,7 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 	if needsBrowserCookieFallback(resp.StatusCode, extracted, resolvedAuth.Extractions) {
 		// Tier 3a: read cookies from user's browser (kooky).
 		if tryBrowserCookieRetry(ctx, pc, &resolvedAuth) {
-			pc.browserSeeded = true
+			pc.browserSeeded.Store(true)
 			saveCachedCookies(pc.client, resolvedURL)
 			pc.lastPreflightURL = resolvedURL
 			pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
@@ -124,7 +124,7 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 		// Tier 4: last-resort escape hatch — open in browser.
 		if resolvedAuth.BrowserEscapeHatch && isInteractive(ctx) {
 			if tryBrowserEscapeHatch(ctx, pc, &resolvedAuth) {
-				pc.browserSeeded = true
+				pc.browserSeeded.Store(true)
 				saveCachedCookies(pc.client, resolvedURL)
 				pc.lastPreflightURL = resolvedURL
 				pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
@@ -184,7 +184,7 @@ func replaceAuthValuesLocked(ctx context.Context, pc *providerClient, auth *Auth
 // true on HTTP 2xx + successful extraction. The auth parameter carries the
 // resolved (city-specific) preflight URL.
 func tryBrowserCookieRetry(ctx context.Context, pc *providerClient, auth *AuthConfig) bool {
-	if !applyBrowserCookies(pc.client, auth.PreflightURL, pc.config.Cookies.Browser) {
+	if !applyBrowserCookies(pc, auth.PreflightURL, pc.config.Cookies.Browser) {
 		return false
 	}
 	resp2, body2, err2 := doPreflightRequest(ctx, pc.client, auth)
@@ -349,6 +349,9 @@ func finishEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig
 	}
 	if len(fresh) > 0 {
 		pc.client.Jar.SetCookies(u, fresh)
+		// Recovered from the user's own browser window, so the jar is now
+		// browser-seeded whether or not the retry below succeeds.
+		pc.browserSeeded.Store(true)
 	}
 
 	resp2, body2, err2 := doPreflightRequest(ctx, pc.client, auth)
@@ -599,7 +602,17 @@ func isAkamaiChallenge(statusCode int, body []byte) bool {
 // URL and seeds them into the client's cookie jar. When browserHint is
 // non-empty, reads only from that specific browser to avoid cross-browser
 // cookie contamination. Returns true if any cookies were applied.
-func applyBrowserCookies(client *http.Client, targetURL, browserHint string) bool {
+// It takes the providerClient rather than the bare client because marking the
+// jar as browser-seeded IS the point of this function's second half: round 7 of
+// review found the flag set at three call sites and missing at four others,
+// which is the caller-instead-of-seam mistake every round of this branch has
+// caught. There is one place browser cookies enter a provider jar, and this is
+// it, so the provenance is recorded here where it cannot be forgotten.
+func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool {
+	if pc == nil || pc.client == nil {
+		return false
+	}
+	client := pc.client
 	if client == nil || client.Jar == nil {
 		return false
 	}
@@ -613,6 +626,7 @@ func applyBrowserCookies(client *http.Client, targetURL, browserHint string) boo
 		return false
 	}
 	client.Jar.SetCookies(u, cookies)
+	pc.browserSeeded.Store(true)
 	slog.Debug("applied browser cookies to preflight client", "url", targetURL, "count", len(cookies))
 	return true
 }
@@ -708,14 +722,14 @@ func discardBrowserSeededAuth(pc *providerClient) {
 	pc.authMu.Lock()
 	defer pc.authMu.Unlock()
 
-	if !pc.browserSeeded {
+	if !pc.browserSeeded.Load() {
 		return
 	}
 
 	pc.authValues = nil
 	pc.authExpiry = time.Time{}
 	pc.lastPreflightURL = ""
-	pc.browserSeeded = false
+	pc.browserSeeded.Store(false)
 
 	if pc.client != nil {
 		if jar, err := cookiejar.New(nil); err == nil {

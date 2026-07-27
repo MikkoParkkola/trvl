@@ -23,12 +23,17 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	// config; we then drop the cached providerClient so its HTTP client,
 	// rate limiter and auth cache are rebuilt from the new config.
 	var oldJar http.CookieJar
+	oldJarBrowserSeeded := false
 	if fresh := rt.registry.ReloadIfChanged(cfg.ID); fresh != nil && fresh != cfg {
 		// Preserve the cookie jar so WAF tokens and session cookies survive
 		// config reloads. The jar is installed on the new client below.
 		rt.mu.Lock()
 		if old := rt.clients[cfg.ID]; old != nil && old.client != nil {
 			oldJar = old.client.Jar
+			// The jar survives a config reload, so its provenance must too.
+			// Moving browser-derived cookies into a client marked clean is how
+			// the opt-out would lose track of them across a reload.
+			oldJarBrowserSeeded = old.browserSeeded.Load()
 		}
 		delete(rt.clients, cfg.ID)
 		rt.mu.Unlock()
@@ -37,6 +42,9 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	pc := rt.getOrCreateClient(cfg)
 	if oldJar != nil && pc.client != nil {
 		pc.client.Jar = oldJar
+		if oldJarBrowserSeeded {
+			pc.browserSeeded.Store(true)
+		}
 	}
 
 	// Rate limit.
@@ -115,7 +123,7 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 		if cfg.Auth != nil && cfg.Auth.PreflightURL != "" {
 			endpointURL = substituteVars(cfg.Auth.PreflightURL, vars)
 		}
-		browserCookiesApplied = applyBrowserCookies(pc.client, endpointURL, cfg.Cookies.Browser)
+		browserCookiesApplied = applyBrowserCookies(pc, endpointURL, cfg.Cookies.Browser)
 
 		// Fail loudly when a browser-cookie provider (e.g. Booking.com) has no
 		// usable browser session. Without cookies the WAF strips data and the
@@ -336,7 +344,7 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 		recovered := false
 
 		// Tier 3a: re-read cookies from the user's browser.
-		if applyBrowserCookies(pc.client, endpoint, cfg.Cookies.Browser) {
+		if applyBrowserCookies(pc, endpoint, cfg.Cookies.Browser) {
 			resp2, body2, err2 := doSearchRequest(ctx, pc.client, req)
 			if err2 == nil && !isAkamaiChallenge(resp2.StatusCode, body2) && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
 				resp, body = resp2, body2

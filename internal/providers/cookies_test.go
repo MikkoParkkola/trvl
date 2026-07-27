@@ -84,7 +84,7 @@ func TestNeedsBrowserCookieFallback(t *testing.T) {
 // cookie jar is configured.
 func TestApplyBrowserCookies_NilJar(t *testing.T) {
 	client := &http.Client{}
-	if applyBrowserCookies(client, "https://example.com", "") {
+	if applyBrowserCookies(&providerClient{config: &ProviderConfig{ID: "t"}, client: client}, "https://example.com", "") {
 		t.Error("expected false when client has no jar")
 	}
 }
@@ -93,7 +93,7 @@ func TestApplyBrowserCookies_NilJar(t *testing.T) {
 func TestApplyBrowserCookies_BadURL(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
-	if applyBrowserCookies(client, "::not a url::", "") {
+	if applyBrowserCookies(&providerClient{config: &ProviderConfig{ID: "t"}, client: client}, "::not a url::", "") {
 		t.Error("expected false for bad URL")
 	}
 }

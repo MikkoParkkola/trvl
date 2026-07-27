@@ -318,7 +318,7 @@ func TestApplyBrowserCookies_WithSyntheticCookies(t *testing.T) {
 
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
-	if !applyBrowserCookies(client, targetURL, hint) {
+	if !applyBrowserCookies(&providerClient{config: &ProviderConfig{ID: "t"}, client: client}, targetURL, hint) {
 		t.Error("expected true when warm cache has cookies")
 	}
 }
@@ -344,7 +344,7 @@ func TestApplyBrowserCookies_BadURLPath(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
 	// url.Parse("://no-scheme-here") → error or empty host → returns false
-	got := applyBrowserCookies(client, targetURL, "")
+	got := applyBrowserCookies(&providerClient{config: &ProviderConfig{ID: "t"}, client: client}, targetURL, "")
 	// Result may be false (url.Parse error) — just confirm no panic
 	_ = got
 }

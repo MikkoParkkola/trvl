@@ -156,9 +156,12 @@ type providerClient struct {
 	// It exists because the auth cache is in-memory and the MCP server is
 	// long-lived: without it, a jar seeded while browser access was permitted
 	// keeps being sent on later calls, and those calls return from the cache
-	// above without reaching any of the guarded readers. Written under authMu,
-	// like authValues and authExpiry.
-	browserSeeded bool
+	// above without reaching any of the guarded readers.
+	//
+	// Atomic rather than authMu-protected: it is written from applyBrowserCookies,
+	// which runs both inside runPreflight (holding authMu) and from the search
+	// path (not holding it). One field, two lock regimes, so it carries its own.
+	browserSeeded atomic.Bool
 
 	// ttlState is the AIMD adaptive TTL controller for the auth cache.
 	// Accessed under authMu (same lock that protects authExpiry).

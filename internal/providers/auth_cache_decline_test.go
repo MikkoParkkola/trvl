@@ -40,7 +40,7 @@ func TestAuthCacheDiscardsBrowserSeededStateAfterADecline(t *testing.T) {
 		// that must stop being sent.
 		jar.SetCookies(u, []*http.Cookie{{Name: "datadome", Value: "from-the-users-browser"}})
 
-		return &providerClient{
+		pc := &providerClient{
 			config: &ProviderConfig{
 				ID:   "test-auth-cache-decline",
 				Auth: &AuthConfig{PreflightURL: preflight},
@@ -49,8 +49,9 @@ func TestAuthCacheDiscardsBrowserSeededStateAfterADecline(t *testing.T) {
 			authValues:       map[string]string{"token": "seeded-from-browser"},
 			authExpiry:       time.Now().Add(time.Hour),
 			lastPreflightURL: preflight,
-			browserSeeded:    true,
 		}
+		pc.browserSeeded.Store(true)
+		return pc
 	}
 
 	rt := NewRuntime(nil)
@@ -82,7 +83,7 @@ func TestAuthCacheDiscardsBrowserSeededStateAfterADecline(t *testing.T) {
 		pc.authMu.RLock()
 		defer pc.authMu.RUnlock()
 
-		if pc.browserSeeded {
+		if pc.browserSeeded.Load() {
 			t.Error("the client is still marked browser-seeded after the decline")
 		}
 		if len(pc.authValues) != 0 {
@@ -124,7 +125,6 @@ func TestAuthCacheKeepsNonBrowserStateAfterADecline(t *testing.T) {
 		authValues:       map[string]string{"token": "from-an-ordinary-preflight"},
 		authExpiry:       time.Now().Add(time.Hour),
 		lastPreflightURL: preflight,
-		browserSeeded:    false,
 	}
 
 	t.Setenv(consent.CookiesEnv, "1")
