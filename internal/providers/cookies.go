@@ -78,24 +78,32 @@ type openerFunc func(goos, browserPreference, targetURL string) error
 // defaultOpenURL is the production openerFunc — it dispatches to the
 // platform-native "open this URL" command.
 //
-// These are started, not waited on. Waiting was a latent hang on a search path:
-// `xdg-open` in particular can block for as long as the browser it launched
-// stays open, and the whole point of this call is that the browser stays open
-// long enough for a human to solve a challenge. Bounding it the way trvl bounds
-// its credential helpers would be worse than the disease — on Linux the browser
-// is a child of `xdg-open`, so killing the group would shut the window in the
-// user's face. Start reports the failure that actually matters (no such
-// command); the exit status of a launcher carries nothing worth waiting for.
+// These are not waited on to completion. Waiting was a latent hang on a search
+// path: `xdg-open` in particular can block for as long as the browser it launched
+// stays open, and the whole point of this call is that the browser stays open long
+// enough for a human to solve a challenge. Bounding it the way trvl bounds its
+// credential helpers would be worse than the disease, because on Linux the browser
+// is a child of `xdg-open` and killing the group would shut the window in the
+// user's face.
 //
-// Started, but still reaped. A child that is never waited on stays a zombie for
-// the life of the parent, and trvl's MCP server is long-lived, so that would be
-// one dead entry per challenge. startAndReap hands the wait to a goroutine: the
-// caller is not blocked and the process table stays clean.
+// One of them is watched briefly, and only one. An earlier version consulted only
+// Start's error, on the reasoning that the sole failure worth reporting was a missing
+// command. That was wrong for the preferred-browser attempt: `open` exists whatever
+// browser you name it, so an unavailable preference starts fine and then exits
+// non-zero, and reporting that as success skipped the plain `open` fallback on the
+// next line. The user got no window and never saw the challenge. That attempt now
+// goes through startAndReapWithin. The other three do not, because they have no
+// fallback behind them and `xdg-open` staying alive is normal rather than an error,
+// so watching them would reintroduce the wait this comment opens by ruling out.
+//
+// Started, but still reaped either way. A child that is never waited on stays a
+// zombie for the life of the parent, and trvl's MCP server is long-lived, so that
+// would be one dead entry per challenge.
 func defaultOpenURL(goos, browserPreference, targetURL string) error {
 	switch goos {
 	case "darwin":
 		if browserPreference != "" {
-			if err := startAndReap(exec.Command("open", "-a", browserPreference, targetURL)); err == nil {
+			if err := startAndReapWithin(exec.Command("open", "-a", browserPreference, targetURL), launcherFailureWindow); err == nil {
 				return nil
 			}
 		}
@@ -618,12 +626,83 @@ func isTestBinary() bool {
 	return false
 }
 
-// startAndReap starts cmd without waiting for it, then reaps it in the
-// background so the finished child does not linger as a zombie.
+// startAndReap starts cmd, looks briefly for an immediate failure, and reaps it in
+// the background so a finished child does not linger as a zombie.
 func startAndReap(cmd *exec.Cmd) error {
+	return startAndReapWithin(cmd, launcherStartupWindow)
+}
+
+// launcherFailureWindow is how long to wait for the preferred-browser attempt to
+// fail before assuming it succeeded.
+//
+// 500ms, because `open -a` resolves the application before doing anything and so
+// fails within tens of milliseconds. It costs nothing on the success path either,
+// since `open` hands the URL off and exits rather than staying with the browser, so
+// this window is only ever spent on a failure.
+const launcherFailureWindow = 500 * time.Millisecond
+
+// launcherStartupWindow is the same idea for the launchers with no fallback behind
+// them, and it is far shorter because here the window IS spent on success: `xdg-open`
+// can stay alive as long as the browser it started, so a persistent launcher pays
+// this on every challenge.
+//
+// It is not zero, which was the previous answer and was wrong. The caller does use
+// the error. mcp/tools_providers.go tells the user "Opened X in browser to warm
+// cookies. Future searches will use these cookies automatically" on a nil error, so
+// swallowing a launch failure produces a confident false statement that a browser
+// opened when none did, followed by a wait for cookies that cannot arrive. A headless
+// Linux box where `xdg-open` exists with no usable handler is the realistic case, and
+// it fails in milliseconds.
+//
+// 150ms buys that at a cost nobody perceives, against a cookie wait measured in tens
+// of seconds.
+const launcherStartupWindow = 150 * time.Millisecond
+
+// startAndReapWithin starts cmd and then looks briefly for an early failure.
+//
+// Sizing this window took three attempts, and the wrong answers are recorded rather
+// than tidied away because each was wrong for a different reason.
+//
+// The original consulted only Start's error, which cannot see a launcher that starts
+// and then exits. `open` exists whatever browser you name it, so an unavailable
+// preference started fine, exited non-zero, was reported as success, and the plain
+// `open` fallback on the next line was skipped. The user got no window.
+//
+// The second routed every launcher through a two-second window. Wrong because
+// `xdg-open` can stay alive as long as the browser it started, so a persistent
+// launcher paid the entire window on every challenge, which is the blocking this
+// whole approach exists to avoid.
+//
+// The third confined the window to the preferred-browser attempt, on the grounds that
+// the other launchers had no fallback and so lost nothing by being unwatched. Also
+// wrong: the caller reports "Opened X in browser to warm cookies" on a nil error, so
+// a swallowed failure is a confident false statement to the user, followed by a wait
+// for cookies that cannot arrive.
+//
+// So every launcher is watched, with the window sized to what it actually costs.
+// Callers pass launcherFailureWindow where the window is never spent on success, and
+// launcherStartupWindow where it is.
+//
+// Three outcomes, each treated as what it is. Exited cleanly inside the window:
+// success. Exited non-zero inside the window: failure, so the caller can fall back or
+// report it. Still running when the window expires: success, with the wait continuing
+// in the background so the child is reaped rather than left a zombie in a long-lived
+// MCP server. A slow launch is therefore never misread as a failure; only an explicit
+// non-zero exit is.
+func startAndReapWithin(cmd *exec.Cmd, window time.Duration) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	go func() { _ = cmd.Wait() }()
-	return nil
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(window):
+		// Still alive, so it launched. Keep waiting off to the side purely to reap.
+		go func() { <-done }()
+		return nil
+	}
 }
