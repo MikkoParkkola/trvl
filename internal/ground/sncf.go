@@ -49,7 +49,7 @@ var (
 	// sncfResolveChallenge escalates SNCF's anti-bot wall HEADLESS-first (no
 	// window, no focus steal) via providers.ResolveChallenge. Overridable in tests.
 	sncfResolveChallenge = func(ctx context.Context, targetURL string) (*providers.ChallengeResult, error) {
-		return providers.ResolveChallenge(ctx, targetURL, providers.WithTier2Force())
+		return providers.ResolveChallenge(ctx, targetURL)
 	}
 	// sncfOpenBrowser opens a VISIBLE browser window so a human can solve an
 	// interactive captcha. Only invoked on ChallengeNeedsHuman. Overridable in tests.

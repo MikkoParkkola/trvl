@@ -120,8 +120,8 @@ var cdpChallengeRunner = runCDPChallenge
 //     returns ChallengeCleared.
 //
 // Gating: the path runs by default and returns ErrTier2Disabled when the user
-// declined it (TRVL_NO_TIER2_CDP, or TRVL_TIER2_CDP=0) unless WithTier2Force is
-// used. It also refuses inside a `go test` binary, so the suite stays offline;
+// declined it (TRVL_NO_TIER2_CDP, or TRVL_TIER2_CDP=0). It also refuses inside
+// a `go test` binary, so the suite stays offline;
 // TRVL_ALLOW_BROWSER_COOKIES lifts that. It reuses the Tier2Option set so
 // callers configure it the same way as the lower-level CDP refresh.
 func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option) (*ChallengeResult, error) {
@@ -130,7 +130,8 @@ func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option
 		o(&cfg)
 	}
 
-	if !cfg.force && !Tier2Enabled() {
+	// An explicit decline is absolute; see RefreshCookiesViaCDP.
+	if Tier2Declined() {
 		return nil, ErrTier2Disabled
 	}
 
@@ -173,6 +174,13 @@ func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option
 // stolen (Headless + DefaultExecAllocatorOptions; no activation/foreground
 // flags).
 func runCDPChallenge(ctx context.Context, execPath, targetURL string, challengeWait time.Duration) ([]*network.Cookie, string, error) {
+	// Same reason as runCDPCollect: an explicit decline is absolute and is
+	// enforced on the spawning function, so a caller that reaches past
+	// ResolveChallenge still cannot start a browser.
+	if Tier2Declined() {
+		return nil, "", ErrTier2Disabled
+	}
+
 	// Same reason as runCDPCollect: with Tier-2 on by default, the driver is
 	// what must refuse inside a test binary, so stubbed tests still run.
 	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
@@ -234,7 +242,5 @@ func defaultHeadlessFirstResolve(ctx context.Context, targetURL string) (*Challe
 	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
 		return nil, ErrTier2Disabled
 	}
-	// Force past the env opt-in: the Tier-4 caller has already gated this on
-	// per-provider BrowserEscapeHatch + an interactive context.
-	return ResolveChallenge(ctx, targetURL, WithTier2Force())
+	return ResolveChallenge(ctx, targetURL)
 }

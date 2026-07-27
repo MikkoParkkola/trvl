@@ -79,7 +79,7 @@ var (
 	// do we open a real window. Overridable in tests so the orchestration is
 	// exercised offline without spawning a browser.
 	trainlineResolveChallenge = func(ctx context.Context, targetURL string) (*providers.ChallengeResult, error) {
-		return providers.ResolveChallenge(ctx, targetURL, providers.WithTier2Force())
+		return providers.ResolveChallenge(ctx, targetURL)
 	}
 	// trainlineOpenBrowser opens a VISIBLE browser window so a human can solve an
 	// interactive captcha. Only invoked on ChallengeNeedsHuman. Overridable in tests.

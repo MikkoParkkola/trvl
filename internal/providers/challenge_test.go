@@ -76,7 +76,7 @@ func TestResolveChallenge_NoBrowserFound(t *testing.T) {
 	fileExists = func(string) bool { return false }
 	defer func() { fileExists = prevExists }()
 
-	_, err := ResolveChallenge(context.Background(), "https://example.com/", WithTier2Force())
+	_, err := ResolveChallenge(context.Background(), "https://example.com/")
 	if !errors.Is(err, ErrNoBrowserFound) {
 		t.Fatalf("err = %v, want ErrNoBrowserFound", err)
 	}
@@ -94,7 +94,7 @@ func TestResolveChallenge_RunnerError(t *testing.T) {
 	}
 	defer func() { cdpChallengeRunner = prevRunner }()
 
-	_, err := ResolveChallenge(context.Background(), "https://example.com/", WithTier2Force())
+	_, err := ResolveChallenge(context.Background(), "https://example.com/")
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want boom", err)
 	}
@@ -121,7 +121,7 @@ func TestResolveChallenge_ClearedPersistsCookies(t *testing.T) {
 	defer func() { cdpChallengeRunner = prevRunner }()
 
 	target := "https://example.com/"
-	res, err := ResolveChallenge(context.Background(), target, WithTier2Force())
+	res, err := ResolveChallenge(context.Background(), target)
 	if err != nil {
 		t.Fatalf("ResolveChallenge: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestResolveChallenge_NeedsHumanDoesNotPersist(t *testing.T) {
 	defer func() { cdpChallengeRunner = prevRunner }()
 
 	target := "https://example.com/"
-	res, err := ResolveChallenge(context.Background(), target, WithTier2Force())
+	res, err := ResolveChallenge(context.Background(), target)
 	if err != nil {
 		t.Fatalf("ResolveChallenge: %v", err)
 	}

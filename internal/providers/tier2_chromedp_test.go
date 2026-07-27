@@ -11,14 +11,14 @@ import (
 	"github.com/chromedp/cdproto/network"
 )
 
-func TestTier2Enabled(t *testing.T) {
+func TestTier2Declined(t *testing.T) {
 	t.Setenv(tier2DisableEnv, "")
 	t.Setenv(tier2EnableEnv, "")
-	if !Tier2Enabled() {
+	if Tier2Declined() {
 		t.Fatal("expected enabled by default: the path is windowless, and leaving it off returned no results on challenged searches")
 	}
 	t.Setenv(tier2EnableEnv, "1")
-	if !Tier2Enabled() {
+	if Tier2Declined() {
 		t.Fatal("expected enabled when the old opt-in is set")
 	}
 
@@ -27,7 +27,7 @@ func TestTier2Enabled(t *testing.T) {
 	// not overrule them.
 	for _, deny := range []string{"0", "false", "no"} {
 		t.Setenv(tier2EnableEnv, deny)
-		if Tier2Enabled() {
+		if !Tier2Declined() {
 			t.Errorf("expected disabled with %s=%q", tier2EnableEnv, deny)
 		}
 	}
@@ -35,13 +35,13 @@ func TestTier2Enabled(t *testing.T) {
 
 	for _, off := range []string{"1", "true", "yes", "please"} {
 		t.Setenv(tier2DisableEnv, off)
-		if Tier2Enabled() {
+		if !Tier2Declined() {
 			t.Errorf("expected disabled with %s=%q", tier2DisableEnv, off)
 		}
 	}
 	for _, on := range []string{"", "0", "false"} {
 		t.Setenv(tier2DisableEnv, on)
-		if !Tier2Enabled() {
+		if Tier2Declined() {
 			t.Errorf("expected enabled with %s=%q", tier2DisableEnv, on)
 		}
 	}
@@ -61,7 +61,7 @@ func TestRefreshCookiesViaCDP_NoBrowserFound(t *testing.T) {
 	fileExists = func(string) bool { return false }
 	defer func() { fileExists = prevExists }()
 
-	_, err := RefreshCookiesViaCDP(context.Background(), "https://example.com/", WithTier2Force())
+	_, err := RefreshCookiesViaCDP(context.Background(), "https://example.com/")
 	if !errors.Is(err, ErrNoBrowserFound) {
 		t.Fatalf("err = %v, want ErrNoBrowserFound", err)
 	}
@@ -86,7 +86,7 @@ func TestRefreshCookiesViaCDP_HarvestsAndCaches(t *testing.T) {
 	defer func() { cdpRunner = prevRunner }()
 
 	target := "https://example.com/"
-	cookies, err := RefreshCookiesViaCDP(context.Background(), target, WithTier2Force())
+	cookies, err := RefreshCookiesViaCDP(context.Background(), target)
 	if err != nil {
 		t.Fatalf("RefreshCookiesViaCDP: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestRefreshCookiesViaCDP_RunnerError(t *testing.T) {
 	}
 	defer func() { cdpRunner = prevRunner }()
 
-	_, err := RefreshCookiesViaCDP(context.Background(), "https://example.com/", WithTier2Force())
+	_, err := RefreshCookiesViaCDP(context.Background(), "https://example.com/")
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want boom", err)
 	}

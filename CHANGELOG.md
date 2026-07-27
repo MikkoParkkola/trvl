@@ -24,7 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and no explanation. The path drives an already-installed Chrome, Brave or Edge in
   headless mode — no window, no focus steal, no bundled browser — so the cost of it
   running is a browser process for a few seconds, not an interruption. An explicit
-  `TRVL_TIER2_CDP=0` is still honoured: someone who set that meant it.
+  `TRVL_TIER2_CDP=0` is still honoured: someone who set that meant it. The decline
+  is checked on the two functions that actually spawn the browser, so a caller that
+  reaches past the entry points cannot route around it. The `WithTier2Force` option
+  every rail and hotel caller used to pass is gone: it was checked as
+  `!cfg.force && !Tier2Enabled()`, which left the opt-out with no effect on any real
+  search. It governs the headless browser only — the visible-window escape hatch is
+  a separate path with its own per-provider opt-in and its own confirmation prompt.
 
 ### Known limitations
 
