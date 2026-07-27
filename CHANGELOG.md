@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checked at each of the three places in trvl that can start a browser — the two CDP
   drivers in the provider layer and the ground-provider scraper — rather than at the
   entry points above them, so a caller that reaches past those cannot route around it.
+- **`TRVL_NO_BROWSER_COOKIES` now also stops the `nab` helper.** The three rail
+  providers call `nab` as a fallback once the in-process cookie reader has failed, and
+  every one of those calls hands it `--cookies`, so the helper went and read the same
+  browser cookie stores the opt-out had just refused to read — the README's "no nab"
+  was untrue. The decline is now checked inside the nab client, at the point the helper
+  process would be started, so all three call sites are covered at once. The rule for
+  reading the variable is written twice rather than shared, because `internal/cookies`
+  already imports `internal/nab` and reusing it would close an import cycle; a test in
+  `internal/cookies`, the one package that can see both, fails if the two ever disagree.
   The `WithTier2Force` option every rail and hotel caller used to pass is gone: it was
   checked as `!cfg.force && !Tier2Enabled()`, which left the opt-out with no effect on
   any real search. It governs the headless browser only — the visible-window escape
