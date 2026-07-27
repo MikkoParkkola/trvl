@@ -27,6 +27,13 @@ func TestKookyReadsWhatNabReads(t *testing.T) {
 		t.Skip("diagnostic: reads your own browser cookie stores; set TRVL_COOKIE_PROBE=1")
 	}
 
+	// Without this the reader short-circuits on its own test-binary guard
+	// (cookies.go, TRVL_ALLOW_BROWSER_COOKIES) and every domain reports zero
+	// cookies regardless of whether kooky works. The first run of this probe
+	// omitted it and the zero result was read as evidence about decryption; it
+	// was evidence about the guard.
+	t.Setenv("TRVL_ALLOW_BROWSER_COOKIES", "1")
+
 	// The domains nab demonstrably returned cookies for while #521 was being
 	// built, so a fair comparison rather than a friendly one.
 	for _, target := range []string{
