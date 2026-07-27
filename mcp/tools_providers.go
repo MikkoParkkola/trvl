@@ -240,13 +240,21 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 //
 // An error is reported rather than hidden, because a launcher that failed inside the
 // window is the one case where something is definitely known.
+//
+// The two templates are constants so a test can pin their wording once and then check
+// that every input renders one of them unchanged. That combination is what forbids a
+// promise being added for one provider or one error while examples of other inputs stay
+// green.
+const (
+	warmingNoteAsked  = "\n\nAsked your browser to open %s so cookies for %s can be reused. If no window appeared, open that URL yourself."
+	warmingNoteFailed = "\n\nCould not start a browser for %s (%v). Open %s yourself so those cookies can be reused."
+)
+
 func browserWarmingNote(preflightURL, providerName string, err error) string {
 	if err != nil {
-		return fmt.Sprintf("\n\nCould not start a browser for %s (%v). Open %s yourself so those cookies can be reused.",
-			providerName, err, preflightURL)
+		return fmt.Sprintf(warmingNoteFailed, providerName, err, preflightURL)
 	}
-	return fmt.Sprintf("\n\nAsked your browser to open %s so cookies for %s can be reused. If no window appeared, open that URL yourself.",
-		preflightURL, providerName)
+	return fmt.Sprintf(warmingNoteAsked, preflightURL, providerName)
 }
 
 // parseProviderConfig extracts a ProviderConfig from MCP tool arguments.
