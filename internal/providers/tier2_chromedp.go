@@ -21,24 +21,29 @@ import (
 	"net/url"
 	"os"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
+
+	"github.com/MikkoParkkola/trvl/internal/consent"
 )
 
 // tier2EnableEnv was the opt-in for the Tier-2 CDP cookie-refresh path. The
 // path now runs by default; an explicit 0/false here still turns it off.
-const tier2EnableEnv = "TRVL_TIER2_CDP"
+const tier2EnableEnv = consent.Tier2LegacyEnv
 
 // tier2DisableEnv is the opt-out, named to match TRVL_NO_BROWSER_COOKIES.
-const tier2DisableEnv = "TRVL_NO_TIER2_CDP"
+const tier2DisableEnv = consent.Tier2Env
 
 // ErrTier2Disabled is returned when the Tier-2 path is invoked after the user
 // declined it (TRVL_NO_TIER2_CDP set, or TRVL_TIER2_CDP=0). Nothing suppresses
 // it — see Tier2Declined.
-var ErrTier2Disabled = errors.New("tier2 cdp cookie-refresh declined (unset TRVL_NO_TIER2_CDP to enable)")
+//
+// It is the same value as consent.ErrTier2Declined, not a copy: internal/ground
+// compares against it through this name, and two distinct errors that both mean
+// "declined" is the drift this consolidation removed elsewhere.
+var ErrTier2Disabled = consent.ErrTier2Declined
 
 // ErrNoBrowserFound is returned when no installed Chromium-family browser can be
 // located to drive headlessly.
@@ -97,26 +102,10 @@ func WithTier2ExecPath(path string) Tier2Option {
 // a privacy control and silently was not. That is the #507/#515 defect class,
 // and it is why the question asked here is "did the user say no?" and why the
 // drivers below are where it gets asked.
-func Tier2Declined() bool {
-	if truthyEnv(os.Getenv(tier2DisableEnv)) {
-		return true
-	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(tier2EnableEnv))) {
-	case "0", "false", "no":
-		return true
-	}
-	return false
-}
-
-// truthyEnv reads an opt-out variable the same way internal/cookies does:
-// present and not an explicit denial means the user asked for it.
-func truthyEnv(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", "0", "false":
-		return false
-	}
-	return true
-}
+//
+// The rule itself lives in internal/consent, alongside the cookie decline, so
+// there is one place to look for "did the user decline this?".
+func Tier2Declined() bool { return consent.Tier2Declined() }
 
 // fileExists is overridable in tests so browser detection can be exercised
 // without depending on what is installed on the build/CI host.

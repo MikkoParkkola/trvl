@@ -10,12 +10,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/consent"
 	trvlnab "github.com/MikkoParkkola/trvl/internal/nab"
 	"github.com/MikkoParkkola/trvl/internal/safeexec"
 	"golang.org/x/sync/singleflight"
@@ -52,27 +52,14 @@ func BrowserCookies(domain string) string {
 
 // DisableEnv turns off every read of the user's browser cookie stores.
 //
-// Reading those stores is what makes rail search work against operators that
-// challenge non-browser traffic, so it is on by default. It is also a read of a
-// local credential store — on macOS it reaches the Keychain — that the user did
-// not ask for, which is the kind of thing someone is entitled to decline. This
-// is the way to decline it. Rail searches against a challenging operator then
-// fail rather than degrade quietly, which is the honest cost of the choice.
-const DisableEnv = "TRVL_NO_BROWSER_COOKIES"
+// The name is kept here for this package's callers; the variable and the rule
+// for reading it live in internal/consent, which both this package and
+// internal/nab can see. They used to hold a copy each, because internal/cookies
+// imports internal/nab and sharing the other way would close an import cycle.
+const DisableEnv = consent.CookiesEnv
 
 // Disabled reports whether the user has declined browser cookie reads.
-//
-// Any non-empty value other than "0" or "false" counts, because someone setting
-// this is expressing a preference about their credentials and the least
-// surprising reading of TRVL_NO_BROWSER_COOKIES=yes is that they meant it.
-func Disabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(DisableEnv))) {
-	case "", "0", "false":
-		return false
-	default:
-		return true
-	}
-}
+func Disabled() bool { return consent.CookiesDeclined() }
 
 // BrowserCookiesContext is BrowserCookies with caller cancellation honoured.
 // A request that has gone away must not keep a helper running on its behalf.

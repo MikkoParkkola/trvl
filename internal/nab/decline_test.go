@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os/exec"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/consent"
 )
 
 // TestFetchRefusesWhenBrowserCookiesDeclined covers the bypass a third
@@ -21,7 +23,7 @@ import (
 // The gate is asserted at the command seam: if it leaks, commandContext runs and
 // the test sees it, rather than the test passing because no binary was found.
 func TestFetchRefusesWhenBrowserCookiesDeclined(t *testing.T) {
-	t.Setenv(declineEnv, "1")
+	t.Setenv(consent.CookiesEnv, "1")
 
 	invoked := false
 	prev := commandContext
@@ -47,7 +49,7 @@ func TestFetchRefusesWhenBrowserCookiesDeclined(t *testing.T) {
 // TestFetchRunsWithoutADecline is the other half: the gate must refuse a decline
 // and only a decline, so an absent opt-out still reaches the command seam.
 func TestFetchRunsWithoutADecline(t *testing.T) {
-	t.Setenv(declineEnv, "")
+	t.Setenv(consent.CookiesEnv, "")
 
 	invoked := false
 	prev := commandContext
@@ -73,7 +75,7 @@ func TestBrowserCookiesDeclinedParsing(t *testing.T) {
 		{"", false}, {"0", false}, {"false", false}, {"FALSE", false},
 		{"1", true}, {"true", true}, {"yes", true}, {"no", true}, {"anything", true},
 	} {
-		t.Setenv(declineEnv, tc.value)
+		t.Setenv(consent.CookiesEnv, tc.value)
 		if got := BrowserCookiesDeclined(); got != tc.want {
 			t.Errorf("BrowserCookiesDeclined() with %q = %v, want %v", tc.value, got, tc.want)
 		}
