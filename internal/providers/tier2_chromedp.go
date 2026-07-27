@@ -16,6 +16,7 @@ package providers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -44,6 +45,16 @@ const tier2DisableEnv = consent.Tier2Env
 // compares against it through this name, and two distinct errors that both mean
 // "declined" is the drift this consolidation removed elsewhere.
 var ErrTier2Disabled = consent.ErrTier2Declined
+
+// ErrNoBrowserFound is returned when no installed Chromium-family browser can be
+// located to drive headlessly.
+// errTier2CookiesDeclined is what a CDP harvest returns when the user declined
+// browser COOKIES rather than the CDP path itself. It wraps ErrTier2Disabled so
+// every existing caller's errors.Is still holds, but it names the variable the
+// user actually set: telling a TRVL_NO_BROWSER_COOKIES user to go change
+// TRVL_NO_TIER2_CDP is the same misnamed-control defect as #507/#515.
+var errTier2CookiesDeclined = fmt.Errorf("%w: browser cookies declined (unset %s to enable)",
+	consent.ErrTier2Declined, consent.CookiesEnv)
 
 // ErrNoBrowserFound is returned when no installed Chromium-family browser can be
 // located to drive headlessly.
@@ -183,6 +194,16 @@ func RefreshCookiesViaCDP(ctx context.Context, targetURL string, opts ...Tier2Op
 		return nil, ErrTier2Disabled
 	}
 
+	// And a decline of browser COOKIES stops it too. This whole path exists to
+	// obtain cookies from a browser, so the cookie opt-out governs it just as
+	// much as the CDP one does — a user who set TRVL_NO_BROWSER_COOKIES and
+	// left the Tier-2 variable alone was still getting a browser launched, its
+	// cookies harvested, and the result written to ~/.trvl/cookies. Two
+	// variables, one question, and the narrower one must not be a bypass.
+	if consent.CookiesDeclined() {
+		return nil, errTier2CookiesDeclined
+	}
+
 	if _, err := url.Parse(targetURL); err != nil {
 		return nil, err
 	}
@@ -201,9 +222,22 @@ func RefreshCookiesViaCDP(ctx context.Context, targetURL string, opts ...Tier2Op
 		return nil, err
 	}
 
-	cookies := convertNetworkCookies(raw)
-	persistCookiesToCache(targetURL, cookies)
-	return cookies, nil
+	harvested := convertNetworkCookies(raw)
+
+	// The CDP read takes seconds — a challenge wait, a cold profile — so the
+	// decline that matters is the one in force NOW, not the one checked before
+	// the browser started. Refuse before the cache write, or a decline arriving
+	// mid-read still ends with the user's session on disk for the whole TTL.
+	//
+	// Asked directly rather than through permittedAfterRead: that helper answers
+	// nil for BOTH a refusal and a harvest that legitimately found no cookies,
+	// and turning the second one into a decline error is the same conflation the
+	// refusal logging exists to prevent, only inverted.
+	if consent.CookiesDeclined() {
+		return nil, errTier2CookiesDeclined
+	}
+	persistCookiesToCache(targetURL, harvested)
+	return harvested, nil
 }
 
 // runCDPCollect drives an installed browser headlessly via chromedp and returns
@@ -215,6 +249,9 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 	// still cannot start one.
 	if Tier2Declined() {
 		return nil, ErrTier2Disabled
+	}
+	if consent.CookiesDeclined() {
+		return nil, errTier2CookiesDeclined
 	}
 
 	// Now that Tier-2 is on by default, this is what keeps `go test` from
