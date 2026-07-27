@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -425,6 +426,13 @@ func InvalidateWarmCache(targetURL, browserHint string) {
 // begins is a check the next editor breaks.
 func permittedAfterRead(list []*http.Cookie) []*http.Cookie {
 	if cookies.Disabled() {
+		// Say so. Dropping to nil silently makes a refusal look exactly like a
+		// machine with no cookies for this site, which is the one thing a user
+		// debugging "why is it not logged in" must be able to tell apart.
+		if len(list) > 0 {
+			slog.Debug("browser cookies dropped: the user has declined browser access",
+				"env", cookies.DisableEnv, "dropped", len(list))
+		}
 		return nil
 	}
 	return list

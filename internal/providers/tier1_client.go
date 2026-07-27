@@ -18,6 +18,7 @@ package providers
 
 import (
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -146,16 +147,20 @@ func (c *Tier1Client) SeedCookies(targetURL string) int {
 		return 0
 	}
 
-	cookies := BrowserCookiesForURL(targetURL)
-	if len(cookies) == 0 {
-		cookies = cachedCookiesForURL(targetURL)
+	// Named `harvested`, not `cookies`: the package of the same name is now
+	// imported here for the consent check, and a local shadow would silently
+	// make `cookies.Disabled()` unavailable in exactly the function that must
+	// never forget it.
+	harvested := BrowserCookiesForURL(targetURL)
+	if len(harvested) == 0 {
+		harvested = cachedCookiesForURL(targetURL)
 	}
-	if len(cookies) == 0 {
+	if len(harvested) == 0 {
 		return 0
 	}
-	c.inner.SetCookies(u, toFHTTPCookies(cookies))
+	c.inner.SetCookies(u, toFHTTPCookies(harvested))
 	c.markSeeded()
-	return len(cookies)
+	return len(harvested)
 }
 
 // markSeeded records that this client's jar now holds cookies harvested from
@@ -186,6 +191,8 @@ func (c *Tier1Client) discardSeededIfDeclined() {
 	}
 	c.inner.SetCookieJar(tlsclient.NewCookieJar())
 	c.seeded = false
+	slog.Debug("tier-1 cookie jar discarded: the user declined browser access after it was seeded",
+		"env", cookies.DisableEnv)
 }
 
 // Cookies returns the cookies the jar currently holds for targetURL. Returns
