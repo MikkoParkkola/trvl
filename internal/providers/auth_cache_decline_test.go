@@ -3,7 +3,6 @@ package providers
 import (
 	"context"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"testing"
 	"time"
@@ -28,29 +27,30 @@ func TestAuthCacheDiscardsBrowserSeededStateAfterADecline(t *testing.T) {
 	const preflight = "https://example.test/preflight"
 
 	newPC := func() *providerClient {
-		jar, err := cookiejar.New(nil)
-		if err != nil {
-			t.Fatalf("cookiejar: %v", err)
+		vault := newCookieVault()
+		if vault == nil {
+			t.Fatal("cookie vault")
 		}
 		u, err := url.Parse(preflight)
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		// A cookie of the kind the browser tiers seed: this is the material
-		// that must stop being sent.
-		jar.SetCookies(u, []*http.Cookie{{Name: "datadome", Value: "from-the-users-browser"}})
+		// Seeded through the browser path, so the jar records the provenance
+		// itself. This is the material that must stop being sent.
+		if !vault.seedFromBrowser(u, []*http.Cookie{{Name: "datadome", Value: "from-the-users-browser"}}) {
+			t.Fatal("fixture did not seed browser cookies")
+		}
 
 		pc := &providerClient{
 			config: &ProviderConfig{
 				ID:   "test-auth-cache-decline",
 				Auth: &AuthConfig{PreflightURL: preflight},
 			},
-			client:           &http.Client{Jar: jar},
+			client:           &http.Client{Jar: vault},
 			authValues:       map[string]string{"token": "seeded-from-browser"},
 			authExpiry:       time.Now().Add(time.Hour),
 			lastPreflightURL: preflight,
 		}
-		pc.browserSeeded.Store(true)
 		return pc
 	}
 
@@ -83,7 +83,7 @@ func TestAuthCacheDiscardsBrowserSeededStateAfterADecline(t *testing.T) {
 		pc.authMu.RLock()
 		defer pc.authMu.RUnlock()
 
-		if pc.browserSeeded.Load() {
+		if pc.isBrowserSeeded() {
 			t.Error("the client is still marked browser-seeded after the decline")
 		}
 		if len(pc.authValues) != 0 {
@@ -112,16 +112,23 @@ func TestAuthCacheDiscardsBrowserSeededStateAfterADecline(t *testing.T) {
 func TestAuthCacheKeepsNonBrowserStateAfterADecline(t *testing.T) {
 	const preflight = "https://example.test/preflight"
 
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatalf("cookiejar: %v", err)
+	// A vault, but one no browser ever touched: cookies arrived the ordinary
+	// way, via Set-Cookie. The vault must tell the two apart.
+	vault := newCookieVault()
+	if vault == nil {
+		t.Fatal("cookie vault")
 	}
+	u, err := url.Parse(preflight)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	vault.SetCookies(u, []*http.Cookie{{Name: "session", Value: "from-an-ordinary-preflight"}})
 	pc := &providerClient{
 		config: &ProviderConfig{
 			ID:   "test-auth-cache-decline-keep",
 			Auth: &AuthConfig{PreflightURL: preflight},
 		},
-		client:           &http.Client{Jar: jar},
+		client:           &http.Client{Jar: vault},
 		authValues:       map[string]string{"token": "from-an-ordinary-preflight"},
 		authExpiry:       time.Now().Add(time.Hour),
 		lastPreflightURL: preflight,

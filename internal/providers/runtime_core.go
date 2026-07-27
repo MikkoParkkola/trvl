@@ -148,21 +148,6 @@ type providerClient struct {
 	// dest_id are rejected for a different one.
 	lastPreflightURL string
 
-	// browserSeeded records that this client's cookie jar and auth values were
-	// populated, wholly or partly, from the user's browser — either read live
-	// via kooky/nab or loaded from the on-disk cache, which carries no
-	// provenance and so is treated as browser-derived (#534).
-	//
-	// It exists because the auth cache is in-memory and the MCP server is
-	// long-lived: without it, a jar seeded while browser access was permitted
-	// keeps being sent on later calls, and those calls return from the cache
-	// above without reaching any of the guarded readers.
-	//
-	// Atomic rather than authMu-protected: it is written from applyBrowserCookies,
-	// which runs both inside runPreflight (holding authMu) and from the search
-	// path (not holding it). One field, two lock regimes, so it carries its own.
-	browserSeeded atomic.Bool
-
 	// ttlState is the AIMD adaptive TTL controller for the auth cache.
 	// Accessed under authMu (same lock that protects authExpiry).
 	ttlState preflightttl.State
@@ -175,6 +160,18 @@ type providerClient struct {
 	// last429 records when the most recent 429 was received.
 	last429 time.Time
 	rl429Mu sync.Mutex
+}
+
+// isBrowserSeeded reports whether this client's jar currently holds cookies
+// that came from the user's browser. The provenance lives in the jar rather
+// than beside it (see cookie_vault.go): a flag next to the jar can be written
+// after a revocation has already read it, which is the race round 8 of review
+// found.
+func (pc *providerClient) isBrowserSeeded() bool {
+	if pc == nil {
+		return false
+	}
+	return vaultOf(pc.client).isBrowserSeeded()
 }
 
 // effectiveCacheTTL returns the adaptive TTL when the AIMD controller has
@@ -263,8 +260,15 @@ func (rt *Runtime) getOrCreateClient(cfg *ProviderConfig) *providerClient {
 		}
 	}
 	if httpClient.Jar == nil {
-		jar, _ := cookiejar.New(nil)
-		httpClient.Jar = jar
+		// A vault rather than a bare jar: browser-derived cookies may only enter
+		// a jar that records where they came from and can hand them back. See
+		// cookie_vault.go.
+		if v := newCookieVault(); v != nil {
+			httpClient.Jar = v
+		} else {
+			jar, _ := cookiejar.New(nil)
+			httpClient.Jar = jar
+		}
 	}
 
 	rps := cfg.RateLimit.RequestsPerSecond

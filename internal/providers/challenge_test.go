@@ -211,10 +211,11 @@ func TestTryBrowserEscapeHatch_HeadlessClears_NoVisibleWindow(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	jar, _ := cookiejar.New(nil)
+	// A vault: the escape-hatch tail seeds cookies recovered from the user's
+	// own browser window, and those only enter a jar that can revoke them.
 	pc := &providerClient{
 		config:     &ProviderConfig{ID: "headless-clear", Name: "HeadlessClear"},
-		client:     &http.Client{Jar: jar},
+		client:     &http.Client{Jar: newCookieVault()},
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: srv.URL, BrowserEscapeHatch: true}
