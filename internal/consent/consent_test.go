@@ -58,13 +58,18 @@ func TestTier2Declined(t *testing.T) {
 		{"legacy opt-in set to off, which the denylist missed", "", "off", true},
 		{"legacy opt-in set to disabled", "", "disabled", true},
 		{"legacy opt-in set to an unrecognised word", "", "banana", true},
-		// Case and surrounding space are normalised, which is strictly more
-		// permissive than the predecessor: it compared raw, so "TRUE" left the
-		// browser off. Anyone that affects was trying to turn it ON, so the
-		// looser reading cannot switch a user's browser off against their wish.
-		{"legacy opt-in enabled in capitals", "", "TRUE", false},
-		{"legacy opt-in enabled with surrounding space", "", "  yes  ", false},
+		// The legacy value is compared RAW. A second review round caught the
+		// first version of this fix folding case and trimming space, which
+		// launches a browser for anyone who wrote TRUE -- on the old rules that
+		// left the browser OFF, because the comparison was raw there too. The
+		// argument for folding was that such a user "obviously meant yes". That
+		// is a guess about intent at a consent boundary, which is the failure
+		// this whole package exists to stop, so these cases pin the raw match.
+		{"legacy opt-in enabled in capitals, which did not enable it before", "", "TRUE", true},
+		{"legacy opt-in enabled with surrounding space, likewise", "", "  yes  ", true},
 		{"legacy opt-in denied in capitals", "", "FALSE", true},
+		{"legacy opt-in enabled exactly", "", "yes", false},
+		{"legacy opt-in enabled exactly, the other spelling", "", "true", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(Tier2Env, tc.optOut)
