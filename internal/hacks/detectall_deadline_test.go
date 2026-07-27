@@ -3,6 +3,7 @@ package hacks
 import (
 	"context"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 )
@@ -214,5 +215,159 @@ func TestDetectAll_CompleteWhenNothingIsCutShort(t *testing.T) {
 
 	if !complete {
 		t.Fatal("a sweep where every detector finished must report complete, or the warning appears on every ordinary search")
+	}
+}
+
+// TestDrainBuffered_KeepsWhatWasAlreadyDeliveredAndCountsIt covers a defect the
+// adversarial review found. Both of DetectAll's bail-out paths used to return
+// without looking at the channel, and a select with more than one ready case
+// picks at random, so a result delivered at the same moment as the deadline was
+// thrown away. That makes the answer wrong rather than merely incomplete, and
+// separating those two is the entire purpose of the partial flag.
+//
+// This tests the mechanism directly rather than trying to lose a race on
+// purpose. Two earlier attempts drove the whole sweep and asserted on what came
+// back; both passed against a mutant with the drain removed, because the
+// collector consumed everything long before cancellation landed. A test that
+// cannot fail is worse than no test, so the function was hoisted out to be
+// called on a channel whose contents are known.
+func TestDrainBuffered_KeepsWhatWasAlreadyDeliveredAndCountsIt(t *testing.T) {
+	ch := make(chan detectorResult, 8)
+	ch <- detectorResult{hacks: []Hack{{Type: "a"}, {Type: "b"}}}
+	ch <- detectorResult{hacks: []Hack{{Type: "c"}}, cutShort: true}
+	ch <- detectorResult{hacks: []Hack{{Type: "d"}}}
+
+	received := 5 // a non-zero start proves it adds rather than assigns
+	anyCutShort := false
+
+	got := drainBuffered(ch, &received, &anyCutShort)
+
+	var types []string
+	for _, h := range got {
+		types = append(types, h.Type)
+	}
+	if want := []string{"a", "b", "c", "d"}; !slices.Equal(types, want) {
+		t.Errorf("drained hacks = %v, want %v", types, want)
+	}
+	if received != 8 {
+		t.Errorf("received = %d, want 8: every drained result must count, or the sweep can call itself complete on results it never accounted for", received)
+	}
+	if !anyCutShort {
+		t.Error("a drained result carrying cutShort must mark the sweep cut short, otherwise a truncated detector's output is reported as a full one")
+	}
+}
+
+// TestDrainBuffered_DoesNotWaitForWhatHasNotArrived is the other half of the
+// contract. Draining must never block: anything not yet buffered is what makes
+// the sweep partial, and waiting for it is what the caller's deadline forbids.
+// Without the default case this test hangs rather than fails, so it carries its
+// own timeout.
+func TestDrainBuffered_DoesNotWaitForWhatHasNotArrived(t *testing.T) {
+	ch := make(chan detectorResult, 4) // open, one buffered, three slots free
+	ch <- detectorResult{hacks: []Hack{{Type: "arrived"}}}
+
+	received := 0
+	anyCutShort := false
+
+	done := make(chan []Hack, 1)
+	go func() { done <- drainBuffered(ch, &received, &anyCutShort) }()
+
+	select {
+	case got := <-done:
+		if len(got) != 1 || got[0].Type != "arrived" {
+			t.Fatalf("drained %v, want exactly the one buffered hack", got)
+		}
+		if received != 1 {
+			t.Errorf("received = %d, want 1", received)
+		}
+		if anyCutShort {
+			t.Error("nothing was cut short")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("drainBuffered blocked waiting on an open channel with nothing buffered")
+	}
+}
+
+// TestCollectSweep_BailOutKeepsAlreadyDeliveredResults covers the two bail-out
+// call sites, which is the coverage the earlier attempts at this failed to get.
+//
+// Both cases are made ready at the same instant on purpose: ch is pre-filled, and
+// done is already closed. Go picks at random between them, so without the drain a
+// run that takes the bail-out first loses every buffered result. Repetition turns
+// that coin flip into a certainty. With the drain the outcome does not depend on
+// which case wins, which is the property being asserted.
+func TestCollectSweep_BailOutKeepsAlreadyDeliveredResults(t *testing.T) {
+	const iterations = 200
+
+	for _, tc := range []struct {
+		name string
+		bail func() (<-chan struct{}, <-chan time.Time)
+	}{
+		{
+			name: "caller deadline",
+			bail: func() (<-chan struct{}, <-chan time.Time) {
+				done := make(chan struct{})
+				close(done)
+				return done, nil // a nil timer channel never fires
+			},
+		},
+		{
+			name: "sweep bound",
+			bail: func() (<-chan struct{}, <-chan time.Time) {
+				fired := make(chan time.Time, 1)
+				fired <- time.Time{}
+				return nil, fired // a nil done channel never fires
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := 0; i < iterations; i++ {
+				ch := make(chan detectorResult, 4)
+				ch <- detectorResult{hacks: []Hack{{Type: "first", Savings: 10, Currency: "EUR"}}}
+				ch <- detectorResult{hacks: []Hack{{Type: "second", Savings: 20, Currency: "EUR"}}}
+				done, sweep := tc.bail()
+
+				got, complete := collectSweep(ch, done, sweep, 4, 4)
+
+				if complete {
+					t.Fatalf("iteration %d: a sweep that bailed out reported complete", i)
+				}
+				seen := map[string]bool{}
+				for _, h := range got {
+					seen[h.Type] = true
+				}
+				for _, want := range []string{"first", "second"} {
+					if !seen[want] {
+						t.Fatalf("iteration %d: %q was already delivered when the bail-out fired and was discarded (got %d hacks)", i, want, len(got))
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestCollectSweep_CompleteOnlyWhenEveryDetectorDelivered guards the accounting
+// the bail-out paths hand back, so the drain cannot quietly turn a truncated
+// sweep into a finished one.
+func TestCollectSweep_CompleteOnlyWhenEveryDetectorDelivered(t *testing.T) {
+	newFull := func(cutShort bool) <-chan detectorResult {
+		ch := make(chan detectorResult, 2)
+		ch <- detectorResult{hacks: []Hack{{Type: "a"}}}
+		ch <- detectorResult{hacks: []Hack{{Type: "b"}}, cutShort: cutShort}
+		close(ch)
+		return ch
+	}
+
+	if _, complete := collectSweep(newFull(false), nil, nil, 2, 2); !complete {
+		t.Error("every detector was dispatched and delivered, so the sweep is complete")
+	}
+	if _, complete := collectSweep(newFull(true), nil, nil, 2, 2); complete {
+		t.Error("a detector cut off by its own allowance means the sweep is not complete")
+	}
+	if _, complete := collectSweep(newFull(false), nil, nil, 2, 3); complete {
+		t.Error("a detector that was never dispatched means the sweep is not complete")
+	}
+	if _, complete := collectSweep(newFull(false), nil, nil, 3, 3); complete {
+		t.Error("a dispatched detector that never delivered means the sweep is not complete")
 	}
 }

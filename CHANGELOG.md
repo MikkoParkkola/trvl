@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A hack sweep now honours the caller's deadline and admits when it is
+  partial.** `DetectAll` fans out every hack detector concurrently and waited for
+  all of them, so a caller's deadline was advisory: a 1ms deadline took a measured
+  1m0.30s to come back. Worse, a truncated sweep was reported as a full one, so an
+  agent reading three hacks presented three as the answer when there were more.
+  The sweep now returns at the deadline, or at its own bound when the caller set
+  none, hands over what arrived, and tells the caller it is partial through both
+  the CLI and the MCP tool. A detector cut off by its own per-detector allowance
+  counts as incomplete rather than complete, and results already delivered when
+  the deadline fires are kept instead of discarded. An empty partial sweep no
+  longer prints "No travel hacks detected", which claimed a finished search.
+- **A capped readiness verdict now says so instead of implying the property came
+  up short.** `trvl prices` could never report "booking ready": the verdict needs
+  all four signals true and that endpoint carries no cancellation terms, so
+  `refundability_known` was never set. Every property came back "caution", which
+  is indistinguishable from a property whose data really is thin. The verdict now
+  carries its ceiling and the signals behind it, exposed as
+  `booking_readiness_ceiling` and `booking_readiness_ceiling_reasons` in the JSON
+  and the MCP schema, and printed below the price table. A signal the source
+  cannot supply appears only in the ceiling reasons, never among the ordinary
+  downgrade reasons, because listing it there reads as a finding about the offer.
+  Reported by @RobertoReale, who tested six Ischia properties and got six
+  identical cautions with nothing to explain them.
+- **A capped verdict no longer claims every signal was confirmed.** With the
+  unobtainable signal moved out of the ordinary reasons, that list is empty on a
+  best-case capped source, and the summary fell through to its default: `Booking
+  readiness: caution — all signals confirmed`. A verdict that is not ready,
+  asserting everything checked out. Capped verdicts now say that every obtainable
+  signal was confirmed and name what the source could not supply.
+
 ## [1.20.0] - 2026-07-13
 
 ### Fixed

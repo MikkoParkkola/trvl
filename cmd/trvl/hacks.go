@@ -88,7 +88,7 @@ Examples:
 				})
 			}
 
-			return printHacksTable(origin, dest, date, naivePrice, currency, detected)
+			return printHacksTable(origin, dest, date, naivePrice, currency, detected, complete)
 		},
 	}
 
@@ -101,7 +101,7 @@ Examples:
 }
 
 // printHacksTable renders all detected hacks as a formatted output.
-func printHacksTable(origin, dest, date string, naivePrice float64, currency string, detected []hacks.Hack) error {
+func printHacksTable(origin, dest, date string, naivePrice float64, currency string, detected []hacks.Hack, complete bool) error {
 	header := fmt.Sprintf("Travel Hacks · %s→%s · %s", origin, dest, date)
 	if naivePrice > 0 {
 		models.Banner(os.Stdout, "💡", header,
@@ -116,6 +116,15 @@ func printHacksTable(origin, dest, date string, naivePrice float64, currency str
 	fmt.Println()
 
 	if len(detected) == 0 {
+		if !complete {
+			// The prose has to agree with the sweep. "No hacks detected" states a
+			// finding the sweep never made: nothing came back because it ran out
+			// of time, not because there was nothing to find. The note on stderr
+			// is not enough, because stdout is what gets read, piped and pasted.
+			fmt.Println("No hacks found before the deadline. The sweep did not finish, so this is not a finding that none exist.")
+			fmt.Println("Retry with more time, or narrow the search.")
+			return nil
+		}
 		fmt.Println("No hacks detected for this route and date.")
 		fmt.Println("Try adding --return DATE to enable split-ticketing and date-flex checks.")
 		return nil

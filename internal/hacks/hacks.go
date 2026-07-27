@@ -449,16 +449,8 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 	// slow API call cannot block the entire hacks response. context.WithTimeout
 	// inherits ctx's deadline if it is earlier than detectorTimeout, so a
 	// tight parent deadline still propagates into every detector's HTTP path.
-	type result struct {
-		hacks []Hack
-		// cutShort reports that this detector's own deadline fired rather than
-		// the detector finishing. Delivery alone was not enough: a timed-out
-		// detector still sends whatever it had, so counting deliveries reported
-		// the sweep complete while one detector had in fact been cut off.
-		cutShort bool
-	}
 
-	ch := make(chan result, len(detectors))
+	ch := make(chan detectorResult, len(detectors))
 	var wg sync.WaitGroup
 	dispatched := 0
 
@@ -483,7 +475,7 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 			dCtx, cancel := context.WithTimeout(ctx, currentDetectorTimeout())
 			defer cancel()
 			h := fn(dCtx, in)
-			ch <- result{hacks: h, cutShort: dCtx.Err() != nil}
+			ch <- detectorResult{hacks: h, cutShort: dCtx.Err() != nil}
 		}()
 	}
 
@@ -499,14 +491,33 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 	// Ranging over the channel alone was not enough. A detector that has already
 	// started cannot be interrupted mid-computation by a context — cancellation
 	// is cooperative, and a detector doing synchronous work only notices at its
-	// next check. Waiting for all 39 to notice meant a caller asking for results
-	// within 1ms waited 1.87s, so DetectAll silently broke the contract its own
-	// per-detector timeouts were there to keep.
+	// next check. Waiting for all of them to notice meant a caller asking for
+	// results within 1ms waited a measured 1m0.30s, so DetectAll silently broke
+	// the contract its own per-detector timeouts were there to keep.
 	//
-	// Stragglers are not leaked: ch is buffered to len(detectors), so a late
-	// goroutine completes its send and exits whether or not anyone is reading.
-	// Their results are discarded, which is the correct answer for a caller that
-	// has already given up on them.
+	// What abandoning them does and does not cost, stated precisely, because the
+	// earlier version of this comment claimed more than it could:
+	//
+	// A detector that FINISHES after the caller has gone gets its send and its
+	// goroutine bounded, and that is the whole of the claim. ch is buffered to
+	// len(detectors), so the send completes whether or not anyone is reading, and
+	// the goroutine exits. What is NOT claimed is that the result goes away: if a
+	// sibling detector is still stuck, the goroutine waiting to close ch is stuck
+	// with it, and it holds ch alive along with every payload buffered in it. So a
+	// late result is unread rather than reclaimed, and one abandoned sweep retains
+	// a channel plus its contents for as long as the stuck sibling runs. Bounding
+	// the goroutine is not the same as freeing the memory, and an earlier version
+	// of this comment claimed both.
+	//
+	// A detector stuck INSIDE its own function is not bounded, and no code here
+	// can bound it. Cancellation is cooperative and Go cannot terminate a
+	// goroutine, so one that ignores its context keeps running and holding
+	// whatever it holds. That predates this bound: before it, such a detector
+	// blocked DetectAll itself and the caller with it, which is worse. It is not
+	// fixable by capping concurrency either, because a permanently stuck detector
+	// would hold a slot forever and turn slow accumulation into a total stall. The
+	// real fix is a cancellation audit of the providers the detectors call, which
+	// is tracked in #520 and deliberately not attempted here.
 	// Bound the sweep itself, not just each detector.
 	//
 	// The per-detector timeout only reaches the detector; it does not stop the
@@ -517,9 +528,26 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 	sweep := time.NewTimer(currentSweepTimeout())
 	defer sweep.Stop()
 
+	return collectSweep(ch, ctx.Done(), sweep.C, dispatched, len(detectors))
+}
+
+// collectSweep gathers detector results until the set is complete, the caller's
+// context ends, or the sweep's own bound fires. It is a function rather than an
+// inline loop so the two bail-out paths can be driven directly from a test: an
+// already-closed done channel makes the bail-out ready at the first select, and
+// a pre-filled ch makes the delivery case ready at the same moment, which is the
+// interleaving that matters and the one the scheduler will not reproduce on
+// request.
+//
+// dispatched is how many detectors were actually started and total how many were
+// registered. Both are needed: a detector dispatched just before cancellation can
+// return without sending, so counting deliveries against dispatches alone would
+// call a sweep complete when one detector never ran.
+func collectSweep(ch <-chan detectorResult, done <-chan struct{}, sweep <-chan time.Time, dispatched, total int) ([]Hack, bool) {
 	var all []Hack
 	received := 0
 	anyCutShort := false
+
 	for {
 		select {
 		case r, ok := <-ch:
@@ -530,32 +558,72 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 				// its own defensive check, returns without sending, and the
 				// channel closes with the sweep looking complete when one
 				// detector never ran at all.
-				//
-				// This branch is a guard for a rare interleaving, and it is not
-				// deterministically reachable in a test: the only thing that makes
-				// a goroutine skip its send is a cancelled context, and that same
-				// condition normally satisfies the ctx.Done() case above. It
-				// matters when every goroutine skips fast enough to close the
-				// channel and the select happens to pick this case — select is
-				// random when both are ready. Cheap, and the alternative is
-				// reporting a sweep complete that never ran.
-				return dedupHacks(all), received == dispatched && dispatched == len(detectors) && !anyCutShort
+				return dedupHacks(all), received == dispatched && dispatched == total && !anyCutShort
 			}
 			received++
 			if r.cutShort {
 				anyCutShort = true
 			}
 			all = append(all, r.hacks...)
-		case <-ctx.Done():
+		case <-done:
 			// Return what arrived in time rather than nothing: partial results
 			// beat an empty answer, and this matches how the rest of trvl
-			// degrades when a provider is slow. The caller is told it is
-			// partial so it cannot present this as the full sweep.
-			return dedupHacks(all), false
-		case <-sweep.C:
+			// degrades when a provider is slow. The caller is told it is partial
+			// so it cannot present this as the full sweep. Draining first is what
+			// stops a result that was already delivered from being thrown away
+			// when select happens to pick this case over the channel.
+			return dedupHacks(append(all, drainBuffered(ch, &received, &anyCutShort)...)), false
+		case <-sweep:
 			// No caller deadline, and something is not coming back. Same
 			// contract: hand over what arrived, marked partial.
-			return dedupHacks(all), false
+			return dedupHacks(append(all, drainBuffered(ch, &received, &anyCutShort)...)), false
+		}
+	}
+}
+
+// detectorResult is one detector's contribution to a sweep. It is declared at
+// package level rather than inside DetectAll so drainBuffered can be a plain
+// function with its own test, instead of a closure reachable only by driving the
+// whole sweep and hoping the scheduler cooperates.
+type detectorResult struct {
+	hacks []Hack
+	// cutShort reports that this detector's own deadline fired rather than the
+	// detector finishing. Delivery alone was not enough: a timed-out detector
+	// still sends whatever it had, so counting deliveries reported the sweep
+	// complete while one detector had in fact been cut off.
+	cutShort bool
+}
+
+// drainBuffered takes everything already sitting in ch and returns without
+// waiting for anything more.
+//
+// Both of DetectAll's bail-out paths need this. A select with more than one
+// ready case picks at random, so when the deadline lands at the same moment as a
+// detector's send, the timer case can win while finished results are already
+// buffered. Returning there would throw away work that was done and delivered,
+// which makes the answer wrong rather than merely incomplete, and keeping those
+// two apart is the whole purpose of the partial flag. The accounting is passed
+// in so a drained result still counts toward received and can still mark the
+// sweep cut short.
+//
+// Anything not yet buffered is what makes the sweep partial, and waiting for it
+// is precisely what the caller's deadline forbids, so the default case returns
+// immediately.
+func drainBuffered(ch <-chan detectorResult, received *int, anyCutShort *bool) []Hack {
+	var extra []Hack
+	for {
+		select {
+		case r, ok := <-ch:
+			if !ok {
+				return extra
+			}
+			*received++
+			if r.cutShort {
+				*anyCutShort = true
+			}
+			extra = append(extra, r.hacks...)
+		default:
+			return extra
 		}
 	}
 }
