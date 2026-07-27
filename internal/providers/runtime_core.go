@@ -148,6 +148,18 @@ type providerClient struct {
 	// dest_id are rejected for a different one.
 	lastPreflightURL string
 
+	// browserSeeded records that this client's cookie jar and auth values were
+	// populated, wholly or partly, from the user's browser — either read live
+	// via kooky/nab or loaded from the on-disk cache, which carries no
+	// provenance and so is treated as browser-derived (#534).
+	//
+	// It exists because the auth cache is in-memory and the MCP server is
+	// long-lived: without it, a jar seeded while browser access was permitted
+	// keeps being sent on later calls, and those calls return from the cache
+	// above without reaching any of the guarded readers. Written under authMu,
+	// like authValues and authExpiry.
+	browserSeeded bool
+
 	// ttlState is the AIMD adaptive TTL controller for the auth cache.
 	// Accessed under authMu (same lock that protects authExpiry).
 	ttlState preflightttl.State
