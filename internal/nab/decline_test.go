@@ -1,9 +1,12 @@
 package nab
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/consent"
@@ -64,6 +67,50 @@ func TestFetchRunsWithoutADecline(t *testing.T) {
 
 	if !invoked {
 		t.Fatal("nab was not invoked without a decline; the gate refuses more than it should")
+	}
+}
+
+// TestDeclineLogDoesNotLeakTheURL pins the fix for a defect adversarial review
+// found in the debug line added by the consent refactor: it logged the whole
+// URL. This codebase's URLs carry the user's journey in their query parameters
+// -- dates, origin, destination -- so the line that exists to explain a privacy
+// decision was itself disclosing what the user was looking up. To a debug log,
+// but that is where a privacy control least belongs.
+//
+// Three rounds then failed to reduce the URL to something provably harmless:
+// the query string, then the IPv6 zone identifier that survives in url.URL.Host,
+// then the hostname itself, which is only non-sensitive because this repo's
+// callers happen to pass hardcoded provider hosts. The line now logs no part of
+// the URL at all, so this test asserts absence of the host as well.
+//
+// It asserts on the emitted record rather than on a helper, because a helper
+// unit test passes whether or not the call site uses it -- the same
+// caller-instead-of-seam mistake the four earlier rounds each found.
+func TestDeclineLogDoesNotLeakTheURL(t *testing.T) {
+	t.Setenv(consent.CookiesEnv, "1")
+
+	var buf bytes.Buffer
+	prevLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(prevLogger)
+
+	const (
+		host      = "www.thetrainline.com"
+		sensitive = "from=PARIS&to=BERLIN&date=2026-08-14&passenger=M+Parkkola"
+	)
+	c := &Client{path: "/nonexistent/nab"}
+	_, _ = c.Fetch(context.Background(), "https://"+host+"/search?"+sensitive, FetchOptions{})
+
+	logged := buf.String()
+	// Without this the rest is vacuous: a line that is never emitted leaks nothing.
+	// Anchored on the variable name, which is the line's whole actionable content.
+	if !strings.Contains(logged, consent.CookiesEnv) {
+		t.Fatalf("expected the decline to name the variable that refused it, got %q", logged)
+	}
+	for _, leak := range []string{sensitive, "PARIS", "BERLIN", "2026-08-14", "Parkkola", "/search", host} {
+		if strings.Contains(logged, leak) {
+			t.Errorf("decline log leaked %q; full record: %s", leak, logged)
+		}
 	}
 }
 
