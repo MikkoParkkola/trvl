@@ -43,6 +43,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hatch is a separate path with its own per-provider opt-in and its own confirmation
   prompt.
 
+### Removed
+
+- **`trvl share --format link` no longer publishes anything.** The option was
+  opt-in and never the default: choosing the `link` format created a public GitHub
+  gist of the trip card under your own account. On review it caused more trouble
+  than it was worth, and the clipboard format already gives you something to
+  paste. `trvl share` now prints the card or copies it to your clipboard, and you
+  decide who receives it. ([#527](https://github.com/MikkoParkkola/trvl/issues/527))
+
+  If you used `--format link`, the gists it created are still on your account.
+  `gh gist list` shows them, `gh gist delete <id>` removes them.
+
 ### Known limitations
 
 - **On Windows, a helper that forks something in its first instants can leave that
