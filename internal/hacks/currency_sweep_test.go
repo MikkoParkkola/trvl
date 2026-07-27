@@ -10,10 +10,10 @@ import (
 // gr builds a minimal GroundRoute for the currency-conversion tests.
 func gr(price float64, currency, depTime, arrTime string) models.GroundRoute {
 	return models.GroundRoute{
-		Provider: "flixbus",
-		Type:     "bus",
-		Price:    price,
-		Currency: currency,
+		Provider:  "flixbus",
+		Type:      "bus",
+		Price:     price,
+		Currency:  currency,
 		Departure: models.GroundStop{City: "A", Time: depTime},
 		Arrival:   models.GroundStop{City: "B", Time: arrTime},
 	}

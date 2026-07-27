@@ -83,14 +83,23 @@ func TestHotelBookingReadiness_AllSignalsTrue(t *testing.T) {
 		t.Errorf("want Caution, got %s", v.Readiness)
 	}
 	// The one downgrade reason should mention refundability.
+	// Refundability is unobtainable on this endpoint, so it belongs in the
+	// ceiling reasons and NOT in the ordinary reasons. This assertion used to
+	// require the opposite, which is the defect an external tester reported: a
+	// source limitation reading as a finding about the property.
 	found := false
-	for _, r := range v.Reasons {
+	for _, r := range v.CeilingReasons {
 		if strings.Contains(r, "refundability") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected refundability downgrade reason, got %v", v.Reasons)
+		t.Errorf("expected refundability in the ceiling reasons, got %v", v.CeilingReasons)
+	}
+	for _, r := range v.Reasons {
+		if strings.Contains(r, "refundability") {
+			t.Errorf("refundability reported as a property finding: %q", r)
+		}
 	}
 }
 
@@ -192,13 +201,19 @@ func TestBookingReadinessReasons_NilRefundability(t *testing.T) {
 	}
 	v := hotelBookingReadiness("hotel-ref", providers)
 	hasRefundabilityReason := false
-	for _, r := range v.Reasons {
+	// Same correction: always unobtainable here, so it is a ceiling reason.
+	for _, r := range v.CeilingReasons {
 		if strings.Contains(r, "refundability") {
 			hasRefundabilityReason = true
 		}
 	}
 	if !hasRefundabilityReason {
-		t.Errorf("expected refundability downgrade reason (always nil on prices endpoint), got: %v", v.Reasons)
+		t.Errorf("expected refundability in the ceiling reasons (never obtainable on the prices endpoint), got: %v", v.CeilingReasons)
+	}
+	for _, r := range v.Reasons {
+		if strings.Contains(r, "refundability") {
+			t.Errorf("refundability reported as a property finding: %q", r)
+		}
 	}
 }
 
