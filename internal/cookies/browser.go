@@ -346,3 +346,14 @@ func OpenBrowserForAuth(url string) error {
 	browserAuthOpened.domains[domain] = browserAuthNow()
 	return nil
 }
+
+// HeaderIfPermitted is the string half of AttachBrowserCookies: providers that
+// hand a whole Cookie header value to a request constructor rather than
+// attaching cookies one at a time. Wrap it AT THE READ, not at the send — the
+// browser read is the slow part, so a decline arriving during it has to win.
+func HeaderIfPermitted(header string) string {
+	if Disabled() {
+		return ""
+	}
+	return header
+}

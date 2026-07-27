@@ -569,7 +569,7 @@ func searchSNCFCalendar(ctx context.Context, fromStation, toStation SNCFStation,
 		_ = resp.Body.Close()
 
 		if allowBrowserCookies {
-			cookieHeader := sncfBrowserCookies(ctx, "sncf-connect.com")
+			cookieHeader := cookies.HeaderIfPermitted(sncfBrowserCookies(ctx, "sncf-connect.com"))
 			if cookieHeader != "" {
 				slog.Debug("retrying sncf calendar api with browser cookies")
 				req2, err2 := newSNCFRequest(cookieHeader)

@@ -87,6 +87,19 @@ func TestGroundProvidersDoNotAttachCookiesDirectly(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
+		// Every read of the user's browser must be wrapped where it is read,
+		// not where it is sent: the read is the slow part, and a decline
+		// arriving during it has to win.
+		for _, line := range strings.Split(string(src), "\n") {
+			if !strings.Contains(line, "BrowserCookies(ctx") {
+				continue
+			}
+			if !strings.Contains(line, "HeaderIfPermitted(") && !strings.Contains(line, "AttachBrowserCookies(") {
+				t.Errorf("internal/ground/%s reads browser cookies without a post-read consent "+
+					"check: %s\n\twrap it in cookies.HeaderIfPermitted(...) so an opt-out arriving "+
+					"during the read still stops the credential", name, strings.TrimSpace(line))
+			}
+		}
 		if strings.Contains(string(src), ".AddCookie(") {
 			t.Errorf("internal/ground/%s attaches cookies directly; route browser-derived "+
 				"cookies through cookies.AttachBrowserCookies so an opt-out arriving during "+
@@ -94,4 +107,25 @@ func TestGroundProvidersDoNotAttachCookiesDirectly(t *testing.T) {
 				"test with the reason its cookies are not browser-derived", name)
 		}
 	}
+}
+
+// TestHeaderIfPermittedRefusedAfterADecline covers the string half of the seam:
+// the providers that hand a Cookie header value to a request constructor rather
+// than attaching cookies one at a time (Trainline, SNCF, Eurostar). Same shape,
+// same reason — the check has to sit after the browser read, not before it.
+func TestHeaderIfPermittedRefusedAfterADecline(t *testing.T) {
+	const harvested = "datadome=from-the-users-browser"
+
+	t.Run("passed through while nothing is declined", func(t *testing.T) {
+		if got := HeaderIfPermitted(harvested); got != harvested {
+			t.Fatalf("the header was dropped with no opt-out in force: %q", got)
+		}
+	})
+
+	t.Run("dropped once the user declines", func(t *testing.T) {
+		t.Setenv(DisableEnv, "1")
+		if got := HeaderIfPermitted(harvested); got != "" {
+			t.Errorf("a browser cookie header read before the opt-out survived it: %q", got)
+		}
+	})
 }
