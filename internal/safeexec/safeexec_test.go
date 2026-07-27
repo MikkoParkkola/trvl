@@ -97,11 +97,34 @@ func TestOutput_ContainsDescendantsOnTimeout(t *testing.T) {
 		t.Fatalf("Output took %v; the deadline should have ended it near %v", elapsed, deadline)
 	}
 
-	// Checked here rather than after the wait below, so that a descendant which
-	// only appears late cannot satisfy it, and so a mistimed fixture reports in
-	// one deadline instead of one deadline plus the wait.
-	if _, err := os.Stat(started); err != nil {
-		t.Fatalf("the descendant never started on %s (%v); the run proves nothing about containment, so it is a fixture failure rather than a pass", runtime.GOOS, err)
+	// The descendant has to have existed before cleanup ran, or the run proves
+	// nothing: a survivor check alone is satisfied just as well by a descendant that
+	// never spawned.
+	//
+	// Asserting that with a bare Stat here, immediately after the deadline, ties the
+	// test to how promptly the machine scheduled a shell. It failed exactly that way
+	// once, inside a 98-package parallel coverage run, reporting "never started" while
+	// containment was working perfectly. Failing safe is the right direction for this
+	// guard, but a test that goes red under load is one people learn to rerun rather
+	// than read.
+	//
+	// So the marker is waited for, and then its mtime is checked against the moment
+	// the deadline passed. That keeps the strict property, which is that the
+	// descendant existed before cleanup rather than merely by the end of the test,
+	// without making the schedule decide the verdict.
+	deadlinePassed := time.Now()
+	info := waitForMarker(t, started, deadline+3*time.Second)
+	if info == nil {
+		t.Fatalf("the descendant never started on %s; the run proves nothing about containment, so it is a fixture failure rather than a pass", runtime.GOOS)
+	}
+	if info.ModTime().After(deadlinePassed) {
+		// Defensive, and honestly untestable here. On Unix a descendant cannot start
+		// after the deadline and survive it, because the process group is signalled,
+		// so this branch is unreachable on the platform that can run it. It guards
+		// Windows, where a descendant genuinely can escape, and where a fixture whose
+		// timing drifted past the deadline would otherwise pass while proving nothing.
+		t.Fatalf("the descendant on %s only started %v after the deadline passed; it was never a candidate for cleanup, so this run proves nothing",
+			runtime.GOOS, info.ModTime().Sub(deadlinePassed))
 	}
 
 	// Outlive the descendant's own sleep: if it were still alive, this is when
@@ -115,5 +138,32 @@ func TestOutput_ContainsDescendantsOnTimeout(t *testing.T) {
 		// Absence is the assertion, so only a definite absence can pass. A
 		// permission or I/O error is not evidence of containment.
 		t.Fatalf("cannot tell whether a descendant survived on %s: %v", runtime.GOOS, err)
+	}
+}
+
+// waitForMarker polls for path until it exists or the budget runs out, returning its
+// FileInfo or nil.
+//
+// Polling rather than a single Stat because the thing being waited for is a shell
+// getting scheduled, which under load takes as long as it takes. The budget only
+// bounds how long a genuine fixture failure takes to report; it does not weaken any
+// assertion, because the caller separately checks that the marker's mtime precedes
+// the moment cleanup ran.
+func waitForMarker(t *testing.T, path string, budget time.Duration) os.FileInfo {
+	t.Helper()
+
+	limit := time.Now().Add(budget)
+	for {
+		info, err := os.Stat(path)
+		if err == nil {
+			return info
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("cannot stat %s: %v", path, err)
+		}
+		if !time.Now().Before(limit) {
+			return nil
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

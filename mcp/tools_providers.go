@@ -242,10 +242,10 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 // window is the one case where something is definitely known.
 func browserWarmingNote(preflightURL, providerName string, err error) string {
 	if err != nil {
-		return fmt.Sprintf("\n\nCould not start a browser for %s (%v). Open %s yourself and searches will pick the cookies up.",
+		return fmt.Sprintf("\n\nCould not start a browser for %s (%v). Open %s yourself so those cookies can be reused.",
 			providerName, err, preflightURL)
 	}
-	return fmt.Sprintf("\n\nAsked your browser to open %s so cookies for %s can be reused. If no window appeared, open that URL yourself and searches will pick the cookies up.",
+	return fmt.Sprintf("\n\nAsked your browser to open %s so cookies for %s can be reused. If no window appeared, open that URL yourself.",
 		preflightURL, providerName)
 }
 

@@ -31,6 +31,23 @@ func TestBrowserWarmingNote_ClaimsOnlyWhatIsKnown(t *testing.T) {
 			t.Errorf("the note claims more than a nil launcher error establishes (%q):\n%s", forbidden, note)
 		}
 	}
+	// No unconditional future tense anywhere, which is the semantic rule rather than
+	// a list of banned phrases. The first version of this test forbade only the exact
+	// wording that had been wrong, "will use these cookies", and the replacement
+	// sailed past it as "searches will pick the cookies up": the same promise about a
+	// future that is not established, reworded. Opening a URL does not establish that
+	// usable cookies were created, or that they can be extracted afterwards.
+	//
+	// Forbidding "will" outright is blunt and that is deliberate. Every honest thing
+	// this note has to say is conditional, so the word has no legitimate use here, and
+	// a rule that cannot be satisfied by rephrasing is the point.
+	if strings.Contains(strings.ToLower(note), "will") {
+		t.Errorf("the note promises a future it cannot establish; every claim here has to be conditional:\n%s", note)
+	}
+	// And it must actually be conditional rather than merely silent.
+	if !strings.Contains(strings.ToLower(note), "can be reused") {
+		t.Errorf("the note should say cookies CAN be reused, which is what is actually true:\n%s", note)
+	}
 	// It still has to be useful, or the fix would be achieved by saying nothing.
 	// Compared case-insensitively: "Asked" opens the sentence, and a test that breaks
 	// on capitalisation guards nothing worth guarding.
@@ -57,5 +74,10 @@ func TestBrowserWarmingNote_ReportsAKnownFailure(t *testing.T) {
 	}
 	if !strings.Contains(note, "exit status 4") {
 		t.Errorf("the underlying error should be visible so the user can act on it:\n%s", note)
+	}
+	// Same semantic rule as the success case. A failed launch is even less entitled to
+	// promise anything about future searches.
+	if strings.Contains(strings.ToLower(note), "will") {
+		t.Errorf("a failure note promises a future it cannot establish:\n%s", note)
 	}
 }
