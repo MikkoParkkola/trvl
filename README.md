@@ -212,10 +212,10 @@ Three things follow, and they are the reason this section exists:
 - **Some of it persists and some of it launches a browser.** The Booking.com token is
   written to `~/.trvl/cookies`. The headless harvest starts your Chrome.
 
-Where those cookies go: into requests to the same site they came from, which is the
-point of reading them, and nowhere else. No third party receives them and no copy is
-sent to trvl or anyone operating it. The only thing written to disk is that one token
-cache.
+Where those cookies go: into the request trvl makes to the site they were read from, so
+that operator receives its own cookies back, which is the point of reading them. trvl
+sends them nowhere else, and does not report them to any endpoint of its own. The only
+thing written to disk is that one token cache.
 
 Documenting this took three attempts, and each earlier version claimed a narrower
 scope than the code has: first that trvl never looked at local credentials

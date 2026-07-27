@@ -30,8 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Booking.com search looks for its `aws-waf-token` in `~/.trvl/cookies`, then your
   browser's cookies, then a headless harvest through your installed Chrome, writing
   the result back to that cache. A rail search reads cookies for the operator after a
-  403. None of it is uploaded, and nothing turns it off today. Whether any of it should
-  be opt-in is open at [#521](https://github.com/MikkoParkkola/trvl/issues/521).
+  403. Each cookie is sent back to the operator it came from, as part of the retry that
+  needs it, and nothing turns any of this off today. Whether any of it should be opt-in
+  is open at [#521](https://github.com/MikkoParkkola/trvl/issues/521).
 
 ### Added
 
