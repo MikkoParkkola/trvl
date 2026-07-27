@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -26,6 +25,15 @@ const trainlineSearchURL = "https://www.thetrainline.com/api/journey-search/"
 // trainlineHomeURL is the origin used to harvest the user's live browser cookies
 // (incl the datadome clearance) for the Tier-1 browser-impersonation fallback.
 const trainlineHomeURL = "https://www.thetrainline.com"
+
+// trainlineHelperBudget bounds the whole external-helper attempt (a seed request
+// plus the API call). Matched to sncf.go's equivalent so the two rail paths
+// behave the same under a stalled network.
+const trainlineHelperBudget = 35 * time.Second
+
+// trainlineHelperMaxTime is the per-invocation cap handed to the helper itself,
+// for the case where it ignores context cancellation.
+const trainlineHelperMaxTime = "20"
 
 // trainlineChromeUA must match the Chrome JA3 profile providers.NewTier1Client
 // presents (Chrome 146 — the tls-client default). Datadome binds its clearance
@@ -53,7 +61,7 @@ var trainlineAfter = time.After
 var (
 	trainlineDo             = func(req *http.Request) (*http.Response, error) { return trainlineClient.Do(req) }
 	trainlineFetchViaNab    = fetchTrainlineViaNab
-	trainlineBrowserCookies = cookies.BrowserCookies
+	trainlineBrowserCookies = cookies.BrowserCookiesContext
 	// trainlineViaCurlFn shells out to the system curl binary for the curl-assisted
 	// fallback. Overridable in tests so the 403 escalation chain runs offline.
 	trainlineViaCurlFn = trainlineViaCurl
@@ -233,118 +241,6 @@ type trainlinePrice struct {
 	Currency string  `json:"currency"`
 }
 
-// trainlineViaCurl calls /api/journey-search/ using the system curl binary with
-// a cookie jar. macOS curl uses BoringSSL / Secure Transport which produces a
-// browser-like TLS ClientHello that often passes Datadome's TLS fingerprint
-// check. We first visit the homepage with curl to seed the cookie jar (so the
-// datadome cookie is associated with the same TLS session), then POST to the API.
-func trainlineViaCurl(ctx context.Context, fromID, toID, date, currency string) ([]models.GroundRoute, error) {
-	dateTime, err := models.ParseDate(date)
-	if err != nil {
-		return nil, fmt.Errorf("trainlineViaCurl invalid date %q: %w", date, err)
-	}
-	departureISO := dateTime.Add(6 * time.Hour).Format("2006-01-02T15:04:05")
-
-	originURN := trainlineURN(fromID)
-	destURN := trainlineURN(toID)
-
-	reqBody := trainlineJourneySearchRequest{
-		Passengers:              []trainlinePassenger{{DateOfBirth: "1996-01-01", CardIDs: []any{}}},
-		IsEurope:                true,
-		Cards:                   []any{},
-		Type:                    "single",
-		MaximumJourneys:         5,
-		IncludeRealtime:         true,
-		TransportModes:          []string{"mixed"},
-		DirectSearch:            false,
-		Composition:             []string{"through", "interchangeSplit"},
-		AutoApplyCorporateCodes: false,
-		Origin:                  originURN,
-		Destination:             destURN,
-		TransitDefinitions: []trainlineTransitDef{
-			{
-				Direction:   "outward",
-				Origin:      originURN,
-				Destination: destURN,
-				JourneyDate: trainlineJourneyDate{
-					Type: "departAfter",
-					Time: departureISO,
-				},
-			},
-		},
-	}
-
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("trainlineViaCurl marshal: %w", err)
-	}
-
-	// Common browser-like headers shared between the seed and API requests.
-	commonHeaders := []string{
-		"-H", "Accept-Language: en-GB,en;q=0.9",
-		"-H", `sec-ch-ua: "Chromium";v="133", "Not(A:Brand";v="99"`,
-		"-H", "sec-ch-ua-mobile: ?0",
-		"-H", `sec-ch-ua-platform: "macOS"`,
-		"-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-	}
-
-	// Step 1: Seed the cookie jar by visiting the homepage so Datadome sets its
-	// cookie bound to this exact curl TLS session.
-	cookieJarFile := fmt.Sprintf("/tmp/trainline-cookies-%d.txt", time.Now().UnixNano())
-	defer func() { _ = os.Remove(cookieJarFile) }()
-	seedArgs := append([]string{
-		"-s", "--http2",
-		"-L",                // follow redirects
-		"-c", cookieJarFile, // write cookies
-		"-b", cookieJarFile, // send cookies
-		"-H", "Accept: text/html,application/xhtml+xml",
-		"-H", "sec-fetch-dest: document",
-		"-H", "sec-fetch-mode: navigate",
-		"-H", "sec-fetch-site: none",
-		"https://www.thetrainline.com",
-		"-o", "/dev/null",
-	}, commonHeaders...)
-
-	seedCmd := exec.CommandContext(ctx, "curl", seedArgs...)
-	if seedErr := seedCmd.Run(); seedErr != nil {
-		slog.Debug("trainlineViaCurl: seed request failed", "err", seedErr)
-		// Continue anyway — the API call may still work.
-	} else {
-		slog.Debug("trainlineViaCurl: homepage seed complete", "jar", cookieJarFile)
-	}
-
-	// Step 2: POST to the journey-search API using the seeded cookie jar.
-	apiArgs := append([]string{
-		"-s", "--http2",
-		"-X", "POST",
-		"-c", cookieJarFile,
-		"-b", cookieJarFile,
-		trainlineSearchURL,
-		"-H", "Content-Type: application/json",
-		"-H", "Accept: application/json",
-		"-H", "sec-fetch-dest: empty",
-		"-H", "sec-fetch-mode: cors",
-		"-H", "sec-fetch-site: same-origin",
-		"-H", "x-version: 4.46.32109",
-		"-H", "Origin: https://www.thetrainline.com",
-		"-H", "Referer: https://www.thetrainline.com/",
-		"-d", string(bodyBytes),
-	}, commonHeaders...)
-
-	apiCmd := exec.CommandContext(ctx, "curl", apiArgs...)
-	curlOut, err := apiCmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("trainlineViaCurl curl: %w", err)
-	}
-
-	trimmed := strings.TrimSpace(string(curlOut))
-	if !strings.HasPrefix(trimmed, "{") && !strings.HasPrefix(trimmed, "[") {
-		return nil, fmt.Errorf("trainlineViaCurl: non-JSON response (%.80s)", trimmed)
-	}
-
-	return readAndParseTrainlineResponse(strings.NewReader(trimmed), "", "", date, currency)
-}
-
 // trainlineDoWithRetry issues the request and, on a single HTTP 429, honours the
 // Retry-After header (capped at trainlineMaxRetryDelay) and replays the request
 // exactly once. makeReq rebuilds a fresh request per attempt so the POST body is
@@ -506,7 +402,7 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 
 		// Try 2: use a real browser session cookie extracted from Brave/Chrome.
 		// Requires the user to have visited thetrainline.com in their browser.
-		cookieHeader := trainlineBrowserCookies("thetrainline.com")
+		cookieHeader := trainlineBrowserCookies(ctx, "thetrainline.com")
 		if cookieHeader != "" {
 			slog.Debug("retrying trainline with browser cookies")
 			req3, err3 := newTrainlineRequest(cookieHeader)

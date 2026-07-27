@@ -13,8 +13,7 @@ import (
 // round-trip request and asserts the provider returns genuine both-bound
 // return-ticket data: FareType=FareRoundTrip plus outbound/inbound Direction
 // tags on the legs. Credential is resolved through the provider's normal chain
-// (AFKLM_KEY env, macOS Keychain, then 1Password
-// op://Personal/Air France-KLM Developer API/credential).
+// (AFKLM_KEY env, macOS Keychain, then 1Password via AFKLM_OP_REF).
 //
 // Opt-in (default suite stays deterministic + offline):
 //
@@ -24,7 +23,7 @@ func TestProbeAFKLMRoundTrip(t *testing.T) {
 		t.Skip("set TRVL_TEST_LIVE_PROBES=1 to run live AF-KLM round-trip probe")
 	}
 
-	p, err := NewProvider()
+	p, err := NewProvider(context.Background(), PolicyExternal)
 	if err == ErrNoCredential {
 		t.Skip("no AF-KLM credential configured (set AFKLM_KEY or sign in to 1Password)")
 	}

@@ -83,8 +83,8 @@ More starter prompts and what good answers look like: [docs/DEMO.md](docs/DEMO.m
 ## Why trvl, not the alternatives
 
 - **Whole journey, door to door.** It plans the entire trip across modes — home to airport, flight, arrival transfer, hotel, onward train — and prices each leg in its real mode. Most tools stop at one flight, one hotel.
-- **No API keys, no signup, no bill.** Works the moment you install it. No Amadeus key to apply for, no subscription, no per-call cost.
-- **Your assistant, your machine.** One local binary, any MCP client. Not locked to a vendor; your trips and preferences never leave your computer.
+- **No API keys, no signup, no bill.** Every core source works the moment you install it — no Amadeus key to apply for, no subscription, no per-call cost. Some optional providers can be switched on with a key of your own (AF-KLM, SerpAPI, Travelpayouts and others); none of them is required. Separately from keys, trvl reads your browser's cookie stores to get past the bot protection that hotel and rail sites put in front of their search APIs: see [What trvl reads from your browser](#what-trvl-reads-from-your-browser).
+- **Your assistant, your machine.** One local binary, any MCP client, not locked to a vendor. Where your data goes, stated plainly rather than promised away. Searching sends the query to the providers being searched, the same as any travel site: route, dates and traveller count go to Google, Kiwi, Booking and the rest. A key or cookie you have configured is sent to the service it authenticates, when that provider is used, because that is what authenticating means. What trvl keeps for itself stays under `~/.trvl` and is not sent anywhere: saved trips, preferences, watches, search history. Two commands publish deliberately, since that is what you ran them for: `trvl share` posts a trip card as a **public** GitHub gist ([#527](https://github.com/MikkoParkkola/trvl/issues/527) asks whether that default is right), and the calendar helper writes an event to your Google calendar.
 - **It optimizes, not just lists.** Shift-day pricing, split-airline routing, hidden-city checks, award sweet spots, round-trip fares. It hands back the cheaper option and shows what it saved.
 - **It is honest when a source fails.** Typed statuses and labelled estimates, never an empty result dressed up as "nothing found."
 
@@ -160,6 +160,91 @@ Local stdio is the default and safest transport. `trvl mcp --http` binds to `127
 
 Full troubleshooting: [docs/CLI.md](docs/CLI.md).
 
+## Optional credentialed providers
+
+Every source trvl uses by default is free and needs no account. A number of extras switch on only if you supply a key of your own, and stay silent otherwise:
+
+| Variable | Enables |
+| --- | --- |
+| `AFKLM_KEY` | AF-KLM native round-trip fares (see below) |
+| `AFKL_KLM_COOKIES` | AF-KLM Flying Blue award / miles search |
+| `SERPAPI_KEY` | Detail-verified hotel provider prices (`trvl serpapi`) |
+| `TRAVELPAYOUTS_TOKEN` | Historical price trends |
+| `TRANSAVIA_API_KEY` | Transavia flights |
+| `DISTRIBUSION_API_KEY` | Bus and coach ground legs |
+| `FOURSQUARE_API_KEY` | Nearby places |
+| `GEOAPIFY_API_KEY` | Destination geo data |
+| `OPENTRIPMAP_API_KEY` | Attractions |
+| `TICKETMASTER_API_KEY` | Events |
+| `TRVL_GMAIL_APP_PASSWORD` | Emailing trip digests |
+
+Every one of these reads its key from the environment. AF-KLM is the single exception and only when you ask for it: under an explicit `--provider afklm` it can also read the macOS Keychain or 1Password, which is described in full below. Nothing in this table reaches a credential manager during an ordinary search.
+
+## What trvl reads from your browser
+
+Hotel and rail sites put bot protection in front of their search APIs. trvl gets past
+it by reusing the browser session you already have, which is why searches work at all
+without an API key. That means it reads local state, so here is exactly what and when.
+
+**At startup, before any search.** Creating the provider runtime kicks off background
+reads of your browser cookie stores for every provider configured to use them
+(`internal/providers/runtime_core.go:179`). On macOS the first such read goes through
+the Keychain and takes six to ten seconds cold, which is precisely why it is started
+early rather than on demand.
+
+**On a hotel search.** Booking.com needs an `aws-waf-token`. trvl looks for one in
+this order: the cache at `~/.trvl/cookies`, then your installed browser's cookies via
+[kooky](https://github.com/browserutils/kooky), then a headless harvest driven through
+your installed Chrome. A token obtained that way is written back to that cache and
+reused for days.
+
+**On a rail search.** When Trainline, Eurostar or SNCF answers with a 403 challenge,
+trvl runs [nab](https://github.com/MikkoParkkola/nab) to read your cookies for that
+operator and retries with them.
+
+Three things follow, and they are the reason this section exists:
+
+- **It is automatic.** No flag turns it on and none turns it off. Running trvl at all
+  starts the startup reads.
+- **It reads credential storage.** Browser cookie databases are encrypted, so getting
+  at them means Keychain access on macOS. What is read is your own session cookies for
+  the site being searched.
+- **Some of it persists and some of it launches a browser.** The Booking.com token is
+  written to `~/.trvl/cookies`. The headless harvest starts your Chrome.
+
+Where those cookies go: into the request trvl makes to the site they were read from, so
+that operator receives its own cookies back, which is the point of reading them. trvl
+sends them nowhere else, and does not report them to any endpoint of its own. The only
+thing written to disk is that one token cache.
+
+Documenting this took three attempts, and each earlier version claimed a narrower
+scope than the code has: first that trvl never looked at local credentials
+unrequested, then that rail search was the sole exception. Both were wrong. Whether
+any of it should be opt-in is open at
+[#521](https://github.com/MikkoParkkola/trvl/issues/521).
+
+AF-KLM is the single exception, and it is worth explaining. Ordinary round-trips are already covered in the default merge: Kiwi returns both legs of a paired itinerary, and Google returns the genuine round-trip fare with the matching return chosen at booking. AF-KLM is there for what neither offers — the rail+fly itineraries it sells, where a train leg from Brussels Midi, Antwerp or Brussels is ticketed as part of the flight instead of being a separate rail booking you have to make and risk yourself. It also returns both legs on KL/AF metal in full detail. It is the only provider whose **API key** can come from a credential manager, under tight rules. (Browser cookie access is a separate matter and is covered in [What trvl reads from your browser](#what-trvl-reads-from-your-browser); several providers do that, and it also touches the Keychain.)
+
+| Variable | Effect |
+| --- | --- |
+| `AFKLM_KEY` | The API key itself. Once set, AF-KLM native round-trips join your default searches automatically. |
+| `AFKLM_OP_REF` | A 1Password secret reference, e.g. `op://Private/AF-KLM/credential`. Read via the `op` CLI **only** when you run `--provider afklm` explicitly. |
+| `AFKLM_KEYCHAIN_SERVICE` | Overrides the macOS Keychain service name (default `afklm-api-key`). Read under `--provider afklm` only. |
+
+Set `AFKLM_OP_REF` without `AFKLM_KEY` and a default search will tell you AF-KLM was skipped and why, rather than quietly leaving it out.
+
+The rule, and why it exists: a search you didn't ask for never runs an AF-KLM credential helper. (Scoped to AF-KLM on purpose. Browser cookie reads are a different mechanism with a different answer, described above.) `op` and `security` are third-party programs that can block, can pop an interactive prompt, and can leave stray processes behind — so an opportunistic lookup on the default path is limited to reading an environment variable, which costs nothing and cannot prompt. Only an explicit `--provider afklm` may reach an external store, where a prompt is something you asked for. Reported as [#507](https://github.com/MikkoParkkola/trvl/issues/507).
+
+If you use the macOS Keychain (`security add-generic-password -a "$USER" -s afklm-api-key -w <key>`), it is consulted under `--provider afklm` only, for the same reason.
+
+### One limitation on Windows
+
+Every helper trvl runs is bounded by a deadline on every platform, so none of them can hang a search. Cleaning up what a helper leaves behind is weaker on Windows than elsewhere.
+
+On Unix a helper is signalled as a process group, so anything it started dies with it. On Windows it goes into a job object, and a job can only be assigned to a process that already exists, so there is a window of microseconds after the helper starts during which a child it creates is not yet a member. A helper that forks something in its first instants can therefore leave that child running after the helper itself has been killed.
+
+None of the programs trvl actually invokes behaves that way, so in practice you should not see stray processes. It is a real gap rather than a theoretical one, though, and closing it needs a suspended start whose own failure mode is worse than the gap, so it is documented instead of half-fixed. The reasoning is in [#526](https://github.com/MikkoParkkola/trvl/issues/526).
+
 ## Ecosystem
 
 Part of a suite of MCP tools: [mcp-gateway](https://github.com/MikkoParkkola/mcp-gateway) (universal gateway) · [nab](https://github.com/MikkoParkkola/nab) (web extraction with anti-bot) · [axterminator](https://github.com/MikkoParkkola/axterminator) (macOS GUI automation).
@@ -173,7 +258,7 @@ trvl sends one anonymous heartbeat per install per day so the project knows roug
 - the Go runtime string (OS, architecture, Go version, e.g. `darwin/arm64/go1.26.5`)
 - a random install id generated locally on first run (stored in `~/.trvl/install-id`)
 
-It never sends your IP, hostname, username, search queries, or any travel data. The collector derives coarse geography server-side from the request and only reports it in aggregate, with a minimum group size of 5 (k-anonymity), so no single install is identifiable. The request has a 3-second timeout and fails silently. If the collector is down or slow, trvl behaves exactly as if telemetry were off.
+The payload contains nothing else: no hostname, no username, no search queries, no travel data. Two things the list above does not make obvious, stated rather than left to inference. Your IP is not in the payload, but the request reveals it as any HTTP request does, and the collector uses it server-side to derive coarse geography, which it reports only in aggregate with a minimum group size of 5. And the install id is stable, so repeated heartbeats from one machine are linkable to each other over time; it is random and contains nothing about you, but it is not a fresh value each time. The request has a 3-second timeout and fails silently. If the collector is down or slow, trvl behaves exactly as if telemetry were off.
 
 To turn it off, set any one of these before running trvl:
 

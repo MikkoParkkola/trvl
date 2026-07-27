@@ -419,7 +419,7 @@ func TestSearchSNCFCalendar_403WithBrowserCookieRetry(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	}
-	sncfBrowserCookies = func(string) string { return "session=abc123" }
+	sncfBrowserCookies = func(_ context.Context, _ string) string { return "session=abc123" }
 	sncfFetchViaNab = func(context.Context, string, SNCFStation, SNCFStation, string, string) ([]models.GroundRoute, error) {
 		return nil, fmt.Errorf("nab unavailable")
 	}
@@ -709,7 +709,7 @@ func TestSearchTrainline_403_DatadomeSeedRetry(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	}
-	trainlineBrowserCookies = func(string) string { return "" }
+	trainlineBrowserCookies = func(_ context.Context, _ string) string { return "" }
 	trainlineFetchViaNab = func(context.Context, []byte, string, string, string, string) ([]models.GroundRoute, error) {
 		return nil, fmt.Errorf("unavailable")
 	}

@@ -31,7 +31,7 @@ var eurostarClient = batchexec.ChromeHTTPClient()
 var (
 	eurostarDo             = func(req *http.Request) (*http.Response, error) { return eurostarClient.Do(req) }
 	eurostarFetchViaNab    = fetchEurostarViaNab
-	eurostarBrowserCookies = cookies.BrowserCookies
+	eurostarBrowserCookies = cookies.BrowserCookiesContext
 )
 
 type eurostarHeader struct {
@@ -364,7 +364,7 @@ func SearchEurostar(ctx context.Context, from, to, startDate, endDate, currency 
 		_ = firstBody // consumed for logging; body closed by defer
 
 		// Attempt retry with browser cookies.
-		cookieHeader := eurostarBrowserCookies("eurostar.com")
+		cookieHeader := eurostarBrowserCookies(ctx, "eurostar.com")
 		if cookieHeader != "" {
 			slog.Debug("retrying eurostar with browser cookies")
 			req2, err2 := newEurostarRequest(cookieHeader)

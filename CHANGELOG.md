@@ -7,8 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Known limitations
+
+- **On Windows, a helper that forks something in its first instants can leave that
+  child behind.** Every helper is bounded by a deadline on every platform, so none of
+  them can hang a search. Cleanup is weaker on Windows: a job object can only be
+  assigned to a process that already exists, so a child created in the microseconds
+  after the helper starts is not yet a member of the job and survives it. None of the
+  programs trvl actually invokes behaves that way, so stray processes are unlikely in
+  practice. Closing the window needs a suspended start whose own failure mode leaves
+  the helper never running at all, which is worse, so this is documented rather than
+  half-fixed. Reasoning in [#526](https://github.com/MikkoParkkola/trvl/issues/526).
+
+### Documentation
+
+- **What trvl reads from your browser is now documented, and it is more than the
+  README used to imply.** Hotel and rail sites put bot protection in front of their
+  search APIs, and trvl gets past it by reusing your existing browser session, which
+  is why searches work without an API key. Three things were undocumented. Starting
+  the provider runtime pre-reads your browser cookie stores before any search, because
+  the first read goes through the macOS Keychain and costs six to ten seconds cold. A
+  Booking.com search looks for its `aws-waf-token` in `~/.trvl/cookies`, then your
+  browser's cookies, then a headless harvest through your installed Chrome, writing
+  the result back to that cache. A rail search reads cookies for the operator after a
+  403. Each cookie is sent back to the operator it came from, as part of the retry that
+  needs it, and nothing turns any of this off today. Whether any of it should be opt-in
+  is open at [#521](https://github.com/MikkoParkkola/trvl/issues/521).
+
+### Added
+
+- `AFKLM_KEYCHAIN_SERVICE` overrides the macOS Keychain service name, so a user who
+  files the key under their own name is not forced to adopt trvl's.
+
+### Changed
+
+- **BREAKING — AF-KLM credentials are no longer discovered automatically.** A default
+  flight search now reads the `AFKLM_KEY` environment variable and nothing else. It no
+  longer consults the macOS Keychain or 1Password, so it starts no subprocess, cannot
+  block a search, and cannot surface a credential prompt. If you relied on a Keychain
+  entry or a 1Password item, export `AFKLM_KEY` to restore AF-KLM in default searches,
+  or run `--provider afklm` explicitly. This matters most for AF-KLM's rail+fly
+  itineraries (a train leg from Brussels Midi, Antwerp or Brussels ticketed as part of
+  the flight), which no other provider exposes. External credential stores are now
+  reachable only under the explicit flag.
+  ([#507](https://github.com/MikkoParkkola/trvl/issues/507))
+- The 1Password lookup requires a secret reference you supply in `AFKLM_OP_REF`, e.g.
+  `op://Private/AF-KLM/credential`. The previously hardcoded reference was a leftover
+  from experimental work and named an item only the maintainer had.
+
 ### Fixed
 
+- A credential lookup on the default search path could hang forever and accumulate
+  stalled helper processes, and could surface an interactive 1Password account-setup
+  prompt in the terminal hosting an MCP session. Helper invocations are now bounded,
+  detached from the controlling terminal so they cannot prompt, and signalled by
+  process group so nothing they spawn is left behind. ([#507](https://github.com/MikkoParkkola/trvl/issues/507))
+- A helper that exceeds its deadline now reports that it timed out, instead of
+  reporting that no credential is configured.
+- Browser-cookie extraction, reached from ordinary hotel and rail searches, had the
+  same defect: an unbounded `nab` could stall a search and leave helpers behind. It is
+  now bounded, detached, shares one budget across browsers, and stops retrying a
+  domain that has just failed.
+- A search that skips AF-KLM because `AFKLM_OP_REF` is set but `AFKLM_KEY` is not now
+  says so, with a hint naming the fix. Silently dropping a provider the user had
+  configured looked like a broken provider.
+
+  All of the above reported by [@JoshTristram](https://github.com/JoshTristram) in
+  [#507](https://github.com/MikkoParkkola/trvl/issues/507), who found around twenty
+  stalled `op read` processes under an MCP session, traced them to the default search
+  path rather than an explicit provider flag, and spotted the hardcoded vault
+  reference that named an item only the maintainer had. He also proposed skipping the
+  lookup when `op account list` is empty; the fix taken instead removes the lookup
+  from the default path altogether, which covers the signed-out and biometric-locked
+  cases that an empty-account check would have missed.
 - **A hack sweep now honours the caller's deadline and admits when it is
   partial.** `DetectAll` fans out every hack detector concurrently and waited for
   all of them, so a caller's deadline was advisory: a 1ms deadline took a measured

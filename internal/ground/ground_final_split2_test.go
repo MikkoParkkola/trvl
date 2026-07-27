@@ -343,7 +343,7 @@ func TestSearchEurostar_403_NabFallback(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	}
-	eurostarBrowserCookies = func(string) string { return "" }
+	eurostarBrowserCookies = func(_ context.Context, _ string) string { return "" }
 	eurostarFetchViaNab = func(context.Context, []byte, EurostarStation, EurostarStation, string, string, bool) ([]models.GroundRoute, error) {
 		return []models.GroundRoute{
 			{Provider: "eurostar", Type: "train", Price: 39, Currency: "GBP",
@@ -396,7 +396,7 @@ func TestSearchEurostar_403_BrowserCookieRetry(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	}
-	eurostarBrowserCookies = func(string) string { return "session=abc" }
+	eurostarBrowserCookies = func(_ context.Context, _ string) string { return "session=abc" }
 	eurostarFetchViaNab = func(context.Context, []byte, EurostarStation, EurostarStation, string, string, bool) ([]models.GroundRoute, error) {
 		return nil, fmt.Errorf("nab unavailable")
 	}

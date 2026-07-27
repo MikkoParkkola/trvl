@@ -53,7 +53,7 @@ trvl ships with **Google Flights** (hand-rolled protobuf) on the default code pa
 |----------|----------|----------|------------|------|
 | **Google Flights** | hand-rolled protobuf | Broadest coverage, server-side filters | default | None |
 | **Kiwi** | REST | Virtual-interlining + self-connect candidates | default (one-way merge) | None |
-| **AFKLM Flying Blue** | Offers API v3 + Award API | Cash + miles cabin search on KL/AF metal; native round-trip fares (both legs, one ticket) | `--provider afklm` (cash) / `--award` (miles), both opt-in | API credential (cash) / Flying Blue session cookie (award) |
+| **AFKLM Flying Blue** | Offers API v3 + Award API | Cash + miles cabin search on KL/AF metal; native round-trip fares (both legs, one ticket) | `--provider afklm` (cash) / `--award` (miles), both opt-in | API credential (cash) / Flying Blue session cookie (award). `AFKLM_KEY` env only on the default merge; Keychain and 1Password (`AFKLM_OP_REF`) under `--provider afklm` only — see [#507](https://github.com/MikkoParkkola/trvl/issues/507) |
 | **Skiplagged** | Streamable HTTP MCP (`@skiplagged/mcp` v0.0.4, protocol 2025-06-18) | Genre-defining hidden-city + virtual-interlining defaults | default (one-way merge) / `--provider skiplagged` for solo | None |
 | **Ryanair** | Public API | Largest European low-cost network | `--provider ryanair` | None |
 | **Wizz Air** | Public API | Central/Eastern European low-cost routes | `--provider wizzair` | None |

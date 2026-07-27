@@ -244,7 +244,7 @@ func TestSharedLimiterAcrossProviders(t *testing.T) {
 	defer srv.Close()
 
 	// Create via NewClient (exercises default shared limiter path).
-	c1, err := NewClient(ClientOptions{
+	c1, err := NewClient(context.Background(), ClientOptions{
 		Credential: "dummy",
 		BaseURL:    srv.URL,
 		HTTPClient: srv.Client(),
@@ -254,7 +254,7 @@ func TestSharedLimiterAcrossProviders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient c1: %v", err)
 	}
-	c2, err := NewClient(ClientOptions{
+	c2, err := NewClient(context.Background(), ClientOptions{
 		Credential: "dummy",
 		BaseURL:    srv.URL,
 		HTTPClient: srv.Client(),
@@ -312,7 +312,7 @@ func TestAFKLMDailyQuota_IncrementPersists_CacheHitsDoNotIncrement(t *testing.T)
 	defer srv.Close()
 
 	lim := newTestLimiter()
-	c1, err := NewClient(ClientOptions{
+	c1, err := NewClient(context.Background(), ClientOptions{
 		Credential: "k1",
 		CacheDir:   d,
 		BaseURL:    srv.URL,
@@ -347,7 +347,7 @@ func TestAFKLMDailyQuota_IncrementPersists_CacheHitsDoNotIncrement(t *testing.T)
 	}
 
 	// New client instance, same dir: count persists
-	c2, err := NewClient(ClientOptions{
+	c2, err := NewClient(context.Background(), ClientOptions{
 		Credential: "k1",
 		CacheDir:   d,
 		BaseURL:    srv.URL,
@@ -433,7 +433,7 @@ func TestAFKLMDailyQuota_NowFuncRolloverResets(t *testing.T) {
 	defer srv.Close()
 
 	lim := newTestLimiter()
-	c1, _ := NewClient(ClientOptions{
+	c1, _ := NewClient(context.Background(), ClientOptions{
 		Credential: "k",
 		CacheDir:   d,
 		BaseURL:    srv.URL,
@@ -454,7 +454,7 @@ func TestAFKLMDailyQuota_NowFuncRolloverResets(t *testing.T) {
 	day2 := day1.AddDate(0, 0, 1)
 	nowFunc = func() time.Time { return day2 }
 
-	c2, _ := NewClient(ClientOptions{
+	c2, _ := NewClient(context.Background(), ClientOptions{
 		Credential: "k",
 		CacheDir:   d,
 		BaseURL:    srv.URL,

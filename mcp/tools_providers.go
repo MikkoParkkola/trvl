@@ -209,22 +209,52 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 		return nil, nil, fmt.Errorf("configure_provider: save: %w", err)
 	}
 
-	// Proactive cookie warming: if the provider uses browser_escape_hatch,
-	// open the preflight URL in the user's browser now so that cookies are
-	// warm before the first search. This is a one-time setup action.
+	// Proactive cookie warming: if the provider uses browser_escape_hatch, ask the
+	// platform to open the preflight URL now so cookies are warm before the first
+	// search. This is a one-time setup action.
 	warmingNote := ""
 	if config.Auth != nil && config.Auth.BrowserEscapeHatch && config.Auth.PreflightURL != "" {
-		if err := providers.OpenURLInBrowser(config.Auth.PreflightURL, ""); err != nil {
+		err := providers.OpenURLInBrowser(config.Auth.PreflightURL, "")
+		if err != nil {
 			log.Printf("cookie warming: failed to open browser for %s: %v", config.Name, err)
-		} else {
-			warmingNote = fmt.Sprintf("\n\nOpened %s in browser to warm cookies for %s. Future searches will use these cookies automatically.",
-				config.Auth.PreflightURL, config.Name)
 		}
+		warmingNote = browserWarmingNote(config.Auth.PreflightURL, config.Name, err)
 	}
 
 	summary := fmt.Sprintf("Provider %q enabled for %s search (domain: %s, rate limit: %.1f rps).%s",
 		config.Name, config.Category, domain, config.RateLimit.RequestsPerSecond, warmingNote)
 	return textContent(summary), config, nil
+}
+
+// browserWarmingNote is the sentence the caller sees after trvl asks the platform to
+// open a preflight URL.
+//
+// It says "asked", never "opened", and the distinction is load-bearing rather than
+// pedantic. A nil error from the launcher means it accepted the request without
+// failing immediately. It cannot mean a browser appeared: the launcher is watched
+// only for a brief window, so one that fails after it, which a cold launcher can,
+// looks identical to one that succeeded. The previous wording promised that the
+// browser had opened and that future searches would use the cookies, neither of which
+// this code establishes, and a user whose browser silently failed to launch would sit
+// waiting for cookies that could never arrive.
+//
+// An error is reported rather than hidden, because a launcher that failed inside the
+// window is the one case where something is definitely known.
+//
+// The two templates are constants so a test can pin their wording once and then check
+// that every input renders one of them unchanged. That combination is what forbids a
+// promise being added for one provider or one error while examples of other inputs stay
+// green.
+const (
+	warmingNoteAsked  = "\n\nAsked your browser to open %s so cookies for %s can be reused. If no window appeared, open that URL yourself."
+	warmingNoteFailed = "\n\nCould not start a browser for %s (%v). Open %s yourself so those cookies can be reused."
+)
+
+func browserWarmingNote(preflightURL, providerName string, err error) string {
+	if err != nil {
+		return fmt.Sprintf(warmingNoteFailed, providerName, err, preflightURL)
+	}
+	return fmt.Sprintf(warmingNoteAsked, preflightURL, providerName)
 }
 
 // parseProviderConfig extracts a ProviderConfig from MCP tool arguments.

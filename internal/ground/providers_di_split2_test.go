@@ -103,7 +103,7 @@ func TestSearchTrainline_DI_HappyPath(t *testing.T) {
 		mockReq.Header = req.Header
 		return http.DefaultClient.Do(mockReq)
 	}
-	trainlineBrowserCookies = func(string) string { return "" }
+	trainlineBrowserCookies = func(_ context.Context, _ string) string { return "" }
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -177,7 +177,7 @@ func TestSearchTrainline_DI_HTTP403_NoFallback(t *testing.T) {
 		mockReq.Header = req.Header
 		return http.DefaultClient.Do(mockReq)
 	}
-	trainlineBrowserCookies = func(string) string { return "" }
+	trainlineBrowserCookies = func(_ context.Context, _ string) string { return "" }
 
 	_, err := SearchTrainline(context.Background(), "london", "paris", "2026-07-10", "GBP", false)
 	if err == nil {

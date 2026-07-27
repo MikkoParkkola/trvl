@@ -265,7 +265,7 @@ Create `internal/ground/amtrak_test.go` with:
 ### Why reverse-engineer vs official APIs?
 
 - **Free**: Google has no public Flights/Hotels API. Skyscanner's affiliate API requires business approval. Booking.com's API requires a partner agreement. trvl works out of the box with zero signup.
-- **No API keys**: Nothing to manage, rotate, or pay for. No `.env` files, no secrets in CI.
+- **No API keys**: for the core sources, nothing to manage, rotate, or pay for. No `.env` files, no secrets in CI. Optional providers can be switched on with a key of your own, listed in the README; none is required.
 - **No rate limits imposed by the provider**: Official APIs typically limit you to N requests per day. trvl's self-imposed limits are conservative but not artificially low.
 - **Same data**: The batchexecute protocol returns the exact same data that google.com/travel shows. No "lite" tier, no missing fields.
 - **Precedent**: [fli](https://github.com/punitarani/fli) has done this for Google Flights since 2023 with no legal issues.

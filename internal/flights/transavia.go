@@ -67,7 +67,7 @@ func transaviaAPIKey() string {
 }
 
 // transaviaConfigured reports whether a Transavia API key is present. Mirrors
-// afklm.Configured(): provider silently skips when unconfigured.
+// the AFKLM credential check: provider silently skips when unconfigured.
 func transaviaConfigured() bool {
 	return transaviaAPIKey() != ""
 }

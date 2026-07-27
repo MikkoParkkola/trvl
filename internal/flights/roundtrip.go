@@ -114,11 +114,15 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 	statuses = append(statuses, kiwiStatuses...)
 	nativeRT = append(nativeRT, kiwiRT...)
 
-	// Opportunistic AFKLM native round-trip (the only provider returning genuine
-	// both-bound single-carrier round-trips) on the DEFAULT merge path.
-	// Included IFF a credential resolves (env AFKLM_KEY / keychain / 1Password)
-	// via the existing NewProvider/ErrNoCredential check — no new plumbing.
-	// When no credential: silent fast skip (no error, no warning, no latency).
+	// Opportunistic AFKLM native round-trip on the DEFAULT merge path. Google
+	// and Kiwi already supply native round-trip fares above; AFKLM is here for
+	// the rail+fly itineraries it alone sells (a train leg from ZYR/ZWE/BRU
+	// ticketed as part of the flight) and for both-leg detail on KL/AF metal.
+	// Included IFF AFKLM_KEY is set in the environment. This path deliberately
+	// reads nothing else — no Keychain, no 1Password, no subprocess — because it
+	// runs on every round-trip search whether or not the user asked for AF-KLM
+	// (#507). External stores are reachable only via explicit --provider afklm.
+	// When unset: silent fast skip (no error, no warning, no latency).
 	// Any AFKLM error is non-fatal (log + continue). --provider afklm remains
 	// "AFKLM only"; this path only augments the default Google+Kiwi+Skiplagged.
 	afklmRT, afklmSt := searchAFKLMNativeRoundTrip(ctx, origin, destination, date, returnDate, opts)

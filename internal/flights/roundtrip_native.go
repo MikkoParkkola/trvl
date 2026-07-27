@@ -277,10 +277,33 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 
 	newProvider := opts.afklmNewProvider
 	if newProvider == nil {
-		newProvider = afklm.NewProvider // production default
+		// PolicyEnvOnly: this is the DEFAULT merge, which the user did not ask
+		// for. It reads AFKLM_KEY and nothing else — no Keychain, no 1Password,
+		// no subprocess of any kind. An opportunistic provider must not be able
+		// to block a search or surface a credential prompt (#507). Users who
+		// keep the key in an external store opt in with `--provider afklm`.
+		newProvider = func() (*afklm.AFKLMProvider, error) {
+			return afklm.NewProvider(ctx, afklm.PolicyEnvOnly)
+		}
 	}
 	p, err := newProvider()
 	if errors.Is(err, afklm.ErrNoCredential) {
+		// Silent for the user who never enabled AF-KLM: a status line about a
+		// provider they have not heard of is noise on every search.
+		//
+		// Not silent for the user who did enable it. Someone with AFKLM_OP_REF
+		// set has told trvl where their key lives, and the default path
+		// deliberately will not read it, so AF-KLM goes missing from results
+		// they expect it in. Saying nothing there would look like the provider
+		// had broken.
+		if hint := afklm.DefaultPathSkipHint(); hint != "" {
+			return nil, []models.ProviderStatus{{
+				ID:      "native_roundtrip:afklm",
+				Name:    "AFKLM (native round-trip)",
+				Status:  models.StatusNotConfigured,
+				FixHint: hint,
+			}}
+		}
 		return nil, nil // silent, zero latency, zero user signal
 	}
 	if err != nil {

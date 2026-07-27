@@ -60,7 +60,7 @@ func TestSearchSNCFCalendar_HappyPath(t *testing.T) {
 		mockReq.Header = req.Header
 		return http.DefaultClient.Do(mockReq)
 	}
-	sncfBrowserCookies = func(string) string { return "" }
+	sncfBrowserCookies = func(_ context.Context, _ string) string { return "" }
 
 	fromStation, _ := LookupSNCFStation("Paris")
 	toStation, _ := LookupSNCFStation("Lyon")
@@ -124,7 +124,7 @@ func TestSearchSNCFCalendar_HTTP403_FallsToNab(t *testing.T) {
 		mockReq.Header = req.Header
 		return http.DefaultClient.Do(mockReq)
 	}
-	sncfBrowserCookies = func(string) string { return "" }
+	sncfBrowserCookies = func(_ context.Context, _ string) string { return "" }
 
 	nabCalled := false
 	sncfFetchViaNab = func(ctx context.Context, apiURL string, from, to SNCFStation, date, currency string) ([]models.GroundRoute, error) {
@@ -188,7 +188,7 @@ func TestSearchSNCFCalendar_NoPriceForDate(t *testing.T) {
 		mockReq.Header = req.Header
 		return http.DefaultClient.Do(mockReq)
 	}
-	sncfBrowserCookies = func(string) string { return "" }
+	sncfBrowserCookies = func(_ context.Context, _ string) string { return "" }
 
 	fromStation, _ := LookupSNCFStation("Paris")
 	toStation, _ := LookupSNCFStation("Lyon")
@@ -411,7 +411,7 @@ func TestSearchTrainline_MockHappyPath(t *testing.T) {
 		mockReq.Header = req.Header
 		return http.DefaultClient.Do(mockReq)
 	}
-	trainlineBrowserCookies = func(string) string { return "" }
+	trainlineBrowserCookies = func(_ context.Context, _ string) string { return "" }
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
