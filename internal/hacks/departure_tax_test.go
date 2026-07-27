@@ -225,8 +225,8 @@ func TestDetectDepartureTax_nonEURTarget_netsGroundCostAndConverts(t *testing.T)
 	newSyntheticTaxRoute(t)
 
 	const fakeRate = 0.85
-	orig := convertCurrencyFn
-	convertCurrencyFn = func(_ context.Context, amount float64, from, to string) (float64, string) {
+
+	swapCurrencyConverter(t, func(_ context.Context, amount float64, from, to string) (float64, string) {
 		if from == to {
 			return amount, to
 		}
@@ -236,8 +236,7 @@ func TestDetectDepartureTax_nonEURTarget_netsGroundCostAndConverts(t *testing.T)
 		// Mirror destinations.ConvertCurrency's "can't convert" contract:
 		// return the original amount/currency unchanged.
 		return amount, from
-	}
-	t.Cleanup(func() { convertCurrencyFn = orig })
+	})
 
 	hacks := detectDepartureTax(context.Background(), DetectorInput{
 		Origin:      syntheticTaxOrigin,
@@ -276,14 +275,13 @@ func TestDetectDepartureTax_nonEURTarget_netsGroundCostAndConverts(t *testing.T)
 // test actually fell through to the live default seam — verified via timing
 // (0.57s vs 0.00s for an offline call) during this seam's introduction.
 func TestDetectDepartureTax_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
-	orig := convertCurrencyFn
-	convertCurrencyFn = func(_ context.Context, amount float64, from, to string) (float64, string) {
+
+	swapCurrencyConverter(t, func(_ context.Context, amount float64, from, to string) (float64, string) {
 		if from == to {
 			return amount, to
 		}
 		return amount, from // can't convert — same contract as the real function
-	}
-	t.Cleanup(func() { convertCurrencyFn = orig })
+	})
 
 	hacks := detectDepartureTax(context.Background(), DetectorInput{
 		Origin:      "CPH",

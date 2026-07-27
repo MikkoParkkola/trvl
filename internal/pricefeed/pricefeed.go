@@ -129,8 +129,19 @@ func HotelPosition(hotelID, checkIn string, result *models.HotelPriceResult) *pr
 }
 
 // HotelPricesReadiness maps the signals available on the hotel-prices endpoint
-// into a booking verdict. Refundability is not available here, so the verdict
-// conservatively caps below "ready" by design.
+// into a booking verdict.
+//
+// This endpoint carries no cancellation terms, so refundability is not merely
+// absent here — it is unobtainable, and Ready needs all four signals true. Every
+// verdict from this path is therefore capped at Caution no matter how good the
+// property's data is.
+//
+// That ceiling is declared rather than left implicit. Reported by an external
+// tester who ran six indexed properties, saw Caution every time, and could not
+// tell whether he was looking at six uncertain properties or a scale that never
+// says better: the verdict read identically either way. Declaring the ceiling is
+// what lets a caller say "this path cannot do better" instead of implying a
+// finding about the hotel.
 func HotelPricesReadiness(hotelID string, providers []models.ProviderPrice) booking.Verdict {
 	cheapest := CheapestProvider(providers)
 	var in booking.Input
@@ -149,7 +160,7 @@ func HotelPricesReadiness(hotelID string, providers []models.ProviderPrice) book
 	case models.PriceConfidenceUnverified:
 		in.Verified = booking.False()
 	}
-	return booking.Evaluate(in)
+	return booking.EvaluateWith(in, booking.Availability{NoRefundability: true})
 }
 
 // RoomsReadiness maps the richer room-level signals into a booking verdict.

@@ -87,7 +87,7 @@ func BenchmarkDetectAll(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		_ = DetectAll(ctx, in)
+		_, _ = DetectAll(ctx, in)
 	}
 }
 
@@ -121,7 +121,7 @@ func BenchmarkDetectAll_NoMatch(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		_ = DetectAll(ctx, in)
+		_, _ = DetectAll(ctx, in)
 	}
 }
 
@@ -183,7 +183,7 @@ func BenchmarkDetectAll_Parallel(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_ = DetectAll(ctx, in)
+			_, _ = DetectAll(ctx, in)
 		}
 	})
 }
@@ -198,7 +198,7 @@ func TestDetectAll_CancelledContext(t *testing.T) {
 	cancel()
 
 	start := time.Now()
-	hacks := DetectAll(ctx, in)
+	hacks, _ := DetectAll(ctx, in)
 	elapsed := time.Since(start)
 
 	// With an already-cancelled context, DetectAll should return very fast.
@@ -224,7 +224,7 @@ func TestDetectAll_DeadlineExceeded(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	hacks := DetectAll(ctx, in)
+	hacks, _ := DetectAll(ctx, in)
 	elapsed := time.Since(start)
 
 	// Should return promptly. The per-detector timeout is 20s, but the

@@ -40,7 +40,13 @@ func isMoney(v float64) bool {
 // context so a slow detector never blocks the naive results.
 func BestSaving(ctx context.Context, in DetectorInput, detect DetectFunc) *models.HackSaving {
 	if detect == nil {
-		detect = DetectAll
+		// BestSaving picks a single best saving, so a short sweep simply has
+		// fewer candidates to choose from; there is no partial answer to
+		// mis-present. The completeness flag is dropped deliberately.
+		detect = func(ctx context.Context, in DetectorInput) []Hack {
+			found, _ := DetectAll(ctx, in)
+			return found
+		}
 	}
 	if !isMoney(in.NaivePrice) || !in.valid() {
 		return nil

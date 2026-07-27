@@ -296,11 +296,21 @@ func handleHotelPrices(ctx context.Context, args map[string]any, elicit ElicitFu
 		PricePosition           *pricesignal.Position `json:"price_position,omitempty"`
 		BookingReadiness        string                `json:"booking_readiness,omitempty"`
 		BookingReadinessReasons []string              `json:"booking_readiness_reasons,omitempty"`
+		// The ceiling is what stops an agent reading a structurally capped
+		// verdict as a finding about the hotel. This endpoint carries no
+		// cancellation terms, so it can never report ready; without saying so, a
+		// caution here is indistinguishable from a caution earned by thin data.
+		BookingReadinessCeiling        string   `json:"booking_readiness_ceiling,omitempty"`
+		BookingReadinessCeilingReasons []string `json:"booking_readiness_ceiling_reasons,omitempty"`
 	}
 	enriched := enrichedHotelPriceResult{HotelPriceResult: result, PricePosition: pricePos}
 	if readiness != nil {
 		enriched.BookingReadiness = string(readiness.Readiness)
 		enriched.BookingReadinessReasons = readiness.Reasons
+		if readiness.Capped() {
+			enriched.BookingReadinessCeiling = string(readiness.Ceiling)
+			enriched.BookingReadinessCeilingReasons = readiness.CeilingReasons
+		}
 	}
 
 	summary := fmt.Sprintf("Found %d booking providers for hotel %s (%s to %s).",

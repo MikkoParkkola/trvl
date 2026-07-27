@@ -28,7 +28,7 @@ func TestDetectAll_emptyInput(t *testing.T) {
 	// With empty input all detectors should return quickly without panicking.
 	// We cannot assert specific counts because real API calls are involved,
 	// but the function must not panic.
-	_ = DetectAll(context.Background(), DetectorInput{})
+	_, _ = DetectAll(context.Background(), DetectorInput{})
 }
 
 // TestHackFields verifies the Hack struct serialises correctly.
