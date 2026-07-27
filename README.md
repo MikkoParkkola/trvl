@@ -222,7 +222,11 @@ scope than the code has: first that trvl never looked at local credentials
 unrequested, then that rail search was the sole exception. Both were wrong.
 
 **Turning it off.** Set `TRVL_NO_BROWSER_COOKIES=1` and trvl reads no browser cookie
-store at all — no nab, no Keychain, nothing. It stays on by default because it is what
+store at all — no nab, no Keychain, nothing. The nab part of that sentence is newer than
+the rest of it: the variable used to stop only the reader inside trvl, while the three
+rail providers went on to run nab as a fallback and nab read the same stores from its own
+process. It is now refused at the point that helper would be started, so the claim above
+covers both. It stays on by default because it is what
 makes hotel and rail search work against sites that block non-browser traffic, and
 switching it off does not make those searches fall back to something else: an operator
 that answers with a bot challenge simply returns no results, and it looks like trvl

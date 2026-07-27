@@ -6,9 +6,31 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
+
+// declineEnv is TRVL_NO_BROWSER_COOKIES, the opt-out from #521.
+//
+// The parsing rule is duplicated from cookies.Disabled rather than shared,
+// because internal/cookies already imports this package and reusing it would
+// close an import cycle. internal/cookies owns the definition;
+// TestNabAgreesWithCookiesOnTheDecline (in that package, which can see both)
+// fails if these two ever disagree.
+const declineEnv = "TRVL_NO_BROWSER_COOKIES"
+
+// BrowserCookiesDeclined reports whether the user has declined browser cookie
+// reads. Every Fetch passes --cookies to nab, which reads the user's browser
+// cookie stores, so a decline has to stop the call rather than adjust it.
+func BrowserCookiesDeclined() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(declineEnv))) {
+	case "", "0", "false":
+		return false
+	default:
+		return true
+	}
+}
 
 var ErrNotAvailable = errors.New("nab not available")
 
@@ -63,6 +85,20 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opts FetchOptions) ([
 	if !c.Available() {
 		return nil, ErrNotAvailable
 	}
+
+	// Every Fetch below passes --cookies, so this whole path reads the user's
+	// browser cookie stores. A user who declined that must not have nab started
+	// for them -- the rail providers reach here as a fallback AFTER the gated
+	// in-process extractor already refused, which is how the opt-out was still
+	// leaking cookie reads after #521's first two rounds.
+	//
+	// ErrNotAvailable rather than a new sentinel: every caller already treats it
+	// as "nab is not an option here" and falls through quietly, which is exactly
+	// the desired behaviour.
+	if BrowserCookiesDeclined() {
+		return nil, ErrNotAvailable
+	}
+
 	if opts.Browser == "" {
 		opts.Browser = "auto"
 	}
