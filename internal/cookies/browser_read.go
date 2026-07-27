@@ -38,7 +38,37 @@ var ErrBrowserReadDeclined = errors.New("browser page read declined (unset " + c
 // prompting the user to complete a CAPTCHA challenge.
 var SkipBrowserRead bool
 
-func BrowserReadPage(ctx context.Context, url string, waitSeconds int) (string, error) {
+// pageIfPermitted is the post-read consent gate for the real-browser page read,
+// the text-shaped sibling of HeaderIfPermitted and of providers.permittedAfterRead.
+//
+// Round 12 of review found why the entry checks below are not enough on their
+// own. Driving the user's Chrome or Safari through osascript takes SECONDS — a
+// window opens, a page loads, a challenge may be solved by hand — and the entry
+// check decides the question before any of that. A decline arriving during the
+// read lost: the read completed afterwards and the logged-in page text was
+// returned, and the caching wrapper then persisted it for the whole TTL. Same
+// race the cookie readers had, in a different currency.
+//
+// So the check is re-asked on the way out, on the value, immediately before it
+// can escape. It returns the declined sentinel rather than an empty string so a
+// caller cannot mistake a refusal for a page that simply would not load.
+func pageIfPermitted(text string) (string, error) {
+	if Disabled() {
+		return "", ErrBrowserReadDeclined
+	}
+	return text, nil
+}
+
+func BrowserReadPage(ctx context.Context, url string, waitSeconds int) (text string, err error) {
+	// Every successful return leaves through the post-read gate, including the
+	// per-browser loop below: the read is the slow part and a decline arriving
+	// during it has to win.
+	defer func() {
+		if err == nil {
+			text, err = pageIfPermitted(text)
+		}
+	}()
+
 	// The sixth path of this family, and the most visible of them: this one
 	// activates the user's real Chrome or Safari via osascript and reads the
 	// rendered page out of it. That uses their logged-in session, which is the
@@ -60,13 +90,13 @@ func BrowserReadPage(ctx context.Context, url string, waitSeconds int) (string, 
 
 	// Try Chrome first, then Safari.
 	for _, browser := range []string{"Google Chrome", "Safari"} {
-		text, err := browserReadPageWith(ctx, browser, url, waitSeconds)
-		if err != nil {
-			slog.Debug("browser read failed", "browser", browser, "err", err)
+		page, readErr := browserReadPageWith(ctx, browser, url, waitSeconds)
+		if readErr != nil {
+			slog.Debug("browser read failed", "browser", browser, "err", readErr)
 			continue
 		}
-		if len(text) > 100 {
-			return text, nil
+		if len(page) > 100 {
+			return page, nil
 		}
 	}
 	return "", fmt.Errorf("could not read page from any browser")
@@ -180,8 +210,29 @@ func BrowserReadPageCached(ctx context.Context, url string, waitSeconds int, ttl
 		return "", err
 	}
 
-	browserPageCache.Lock()
-	browserPageCache.entries[url] = browserCacheEntry{text: text, expires: time.Now().Add(ttl)}
-	browserPageCache.Unlock()
+	if err := cachePageIfPermitted(url, text, ttl); err != nil {
+		return "", err
+	}
 	return text, nil
+}
+
+// cachePageIfPermitted stores page text read out of the user's logged-in browser
+// session, re-checking the decline UNDER the write lock.
+//
+// Same reason the cookie vault re-checks under its own: the read that produced
+// this text took seconds, so the decline may have arrived during it. The gate on
+// BrowserReadPage stops the return value; this stops the COPY, which is the more
+// durable half — a page persisted here outlives the request and would be served
+// for the whole TTL, a refusal the user set and then cached away.
+//
+// It is a named function rather than an inline block so the refusal can be
+// tested without a real browser on the machine.
+func cachePageIfPermitted(url, text string, ttl time.Duration) error {
+	browserPageCache.Lock()
+	defer browserPageCache.Unlock()
+	if Disabled() {
+		return ErrBrowserReadDeclined
+	}
+	browserPageCache.entries[url] = browserCacheEntry{text: text, expires: time.Now().Add(ttl)}
+	return nil
 }

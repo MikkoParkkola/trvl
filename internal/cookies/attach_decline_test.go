@@ -83,8 +83,12 @@ func TestProvidersDoNotSendBrowserCookiesDirectly(t *testing.T) {
 	}
 
 	root := ".."
-	// The seam itself, and the transport primitive every provider calls through.
-	skipDirs := map[string]bool{"cookies": true, "batchexec": true}
+	// Only the seam package itself, which is where the wrappers are DEFINED.
+	// Nothing else is exempt: an earlier version of this test also skipped
+	// internal/batchexec on the grounds that it is "just the transport", which
+	// bought nothing (it holds the GetWithCookie definition, no call sites) and
+	// would have hidden the day it grew one.
+	skipDirs := map[string]bool{"cookies": true}
 
 	var walked int
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -145,7 +149,10 @@ func TestProvidersDoNotSendBrowserCookiesDirectly(t *testing.T) {
 		return nil
 	})
 	if err != nil {
-		t.Skipf("internal/ not walkable: %v", err)
+		// NOT a skip. A detector that disarms itself when its own I/O fails
+		// reports "no bypasses" for the one reason that proves nothing, which is
+		// the failure mode this whole family is made of.
+		t.Fatalf("the walk could not complete, so it proves nothing: %v", err)
 	}
 	// A walk that silently covered nothing would pass forever.
 	if walked < 50 {
