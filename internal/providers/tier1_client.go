@@ -22,11 +22,14 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"sync"
 
 	tlsclient "github.com/bogdanfinn/tls-client"
 	"github.com/bogdanfinn/tls-client/profiles"
 
 	fhttp "github.com/bogdanfinn/fhttp"
+
+	"github.com/MikkoParkkola/trvl/internal/cookies"
 )
 
 // Fetcher is the minimal net/http-shaped surface a provider needs from an
@@ -81,6 +84,9 @@ func WithTier1InsecureSkipVerify() Tier1Option {
 // requests through a ProviderLimiter (see provider_limiter.go).
 type Tier1Client struct {
 	inner tlsclient.HttpClient
+
+	seededMu sync.Mutex
+	seeded   bool
 }
 
 // Interface guard.
@@ -148,7 +154,38 @@ func (c *Tier1Client) SeedCookies(targetURL string) int {
 		return 0
 	}
 	c.inner.SetCookies(u, toFHTTPCookies(cookies))
+	c.markSeeded()
 	return len(cookies)
+}
+
+// markSeeded records that this client's jar now holds cookies harvested from
+// the user's browser (or from the cache that was itself filled from the
+// browser). It is what discardSeededIfDeclined keys on.
+func (c *Tier1Client) markSeeded() {
+	c.seededMu.Lock()
+	defer c.seededMu.Unlock()
+	c.seeded = true
+}
+
+// discardSeededIfDeclined throws away the whole jar if the user has declined
+// browser cookies since it was seeded.
+//
+// Seeding happens once; requests happen for as long as the client lives. Both
+// sources SeedCookies draws from now refuse after a decline, so a decline can
+// no longer put browser cookies IN — but it cannot reach the ones already
+// there, and the tls-client jar attaches them to every later request with no
+// revoke path of its own. This is the same shape the vault had in round 8, and
+// the fix is the same: swap the jar, which is the tls-client's own documented
+// way to clear it. The cache is left alone deliberately — loadCachedCookies
+// already refuses every read after a decline, so nothing can be served from it.
+func (c *Tier1Client) discardSeededIfDeclined() {
+	c.seededMu.Lock()
+	defer c.seededMu.Unlock()
+	if !c.seeded || !cookies.Disabled() {
+		return
+	}
+	c.inner.SetCookieJar(tlsclient.NewCookieJar())
+	c.seeded = false
 }
 
 // Cookies returns the cookies the jar currently holds for targetURL. Returns
@@ -158,12 +195,20 @@ func (c *Tier1Client) Cookies(targetURL string) []*http.Cookie {
 	if err != nil || u.Host == "" {
 		return nil
 	}
-	return fromFHTTPCookies(c.inner.GetCookies(u))
+	c.discardSeededIfDeclined()
+	return permittedAfterRead(fromFHTTPCookies(c.inner.GetCookies(u)))
 }
 
 // Do executes a standard net/http request through the Chrome-impersonating
 // transport, bridging to and from the bogdanfinn/fhttp types tls-client uses.
 func (c *Tier1Client) Do(req *http.Request) (*http.Response, error) {
+	// The jar attaches its cookies inside c.inner.Do, so the decline has to be
+	// answered before that call, not after it. A Cookie header a caller set by
+	// hand is deliberately left alone: the opt-out is about the user's browser,
+	// not about cookies in general, and a server-established session is neither
+	// harvested nor the user's. Those headers are held to
+	// cookies.HeaderIfPermitted by the lint in attach_decline_test.go.
+	c.discardSeededIfDeclined()
 	freq, err := toFHTTPRequest(req)
 	if err != nil {
 		return nil, err
