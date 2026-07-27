@@ -90,7 +90,13 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opts FetchOptions) ([
 	// install look identical to everything downstream, so the one place that can
 	// still tell them apart says so here.
 	if BrowserCookiesDeclined() {
-		slog.Debug("nab fetch declined by the user", "env", consent.CookiesEnv, "url", rawURL)
+		// No URL, and no host either. The decline is a global env-var opt-out, so
+		// once it is set EVERY fetch is refused -- which URL was refused tells an
+		// operator nothing they can act on, and rounds 5 to 7 of review spent
+		// three attempts failing to reduce a URL to something provably harmless
+		// (query string, then IPv6 zone, then the hostname itself). The variable
+		// name is the whole actionable content of this line.
+		slog.Debug("nab fetch declined by the user", "env", consent.CookiesEnv)
 		return nil, ErrNotAvailable
 	}
 
