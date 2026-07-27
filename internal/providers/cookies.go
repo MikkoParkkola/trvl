@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/browserutils/kooky"
 	_ "github.com/browserutils/kooky/browser/all" // register all browser cookie finders
 	"github.com/browserutils/kooky/browser/brave"
@@ -398,6 +399,16 @@ func InvalidateWarmCache(targetURL, browserHint string) {
 // BrowserCookiesForURL reads matching browser cookies for targetURL using the
 // same bounded, test-guarded path as provider search recovery.
 func BrowserCookiesForURL(targetURL string) []*http.Cookie {
+	// The same opt-out that covers the nab reader, because a user setting
+	// TRVL_NO_BROWSER_COOKIES means their cookie stores, not one of the two code
+	// paths that reads them. Gating only the other reader would ship a control
+	// whose name promises more than it does.
+	//
+	// Whether this reader returns anything on a given machine is a separate
+	// question, and currently a doubtful one: see #529.
+	if cookies.Disabled() {
+		return nil
+	}
 	return browserCookiesForURL(targetURL)
 }
 

@@ -219,9 +219,17 @@ thing written to disk is that one token cache.
 
 Documenting this took three attempts, and each earlier version claimed a narrower
 scope than the code has: first that trvl never looked at local credentials
-unrequested, then that rail search was the sole exception. Both were wrong. Whether
-any of it should be opt-in is open at
-[#521](https://github.com/MikkoParkkola/trvl/issues/521).
+unrequested, then that rail search was the sole exception. Both were wrong.
+
+**Turning it off.** Set `TRVL_NO_BROWSER_COOKIES=1` and trvl reads no browser cookie
+store at all — no nab, no Keychain, nothing. It stays on by default because it is what
+makes hotel and rail search work against sites that block non-browser traffic, and
+switching it off does not make those searches fall back to something else: an operator
+that answers with a bot challenge simply returns no results, and it looks like trvl
+finding no trains rather than like a setting you chose. That is the trade, stated so
+you can make it deliberately. Decided in
+[#521](https://github.com/MikkoParkkola/trvl/issues/521); the headless Chrome harvest
+is separately opt-in behind `TRVL_TIER2_CDP` and does not run unless you set it.
 
 AF-KLM is the single exception, and it is worth explaining. Ordinary round-trips are already covered in the default merge: Kiwi returns both legs of a paired itinerary, and Google returns the genuine round-trip fare with the matching return chosen at booking. AF-KLM is there for what neither offers — the rail+fly itineraries it sells, where a train leg from Brussels Midi, Antwerp or Brussels is ticketed as part of the flight instead of being a separate rail booking you have to make and risk yourself. It also returns both legs on KL/AF metal in full detail. It is the only provider whose **API key** can come from a credential manager, under tight rules. (Browser cookie access is a separate matter and is covered in [What trvl reads from your browser](#what-trvl-reads-from-your-browser); several providers do that, and it also touches the Keychain.)
 
