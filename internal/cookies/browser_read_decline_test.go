@@ -48,3 +48,47 @@ func TestBrowserReadPageHonoursTheDecline(t *testing.T) {
 		t.Errorf("refusal took %v, long enough that the browser may have been launched first", elapsed)
 	}
 }
+
+// TestBrowserReadPageCachedRefusesAWarmEntry pins the half of the sixth path
+// that a check inside BrowserReadPage alone does NOT cover: a cache entry that
+// was filled while browser access was permitted, then served after the user
+// declined. The cached path returns before it ever calls BrowserReadPage, so
+// the seam check there is invisible to it.
+//
+// The entry is seeded directly rather than by a real read, so the test proves
+// the refusal on a cache that is genuinely warm and genuinely servable -- the
+// control being the expiry, set far in the future, which is what would make
+// this entry a hit if the guard were removed.
+func TestBrowserReadPageCachedRefusesAWarmEntry(t *testing.T) {
+	const url = "https://www.thetrainline.com/search"
+
+	browserPageCache.Lock()
+	browserPageCache.entries[url] = browserCacheEntry{
+		text:    "page text taken from the user's logged-in session",
+		expires: time.Now().Add(time.Hour),
+	}
+	browserPageCache.Unlock()
+	t.Cleanup(func() {
+		browserPageCache.Lock()
+		delete(browserPageCache.entries, url)
+		browserPageCache.Unlock()
+	})
+
+	// Control: warm, unexpired, and served when nothing has been declined.
+	if got, err := BrowserReadPageCached(context.Background(), url, 4, time.Hour); err != nil || got == "" {
+		t.Fatalf("the fixture did not produce a servable cache entry, so the assertion below would prove nothing: got %q, err = %v", got, err)
+	}
+
+	t.Setenv(consent.CookiesEnv, "1")
+
+	out, err := BrowserReadPageCached(context.Background(), url, 4, time.Hour)
+	if err == nil {
+		t.Fatal("cached page content was served despite the decline")
+	}
+	if !errors.Is(err, ErrBrowserReadDeclined) {
+		t.Fatalf("refused, but not for the declared reason: err = %v, want it to wrap ErrBrowserReadDeclined", err)
+	}
+	if out != "" {
+		t.Errorf("page content came back from a declined read: %q", out)
+	}
+}

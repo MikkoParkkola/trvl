@@ -158,6 +158,15 @@ type browserCacheEntry struct {
 }
 
 func BrowserReadPageCached(ctx context.Context, url string, waitSeconds int, ttl time.Duration) (string, error) {
+	// The cache is checked BEFORE it is served, not only before it is filled.
+	// Entries here are page text taken out of the user's logged-in session, and
+	// serving one after the user declined is the same shape as the cookie-cache
+	// bypass of the previous commit: harvested material replayed from a path the
+	// user believed they had closed. Cheaper to refuse than to reason about
+	// whether the window is reachable.
+	if consent.CookiesDeclined() {
+		return "", ErrBrowserReadDeclined
+	}
 	browserPageCache.RLock()
 	entry, ok := browserPageCache.entries[url]
 	browserPageCache.RUnlock()
