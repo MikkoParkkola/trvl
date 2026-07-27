@@ -45,10 +45,10 @@ func TestOutput_ReturnsStdoutAndDiscardsStderr(t *testing.T) {
 // so that the descendant is created after the job assignment rather than inside
 // the window described in #526. The deadline has to outlast that wait or the
 // descendant would never exist, and the wait afterwards has to outlast the
-// descendant's own 3s sleep measured from when it spawned.
+// descendant's own seven-second sleep measured from when it spawned.
 func containmentTiming() (deadline, settle time.Duration) {
 	if runtime.GOOS == "windows" {
-		return 3 * time.Second, 6 * time.Second
+		return 3 * time.Second, 8 * time.Second
 	}
 	return time.Second, 4 * time.Second
 }
@@ -88,7 +88,12 @@ func TestOutput_ContainsDescendantsOnTimeout(t *testing.T) {
 	if _, err := Output(cmd); err == nil {
 		t.Fatal("expected the hung helper to fail")
 	}
-	if elapsed := time.Since(start); elapsed > deadline+5*time.Second {
+	// This bound is the #507 regression guard: it is what fails if the deadline
+	// stops ending the helper at all. Kept as tight as the platform allows, three
+	// seconds over the deadline, because slack here is hang time that passes
+	// silently. Wait can run one second past cancellation by WaitDelay, so the
+	// remaining margin is two seconds of scheduling.
+	if elapsed := time.Since(start); elapsed > deadline+3*time.Second {
 		t.Fatalf("Output took %v; the deadline should have ended it near %v", elapsed, deadline)
 	}
 

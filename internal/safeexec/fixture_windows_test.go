@@ -36,12 +36,23 @@ import (
 // version of this fixture used `timeout`, and the CI failure it produced looks
 // identical either way, which is why the defect survived a green-to-red reading.
 // `ping` does not consult stdin.
+//
+// The descendant's own wait is seven seconds rather than three, and the reason is
+// when containment actually fires on this platform. Nothing here sets cmd.Cancel,
+// so the deadline kills the direct child only; descendants die when the job handle
+// closes, and that happens in Output's deferred close after Wait returns. Wait can
+// be held open by the descendant, which inherits the parent's stdout pipe, but
+// WaitDelay caps that at one second (safeexec.go:35). So the job closes at
+// deadline plus at most a second, and a descendant writing three seconds after a
+// one-second head start would be writing at almost exactly that moment. Seven
+// seconds puts its write several seconds the wrong side of the kill, which is the
+// difference between a test and a coin toss.
 func writeHangingSpawner(t *testing.T, dir, startedPath, survivorPath string) ([]string, error) {
 	t.Helper()
 	bat := filepath.Join(dir, "hangs.bat")
 	script := "@echo off\r\n" +
 		"ping -n 2 127.0.0.1 >nul\r\n" +
-		"start \"\" /b cmd /c \"echo started>>\"" + startedPath + "\" & ping -n 4 127.0.0.1 >nul & echo survived>>\"" + survivorPath + "\"\"\r\n" +
+		"start \"\" /b cmd /c \"echo started>>\"" + startedPath + "\" & ping -n 8 127.0.0.1 >nul & echo survived>>\"" + survivorPath + "\"\"\r\n" +
 		"ping -n 31 127.0.0.1 >nul\r\n"
 	if err := os.WriteFile(bat, []byte(script), 0o644); err != nil {
 		return nil, err
