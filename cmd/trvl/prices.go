@@ -85,10 +85,19 @@ func runPrices(cmd *cobra.Command, args []string) error {
 				PricePosition    *pricesignal.Position `json:"price_position,omitempty"`
 				BookingReadiness string                `json:"booking_readiness,omitempty"`
 				ReadinessReasons []string              `json:"booking_readiness_reasons,omitempty"`
+				// ReadinessCeiling is the best verdict this command can ever
+				// return. Without it a consumer cannot tell a cautious property
+				// from a capped path, because both print "caution".
+				ReadinessCeiling string   `json:"booking_readiness_ceiling,omitempty"`
+				CeilingReasons   []string `json:"booking_readiness_ceiling_reasons,omitempty"`
 			}{HotelPriceResult: result, PricePosition: pricePos}
 			if readiness != nil {
 				out.BookingReadiness = string(readiness.Readiness)
 				out.ReadinessReasons = readiness.Reasons
+				if readiness.Capped() {
+					out.ReadinessCeiling = string(readiness.Ceiling)
+					out.CeilingReasons = readiness.CeilingReasons
+				}
 			}
 			return models.FormatJSON(os.Stdout, out)
 		}
@@ -101,6 +110,13 @@ func runPrices(cmd *cobra.Command, args []string) error {
 	printPricePosition(os.Stdout, pricePos)
 	if readiness != nil {
 		fmt.Printf("\nBooking readiness: %s — %s\n", readiness.Label(), readiness.Summary())
+		if readiness.Capped() {
+			// Say the ceiling out loud. Six properties all reading "caution" is
+			// indistinguishable from six uncertain properties unless the output
+			// admits this command cannot do better than caution for any of them.
+			fmt.Printf("  (%s is the best this command can report: %s. Use `trvl rooms` for a room-level verdict that can reach ready.)\n",
+				readiness.Ceiling, strings.Join(readiness.CeilingReasons, "; "))
+		}
 	}
 	return nil
 }
