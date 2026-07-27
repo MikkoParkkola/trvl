@@ -6,31 +6,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"log/slog"
 	"os/exec"
 	"strings"
-)
 
-// declineEnv is TRVL_NO_BROWSER_COOKIES, the opt-out from #521.
-//
-// The parsing rule is duplicated from cookies.Disabled rather than shared,
-// because internal/cookies already imports this package and reusing it would
-// close an import cycle. internal/cookies owns the definition;
-// TestNabAgreesWithCookiesOnTheDecline (in that package, which can see both)
-// fails if these two ever disagree.
-const declineEnv = "TRVL_NO_BROWSER_COOKIES"
+	"github.com/MikkoParkkola/trvl/internal/consent"
+)
 
 // BrowserCookiesDeclined reports whether the user has declined browser cookie
 // reads. Every Fetch passes --cookies to nab, which reads the user's browser
 // cookie stores, so a decline has to stop the call rather than adjust it.
-func BrowserCookiesDeclined() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(declineEnv))) {
-	case "", "0", "false":
-		return false
-	default:
-		return true
-	}
-}
+//
+// The rule lives in internal/consent. It used to be written out again here,
+// because internal/cookies imports this package and reusing its copy would have
+// closed an import cycle; the two copies were held together by a cross-package
+// test that failed if they ever disagreed. There is now one copy and nothing to
+// disagree with.
+func BrowserCookiesDeclined() bool { return consent.CookiesDeclined() }
 
 var ErrNotAvailable = errors.New("nab not available")
 
@@ -94,8 +86,11 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opts FetchOptions) ([
 	//
 	// ErrNotAvailable rather than a new sentinel: every caller already treats it
 	// as "nab is not an option here" and falls through quietly, which is exactly
-	// the desired behaviour.
+	// the desired behaviour. The cost is that a declined read and a broken nab
+	// install look identical to everything downstream, so the one place that can
+	// still tell them apart says so here.
 	if BrowserCookiesDeclined() {
+		slog.Debug("nab fetch declined by the user", "env", consent.CookiesEnv, "url", rawURL)
 		return nil, ErrNotAvailable
 	}
 

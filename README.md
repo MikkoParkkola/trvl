@@ -253,15 +253,18 @@ the separate visible-window escape hatch, which asks before it opens anything an
 requires its own per-provider opt-in, is described under
 [What trvl reads from your browser](#what-trvl-reads-from-your-browser).
 
-This is also what gets trvl past the rail sites' bot walls. Measured on 2026-07-27:
-reading cookies off disk returns nothing at all for Trainline, SNCF Connect and
-Rome2Rio, because the tokens those sites check are issued to a live browsing session
-and are not sitting in the cookie store. A headless visit clears the wall for two of
-them and returns usable cookies — Trainline's `datadome`, Rome2Rio's Cloudflare
-`__cf_bm` — so declining this is expected to leave those two empty. SNCF Connect is
-the honest exception: the headless visit reaches a challenge that needs a human, and
-trvl only reuses cookies from a challenge that actually cleared, so tier 2 is not
-what is currently fixing SNCF either way.
+This is also what gets trvl past the rail sites' bot walls. A one-off measurement on
+2026-07-27 — a snapshot of how those three sites behaved that day, not a promise about
+how they behave now — found that reading cookies off disk returned nothing at all for
+Trainline, SNCF Connect and Rome2Rio, because the tokens those sites check are issued
+to a live browsing session and are not sitting in the cookie store. A headless visit
+cleared the wall for two of them and returned usable cookies — Trainline's `datadome`,
+Rome2Rio's Cloudflare `__cf_bm` — so declining this is likely to leave those two empty.
+SNCF Connect was the exception: the headless visit reached a challenge that needs a
+human, and trvl only reuses cookies from a challenge that actually cleared, so tier 2
+was not what fixed SNCF either way. Bot walls change without notice and nothing in CI
+re-checks this, so treat the specifics as dated. To re-measure, run the probe test with
+`TRVL_COOKIE_PROBE=1`.
 
 AF-KLM is the single exception, and it is worth explaining. Ordinary round-trips are already covered in the default merge: Kiwi returns both legs of a paired itinerary, and Google returns the genuine round-trip fare with the matching return chosen at booking. AF-KLM is there for what neither offers — the rail+fly itineraries it sells, where a train leg from Brussels Midi, Antwerp or Brussels is ticketed as part of the flight instead of being a separate rail booking you have to make and risk yourself. It also returns both legs on KL/AF metal in full detail. It is the only provider whose **API key** can come from a credential manager, under tight rules. (Browser cookie access is a separate matter and is covered in [What trvl reads from your browser](#what-trvl-reads-from-your-browser); several providers do that, and it also touches the Keychain.)
 
