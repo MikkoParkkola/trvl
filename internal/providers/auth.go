@@ -8,11 +8,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/waf"
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
@@ -30,6 +32,15 @@ import (
 // search to a different city can swap the values out from under us. See
 // MIK-3070 for the race that motivated this signature.
 func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars map[string]string) (map[string]string, error) {
+	// Before every cache read below, including the no-preflight early return.
+	// The auth cache lives in memory and the MCP server is long-lived, so a jar
+	// seeded from the user's browser outlives the moment it was permitted: the
+	// cache hit returns without reaching loadCachedCookies, tryBrowserCookieRetry
+	// or any other guarded reader, and the browser-derived cookies keep going out
+	// on the wire. Discarding the seeded state costs a preflight; keeping it
+	// costs the user the control they set.
+	discardBrowserSeededAuth(pc)
+
 	if pc.config.Auth == nil || pc.config.Auth.PreflightURL == "" {
 		// No preflight needed — but the caller may still rely on existing
 		// pc.authValues populated by other paths (header-based auth, env tokens).
@@ -67,7 +78,12 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 
 	// Tier 0: try loading persisted cookies from a previous successful session.
 	// This makes browser escape hatch a one-time setup rather than per-search.
-	loadCachedCookies(pc.client, resolvedURL)
+	// The file carries no provenance, so anything it yields is treated as
+	// browser-derived — the conservative reading, and the one #534 exists to
+	// replace with a recorded one.
+	if loadCachedCookies(pc.client, resolvedURL) {
+		pc.browserSeeded = true
+	}
 
 	resp, body, err := doPreflightRequest(ctx, pc.client, &resolvedAuth)
 	if err != nil {
@@ -92,6 +108,7 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 	if needsBrowserCookieFallback(resp.StatusCode, extracted, resolvedAuth.Extractions) {
 		// Tier 3a: read cookies from user's browser (kooky).
 		if tryBrowserCookieRetry(ctx, pc, &resolvedAuth) {
+			pc.browserSeeded = true
 			saveCachedCookies(pc.client, resolvedURL)
 			pc.lastPreflightURL = resolvedURL
 			pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
@@ -107,6 +124,7 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 		// Tier 4: last-resort escape hatch — open in browser.
 		if resolvedAuth.BrowserEscapeHatch && isInteractive(ctx) {
 			if tryBrowserEscapeHatch(ctx, pc, &resolvedAuth) {
+				pc.browserSeeded = true
 				saveCachedCookies(pc.client, resolvedURL)
 				pc.lastPreflightURL = resolvedURL
 				pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
@@ -661,4 +679,54 @@ func decompressBody(resp *http.Response, limit int64) ([]byte, error) {
 		// No encoding or "identity" — read raw.
 		return io.ReadAll(reader)
 	}
+}
+
+// discardBrowserSeededAuth throws away cached auth state that came from the
+// user's browser, once the user has declined browser access.
+//
+// The seventh path of this family, and the first that is purely in-memory: the
+// six before it were a browser launch, an env-var reading, or a file on disk.
+// Here the material has already been harvested into a live http.Client, and the
+// auth cache serves it without consulting anything. In a CLI run that window is
+// short. Under `trvl mcp`, which is the shipping default, the process outlives
+// many searches, so the window is the process.
+//
+// The jar is REPLACED rather than emptied: net/http/cookiejar has no clear, and
+// reaching into it to expire entries one by one would be a second
+// implementation of a thing the standard library already gets right. A nil jar
+// is not used either — a client without one silently drops Set-Cookie, which
+// would turn a privacy control into a broken session.
+//
+// Only browser-seeded state is discarded. A session established by an ordinary
+// preflight never touched the user's browser, and refusing it would punish a
+// user for a setting that says nothing about it.
+func discardBrowserSeededAuth(pc *providerClient) {
+	if pc == nil || !cookies.Disabled() {
+		return
+	}
+
+	pc.authMu.Lock()
+	defer pc.authMu.Unlock()
+
+	if !pc.browserSeeded {
+		return
+	}
+
+	pc.authValues = nil
+	pc.authExpiry = time.Time{}
+	pc.lastPreflightURL = ""
+	pc.browserSeeded = false
+
+	if pc.client != nil {
+		if jar, err := cookiejar.New(nil); err == nil {
+			pc.client.Jar = jar
+		} else {
+			// Unreachable with a nil options argument, but a jar that failed to
+			// build must not leave the old one in place: that is precisely the
+			// state this function exists to remove.
+			pc.client.Jar = nil
+		}
+	}
+
+	slog.Debug("discarded browser-seeded auth state after opt-out", "provider", pc.config.ID)
 }
