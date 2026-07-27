@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -49,9 +50,40 @@ func BrowserCookies(domain string) string {
 	return BrowserCookiesContext(context.Background(), domain)
 }
 
+// DisableEnv turns off every read of the user's browser cookie stores.
+//
+// Reading those stores is what makes rail search work against operators that
+// challenge non-browser traffic, so it is on by default. It is also a read of a
+// local credential store — on macOS it reaches the Keychain — that the user did
+// not ask for, which is the kind of thing someone is entitled to decline. This
+// is the way to decline it. Rail searches against a challenging operator then
+// fail rather than degrade quietly, which is the honest cost of the choice.
+const DisableEnv = "TRVL_NO_BROWSER_COOKIES"
+
+// Disabled reports whether the user has declined browser cookie reads.
+//
+// Any non-empty value other than "0" or "false" counts, because someone setting
+// this is expressing a preference about their credentials and the least
+// surprising reading of TRVL_NO_BROWSER_COOKIES=yes is that they meant it.
+func Disabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(DisableEnv))) {
+	case "", "0", "false":
+		return false
+	default:
+		return true
+	}
+}
+
 // BrowserCookiesContext is BrowserCookies with caller cancellation honoured.
 // A request that has gone away must not keep a helper running on its behalf.
 func BrowserCookiesContext(ctx context.Context, domain string) string {
+	// Before the suppression cache and before the singleflight, because a user
+	// who has declined must not have a helper started for them by a concurrent
+	// caller that arrived first.
+	if Disabled() {
+		return ""
+	}
+
 	if _, ok := cookieSuppressed(domain); ok {
 		return ""
 	}
