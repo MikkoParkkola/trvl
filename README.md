@@ -83,7 +83,7 @@ More starter prompts and what good answers look like: [docs/DEMO.md](docs/DEMO.m
 ## Why trvl, not the alternatives
 
 - **Whole journey, door to door.** It plans the entire trip across modes — home to airport, flight, arrival transfer, hotel, onward train — and prices each leg in its real mode. Most tools stop at one flight, one hotel.
-- **No API keys, no signup, no bill.** Every core source works the moment you install it — no Amadeus key to apply for, no subscription, no per-call cost. Some optional providers can be switched on with a key of your own (AF-KLM, SerpAPI, Travelpayouts and others); none of them is required, and a search never goes looking for credentials on your machine that you haven't pointed it at. See [Optional credentialed providers](#optional-credentialed-providers).
+- **No API keys, no signup, no bill.** Every core source works the moment you install it — no Amadeus key to apply for, no subscription, no per-call cost. Some optional providers can be switched on with a key of your own (AF-KLM, SerpAPI, Travelpayouts and others); none of them is required. Separately from keys, trvl reads your browser's cookie stores to get past the bot protection that hotel and rail sites put in front of their search APIs: see [What trvl reads from your browser](#what-trvl-reads-from-your-browser).
 - **Your assistant, your machine.** One local binary, any MCP client. Not locked to a vendor; your trips and preferences never leave your computer.
 - **It optimizes, not just lists.** Shift-day pricing, split-airline routing, hidden-city checks, award sweet spots, round-trip fares. It hands back the cheaper option and shows what it saved.
 - **It is honest when a source fails.** Typed statuses and labelled estimates, never an empty result dressed up as "nothing found."
@@ -178,9 +178,50 @@ Every source trvl uses by default is free and needs no account. A number of extr
 | `TICKETMASTER_API_KEY` | Events |
 | `TRVL_GMAIL_APP_PASSWORD` | Emailing trip digests |
 
-Every one of these reads its key from the environment and nowhere else. trvl does not search your machine for credentials.
+Every one of these reads its key from the environment and nowhere else.
 
-AF-KLM is the single exception, and it is worth explaining. Ordinary round-trips are already covered in the default merge: Kiwi returns both legs of a paired itinerary, and Google returns the genuine round-trip fare with the matching return chosen at booking. AF-KLM is there for what neither offers — the rail+fly itineraries it sells, where a train leg from Brussels Midi, Antwerp or Brussels is ticketed as part of the flight instead of being a separate rail booking you have to make and risk yourself. It also returns both legs on KL/AF metal in full detail. It is the only provider that can read from a credential store, under tight rules:
+## What trvl reads from your browser
+
+Hotel and rail sites put bot protection in front of their search APIs. trvl gets past
+it by reusing the browser session you already have, which is why searches work at all
+without an API key. That means it reads local state, so here is exactly what and when.
+
+**At startup, before any search.** Creating the provider runtime kicks off background
+reads of your browser cookie stores for every provider configured to use them
+(`internal/providers/runtime_core.go:179`). On macOS the first such read goes through
+the Keychain and takes six to ten seconds cold, which is precisely why it is started
+early rather than on demand.
+
+**On a hotel search.** Booking.com needs an `aws-waf-token`. trvl looks for one in
+this order: the cache at `~/.trvl/cookies`, then your installed browser's cookies via
+[kooky](https://github.com/browserutils/kooky), then a headless harvest driven through
+your installed Chrome. A token obtained that way is written back to that cache and
+reused for days.
+
+**On a rail search.** When Trainline, Eurostar or SNCF answers with a 403 challenge,
+trvl runs [nab](https://github.com/MikkoParkkola/nab) to read your cookies for that
+operator and retries with them.
+
+Three things follow, and they are the reason this section exists:
+
+- **It is automatic.** No flag turns it on and none turns it off. Running trvl at all
+  starts the startup reads.
+- **It reads credential storage.** Browser cookie databases are encrypted, so getting
+  at them means Keychain access on macOS. What is read is your own session cookies for
+  the site being searched.
+- **Some of it persists and some of it launches a browser.** The Booking.com token is
+  written to `~/.trvl/cookies`. The headless harvest starts your Chrome.
+
+Nothing is uploaded. Cookies go into requests to the same site they came from, and the
+only thing written to disk is that one token cache.
+
+Documenting this took three attempts, and each earlier version claimed a narrower
+scope than the code has: first that trvl never looked at local credentials
+unrequested, then that rail search was the sole exception. Both were wrong. Whether
+any of it should be opt-in is open at
+[#521](https://github.com/MikkoParkkola/trvl/issues/521).
+
+AF-KLM is the single exception, and it is worth explaining. Ordinary round-trips are already covered in the default merge: Kiwi returns both legs of a paired itinerary, and Google returns the genuine round-trip fare with the matching return chosen at booking. AF-KLM is there for what neither offers — the rail+fly itineraries it sells, where a train leg from Brussels Midi, Antwerp or Brussels is ticketed as part of the flight instead of being a separate rail booking you have to make and risk yourself. It also returns both legs on KL/AF metal in full detail. It is the only provider whose **API key** can come from a credential manager, under tight rules. (Browser cookie access is a separate matter and is covered in [What trvl reads from your browser](#what-trvl-reads-from-your-browser); several providers do that, and it also touches the Keychain.)
 
 | Variable | Effect |
 | --- | --- |
@@ -190,7 +231,7 @@ AF-KLM is the single exception, and it is worth explaining. Ordinary round-trips
 
 Set `AFKLM_OP_REF` without `AFKLM_KEY` and a default search will tell you AF-KLM was skipped and why, rather than quietly leaving it out.
 
-The rule, and why it exists: a search you didn't ask for never runs a credential helper. `op` and `security` are third-party programs that can block, can pop an interactive prompt, and can leave stray processes behind — so an opportunistic lookup on the default path is limited to reading an environment variable, which costs nothing and cannot prompt. Only an explicit `--provider afklm` may reach an external store, where a prompt is something you asked for. Reported as [#507](https://github.com/MikkoParkkola/trvl/issues/507).
+The rule, and why it exists: a search you didn't ask for never runs an AF-KLM credential helper. (Scoped to AF-KLM on purpose. Browser cookie reads are a different mechanism with a different answer, described above.) `op` and `security` are third-party programs that can block, can pop an interactive prompt, and can leave stray processes behind — so an opportunistic lookup on the default path is limited to reading an environment variable, which costs nothing and cannot prompt. Only an explicit `--provider afklm` may reach an external store, where a prompt is something you asked for. Reported as [#507](https://github.com/MikkoParkkola/trvl/issues/507).
 
 If you use the macOS Keychain (`security add-generic-password -a "$USER" -s afklm-api-key -w <key>`), it is consulted under `--provider afklm` only, for the same reason.
 

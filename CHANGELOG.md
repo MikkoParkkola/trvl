@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **What trvl reads from your browser is now documented, and it is more than the
+  README used to imply.** Hotel and rail sites put bot protection in front of their
+  search APIs, and trvl gets past it by reusing your existing browser session, which
+  is why searches work without an API key. Three things were undocumented. Starting
+  the provider runtime pre-reads your browser cookie stores before any search, because
+  the first read goes through the macOS Keychain and costs six to ten seconds cold. A
+  Booking.com search looks for its `aws-waf-token` in `~/.trvl/cookies`, then your
+  browser's cookies, then a headless harvest through your installed Chrome, writing
+  the result back to that cache. A rail search reads cookies for the operator after a
+  403. None of it is uploaded, and nothing turns it off today. Whether any of it should
+  be opt-in is open at [#521](https://github.com/MikkoParkkola/trvl/issues/521).
+
 ### Added
 
 - `AFKLM_KEYCHAIN_SERVICE` overrides the macOS Keychain service name, so a user who
