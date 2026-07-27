@@ -209,15 +209,24 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 		return nil, nil, fmt.Errorf("configure_provider: save: %w", err)
 	}
 
-	// Proactive cookie warming: if the provider uses browser_escape_hatch,
-	// open the preflight URL in the user's browser now so that cookies are
-	// warm before the first search. This is a one-time setup action.
+	// Proactive cookie warming: if the provider uses browser_escape_hatch, ask the
+	// platform to open the preflight URL now so cookies are warm before the first
+	// search. This is a one-time setup action.
 	warmingNote := ""
 	if config.Auth != nil && config.Auth.BrowserEscapeHatch && config.Auth.PreflightURL != "" {
 		if err := providers.OpenURLInBrowser(config.Auth.PreflightURL, ""); err != nil {
 			log.Printf("cookie warming: failed to open browser for %s: %v", config.Name, err)
 		} else {
-			warmingNote = fmt.Sprintf("\n\nOpened %s in browser to warm cookies for %s. Future searches will use these cookies automatically.",
+			// Says "asked", not "opened", and the distinction is load-bearing.
+			// A nil error here means the launcher accepted the request without
+			// failing immediately; it cannot mean the browser opened. The launcher
+			// is watched only for a brief window, so one that fails after it, which
+			// a cold launcher can, is indistinguishable from one that succeeded.
+			// Claiming the browser opened and that future searches will use the
+			// cookies is therefore a statement this code cannot support, and it is
+			// exactly the sort of confident-but-wrong output the credential work in
+			// #507 was about.
+			warmingNote = fmt.Sprintf("\n\nAsked your browser to open %s so cookies for %s can be reused. If a window did not appear, open that URL yourself and searches will pick the cookies up.",
 				config.Auth.PreflightURL, config.Name)
 		}
 	}
