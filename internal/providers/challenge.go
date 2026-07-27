@@ -119,8 +119,10 @@ var cdpChallengeRunner = runCDPChallenge
 //     harvested cookies to the ~/.trvl/cookies cache for Tier-1 reuse, and
 //     returns ChallengeCleared.
 //
-// Like RefreshCookiesViaCDP it is gated: without the opt-in (TRVL_TIER2_CDP=1 or
-// WithTier2Force) it returns ErrTier2Disabled. It reuses the Tier2Option set so
+// Gating: the path runs by default and returns ErrTier2Disabled when the user
+// declined it (TRVL_NO_TIER2_CDP, or TRVL_TIER2_CDP=0) unless WithTier2Force is
+// used. It also refuses inside a `go test` binary, so the suite stays offline;
+// TRVL_ALLOW_BROWSER_COOKIES lifts that. It reuses the Tier2Option set so
 // callers configure it the same way as the lower-level CDP refresh.
 func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option) (*ChallengeResult, error) {
 	cfg := tier2Config{challengeWait: defaultChallengeWait}
@@ -171,6 +173,12 @@ func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option
 // stolen (Headless + DefaultExecAllocatorOptions; no activation/foreground
 // flags).
 func runCDPChallenge(ctx context.Context, execPath, targetURL string, challengeWait time.Duration) ([]*network.Cookie, string, error) {
+	// Same reason as runCDPCollect: with Tier-2 on by default, the driver is
+	// what must refuse inside a test binary, so stubbed tests still run.
+	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
+		return nil, "", ErrTier2Disabled
+	}
+
 	allocOpts := append([]chromedp.ExecAllocatorOption{},
 		chromedp.DefaultExecAllocatorOptions[:]...)
 	allocOpts = append(allocOpts,
