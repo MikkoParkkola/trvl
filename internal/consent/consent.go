@@ -39,10 +39,21 @@ const CookiesEnv = "TRVL_NO_BROWSER_COOKIES"
 const Tier2Env = "TRVL_NO_TIER2_CDP"
 
 // Tier2LegacyEnv is TRVL_TIER2_CDP, which used to be the opt-IN before the
-// headless path became the default. An explicit 0/false here still declines: a
-// user who set it to keep the browser off meant it, and flipping the default
-// must not quietly overrule them.
+// headless path became the default. A value here that did not switch the
+// browser ON under the old rules still declines: a user who set it to keep the
+// browser off meant it, and flipping the default must not quietly overrule
+// them.
 const Tier2LegacyEnv = "TRVL_TIER2_CDP"
+
+// tier2LegacyEnables lists the values that switched the headless path ON under
+// the old opt-in, copied from the predecessor exactly: Tier2Enabled() was
+// `v == "1" || v == "true" || v == "yes"`. Everything else left the browser off,
+// so everything else has to keep leaving it off.
+//
+// Compared case-insensitively and after trimming, which is strictly more
+// permissive than the predecessor and therefore cannot turn a user who had the
+// browser ON into one who has it off.
+var tier2LegacyEnables = map[string]bool{"1": true, "true": true, "yes": true}
 
 // ErrTier2Declined is returned when the headless path is invoked after the user
 // declined it. Nothing suppresses it -- a declined search fails rather than
@@ -64,9 +75,13 @@ func Tier2Declined() bool {
 	if declined(os.Getenv(Tier2Env)) {
 		return true
 	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(Tier2LegacyEnv))) {
-	case "0", "false", "no":
-		return true
+	// The legacy variable is read as an ALLOWLIST of enables, not a denylist of
+	// denials. An adversarial review of the default flip found the denylist
+	// version fails open: TRVL_TIER2_CDP=off matched no denial, so a user who
+	// had explicitly switched the browser off got one launched on upgrade.
+	// Unset still falls through -- that is the new default, not an old opinion.
+	if raw := strings.TrimSpace(os.Getenv(Tier2LegacyEnv)); raw != "" {
+		return !tier2LegacyEnables[strings.ToLower(raw)]
 	}
 	return false
 }
