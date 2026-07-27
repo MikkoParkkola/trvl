@@ -228,8 +228,16 @@ switching it off does not make those searches fall back to something else: an op
 that answers with a bot challenge simply returns no results, and it looks like trvl
 finding no trains rather than like a setting you chose. That is the trade, stated so
 you can make it deliberately. Decided in
-[#521](https://github.com/MikkoParkkola/trvl/issues/521); the headless Chrome harvest
-is separately opt-in behind `TRVL_TIER2_CDP` and does not run unless you set it.
+[#521](https://github.com/MikkoParkkola/trvl/issues/521).
+
+**The headless browser.** When a site answers with a bot challenge, trvl can drive a
+copy of Chrome, Brave or Edge you already have installed, let the challenge resolve
+itself, and keep the resulting cookies. It runs headless: no window opens, focus is
+never taken, and nothing appears on screen. It bundles no browser of its own. This also
+runs by default, for the same reason — with it off, a challenged search returns nothing
+and looks like an empty result rather than a switched-off feature. Set
+`TRVL_NO_TIER2_CDP=1` to decline. It costs a browser process for a few seconds per
+challenged search, which is the reason someone might want it off.
 
 AF-KLM is the single exception, and it is worth explaining. Ordinary round-trips are already covered in the default merge: Kiwi returns both legs of a paired itinerary, and Google returns the genuine round-trip fare with the matching return chosen at booking. AF-KLM is there for what neither offers — the rail+fly itineraries it sells, where a train leg from Brussels Midi, Antwerp or Brussels is ticketed as part of the flight instead of being a separate rail booking you have to make and risk yourself. It also returns both legs on KL/AF metal in full detail. It is the only provider whose **API key** can come from a credential manager, under tight rules. (Browser cookie access is a separate matter and is covered in [What trvl reads from your browser](#what-trvl-reads-from-your-browser); several providers do that, and it also touches the Keychain.)
 

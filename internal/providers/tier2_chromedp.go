@@ -6,10 +6,10 @@
 // bot challenge can resolve, harvests the resulting cookies (cf_clearance et al)
 // and writes them into the existing ~/.trvl/cookies cache for Tier-1 to reuse.
 //
-// This path is EXPENSIVE and visible (it spawns a browser process), so it is
-// gated behind an explicit opt-in (TRVL_TIER2_CDP=1, or WithTier2Force) and is
-// meant to be invoked only when Tier-1 returns a challenge page
-// (see IsChallengePage in tier1_client.go). Single static binary is preserved:
+// This path is EXPENSIVE and it spawns a browser process, but nothing is shown
+// on screen and focus is never taken. It runs by default when Tier-1 hits a
+// challenge page (see IsChallengePage in tier1_client.go); set
+// TRVL_NO_TIER2_CDP to decline. Single static binary is preserved:
 // chromedp is pure Go and the browser is the user's own install.
 package providers
 
@@ -21,18 +21,24 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
 
-// tier2EnableEnv opts into the Tier-2 CDP cookie-refresh path.
+// tier2EnableEnv was the opt-in for the Tier-2 CDP cookie-refresh path. The
+// path now runs by default; an explicit 0/false here still turns it off.
 const tier2EnableEnv = "TRVL_TIER2_CDP"
 
-// ErrTier2Disabled is returned when RefreshCookiesViaCDP is invoked without the
-// opt-in (TRVL_TIER2_CDP unset/0 and WithTier2Force not used).
-var ErrTier2Disabled = errors.New("tier2 cdp cookie-refresh disabled (set TRVL_TIER2_CDP=1 to enable)")
+// tier2DisableEnv is the opt-out, named to match TRVL_NO_BROWSER_COOKIES.
+const tier2DisableEnv = "TRVL_NO_TIER2_CDP"
+
+// ErrTier2Disabled is returned when RefreshCookiesViaCDP is invoked after the
+// user declined the path (TRVL_NO_TIER2_CDP set, or TRVL_TIER2_CDP=0) and
+// WithTier2Force was not used.
+var ErrTier2Disabled = errors.New("tier2 cdp cookie-refresh declined (unset TRVL_NO_TIER2_CDP to enable)")
 
 // ErrNoBrowserFound is returned when no installed Chromium-family browser can be
 // located to drive headlessly.
@@ -73,10 +79,40 @@ func WithTier2ExecPath(path string) Tier2Option {
 	return func(c *tier2Config) { c.execPath = path }
 }
 
-// Tier2Enabled reports whether the Tier-2 opt-in is set via TRVL_TIER2_CDP.
+// Tier2Enabled reports whether the Tier-2 headless cookie refresh may run.
+//
+// It is on by default. The path drives an already-installed Chrome, Brave or
+// Edge with chromedp.Headless (runCDPCollect), so nothing appears on screen and
+// focus is never taken; a user who is not looking at the process list cannot
+// tell it ran. What they can tell is that a challenged search returned nothing,
+// which is what leaving it off by default produced.
+//
+// Two ways to decline, both honoured:
+//
+//	TRVL_NO_TIER2_CDP  set to anything but 0/false — the opt-out, matching
+//	                   TRVL_NO_BROWSER_COOKIES (#521)
+//	TRVL_TIER2_CDP     explicitly 0/false — this used to be the opt-IN, so a
+//	                   user who set it to 0 to keep the browser off meant it,
+//	                   and flipping the default must not quietly overrule them
 func Tier2Enabled() bool {
-	v := os.Getenv(tier2EnableEnv)
-	return v == "1" || v == "true" || v == "yes"
+	if truthyEnv(os.Getenv(tier2DisableEnv)) {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(tier2EnableEnv))) {
+	case "0", "false", "no":
+		return false
+	}
+	return true
+}
+
+// truthyEnv reads an opt-out variable the same way internal/cookies does:
+// present and not an explicit denial means the user asked for it.
+func truthyEnv(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "0", "false":
+		return false
+	}
+	return true
 }
 
 // fileExists is overridable in tests so browser detection can be exercised
@@ -141,7 +177,9 @@ var cdpRunner = runCDPCollect
 // RefreshCookiesViaCDP launches the user's installed browser headlessly, lets
 // the anti-bot challenge at targetURL resolve, harvests the resulting cookies,
 // persists them to the ~/.trvl/cookies cache, and returns them. It is the
-// Tier-2 entrypoint and is gated: without the opt-in it returns ErrTier2Disabled.
+// Tier-2 entrypoint. It runs by default and returns ErrTier2Disabled when the
+// user declined (TRVL_NO_TIER2_CDP, or TRVL_TIER2_CDP=0) without WithTier2Force,
+// and also inside a `go test` binary unless TRVL_ALLOW_BROWSER_COOKIES is set.
 func RefreshCookiesViaCDP(ctx context.Context, targetURL string, opts ...Tier2Option) ([]*http.Cookie, error) {
 	cfg := tier2Config{challengeWait: defaultChallengeWait}
 	for _, o := range opts {
@@ -179,6 +217,14 @@ func RefreshCookiesViaCDP(ctx context.Context, targetURL string, opts ...Tier2Op
 // the cookies present after the challenge wait. No window is shown and focus is
 // never stolen (Headless + DefaultExecAllocatorOptions).
 func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWait time.Duration) ([]*network.Cookie, error) {
+	// Now that Tier-2 is on by default, this is what keeps `go test` from
+	// launching a real browser on a build host. It sits on the driver rather
+	// than the entrypoint so tests that stub cdpRunner still exercise the
+	// orchestration. Mirrors the browserCookiesForURL guard.
+	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
+		return nil, ErrTier2Disabled
+	}
+
 	allocOpts := append([]chromedp.ExecAllocatorOption{},
 		chromedp.DefaultExecAllocatorOptions[:]...)
 	allocOpts = append(allocOpts,

@@ -64,7 +64,7 @@ func TestChallengeStatusString(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestResolveChallenge_DisabledByDefault(t *testing.T) {
-	t.Setenv(tier2EnableEnv, "")
+	t.Setenv(tier2DisableEnv, "1")
 	_, err := ResolveChallenge(context.Background(), "https://example.com/")
 	if !errors.Is(err, ErrTier2Disabled) {
 		t.Fatalf("err = %v, want ErrTier2Disabled", err)

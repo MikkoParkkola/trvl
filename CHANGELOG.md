@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`TRVL_NO_BROWSER_COOKIES` — decline browser cookie reads.** Set it to anything but
+  `0` or `false` and trvl reads no browser cookie store: neither the in-process reader
+  used by hotel and rail search, nor the nab helper used by the rail 403 retry. The
+  check sits on the low-level readers rather than the exported wrapper, because
+  recovery code reaches them directly and a gate on the public name alone would have
+  ignored the user three ways out of four. Default is unchanged. ([#521](https://github.com/MikkoParkkola/trvl/issues/521))
+
+### Changed
+
+- **The headless cookie harvest now runs by default; `TRVL_NO_TIER2_CDP` turns it
+  off.** It was opt-in behind `TRVL_TIER2_CDP`, which meant that for anyone who had
+  not read the README, a site answering with a bot challenge produced an empty result
+  and no explanation. The path drives an already-installed Chrome, Brave or Edge in
+  headless mode — no window, no focus steal, no bundled browser — so the cost of it
+  running is a browser process for a few seconds, not an interruption. An explicit
+  `TRVL_TIER2_CDP=0` is still honoured: someone who set that meant it.
+
 ### Known limitations
 
 - **On Windows, a helper that forks something in its first instants can leave that

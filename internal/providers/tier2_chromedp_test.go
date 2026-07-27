@@ -12,18 +12,43 @@ import (
 )
 
 func TestTier2Enabled(t *testing.T) {
+	t.Setenv(tier2DisableEnv, "")
 	t.Setenv(tier2EnableEnv, "")
-	if Tier2Enabled() {
-		t.Fatal("expected disabled when env unset")
+	if !Tier2Enabled() {
+		t.Fatal("expected enabled by default: the path is windowless, and leaving it off returned no results on challenged searches")
 	}
 	t.Setenv(tier2EnableEnv, "1")
 	if !Tier2Enabled() {
-		t.Fatal("expected enabled when env=1")
+		t.Fatal("expected enabled when the old opt-in is set")
+	}
+
+	// The old opt-in doubles as an opt-out when set to a denial, because a user
+	// who set it to 0 to keep a browser off meant it and the default flip must
+	// not overrule them.
+	for _, deny := range []string{"0", "false", "no"} {
+		t.Setenv(tier2EnableEnv, deny)
+		if Tier2Enabled() {
+			t.Errorf("expected disabled with %s=%q", tier2EnableEnv, deny)
+		}
+	}
+	t.Setenv(tier2EnableEnv, "")
+
+	for _, off := range []string{"1", "true", "yes", "please"} {
+		t.Setenv(tier2DisableEnv, off)
+		if Tier2Enabled() {
+			t.Errorf("expected disabled with %s=%q", tier2DisableEnv, off)
+		}
+	}
+	for _, on := range []string{"", "0", "false"} {
+		t.Setenv(tier2DisableEnv, on)
+		if !Tier2Enabled() {
+			t.Errorf("expected enabled with %s=%q", tier2DisableEnv, on)
+		}
 	}
 }
 
 func TestRefreshCookiesViaCDP_DisabledByDefault(t *testing.T) {
-	t.Setenv(tier2EnableEnv, "")
+	t.Setenv(tier2DisableEnv, "1")
 	_, err := RefreshCookiesViaCDP(context.Background(), "https://example.com/")
 	if !errors.Is(err, ErrTier2Disabled) {
 		t.Fatalf("err = %v, want ErrTier2Disabled", err)
