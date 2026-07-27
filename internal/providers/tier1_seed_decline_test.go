@@ -3,6 +3,7 @@ package providers
 import (
 	"net/http"
 	"net/url"
+	"sync"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/consent"
@@ -39,7 +40,9 @@ func TestTier1JarCannotOutliveADecline(t *testing.T) {
 		c.inner.SetCookies(u, toFHTTPCookies([]*http.Cookie{
 			{Name: "datadome", Value: "from-the-users-browser", Domain: u.Hostname(), Path: "/"},
 		}))
-		c.markSeeded()
+		c.seededMu.Lock()
+		c.seeded = true
+		c.seededMu.Unlock()
 		return c
 	}
 
@@ -102,4 +105,118 @@ func TestTier1JarCannotOutliveADecline(t *testing.T) {
 			t.Errorf("the replacement jar does not hold cookies: %v", got)
 		}
 	})
+}
+
+// TestTier1RevocationIsAtomic covers what round 13 found: the revocation was
+// correct in a single goroutine and wrong in two.
+//
+// Seeding used to inject the cookies and mark the client afterwards, so a
+// request landing between the two saw an unseeded client, skipped revocation
+// entirely, and sent cookies the user had already declined. The jar swap was
+// also a bare pointer assignment racing every in-flight request — a revocation
+// an already-started request could outrun, and a data race besides.
+//
+// Run with -race; the assertion is that nothing escapes and nothing races.
+func TestTier1RevocationIsAtomic(t *testing.T) {
+	const target = "https://example.test/search"
+
+	u, err := url.Parse(target)
+	if err != nil {
+		t.Fatalf("fixture URL: %v", err)
+	}
+
+	c, err := NewTier1Client()
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	c.seededMu.Lock()
+	c.seeded = true
+	c.inner.SetCookies(u, toFHTTPCookies([]*http.Cookie{
+		{Name: "datadome", Value: "from-the-users-browser", Domain: u.Hostname(), Path: "/"},
+	}))
+	c.seededMu.Unlock()
+
+	t.Setenv(consent.CookiesEnv, "1")
+
+	// Readers and revokers at the same time, which is the shape a real search
+	// has: several providers on one client while the user's decline lands.
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if got := c.Cookies(target); len(got) != 0 {
+				t.Errorf("a concurrent reader got cookies after the decline: %v", got)
+			}
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c.discardSeededIfDeclined()
+		}()
+	}
+	wg.Wait()
+
+	if got := c.inner.GetCookies(u); len(got) != 0 {
+		t.Errorf("cookies survived a decline under concurrency: %v", got)
+	}
+}
+
+// TestTier1RevocationRacesCleanly is the same concern as above with the one
+// weakness removed: `seeded` is a latch, so a single decline produces exactly
+// ONE jar swap no matter how many goroutines call the revoker, and a single swap
+// is too small a target for the race detector to have anything to interleave
+// with. The revokers here re-arm the client between revocations, so N swaps
+// really do overlap N reads.
+//
+// The oracle is -race, not an assertion: readers deliberately assert nothing
+// about what they see, because a re-arm landing between a reader's revocation
+// check and its read legitimately puts a cookie back. What must hold is that
+// none of it races, and that the jar is empty once the churn stops.
+func TestTier1RevocationRacesCleanly(t *testing.T) {
+	const target = "https://example.test/search"
+
+	u, err := url.Parse(target)
+	if err != nil {
+		t.Fatalf("fixture URL: %v", err)
+	}
+	browserCookies := toFHTTPCookies([]*http.Cookie{
+		{Name: "datadome", Value: "from-the-users-browser", Domain: u.Hostname(), Path: "/"},
+	})
+
+	c, err := NewTier1Client()
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	t.Setenv(consent.CookiesEnv, "1")
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				c.Cookies(target)
+			}
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				// Re-arm exactly as SeedCookies does, then revoke.
+				c.seededMu.Lock()
+				c.seeded = true
+				c.inner.SetCookies(u, browserCookies)
+				c.seededMu.Unlock()
+
+				c.discardSeededIfDeclined()
+			}
+		}()
+	}
+	wg.Wait()
+
+	c.discardSeededIfDeclined()
+	if got := c.inner.GetCookies(u); len(got) != 0 {
+		t.Errorf("the churn left declined cookies in the jar: %v", got)
+	}
 }
