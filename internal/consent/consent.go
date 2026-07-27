@@ -50,9 +50,11 @@ const Tier2LegacyEnv = "TRVL_TIER2_CDP"
 // `v == "1" || v == "true" || v == "yes"`. Everything else left the browser off,
 // so everything else has to keep leaving it off.
 //
-// Compared case-insensitively and after trimming, which is strictly more
-// permissive than the predecessor and therefore cannot turn a user who had the
-// browser ON into one who has it off.
+// Compared RAW -- no trimming, no case folding. The predecessor compared raw, so
+// TRVL_TIER2_CDP=TRUE left the browser off, and any normalisation here would
+// launch one for that user on upgrade. It is tempting to argue they obviously
+// meant yes; that is a guess about intent, and guessing about intent at a
+// consent boundary is the whole failure this package exists to stop.
 var tier2LegacyEnables = map[string]bool{"1": true, "true": true, "yes": true}
 
 // ErrTier2Declined is returned when the headless path is invoked after the user
@@ -80,8 +82,12 @@ func Tier2Declined() bool {
 	// version fails open: TRVL_TIER2_CDP=off matched no denial, so a user who
 	// had explicitly switched the browser off got one launched on upgrade.
 	// Unset still falls through -- that is the new default, not an old opinion.
-	if raw := strings.TrimSpace(os.Getenv(Tier2LegacyEnv)); raw != "" {
-		return !tier2LegacyEnables[strings.ToLower(raw)]
+	//
+	// The value is compared raw for the reason given on tier2LegacyEnables: the
+	// predecessor compared raw, and a second review round caught that folding
+	// case here launches a browser for anyone who wrote TRUE.
+	if raw := os.Getenv(Tier2LegacyEnv); raw != "" {
+		return !tier2LegacyEnables[raw]
 	}
 	return false
 }
