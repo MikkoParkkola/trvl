@@ -9,6 +9,9 @@ import (
 const (
 	testPreflightURL  = "https://preflight.invalid/warm"
 	testProviderLabel = "acme"
+	// A legitimate name that contains a word the wording rule forbids. Its whole job
+	// is to prove the rule reads trvl's sentence rather than the caller's data.
+	testAwkwardProvider = "Willow Rail"
 )
 
 // TestBrowserWarmingNote_ClaimsOnlyWhatIsKnown pins the wording of the sentence a
@@ -39,9 +42,14 @@ func TestBrowserWarmingNote_ClaimsOnlyWhatIsKnown(t *testing.T) {
 	// usable cookies were created, or that they can be extracted afterwards.
 	//
 	// Forbidding "will" outright is blunt and that is deliberate. Every honest thing
-	// this note has to say is conditional, so the word has no legitimate use here, and
-	// a rule that cannot be satisfied by rephrasing is the point.
-	if strings.Contains(strings.ToLower(note), "will") {
+	// this note has to say is conditional, so the word has no legitimate use in the
+	// template, and a rule that cannot be satisfied by rephrasing is the point.
+	//
+	// The check runs on the template rather than the finished string. Provider names
+	// and URLs are interpolated in, and a provider called Willow or a host containing
+	// the letters would otherwise fail a test about trvl's own wording. See the
+	// interpolation case below, which pins exactly that.
+	if strings.Contains(noteTemplate(note), "will") {
 		t.Errorf("the note promises a future it cannot establish; every claim here has to be conditional:\n%s", note)
 	}
 	// And it must actually be conditional rather than merely silent.
@@ -77,7 +85,38 @@ func TestBrowserWarmingNote_ReportsAKnownFailure(t *testing.T) {
 	}
 	// Same semantic rule as the success case. A failed launch is even less entitled to
 	// promise anything about future searches.
-	if strings.Contains(strings.ToLower(note), "will") {
+	if strings.Contains(noteTemplate(note), "will") {
 		t.Errorf("a failure note promises a future it cannot establish:\n%s", note)
+	}
+}
+
+// noteTemplate strips the interpolated URL and provider name from a note and
+// lowercases what is left, so a wording rule applies to trvl's own text rather than to
+// whatever the caller happened to be called.
+//
+// Without this, forbidding "will" would fail for a provider named Willow or a host
+// containing those letters, which is a test about someone else's naming rather than
+// about honesty.
+func noteTemplate(note string) string {
+	stripped := strings.ReplaceAll(note, testPreflightURL, "")
+	stripped = strings.ReplaceAll(stripped, testProviderLabel, "")
+	stripped = strings.ReplaceAll(stripped, testAwkwardProvider, "")
+	return strings.ToLower(stripped)
+}
+
+// TestBrowserWarmingNote_WordingRuleIgnoresInterpolatedNames pins that the rule above
+// judges trvl's sentence and not the data dropped into it.
+//
+// A provider legitimately called Willow contains the forbidden word. A rule that fired
+// on that would be a test about naming rather than about claiming more than is known,
+// and someone would eventually weaken the real rule to get their provider to pass.
+func TestBrowserWarmingNote_WordingRuleIgnoresInterpolatedNames(t *testing.T) {
+	note := browserWarmingNote(testPreflightURL, testAwkwardProvider, nil)
+
+	if !strings.Contains(note, testAwkwardProvider) {
+		t.Fatalf("precondition: the note should name the provider, got:\n%s", note)
+	}
+	if strings.Contains(noteTemplate(note), "will") {
+		t.Errorf("the wording rule fired on an interpolated provider name rather than on trvl's own text:\n%s", note)
 	}
 }

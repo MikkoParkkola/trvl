@@ -112,7 +112,12 @@ func TestOutput_ContainsDescendantsOnTimeout(t *testing.T) {
 	// the deadline passed. That keeps the strict property, which is that the
 	// descendant existed before cleanup rather than merely by the end of the test,
 	// without making the schedule decide the verdict.
-	deadlinePassed := time.Now()
+	// The cutoff is the deadline instant itself, computed from when the command was
+	// launched, not the moment Output returned. Those differ by WaitDelay plus
+	// whatever scheduling costs, up to a second or more, and using the later one
+	// would let a descendant created after the real deadline slip in under the
+	// ordering check while looking contained.
+	deadlinePassed := start.Add(deadline)
 	info := waitForMarker(t, started, deadline+3*time.Second)
 	if info == nil {
 		t.Fatalf("the descendant never started on %s; the run proves nothing about containment, so it is a fixture failure rather than a pass", runtime.GOOS)
