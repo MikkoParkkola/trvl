@@ -57,55 +57,99 @@ func TestAttachBrowserCookiesRefusedAfterADecline(t *testing.T) {
 	})
 }
 
-// TestGroundProvidersDoNotAttachCookiesDirectly keeps the seam a seam.
+// TestProvidersDoNotSendBrowserCookiesDirectly keeps the seam a seam.
 //
-// The defect above was not a wrong check; it was a call site that never asked.
-// Nothing in the type system stops the next one, so this walks internal/ground
-// and fails on a direct req.AddCookie. A provider whose cookies genuinely never
-// touch the browser — a session it established itself — belongs in the
-// allowlist below WITH the reason, which is the review this test exists to
-// force.
-func TestGroundProvidersDoNotAttachCookiesDirectly(t *testing.T) {
-	// tallink: cookies come from Tallink's own booking session (Set-Cookie on a
-	// prior response in the same flow), never from the user's browser.
-	allowed := map[string]string{"tallink.go": "server-established booking session, not browser-derived"}
-
-	dir := filepath.Join("..", "ground")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Skipf("internal/ground not readable: %v", err)
+// The defects this family is made of were never a wrong check; they were call
+// sites that never asked. Nothing in the type system stops the next one, so this
+// walks the provider packages and fails on a browser cookie reaching the wire
+// without a post-read consent check.
+//
+// Its job changed in round 11. It used to be the primary defence and it covered
+// internal/ground only — which is exactly why review found a Booking.com path in
+// internal/hotels that it could not see. The guarantee now lives one layer down,
+// in providers.permittedAfterRead, which re-checks the decline on the way out of
+// every browser read. This test is the TRIPWIRE for a reader added outside that
+// gated path. So the fix for a failure here is a wrap or a gated reader, never a
+// new allowlist entry — an entry is only for cookies that never came from the
+// user's browser, and it must say why.
+func TestProvidersDoNotSendBrowserCookiesDirectly(t *testing.T) {
+	allowed := map[string]string{
+		// Tallink: cookies come from Tallink's own booking session (Set-Cookie on
+		// a prior response in the same flow), never from the user's browser.
+		"ground/tallink.go": "server-established booking session, not browser-derived",
+		// Google consent bypass: a hardcoded constant (SOCS/CONSENT), not read
+		// from anyone's browser. See googleConsentCookie in that file.
+		"hotels/search_fetch.go": "hardcoded consent constant, not browser-derived",
 	}
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		if _, ok := allowed[name]; ok {
-			continue
-		}
-		src, err := os.ReadFile(filepath.Join(dir, name))
+
+	root := ".."
+	// The seam itself, and the transport primitive every provider calls through.
+	skipDirs := map[string]bool{"cookies": true, "batchexec": true}
+
+	var walked int
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
+			return err
 		}
-		// Every read of the user's browser must be wrapped where it is read,
-		// not where it is sent: the read is the slow part, and a decline
-		// arriving during it has to win.
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		if info.IsDir() {
+			if skipDirs[rel] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		name := info.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			return nil
+		}
+		if _, ok := allowed[rel]; ok {
+			return nil
+		}
+		src, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		walked++
+		permitted := func(line string) bool {
+			return strings.Contains(line, "HeaderIfPermitted(") ||
+				strings.Contains(line, "AttachBrowserCookies(")
+		}
 		for _, line := range strings.Split(string(src), "\n") {
-			if !strings.Contains(line, "BrowserCookies(ctx") {
-				continue
+			// Every read of the user's browser must be wrapped where it is read,
+			// not where it is sent: the read is the slow part, and a decline
+			// arriving during it has to win.
+			if strings.Contains(line, "BrowserCookies(ctx") && !permitted(line) {
+				t.Errorf("internal/%s reads browser cookies without a post-read consent "+
+					"check: %s\n\twrap it in cookies.HeaderIfPermitted(...) so an opt-out "+
+					"arriving during the read still stops the credential", rel, strings.TrimSpace(line))
 			}
-			if !strings.Contains(line, "HeaderIfPermitted(") && !strings.Contains(line, "AttachBrowserCookies(") {
-				t.Errorf("internal/ground/%s reads browser cookies without a post-read consent "+
-					"check: %s\n\twrap it in cookies.HeaderIfPermitted(...) so an opt-out arriving "+
-					"during the read still stops the credential", name, strings.TrimSpace(line))
+			// The last line before transmission. Round 11 found two of these in
+			// booking_rooms.go handing a raw browser Cookie header to the client.
+			if strings.Contains(line, ".GetWithCookie(") && !permitted(line) {
+				t.Errorf("internal/%s sends a raw Cookie header: %s\n\twrap the value in "+
+					"cookies.HeaderIfPermitted(...), or add the file to the allowlist in "+
+					"this test with the reason its cookies are not browser-derived",
+					rel, strings.TrimSpace(line))
+			}
+			if strings.Contains(line, ".AddCookie(") && !permitted(line) {
+				t.Errorf("internal/%s attaches cookies directly: %s\n\troute browser-derived "+
+					"cookies through cookies.AttachBrowserCookies so an opt-out arriving "+
+					"during the browser read still stops them, or add the file to the "+
+					"allowlist in this test with the reason its cookies are not "+
+					"browser-derived", rel, strings.TrimSpace(line))
 			}
 		}
-		if strings.Contains(string(src), ".AddCookie(") {
-			t.Errorf("internal/ground/%s attaches cookies directly; route browser-derived "+
-				"cookies through cookies.AttachBrowserCookies so an opt-out arriving during "+
-				"the browser read still stops them, or add the file to the allowlist in this "+
-				"test with the reason its cookies are not browser-derived", name)
-		}
+		return nil
+	})
+	if err != nil {
+		t.Skipf("internal/ not walkable: %v", err)
+	}
+	// A walk that silently covered nothing would pass forever.
+	if walked < 50 {
+		t.Fatalf("the walk only read %d files; it is not covering the provider packages", walked)
 	}
 }
 
