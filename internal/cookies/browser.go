@@ -195,7 +195,17 @@ var errCookieSuppressed = errors.New("cookie extraction suppressed after a recen
 // own permission prompt; unbounded and terminal-attached, that is the exact
 // shape that produced #507: a credential prompt appearing mid-search and a
 // helper that never returns.
+//
+// The decline is re-checked here even though the only caller already checked it.
+// This function is the seam where the helper process is actually started, and
+// three rounds of review on #521 each found the same failure shape: a gate placed
+// on the caller rather than the seam, and then a caller that did not have it. The
+// duplicate check costs one env read on a path that is about to fork a process.
 func extractViaNab(ctx context.Context, browser, domain string) string {
+	if Disabled() {
+		return ""
+	}
+
 	nabPath, err := trvlnab.LookupPath()
 	if err != nil {
 		return ""
