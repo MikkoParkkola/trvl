@@ -242,8 +242,9 @@ runs by default, for the same reason — with it off, a challenged search return
 and looks like an empty result rather than a switched-off feature. Set
 `TRVL_NO_TIER2_CDP=1` to decline. It costs a browser process for a few seconds per
 challenged search, which is the reason someone might want it off. The check sits on
-the two functions that actually start the browser, so a provider reaching past the
-usual entry points still cannot spawn one. It governs the *headless* browser only —
+each of the three places in trvl that can start a browser, rather than on the
+entry points above them, so a provider reaching past the usual route still cannot
+spawn one. It governs the *headless* browser only —
 the separate visible-window escape hatch, which asks before it opens anything and
 requires its own per-provider opt-in, is described under
 [What trvl reads from your browser](#what-trvl-reads-from-your-browser).
