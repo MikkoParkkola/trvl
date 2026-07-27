@@ -168,7 +168,19 @@ func TestShareCmd_LastFormatLinkV21(t *testing.T) {
 	cmd := shareCmd()
 	cmd.SetArgs([]string{"--last", "--format", "link"})
 
-	_ = cmd.Execute()
+	// "link" was the gist-upload format and is retired (#527). Until this
+	// commit the assertion-free `_ = cmd.Execute()` here published a real
+	// public gist on every run. It must now be refused outright: a caller
+	// expecting a URL should be told the format is gone, not handed an
+	// itinerary on stdout.
+	t.Setenv("PATH", t.TempDir())
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("share --format link returned nil; the retired upload format must error")
+	}
+	if !strings.Contains(err.Error(), "removed") {
+		t.Errorf("share --format link error = %v, want it to say the format was removed", err)
+	}
 }
 
 func TestTripsShowCmd_JSONFormatV21(t *testing.T) {
