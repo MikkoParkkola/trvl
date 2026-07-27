@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	cookiesconsent "github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -153,8 +154,14 @@ func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
 		return string(body), nil
 	}
 
-	// Booking.com returns 202/403/503 for WAF challenge pages.
-	// Try reading the bkng cookie from the user's browser via kooky.
+	// Booking.com returns 202/403/503 for WAF challenge pages. Try reading the
+	// bkng cookie from the user's browser via kooky.
+	//
+	// The read itself is gated inside providers (permittedAfterRead), which is
+	// where the guarantee lives. The HeaderIfPermitted wraps below are the second
+	// layer: they sit on the last line before transmission, so a decline arriving
+	// even later than the read still stops the credential. Round 11 of review
+	// found this path sending live Booking.com credentials with neither.
 	if status == 202 || status == 403 || status == 503 {
 		cookies := browserCookies("https://www.booking.com")
 		var cookieStr string
@@ -166,7 +173,7 @@ func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
 		}
 		if cookieStr != "" {
 			slog.Debug("booking.com challenge, retrying with browser cookie", "status", status)
-			status, body, err = client.GetWithCookie(ctx, pageURL, cookieStr)
+			status, body, err = client.GetWithCookie(ctx, pageURL, cookiesconsent.HeaderIfPermitted(cookieStr))
 			if err == nil && status == 200 {
 				return string(body), nil
 			}
@@ -184,7 +191,7 @@ func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
 		}
 		if cookieStr != "" {
 			slog.Debug("booking.com challenge, retrying with all browser cookies", "status", status)
-			status, body, err = client.GetWithCookie(ctx, pageURL, cookieStr)
+			status, body, err = client.GetWithCookie(ctx, pageURL, cookiesconsent.HeaderIfPermitted(cookieStr))
 			if err == nil && status == 200 {
 				return string(body), nil
 			}
