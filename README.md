@@ -233,11 +233,30 @@ you can make it deliberately. Decided in
 **The headless browser.** When a site answers with a bot challenge, trvl can drive a
 copy of Chrome, Brave or Edge you already have installed, let the challenge resolve
 itself, and keep the resulting cookies. It runs headless: no window opens, focus is
-never taken, and nothing appears on screen. It bundles no browser of its own. This also
+never taken, and nothing appears on screen. It bundles no browser of its own. It also
+starts from an empty profile, so it does not read the cookies you already have — that
+is the separate switch above, and they are separate because they are separate things:
+one reads the session you are already logged into, this one starts a new anonymous
+session and keeps what that session is given. This also
 runs by default, for the same reason — with it off, a challenged search returns nothing
 and looks like an empty result rather than a switched-off feature. Set
 `TRVL_NO_TIER2_CDP=1` to decline. It costs a browser process for a few seconds per
-challenged search, which is the reason someone might want it off.
+challenged search, which is the reason someone might want it off. The check sits on
+the two functions that actually start the browser, so a provider reaching past the
+usual entry points still cannot spawn one. It governs the *headless* browser only —
+the separate visible-window escape hatch, which asks before it opens anything and
+requires its own per-provider opt-in, is described under
+[What trvl reads from your browser](#what-trvl-reads-from-your-browser).
+
+This is also what gets trvl past the rail sites' bot walls. Measured on 2026-07-27:
+reading cookies off disk returns nothing at all for Trainline, SNCF Connect and
+Rome2Rio, because the tokens those sites check are issued to a live browsing session
+and are not sitting in the cookie store. A headless visit clears the wall for two of
+them and returns usable cookies — Trainline's `datadome`, Rome2Rio's Cloudflare
+`__cf_bm` — so declining this is expected to leave those two empty. SNCF Connect is
+the honest exception: the headless visit reaches a challenge that needs a human, and
+trvl only reuses cookies from a challenge that actually cleared, so tier 2 is not
+what is currently fixing SNCF either way.
 
 AF-KLM is the single exception, and it is worth explaining. Ordinary round-trips are already covered in the default merge: Kiwi returns both legs of a paired itinerary, and Google returns the genuine round-trip fare with the matching return chosen at booking. AF-KLM is there for what neither offers — the rail+fly itineraries it sells, where a train leg from Brussels Midi, Antwerp or Brussels is ticketed as part of the flight instead of being a separate rail booking you have to make and risk yourself. It also returns both legs on KL/AF metal in full detail. It is the only provider whose **API key** can come from a credential manager, under tight rules. (Browser cookie access is a separate matter and is covered in [What trvl reads from your browser](#what-trvl-reads-from-your-browser); several providers do that, and it also touches the Keychain.)
 
