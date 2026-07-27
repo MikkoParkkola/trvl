@@ -2,6 +2,7 @@ package safeexec
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -76,7 +77,7 @@ func TestOutput_ContainsDescendantsOnTimeout(t *testing.T) {
 
 	bin, err := writeHangingSpawner(t, dir, started, survivor)
 	if err != nil {
-		t.Skipf("no fixture for %s: %v", runtime.GOOS, err)
+		t.Fatalf("write fixture for %s: %v", runtime.GOOS, err)
 	}
 
 	deadline, settle := containmentTiming()
@@ -91,14 +92,23 @@ func TestOutput_ContainsDescendantsOnTimeout(t *testing.T) {
 		t.Fatalf("Output took %v; the deadline should have ended it near %v", elapsed, deadline)
 	}
 
+	// Checked here rather than after the wait below, so that a descendant which
+	// only appears late cannot satisfy it, and so a mistimed fixture reports in
+	// one deadline instead of one deadline plus the wait.
+	if _, err := os.Stat(started); err != nil {
+		t.Fatalf("the descendant never started on %s (%v); the run proves nothing about containment, so it is a fixture failure rather than a pass", runtime.GOOS, err)
+	}
+
 	// Outlive the descendant's own sleep: if it were still alive, this is when
 	// it would write.
 	time.Sleep(settle)
 
-	if _, err := os.Stat(started); err != nil {
-		t.Fatalf("the descendant never started on %s (%v); the run proves nothing about containment, so it is a fixture failure rather than a pass", runtime.GOOS, err)
-	}
-	if _, err := os.Stat(survivor); err == nil {
+	switch _, err := os.Stat(survivor); {
+	case err == nil:
 		t.Fatalf("a descendant outlived the timeout on %s; helpers will accumulate exactly as reported in #507", runtime.GOOS)
+	case !errors.Is(err, os.ErrNotExist):
+		// Absence is the assertion, so only a definite absence can pass. A
+		// permission or I/O error is not evidence of containment.
+		t.Fatalf("cannot tell whether a descendant survived on %s: %v", runtime.GOOS, err)
 	}
 }

@@ -27,13 +27,22 @@ import (
 // have been contained and the survivor check alone would still be satisfied. The
 // caller asserts that startedPath exists, so a fixture that mistimes itself
 // fails loudly instead of going quietly green.
+// Both waits are pings rather than `timeout`, and that is not a style choice.
+// safeexec sets cmd.Stdin to nil (safeexec.go:52), which on Windows is the NUL
+// device, and `timeout` treats any redirected stdin as an error: it prints
+// "ERROR: Input redirection is not supported" and exits immediately. A fixture
+// built on it would collapse both waits at once, so the helper would not hang and
+// the descendant would write its survivor marker straight away. The earlier
+// version of this fixture used `timeout`, and the CI failure it produced looks
+// identical either way, which is why the defect survived a green-to-red reading.
+// `ping` does not consult stdin.
 func writeHangingSpawner(t *testing.T, dir, startedPath, survivorPath string) ([]string, error) {
 	t.Helper()
 	bat := filepath.Join(dir, "hangs.bat")
 	script := "@echo off\r\n" +
 		"ping -n 2 127.0.0.1 >nul\r\n" +
-		"start \"\" /b cmd /c \"echo started>>\"" + startedPath + "\" & timeout /t 3 /nobreak >nul & echo survived>>\"" + survivorPath + "\"\"\r\n" +
-		"timeout /t 30 /nobreak >nul\r\n"
+		"start \"\" /b cmd /c \"echo started>>\"" + startedPath + "\" & ping -n 4 127.0.0.1 >nul & echo survived>>\"" + survivorPath + "\"\"\r\n" +
+		"ping -n 31 127.0.0.1 >nul\r\n"
 	if err := os.WriteFile(bat, []byte(script), 0o644); err != nil {
 		return nil, err
 	}

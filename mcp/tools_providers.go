@@ -214,26 +214,39 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 	// search. This is a one-time setup action.
 	warmingNote := ""
 	if config.Auth != nil && config.Auth.BrowserEscapeHatch && config.Auth.PreflightURL != "" {
-		if err := providers.OpenURLInBrowser(config.Auth.PreflightURL, ""); err != nil {
+		err := providers.OpenURLInBrowser(config.Auth.PreflightURL, "")
+		if err != nil {
 			log.Printf("cookie warming: failed to open browser for %s: %v", config.Name, err)
-		} else {
-			// Says "asked", not "opened", and the distinction is load-bearing.
-			// A nil error here means the launcher accepted the request without
-			// failing immediately; it cannot mean the browser opened. The launcher
-			// is watched only for a brief window, so one that fails after it, which
-			// a cold launcher can, is indistinguishable from one that succeeded.
-			// Claiming the browser opened and that future searches will use the
-			// cookies is therefore a statement this code cannot support, and it is
-			// exactly the sort of confident-but-wrong output the credential work in
-			// #507 was about.
-			warmingNote = fmt.Sprintf("\n\nAsked your browser to open %s so cookies for %s can be reused. If a window did not appear, open that URL yourself and searches will pick the cookies up.",
-				config.Auth.PreflightURL, config.Name)
 		}
+		warmingNote = browserWarmingNote(config.Auth.PreflightURL, config.Name, err)
 	}
 
 	summary := fmt.Sprintf("Provider %q enabled for %s search (domain: %s, rate limit: %.1f rps).%s",
 		config.Name, config.Category, domain, config.RateLimit.RequestsPerSecond, warmingNote)
 	return textContent(summary), config, nil
+}
+
+// browserWarmingNote is the sentence the caller sees after trvl asks the platform to
+// open a preflight URL.
+//
+// It says "asked", never "opened", and the distinction is load-bearing rather than
+// pedantic. A nil error from the launcher means it accepted the request without
+// failing immediately. It cannot mean a browser appeared: the launcher is watched
+// only for a brief window, so one that fails after it, which a cold launcher can,
+// looks identical to one that succeeded. The previous wording promised that the
+// browser had opened and that future searches would use the cookies, neither of which
+// this code establishes, and a user whose browser silently failed to launch would sit
+// waiting for cookies that could never arrive.
+//
+// An error is reported rather than hidden, because a launcher that failed inside the
+// window is the one case where something is definitely known.
+func browserWarmingNote(preflightURL, providerName string, err error) string {
+	if err != nil {
+		return fmt.Sprintf("\n\nCould not start a browser for %s (%v). Open %s yourself and searches will pick the cookies up.",
+			providerName, err, preflightURL)
+	}
+	return fmt.Sprintf("\n\nAsked your browser to open %s so cookies for %s can be reused. If no window appeared, open that URL yourself and searches will pick the cookies up.",
+		preflightURL, providerName)
 }
 
 // parseProviderConfig extracts a ProviderConfig from MCP tool arguments.
