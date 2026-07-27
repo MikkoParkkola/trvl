@@ -84,7 +84,7 @@ More starter prompts and what good answers look like: [docs/DEMO.md](docs/DEMO.m
 
 - **Whole journey, door to door.** It plans the entire trip across modes — home to airport, flight, arrival transfer, hotel, onward train — and prices each leg in its real mode. Most tools stop at one flight, one hotel.
 - **No API keys, no signup, no bill.** Every core source works the moment you install it — no Amadeus key to apply for, no subscription, no per-call cost. Some optional providers can be switched on with a key of your own (AF-KLM, SerpAPI, Travelpayouts and others); none of them is required. Separately from keys, trvl reads your browser's cookie stores to get past the bot protection that hotel and rail sites put in front of their search APIs: see [What trvl reads from your browser](#what-trvl-reads-from-your-browser).
-- **Your assistant, your machine.** One local binary, any MCP client. Not locked to a vendor; your trips and preferences never leave your computer.
+- **Your assistant, your machine.** One local binary, any MCP client. Not locked to a vendor, and nothing about your trips is sent anywhere as part of searching. Two commands do send data, because that is what you ran them for: `trvl share` publishes a trip card as a **public** GitHub gist ([#527](https://github.com/MikkoParkkola/trvl/issues/527) asks whether that default is right), and the calendar helper writes an event to your Google calendar. Nothing else leaves your computer.
 - **It optimizes, not just lists.** Shift-day pricing, split-airline routing, hidden-city checks, award sweet spots, round-trip fares. It hands back the cheaper option and shows what it saved.
 - **It is honest when a source fails.** Typed statuses and labelled estimates, never an empty result dressed up as "nothing found."
 
@@ -178,7 +178,7 @@ Every source trvl uses by default is free and needs no account. A number of extr
 | `TICKETMASTER_API_KEY` | Events |
 | `TRVL_GMAIL_APP_PASSWORD` | Emailing trip digests |
 
-Every one of these reads its key from the environment and nowhere else.
+Every one of these reads its key from the environment. AF-KLM is the single exception and only when you ask for it: under an explicit `--provider afklm` it can also read the macOS Keychain or 1Password, which is described in full below. Nothing in this table reaches a credential manager during an ordinary search.
 
 ## What trvl reads from your browser
 
