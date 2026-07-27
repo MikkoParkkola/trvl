@@ -18,8 +18,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   none, hands over what arrived, and tells the caller it is partial through both
   the CLI and the MCP tool. A detector cut off by its own per-detector allowance
   counts as incomplete rather than complete, and results already delivered when
-  the deadline fires are kept instead of discarded. An empty partial sweep no
-  longer prints "No travel hacks detected", which claimed a finished search.
+  the deadline fires are kept instead of discarded. An empty partial sweep no longer
+  reports that none were detected, on either surface, because that claimed a search
+  that had finished looking. Neither surface tells you to retry with more time any
+  more: the sweep also stops at bounds you do not set, so that advice pointed at a
+  knob that does not exist. Nor does either surface guess at a cause any more: an
+  incomplete sweep happens for several reasons, including a short deadline of your
+  own or a plain cancellation with no deadline at all, so the message says the sweep
+  says only that not every detector was confirmed to finish, and diagnoses nothing.
+  That wording is deliberate: whether a detector finished a moment before its
+  allowance expired is not observable from outside, so the sweep errs toward calling
+  itself partial and the message claims no more than the flag supports. It no longer blames a deadline either, which was
+  simply untrue when you interrupted a search yourself. And a sweep that did in fact
+  finish is no longer reported as partial: cancellation can arrive at the same instant
+  as the final result, and the verdict is now computed from what actually arrived
+  rather than assumed from the fact that a timer fired. The MCP tool now declares
+  `complete` and `note` in its output schema, so an agent reading the schema learns
+  about the completeness signal instead of having to know it is there. The same gap
+  hid more: six fields on each hack were undeclared, along with the entire AF-KLM
+  rail-and-fly bundle, its legs, their costs, and the flag that marks a rail fare as
+  an estimate rather than a live quote. All are declared now, so a client can ask for
+  the rail-and-fly detail instead of discovering it by accident.
 - **A capped readiness verdict now says so instead of implying the property came
   up short.** `trvl prices` could never report "booking ready": the verdict needs
   all four signals true and that endpoint carries no cancellation terms, so

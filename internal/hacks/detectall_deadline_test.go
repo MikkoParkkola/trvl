@@ -2,8 +2,11 @@ package hacks
 
 import (
 	"context"
+	"regexp"
 	"runtime"
 	"slices"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -99,8 +102,13 @@ func TestDetectAll_AbandonedDetectorsDoNotBlockForever(t *testing.T) {
 	}
 	withDetectors(t, fns...)
 
-	runtime.GC()
-	baseline := runtime.NumGoroutine()
+	// Baseline first. Counting DetectAll goroutines is scoped far better than
+	// counting every goroutine in the process, but it is still not scoped to THIS
+	// call: earlier tests in this package leave their own stragglers inside
+	// DetectAll, and asserting the count reaches zero failed on exactly that, eight
+	// of them from a sibling test's thirty-second detector. What this test can
+	// honestly assert is that its own sweep adds none that stay.
+	before := goroutinesInsideDetectAll()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
@@ -110,18 +118,72 @@ func TestDetectAll_AbandonedDetectorsDoNotBlockForever(t *testing.T) {
 	}
 
 	// The abandoned goroutines cannot be interrupted, so wait for them to drain.
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		runtime.GC()
-		if runtime.NumGoroutine() <= baseline+2 {
+	limit := time.Now().Add(10 * time.Second)
+	for {
+		var fresh []string
+		for id := range goroutinesInsideDetectAll() {
+			if !before[id] {
+				fresh = append(fresh, id)
+			}
+		}
+		if len(fresh) == 0 {
 			return // they completed their sends and exited
 		}
-		time.Sleep(100 * time.Millisecond)
+		if !time.Now().Before(limit) {
+			sort.Strings(fresh)
+			t.Fatalf("%d goroutines this sweep started are still inside DetectAll (ids %s). "+
+				"Each is parked on a send nobody will receive, so every timed-out search leaks one per detector",
+				len(fresh), strings.Join(fresh, ", "))
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// goroutineHeader matches the id in a stack block's opening line, e.g.
+// "goroutine 42 [chan send]:".
+var goroutineHeader = regexp.MustCompile(`^goroutine (\d+) `)
+
+// goroutinesInsideDetectAll returns the ids of goroutines currently inside
+// DetectAll, identified from their stacks.
+//
+// It returns identities rather than a count, and that took three attempts to get
+// right. Comparing runtime.NumGoroutine() against a baseline failed for reasons
+// unrelated to its subject, since any goroutine another test left behind counts:
+// CI failed it at a baseline of 97 with 102 remaining while this sweep's own
+// goroutines had drained. Narrowing to DetectAll frames fixed that and left a
+// subtler hole, because a count is still not scoped to one call. With a baseline of
+// eight prior stragglers, a sweep leaking three shows eleven, and if those eight
+// exit during the wait the total falls to three and passes a "back to baseline"
+// check. A small leak would be masked by unrelated goroutines finishing.
+//
+// Identities close it. Anything present before the sweep is ignored by name, so
+// nothing it does later can hide what this sweep left behind.
+func goroutinesInsideDetectAll() map[string]bool {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
 	}
 
-	t.Fatalf("goroutines did not drain after an abandoned sweep: baseline %d, still %d. "+
-		"Each is parked on a send nobody will receive, so every timed-out search leaks one per detector",
-		baseline, runtime.NumGoroutine())
+	ids := map[string]bool{}
+	for _, stack := range strings.Split(string(buf), "\n\n") {
+		// The detector wrappers are closures declared in DetectAll, so their frames
+		// read hacks.DetectAll.funcN. The collector itself has returned by the time
+		// this is called, and the test goroutine calling this appears with a
+		// goroutinesInsideDetectAll frame rather than a DetectAll one.
+		if !strings.Contains(stack, "hacks.DetectAll.func") {
+			continue
+		}
+		// Each block opens with "goroutine 123 [chan send]:".
+		if m := goroutineHeader.FindStringSubmatch(stack); m != nil {
+			ids[m[1]] = true
+		}
+	}
+	return ids
 }
 
 // TestDetectAll_BoundedWithoutACallerDeadline is the availability guard.
@@ -369,5 +431,100 @@ func TestCollectSweep_CompleteOnlyWhenEveryDetectorDelivered(t *testing.T) {
 	}
 	if _, complete := collectSweep(newFull(false), nil, nil, 3, 3); complete {
 		t.Error("a dispatched detector that never delivered means the sweep is not complete")
+	}
+}
+
+// TestCollectSweep_BailOutWithEverythingDeliveredIsComplete pins the last of the
+// dishonest-output defects in this change, and this one was in the accounting
+// rather than the wording.
+//
+// Both bail-out paths used to return complete=false unconditionally. Reaching them
+// does not prove anything is missing: select picks at random among ready cases, so
+// cancellation can land at the same moment as the final result, and the drain then
+// collects every one of them. The sweep was finished and said it was not, and both
+// the CLI and the MCP tool turn that flag into the sentence "the sweep ended before
+// every detector finished" for a human to read.
+//
+// Constructed to make exactly that race certain: every result is buffered before
+// the call, and the bail-out is already fired, so both cases are ready at the first
+// select and the outcome must not depend on which one wins.
+func TestCollectSweep_BailOutWithEverythingDeliveredIsComplete(t *testing.T) {
+	const iterations = 200
+
+	for _, tc := range []struct {
+		name string
+		bail func() (<-chan struct{}, <-chan time.Time)
+	}{
+		{
+			name: "caller cancellation",
+			bail: func() (<-chan struct{}, <-chan time.Time) {
+				done := make(chan struct{})
+				close(done)
+				return done, nil
+			},
+		},
+		{
+			name: "sweep bound",
+			bail: func() (<-chan struct{}, <-chan time.Time) {
+				fired := make(chan time.Time, 1)
+				fired <- time.Time{}
+				return nil, fired
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := 0; i < iterations; i++ {
+				ch := make(chan detectorResult, 3)
+				ch <- detectorResult{hacks: []Hack{{Type: "a", Savings: 10, Currency: "EUR"}}}
+				ch <- detectorResult{hacks: []Hack{{Type: "b", Savings: 20, Currency: "EUR"}}}
+				ch <- detectorResult{hacks: []Hack{{Type: "c", Savings: 30, Currency: "EUR"}}}
+				done, sweep := tc.bail()
+
+				got, complete := collectSweep(ch, done, sweep, 3, 3)
+
+				if !complete {
+					t.Fatalf("iteration %d: every detector delivered, yet the sweep reported itself partial (%d hacks returned)", i, len(got))
+				}
+				if len(got) != 3 {
+					t.Fatalf("iteration %d: expected all three hacks, got %d", i, len(got))
+				}
+			}
+		})
+	}
+}
+
+// TestCollectSweep_BailOutStillPartialWhenOneIsOutstanding is the other half, so
+// recomputing completeness cannot be satisfied by always reporting complete. One
+// detector was dispatched and never delivered, which is the ordinary case, and it
+// must still come back partial.
+func TestCollectSweep_BailOutStillPartialWhenOneIsOutstanding(t *testing.T) {
+	ch := make(chan detectorResult, 3)
+	ch <- detectorResult{hacks: []Hack{{Type: "a"}}}
+	ch <- detectorResult{hacks: []Hack{{Type: "b"}}}
+	done := make(chan struct{})
+	close(done)
+
+	got, complete := collectSweep(ch, done, nil, 3, 3)
+
+	if complete {
+		t.Errorf("two of three detectors delivered, so the sweep is not complete (got %d hacks)", len(got))
+	}
+	if len(got) != 2 {
+		t.Errorf("expected the two delivered hacks, got %d", len(got))
+	}
+}
+
+// TestCollectSweep_BailOutPartialWhenADetectorWasCutShort covers the third input to
+// the verdict: a detector that delivered but was cut off by its own allowance means
+// the sweep is not complete even though the counts line up.
+func TestCollectSweep_BailOutPartialWhenADetectorWasCutShort(t *testing.T) {
+	ch := make(chan detectorResult, 2)
+	ch <- detectorResult{hacks: []Hack{{Type: "a"}}}
+	ch <- detectorResult{hacks: []Hack{{Type: "b"}}, cutShort: true}
+	done := make(chan struct{})
+	close(done)
+
+	if _, complete := collectSweep(ch, done, nil, 2, 2); complete {
+		t.Error("a detector cut off by its own allowance means the sweep is not complete")
 	}
 }

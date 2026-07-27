@@ -74,7 +74,7 @@ Examples:
 
 			detected, complete := hacks.DetectAll(ctx, input)
 			if !complete {
-				fmt.Fprintln(os.Stderr, "Note: the deadline expired before every detector finished; results below are partial.")
+				fmt.Fprintln(os.Stderr, "Note: not every detector was confirmed to finish; results below are partial.")
 			}
 
 			if format == "json" {
@@ -121,8 +121,37 @@ func printHacksTable(origin, dest, date string, naivePrice float64, currency str
 			// finding the sweep never made: nothing came back because it ran out
 			// of time, not because there was nothing to find. The note on stderr
 			// is not enough, because stdout is what gets read, piped and pasted.
-			fmt.Println("No hacks found before the deadline. The sweep did not finish, so this is not a finding that none exist.")
-			fmt.Println("Retry with more time, or narrow the search.")
+			fmt.Println("No hacks found. Not every detector was confirmed to finish, so this is not a finding that none exist.")
+			fmt.Println("Retrying may return more.")
+			// Two wrong versions of this line came before the current one, and
+			// both are worth remembering. "Retry with more time, or narrow the
+			// search" pointed at knobs that do not exist: the sweep also stops at
+			// bounds the caller does not set, 20s per detector and 25s overall,
+			// both under the 120s default on --timeout, and the detector roster is
+			// the same whatever the route. Then "one provider is slow or
+			// A third round removed "the sweep ended before every detector
+			// finished", which sounds factual and is sometimes false: cutShort is
+			// read after a detector returns, so one that finished a moment before
+			// its allowance expired is recorded as truncated. The bias is safe, it
+			// never calls a truncated sweep complete, but it does mean the only
+			// claim the flag supports is that not every detector was CONFIRMED to
+			// finish. That is what both surfaces now say.
+			//
+			// unreachable" named a culprit that cannot be inferred from here: an
+			// incomplete sweep also happens when the caller's own deadline is
+			// short, or when a detector doing local work runs past its allowance,
+			// with every provider perfectly healthy.
+			//
+			// The word "deadline" went too, throughout this file, and then "in
+			// time" after it. A sweep also ends on a plain cancellation that
+			// carries no deadline at all, so a user who interrupted a search was
+			// told first that a deadline had expired and then that detectors ran
+			// out of time. Neither had happened. Four rounds of this converged on
+			// one rule: say the sweep ended before the detectors did, and say
+			// nothing whatever about why. The rule is enforced by a test that walks
+			// every string literal in this file, because each round of it was found
+			// by review rather than by the assertions.
+
 			return nil
 		}
 		fmt.Println("No hacks detected for this route and date.")
