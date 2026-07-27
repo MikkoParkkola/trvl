@@ -402,7 +402,7 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 
 		// Try 2: use a real browser session cookie extracted from Brave/Chrome.
 		// Requires the user to have visited thetrainline.com in their browser.
-		cookieHeader := trainlineBrowserCookies(ctx, "thetrainline.com")
+		cookieHeader := cookies.HeaderIfPermitted(trainlineBrowserCookies(ctx, "thetrainline.com"))
 		if cookieHeader != "" {
 			slog.Debug("retrying trainline with browser cookies")
 			req3, err3 := newTrainlineRequest(cookieHeader)
