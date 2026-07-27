@@ -2,19 +2,41 @@ package hacks
 
 import (
 	"context"
+	"sync/atomic"
 
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-// convertCurrencyFn is the package-level currency-conversion seam every
-// detector must go through instead of calling destinations.ConvertCurrency
-// directly. Production wires it to destinations.ConvertCurrency; tests
-// replace it with a deterministic fake. This is shared mutable package
-// state — tests that reassign it must save/restore the original sequentially
-// and must not run under t.Parallel.
-var convertCurrencyFn = destinations.ConvertCurrency
+// currencyConverter is the currency-conversion seam every detector must go
+// through instead of calling destinations.ConvertCurrency directly.
+type currencyConverter func(ctx context.Context, amount float64, from, to string) (float64, string)
+
+// convertCurrencySeam holds the active converter. Production wires it to
+// destinations.ConvertCurrency; tests swap in a deterministic fake.
+//
+// It is atomic rather than a plain var because detector goroutines can outlive
+// the call that started them. DetectAll returns at its caller's deadline and
+// leaves stragglers finishing, so a detector from one test can still be reading
+// this while the next test writes it — a real data race that CI caught with
+// -race and a plain var could not prevent. Sequencing test writes cannot fix it;
+// the reader is not under the test's control.
+var convertCurrencySeam atomic.Pointer[currencyConverter]
+
+func init() {
+	setCurrencyConverter(destinations.ConvertCurrency)
+}
+
+// setCurrencyConverter installs a converter. Tests use swapCurrencyConverter.
+func setCurrencyConverter(fn currencyConverter) {
+	convertCurrencySeam.Store(&fn)
+}
+
+// currentCurrencyConverter returns the active converter.
+func currentCurrencyConverter() currencyConverter {
+	return *convertCurrencySeam.Load()
+}
 
 // convertCurrency converts amount from `from` into `target` through the
 // package's currency seam and reports whether the conversion actually landed
@@ -27,7 +49,7 @@ func convertCurrency(ctx context.Context, amount float64, from, target string) (
 	if amount <= 0 {
 		return 0, false
 	}
-	conv, gotCur := convertCurrencyFn(ctx, amount, from, target)
+	conv, gotCur := currentCurrencyConverter()(ctx, amount, from, target)
 	if gotCur != target {
 		return 0, false
 	}
@@ -44,7 +66,7 @@ func convertCurrency(ctx context.Context, amount float64, from, target string) (
 // and flight_combo.go's cheapestFlightPriceInCurrency (both of which call
 // destinations.ConvertCurrency directly and predate this seam); new detectors
 // route through here instead so their currency-conversion behaviour is
-// injectable in tests via convertCurrencyFn.
+// injectable in tests via the currency seam.
 func cheapestFlightPriceInTarget(ctx context.Context, r *models.FlightSearchResult, target string) (float64, bool) {
 	if r == nil || !r.Success {
 		return 0, false

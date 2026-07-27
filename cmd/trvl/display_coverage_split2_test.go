@@ -148,7 +148,7 @@ func TestPrintHacksTable_WithHacks(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		err := printHacksTable("HEL", "AMS", "2026-04-15", 200, "EUR", detected)
+		err := printHacksTable("HEL", "AMS", "2026-04-15", 200, "EUR", detected, true)
 		if err != nil {
 			t.Errorf("printHacksTable returned error: %v", err)
 		}
@@ -176,7 +176,7 @@ func TestPrintHacksTable_NoHacks(t *testing.T) {
 	models.UseColor = false
 
 	out := captureStdout(t, func() {
-		_ = printHacksTable("HEL", "AMS", "2026-04-15", 0, "EUR", nil)
+		_ = printHacksTable("HEL", "AMS", "2026-04-15", 0, "EUR", nil, true)
 	})
 
 	if !strings.Contains(out, "No hacks detected") {
@@ -197,7 +197,7 @@ func TestPrintHacksTable_NoBaseline(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		_ = printHacksTable("HEL", "AMS", "2026-04-15", 0, "EUR", detected)
+		_ = printHacksTable("HEL", "AMS", "2026-04-15", 0, "EUR", detected, true)
 	})
 
 	// Without baseline, should not show "Baseline:" line.

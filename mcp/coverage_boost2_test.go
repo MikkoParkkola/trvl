@@ -31,7 +31,7 @@ func flightsOptsEmpty() flights.SearchOptions {
 
 func TestBuildHacksSummary_NoHacks(t *testing.T) {
 	t.Parallel()
-	got := buildHacksSummary("HEL", "PRG", "2026-07-01", nil)
+	got := buildHacksSummary("HEL", "PRG", "2026-07-01", nil, true)
 	if !strings.Contains(got, "No travel hacks") {
 		t.Errorf("expected 'No travel hacks', got %q", got)
 	}
@@ -46,7 +46,7 @@ func TestBuildHacksSummary_WithHacks(t *testing.T) {
 		{Title: "Night bus", Savings: 80, Currency: "EUR", Description: "Take overnight bus"},
 		{Title: "Open jaw", Savings: 0, Currency: "EUR", Description: "Fly into different airport"},
 	}
-	got := buildHacksSummary("HEL", "PRG", "2026-07-01", detected)
+	got := buildHacksSummary("HEL", "PRG", "2026-07-01", detected, true)
 	if !strings.Contains(got, "Night bus") {
 		t.Error("summary should contain hack title")
 	}

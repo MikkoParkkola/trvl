@@ -22,6 +22,9 @@ func installTier1Probe(sched *watch.Scheduler, dir string) {
 	var tick int64
 	sched.SetProbeHook(func(ctx context.Context, active []watch.Watch) {
 		n := int(atomic.AddInt64(&tick, 1) - 1)
-		tier1.ProbeOne(ctx, active, n, cfprobe.Default(), cache, time.Now(), hacks.DetectAll)
+		tier1.ProbeOne(ctx, active, n, cfprobe.Default(), cache, time.Now(), func(ctx context.Context, in hacks.DetectorInput) []hacks.Hack {
+			found, _ := hacks.DetectAll(ctx, in)
+			return found
+		})
 	})
 }

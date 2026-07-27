@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -108,17 +109,34 @@ func runPrices(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	printPricePosition(os.Stdout, pricePos)
-	if readiness != nil {
-		fmt.Printf("\nBooking readiness: %s — %s\n", readiness.Label(), readiness.Summary())
-		if readiness.Capped() {
-			// Say the ceiling out loud. Six properties all reading "caution" is
-			// indistinguishable from six uncertain properties unless the output
-			// admits this command cannot do better than caution for any of them.
-			fmt.Printf("  (%s is the best this command can report: %s. Use `trvl rooms` for a room-level verdict that can reach ready.)\n",
-				readiness.Ceiling, strings.Join(readiness.CeilingReasons, "; "))
-		}
-	}
+	printReadiness(os.Stdout, readiness)
 	return nil
+}
+
+// printReadiness writes the readiness verdict and, when the command could never
+// have reached ready, the ceiling that explains why.
+//
+// It takes a writer so the rendered output can be asserted. The previous test for
+// this read prices.go and grepped it for substrings, which cannot see how the two
+// lines read together and so missed that they repeated each other.
+func printReadiness(w io.Writer, readiness *booking.Verdict) {
+	if readiness == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "\nBooking readiness: %s — %s\n", readiness.Label(), readiness.Summary())
+	if readiness.Capped() {
+		// Say the ceiling out loud. Six properties all reading "caution" is
+		// indistinguishable from six uncertain properties unless the output
+		// admits this command cannot do better than caution for any of them.
+		//
+		// Summary() already names the unobtainable signals when there are no
+		// ordinary findings to report, so naming them again here would print the
+		// same phrase on two consecutive lines. This line adds what Summary
+		// cannot: which verdict is the ceiling, and where to go for one that can
+		// reach ready.
+		_, _ = fmt.Fprintf(w, "  (%s is the best this command can report. Use `trvl rooms` for a room-level verdict that can reach ready.)\n",
+			readiness.Ceiling)
+	}
 }
 
 func formatPricesTable(result *models.HotelPriceResult) error {

@@ -190,14 +190,13 @@ func TestCheckErrorFare_empty_input(t *testing.T) {
 // out (the prior version of this test relied on the live default seam
 // despite its doc comment's claim otherwise).
 func TestDetectErrorFare_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
-	orig := convertCurrencyFn
-	convertCurrencyFn = func(_ context.Context, amount float64, from, to string) (float64, string) {
+
+	swapCurrencyConverter(t, func(_ context.Context, amount float64, from, to string) (float64, string) {
 		if from == to {
 			return amount, to
 		}
 		return amount, from // can't convert — same contract as the real function
-	}
-	t.Cleanup(func() { convertCurrencyFn = orig })
+	})
 
 	in := DetectorInput{
 		Origin:      "HEL",
@@ -248,8 +247,8 @@ func TestDetectErrorFare_eurTarget_labelsEURAndConverts(t *testing.T) {
 // sequentially like railGroundSearcher).
 func TestDetectErrorFare_nonEURTarget_noDoubleConversion(t *testing.T) {
 	const fakeRate = 0.85
-	orig := convertCurrencyFn
-	convertCurrencyFn = func(_ context.Context, amount float64, from, to string) (float64, string) {
+
+	swapCurrencyConverter(t, func(_ context.Context, amount float64, from, to string) (float64, string) {
 		if from == to {
 			return amount, to
 		}
@@ -257,8 +256,7 @@ func TestDetectErrorFare_nonEURTarget_noDoubleConversion(t *testing.T) {
 			return amount * fakeRate, "GBP"
 		}
 		return amount, from
-	}
-	t.Cleanup(func() { convertCurrencyFn = orig })
+	})
 
 	// HEL->BCN is ~2900 km (long-haul). One-way floor = EUR 60, typical =
 	// EUR 250, error threshold = EUR 30. NaivePrice 20 (already in GBP, per
@@ -315,8 +313,8 @@ func TestDetectErrorFare_nonEURTarget_noDoubleConversion(t *testing.T) {
 // sequentially like railGroundSearcher).
 func TestDetectErrorFare_nonEURTarget_JPY_classifiesCorrectly(t *testing.T) {
 	const fakeRate = 130.0
-	orig := convertCurrencyFn
-	convertCurrencyFn = func(_ context.Context, amount float64, from, to string) (float64, string) {
+
+	swapCurrencyConverter(t, func(_ context.Context, amount float64, from, to string) (float64, string) {
 		if from == to {
 			return amount, to
 		}
@@ -324,8 +322,7 @@ func TestDetectErrorFare_nonEURTarget_JPY_classifiesCorrectly(t *testing.T) {
 			return amount * fakeRate, "JPY"
 		}
 		return amount, from
-	}
-	t.Cleanup(func() { convertCurrencyFn = orig })
+	})
 
 	// HEL->BCN is ~2900 km (long-haul). One-way floor = EUR 60, typical =
 	// EUR 250. Converted at the fake rate: floor = JPY 7800, typical =

@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A hack sweep now honours the caller's deadline and admits when it is
+  partial.** `DetectAll` fans out every hack detector concurrently and waited for
+  all of them, so a caller's deadline was advisory: a 1ms deadline took a measured
+  1m0.30s to come back. Worse, a truncated sweep was reported as a full one, so an
+  agent reading three hacks presented three as the answer when there were more.
+  The sweep now returns at the deadline, or at its own bound when the caller set
+  none, hands over what arrived, and tells the caller it is partial through both
+  the CLI and the MCP tool. A detector cut off by its own per-detector allowance
+  counts as incomplete rather than complete, and results already delivered when
+  the deadline fires are kept instead of discarded. An empty partial sweep no longer
+  reports that none were detected, on either surface, because that claimed a search
+  that had finished looking. Neither surface tells you to retry with more time any
+  more: the sweep also stops at bounds you do not set, so that advice pointed at a
+  knob that does not exist. Nor does either surface guess at a cause any more: an
+  incomplete sweep happens for several reasons, including a short deadline of your
+  own or a plain cancellation with no deadline at all, so the message says the sweep
+  says only that not every detector was confirmed to finish, and diagnoses nothing.
+  That wording is deliberate: whether a detector finished a moment before its
+  allowance expired is not observable from outside, so the sweep errs toward calling
+  itself partial and the message claims no more than the flag supports. It no longer blames a deadline either, which was
+  simply untrue when you interrupted a search yourself. And a sweep that did in fact
+  finish is no longer reported as partial: cancellation can arrive at the same instant
+  as the final result, and the verdict is now computed from what actually arrived
+  rather than assumed from the fact that a timer fired. The MCP tool now declares
+  `complete` and `note` in its output schema, so an agent reading the schema learns
+  about the completeness signal instead of having to know it is there. The same gap
+  hid more: six fields on each hack were undeclared, along with the entire AF-KLM
+  rail-and-fly bundle, its legs, their costs, and the flag that marks a rail fare as
+  an estimate rather than a live quote. All are declared now, so a client can ask for
+  the rail-and-fly detail instead of discovering it by accident.
+- **A capped readiness verdict now says so instead of implying the property came
+  up short.** `trvl prices` could never report "booking ready": the verdict needs
+  all four signals true and that endpoint carries no cancellation terms, so
+  `refundability_known` was never set. Every property came back "caution", which
+  is indistinguishable from a property whose data really is thin. The verdict now
+  carries its ceiling and the signals behind it, exposed as
+  `booking_readiness_ceiling` and `booking_readiness_ceiling_reasons` in the JSON
+  and the MCP schema, and printed below the price table. A signal the source
+  cannot supply appears only in the ceiling reasons, never among the ordinary
+  downgrade reasons, because listing it there reads as a finding about the offer.
+  Reported by @RobertoReale, who tested six Ischia properties and got six
+  identical cautions with nothing to explain them.
+- **A capped verdict no longer claims every signal was confirmed.** With the
+  unobtainable signal moved out of the ordinary reasons, that list is empty on a
+  best-case capped source, and the summary fell through to its default: `Booking
+  readiness: caution — all signals confirmed`. A verdict that is not ready,
+  asserting everything checked out. Capped verdicts now say that every obtainable
+  signal was confirmed and name what the source could not supply.
+
 ## [1.20.0] - 2026-07-13
 
 ### Fixed

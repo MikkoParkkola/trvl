@@ -39,5 +39,5 @@ func TestRegisteredDetectorCountMatchesDetectAll(t *testing.T) {
 	if RegisteredDetectorCount() == 0 {
 		t.Fatal("detector roster is empty")
 	}
-	_ = DetectAll(context.Background(), DetectorInput{})
+	_, _ = DetectAll(context.Background(), DetectorInput{})
 }
