@@ -497,9 +497,9 @@ func trainlineViaTier1(ctx context.Context, body []byte, cks []*http.Cookie, fro
 	// presents (the default headers carry a Chrome 133 UA, which would mismatch).
 	req.Header.Set("User-Agent", trainlineChromeUA)
 	req.Header.Set("sec-ch-ua", trainlineChromeSecCHUA)
-	for _, ck := range cks {
-		req.AddCookie(ck)
-	}
+	// Browser-harvested (datadome clearance). Attached through the consent seam
+	// so a decline landing during the browser read still stops them.
+	cookies.AttachBrowserCookies(req, cks)
 
 	resp, err := tier1.Do(req)
 	if err != nil {

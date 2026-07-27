@@ -236,9 +236,42 @@ func parseNetscapeCookies(data string) string {
 func ApplyCookies(req *http.Request, domain string) {
 	// The request carries the caller's context; use it rather than starting a
 	// detached lookup on behalf of a request that may already be cancelled.
-	if c := BrowserCookiesContext(req.Context(), domain); c != "" {
-		req.Header.Set("Cookie", c)
+	c := BrowserCookiesContext(req.Context(), domain)
+	if c == "" {
+		return
 	}
+	// Re-checked after the read, not only inside it: reading the browser stores
+	// takes seconds (Keychain unlock, cold profile), and a decline that lands
+	// during the read must still win. See AttachBrowserCookies.
+	if Disabled() {
+		return
+	}
+	req.Header.Set("Cookie", c)
+}
+
+// AttachBrowserCookies attaches cookies that came from the user's browser to a
+// request, unless browser access has been declined. It reports whether anything
+// was attached.
+//
+// It exists because a cookie jar is not the only way browser credentials reach
+// the wire: several providers read the browser once and then set the cookies on
+// the request directly, past any jar. Round 9 of review found two such paths
+// (Trainline's Tier-1 retry, Rome2Rio's Cloudflare path) still sending browser
+// cookies after an opt-out, for the same reason the jar did before it grew a
+// vault — the consent check sat before the slow read rather than after it.
+//
+// So the check belongs here, at the last point before transmission, where a
+// decline that arrives while the browser is being read still wins.
+func AttachBrowserCookies(req *http.Request, list []*http.Cookie) bool {
+	if req == nil || len(list) == 0 || Disabled() {
+		return false
+	}
+	for _, ck := range list {
+		if ck != nil {
+			req.AddCookie(ck)
+		}
+	}
+	return true
 }
 
 // IsCaptchaResponse reports whether an HTTP response is a Datadome CAPTCHA block
