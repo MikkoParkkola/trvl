@@ -205,14 +205,19 @@ func TestSummary_CappedVerdictDoesNotClaimAllSignalsConfirmed(t *testing.T) {
 	}
 }
 
-// TestSummary_CeilingWithoutReasonsDoesNotDangle covers the decoded-Verdict case:
-// Verdict is exported and carries JSON tags, so a value arriving from a client can
-// hold a ceiling with no reasons. Joining an empty list would leave a trailing
-// separator in user-visible text.
-func TestSummary_CeilingWithoutReasonsDoesNotDangle(t *testing.T) {
+// TestSummary_CeilingWithoutReasonsStaysHonest covers the decoded-Verdict case.
+// Verdict has exported fields and no constructor of its own, so a value decoded
+// from a client can hold a ceiling with an empty reason list. Two ways to get that
+// wrong: join the empty list and leave a separator dangling, or fall through to
+// "all signals confirmed" and reintroduce the very claim the capped branch exists
+// to prevent. The second is the worse one, so it is asserted first.
+func TestSummary_CeilingWithoutReasonsStaysHonest(t *testing.T) {
 	v := Verdict{Readiness: Ready, Ceiling: Caution}
 	got := v.Summary()
-	if strings.HasSuffix(got, "; ") || strings.HasSuffix(got, ";") {
+	if strings.Contains(got, "all signals confirmed") {
+		t.Fatalf("a capped verdict with no nameable ceiling reason claims every signal confirmed: %q", got)
+	}
+	if strings.HasSuffix(got, ";") || strings.HasSuffix(got, "; ") {
 		t.Fatalf("summary ends in a dangling separator: %q", got)
 	}
 	if got == "" {

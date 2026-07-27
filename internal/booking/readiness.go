@@ -247,11 +247,17 @@ func (v Verdict) Summary() string {
 		// and confirmed. On a capped source the ordinary reasons are empty
 		// because the missing signal is a ceiling reason, not a property
 		// finding — and printing "caution — all signals confirmed" asserts
-		// something plainly false about a verdict that is not ready.
-		// The reasons guard matters because Verdict is exported and decodable:
-		// a value round-tripped through JSON can carry a ceiling with no reasons,
-		// and appending an empty join would emit a dangling separator.
-		if v.Capped() && len(v.CeilingReasons) > 0 {
+		// something plainly false about a verdict that is not ready. A capped
+		// verdict therefore never takes that wording, whether or not it can name
+		// what the source withheld: Verdict has exported fields and no
+		// constructor of its own, so a decoded value can arrive holding a
+		// ceiling with an empty reason list. That case gets the conservative
+		// sentence rather than the confident one, and rather than a join that
+		// would leave a separator dangling off the end.
+		if v.Capped() {
+			if len(v.CeilingReasons) == 0 {
+				return "every obtainable signal confirmed; source limitation details unavailable"
+			}
 			return "every obtainable signal confirmed; " + strings.Join(v.CeilingReasons, "; ")
 		}
 		return "all signals confirmed"
