@@ -307,6 +307,12 @@ func warmBrowserCookiesResult(targetURL, browserHint string, timeout time.Durati
 // the same logic as browserCookiesForURLWithHint but extracted so it can
 // run in a background goroutine without recursive cache lookups.
 func readBrowserCookiesDirect(targetURL, browserHint string) []*http.Cookie {
+	// Reached from the background pre-warm goroutine and the browser-hint path,
+	// neither of which passes through browserCookiesForURL, so the opt-out is
+	// checked here too rather than trusting a caller to have done it.
+	if cookies.Disabled() {
+		return nil
+	}
 	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
 		return nil
 	}
@@ -399,16 +405,6 @@ func InvalidateWarmCache(targetURL, browserHint string) {
 // BrowserCookiesForURL reads matching browser cookies for targetURL using the
 // same bounded, test-guarded path as provider search recovery.
 func BrowserCookiesForURL(targetURL string) []*http.Cookie {
-	// The same opt-out that covers the nab reader, because a user setting
-	// TRVL_NO_BROWSER_COOKIES means their cookie stores, not one of the two code
-	// paths that reads them. Gating only the other reader would ship a control
-	// whose name promises more than it does.
-	//
-	// Whether this reader returns anything on a given machine is a separate
-	// question, and currently a doubtful one: see #529.
-	if cookies.Disabled() {
-		return nil
-	}
 	return browserCookiesForURL(targetURL)
 }
 
@@ -423,6 +419,19 @@ func BrowserCookiesForURL(targetURL string) []*http.Cookie {
 // browser has already solved any JS challenges and has valid session
 // cookies, which we can read directly from their disk-backed cookie jars.
 func browserCookiesForURL(targetURL string) []*http.Cookie {
+	// The opt-out sits on the low-level reader, not on the exported wrapper,
+	// because a user setting TRVL_NO_BROWSER_COOKIES means their cookie stores
+	// rather than one entry point into them. In-package recovery code reaches
+	// this function directly (currentCookieSource, the warm-cache path), so a
+	// gate on the wrapper alone would ship a control whose name promises more
+	// than it delivers — the same defect class as #507.
+	//
+	// Whether this reader returns anything on a given machine is a separate
+	// question, and currently a doubtful one: see #529.
+	if cookies.Disabled() {
+		return nil
+	}
+
 	// Check warm cache first — returns instantly if pre-warmed.
 	if cached := warmBrowserCookiesResult(targetURL, "", browserCookieLookupTimeout); cached != nil {
 		return cached
@@ -498,6 +507,9 @@ func browserCookiesForURL(targetURL string) []*http.Cookie {
 // Falls back to browserCookiesForURL (all-browser auto-discovery) when the
 // hint is empty or the specified browser's cookie store cannot be found.
 func browserCookiesForURLWithHint(targetURL, browserHint string) []*http.Cookie {
+	if cookies.Disabled() {
+		return nil
+	}
 	if browserHint == "" {
 		return browserCookiesForURL(targetURL)
 	}
