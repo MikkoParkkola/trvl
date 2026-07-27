@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/consent"
 )
 
 const cookieCacheTTL = 24 * time.Hour
@@ -56,7 +58,26 @@ func cookieCachePath(domain string) (string, error) {
 // loadCachedCookies reads persisted cookies for a URL and seeds them into
 // the HTTP client's jar. Returns true if cookies were loaded and are fresh
 // (saved within cookieCacheTTL).
+//
+// It refuses everything when the user has declined browser cookie reads, and
+// that refusal is the fifth bypass of this branch's family -- found by review,
+// not by us. Cookies read out of the user's browser are WRITTEN here:
+// auth.go's tier-3 fallback calls saveCachedCookies right after
+// tryBrowserCookieRetry succeeds. So the decline stopped fresh reads while this
+// path kept replaying a previous harvest for the whole cache TTL. Setting the
+// variable would have looked like it worked and changed nothing for a day.
+//
+// It refuses the WHOLE cache, not the browser-derived entries, because this
+// file records no provenance: a cookie saved after an ordinary preflight and
+// one copied out of Chrome are the same three fields on disk. Distinguishing
+// them is the better fix and is filed separately; refusing all of them is the
+// one available now that cannot be wrong in the direction that matters. The
+// cost is a refetch, paid only by users who asked for exactly this.
 func loadCachedCookies(client *http.Client, targetURL string) bool {
+	if consent.CookiesDeclined() {
+		return false
+	}
+
 	u, err := url.Parse(targetURL)
 	if err != nil || u.Host == "" {
 		return false
