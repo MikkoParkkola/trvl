@@ -2,6 +2,7 @@ package cookies
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -9,7 +10,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/consent"
 )
+
+// ErrBrowserReadDeclined is returned when the user has declined browser access
+// and something asked to drive their browser anyway. It is distinct from the
+// "browser reading disabled" error above on purpose: that one means an
+// automated context switched the feature off, this one means the user did, and
+// a test that cannot tell them apart proves nothing about the decline.
+var ErrBrowserReadDeclined = errors.New("browser page read declined (unset " + consent.CookiesEnv + " to enable)")
 
 // BrowserReadPage opens a URL in the user's default browser, waits for the page
 // to load, then reads the rendered page text via macOS osascript (AppleScript).
@@ -29,6 +39,15 @@ import (
 var SkipBrowserRead bool
 
 func BrowserReadPage(ctx context.Context, url string, waitSeconds int) (string, error) {
+	// The sixth path of this family, and the most visible of them: this one
+	// activates the user's real Chrome or Safari via osascript and reads the
+	// rendered page out of it. That uses their logged-in session, which is the
+	// same interest TRVL_NO_BROWSER_COOKIES protects, so the same decline
+	// governs it. The check is here at the seam rather than in the callers,
+	// because a caller-side check is what the five earlier bypasses all were.
+	if consent.CookiesDeclined() {
+		return "", ErrBrowserReadDeclined
+	}
 	if SkipBrowserRead {
 		return "", fmt.Errorf("browser reading disabled")
 	}
