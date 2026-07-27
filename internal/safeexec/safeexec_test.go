@@ -38,56 +38,66 @@ func TestOutput_ReturnsStdoutAndDiscardsStderr(t *testing.T) {
 	}
 }
 
-// TestOutput_ContainsDescendantsOnTimeout covers the containment guarantee on the
-// platforms where it holds.
+// containmentTiming returns the command deadline and the wait that follows it.
 //
-// The helper backgrounds a descendant that would write a marker after 3s, then
-// hangs. The command is bounded at 1s, so a contained descendant never reaches its
-// write: on Unix the process group is signalled.
-//
-// It does not run on Windows, and the reason is a real limit rather than an
-// inconvenience. A job object can only be assigned to a process that already
-// exists, so the assignment necessarily follows Start (safeexec.go:99, then
-// harden_windows.go:88). That leaves a window of microseconds in which a child is
-// not yet a job member, and this test's Windows fixture creates its descendant with
-// `start "" /b` as the batch file's very first statement, so it lands inside that
-// window every time. The test would be asserting a guarantee the implementation
-// deliberately does not make.
-//
-// What Windows does still get is the bound: the helper is killed at its deadline and
-// Output returns, which is the hang from #507. Only an immediately-spawned
-// grandchild can outlive it. Closing the window needs a suspended start with the
-// assignment before the resume, which was declined because any failure in that
-// sequence leaves the helper never running at all. Tracked with the full reasoning
-// in #526.
-func TestOutput_ContainsDescendantsOnTimeout(t *testing.T) {
+// Windows gets larger numbers because its fixture spends its first second waiting,
+// so that the descendant is created after the job assignment rather than inside
+// the window described in #526. The deadline has to outlast that wait or the
+// descendant would never exist, and the wait afterwards has to outlast the
+// descendant's own 3s sleep measured from when it spawned.
+func containmentTiming() (deadline, settle time.Duration) {
 	if runtime.GOOS == "windows" {
-		t.Skip("descendant containment is not guaranteed on Windows: the job assignment necessarily follows Start, and this fixture spawns inside that window (#526)")
+		return 3 * time.Second, 6 * time.Second
 	}
+	return time.Second, 4 * time.Second
+}
 
+// TestOutput_ContainsDescendantsOnTimeout pins the containment guarantee the
+// implementation actually makes: a descendant that exists by the time the deadline
+// arrives does not outlive it. On Unix that is every descendant, because the
+// process group is set through SysProcAttr before the process exists. On Windows it
+// is every descendant created after the job assignment, which necessarily follows
+// Start, leaving a window of microseconds that is #526 and stays open deliberately.
+// Closing it needs a suspended start with the assignment before the resume, and
+// that was declined because any failure in the sequence leaves the helper never
+// running at all.
+//
+// This is the only automated coverage the Windows job-object path has, so the
+// fixture is arranged to sit on the far side of that window rather than skipping
+// the platform. Two markers keep the arrangement honest. The descendant writes one
+// the moment it starts and another after a 3s sleep. The first must exist, which
+// proves the deadline did not simply arrive before there was anything to contain;
+// without it a mistimed fixture would pass while asserting nothing. The second must
+// not, which is the containment itself.
+func TestOutput_ContainsDescendantsOnTimeout(t *testing.T) {
 	dir := t.TempDir()
+	started := filepath.Join(dir, "descendant.started")
 	survivor := filepath.Join(dir, "descendant.survived")
 
-	bin, err := writeHangingSpawner(t, dir, survivor)
+	bin, err := writeHangingSpawner(t, dir, started, survivor)
 	if err != nil {
 		t.Skipf("no fixture for %s: %v", runtime.GOOS, err)
 	}
 
-	cmd, _, cancel := Command(context.Background(), time.Second, bin[0], bin[1:]...)
+	deadline, settle := containmentTiming()
+	cmd, _, cancel := Command(context.Background(), deadline, bin[0], bin[1:]...)
 	defer cancel()
 
 	start := time.Now()
 	if _, err := Output(cmd); err == nil {
 		t.Fatal("expected the hung helper to fail")
 	}
-	if elapsed := time.Since(start); elapsed > 6*time.Second {
-		t.Fatalf("Output took %v; the deadline should have ended it near 1s", elapsed)
+	if elapsed := time.Since(start); elapsed > deadline+5*time.Second {
+		t.Fatalf("Output took %v; the deadline should have ended it near %v", elapsed, deadline)
 	}
 
 	// Outlive the descendant's own sleep: if it were still alive, this is when
 	// it would write.
-	time.Sleep(4 * time.Second)
+	time.Sleep(settle)
 
+	if _, err := os.Stat(started); err != nil {
+		t.Fatalf("the descendant never started on %s (%v); the run proves nothing about containment, so it is a fixture failure rather than a pass", runtime.GOOS, err)
+	}
 	if _, err := os.Stat(survivor); err == nil {
 		t.Fatalf("a descendant outlived the timeout on %s; helpers will accumulate exactly as reported in #507", runtime.GOOS)
 	}
