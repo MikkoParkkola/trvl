@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Known limitations
+
+- **On Windows, a helper that forks something in its first instants can leave that
+  child behind.** Every helper is bounded by a deadline on every platform, so none of
+  them can hang a search. Cleanup is weaker on Windows: a job object can only be
+  assigned to a process that already exists, so a child created in the microseconds
+  after the helper starts is not yet a member of the job and survives it. None of the
+  programs trvl actually invokes behaves that way, so stray processes are unlikely in
+  practice. Closing the window needs a suspended start whose own failure mode leaves
+  the helper never running at all, which is worse, so this is documented rather than
+  half-fixed. Reasoning in [#526](https://github.com/MikkoParkkola/trvl/issues/526).
+
 ### Documentation
 
 - **What trvl reads from your browser is now documented, and it is more than the

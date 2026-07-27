@@ -235,6 +235,14 @@ The rule, and why it exists: a search you didn't ask for never runs an AF-KLM cr
 
 If you use the macOS Keychain (`security add-generic-password -a "$USER" -s afklm-api-key -w <key>`), it is consulted under `--provider afklm` only, for the same reason.
 
+### One limitation on Windows
+
+Every helper trvl runs is bounded by a deadline on every platform, so none of them can hang a search. Cleaning up what a helper leaves behind is weaker on Windows than elsewhere.
+
+On Unix a helper is signalled as a process group, so anything it started dies with it. On Windows it goes into a job object, and a job can only be assigned to a process that already exists, so there is a window of microseconds after the helper starts during which a child it creates is not yet a member. A helper that forks something in its first instants can therefore leave that child running after the helper itself has been killed.
+
+None of the programs trvl actually invokes behaves that way, so in practice you should not see stray processes. It is a real gap rather than a theoretical one, though, and closing it needs a suspended start whose own failure mode is worse than the gap, so it is documented instead of half-fixed. The reasoning is in [#526](https://github.com/MikkoParkkola/trvl/issues/526).
+
 ## Ecosystem
 
 Part of a suite of MCP tools: [mcp-gateway](https://github.com/MikkoParkkola/mcp-gateway) (universal gateway) · [nab](https://github.com/MikkoParkkola/nab) (web extraction with anti-bot) · [axterminator](https://github.com/MikkoParkkola/axterminator) (macOS GUI automation).
