@@ -28,8 +28,9 @@ func TestCookiesDeclined(t *testing.T) {
 }
 
 // TestTier2Declined covers the second variable, which has one extra rule: the
-// old opt-in still declines when set to an explicit denial, so flipping the
-// default to on does not quietly overrule someone who had turned it off.
+// old opt-in reads as an allowlist of the values that switched the browser ON
+// before the default flipped, so anything else a user set to keep it off still
+// keeps it off.
 func TestTier2Declined(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -46,6 +47,24 @@ func TestTier2Declined(t *testing.T) {
 		{"legacy opt-in explicitly no", "", "no", true},
 		{"legacy opt-in enabled", "", "1", false},
 		{"opt-out wins over an enabled legacy opt-in", "1", "1", true},
+
+		// The cases below are the fix for a defect an adversarial review of the
+		// default flip found: the legacy variable was read as a DENYLIST of
+		// three denials, so any other way of saying no fell through and the
+		// browser launched. It is now an allowlist of the three values that
+		// switched it on under the old rules -- copied from the predecessor,
+		// which was `v == "1" || v == "true" || v == "yes"` -- so a value that
+		// did not enable it then cannot enable it now.
+		{"legacy opt-in set to off, which the denylist missed", "", "off", true},
+		{"legacy opt-in set to disabled", "", "disabled", true},
+		{"legacy opt-in set to an unrecognised word", "", "banana", true},
+		// Case and surrounding space are normalised, which is strictly more
+		// permissive than the predecessor: it compared raw, so "TRUE" left the
+		// browser off. Anyone that affects was trying to turn it ON, so the
+		// looser reading cannot switch a user's browser off against their wish.
+		{"legacy opt-in enabled in capitals", "", "TRUE", false},
+		{"legacy opt-in enabled with surrounding space", "", "  yes  ", false},
+		{"legacy opt-in denied in capitals", "", "FALSE", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(Tier2Env, tc.optOut)
