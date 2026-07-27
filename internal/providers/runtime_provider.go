@@ -23,17 +23,15 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	// config; we then drop the cached providerClient so its HTTP client,
 	// rate limiter and auth cache are rebuilt from the new config.
 	var oldJar http.CookieJar
-	oldJarBrowserSeeded := false
 	if fresh := rt.registry.ReloadIfChanged(cfg.ID); fresh != nil && fresh != cfg {
 		// Preserve the cookie jar so WAF tokens and session cookies survive
-		// config reloads. The jar is installed on the new client below.
+		// config reloads. The jar is installed on the new client below, and it
+		// carries its own provenance (cookie_vault.go), so browser-derived
+		// cookies cannot arrive in the new client marked clean — which is how a
+		// reload would otherwise launder them past the opt-out.
 		rt.mu.Lock()
 		if old := rt.clients[cfg.ID]; old != nil && old.client != nil {
 			oldJar = old.client.Jar
-			// The jar survives a config reload, so its provenance must too.
-			// Moving browser-derived cookies into a client marked clean is how
-			// the opt-out would lose track of them across a reload.
-			oldJarBrowserSeeded = old.browserSeeded.Load()
 		}
 		delete(rt.clients, cfg.ID)
 		rt.mu.Unlock()
@@ -42,9 +40,6 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	pc := rt.getOrCreateClient(cfg)
 	if oldJar != nil && pc.client != nil {
 		pc.client.Jar = oldJar
-		if oldJarBrowserSeeded {
-			pc.browserSeeded.Store(true)
-		}
 	}
 
 	// Rate limit.

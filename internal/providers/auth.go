@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strings"
@@ -80,10 +79,9 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 	// This makes browser escape hatch a one-time setup rather than per-search.
 	// The file carries no provenance, so anything it yields is treated as
 	// browser-derived — the conservative reading, and the one #534 exists to
-	// replace with a recorded one.
-	if loadCachedCookies(pc.client, resolvedURL) {
-		pc.browserSeeded.Store(true)
-	}
+	// replace with a recorded one. loadCachedCookies records that itself, on the
+	// vault, in the same critical section it commits the cookies in.
+	loadCachedCookies(pc.client, resolvedURL)
 
 	resp, body, err := doPreflightRequest(ctx, pc.client, &resolvedAuth)
 	if err != nil {
@@ -108,7 +106,6 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 	if needsBrowserCookieFallback(resp.StatusCode, extracted, resolvedAuth.Extractions) {
 		// Tier 3a: read cookies from user's browser (kooky).
 		if tryBrowserCookieRetry(ctx, pc, &resolvedAuth) {
-			pc.browserSeeded.Store(true)
 			saveCachedCookies(pc.client, resolvedURL)
 			pc.lastPreflightURL = resolvedURL
 			pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
@@ -124,7 +121,6 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 		// Tier 4: last-resort escape hatch — open in browser.
 		if resolvedAuth.BrowserEscapeHatch && isInteractive(ctx) {
 			if tryBrowserEscapeHatch(ctx, pc, &resolvedAuth) {
-				pc.browserSeeded.Store(true)
 				saveCachedCookies(pc.client, resolvedURL)
 				pc.lastPreflightURL = resolvedURL
 				pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
@@ -348,10 +344,13 @@ func finishEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig
 		return false
 	}
 	if len(fresh) > 0 {
-		pc.client.Jar.SetCookies(u, fresh)
-		// Recovered from the user's own browser window, so the jar is now
-		// browser-seeded whether or not the retry below succeeds.
-		pc.browserSeeded.Store(true)
+		// Recovered from the user's own browser window, so this is a browser
+		// seed and is recorded as one whether or not the retry below succeeds.
+		// A vault is required, and a decline during the window the user spent
+		// clearing the challenge means these cookies are simply not taken.
+		if !vaultOf(pc.client).seedFromBrowser(u, fresh) {
+			return false
+		}
 	}
 
 	resp2, body2, err2 := doPreflightRequest(ctx, pc.client, auth)
@@ -612,8 +611,11 @@ func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool
 	if pc == nil || pc.client == nil {
 		return false
 	}
-	client := pc.client
-	if client == nil || client.Jar == nil {
+	// Fail closed: browser cookies only enter a jar that can revoke them. A
+	// plain jar would take them and keep them past a decline, which is the
+	// whole failure this branch exists to remove.
+	vault := vaultOf(pc.client)
+	if vault == nil {
 		return false
 	}
 	cookies := browserCookiesForURLWithHint(targetURL, browserHint)
@@ -625,8 +627,12 @@ func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool
 	if err != nil {
 		return false
 	}
-	client.Jar.SetCookies(u, cookies)
-	pc.browserSeeded.Store(true)
+	// The read above takes seconds; the user may have declined during it. The
+	// vault re-checks that under the same lock it commits under, so a read that
+	// began before the opt-out cannot land after it.
+	if !vault.seedFromBrowser(u, cookies) {
+		return false
+	}
 	slog.Debug("applied browser cookies to preflight client", "url", targetURL, "count", len(cookies))
 	return true
 }
@@ -722,25 +728,17 @@ func discardBrowserSeededAuth(pc *providerClient) {
 	pc.authMu.Lock()
 	defer pc.authMu.Unlock()
 
-	if !pc.browserSeeded.Load() {
+	// The jar goes first, and it decides. It holds the provenance under the same
+	// lock it commits cookies under, so this cannot observe "not seeded" while a
+	// browser read that is already in flight is about to make it so: that read
+	// re-checks the decline before committing and will now take nothing.
+	if !vaultOf(pc.client).discardBrowserSeeded() {
 		return
 	}
 
 	pc.authValues = nil
 	pc.authExpiry = time.Time{}
 	pc.lastPreflightURL = ""
-	pc.browserSeeded.Store(false)
-
-	if pc.client != nil {
-		if jar, err := cookiejar.New(nil); err == nil {
-			pc.client.Jar = jar
-		} else {
-			// Unreachable with a nil options argument, but a jar that failed to
-			// build must not leave the old one in place: that is precisely the
-			// state this function exists to remove.
-			pc.client.Jar = nil
-		}
-	}
 
 	slog.Debug("discarded browser-seeded auth state after opt-out", "provider", pc.config.ID)
 }

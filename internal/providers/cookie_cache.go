@@ -124,6 +124,15 @@ func loadCachedCookies(client *http.Client, targetURL string) bool {
 	}
 
 	if client.Jar != nil {
+		// The cache file carries no provenance, so its contents are treated as
+		// browser-derived (#534). On a provider client that means the vault
+		// records them as such, in the same critical section it commits them —
+		// a later opt-out then takes them back. A plain jar (the throwaway one
+		// CachedCookiesForURL builds to read the file) has nothing to record on
+		// and nothing to revoke, so it just takes them.
+		if v := vaultOf(client); v != nil {
+			return v.seedFromBrowser(u, cookies)
+		}
 		client.Jar.SetCookies(u, cookies)
 		slog.Debug("cookie cache: loaded", "domain", u.Host, "count", len(cookies))
 		return true
