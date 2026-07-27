@@ -598,6 +598,15 @@ func TestOutputShare_FormatSurfaceIsClosed(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "removed") {
 		t.Errorf("outputShare(\"link\") = %v, want an error saying the format was removed", err)
 	}
+
+	// It also has to say what to do about a gist created before the removal.
+	// This error is the only surface where the affected population self-selects:
+	// nobody else can reach it, and someone who does has a public gist on their
+	// account right now. Losing the pointer would leave the cleanup advice only
+	// in a changelog they have no reason to open.
+	if err != nil && !strings.Contains(err.Error(), "gh gist list") {
+		t.Errorf("outputShare(\"link\") = %v, want it to point at gh gist list so an affected user can clean up", err)
+	}
 }
 
 func TestRunEvents_MissingAPIKeyV24(t *testing.T) {

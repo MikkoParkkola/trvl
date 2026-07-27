@@ -129,9 +129,13 @@ func outputShare(md, formatOut string) error {
 		return copyToClipboard(md)
 	case "link":
 		// Removed in #527. This published the card as a public GitHub gist.
-		return fmt.Errorf("--format link has been removed: it published the trip as a public GitHub gist, " +
-			"which exposed your destinations and dates. Use the default output or --format clipboard, " +
-			"then send the text yourself")
+		// Wording matches the changelog entry on purpose: this error is the one
+		// place the affected population self-selects, so it is also where the
+		// cleanup pointer earns the most, and it must not read as a graver
+		// notice than the release note a user might read alongside it.
+		return fmt.Errorf("--format link has been removed: it created a public GitHub gist of the trip card. " +
+			"Use the default output or --format clipboard and send the text yourself. " +
+			"Gists it created are still on your account (gh gist list)")
 	default:
 		return fmt.Errorf("unsupported --format %q: use markdown or clipboard", formatOut)
 	}
