@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os/exec"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/providers"
@@ -545,10 +546,22 @@ func TestUpgradeCmd_DefaultRunV24(t *testing.T) {
 	}
 }
 
+// TestCreateGist_NoGhV24 covers the fallback branch of createGist: when the gh
+// CLI is absent, it must print the markdown to stdout rather than publishing.
+//
+// PATH is emptied so exec.LookPath("gh") fails. Without this the test hits the
+// real branch and runs `gh gist create --public` against the live account —
+// which silently published 794 public gists between 2026-06-26 and 2026-07-27.
 func TestCreateGist_NoGhV24(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 
-	err := createGist("# Test trip\n\nSome markdown content here.")
-	_ = err
+	if _, err := exec.LookPath("gh"); err == nil {
+		t.Fatal("gh still resolvable after PATH override; refusing to run (would publish a real public gist)")
+	}
+
+	if err := createGist("# Test trip\n\nSome markdown content here."); err != nil {
+		t.Errorf("fallback path returned error: %v", err)
+	}
 }
 
 func TestRunEvents_MissingAPIKeyV24(t *testing.T) {
