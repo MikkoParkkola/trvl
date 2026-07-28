@@ -234,7 +234,7 @@ func TestTryBrowserEscapeHatch_HeadlessClears_NoVisibleWindow(t *testing.T) {
 		return nil
 	})
 
-	if got := tryBrowserEscapeHatch(context.Background(), pc, auth); !got {
+	if _, got := tryBrowserEscapeHatch(context.Background(), pc, auth); !got {
 		t.Fatal("expected true when headless clears and preflight retry succeeds")
 	}
 	if openerCalls != 0 {
@@ -271,7 +271,7 @@ func TestTryBrowserEscapeHatch_NeedsHuman_OpensVisibleOnce(t *testing.T) {
 	// Cookie source returns a stable (unchanged) set so the wait reports no change.
 	withCookieSource(t, func(string) []*http.Cookie { return nil })
 
-	got := tryBrowserEscapeHatch(ctx, pc, auth)
+	_, got := tryBrowserEscapeHatch(ctx, pc, auth)
 	if got {
 		t.Fatal("expected false: visible path opened but no cookie change observed")
 	}
@@ -305,7 +305,7 @@ func TestTryBrowserEscapeHatch_HeadlessUnresolved_FallsThrough(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
 
-	_ = tryBrowserEscapeHatch(ctx, pc, auth)
+	_, _ = tryBrowserEscapeHatch(ctx, pc, auth)
 	if openerCalls != 1 {
 		t.Fatalf("visible opener called %d times, want exactly 1 (headless errored)", openerCalls)
 	}
@@ -356,7 +356,7 @@ func TestTryBrowserEscapeHatch_CookieDecline_NeverOpensBrowser(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
 
-	if got := tryBrowserEscapeHatch(ctx, pc, auth); got {
+	if _, got := tryBrowserEscapeHatch(ctx, pc, auth); got {
 		t.Error("the escape hatch reported success after the user declined browser cookie access")
 	}
 	if openerCalls != 0 {

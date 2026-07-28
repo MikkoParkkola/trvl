@@ -366,7 +366,10 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 
 		// Tier 4: browser escape hatch.
 		if !recovered && cfg.Auth != nil && cfg.Auth.BrowserEscapeHatch && isInteractive(ctx) {
-			if tryBrowserEscapeHatch(ctx, pc, cfg.Auth) {
+			// No lock held on this path, unlike runPreflight — so commit with
+			// the self-locking variant. Readers hold pc.authMu.RLock.
+			if vals, ok := tryBrowserEscapeHatch(ctx, pc, cfg.Auth); ok {
+				commitAuthValues(pc, vals)
 				resp2, body2, err2 := doSearchRequest(ctx, pc.client, req)
 				if err2 == nil && !isAkamaiChallenge(resp2.StatusCode, body2) && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
 					resp, body = resp2, body2

@@ -517,9 +517,11 @@ func runTestPreflight(ctx context.Context, pc *providerClient, cfg *ProviderConf
 		// the context interactive. Non-interactive callers (this test
 		// harness by default) never spawn a browser.
 		if tier == "" && cfg.Auth.BrowserEscapeHatch && isInteractive(ctx) {
-			if tryBrowserEscapeHatch(ctx, pc, cfg.Auth) {
-				// tryBrowserEscapeHatch already wrote fresh values into
-				// pc.authValues; re-issue preflight once more here only
+			if vals, ok := tryBrowserEscapeHatch(ctx, pc, cfg.Auth); ok {
+				// No lock held here, so commit with the self-locking variant.
+				commitAuthValues(pc, vals)
+				// tryBrowserEscapeHatch already produced fresh values;
+				// re-issue preflight once more here only
 				// to capture the body for diagnostics.
 				resp2, body2, err2 := doPreflightRequest(ctx, pc.client, cfg.Auth)
 				if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 && !isAkamaiChallenge(resp2.StatusCode, body2) {

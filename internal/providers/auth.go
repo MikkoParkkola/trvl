@@ -105,15 +105,23 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 	// client selected in getOrCreateClient; it runs implicitly on every
 	// request when cfg.TLS.Fingerprint == "chrome".)
 	if needsBrowserCookieFallback(resp.StatusCode, extracted, resolvedAuth.Extractions) {
+		// This whole cascade runs with pc.authMu held for writing (acquired
+		// above), which is what keeps two concurrent searches from both opening
+		// a browser window. The tiers therefore must not take the lock
+		// themselves — they return the recovered values and we commit them here
+		// with the Locked variant.
+		//
 		// Tier 3a: read cookies from user's browser (kooky).
-		if tryBrowserCookieRetry(ctx, pc, &resolvedAuth) {
+		if vals, ok := tryBrowserCookieRetry(ctx, pc, &resolvedAuth); ok {
+			commitAuthValuesLocked(pc, vals)
 			saveCachedCookies(pc.client, resolvedURL)
 			pc.lastPreflightURL = resolvedURL
 			pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
 			return copyAuthValues(pc.authValues), nil
 		}
 		// Tier 3b: run WAF challenge.js in sobek JS engine (pure Go).
-		if tryWAFSolve(ctx, pc, &resolvedAuth, resp.StatusCode, body) {
+		if vals, ok := tryWAFSolve(ctx, pc, &resolvedAuth, resp.StatusCode, body); ok {
+			commitAuthValuesLocked(pc, vals)
 			saveCachedCookies(pc.client, resolvedURL)
 			pc.lastPreflightURL = resolvedURL
 			pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
@@ -121,7 +129,8 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 		}
 		// Tier 4: last-resort escape hatch — open in browser.
 		if resolvedAuth.BrowserEscapeHatch && isInteractive(ctx) {
-			if tryBrowserEscapeHatch(ctx, pc, &resolvedAuth) {
+			if vals, ok := tryBrowserEscapeHatch(ctx, pc, &resolvedAuth); ok {
+				commitAuthValuesLocked(pc, vals)
 				saveCachedCookies(pc.client, resolvedURL)
 				pc.lastPreflightURL = resolvedURL
 				pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
@@ -157,17 +166,28 @@ func snapshotAuthValuesLocked(pc *providerClient) map[string]string {
 	return copyAuthValues(pc.authValues)
 }
 
-// replaceAuthValuesLocked refreshes pc.authValues from a recovered response. It
-// runs the extractions off-lock (applyURLExtractions performs network I/O) and
-// then clears+swaps the results in under pc.authMu.Lock. Readers hold
-// pc.authMu.RLock, so the older unsynchronized clear+write here raced concurrent
-// searches sharing the providerClient.
-func replaceAuthValuesLocked(ctx context.Context, pc *providerClient, auth *AuthConfig, resp *http.Response, body []byte) {
+// extractAuthValues builds a fresh auth-value map from a recovered response.
+// It touches no shared state and takes no lock: applyURLExtractions performs
+// network I/O, and the returned map is owned solely by the caller until it is
+// committed.
+//
+// Splitting extraction from the commit is load-bearing, not cosmetic. The
+// recovery tiers run under two different lock disciplines — runPreflight holds
+// pc.authMu for writing across the whole cascade, while the search-path
+// recovery in runtime_provider.go holds nothing — so a tier that reached for
+// the mutex itself was correct for exactly one of its two callers. It
+// deadlocked the first (sync.RWMutex is not reentrant) and had to keep locking
+// for the second to stay race-free against readers holding RLock.
+func extractAuthValues(ctx context.Context, pc *providerClient, auth *AuthConfig, resp *http.Response, body []byte) map[string]string {
 	fresh := map[string]string{}
 	applyExtractions(auth.Extractions, resp, body, fresh)
 	applyURLExtractions(ctx, pc.client, auth.Extractions, fresh)
-	pc.authMu.Lock()
-	defer pc.authMu.Unlock()
+	return fresh
+}
+
+// commitAuthValuesLocked clears pc.authValues and installs fresh in its place.
+// The caller MUST already hold pc.authMu for writing.
+func commitAuthValuesLocked(pc *providerClient, fresh map[string]string) {
 	for k := range pc.authValues {
 		delete(pc.authValues, k)
 	}
@@ -176,49 +196,59 @@ func replaceAuthValuesLocked(ctx context.Context, pc *providerClient, auth *Auth
 	}
 }
 
+// commitAuthValues is the self-locking commit, for callers that do not already
+// hold pc.authMu. Readers hold pc.authMu.RLock, so an unsynchronized
+// clear+write here would race concurrent searches sharing the providerClient.
+func commitAuthValues(pc *providerClient, fresh map[string]string) {
+	pc.authMu.Lock()
+	defer pc.authMu.Unlock()
+	commitAuthValuesLocked(pc, fresh)
+}
+
 // tryBrowserCookieRetry is Tier 3: read cookies from the user's disk-backed
-// browser stores, seed them into the client jar, and retry preflight. Returns
-// true on HTTP 2xx + successful extraction. The auth parameter carries the
+// browser stores, seed them into the client jar, and retry preflight. On
+// success it returns the freshly extracted auth values and true; the caller
+// commits them under its own lock discipline. The auth parameter carries the
 // resolved (city-specific) preflight URL.
-func tryBrowserCookieRetry(ctx context.Context, pc *providerClient, auth *AuthConfig) bool {
+func tryBrowserCookieRetry(ctx context.Context, pc *providerClient, auth *AuthConfig) (map[string]string, bool) {
 	if !applyBrowserCookies(pc, auth.PreflightURL, pc.config.Cookies.Browser) {
-		return false
+		return nil, false
 	}
 	resp2, body2, err2 := doPreflightRequest(ctx, pc.client, auth)
 	if err2 != nil || resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
-		return false
+		return nil, false
 	}
 	// Reject 202 challenge pages — they are in the 2xx range but are WAF
 	// interstitials, not real responses.
 	if isAkamaiChallenge(resp2.StatusCode, body2) {
-		return false
+		return nil, false
 	}
-	replaceAuthValuesLocked(ctx, pc, auth, resp2, body2)
-	return true
+	return extractAuthValues(ctx, pc, auth, resp2, body2), true
 }
 
 // tryWAFSolve is Tier 3b: if the preflight response looks like an AWS WAF
 // challenge page (HTTP 202 with *.awswaf.com script refs), run challenge.js
 // in the sobek JS engine to obtain an aws-waf-token cookie, then retry
-// preflight. Returns true on success. The auth parameter carries the
-// resolved (city-specific) preflight URL.
-func tryWAFSolve(ctx context.Context, pc *providerClient, auth *AuthConfig, statusCode int, pageBody []byte) bool {
+// preflight. On success it returns the freshly extracted auth values and true;
+// the caller commits them under its own lock discipline. The auth parameter
+// carries the resolved (city-specific) preflight URL.
+func tryWAFSolve(ctx context.Context, pc *providerClient, auth *AuthConfig, statusCode int, pageBody []byte) (map[string]string, bool) {
 	// Only attempt on HTTP 202 (AWS WAF challenge) or 403 (some WAF variants).
 	if statusCode != http.StatusAccepted && statusCode != http.StatusForbidden {
-		return false
+		return nil, false
 	}
 
 	pageURL := auth.PreflightURL
 	cookie, err := waf.SolveAWSWAF(ctx, pc.client, pageURL, string(pageBody), nil)
 	if err != nil {
 		slog.Debug("waf solver did not produce a token", "provider", pc.config.ID, "error", err.Error())
-		return false
+		return nil, false
 	}
 
 	// Install the token cookie into the client jar.
 	u, err := url.Parse(pageURL)
 	if err != nil {
-		return false
+		return nil, false
 	}
 	pc.client.Jar.SetCookies(u, []*http.Cookie{cookie})
 	slog.Info("waf solver obtained aws-waf-token via JS engine", "provider", pc.config.ID)
@@ -226,14 +256,13 @@ func tryWAFSolve(ctx context.Context, pc *providerClient, auth *AuthConfig, stat
 	// Retry preflight with the fresh token.
 	resp2, body2, err2 := doPreflightRequest(ctx, pc.client, auth)
 	if err2 != nil || resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
-		return false
+		return nil, false
 	}
 	// Reject 202 challenge pages — still a WAF interstitial despite being 2xx.
 	if isAkamaiChallenge(resp2.StatusCode, body2) {
-		return false
+		return nil, false
 	}
-	replaceAuthValuesLocked(ctx, pc, auth, resp2, body2)
-	return true
+	return extractAuthValues(ctx, pc, auth, resp2, body2), true
 }
 
 // tryBrowserEscapeHatch is Tier 4: open the preflight URL in the user's
@@ -246,7 +275,11 @@ func tryWAFSolve(ctx context.Context, pc *providerClient, auth *AuthConfig, stat
 // user is prompted before the browser opens — this replaces the old silent
 // 15-second timeout that users never noticed. The auth parameter carries the
 // resolved (city-specific) preflight URL.
-func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig) bool {
+//
+// On success it returns the freshly extracted auth values and true; the caller
+// commits them under its own lock discipline (runPreflight already holds the
+// write lock, the search-path caller does not).
+func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig) (map[string]string, bool) {
 	// Everything below this line reads the user's own browser: the visible path
 	// opens their real, logged-in profile and then reads its cookie store twice
 	// (browserCookiesForURL, waitForFreshCookies). TRVL_NO_BROWSER_COOKIES is
@@ -266,7 +299,7 @@ func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthCo
 	if consent.CookiesDeclined() {
 		slog.Info("browser escape hatch declined: user opted out of browser cookie access",
 			"provider", pc.config.ID, "env", consent.CookiesEnv)
-		return false
+		return nil, false
 	}
 
 	targetURL := auth.PreflightURL
@@ -279,10 +312,10 @@ func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthCo
 	if res, err := headlessFirstResolve(ctx, targetURL); err == nil && res != nil {
 		switch res.Status {
 		case ChallengeCleared:
-			if finishEscapeHatch(ctx, pc, auth, res.Cookies) {
+			if vals, ok := finishEscapeHatch(ctx, pc, auth, res.Cookies); ok {
 				slog.Info("browser escape hatch: cleared headlessly, no window shown",
 					"provider", pc.config.ID)
-				return true
+				return vals, true
 			}
 			// Headless cleared the page but the preflight retry still failed —
 			// fall through to the visible window as a last resort.
@@ -307,7 +340,7 @@ func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthCo
 		if err != nil || !confirmed {
 			slog.Info("browser escape hatch: user declined or elicitation failed",
 				"provider", pc.config.ID)
-			return false
+			return nil, false
 		}
 	}
 
@@ -325,7 +358,7 @@ func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthCo
 	if err := openURLInBrowser(targetURL, browserPref); err != nil {
 		slog.Warn("browser escape hatch: open failed",
 			"provider", pc.config.ID, "error", err.Error())
-		return false
+		return nil, false
 	}
 
 	// With elicitation the user explicitly confirmed they completed the
@@ -340,31 +373,33 @@ func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthCo
 	if !changed {
 		slog.Warn("browser escape hatch: no cookie change observed within deadline",
 			"provider", pc.config.ID)
-		return false
+		return nil, false
 	}
 
 	if pc.client == nil || pc.client.Jar == nil {
-		return false
+		return nil, false
 	}
-	if !finishEscapeHatch(ctx, pc, auth, fresh) {
-		return false
+	vals, ok := finishEscapeHatch(ctx, pc, auth, fresh)
+	if !ok {
+		return nil, false
 	}
 	slog.Info("browser escape hatch: preflight recovered", "provider", pc.config.ID)
-	return true
+	return vals, true
 }
 
 // finishEscapeHatch seeds the recovered cookies into the client jar, retries the
-// preflight, and (on a clean 2xx that is not another challenge page) refreshes
-// the provider's auth values. It is the shared tail of the Tier-4 escape hatch,
-// used by both the silent headless-first path and the visible-window fallback.
-// Returns true when the preflight retry succeeds and yields usable auth state.
-func finishEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig, fresh []*http.Cookie) bool {
+// preflight, and (on a clean 2xx that is not another challenge page) extracts
+// fresh auth values. It is the shared tail of the Tier-4 escape hatch, used by
+// both the silent headless-first path and the visible-window fallback.
+// Returns the extracted values and true when the preflight retry succeeds; the
+// caller commits them under its own lock discipline.
+func finishEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig, fresh []*http.Cookie) (map[string]string, bool) {
 	if pc.client == nil || pc.client.Jar == nil {
-		return false
+		return nil, false
 	}
 	u, err := url.Parse(auth.PreflightURL)
 	if err != nil {
-		return false
+		return nil, false
 	}
 	if len(fresh) > 0 {
 		// Recovered from the user's own browser window, so this is a browser
@@ -372,7 +407,7 @@ func finishEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig
 		// A vault is required, and a decline during the window the user spent
 		// clearing the challenge means these cookies are simply not taken.
 		if !vaultOf(pc.client).seedFromBrowser(u, fresh) {
-			return false
+			return nil, false
 		}
 	}
 
@@ -380,16 +415,15 @@ func finishEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig
 	if err2 != nil || resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
 		slog.Warn("browser escape hatch: preflight retry still failed",
 			"provider", pc.config.ID)
-		return false
+		return nil, false
 	}
 	// Reject 202 challenge pages — still a WAF interstitial despite being 2xx.
 	if isAkamaiChallenge(resp2.StatusCode, body2) {
 		slog.Warn("browser escape hatch: preflight retry returned another challenge page",
 			"provider", pc.config.ID)
-		return false
+		return nil, false
 	}
-	replaceAuthValuesLocked(ctx, pc, auth, resp2, body2)
-	return true
+	return extractAuthValues(ctx, pc, auth, resp2, body2), true
 }
 
 // doSearchRequest clones the given request, executes it via client, reads the

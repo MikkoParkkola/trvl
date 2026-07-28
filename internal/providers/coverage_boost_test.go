@@ -116,7 +116,7 @@ func TestTryBrowserCookieRetry_NilJar(t *testing.T) {
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: "https://example.com/page"}
-	if tryBrowserCookieRetry(context.Background(), pc, auth) {
+	if _, ok := tryBrowserCookieRetry(context.Background(), pc, auth); ok {
 		t.Error("expected false when client has no jar")
 	}
 }
@@ -159,7 +159,7 @@ func TestTryBrowserCookieRetry_PreflightFails(t *testing.T) {
 		Extractions:  map[string]Extraction{},
 	}
 
-	if tryBrowserCookieRetry(context.Background(), pc, auth) {
+	if _, ok := tryBrowserCookieRetry(context.Background(), pc, auth); ok {
 		t.Error("expected false when retry preflight returns 403")
 	}
 }
@@ -198,7 +198,7 @@ func TestTryBrowserCookieRetry_AkamaiChallengeOnRetry(t *testing.T) {
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: targetURL, Extractions: map[string]Extraction{}}
-	if tryBrowserCookieRetry(context.Background(), pc, auth) {
+	if _, ok := tryBrowserCookieRetry(context.Background(), pc, auth); ok {
 		t.Error("expected false when retry returns Akamai challenge page")
 	}
 }
@@ -236,7 +236,7 @@ func TestTryBrowserCookieRetry_Success(t *testing.T) {
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: targetURL, Extractions: map[string]Extraction{}}
-	if !tryBrowserCookieRetry(context.Background(), pc, auth) {
+	if _, ok := tryBrowserCookieRetry(context.Background(), pc, auth); !ok {
 		t.Error("expected true when retry preflight returns 200")
 	}
 }
@@ -256,7 +256,7 @@ func TestTryWAFSolve_200Status(t *testing.T) {
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: "https://example.com/page"}
-	if tryWAFSolve(context.Background(), pc, auth, http.StatusOK, []byte("body")) {
+	if _, ok := tryWAFSolve(context.Background(), pc, auth, http.StatusOK, []byte("body")); ok {
 		t.Error("expected false for status 200")
 	}
 }
@@ -272,7 +272,7 @@ func TestTryWAFSolve_302Status(t *testing.T) {
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: "https://example.com/page"}
-	if tryWAFSolve(context.Background(), pc, auth, http.StatusFound, []byte("body")) {
+	if _, ok := tryWAFSolve(context.Background(), pc, auth, http.StatusFound, []byte("body")); ok {
 		t.Error("expected false for status 302")
 	}
 }
@@ -289,8 +289,8 @@ func TestTryWAFSolve_202NoMarkers(t *testing.T) {
 	}
 	auth := &AuthConfig{PreflightURL: "https://example.com/challenge"}
 	// Body has no challenge markers → WAF solver fails → false
-	if tryWAFSolve(context.Background(), pc, auth, http.StatusAccepted,
-		[]byte("<html><body>Please wait</body></html>")) {
+	if _, ok := tryWAFSolve(context.Background(), pc, auth, http.StatusAccepted,
+		[]byte("<html><body>Please wait</body></html>")); ok {
 		t.Error("expected false when body has no WAF challenge markers")
 	}
 }
