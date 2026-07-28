@@ -28,9 +28,9 @@ func TestMain(m *testing.M) {
 	// ~/.trvl. watch.DefaultStore() resolves it from os.UserHomeDir(); an
 	// unguarded run wrote to a maintainer's live watch store on 2026-07-26.
 	if dir, err := os.MkdirTemp("", "trvl-test-home-"); err == nil {
-		defer os.RemoveAll(dir)
-		os.Setenv("HOME", dir)
-		os.Setenv("USERPROFILE", dir) // windows
+		defer func() { _ = os.RemoveAll(dir) }()
+		_ = os.Setenv("HOME", dir)
+		_ = os.Setenv("USERPROFILE", dir) // windows
 	}
 
 	destinationEnricher = func(context.Context, string, models.DateRange) (*models.DestinationInfo, error) {

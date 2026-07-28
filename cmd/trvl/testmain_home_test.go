@@ -17,8 +17,8 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("create test HOME: " + err.Error())
 	}
-	defer os.RemoveAll(dir)
-	os.Setenv("HOME", dir)
-	os.Setenv("USERPROFILE", dir) // windows
+	defer func() { _ = os.RemoveAll(dir) }()
+	_ = os.Setenv("HOME", dir)
+	_ = os.Setenv("USERPROFILE", dir) // windows
 	os.Exit(m.Run())
 }
