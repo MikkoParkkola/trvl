@@ -94,8 +94,36 @@ func CheckAllWithRooms(ctx context.Context, store *Store, checker PriceChecker, 
 // delivery to outlive the check timeout. The webhook context should typically be
 // a longer-lived parent context that is canceled when the caller is shutting
 // down.
+//
+// Always re-derives its list from store.List() -- every watch, active or
+// not. A caller that needs to check only a pre-filtered subset (e.g.
+// ActiveWatches) must use CheckWatchesWithRoomsAndWebhookContext instead:
+// see that function's doc comment for why this distinction is load-bearing,
+// not cosmetic.
 func CheckAllWithRoomsAndWebhookContext(checkCtx, webhookCtx context.Context, store *Store, checker PriceChecker, roomChecker RoomChecker) []CheckResult {
 	return checkWatchesWithRoomsAndWebhookContext(checkCtx, webhookCtx, store, checker, roomChecker, store.List())
+}
+
+// CheckWatchesWithRoomsAndWebhookContext checks exactly the given watches,
+// pre-selected by the caller, while allowing webhook delivery to outlive the
+// check timeout. Exported so a caller outside this package (e.g. the
+// standalone `trvl watch daemon`) can apply its own activity filter (see
+// ActiveWatches) before checking, matching the in-process scheduler, which
+// filters internally.
+//
+// This is not an optimization. checkWatchesWithRoomsAndWebhookContext pauses
+// 3 seconds between checks and stops as soon as checkCtx's deadline fires; a
+// caller that hands it store.List() unfiltered pays that pause for every
+// stale watch too, in whatever order the store returns them. A store holding
+// many expired watches ahead of one truly active watch can exhaust the
+// entire check-cycle timeout before ever reaching the active one -- which
+// then goes unchecked for that cycle with no error surfaced, because the
+// caller's own active-count (computed separately, before this call) reports
+// success regardless of whether the active watch was actually reached in
+// time. Passing the SAME filtered slice here that produced that count is
+// what closes the gap. Found by adversarial review, 2026-07-28.
+func CheckWatchesWithRoomsAndWebhookContext(checkCtx, webhookCtx context.Context, store *Store, checker PriceChecker, roomChecker RoomChecker, watches []Watch) []CheckResult {
+	return checkWatchesWithRoomsAndWebhookContext(checkCtx, webhookCtx, store, checker, roomChecker, watches)
 }
 
 func checkWatchesWithRoomsAndWebhookContext(checkCtx, webhookCtx context.Context, store *Store, checker PriceChecker, roomChecker RoomChecker, watches []Watch) []CheckResult {

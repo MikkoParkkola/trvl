@@ -110,7 +110,15 @@ func runWatchCheckCycleWithRooms(ctx context.Context, checker watch.PriceChecker
 	checkCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	notifier.NotifyAll(watch.CheckAllWithRoomsAndWebhookContext(checkCtx, ctx, store, checker, roomChecker))
+	// Must check exactly `watches` (the filtered slice above), not
+	// CheckAllWithRoomsAndWebhookContext's own unfiltered store.List(). That
+	// variant re-prices every stored watch with a 3-second pause between
+	// each; a store holding many expired watches ahead of one truly active
+	// watch can exhaust this 60-second budget before ever reaching the
+	// active one, which then goes unchecked this cycle while the return
+	// value below still reports success. Found by adversarial review,
+	// 2026-07-28.
+	notifier.NotifyAll(watch.CheckWatchesWithRoomsAndWebhookContext(checkCtx, ctx, store, checker, roomChecker, watches))
 	return len(watches), nil
 }
 
