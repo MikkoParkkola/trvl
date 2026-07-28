@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-07-28
+
 ### Added
 
 - **`TRVL_NO_BROWSER_COOKIES` — decline browser cookie reads.** Set it to anything but
@@ -15,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check sits on the low-level readers rather than the exported wrapper, because
   recovery code reaches them directly and a gate on the public name alone would have
   ignored the user three ways out of four. Default is unchanged. ([#521](https://github.com/MikkoParkkola/trvl/issues/521))
+- `AFKLM_KEYCHAIN_SERVICE` overrides the macOS Keychain service name, so a user who
+  files the key under their own name is not forced to adopt trvl's.
 
 ### Changed
 
@@ -42,6 +46,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   any real search. It governs the headless browser only — the visible-window escape
   hatch is a separate path with its own per-provider opt-in and its own confirmation
   prompt.
+- **BREAKING — AF-KLM credentials are no longer discovered automatically.** A default
+  flight search now reads the `AFKLM_KEY` environment variable and nothing else. It no
+  longer consults the macOS Keychain or 1Password, so it starts no subprocess, cannot
+  block a search, and cannot surface a credential prompt. If you relied on a Keychain
+  entry or a 1Password item, export `AFKLM_KEY` to restore AF-KLM in default searches,
+  or run `--provider afklm` explicitly. This matters most for AF-KLM's rail+fly
+  itineraries (a train leg from Brussels Midi, Antwerp or Brussels ticketed as part of
+  the flight), which no other provider exposes. External credential stores are now
+  reachable only under the explicit flag.
+  ([#507](https://github.com/MikkoParkkola/trvl/issues/507))
+- The 1Password lookup requires a secret reference you supply in `AFKLM_OP_REF`, e.g.
+  `op://Private/AF-KLM/credential`. The previously hardcoded reference was a leftover
+  from experimental work and named an item only the maintainer had.
 
 ### Removed
 
@@ -82,27 +99,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   needs it, and nothing turns any of this off today. Whether any of it should be opt-in
   is open at [#521](https://github.com/MikkoParkkola/trvl/issues/521).
 
-### Added
-
-- `AFKLM_KEYCHAIN_SERVICE` overrides the macOS Keychain service name, so a user who
-  files the key under their own name is not forced to adopt trvl's.
-
-### Changed
-
-- **BREAKING — AF-KLM credentials are no longer discovered automatically.** A default
-  flight search now reads the `AFKLM_KEY` environment variable and nothing else. It no
-  longer consults the macOS Keychain or 1Password, so it starts no subprocess, cannot
-  block a search, and cannot surface a credential prompt. If you relied on a Keychain
-  entry or a 1Password item, export `AFKLM_KEY` to restore AF-KLM in default searches,
-  or run `--provider afklm` explicitly. This matters most for AF-KLM's rail+fly
-  itineraries (a train leg from Brussels Midi, Antwerp or Brussels ticketed as part of
-  the flight), which no other provider exposes. External credential stores are now
-  reachable only under the explicit flag.
-  ([#507](https://github.com/MikkoParkkola/trvl/issues/507))
-- The 1Password lookup requires a secret reference you supply in `AFKLM_OP_REF`, e.g.
-  `op://Private/AF-KLM/credential`. The previously hardcoded reference was a leftover
-  from experimental work and named an item only the maintainer had.
-
 ### Fixed
 
 - A credential lookup on the default search path could hang forever and accumulate
@@ -119,6 +115,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A search that skips AF-KLM because `AFKLM_OP_REF` is set but `AFKLM_KEY` is not now
   says so, with a hint naming the fix. Silently dropping a provider the user had
   configured looked like a broken provider.
+- **Wizz Air searches work again.** trvl addressed the airline's API by a version
+  number that Wizz had retired, and every search against it returned nothing. The
+  default now names the version that is live, confirmed against the airline's own
+  site rather than guessed. A test refuses any future change that moves it backwards.
+  ([#506](https://github.com/MikkoParkkola/trvl/issues/506))
+
+### Security
+
+- **A configured webhook URL is no longer written to the log.** `trvl watch` can post
+  price changes to a webhook, and Slack and Discord both carry the shared secret
+  inside that URL. When a post failed, the whole URL went into the log at the default
+  level — so anyone who attached logs to a bug report handed over a working
+  credential. Only the host is logged now. The error text was carrying the URL too,
+  which is the half that a smaller fix would have missed.
+  ([#536](https://github.com/MikkoParkkola/trvl/issues/536))
 
   All of the above reported by [@JoshTristram](https://github.com/JoshTristram) in
   [#507](https://github.com/MikkoParkkola/trvl/issues/507), who found around twenty
@@ -1053,7 +1064,9 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.19.1...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.0...HEAD
+[1.21.0]: https://github.com/MikkoParkkola/trvl/compare/v1.20.0...v1.21.0
+[1.20.0]: https://github.com/MikkoParkkola/trvl/compare/v1.19.1...v1.20.0
 [1.19.1]: https://github.com/MikkoParkkola/trvl/compare/v1.19.0...v1.19.1
 [1.19.0]: https://github.com/MikkoParkkola/trvl/compare/v1.18.0...v1.19.0
 [1.17.6]: https://github.com/MikkoParkkola/trvl/compare/v1.17.5...v1.17.6
