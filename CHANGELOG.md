@@ -37,7 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every headless browser trvl starts itself. Those browsers attach no user profile, so
   a cookie decline does not stop them; if it did, declining access to your own browser
   would also remove the one acquisition path that still works without it, and hotel
-  search would return nothing in exchange for no privacy gained. An earlier attempt at
+  search would return nothing in exchange for no privacy gained. Known gap: on the
+  sites trvl signs into on your behalf, a cookie decline does still switch that
+  recovery path off, because the recovered cookies go through the same store that can
+  hold cookies copied out of a real browser and that store records no note of which is
+  which. Splitting it is tracked as its own change; hotel and rail search are not
+  affected. An earlier attempt at
   this release gated the headless paths on the cookie variable and did exactly that. It
   is reverted, both directions are asserted by tests, and a source-level invariant test
   now fails the build if any launch site is ever given a user profile — the claim the

@@ -257,7 +257,12 @@ one reads the session you are already logged into, this one starts a new anonymo
 session and keeps what that session is given. Because it reads nothing of yours,
 `TRVL_NO_BROWSER_COOKIES=1` leaves it running: if it did not, declining access to your
 own browser would also take away the one path that still works without it, and hotel
-search would return nothing for no gain in privacy. This also
+search would return nothing for no gain in privacy. One exception, and it is a real
+one: on the sites trvl signs into on your behalf, a cookie decline does still switch
+this recovery path off. Those sites hand the recovered cookies to the same store that
+can also hold cookies copied out of your real browser, and that store keeps no note of
+which is which, so a cookie decline refuses all of it rather than guess. Separating the
+two is tracked as its own change. Hotel and rail search are not affected. This also
 runs by default, for the same reason — with it off, a challenged search returns nothing
 and looks like an empty result rather than a switched-off feature. Set
 `TRVL_NO_TIER2_CDP=1` to decline. It costs a browser process for a few seconds per
