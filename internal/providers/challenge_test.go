@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/chromedp/cdproto/network"
 )
 
@@ -307,5 +308,59 @@ func TestTryBrowserEscapeHatch_HeadlessUnresolved_FallsThrough(t *testing.T) {
 	_ = tryBrowserEscapeHatch(ctx, pc, auth)
 	if openerCalls != 1 {
 		t.Fatalf("visible opener called %d times, want exactly 1 (headless errored)", openerCalls)
+	}
+}
+
+// TestTryBrowserEscapeHatch_CookieDecline_NeverOpensBrowser is the consent gate.
+//
+// The setup is deliberately the one that DOES open a window: the headless seam
+// errors, so control reaches the visible-window fallback, which the test above
+// proves calls the opener exactly once. The only difference here is the decline.
+//
+// Gating the cookie reads alone is not enough and that is the point of counting
+// opener calls rather than just the return value. browserCookiesForURL already
+// returns nil when declined, so a version with no gate in this function still
+// returns false — it just does so after opening the user's real browser and
+// waiting out the deadline. A test that asserted only on the return value would
+// pass against the bug.
+func TestTryBrowserEscapeHatch_CookieDecline_NeverOpensBrowser(t *testing.T) {
+	t.Setenv(consent.Tier2Env, "")
+	t.Setenv(consent.Tier2LegacyEnv, "")
+	t.Setenv(consent.CookiesEnv, "1")
+
+	if Tier2Declined() {
+		t.Fatalf("precondition: Tier2Declined must be FALSE here, or this test passes for the wrong reason")
+	}
+
+	jar, _ := cookiejar.New(nil)
+	pc := &providerClient{
+		config:     &ProviderConfig{ID: "cookie-declined", Name: "CookieDeclined"},
+		client:     &http.Client{Jar: jar},
+		authValues: make(map[string]string),
+	}
+	auth := &AuthConfig{PreflightURL: "https://example.com/page", BrowserEscapeHatch: true}
+
+	// Same seam as the fall-through test: headless cannot resolve, so without the
+	// gate the visible path runs.
+	withHeadlessResolve(t, func(ctx context.Context, targetURL string) (*ChallengeResult, error) {
+		return nil, ErrNoBrowserFound
+	})
+
+	var openerCalls int
+	withOpener(t, func(goos, pref, target string) error {
+		openerCalls++
+		return nil
+	})
+	withCookieSource(t, func(string) []*http.Cookie { return nil })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+
+	if got := tryBrowserEscapeHatch(ctx, pc, auth); got {
+		t.Error("the escape hatch reported success after the user declined browser cookie access")
+	}
+	if openerCalls != 0 {
+		t.Fatalf("opener called %d times, want 0: %s declined browser access and the escape hatch "+
+			"opened the user's real browser anyway", openerCalls, consent.CookiesEnv)
 	}
 }

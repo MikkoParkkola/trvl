@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/waf"
 	"github.com/andybalholm/brotli"
@@ -246,6 +247,28 @@ func tryWAFSolve(ctx context.Context, pc *providerClient, auth *AuthConfig, stat
 // 15-second timeout that users never noticed. The auth parameter carries the
 // resolved (city-specific) preflight URL.
 func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig) bool {
+	// Everything below this line reads the user's own browser: the visible path
+	// opens their real, logged-in profile and then reads its cookie store twice
+	// (browserCookiesForURL, waitForFreshCookies). TRVL_NO_BROWSER_COOKIES is
+	// exactly the decline for that, so it has to be answered here rather than
+	// only at the reads.
+	//
+	// Answering it only at the reads is what shipped before, and it fails in the
+	// worst direction: the reads return nil for a declining user, but the browser
+	// has already been opened by then. They get the window they refused, the wait
+	// for a cookie change that can never be observed, and no search result at the
+	// end of it. The decline has to stop the window, not just the read.
+	//
+	// Not gated on Tier2Declined. That decline governs the empty-profile headless
+	// browser (internal/consent/consent.go:35-39); this path is the user's actual
+	// profile, and treating the two as one control is a conflation this release
+	// already had to undo once in internal/ground.
+	if consent.CookiesDeclined() {
+		slog.Info("browser escape hatch declined: user opted out of browser cookie access",
+			"provider", pc.config.ID, "env", consent.CookiesEnv)
+		return false
+	}
+
 	targetURL := auth.PreflightURL
 	browserPref := pc.config.Cookies.Browser
 

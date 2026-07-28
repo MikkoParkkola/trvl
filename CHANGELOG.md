@@ -16,12 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   used by hotel and rail search, nor the nab helper used by the rail 403 retry. The
   check sits on the low-level readers rather than the exported wrapper, because
   recovery code reaches them directly and a gate on the public name alone would have
-  ignored the user. The same reasoning turned out to have one place left: the ground
-  scraper starts a browser of its own and was gated on the Tier-2 variable alone, so a
-  user who declined cookies without touching Tier-2 still got a real Chrome session —
-  and the SNCF path harvests an `x-bff-key` from exactly that session. It is gated now,
-  at both its entry point and its allocator. Default is unchanged.
-  ([#521](https://github.com/MikkoParkkola/trvl/issues/521))
+  ignored the user. It also stops the last-resort escape hatch, which opens the user's
+  own logged-in browser and then waits for its cookie store to change. Gating only the
+  reads left that one failing in the worst direction: the reads returned nothing, but
+  the window had already opened, so a user who declined got the browser they refused,
+  a wait that could never succeed, and no result at the end of it. Default is
+  unchanged. ([#521](https://github.com/MikkoParkkola/trvl/issues/521))
+
+  The two browser opt-outs stay separate, which is the distinction to keep in mind
+  when reading the above. `TRVL_NO_BROWSER_COOKIES` governs the paths that touch the
+  user's own profile. `TRVL_NO_TIER2_CDP` governs the headless browser that starts
+  from an empty profile and never opens theirs — that is the one that covers the
+  ground scraper, and it always did. An earlier attempt at this release put a cookie
+  gate on the scraper too; that refused a search over a store the scraper never reads,
+  and collapsed two documented controls into one. It was removed, and both directions
+  are now asserted by tests.
 - `AFKLM_KEYCHAIN_SERVICE` overrides the macOS Keychain service name, so a user who
   files the key under their own name is not forced to adopt trvl's.
 
