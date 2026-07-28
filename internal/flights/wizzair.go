@@ -106,7 +106,20 @@ var ErrWizzRejected = errors.New("wizzair declined the request (validationCodes)
 // 404'd on the 29.3.0 path (the rotation signature). New version read from the
 // web app's live config — be.wizzair.com/29.4.0/Api/asset/culture serves from a
 // residential IP — confirming the path segment advanced one minor.
-const wizzDefaultVersion = "29.4.0"
+// 2026-07-28 (#506): rotated "29.4.0" -> "29.8.0". The default had gone stale
+// while the version sentinel kept discovering the right answer and failing to
+// land it (a stale remote branch rejects its push, and PR creation is refused by
+// repo policy — three orphan auto/wizzair-version-* branches, zero PRs). Verified
+// by direct probe rather than from the sentinel log: GET /29.8.0/Api/asset/map
+// returns 200 with the full route graph, while the same path on 29.4.0, 29.7.0
+// and 29.9.0 returns 404. That endpoint is the cleanest liveness signal found so
+// far — unauthenticated, GET-able, and 200-or-404 rather than the ambiguous 405
+// the culture asset gives. 29.9.0's 404 is the negative control, proving the
+// probe distinguishes a live version from an absent one instead of answering
+// success to anything. Whether it survives a datacenter IP is unestablished: it
+// is CloudFront-fronted like the timetable endpoint, and only a CI run settles
+// that.
+const wizzDefaultVersion = "29.8.0"
 
 // wizzVersion is the active API version. Overridable in tests; the env var
 // WIZZAIR_API_VERSION takes precedence at request time via wizzResolvedVersion.

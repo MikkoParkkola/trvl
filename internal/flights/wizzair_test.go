@@ -31,6 +31,24 @@ func TestWizzDefaultVersionWellFormed(t *testing.T) {
 	}
 }
 
+// TestWizzDefaultVersionNeverGoesBackwards is a ratchet. The constant is
+// rewritten both by hand and by the CI discovery sentinel, and the failure it
+// guards against is silent: a downgrade produces a perfectly well-formed URL
+// that 404s on every single search, so the semver-shape test above passes while
+// flight search is dead. The floor records the oldest value known to be live —
+// probed 2026-07-28, when GET /<version>/Api/asset/map returned 200 with the
+// full route graph on 29.8.0 and 404 on 29.4.0, 29.7.0 and 29.9.0.
+//
+// Raise the floor only alongside evidence that the new value is live. It is not
+// a staleness check: nothing offline can tell that a version has rotated away,
+// which is the sentinel's job.
+func TestWizzDefaultVersionNeverGoesBackwards(t *testing.T) {
+	const floor = "29.8.0"
+	if wizzDefaultVersion != floor && !wizzVersionNewer(wizzDefaultVersion, floor) {
+		t.Fatalf("wizzDefaultVersion = %q, older than the known-live floor %q — every search would 404", wizzDefaultVersion, floor)
+	}
+}
+
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	b, err := os.ReadFile("testdata/" + name)
