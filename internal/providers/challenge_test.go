@@ -64,7 +64,7 @@ func TestChallengeStatusString(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestResolveChallenge_DisabledByDefault(t *testing.T) {
-	t.Setenv(tier2EnableEnv, "")
+	t.Setenv(tier2DisableEnv, "1")
 	_, err := ResolveChallenge(context.Background(), "https://example.com/")
 	if !errors.Is(err, ErrTier2Disabled) {
 		t.Fatalf("err = %v, want ErrTier2Disabled", err)
@@ -76,7 +76,7 @@ func TestResolveChallenge_NoBrowserFound(t *testing.T) {
 	fileExists = func(string) bool { return false }
 	defer func() { fileExists = prevExists }()
 
-	_, err := ResolveChallenge(context.Background(), "https://example.com/", WithTier2Force())
+	_, err := ResolveChallenge(context.Background(), "https://example.com/")
 	if !errors.Is(err, ErrNoBrowserFound) {
 		t.Fatalf("err = %v, want ErrNoBrowserFound", err)
 	}
@@ -94,7 +94,7 @@ func TestResolveChallenge_RunnerError(t *testing.T) {
 	}
 	defer func() { cdpChallengeRunner = prevRunner }()
 
-	_, err := ResolveChallenge(context.Background(), "https://example.com/", WithTier2Force())
+	_, err := ResolveChallenge(context.Background(), "https://example.com/")
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want boom", err)
 	}
@@ -121,7 +121,7 @@ func TestResolveChallenge_ClearedPersistsCookies(t *testing.T) {
 	defer func() { cdpChallengeRunner = prevRunner }()
 
 	target := "https://example.com/"
-	res, err := ResolveChallenge(context.Background(), target, WithTier2Force())
+	res, err := ResolveChallenge(context.Background(), target)
 	if err != nil {
 		t.Fatalf("ResolveChallenge: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestResolveChallenge_NeedsHumanDoesNotPersist(t *testing.T) {
 	defer func() { cdpChallengeRunner = prevRunner }()
 
 	target := "https://example.com/"
-	res, err := ResolveChallenge(context.Background(), target, WithTier2Force())
+	res, err := ResolveChallenge(context.Background(), target)
 	if err != nil {
 		t.Fatalf("ResolveChallenge: %v", err)
 	}
@@ -211,10 +211,11 @@ func TestTryBrowserEscapeHatch_HeadlessClears_NoVisibleWindow(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	jar, _ := cookiejar.New(nil)
+	// A vault: the escape-hatch tail seeds cookies recovered from the user's
+	// own browser window, and those only enter a jar that can revoke them.
 	pc := &providerClient{
 		config:     &ProviderConfig{ID: "headless-clear", Name: "HeadlessClear"},
-		client:     &http.Client{Jar: jar},
+		client:     &http.Client{Jar: newCookieVault()},
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: srv.URL, BrowserEscapeHatch: true}

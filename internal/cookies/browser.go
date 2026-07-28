@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/consent"
 	trvlnab "github.com/MikkoParkkola/trvl/internal/nab"
 	"github.com/MikkoParkkola/trvl/internal/safeexec"
 	"golang.org/x/sync/singleflight"
@@ -49,9 +50,27 @@ func BrowserCookies(domain string) string {
 	return BrowserCookiesContext(context.Background(), domain)
 }
 
+// DisableEnv turns off every read of the user's browser cookie stores.
+//
+// The name is kept here for this package's callers; the variable and the rule
+// for reading it live in internal/consent, which both this package and
+// internal/nab can see. They used to hold a copy each, because internal/cookies
+// imports internal/nab and sharing the other way would close an import cycle.
+const DisableEnv = consent.CookiesEnv
+
+// Disabled reports whether the user has declined browser cookie reads.
+func Disabled() bool { return consent.CookiesDeclined() }
+
 // BrowserCookiesContext is BrowserCookies with caller cancellation honoured.
 // A request that has gone away must not keep a helper running on its behalf.
 func BrowserCookiesContext(ctx context.Context, domain string) string {
+	// Before the suppression cache and before the singleflight, because a user
+	// who has declined must not have a helper started for them by a concurrent
+	// caller that arrived first.
+	if Disabled() {
+		return ""
+	}
+
 	if _, ok := cookieSuppressed(domain); ok {
 		return ""
 	}
@@ -163,7 +182,17 @@ var errCookieSuppressed = errors.New("cookie extraction suppressed after a recen
 // own permission prompt; unbounded and terminal-attached, that is the exact
 // shape that produced #507: a credential prompt appearing mid-search and a
 // helper that never returns.
+//
+// The decline is re-checked here even though the only caller already checked it.
+// This function is the seam where the helper process is actually started, and
+// three rounds of review on #521 each found the same failure shape: a gate placed
+// on the caller rather than the seam, and then a caller that did not have it. The
+// duplicate check costs one env read on a path that is about to fork a process.
 func extractViaNab(ctx context.Context, browser, domain string) string {
+	if Disabled() {
+		return ""
+	}
+
 	nabPath, err := trvlnab.LookupPath()
 	if err != nil {
 		return ""
@@ -207,9 +236,42 @@ func parseNetscapeCookies(data string) string {
 func ApplyCookies(req *http.Request, domain string) {
 	// The request carries the caller's context; use it rather than starting a
 	// detached lookup on behalf of a request that may already be cancelled.
-	if c := BrowserCookiesContext(req.Context(), domain); c != "" {
-		req.Header.Set("Cookie", c)
+	c := BrowserCookiesContext(req.Context(), domain)
+	if c == "" {
+		return
 	}
+	// Re-checked after the read, not only inside it: reading the browser stores
+	// takes seconds (Keychain unlock, cold profile), and a decline that lands
+	// during the read must still win. See AttachBrowserCookies.
+	if Disabled() {
+		return
+	}
+	req.Header.Set("Cookie", c)
+}
+
+// AttachBrowserCookies attaches cookies that came from the user's browser to a
+// request, unless browser access has been declined. It reports whether anything
+// was attached.
+//
+// It exists because a cookie jar is not the only way browser credentials reach
+// the wire: several providers read the browser once and then set the cookies on
+// the request directly, past any jar. Round 9 of review found two such paths
+// (Trainline's Tier-1 retry, Rome2Rio's Cloudflare path) still sending browser
+// cookies after an opt-out, for the same reason the jar did before it grew a
+// vault — the consent check sat before the slow read rather than after it.
+//
+// So the check belongs here, at the last point before transmission, where a
+// decline that arrives while the browser is being read still wins.
+func AttachBrowserCookies(req *http.Request, list []*http.Cookie) bool {
+	if req == nil || len(list) == 0 || Disabled() {
+		return false
+	}
+	for _, ck := range list {
+		if ck != nil {
+			req.AddCookie(ck)
+		}
+	}
+	return true
 }
 
 // IsCaptchaResponse reports whether an HTTP response is a Datadome CAPTCHA block
@@ -283,4 +345,15 @@ func OpenBrowserForAuth(url string) error {
 	}
 	browserAuthOpened.domains[domain] = browserAuthNow()
 	return nil
+}
+
+// HeaderIfPermitted is the string half of AttachBrowserCookies: providers that
+// hand a whole Cookie header value to a request constructor rather than
+// attaching cookies one at a time. Wrap it AT THE READ, not at the send — the
+// browser read is the slow part, so a decline arriving during it has to win.
+func HeaderIfPermitted(header string) string {
+	if Disabled() {
+		return ""
+	}
+	return header
 }

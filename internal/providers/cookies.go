@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/browserutils/kooky"
 	_ "github.com/browserutils/kooky/browser/all" // register all browser cookie finders
 	"github.com/browserutils/kooky/browser/brave"
@@ -283,7 +285,9 @@ func WarmBrowserCookies(targetURL, browserHint string) {
 // warmBrowserCookiesResult blocks until the warm-up for targetURL completes
 // (up to the given timeout) and returns the cached cookies. Returns nil if
 // no warm-up was started or the timeout expires.
-func warmBrowserCookiesResult(targetURL, browserHint string, timeout time.Duration) []*http.Cookie {
+func warmBrowserCookiesResult(targetURL, browserHint string, timeout time.Duration) (out []*http.Cookie) {
+	defer func() { out = permittedAfterRead(out) }()
+
 	key := warmCacheKey(targetURL, browserHint)
 
 	warmCache.mu.Lock()
@@ -305,7 +309,15 @@ func warmBrowserCookiesResult(targetURL, browserHint string, timeout time.Durati
 // readBrowserCookiesDirect performs the actual kooky cookie read. This is
 // the same logic as browserCookiesForURLWithHint but extracted so it can
 // run in a background goroutine without recursive cache lookups.
-func readBrowserCookiesDirect(targetURL, browserHint string) []*http.Cookie {
+func readBrowserCookiesDirect(targetURL, browserHint string) (out []*http.Cookie) {
+	defer func() { out = permittedAfterRead(out) }()
+
+	// Reached from the background pre-warm goroutine and the browser-hint path,
+	// neither of which passes through browserCookiesForURL, so the opt-out is
+	// checked here too rather than trusting a caller to have done it.
+	if cookies.Disabled() {
+		return nil
+	}
 	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
 		return nil
 	}
@@ -395,6 +407,37 @@ func InvalidateWarmCache(targetURL, browserHint string) {
 	warmCache.mu.Unlock()
 }
 
+// permittedAfterRead is the post-read consent gate for every function in this
+// package that returns cookies taken from the user's browser.
+//
+// Reading a browser takes seconds — Keychain unlock, a cold profile, a window
+// the user has to clear by hand. The checks that guard the ENTRY to those reads
+// therefore decide the question too early: a decline that arrives while the read
+// is in flight loses, the read finishes, and the credentials go out anyway. That
+// race is what rounds 8 and 11 of review found, in the vault and then in the
+// Booking.com room fetch, and chasing it call site by call site is how a family
+// of eleven bypasses gets built.
+//
+// So the readers below re-check on the way OUT, via a deferred call, on every
+// return path including the warm cache. One place, every caller, no seam for a
+// new call site to miss. It is a package-level helper rather than an inline
+// cookies.Disabled() because several of those readers declare a local variable
+// named cookies, and a check whose correctness depends on where the shadow
+// begins is a check the next editor breaks.
+func permittedAfterRead(list []*http.Cookie) []*http.Cookie {
+	if cookies.Disabled() {
+		// Say so. Dropping to nil silently makes a refusal look exactly like a
+		// machine with no cookies for this site, which is the one thing a user
+		// debugging "why is it not logged in" must be able to tell apart.
+		if len(list) > 0 {
+			slog.Debug("browser cookies dropped: the user has declined browser access",
+				"env", cookies.DisableEnv, "dropped", len(list))
+		}
+		return nil
+	}
+	return list
+}
+
 // BrowserCookiesForURL reads matching browser cookies for targetURL using the
 // same bounded, test-guarded path as provider search recovery.
 func BrowserCookiesForURL(targetURL string) []*http.Cookie {
@@ -411,7 +454,26 @@ func BrowserCookiesForURL(targetURL string) []*http.Cookie {
 // JavaScript bot-detection challenges (HTTP 202/403). The user's actual
 // browser has already solved any JS challenges and has valid session
 // cookies, which we can read directly from their disk-backed cookie jars.
-func browserCookiesForURL(targetURL string) []*http.Cookie {
+func browserCookiesForURL(targetURL string) (out []*http.Cookie) {
+	defer func() { out = permittedAfterRead(out) }()
+
+	// The opt-out sits on the low-level reader, not on the exported wrapper,
+	// because a user setting TRVL_NO_BROWSER_COOKIES means their cookie stores
+	// rather than one entry point into them. In-package recovery code reaches
+	// this function directly (currentCookieSource, the warm-cache path), so a
+	// gate on the wrapper alone would ship a control whose name promises more
+	// than it delivers — the same defect class as #507.
+	//
+	// Whether this reader returns anything on a given machine is a separate
+	// question, and currently a doubtful one: see #529.
+	//
+	// This entry check only saves the work. The GUARANTEE is the deferred
+	// permittedAfterRead above, which re-asks after the seconds-long read has
+	// finished; deleting this one costs time, deleting that one ships the bug.
+	if cookies.Disabled() {
+		return nil
+	}
+
 	// Check warm cache first — returns instantly if pre-warmed.
 	if cached := warmBrowserCookiesResult(targetURL, "", browserCookieLookupTimeout); cached != nil {
 		return cached
@@ -486,7 +548,12 @@ func browserCookiesForURL(targetURL string) []*http.Cookie {
 //
 // Falls back to browserCookiesForURL (all-browser auto-discovery) when the
 // hint is empty or the specified browser's cookie store cannot be found.
-func browserCookiesForURLWithHint(targetURL, browserHint string) []*http.Cookie {
+func browserCookiesForURLWithHint(targetURL, browserHint string) (out []*http.Cookie) {
+	defer func() { out = permittedAfterRead(out) }()
+
+	if cookies.Disabled() {
+		return nil
+	}
 	if browserHint == "" {
 		return browserCookiesForURL(targetURL)
 	}

@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`TRVL_NO_BROWSER_COOKIES` — decline browser cookie reads.** Set it to anything but
+  `0` or `false` and trvl reads no browser cookie store: neither the in-process reader
+  used by hotel and rail search, nor the nab helper used by the rail 403 retry. The
+  check sits on the low-level readers rather than the exported wrapper, because
+  recovery code reaches them directly and a gate on the public name alone would have
+  ignored the user three ways out of four. Default is unchanged. ([#521](https://github.com/MikkoParkkola/trvl/issues/521))
+
+### Changed
+
+- **The headless cookie harvest now runs by default; `TRVL_NO_TIER2_CDP` turns it
+  off.** It was opt-in behind `TRVL_TIER2_CDP`, which meant that for anyone who had
+  not read the README, a site answering with a bot challenge produced an empty result
+  and no explanation. The path drives an already-installed Chrome, Brave or Edge in
+  headless mode — no window, no focus steal, no bundled browser — so the cost of it
+  running is a browser process for a few seconds, not an interruption. An explicit
+  `TRVL_TIER2_CDP=0` is still honoured: someone who set that meant it. The decline is
+  checked at each of the three places in trvl that can start a browser — the two CDP
+  drivers in the provider layer and the ground-provider scraper — rather than at the
+  entry points above them, so a caller that reaches past those cannot route around it.
+- **`TRVL_NO_BROWSER_COOKIES` now also stops the `nab` helper.** The three rail
+  providers call `nab` as a fallback once the in-process cookie reader has failed, and
+  every one of those calls hands it `--cookies`, so the helper went and read the same
+  browser cookie stores the opt-out had just refused to read — the README's "no nab"
+  was untrue. The decline is now checked inside the nab client, at the point the helper
+  process would be started, so all three call sites are covered at once. The rule for
+  reading the variable is written twice rather than shared, because `internal/cookies`
+  already imports `internal/nab` and reusing it would close an import cycle; a test in
+  `internal/cookies`, the one package that can see both, fails if the two ever disagree.
+  The `WithTier2Force` option every rail and hotel caller used to pass is gone: it was
+  checked as `!cfg.force && !Tier2Enabled()`, which left the opt-out with no effect on
+  any real search. It governs the headless browser only — the visible-window escape
+  hatch is a separate path with its own per-provider opt-in and its own confirmation
+  prompt.
+
+### Removed
+
+- **`trvl share --format link` no longer publishes anything.** The option was
+  opt-in and never the default: choosing the `link` format created a public GitHub
+  gist of the trip card under your own account. On review it caused more trouble
+  than it was worth, and the clipboard format already gives you something to
+  paste. `trvl share` now prints the card or copies it to your clipboard, and you
+  decide who receives it. ([#527](https://github.com/MikkoParkkola/trvl/issues/527))
+
+  If you used `--format link`, the gists it created are still on your account.
+  `gh gist list` shows them, `gh gist delete <id>` removes them.
+
 ### Known limitations
 
 - **On Windows, a helper that forks something in its first instants can leave that

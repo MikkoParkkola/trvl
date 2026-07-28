@@ -49,7 +49,7 @@ var (
 	// sncfResolveChallenge escalates SNCF's anti-bot wall HEADLESS-first (no
 	// window, no focus steal) via providers.ResolveChallenge. Overridable in tests.
 	sncfResolveChallenge = func(ctx context.Context, targetURL string) (*providers.ChallengeResult, error) {
-		return providers.ResolveChallenge(ctx, targetURL, providers.WithTier2Force())
+		return providers.ResolveChallenge(ctx, targetURL)
 	}
 	// sncfOpenBrowser opens a VISIBLE browser window so a human can solve an
 	// interactive captcha. Only invoked on ChallengeNeedsHuman. Overridable in tests.
@@ -569,7 +569,7 @@ func searchSNCFCalendar(ctx context.Context, fromStation, toStation SNCFStation,
 		_ = resp.Body.Close()
 
 		if allowBrowserCookies {
-			cookieHeader := sncfBrowserCookies(ctx, "sncf-connect.com")
+			cookieHeader := cookies.HeaderIfPermitted(sncfBrowserCookies(ctx, "sncf-connect.com"))
 			if cookieHeader != "" {
 				slog.Debug("retrying sncf calendar api with browser cookies")
 				req2, err2 := newSNCFRequest(cookieHeader)

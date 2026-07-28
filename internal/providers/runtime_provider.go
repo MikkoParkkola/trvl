@@ -25,7 +25,10 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	var oldJar http.CookieJar
 	if fresh := rt.registry.ReloadIfChanged(cfg.ID); fresh != nil && fresh != cfg {
 		// Preserve the cookie jar so WAF tokens and session cookies survive
-		// config reloads. The jar is installed on the new client below.
+		// config reloads. The jar is installed on the new client below, and it
+		// carries its own provenance (cookie_vault.go), so browser-derived
+		// cookies cannot arrive in the new client marked clean — which is how a
+		// reload would otherwise launder them past the opt-out.
 		rt.mu.Lock()
 		if old := rt.clients[cfg.ID]; old != nil && old.client != nil {
 			oldJar = old.client.Jar
@@ -115,7 +118,7 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 		if cfg.Auth != nil && cfg.Auth.PreflightURL != "" {
 			endpointURL = substituteVars(cfg.Auth.PreflightURL, vars)
 		}
-		browserCookiesApplied = applyBrowserCookies(pc.client, endpointURL, cfg.Cookies.Browser)
+		browserCookiesApplied = applyBrowserCookies(pc, endpointURL, cfg.Cookies.Browser)
 
 		// Fail loudly when a browser-cookie provider (e.g. Booking.com) has no
 		// usable browser session. Without cookies the WAF strips data and the
@@ -336,7 +339,7 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 		recovered := false
 
 		// Tier 3a: re-read cookies from the user's browser.
-		if applyBrowserCookies(pc.client, endpoint, cfg.Cookies.Browser) {
+		if applyBrowserCookies(pc, endpoint, cfg.Cookies.Browser) {
 			resp2, body2, err2 := doSearchRequest(ctx, pc.client, req)
 			if err2 == nil && !isAkamaiChallenge(resp2.StatusCode, body2) && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
 				resp, body = resp2, body2

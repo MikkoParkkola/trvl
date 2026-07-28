@@ -186,7 +186,7 @@ func acquireBookingWAFToken(ctx context.Context, searchURL string, forceRefresh 
 		}
 	}
 
-	cookies, err := providers.RefreshCookiesViaCDP(ctx, searchURL, providers.WithTier2Force())
+	cookies, err := providers.RefreshCookiesViaCDP(ctx, searchURL)
 	if err != nil {
 		return "", fmt.Errorf("cdp token harvest: %w", err)
 	}

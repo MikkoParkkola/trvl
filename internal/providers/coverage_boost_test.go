@@ -216,7 +216,8 @@ func TestTryBrowserCookieRetry_Success(t *testing.T) {
 		Endpoint: srv.URL,
 		Cookies:  CookieConfig{Source: "browser"},
 	}
-	jar, _ := cookiejar.New(nil)
+	// A vault, not a bare jar: browser cookies only enter a jar that can hand
+	// them back, so a plain-jar client refuses the seed by design.
 	targetURL := srv.URL + "/page"
 	resetWarmCache(t)
 	entry := &warmCacheEntry{done: make(chan struct{})}
@@ -228,7 +229,7 @@ func TestTryBrowserCookieRetry_Success(t *testing.T) {
 	warmCache.mu.Unlock()
 
 	cl := srv.Client()
-	cl.Jar = jar
+	cl.Jar = newCookieVault()
 	pc := &providerClient{
 		config:     cfg,
 		client:     cl,
@@ -316,9 +317,8 @@ func TestApplyBrowserCookies_WithSyntheticCookies(t *testing.T) {
 	warmCache.entries[warmCacheKey(targetURL, hint)] = entry
 	warmCache.mu.Unlock()
 
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar}
-	if !applyBrowserCookies(client, targetURL, hint) {
+	client := &http.Client{Jar: newCookieVault()}
+	if !applyBrowserCookies(&providerClient{config: &ProviderConfig{ID: "t"}, client: client}, targetURL, hint) {
 		t.Error("expected true when warm cache has cookies")
 	}
 }
@@ -344,7 +344,7 @@ func TestApplyBrowserCookies_BadURLPath(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
 	// url.Parse("://no-scheme-here") → error or empty host → returns false
-	got := applyBrowserCookies(client, targetURL, "")
+	got := applyBrowserCookies(&providerClient{config: &ProviderConfig{ID: "t"}, client: client}, targetURL, "")
 	// Result may be false (url.Parse error) — just confirm no panic
 	_ = got
 }

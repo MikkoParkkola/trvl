@@ -84,7 +84,7 @@ More starter prompts and what good answers look like: [docs/DEMO.md](docs/DEMO.m
 
 - **Whole journey, door to door.** It plans the entire trip across modes — home to airport, flight, arrival transfer, hotel, onward train — and prices each leg in its real mode. Most tools stop at one flight, one hotel.
 - **No API keys, no signup, no bill.** Every core source works the moment you install it — no Amadeus key to apply for, no subscription, no per-call cost. Some optional providers can be switched on with a key of your own (AF-KLM, SerpAPI, Travelpayouts and others); none of them is required. Separately from keys, trvl reads your browser's cookie stores to get past the bot protection that hotel and rail sites put in front of their search APIs: see [What trvl reads from your browser](#what-trvl-reads-from-your-browser).
-- **Your assistant, your machine.** One local binary, any MCP client, not locked to a vendor. Where your data goes, stated plainly rather than promised away. Searching sends the query to the providers being searched, the same as any travel site: route, dates and traveller count go to Google, Kiwi, Booking and the rest. A key or cookie you have configured is sent to the service it authenticates, when that provider is used, because that is what authenticating means. What trvl keeps for itself stays under `~/.trvl` and is not sent anywhere: saved trips, preferences, watches, search history. Two commands publish deliberately, since that is what you ran them for: `trvl share` posts a trip card as a **public** GitHub gist ([#527](https://github.com/MikkoParkkola/trvl/issues/527) asks whether that default is right), and the calendar helper writes an event to your Google calendar.
+- **Your assistant, your machine.** One local binary, any MCP client, not locked to a vendor. Where your data goes, stated plainly rather than promised away. Searching sends the query to the providers being searched, the same as any travel site: route, dates and traveller count go to Google, Kiwi, Booking and the rest. A key or cookie you have configured is sent to the service it authenticates, when that provider is used, because that is what authenticating means. What trvl keeps for itself stays under `~/.trvl` and is not sent anywhere: saved trips, preferences, watches, search history. One command publishes deliberately, since that is what you ran it for: the calendar helper writes an event to your Google calendar. `trvl share` does not — it prints the trip card, or copies it to your clipboard, and you decide who receives it. It used to upload the card as a public GitHub gist; that was removed in [#527](https://github.com/MikkoParkkola/trvl/issues/527), because a card carries destinations and dates, and those together say when your home is empty.
 - **It optimizes, not just lists.** Shift-day pricing, split-airline routing, hidden-city checks, award sweet spots, round-trip fares. It hands back the cheaper option and shows what it saved.
 - **It is honest when a source fails.** Typed statuses and labelled estimates, never an empty result dressed up as "nothing found."
 
@@ -219,9 +219,52 @@ thing written to disk is that one token cache.
 
 Documenting this took three attempts, and each earlier version claimed a narrower
 scope than the code has: first that trvl never looked at local credentials
-unrequested, then that rail search was the sole exception. Both were wrong. Whether
-any of it should be opt-in is open at
+unrequested, then that rail search was the sole exception. Both were wrong.
+
+**Turning it off.** Set `TRVL_NO_BROWSER_COOKIES=1` and trvl reads no browser cookie
+store at all — no nab, no Keychain, nothing. The nab part of that sentence is newer than
+the rest of it: the variable used to stop only the reader inside trvl, while the three
+rail providers went on to run nab as a fallback and nab read the same stores from its own
+process. It is now refused at the point that helper would be started, so the claim above
+covers both. It stays on by default because it is what
+makes hotel and rail search work against sites that block non-browser traffic, and
+switching it off does not make those searches fall back to something else: an operator
+that answers with a bot challenge simply returns no results, and it looks like trvl
+finding no trains rather than like a setting you chose. That is the trade, stated so
+you can make it deliberately. Decided in
 [#521](https://github.com/MikkoParkkola/trvl/issues/521).
+
+**The headless browser.** When a site answers with a bot challenge, trvl can drive a
+copy of Chrome, Brave or Edge you already have installed, let the challenge resolve
+itself, and keep the resulting cookies. It runs headless: no window opens, focus is
+never taken, and nothing appears on screen. It bundles no browser of its own. It also
+starts from an empty profile, so it does not read the cookies you already have — that
+is the separate switch above, and they are separate because they are separate things:
+one reads the session you are already logged into, this one starts a new anonymous
+session and keeps what that session is given. This also
+runs by default, for the same reason — with it off, a challenged search returns nothing
+and looks like an empty result rather than a switched-off feature. Set
+`TRVL_NO_TIER2_CDP=1` to decline. It costs a browser process for a few seconds per
+challenged search, which is the reason someone might want it off. The check sits on
+each of the three places in trvl that can start a browser, rather than on the
+entry points above them, so a provider reaching past the usual route still cannot
+spawn one. It governs the *headless* browser only —
+the separate visible-window escape hatch, which asks before it opens anything and
+requires its own per-provider opt-in, is described under
+[What trvl reads from your browser](#what-trvl-reads-from-your-browser).
+
+This is also what gets trvl past the rail sites' bot walls. A one-off measurement on
+2026-07-27 — a snapshot of how those three sites behaved that day, not a promise about
+how they behave now — found that reading cookies off disk returned nothing at all for
+Trainline, SNCF Connect and Rome2Rio, because the tokens those sites check are issued
+to a live browsing session and are not sitting in the cookie store. A headless visit
+cleared the wall for two of them and returned usable cookies — Trainline's `datadome`,
+Rome2Rio's Cloudflare `__cf_bm` — so declining this is likely to leave those two empty.
+SNCF Connect was the exception: the headless visit reached a challenge that needs a
+human, and trvl only reuses cookies from a challenge that actually cleared, so tier 2
+was not what fixed SNCF either way. Bot walls change without notice and nothing in CI
+re-checks this, so treat the specifics as dated. To re-measure, run the probe test with
+`TRVL_COOKIE_PROBE=1`.
 
 AF-KLM is the single exception, and it is worth explaining. Ordinary round-trips are already covered in the default merge: Kiwi returns both legs of a paired itinerary, and Google returns the genuine round-trip fare with the matching return chosen at booking. AF-KLM is there for what neither offers — the rail+fly itineraries it sells, where a train leg from Brussels Midi, Antwerp or Brussels is ticketed as part of the flight instead of being a separate rail booking you have to make and risk yourself. It also returns both legs on KL/AF metal in full detail. It is the only provider whose **API key** can come from a credential manager, under tight rules. (Browser cookie access is a separate matter and is covered in [What trvl reads from your browser](#what-trvl-reads-from-your-browser); several providers do that, and it also touches the Keychain.)
 

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/waf"
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
@@ -30,6 +31,15 @@ import (
 // search to a different city can swap the values out from under us. See
 // MIK-3070 for the race that motivated this signature.
 func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars map[string]string) (map[string]string, error) {
+	// Before every cache read below, including the no-preflight early return.
+	// The auth cache lives in memory and the MCP server is long-lived, so a jar
+	// seeded from the user's browser outlives the moment it was permitted: the
+	// cache hit returns without reaching loadCachedCookies, tryBrowserCookieRetry
+	// or any other guarded reader, and the browser-derived cookies keep going out
+	// on the wire. Discarding the seeded state costs a preflight; keeping it
+	// costs the user the control they set.
+	discardBrowserSeededAuth(pc)
+
 	if pc.config.Auth == nil || pc.config.Auth.PreflightURL == "" {
 		// No preflight needed — but the caller may still rely on existing
 		// pc.authValues populated by other paths (header-based auth, env tokens).
@@ -67,6 +77,10 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 
 	// Tier 0: try loading persisted cookies from a previous successful session.
 	// This makes browser escape hatch a one-time setup rather than per-search.
+	// The file carries no provenance, so anything it yields is treated as
+	// browser-derived — the conservative reading, and the one #534 exists to
+	// replace with a recorded one. loadCachedCookies records that itself, on the
+	// vault, in the same critical section it commits the cookies in.
 	loadCachedCookies(pc.client, resolvedURL)
 
 	resp, body, err := doPreflightRequest(ctx, pc.client, &resolvedAuth)
@@ -166,7 +180,7 @@ func replaceAuthValuesLocked(ctx context.Context, pc *providerClient, auth *Auth
 // true on HTTP 2xx + successful extraction. The auth parameter carries the
 // resolved (city-specific) preflight URL.
 func tryBrowserCookieRetry(ctx context.Context, pc *providerClient, auth *AuthConfig) bool {
-	if !applyBrowserCookies(pc.client, auth.PreflightURL, pc.config.Cookies.Browser) {
+	if !applyBrowserCookies(pc, auth.PreflightURL, pc.config.Cookies.Browser) {
 		return false
 	}
 	resp2, body2, err2 := doPreflightRequest(ctx, pc.client, auth)
@@ -330,7 +344,13 @@ func finishEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig
 		return false
 	}
 	if len(fresh) > 0 {
-		pc.client.Jar.SetCookies(u, fresh)
+		// Recovered from the user's own browser window, so this is a browser
+		// seed and is recorded as one whether or not the retry below succeeds.
+		// A vault is required, and a decline during the window the user spent
+		// clearing the challenge means these cookies are simply not taken.
+		if !vaultOf(pc.client).seedFromBrowser(u, fresh) {
+			return false
+		}
 	}
 
 	resp2, body2, err2 := doPreflightRequest(ctx, pc.client, auth)
@@ -581,8 +601,21 @@ func isAkamaiChallenge(statusCode int, body []byte) bool {
 // URL and seeds them into the client's cookie jar. When browserHint is
 // non-empty, reads only from that specific browser to avoid cross-browser
 // cookie contamination. Returns true if any cookies were applied.
-func applyBrowserCookies(client *http.Client, targetURL, browserHint string) bool {
-	if client == nil || client.Jar == nil {
+// It takes the providerClient rather than the bare client because marking the
+// jar as browser-seeded IS the point of this function's second half: round 7 of
+// review found the flag set at three call sites and missing at four others,
+// which is the caller-instead-of-seam mistake every round of this branch has
+// caught. There is one place browser cookies enter a provider jar, and this is
+// it, so the provenance is recorded here where it cannot be forgotten.
+func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool {
+	if pc == nil || pc.client == nil {
+		return false
+	}
+	// Fail closed: browser cookies only enter a jar that can revoke them. A
+	// plain jar would take them and keep them past a decline, which is the
+	// whole failure this branch exists to remove.
+	vault := vaultOf(pc.client)
+	if vault == nil {
 		return false
 	}
 	cookies := browserCookiesForURLWithHint(targetURL, browserHint)
@@ -594,7 +627,12 @@ func applyBrowserCookies(client *http.Client, targetURL, browserHint string) boo
 	if err != nil {
 		return false
 	}
-	client.Jar.SetCookies(u, cookies)
+	// The read above takes seconds; the user may have declined during it. The
+	// vault re-checks that under the same lock it commits under, so a read that
+	// began before the opt-out cannot land after it.
+	if !vault.seedFromBrowser(u, cookies) {
+		return false
+	}
 	slog.Debug("applied browser cookies to preflight client", "url", targetURL, "count", len(cookies))
 	return true
 }
@@ -661,4 +699,46 @@ func decompressBody(resp *http.Response, limit int64) ([]byte, error) {
 		// No encoding or "identity" — read raw.
 		return io.ReadAll(reader)
 	}
+}
+
+// discardBrowserSeededAuth throws away cached auth state that came from the
+// user's browser, once the user has declined browser access.
+//
+// The seventh path of this family, and the first that is purely in-memory: the
+// six before it were a browser launch, an env-var reading, or a file on disk.
+// Here the material has already been harvested into a live http.Client, and the
+// auth cache serves it without consulting anything. In a CLI run that window is
+// short. Under `trvl mcp`, which is the shipping default, the process outlives
+// many searches, so the window is the process.
+//
+// The jar is REPLACED rather than emptied: net/http/cookiejar has no clear, and
+// reaching into it to expire entries one by one would be a second
+// implementation of a thing the standard library already gets right. A nil jar
+// is not used either — a client without one silently drops Set-Cookie, which
+// would turn a privacy control into a broken session.
+//
+// Only browser-seeded state is discarded. A session established by an ordinary
+// preflight never touched the user's browser, and refusing it would punish a
+// user for a setting that says nothing about it.
+func discardBrowserSeededAuth(pc *providerClient) {
+	if pc == nil || !cookies.Disabled() {
+		return
+	}
+
+	pc.authMu.Lock()
+	defer pc.authMu.Unlock()
+
+	// The jar goes first, and it decides. It holds the provenance under the same
+	// lock it commits cookies under, so this cannot observe "not seeded" while a
+	// browser read that is already in flight is about to make it so: that read
+	// re-checks the decline before committing and will now take nothing.
+	if !vaultOf(pc.client).discardBrowserSeeded() {
+		return
+	}
+
+	pc.authValues = nil
+	pc.authExpiry = time.Time{}
+	pc.lastPreflightURL = ""
+
+	slog.Debug("discarded browser-seeded auth state after opt-out", "provider", pc.config.ID)
 }
