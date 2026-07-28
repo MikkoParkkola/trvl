@@ -518,3 +518,94 @@ func TestActiveWatches_FiltersCorrectly(t *testing.T) {
 		t.Errorf("got %d active watches, want 3", len(active))
 	}
 }
+
+// countingRoomChecker records how many times the scheduler's own round
+// actually invoked CheckRooms, so tests can prove the wiring runs through
+// runOnce itself rather than calling a checker directly.
+type countingRoomChecker struct {
+	calls   atomic.Int64
+	matches []RoomMatch
+}
+
+func (c *countingRoomChecker) CheckRooms(_ context.Context, _ Watch) ([]RoomMatch, error) {
+	c.calls.Add(1)
+	return c.matches, nil
+}
+
+// TestScheduler_SetRoomCheckerIsUsedByRunOnce guards against the gap an
+// adversarial review found on 2026-07-28: before SetRoomChecker existed,
+// runOnce hardcoded a nil room checker passed to
+// checkWatchesWithRoomsAndWebhookContext, so a Scheduler had NO way to
+// check room-type watches at all -- harmless before the cross-process
+// scheduler singleton (the standalone daemon's own scheduler always had a
+// real room checker, and before the lock both ran independently, so the
+// daemon covered room watches regardless of what the embedded scheduler
+// could do), but a real gap once the singleton lock means only ONE
+// scheduler runs and it might be the MCP-embedded one, which mcp/server.go
+// used to construct with nothing to set a room checker with.
+func TestScheduler_SetRoomCheckerIsUsedByRunOnce(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	store := NewStore(dir)
+
+	if _, _, err := store.Add(Watch{
+		Type:         "room",
+		HotelName:    "Test Hotel",
+		DepartDate:   "2099-07-01",
+		ReturnDate:   "2099-07-05",
+		RoomKeywords: []string{"king"},
+		BelowPrice:   200,
+		Currency:     "EUR",
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	room := &countingRoomChecker{matches: []RoomMatch{{Name: "King Room", Price: 150, Currency: "EUR"}}}
+	s := NewScheduler(dir, time.Hour, &countingChecker{price: 300})
+	s.SetRoomChecker(room)
+	s.Start()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if room.calls.Load() >= 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	s.Stop()
+
+	if room.calls.Load() < 1 {
+		t.Error("scheduler's own check round never invoked the room checker set via SetRoomChecker")
+	}
+}
+
+// TestScheduler_WithNoRoomCheckerSetReportsNotConfigured is the control:
+// a Scheduler.roomChecker field left at its zero value (nil) -- the
+// pre-fix default, and still the default for any caller that never calls
+// SetRoomChecker -- must produce exactly the same "not configured" error
+// runOnce always passed through, unchanged by this fix.
+func TestScheduler_WithNoRoomCheckerSetReportsNotConfigured(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	store := NewStore(dir)
+
+	if _, _, err := store.Add(Watch{
+		Type:         "room",
+		HotelName:    "Test Hotel",
+		DepartDate:   "2099-07-01",
+		ReturnDate:   "2099-07-05",
+		RoomKeywords: []string{"king"},
+		BelowPrice:   200,
+		Currency:     "EUR",
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	results := CheckAllWithRooms(t.Context(), store, &countingChecker{price: 300}, nil)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 check result, got %d", len(results))
+	}
+	if results[0].Error == nil {
+		t.Error("expected an error for an unconfigured room checker")
+	}
+}

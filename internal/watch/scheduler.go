@@ -15,6 +15,16 @@ type Scheduler struct {
 	interval time.Duration // how often to run checks
 	checker  PriceChecker  // injected for testability
 
+	// roomChecker handles room-type watches. Nil by default (runOnce then
+	// passes nil to checkWatchesWithRoomsAndWebhookContext, same as before
+	// this field existed: a room watch reports "room checker not
+	// configured" rather than being silently skipped). Settable via
+	// SetRoomChecker, the same injection-seam pattern PriceChecker and
+	// probeHook already use in this package: callers (cmd/trvl, mcp) each
+	// own their real hotels-API-backed implementation, keeping this
+	// package itself checker-agnostic.
+	roomChecker RoomChecker
+
 	mu        sync.Mutex
 	doneOnce  sync.Once
 	startOnce sync.Once
@@ -42,6 +52,27 @@ func (s *Scheduler) SetProbeHook(hook func(ctx context.Context, active []Watch))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.probeHook = hook
+}
+
+// SetRoomChecker installs the checker used for room-type watches. Safe to
+// call before Start. Pass nil to disable room-watch checking (the
+// scheduler's default, unchanged from before this method existed).
+//
+// Found by adversarial review, 2026-07-28: mcp/server.go constructed its
+// embedded scheduler with no room checker at all (this field/method did
+// not exist), which was harmless before the cross-process scheduler
+// singleton -- the standalone `trvl watch daemon` always had a real one,
+// and before the lock both schedulers ran independently, so the daemon's
+// covered room watches regardless of what MCP could do. The singleton
+// lock means only ONE scheduler runs across the whole store now; in the
+// normal MCP-first startup order, MCP wins the lock and the daemon exits
+// immediately on its own lock attempt, so without this wiring room
+// watches would never be periodically checked or alerted for as long as
+// MCP holds the lock.
+func (s *Scheduler) SetRoomChecker(checker RoomChecker) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.roomChecker = checker
 }
 
 // NoopChecker is a PriceChecker that always returns zero price.
@@ -172,7 +203,10 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 	checkCtx, cancel := context.WithTimeout(ctx, s.interval/2)
 	defer cancel()
 
-	results := checkWatchesWithRoomsAndWebhookContext(checkCtx, ctx, store, s.checker, nil, active)
+	s.mu.Lock()
+	roomChecker := s.roomChecker
+	s.mu.Unlock()
+	results := checkWatchesWithRoomsAndWebhookContext(checkCtx, ctx, store, s.checker, roomChecker, active)
 
 	triggered := 0
 	for _, r := range results {
