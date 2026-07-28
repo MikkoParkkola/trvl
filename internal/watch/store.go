@@ -172,7 +172,27 @@ func (s *Store) Add(w Watch) (string, bool, error) {
 		if !s.watches[i].SameTarget(w) {
 			continue
 		}
-		s.watches[i].applyIntent(w)
+		if s.watches[i].applyIntent(w) {
+			// Currency changed. applyIntent already reset this watch's own
+			// currency-denominated fields (LastPrice, LowestPrice, ...); the
+			// history corpus needs the same treatment. Every PricePoint
+			// recorded for this watch is denominated in the OLD currency, and
+			// Sparkline/TrendArrow/RoutePrices make no currency distinction
+			// within a single watch's series — leaving them in place would
+			// plot (and could re-derive a "low") from numbers in a currency
+			// that no longer matches what the watch reports. Purge rather
+			// than convert: no FX rate is available at this layer, and a
+			// fresh baseline in the new currency is correct, not merely
+			// simpler. Found by adversarial review, 2026-07-28.
+			id := s.watches[i].ID
+			kept := s.history[:0:0]
+			for _, p := range s.history {
+				if p.WatchID != id {
+					kept = append(kept, p)
+				}
+			}
+			s.history = kept
+		}
 		if err := s.saveLocked(); err != nil {
 			return "", false, err
 		}
@@ -195,14 +215,41 @@ func (s *Store) Add(w Watch) (string, bool, error) {
 //
 // Zero values do not overwrite: a re-watch that omits a webhook must not silently
 // delete the webhook already configured on that route.
-func (w *Watch) applyIntent(next Watch) {
+//
+// Returns true if Currency actually changed. Currency is deliberately not
+// part of SameTarget's identity (a re-watch with a new target currency
+// updates the existing watch rather than forking a rival one), but every
+// SYSTEM-COMPUTED numeric field this struct carries -- LastPrice,
+// LowestPrice, CheapestDate, BaselinePrice, LastAlertedPrice -- is
+// denominated in the OLD currency. Leaving them in place after a currency
+// change is not a display quirk: the next check compares a NEW-currency
+// price against an OLD-currency "last price," which can fabricate a huge
+// fake drop (e.g. a ~20,000 JPY watch re-added in EUR compares a ~180 EUR
+// price against 20,000 as if both were the same unit) and fire false
+// alerts/webhooks off it. Reset rather than convert: no FX rate is
+// available at this layer, and a fresh baseline in the new currency is
+// correct, not merely simpler.
+//
+// User-SET thresholds (BelowPrice, AlertDropPct, AlertDropAbs) are left
+// exactly as this function already treated them -- adjustable on any
+// re-watch, the caller's own choice each time, consistent with this
+// function's existing design (see the doc comment on SameTarget). Only the
+// fields the system itself computes and writes are this function's
+// responsibility to keep consistent. Found by adversarial review, 2026-07-28.
+func (w *Watch) applyIntent(next Watch) (currencyChanged bool) {
 	// Re-watching is the renewal signal that keeps a route watch alive.
 	w.RenewedAt = time.Now()
 	if next.BelowPrice > 0 {
 		w.BelowPrice = next.BelowPrice
 	}
-	if next.Currency != "" {
+	if next.Currency != "" && next.Currency != w.Currency {
+		currencyChanged = true
 		w.Currency = next.Currency
+		w.LastPrice = 0
+		w.LowestPrice = 0
+		w.CheapestDate = ""
+		w.BaselinePrice = 0
+		w.LastAlertedPrice = 0
 	}
 	if next.WebhookURL != "" {
 		w.WebhookURL = next.WebhookURL
@@ -219,6 +266,7 @@ func (w *Watch) applyIntent(next Watch) {
 	if next.LastMinuteDropPct > 0 {
 		w.LastMinuteDropPct = next.LastMinuteDropPct
 	}
+	return currencyChanged
 }
 
 // List returns all active watches.

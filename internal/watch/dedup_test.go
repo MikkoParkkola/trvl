@@ -735,3 +735,112 @@ func TestLoadNeverWrites(t *testing.T) {
 		t.Error("Load wrote to the store; readers must be pure-read")
 	}
 }
+
+// TestStoreAddResetsAccumulatedStateOnCurrencyChange guards against the bug
+// an adversarial review found on 2026-07-28: Currency is deliberately not
+// part of SameTarget's identity (a re-watch with a new currency updates the
+// existing watch rather than forking a rival one), but applyIntent used to
+// overwrite Currency without resetting LastPrice, LowestPrice,
+// BaselinePrice, LastAlertedPrice, CheapestDate, or this watch's price
+// history -- all of which are numeric values denominated in the OLD
+// currency. A ~20,000 JPY watch re-added in EUR would then compare a ~180
+// EUR next check against a stale "last price" of 20,000, fabricating a
+// ~99% drop and firing false alerts/webhooks off it.
+func TestStoreAddResetsAccumulatedStateOnCurrencyChange(t *testing.T) {
+	s := NewStore(t.TempDir())
+
+	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "NRT", BelowPrice: 15000, Currency: "JPY"})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	// Simulate an established JPY-denominated watch: accumulated state plus
+	// recorded history, all in JPY's numeric scale.
+	for i := range s.watches {
+		if s.watches[i].ID == id {
+			s.watches[i].LastPrice = 20000
+			s.watches[i].LowestPrice = 18500
+			s.watches[i].CheapestDate = "2026-08-01"
+			s.watches[i].BaselinePrice = 22000
+			s.watches[i].LastAlertedPrice = 19000
+		}
+	}
+	if err := s.RecordPrice(id, 20000, "JPY"); err != nil {
+		t.Fatalf("record price: %v", err)
+	}
+	if len(s.History(id)) == 0 {
+		t.Fatal("setup: expected at least one recorded price point")
+	}
+
+	// Re-watch the SAME target (SameTarget ignores Currency), switching to EUR.
+	if _, created, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "NRT", BelowPrice: 15000, Currency: "EUR"}); err != nil {
+		t.Fatalf("re-add with new currency: %v", err)
+	} else if created {
+		t.Fatal("re-watch with a new currency must update the existing watch, not create a new one")
+	}
+
+	w, ok := s.Get(id)
+	if !ok {
+		t.Fatal("watch vanished after currency re-watch")
+	}
+	if w.Currency != "EUR" {
+		t.Errorf("Currency = %q, want EUR", w.Currency)
+	}
+	if w.LastPrice != 0 {
+		t.Errorf("LastPrice = %v, want 0 (stale JPY value must not survive a currency change)", w.LastPrice)
+	}
+	if w.LowestPrice != 0 {
+		t.Errorf("LowestPrice = %v, want 0 (stale JPY value must not survive a currency change)", w.LowestPrice)
+	}
+	if w.CheapestDate != "" {
+		t.Errorf("CheapestDate = %q, want empty (tied to the reset LowestPrice)", w.CheapestDate)
+	}
+	if w.BaselinePrice != 0 {
+		t.Errorf("BaselinePrice = %v, want 0 (stale JPY value must not survive a currency change)", w.BaselinePrice)
+	}
+	if w.LastAlertedPrice != 0 {
+		t.Errorf("LastAlertedPrice = %v, want 0 (stale JPY value must not survive a currency change)", w.LastAlertedPrice)
+	}
+	if got := s.History(id); len(got) != 0 {
+		t.Errorf("history for this watch = %d points, want 0 (old-currency history must not survive a currency change)", len(got))
+	}
+	// The user-set threshold is untouched by this fix -- same
+	// already-adjustable behavior as BelowPrice always had.
+	if w.BelowPrice != 15000 {
+		t.Errorf("BelowPrice = %v, want 15000 (unrelated to the currency reset)", w.BelowPrice)
+	}
+}
+
+// TestStoreAddPreservesStateWhenCurrencyIsUnchanged is the control for the
+// test above: re-watching WITHOUT changing currency must keep the existing
+// "preserve accumulated state" behavior exactly as before this fix.
+func TestStoreAddPreservesStateWhenCurrencyIsUnchanged(t *testing.T) {
+	s := NewStore(t.TempDir())
+
+	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "NRT", BelowPrice: 500, Currency: "EUR"})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	for i := range s.watches {
+		if s.watches[i].ID == id {
+			s.watches[i].LastPrice = 450
+			s.watches[i].LowestPrice = 400
+		}
+	}
+	if err := s.RecordPrice(id, 450, "EUR"); err != nil {
+		t.Fatalf("record price: %v", err)
+	}
+
+	// Same currency, only the threshold changes.
+	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "NRT", BelowPrice: 350, Currency: "EUR"}); err != nil {
+		t.Fatalf("re-add: %v", err)
+	}
+
+	w, _ := s.Get(id)
+	if w.LastPrice != 450 || w.LowestPrice != 400 {
+		t.Errorf("re-watch without a currency change discarded state: last=%v lowest=%v", w.LastPrice, w.LowestPrice)
+	}
+	if got := s.History(id); len(got) != 1 {
+		t.Errorf("history for this watch = %d points, want 1 (unchanged currency must not purge history)", len(got))
+	}
+}
