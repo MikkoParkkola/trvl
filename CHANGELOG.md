@@ -41,8 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sites trvl signs into on your behalf, a cookie decline does still switch that
   recovery path off, because the recovered cookies go through the same store that can
   hold cookies copied out of a real browser and that store records no note of which is
-  which. Splitting it is tracked as its own change; hotel and rail search are not
-  affected. An earlier attempt at
+  which. Splitting it is tracked as its own change; hotel and rail search keep this
+  recovery browser either way. An earlier attempt at
   this release gated the headless paths on the cookie variable and did exactly that. It
   is reverted, both directions are asserted by tests, and a source-level invariant test
   now fails the build if any launch site is ever given a user profile — the claim the
@@ -130,6 +130,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is open at [#521](https://github.com/MikkoParkkola/trvl/issues/521).
 
 ### Fixed
+
+- **Signing in to a provider could hang forever — and take every later search for
+  that provider with it.** When the first attempt at a provider's session failed and
+  any of the three recovery routes then *succeeded*, the request never returned. It
+  was the success path that hung, so it needed no unusual input; and because the hang
+  happened while holding a write lock, every subsequent search for the same provider
+  queued behind it and hung too. The recovery routes were reaching for a lock the
+  caller was already holding. They no longer take that lock at all: they hand back
+  the recovered session values and whichever caller asked for them stores them. Found
+  by an independent review of this release; the defect itself predates it, so this is
+  a fix to behaviour that shipped earlier, not to anything the release introduced.
 
 - A credential lookup on the default search path could hang forever and accumulate
   stalled helper processes, and could surface an interactive 1Password account-setup

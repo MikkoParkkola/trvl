@@ -151,13 +151,13 @@ func TestReplaceAuthValuesLocked_ConcurrentReadersNoRace(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			snap := snapshotAuthValuesLocked(pc)
+			snap := snapshotAuthValues(pc)
 			_ = snap["csrf_token"]
 		}()
 	}
 	wg.Wait()
 
-	if got := snapshotAuthValuesLocked(pc)["csrf_token"]; got != "FRESH_TOK" {
+	if got := snapshotAuthValues(pc)["csrf_token"]; got != "FRESH_TOK" {
 		t.Errorf("final csrf_token = %q, want FRESH_TOK", got)
 	}
 }
