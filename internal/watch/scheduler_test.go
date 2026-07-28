@@ -609,3 +609,71 @@ func TestScheduler_WithNoRoomCheckerSetReportsNotConfigured(t *testing.T) {
 		t.Error("expected an error for an unconfigured room checker")
 	}
 }
+
+// TestScheduler_LoserReacquiresLockAfterWinnerStops guards against the gap
+// an adversarial review found on 2026-07-28: the original singleton-lock
+// attempt in Start() was one-shot -- a process that lost the lock race
+// gave up forever, with no retry of any kind. TryLockScheduler's own doc
+// comment promises the OS releases the lock automatically when the holder
+// dies, "so a crashed or SIGKILLed process cannot wedge scheduling for
+// everyone else" -- but nothing ever re-attempted the lock on the loser's
+// side, so that promise went unfulfilled: if the winner later died while
+// a loser stayed alive (the exact multi-process-coexistence scenario this
+// singleton exists to handle), scheduling stopped for good, system-wide,
+// until some unrelated THIRD process happened to start.
+//
+// This proves failover actually works: scheduler A wins, scheduler B
+// (same directory) loses and must retry, A stops (releasing the lock, the
+// same as a crash from the OS's point of view -- flock releases on
+// process exit either way), and B's own check round must then fire.
+func TestScheduler_LoserReacquiresLockAfterWinnerStops(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	store := NewStore(dir)
+	if _, _, err := store.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		DepartDate: "2099-07-01", BelowPrice: 500, Currency: "EUR",
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	checkerA := &countingChecker{price: 300}
+	a := NewScheduler(dir, time.Hour, checkerA)
+	a.Start()
+
+	// Wait for A to actually win the lock and run its first round, so B's
+	// upcoming Start() deterministically loses the race rather than
+	// racing A for it.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && checkerA.calls.Load() < 1 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if checkerA.calls.Load() < 1 {
+		t.Fatal("setup: scheduler A never won the lock")
+	}
+
+	checkerB := &countingChecker{price: 300}
+	b := NewScheduler(dir, time.Hour, checkerB)
+	b.SetLockRetryIntervalForTest(50 * time.Millisecond)
+	b.Start()
+	defer b.Stop()
+
+	// B must not have won anything yet -- A still holds the lock.
+	time.Sleep(100 * time.Millisecond)
+	if checkerB.calls.Load() != 0 {
+		t.Fatal("setup: scheduler B ran a check before A released the lock")
+	}
+
+	// A stops, releasing the lock -- the same OS-level event as a crash.
+	a.Stop()
+
+	// B's retry loop (50ms interval) must notice within a couple of
+	// intervals and take over.
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && checkerB.calls.Load() < 1 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if checkerB.calls.Load() < 1 {
+		t.Fatal("scheduler B never reacquired the lock after A stopped -- failover did not happen")
+	}
+}

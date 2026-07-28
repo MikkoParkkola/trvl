@@ -44,6 +44,23 @@ type Scheduler struct {
 	// watch package never imports the hacks/probe engines, avoiding a cycle).
 	// Nil by default, so standard scheduler behaviour is unchanged.
 	probeHook func(ctx context.Context, active []Watch)
+
+	// lockRetryInterval overrides schedulerLockRetryInterval for this
+	// instance. Zero (the default) means "use the package constant" --
+	// tests set this via SetLockRetryIntervalForTest to a small value so a
+	// lock-failover test doesn't have to wait out the real 30s production
+	// interval. Same pattern as SetWebhookHTTPClientForTest (check.go).
+	lockRetryInterval time.Duration
+}
+
+// SetLockRetryIntervalForTest overrides how often this Scheduler retries
+// the singleton lock after losing it. Test-only: production callers should
+// never need a value other than schedulerLockRetryInterval. Must be called
+// before Start.
+func (s *Scheduler) SetLockRetryIntervalForTest(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lockRetryInterval = d
 }
 
 // SetProbeHook installs an optional per-round hook invoked with the active
@@ -100,37 +117,81 @@ func NewScheduler(dir string, interval time.Duration, checker PriceChecker) *Sch
 	}
 }
 
+// schedulerLockRetryInterval is how often a process that lost the singleton
+// lock race re-attempts it. See acquireAndRun's doc comment for why a retry
+// loop exists at all. Frequent enough to notice a dead holder promptly (the
+// OS releases the lock immediately on process death; nothing here needs to
+// wait out any timeout), cheap enough that polling it costs nothing next to
+// the 30-minute-default scheduling interval it guards.
+const schedulerLockRetryInterval = 30 * time.Second
+
 // Start launches the background goroutine. Idempotent — subsequent calls are no-ops.
 func (s *Scheduler) Start() {
 	s.startOnce.Do(func() {
 		s.mu.Lock()
-		defer s.mu.Unlock()
 		if s.stopped {
+			s.mu.Unlock()
 			return
 		}
-		// At most one scheduler per ~/.trvl across all processes. MCP clients
-		// spawn a server per session and some leak them; without this, every
-		// live `trvl mcp` runs a full round against the same watches, multiplying
-		// provider load and racing on the same JSON files. A process that loses
-		// the race still serves tool calls, it just does not schedule.
-		lock, held, err := TryLockScheduler(s.dir)
-		if err != nil {
-			slog.Warn("scheduler: acquire singleton lock", "err", err)
-			s.closeDone()
-			return
-		}
-		if !held {
-			slog.Debug("scheduler: another process owns the scheduler; not scheduling here")
-			s.closeDone()
-			return
-		}
-		s.lock = lock
-
 		ctx, cancel := context.WithCancel(context.Background())
 		s.cancel = cancel
 		s.started = true
-		go s.run(ctx)
+		s.mu.Unlock()
+		go s.acquireAndRun(ctx)
 	})
+}
+
+// acquireAndRun retries the cross-process singleton lock until acquired or
+// ctx is cancelled (via Stop), then runs scheduling rounds for as long as
+// this process holds it.
+//
+// Found by adversarial review, 2026-07-28: the original one-shot lock
+// attempt gave up permanently if another process held the lock at Start()
+// time -- there was no retry of any kind. TryLockScheduler's own doc
+// comment promises "the OS releases the lock automatically if the holder
+// dies, so a crashed or SIGKILLed process cannot wedge scheduling for
+// everyone else," but nothing here ever re-attempted the lock, so that
+// promise went unfulfilled for every OTHER process that had already lost
+// the race: if the winner later died while a loser stayed alive -- the
+// exact multi-process-coexistence scenario this whole singleton exists to
+// handle; 15 orphaned `trvl mcp` processes were observed alive
+// simultaneously in the incident that motivated it -- nothing would ever
+// notice and reacquire. All scheduling would silently stop until some
+// THIRD, brand-new process happened to start and win the now-free lock.
+func (s *Scheduler) acquireAndRun(ctx context.Context) {
+	s.mu.Lock()
+	retryInterval := s.lockRetryInterval
+	s.mu.Unlock()
+	if retryInterval <= 0 {
+		retryInterval = schedulerLockRetryInterval
+	}
+	ticker := time.NewTicker(retryInterval)
+	defer ticker.Stop()
+
+	for {
+		lock, held, err := TryLockScheduler(s.dir)
+		if err != nil {
+			slog.Warn("scheduler: acquire singleton lock", "err", err)
+		} else if held {
+			s.mu.Lock()
+			s.lock = lock
+			s.mu.Unlock()
+			s.run(ctx) // run() closes s.done itself on return.
+			return
+		} else {
+			slog.Debug("scheduler: another process owns the scheduler; will retry",
+				"retry_after", retryInterval)
+		}
+
+		select {
+		case <-ctx.Done():
+			// Exiting without ever having called run(): that is the only
+			// other path that closes s.done, so this one must too.
+			s.closeDone()
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // Stop signals the background goroutine to exit and waits for it to finish.
