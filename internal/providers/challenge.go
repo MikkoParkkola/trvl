@@ -20,6 +20,8 @@ import (
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
+
+	"github.com/MikkoParkkola/trvl/internal/consent"
 )
 
 // ChallengeStatus is the outcome of a headless-first challenge resolution.
@@ -120,10 +122,12 @@ var cdpChallengeRunner = runCDPChallenge
 //     returns ChallengeCleared.
 //
 // Gating: the path runs by default and returns ErrTier2Disabled when the user
-// declined it (TRVL_NO_TIER2_CDP, or TRVL_TIER2_CDP=0). It also refuses inside
-// a `go test` binary, so the suite stays offline;
-// TRVL_ALLOW_BROWSER_COOKIES lifts that. It reuses the Tier2Option set so
-// callers configure it the same way as the lower-level CDP refresh.
+// declined it (TRVL_NO_TIER2_CDP, or TRVL_TIER2_CDP=0). A browser-cookie decline
+// (TRVL_NO_BROWSER_COOKIES) stops it too — it reads the user's browser session
+// whatever the reason for the call. It also refuses inside a `go test` binary,
+// so the suite stays offline; TRVL_ALLOW_BROWSER_COOKIES lifts that. It reuses
+// the Tier2Option set so callers configure it the same way as the lower-level
+// CDP refresh.
 func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option) (*ChallengeResult, error) {
 	cfg := tier2Config{challengeWait: defaultChallengeWait}
 	for _, o := range opts {
@@ -133,6 +137,14 @@ func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option
 	// An explicit decline is absolute; see RefreshCookiesViaCDP.
 	if Tier2Declined() {
 		return nil, ErrTier2Disabled
+	}
+
+	// A browser-cookie decline is equally absolute here. This path launches the
+	// user's own browser and takes its session, which is precisely what the
+	// decline refused — the fact that it is reached to clear a challenge rather
+	// than to refresh cookies does not make the session any less theirs.
+	if consent.CookiesDeclined() {
+		return nil, errTier2CookiesDeclined
 	}
 
 	if _, err := url.Parse(targetURL); err != nil {
@@ -154,6 +166,15 @@ func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option
 	}
 
 	cookies := convertNetworkCookies(rawCookies)
+
+	// The decline can also arrive while the challenge is resolving. Ask the
+	// consent state directly rather than inferring refusal from an empty
+	// harvest, and refuse before either exit: the cleared branch persists the
+	// cookies to the cache, and the needs-human branch hands them back to the
+	// caller. Both are transmissions of a session the user has since refused.
+	if consent.CookiesDeclined() {
+		return nil, errTier2CookiesDeclined
+	}
 
 	if needsHuman, marker := DetectInteractiveCaptcha([]byte(html)); needsHuman {
 		// The headless pass could not clear an interactive captcha. Do NOT
@@ -179,6 +200,12 @@ func runCDPChallenge(ctx context.Context, execPath, targetURL string, challengeW
 	// ResolveChallenge still cannot start a browser.
 	if Tier2Declined() {
 		return nil, "", ErrTier2Disabled
+	}
+
+	// And the same for the browser-cookie decline, on the spawning function, so
+	// a caller that reaches past ResolveChallenge still cannot start a browser.
+	if consent.CookiesDeclined() {
+		return nil, "", errTier2CookiesDeclined
 	}
 
 	// Same reason as runCDPCollect: with Tier-2 on by default, the driver is
