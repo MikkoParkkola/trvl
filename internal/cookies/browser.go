@@ -306,11 +306,27 @@ var browserAuthOpened = struct {
 // same domain. Set to 24 hours — once opened, never again until tomorrow.
 const browserAuthCooldown = 24 * time.Hour
 
+// ErrBrowserAuthDeclined reports that the user has opted out of trvl touching
+// their own browsers, so no window was opened.
+var ErrBrowserAuthDeclined = errors.New("browser auth declined: user opted out of browser access")
+
 // OpenBrowserForAuth opens url in the user's default browser so they can
 // complete a CAPTCHA or login challenge. Suppresses repeated opens for the
 // same domain within 24 hours. Returns an error if the browser could not
 // be launched, or nil if suppressed by cooldown.
+//
+// Gated on CookiesDeclined. This launches the user's real, visible browser —
+// the one they are logged into — which is exactly what that decline covers.
+// The other decline (Tier2) governs the empty-profile headless browser and is
+// deliberately not consulted here: conflating the two is the defect this
+// release already had to undo once in internal/providers.
 func OpenBrowserForAuth(url string) error {
+	if consent.CookiesDeclined() {
+		slog.Info("not opening browser for auth: user opted out of browser access",
+			"env", consent.CookiesEnv)
+		return ErrBrowserAuthDeclined
+	}
+
 	// Extract domain from URL for cooldown tracking.
 	domain := url
 	if idx := strings.Index(url, "://"); idx >= 0 {

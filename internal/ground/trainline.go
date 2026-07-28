@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	trvlnab "github.com/MikkoParkkola/trvl/internal/nab"
@@ -453,9 +454,13 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 				}
 			}
 		} else if res != nil && res.Status == providers.ChallengeNeedsHuman {
-			slog.Warn("trainline requires human verification — opening browser", "vendor", res.Marker)
-			_, _ = fmt.Fprintf(os.Stderr, "⚠️  Trainline requires verification. Opening browser — please solve the challenge, then retry.\n")
-			_ = trainlineOpenBrowser(trainlineHomeURL)
+			if err := trainlineOpenBrowser(trainlineHomeURL); errors.Is(err, cookies.ErrBrowserAuthDeclined) {
+				slog.Warn("trainline requires human verification — browser not opened, user opted out", "vendor", res.Marker)
+				_, _ = fmt.Fprintf(os.Stderr, "⚠️  Trainline requires verification. Not opening your browser (%s is set) — solve it yourself, then retry.\n", consent.CookiesEnv)
+			} else {
+				slog.Warn("trainline requires human verification — opening browser", "vendor", res.Marker)
+				_, _ = fmt.Fprintf(os.Stderr, "⚠️  Trainline requires verification. Opening browser — please solve the challenge, then retry.\n")
+			}
 		}
 
 		// Last resort: opt-in browser scraper via Go CDP.

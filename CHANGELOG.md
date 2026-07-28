@@ -26,7 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The two browser opt-outs answer two different questions, and this release makes the
   code match that. `TRVL_NO_BROWSER_COOKIES` answers "may trvl touch my browsers and
   the sessions I am logged into?" — it covers every cookie-store read, the
-  `~/.trvl/cookies` cache, and the escape hatch that opens the user's own browser.
+  `~/.trvl/cookies` cache, and every path that opens the user's own browser — the
+  provider escape hatch, and the Trainline and SNCF rail fallbacks that open a window
+  when a challenge needs a human. Those two rail paths called the browser opener
+  directly and were never gated; an independent review of this release caught it
+  before it shipped, so the check now sits on the opener itself, where any future
+  caller inherits it, and the message the user sees says the browser is not opening
+  rather than announcing one that never appears.
   `TRVL_NO_TIER2_CDP` answers "may trvl run a browser process at all?" — it covers
   every headless browser trvl starts itself. Those browsers attach no user profile, so
   a cookie decline does not stop them; if it did, declining access to your own browser

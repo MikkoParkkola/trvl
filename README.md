@@ -226,7 +226,7 @@ plainly:
 
 | Setting | The question it answers | What it covers |
 | --- | --- | --- |
-| `TRVL_NO_BROWSER_COOKIES=1` | May trvl touch **my** browsers and the sessions I am logged into? | Every read of a browser cookie store (including via nab), the `~/.trvl/cookies` cache, and the visible-window escape hatch that opens your real browser |
+| `TRVL_NO_BROWSER_COOKIES=1` | May trvl touch **my** browsers and the sessions I am logged into? | Every read of a browser cookie store (including via nab), the `~/.trvl/cookies` cache, and every window trvl opens in your real browser — the escape hatch and the Trainline/SNCF human-verification fallbacks |
 | `TRVL_NO_TIER2_CDP=1` | May trvl **run a browser process** at all? | Every headless browser trvl starts itself — all three places in the code that can start one |
 
 Setting the first one does **not** stop the headless browser, and that is deliberate:
