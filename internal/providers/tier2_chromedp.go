@@ -48,12 +48,15 @@ var ErrTier2Disabled = consent.ErrTier2Declined
 
 // ErrNoBrowserFound is returned when no installed Chromium-family browser can be
 // located to drive headlessly.
-// errTier2CookiesDeclined is what a CDP harvest returns when the user declined
+// ErrTier2CookiesDeclined is what a CDP harvest returns when the user declined
 // browser COOKIES rather than the CDP path itself. It wraps ErrTier2Disabled so
 // every existing caller's errors.Is still holds, but it names the variable the
 // user actually set: telling a TRVL_NO_BROWSER_COOKIES user to go change
 // TRVL_NO_TIER2_CDP is the same misnamed-control defect as #507/#515.
-var errTier2CookiesDeclined = fmt.Errorf("%w: browser cookies declined (unset %s to enable)",
+//
+// Exported because internal/ground holds the third browser-launching site in the
+// repo and has to return the same error for the same refusal.
+var ErrTier2CookiesDeclined = fmt.Errorf("%w: browser cookies declined (unset %s to enable)",
 	consent.ErrTier2Declined, consent.CookiesEnv)
 
 // ErrNoBrowserFound is returned when no installed Chromium-family browser can be
@@ -201,7 +204,7 @@ func RefreshCookiesViaCDP(ctx context.Context, targetURL string, opts ...Tier2Op
 	// cookies harvested, and the result written to ~/.trvl/cookies. Two
 	// variables, one question, and the narrower one must not be a bypass.
 	if consent.CookiesDeclined() {
-		return nil, errTier2CookiesDeclined
+		return nil, ErrTier2CookiesDeclined
 	}
 
 	if _, err := url.Parse(targetURL); err != nil {
@@ -234,7 +237,7 @@ func RefreshCookiesViaCDP(ctx context.Context, targetURL string, opts ...Tier2Op
 	// and turning the second one into a decline error is the same conflation the
 	// refusal logging exists to prevent, only inverted.
 	if consent.CookiesDeclined() {
-		return nil, errTier2CookiesDeclined
+		return nil, ErrTier2CookiesDeclined
 	}
 	persistCookiesToCache(targetURL, harvested)
 	return harvested, nil
@@ -251,7 +254,7 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 		return nil, ErrTier2Disabled
 	}
 	if consent.CookiesDeclined() {
-		return nil, errTier2CookiesDeclined
+		return nil, ErrTier2CookiesDeclined
 	}
 
 	// Now that Tier-2 is on by default, this is what keeps `go test` from
