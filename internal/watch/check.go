@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -449,15 +451,43 @@ func fireWebhook(ctx context.Context, r CheckResult) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.Watch.WebhookURL, bytes.NewReader(body))
 	if err != nil {
-		slog.Warn("webhook: create request", "watch_id", r.Watch.ID, "err", err)
+		slog.Warn("webhook: create request", "watch_id", r.Watch.ID, "err", webhookSafeErr(err))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := webhookHTTPClient.Do(req)
 	if err != nil {
-		slog.Warn("webhook: POST failed", "watch_id", r.Watch.ID, "url", r.Watch.WebhookURL, "err", err)
+		slog.Warn("webhook: POST failed", "watch_id", r.Watch.ID, "host", webhookLogTarget(r.Watch.WebhookURL), "err", webhookSafeErr(err))
 		return
 	}
 	_ = resp.Body.Close()
+}
+
+// webhookLogTarget reduces a user-supplied webhook URL to a form that is safe to
+// log. Slack and Discord both carry the shared secret in the PATH, so the path,
+// query and fragment are all dropped and only the host survives. A URL that does
+// not parse yields a constant rather than an echo of the input, because the
+// unparseable case is precisely where a malformed secret would otherwise ride
+// through.
+func webhookLogTarget(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "invalid"
+	}
+	return u.Host
+}
+
+// webhookSafeErr strips the URL out of a *url.Error.
+//
+// This is the part that is easy to miss: net/http returns *url.Error from both
+// NewRequestWithContext and Client.Do, and url.Error.Error() prints the full URL
+// it was given. Redacting the "url" log attribute alone would therefore still
+// disclose the secret through the "err" attribute on the very same line.
+func webhookSafeErr(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return fmt.Errorf("%s %s: %w", ue.Op, webhookLogTarget(ue.URL), ue.Err)
+	}
+	return err
 }
