@@ -262,8 +262,9 @@ one: on the sites trvl signs into on your behalf, a cookie decline does still sw
 this recovery path off. Those sites hand the recovered cookies to the same store that
 can also hold cookies copied out of your real browser, and that store keeps no note of
 which is which, so a cookie decline refuses all of it rather than guess. Separating the
-two is tracked as its own change. Hotel and rail search are not affected. This also
-runs by default, for the same reason — with it off, a challenged search returns nothing
+two is tracked as its own change. Hotel and rail search keep this recovery browser
+either way. This also runs by default, for the same reason — with it off, a
+challenged search returns nothing
 and looks like an empty result rather than a switched-off feature. Set
 `TRVL_NO_TIER2_CDP=1` to decline. It costs a browser process for a few seconds per
 challenged search, which is the reason someone might want it off. The check sits on
