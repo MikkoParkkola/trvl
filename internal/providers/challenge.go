@@ -144,7 +144,7 @@ func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option
 	// decline refused — the fact that it is reached to clear a challenge rather
 	// than to refresh cookies does not make the session any less theirs.
 	if consent.CookiesDeclined() {
-		return nil, errTier2CookiesDeclined
+		return nil, ErrTier2CookiesDeclined
 	}
 
 	if _, err := url.Parse(targetURL); err != nil {
@@ -173,7 +173,7 @@ func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option
 	// cookies to the cache, and the needs-human branch hands them back to the
 	// caller. Both are transmissions of a session the user has since refused.
 	if consent.CookiesDeclined() {
-		return nil, errTier2CookiesDeclined
+		return nil, ErrTier2CookiesDeclined
 	}
 
 	if needsHuman, marker := DetectInteractiveCaptcha([]byte(html)); needsHuman {
@@ -205,7 +205,7 @@ func runCDPChallenge(ctx context.Context, execPath, targetURL string, challengeW
 	// And the same for the browser-cookie decline, on the spawning function, so
 	// a caller that reaches past ResolveChallenge still cannot start a browser.
 	if consent.CookiesDeclined() {
-		return nil, "", errTier2CookiesDeclined
+		return nil, "", ErrTier2CookiesDeclined
 	}
 
 	// Same reason as runCDPCollect: with Tier-2 on by default, the driver is

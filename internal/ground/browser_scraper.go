@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
 	"github.com/chromedp/cdproto/network"
@@ -54,6 +55,9 @@ window.chrome = window.chrome || {runtime: {}};
 func BrowserScrapeRoutes(ctx context.Context, provider, from, to, date, currency string) ([]models.GroundRoute, error) {
 	if providers.Tier2Declined() {
 		return nil, providers.ErrTier2Disabled
+	}
+	if consent.CookiesDeclined() {
+		return nil, providers.ErrTier2CookiesDeclined
 	}
 
 	provider = strings.ToLower(strings.TrimSpace(provider))
@@ -428,6 +432,25 @@ func newBrowserScraperContext(ctx context.Context) (context.Context, context.Can
 	if providers.Tier2Declined() {
 		return nil, nil, providers.ErrTier2Disabled
 	}
+
+	// And the cookie decline stops it too, for the reason stated at the paired
+	// check in internal/providers/tier2_chromedp.go: two variables, one question,
+	// and the narrower one must not be a bypass. An adversarial review of this
+	// branch found that gating here on Tier2Declined ALONE let a user who set
+	// only TRVL_NO_BROWSER_COOKIES still get Chrome launched — and the SNCF
+	// caller captures an x-bff-key from that session and returns it, so the
+	// bypass leaked a credential, not merely a page.
+	if consent.CookiesDeclined() {
+		return nil, nil, providers.ErrTier2CookiesDeclined
+	}
+
+	// And the cookie decline stops it too, for the reason stated at the paired
+	// check in internal/providers/tier2_chromedp.go: two variables, one question,
+	// and the narrower one must not be a bypass. An adversarial review of this
+	// branch found that gating here on Tier2Declined ALONE let a user who set
+	// only TRVL_NO_BROWSER_COOKIES still get Chrome launched — and the SNCF
+	// caller captures an x-bff-key from that session and returns it, so the
+	// bypass leaked a credential, not merely a page.
 
 	allocOpts := append([]chromedp.ExecAllocatorOption{}, chromedp.DefaultExecAllocatorOptions[:]...)
 	allocOpts = append(allocOpts,
