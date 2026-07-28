@@ -74,7 +74,7 @@ Examples:
 				return errors.New(
 					"another trvl process is already running price checks for this store " +
 						"(an MCP server or another daemon).\n" +
-						"Run `trvl watch check` for a one-off check, or stop the other process first.")
+						"Run `trvl watch check` for a one-off check, or stop the other process first")
 			}
 			defer lock.Release()
 
