@@ -46,8 +46,6 @@ const tier2DisableEnv = consent.Tier2Env
 // "declined" is the drift this consolidation removed elsewhere.
 var ErrTier2Disabled = consent.ErrTier2Declined
 
-// ErrNoBrowserFound is returned when no installed Chromium-family browser can be
-// located to drive headlessly.
 // ErrTier2CookiesDeclined is what a CDP harvest returns when the user declined
 // browser COOKIES rather than the CDP path itself. It wraps ErrTier2Disabled so
 // every existing caller's errors.Is still holds, but it names the variable the

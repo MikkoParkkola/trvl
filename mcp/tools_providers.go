@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/MikkoParkkola/trvl/internal/providers"
 )
 
@@ -214,11 +215,30 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 	// search. This is a one-time setup action.
 	warmingNote := ""
 	if config.Auth != nil && config.Auth.BrowserEscapeHatch && config.Auth.PreflightURL != "" {
-		err := providers.OpenURLInBrowser(config.Auth.PreflightURL, "")
-		if err != nil {
-			log.Printf("cookie warming: failed to open browser for %s: %v", config.Name, err)
+		if consent.CookiesDeclined() {
+			// This opens the user's REAL browser, on their own profile, for the
+			// declared purpose of warming cookies. TRVL_NO_BROWSER_COOKIES is
+			// exactly the decline for that, and the elicitation above does not
+			// override it: the user consented to enabling a provider, not to
+			// having their browser opened and their session reused.
+			// Configuration still succeeds — the provider is enabled, it simply
+			// starts cold.
+			//
+			// Defensive rather than a fix for a live bypass: configure_provider
+			// never sets BrowserEscapeHatch from its arguments (see the Auth
+			// block below), so today this branch is only reachable for a config
+			// that acquired the flag elsewhere. It is written now because the
+			// flag is one argument away from being settable, and the failure it
+			// would cause — a browser opening for a user who declined — is not
+			// one to discover in production.
+			warmingNote = warmingNoteDeclined
+		} else {
+			err := providers.OpenURLInBrowser(config.Auth.PreflightURL, "")
+			if err != nil {
+				log.Printf("cookie warming: failed to open browser for %s: %v", config.Name, err)
+			}
+			warmingNote = browserWarmingNote(config.Auth.PreflightURL, config.Name, err)
 		}
-		warmingNote = browserWarmingNote(config.Auth.PreflightURL, config.Name, err)
 	}
 
 	summary := fmt.Sprintf("Provider %q enabled for %s search (domain: %s, rate limit: %.1f rps).%s",
@@ -248,6 +268,12 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 const (
 	warmingNoteAsked  = "\n\nAsked your browser to open %s so cookies for %s can be reused. If no window appeared, open that URL yourself."
 	warmingNoteFailed = "\n\nCould not start a browser for %s (%v). Open %s yourself so those cookies can be reused."
+	// warmingNoteDeclined says what was NOT done and why, because the alternative
+	// is silence: the provider is enabled, no browser appears, and the user is
+	// left guessing whether the setup half-failed. It names the variable so the
+	// answer is actionable by whoever set it.
+	warmingNoteDeclined = "\n\nDid not open a browser to warm cookies: " + consent.CookiesEnv +
+		" declines access to your browser. The provider is enabled and will start without warm cookies."
 )
 
 func browserWarmingNote(preflightURL, providerName string, err error) string {
