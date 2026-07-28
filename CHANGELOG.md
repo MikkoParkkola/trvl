@@ -16,7 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   used by hotel and rail search, nor the nab helper used by the rail 403 retry. The
   check sits on the low-level readers rather than the exported wrapper, because
   recovery code reaches them directly and a gate on the public name alone would have
-  ignored the user three ways out of four. Default is unchanged. ([#521](https://github.com/MikkoParkkola/trvl/issues/521))
+  ignored the user. The same reasoning turned out to have one place left: the ground
+  scraper starts a browser of its own and was gated on the Tier-2 variable alone, so a
+  user who declined cookies without touching Tier-2 still got a real Chrome session —
+  and the SNCF path harvests an `x-bff-key` from exactly that session. It is gated now,
+  at both its entry point and its allocator. Default is unchanged.
+  ([#521](https://github.com/MikkoParkkola/trvl/issues/521))
 - `AFKLM_KEYCHAIN_SERVICE` overrides the macOS Keychain service name, so a user who
   files the key under their own name is not forced to adopt trvl's.
 

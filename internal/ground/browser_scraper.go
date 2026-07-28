@@ -53,11 +53,15 @@ window.chrome = window.chrome || {runtime: {}};
 // stale: nothing gated it, and both callers (trainline.go, sncf.go) invoke it
 // unconditionally after the challenge path fails.
 func BrowserScrapeRoutes(ctx context.Context, provider, from, to, date, currency string) ([]models.GroundRoute, error) {
-	if providers.Tier2Declined() {
-		return nil, providers.ErrTier2Disabled
-	}
+	// Cookies first, deliberately. Both checks refuse, and ErrTier2CookiesDeclined
+	// wraps ErrTier2Disabled so either order satisfies the same errors.Is. What the
+	// order decides is which variable the message names when a user has set both,
+	// and naming the one they actually set is the whole point of the cookie error.
 	if consent.CookiesDeclined() {
 		return nil, providers.ErrTier2CookiesDeclined
+	}
+	if providers.Tier2Declined() {
+		return nil, providers.ErrTier2Disabled
 	}
 
 	provider = strings.ToLower(strings.TrimSpace(provider))
@@ -423,17 +427,7 @@ func decodeBrowserJSONBodies(raws []string) []map[string]any {
 }
 
 func newBrowserScraperContext(ctx context.Context) (context.Context, context.CancelFunc, error) {
-	// An explicit decline is absolute and is checked HERE, on the function that
-	// builds the allocator, for the same reason internal/providers checks it on
-	// runCDPCollect rather than on its entrypoints: this is the third place in
-	// the repo that can start a browser, and gating only the two in
-	// internal/providers left this one spawning Chrome after the user said no
-	// (#521). A caller that reaches past BrowserScrapeRoutes still cannot.
-	if providers.Tier2Declined() {
-		return nil, nil, providers.ErrTier2Disabled
-	}
-
-	// And the cookie decline stops it too, for the reason stated at the paired
+	// The cookie decline is checked first, for the reason stated at the paired
 	// check in internal/providers/tier2_chromedp.go: two variables, one question,
 	// and the narrower one must not be a bypass. An adversarial review of this
 	// branch found that gating here on Tier2Declined ALONE let a user who set
@@ -444,13 +438,15 @@ func newBrowserScraperContext(ctx context.Context) (context.Context, context.Can
 		return nil, nil, providers.ErrTier2CookiesDeclined
 	}
 
-	// And the cookie decline stops it too, for the reason stated at the paired
-	// check in internal/providers/tier2_chromedp.go: two variables, one question,
-	// and the narrower one must not be a bypass. An adversarial review of this
-	// branch found that gating here on Tier2Declined ALONE let a user who set
-	// only TRVL_NO_BROWSER_COOKIES still get Chrome launched — and the SNCF
-	// caller captures an x-bff-key from that session and returns it, so the
-	// bypass leaked a credential, not merely a page.
+	// An explicit decline is absolute and is checked HERE, on the function that
+	// builds the allocator, for the same reason internal/providers checks it on
+	// runCDPCollect rather than on its entrypoints: this is the third place in
+	// the repo that can start a browser, and gating only the two in
+	// internal/providers left this one spawning Chrome after the user said no
+	// (#521). A caller that reaches past BrowserScrapeRoutes still cannot.
+	if providers.Tier2Declined() {
+		return nil, nil, providers.ErrTier2Disabled
+	}
 
 	allocOpts := append([]chromedp.ExecAllocatorOption{}, chromedp.DefaultExecAllocatorOptions[:]...)
 	allocOpts = append(allocOpts,

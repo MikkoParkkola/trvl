@@ -66,3 +66,51 @@ func TestNewBrowserScraperContextRefusesOnCookieDeclineAlone(t *testing.T) {
 		t.Errorf("error does not name the variable the user actually set: %v", err)
 	}
 }
+
+// The gate sits above the provider switch, so it has to hold for every provider
+// and not just the SNCF path that motivated the fix. Trainline reaches the same
+// scraper through the same entry point.
+func TestBrowserScrapeRoutesRefusesForTrainlineToo(t *testing.T) {
+	declineCookiesOnly(t)
+
+	routes, err := BrowserScrapeRoutes(context.Background(), "trainline", "PAR", "LYS", "2026-09-15", "EUR")
+	if err == nil {
+		t.Fatalf("trainline started a browser after the user declined browser cookies; got %d routes", len(routes))
+	}
+	if !errors.Is(err, providers.ErrTier2CookiesDeclined) {
+		t.Errorf("trainline refusal does not name the cookie variable: %v", err)
+	}
+	if routes != nil {
+		t.Errorf("refusal still returned routes: %v", routes)
+	}
+}
+
+// Setting both variables is the case where check order becomes visible. Either
+// order refuses, and ErrTier2CookiesDeclined wraps ErrTier2Disabled so either
+// order satisfies the same errors.Is — which is exactly why the wrong order is
+// easy to ship and hard to notice. What the user reads is the difference: the
+// message has to name the cookie variable they set, not fall back to the
+// generic Tier-2 wording just because that check happened to run first.
+func TestBrowserScrapeRoutesNamesTheCookieVariableWhenBothAreSet(t *testing.T) {
+	t.Setenv(consent.Tier2LegacyEnv, "")
+	t.Setenv(consent.Tier2Env, "1")
+	t.Setenv(consent.CookiesEnv, "1")
+
+	if !providers.Tier2Declined() {
+		t.Fatalf("precondition: both declines must be active for this test to mean anything")
+	}
+	if !consent.CookiesDeclined() {
+		t.Fatalf("precondition: CookiesDeclined must be true here")
+	}
+
+	_, err := BrowserScrapeRoutes(context.Background(), "sncf", "PAR", "LYS", "2026-09-15", "EUR")
+	if err == nil {
+		t.Fatal("a browser was allowed to start with both declines set")
+	}
+	if !errors.Is(err, providers.ErrTier2CookiesDeclined) {
+		t.Errorf("with both variables set the user is told about the wrong one; the cookie decline is the specific signal and must win: %v", err)
+	}
+	if !errors.Is(err, providers.ErrTier2Disabled) {
+		t.Errorf("error no longer satisfies the errors.Is every existing caller uses: %v", err)
+	}
+}
