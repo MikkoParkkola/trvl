@@ -23,14 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a wait that could never succeed, and no result at the end of it. Default is
   unchanged. ([#521](https://github.com/MikkoParkkola/trvl/issues/521))
 
-  The two browser opt-outs stay separate, which is the distinction to keep in mind
-  when reading the above. `TRVL_NO_BROWSER_COOKIES` governs the paths that touch the
-  user's own profile. `TRVL_NO_TIER2_CDP` governs the headless browser that starts
-  from an empty profile and never opens theirs — that is the one that covers the
-  ground scraper, and it always did. An earlier attempt at this release put a cookie
-  gate on the scraper too; that refused a search over a store the scraper never reads,
-  and collapsed two documented controls into one. It was removed, and both directions
-  are now asserted by tests.
+  The two browser opt-outs answer two different questions, and this release makes the
+  code match that. `TRVL_NO_BROWSER_COOKIES` answers "may trvl touch my browsers and
+  the sessions I am logged into?" — it covers every cookie-store read, the
+  `~/.trvl/cookies` cache, and the escape hatch that opens the user's own browser.
+  `TRVL_NO_TIER2_CDP` answers "may trvl run a browser process at all?" — it covers
+  every headless browser trvl starts itself. Those browsers attach no user profile, so
+  a cookie decline does not stop them; if it did, declining access to your own browser
+  would also remove the one acquisition path that still works without it, and hotel
+  search would return nothing in exchange for no privacy gained. An earlier attempt at
+  this release gated the headless paths on the cookie variable and did exactly that. It
+  is reverted, both directions are asserted by tests, and a source-level invariant test
+  now fails the build if any launch site is ever given a user profile — the claim the
+  whole separation rests on.
 - `AFKLM_KEYCHAIN_SERVICE` overrides the macOS Keychain service name, so a user who
   files the key under their own name is not forced to adopt trvl's.
 

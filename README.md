@@ -221,7 +221,20 @@ Documenting this took three attempts, and each earlier version claimed a narrowe
 scope than the code has: first that trvl never looked at local credentials
 unrequested, then that rail search was the sole exception. Both were wrong.
 
-**Turning it off.** Set `TRVL_NO_BROWSER_COOKIES=1` and trvl reads no browser cookie
+**Two settings, two different questions.** They are easy to confuse, so state them
+plainly:
+
+| Setting | The question it answers | What it covers |
+| --- | --- | --- |
+| `TRVL_NO_BROWSER_COOKIES=1` | May trvl touch **my** browsers and the sessions I am logged into? | Every read of a browser cookie store (including via nab), the `~/.trvl/cookies` cache, and the visible-window escape hatch that opens your real browser |
+| `TRVL_NO_TIER2_CDP=1` | May trvl **run a browser process** at all? | Every headless browser trvl starts itself — all three places in the code that can start one |
+
+Setting the first one does **not** stop the headless browser, and that is deliberate:
+the headless browser starts from an empty profile, so it never touches your sessions.
+Setting the second one does **not** stop trvl reading cookies you already have. Set
+both to refuse everything browser-related.
+
+**Turning off cookie reads.** Set `TRVL_NO_BROWSER_COOKIES=1` and trvl reads no browser cookie
 store at all — no nab, no Keychain, nothing. The nab part of that sentence is newer than
 the rest of it: the variable used to stop only the reader inside trvl, while the three
 rail providers went on to run nab as a fallback and nab read the same stores from its own
@@ -241,7 +254,10 @@ never taken, and nothing appears on screen. It bundles no browser of its own. It
 starts from an empty profile, so it does not read the cookies you already have — that
 is the separate switch above, and they are separate because they are separate things:
 one reads the session you are already logged into, this one starts a new anonymous
-session and keeps what that session is given. This also
+session and keeps what that session is given. Because it reads nothing of yours,
+`TRVL_NO_BROWSER_COOKIES=1` leaves it running: if it did not, declining access to your
+own browser would also take away the one path that still works without it, and hotel
+search would return nothing for no gain in privacy. This also
 runs by default, for the same reason — with it off, a challenged search returns nothing
 and looks like an empty result rather than a switched-off feature. Set
 `TRVL_NO_TIER2_CDP=1` to decline. It costs a browser process for a few seconds per

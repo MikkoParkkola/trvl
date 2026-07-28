@@ -70,9 +70,12 @@ func TestNewBrowserScraperContextRefusesOnTier2Decline(t *testing.T) {
 // search over a store that was never touched, and would make the two variables
 // one variable in practice while the documentation still promises two.
 //
-// The refusal that DOES belong on a cookie decline sits in
-// providers.ResolveChallenge, which drives the user's real logged-in profile.
-// That is the difference this test exists to keep visible.
+// The refusal that DOES belong on a cookie decline sits where the user's real
+// browsers are touched: the kooky readers in internal/cookies, the ~/.trvl
+// cookie cache (which can hold cookies copied out of them), and the
+// visible-window escape hatch in providers.tryBrowserEscapeHatch, which opens
+// the user's own logged-in browser. providers.ResolveChallenge is NOT on that
+// list — it is profile-less too, same as this scraper.
 // The allocator is the seam this asserts on, not BrowserScrapeRoutes: with the
 // gate correctly absent, the exported entry point would go on to drive a real
 // Chrome for up to browserScraperTimeout. newBrowserScraperContext only builds
