@@ -786,3 +786,134 @@ func TestRunPreflight_Tier3aRecoveryDoesNotDeadlock(t *testing.T) {
 			"the tier or the commit is taking pc.authMu that runPreflight already holds")
 	}
 }
+
+// TestRunPreflight_Tier4RecoveryDoesNotDeadlock closes the last uncovered commit
+// site, auth.go:133 — Tier 4, the interactive browser escape hatch.
+//
+// I had this one recorded as untestable too, for the same reason I wrongly
+// recorded Tier 3a as untestable: I assumed it opens a real browser. It does not
+// have to. headlessFirstResolve (challenge.go:247) is a package-level var whose
+// comment says in as many words that it is the seam for tests, and whose default
+// refuses to spawn a browser inside a `go test` binary at all. Substituting it
+// returns a cleared challenge plus the cookies the window would have produced,
+// and everything after that point — finishEscapeHatch — is plain HTTP.
+//
+// Reaching Tier 4 means the two tiers before it have to genuinely decline:
+//   - Tier 3a finds no browser cookies. There is no warm-cache entry here (the
+//     3a probe above installs one) and the kooky read is blocked in a test
+//     binary, so it returns nothing without touching a real profile.
+//   - Tier 3b is served a plain 403 with no challenge script to solve.
+//
+// Note the consent variable stays CLEARED. Declining browser cookies is how the
+// 3b probe forces 3a off, but that same decline is checked at the top of
+// tryBrowserEscapeHatch (auth.go:244), so using it here would switch off the
+// tier under test and this would pass having exercised nothing.
+func TestRunPreflight_Tier4RecoveryDoesNotDeadlock(t *testing.T) {
+	t.Setenv(consent.CookiesEnv, "")
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	// Substitute the seam. Restoring it is not optional: the var is
+	// package-global and a leaked stub would answer for every later test.
+	prevResolve := headlessFirstResolve
+	t.Cleanup(func() { headlessFirstResolve = prevResolve })
+
+	var resolveCalls int32
+	headlessFirstResolve = func(_ context.Context, _ string) (*ChallengeResult, error) {
+		atomic.AddInt32(&resolveCalls, 1)
+		return &ChallengeResult{
+			Status: ChallengeCleared,
+			Cookies: []*http.Cookie{{
+				Name:   "escape_hatch",
+				Value:  "FROM_WINDOW",
+				Domain: exampleFixtureHost,
+				Path:   "/",
+			}},
+		}, nil
+	}
+
+	var hits int32
+	preflightSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&hits, 1) == 1 {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = fmt.Fprint(w, `<html>denied</html>`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `<html>csrf_token=RECOVERED_T4</html>`)
+	}))
+	defer preflightSrv.Close()
+
+	const target = "https://" + exampleFixtureHost + "/"
+
+	dir := t.TempDir()
+	reg, _ := NewRegistryAt(dir)
+	rt := NewRuntime(reg)
+
+	cl := &http.Client{
+		Transport: &hostSwitchTransport{fallbackTarget: preflightSrv.URL},
+		Timeout:   5 * time.Second,
+	}
+	cl.Jar = newCookieVault()
+
+	pc := &providerClient{
+		config: &ProviderConfig{
+			ID: "preflight-deadlock-t4", Name: "PDT4", Category: "hotels",
+			Endpoint: preflightSrv.URL,
+			Auth: &AuthConfig{
+				Type:               "preflight",
+				PreflightURL:       target,
+				BrowserEscapeHatch: true,
+				Extractions:        map[string]Extraction{"csrf_token": {Pattern: `csrf_token=(\w+)`}},
+			},
+		},
+		client:     cl,
+		authValues: map[string]string{},
+	}
+
+	type outcome struct {
+		snap map[string]string
+		err  error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		// Tier 4 is gated on the interactive opt-in as well as the config flag;
+		// a background context would skip the tier entirely.
+		snap, err := rt.runPreflight(WithInteractive(context.Background()), pc, map[string]string{})
+		done <- outcome{snap, err}
+	}()
+
+	select {
+	case res := <-done:
+		if res.err != nil {
+			t.Fatalf("runPreflight: %v", res.err)
+		}
+		if n := atomic.LoadInt32(&resolveCalls); n == 0 {
+			t.Fatal("fixture failure: the escape hatch was never entered, so Tier 4 did not run — " +
+				"an earlier tier recovered and this test proved nothing about auth.go:133")
+		}
+		if n := atomic.LoadInt32(&hits); n < 2 {
+			t.Fatalf("fixture failure: preflight server saw %d request(s), so the recovery cascade was never reached", n)
+		}
+		if res.snap["csrf_token"] != "RECOVERED_T4" {
+			t.Fatalf("recovered csrf_token = %q, want RECOVERED_T4", res.snap["csrf_token"])
+		}
+		// Positive proof rather than proof by elimination, as in the 3a probe:
+		// the escape-hatch cookie can only reach the jar through the seed inside
+		// finishEscapeHatch, which nothing but Tier 4 calls.
+		u, _ := url.Parse(target)
+		var seeded bool
+		for _, c := range cl.Jar.Cookies(u) {
+			if c.Name == "escape_hatch" && c.Value == "FROM_WINDOW" {
+				seeded = true
+			}
+		}
+		if !seeded {
+			t.Fatal("fixture failure: the escape-hatch cookie never reached the jar, so the recovery did not come from Tier 4")
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("DEADLOCK: runPreflight blocked while committing a successful Tier 4 recovery — " +
+			"the tier or the commit is taking pc.authMu that runPreflight already holds")
+	}
+}
