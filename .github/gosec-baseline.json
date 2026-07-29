@@ -1,0 +1,172 @@
+{
+  "_readme": [
+    "Committed baseline of pre-existing gosec HIGH findings (issue #532).",
+    "The gate in .github/scripts/gosec-gate.sh fails CI on any HIGH finding that is",
+    "NOT covered here. It never lowers gosec's own severity threshold: gosec runs",
+    "unfiltered over ./... and every finding is reported; this file only records the",
+    "HIGH findings that were present when the gate was introduced, each with a",
+    "reason. MEDIUM and LOW are counted and printed, not gated (issue #532",
+    "TRVL.GOSEC.4 tracks their triage separately).",
+    "",
+    "Match key is (rule, file, count). Line numbers and code snippets are",
+    "deliberately NOT part of the key: gosec's snippet spans neighbouring lines, so",
+    "a snippet-keyed baseline would red-fail on edits that have nothing to do with",
+    "the finding, and a scanner that fails every PR gets switched off. Known gap of",
+    "the count key: swapping one finding of a rule for a different finding of the",
+    "same rule in the same file stays suppressed. Accepted deliberately.",
+    "",
+    "To accept a new HIGH: add an entry with a real reason, or prefer an inline",
+    "#nosec in the source, which is narrower. To retire one: drop the entry (the",
+    "gate warns, it does not fail, when actual < allowed).",
+    "",
+    "status: 'accepted' = read, verdict written below. 'deferred' = NOT yet read;",
+    "the gate holds the line at today's count while triage happens. Do not relabel",
+    "a deferred entry to accepted without writing the verdict."
+  ],
+  "gosec_version": "v2.28.0",
+  "scan_command": "gosec -quiet -fmt json ./...",
+  "generated": "2026-07-29",
+  "gated_severity": "HIGH",
+  "entries": [
+    {
+      "rule": "G101",
+      "file": "internal/cars/search.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Constant is the NAME of an environment variable (SKYSCANNER_API_KEY), not a key. The secret itself is read from the environment at runtime."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/deals/deals.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "SourceFeeds is a map of public RSS feed URLs. G101 pattern-matches the word 'secret' in a source key, not a credential."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/destinations/osm.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Public Overpass API endpoint URL. No authentication of any kind is involved."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/flights/roundtrip_native.go",
+      "count": 2,
+      "status": "accepted",
+      "reason": "Two long English warning strings shown to the user about round-trip pricing. High-entropy prose, not a credential."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/ground/digitransit.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Public subscription key that matka.fi ships to every visitor in its JS bundle. Not a private credential; rotating it would break parity with the public site."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/ground/finnlines.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Public API key embedded in the Finnlines booking SPA bundle and served to every visitor. Not a private credential."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/ground/ns.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Public API key embedded in the NS website JS and served to every visitor. Not a private credential."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/lounges/search.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Public Priority Pass search endpoint URL, overridable in tests. No credential."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/waf/solver.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Cookie NAME constant ('aws-waf-token'). The value is issued by the remote WAF at runtime and never appears in source."
+    },
+    {
+      "rule": "G115",
+      "file": "internal/awards/awards.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "int -> rune on '0' + single decimal digit. The digit is produced by dividing by a power of ten, so the range is 0-9 by construction."
+    },
+    {
+      "rule": "G115",
+      "file": "internal/flights/parse.go",
+      "count": 2,
+      "status": "accepted",
+      "reason": "int -> byte in fixed-width numeric padding helpers, where each operand is already reduced by /1000, /10 or %10 to a single digit."
+    },
+    {
+      "rule": "G115",
+      "file": "internal/hotels/agoda_parse.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "int64 -> byte after an explicit 8-bit shift-and-mask in a byte-packing loop; truncation is the intended operation."
+    },
+    {
+      "rule": "G118",
+      "file": "internal/flights/afklm/client.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Deliberate detached background refresh: the goroutine outlives the request that triggered it, so inheriting the request context would cancel the refresh on response. It builds its own context with a timeout."
+    },
+    {
+      "rule": "G404",
+      "file": "internal/batchexec/client.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "math/rand is used only for retry backoff jitter. Jitter is a thundering-herd mitigation, not a security control, and needs no CSPRNG."
+    },
+    {
+      "rule": "G702",
+      "file": "cmd/trvl/prefs.go",
+      "count": 1,
+      "status": "deferred",
+      "reason": "Command injection via taint analysis on exec.Command($EDITOR, path). Not yet read; verdict owed under issue #532 TRVL.GOSEC.2. Source paths are owned by another change in flight, so this gate holds the count rather than editing cmd/."
+    },
+    {
+      "rule": "G703",
+      "file": "cmd/trvl/mcp_install.go",
+      "count": 1,
+      "status": "deferred",
+      "reason": "Path traversal via taint analysis on a .trvl.bak sibling write. Not yet read; verdict owed under issue #532 TRVL.GOSEC.2."
+    },
+    {
+      "rule": "G703",
+      "file": "internal/upgrade/upgrade.go",
+      "count": 1,
+      "status": "deferred",
+      "reason": "Path traversal via taint analysis on the upgrade download write. Not yet read; verdict owed under issue #532 TRVL.GOSEC.2."
+    },
+    {
+      "rule": "G704",
+      "file": "internal/batchexec/client.go",
+      "count": 1,
+      "status": "deferred",
+      "reason": "SSRF via taint analysis on redirect re-request. Not yet read; verdict owed under issue #532 TRVL.GOSEC.2."
+    },
+    {
+      "rule": "G704",
+      "file": "internal/destinations/attractions.go",
+      "count": 2,
+      "status": "deferred",
+      "reason": "SSRF via taint analysis on the attractions API request. Not yet read; verdict owed under issue #532 TRVL.GOSEC.2."
+    },
+    {
+      "rule": "G704",
+      "file": "internal/providers/auth.go",
+      "count": 2,
+      "status": "deferred",
+      "reason": "SSRF via taint analysis on the authenticated request replay. An earlier audit recorded in issue #532 judged these two not remotely reachable, so they are the likeliest to close as accepted; the code itself has not been read here, so the verdict text is still owed under TRVL.GOSEC.2."
+    }
+  ]
+}
