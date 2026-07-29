@@ -159,13 +159,21 @@ func (s *Store) collapseDuplicatesLocked() (int, map[string]string) {
 		// silently mislabel one currency's amount as another's -- e.g. a €50 low
 		// reported as "¥50". Store.Add's applyIntent already treats a currency
 		// change as invalidating the previously observed price (resets
-		// LastPrice/LowestPrice/etc. to 0); mirror that policy here instead of
-		// comparing incompatible magnitudes. Found by adversarial review, 2026-07-29.
+		// LastPrice/LowestPrice/CheapestDate/etc. to 0/""); mirror that policy
+		// here instead of comparing incompatible magnitudes.
+		//
+		// A direct inequality (not "both non-empty and different") also covers a
+		// blank Currency paired with a labeled one: a blank-currency record's
+		// price has no known currency, so it is not safe to treat as "compatible"
+		// with an explicitly labeled survivor either. Found by adversarial
+		// review, 2026-07-29 (two rounds: first the numeric merge, then the
+		// leftover blank-currency gap and untouched history/CheapestDate).
+		sameCurrency := survivor.Currency == w.Currency
 		var mergedLowest float64
-		if survivor.Currency != "" && w.Currency != "" && survivor.Currency != w.Currency {
-			mergedLowest = 0
-		} else {
+		if sameCurrency {
 			mergedLowest = lowerPositive(survivor.LowestPrice, w.LowestPrice)
+		} else {
+			mergedLowest = 0
 		}
 		var loserID string
 		if richer(w, survivor) {
@@ -176,6 +184,9 @@ func (s *Store) collapseDuplicatesLocked() (int, map[string]string) {
 				w.CreatedAt = survivor.CreatedAt
 			}
 			w.LowestPrice = mergedLowest
+			if !sameCurrency {
+				w.CheapestDate = ""
+			}
 			kept[idx] = w
 			loserID = survivor.ID
 		} else {
@@ -184,16 +195,38 @@ func (s *Store) collapseDuplicatesLocked() (int, map[string]string) {
 				survivor.CreatedAt = w.CreatedAt
 			}
 			survivor.LowestPrice = mergedLowest
+			if !sameCurrency {
+				survivor.CheapestDate = ""
+			}
 			kept[idx] = survivor
 			loserID = w.ID
 		}
 		survivorID := kept[idx].ID
-		if loserID != survivorID {
+		// A currency-mismatched loser's own price history belongs to a currency
+		// the survivor no longer claims (its LowestPrice/CheapestDate were just
+		// reset above), so it must not be retagged onto the survivor -- that
+		// would mix incompatible currencies into one numeric series for
+		// Sparkline/TrendArrow. Leaving loserID out of idMap lets
+		// compactHistoryLocked's live-watch filter drop it as an orphan instead,
+		// same as Store.Add already does on a currency change.
+		if sameCurrency && loserID != survivorID {
 			idMap[loserID] = survivorID
 		}
-		for old, cur := range idMap {
-			if cur == loserID {
-				idMap[old] = survivorID
+		// Re-point the rest of the chain only when this merge stayed within one
+		// currency. If it did not, any earlier chain member already mapped to
+		// loserID (e.g. idMap[B]=loserID from a prior same-currency merge) must
+		// NOT be re-pointed to survivorID -- that would walk B's history across
+		// the currency boundary one hop later than the direct A-vs-C case, the
+		// same bug this whole guard exists to prevent. Leaving those entries
+		// pointing at loserID (now absent from kept) is safe: reassignHistoryLocked
+		// still rewrites their WatchID to loserID, and compactHistoryLocked's
+		// live-watch filter then drops them as orphans, exactly like a direct
+		// currency-mismatched pair.
+		if sameCurrency {
+			for old, cur := range idMap {
+				if cur == loserID {
+					idMap[old] = survivorID
+				}
 			}
 		}
 	}

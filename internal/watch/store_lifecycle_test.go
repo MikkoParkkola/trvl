@@ -398,6 +398,181 @@ func TestMigrateReassignsHistoryAcrossChainOfThreeOrMoreDuplicates(t *testing.T)
 	}
 }
 
+// A cross-currency merge resets the survivor's LowestPrice to 0, but the
+// losing record's own price-history points are a currency series in their own
+// right (EUR history under a EUR watch). Retagging them onto a JPY survivor
+// via idMap would still mix the two currencies into one numeric series for
+// History/Sparkline/TrendArrow even though the scalar LowestPrice was fixed.
+// Found by adversarial review, 2026-07-29 (round 2).
+func TestMigrateDoesNotRetagHistoryAcrossCurrencies(t *testing.T) {
+	s := NewStore(t.TempDir())
+	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200}
+
+	eur := base
+	eur.ID = "eur-watch"
+	eur.Currency = "EUR"
+	eur.LowestPrice = 50
+	eur.LastCheck = time.Now().Add(-48 * time.Hour)
+
+	jpy := base
+	jpy.ID = "jpy-watch"
+	jpy.Currency = "JPY"
+	jpy.LowestPrice = 10000
+	jpy.LastCheck = time.Now()
+
+	s.watches = []Watch{eur, jpy}
+	s.history = []PricePoint{
+		{WatchID: "eur-watch", Price: 50, Currency: "EUR", Timestamp: eur.LastCheck},
+		{WatchID: "jpy-watch", Price: 10000, Currency: "JPY", Timestamp: jpy.LastCheck},
+	}
+
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	for _, p := range s.history {
+		if p.WatchID == "eur-watch" {
+			t.Errorf("EUR history point survived retagged onto the JPY survivor instead of being dropped as an orphan")
+		}
+	}
+	watches := s.List()
+	if len(watches) != 1 || watches[0].ID != "jpy-watch" {
+		t.Fatalf("expected jpy-watch alone to survive, got %+v", watches)
+	}
+	for _, p := range s.history {
+		if p.WatchID == "jpy-watch" && p.Currency != "JPY" {
+			t.Errorf("surviving history point has currency %q, want JPY only", p.Currency)
+		}
+	}
+}
+
+// CheapestDate is documented (dedup_test.go) as tied to LowestPrice: whenever
+// LowestPrice resets to unset, CheapestDate must reset alongside it. A
+// cross-currency merge resets LowestPrice but had left CheapestDate untouched,
+// so a stale date from the discarded currency's low would survive next to a
+// "0" price. Found by adversarial review, 2026-07-29 (round 2).
+func TestMigrateClearsCheapestDateOnCrossCurrencyMerge(t *testing.T) {
+	s := NewStore(t.TempDir())
+	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200}
+
+	eur := base
+	eur.ID = "eur-watch"
+	eur.Currency = "EUR"
+	eur.LowestPrice = 50
+	eur.CheapestDate = "2026-08-01"
+	eur.LastCheck = time.Now().Add(-48 * time.Hour)
+
+	jpy := base
+	jpy.ID = "jpy-watch"
+	jpy.Currency = "JPY"
+	jpy.LowestPrice = 10000
+	jpy.CheapestDate = "2026-09-01"
+	jpy.LastCheck = time.Now()
+
+	s.watches = []Watch{eur, jpy}
+
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	watches := s.List()
+	if len(watches) != 1 {
+		t.Fatalf("duplicate group collapsed to %d watches, want 1", len(watches))
+	}
+	if watches[0].CheapestDate != "" {
+		t.Errorf("CheapestDate = %q, want empty (tied to the reset LowestPrice)", watches[0].CheapestDate)
+	}
+}
+
+// The scalar currency guard must fire on ANY inequality, not just "both sides
+// labeled and different" -- a blank Currency has no known currency either, so
+// treating blank-vs-labeled as compatible let a labeled survivor inherit a
+// price with no verified currency. Found by adversarial review, 2026-07-29
+// (round 2).
+func TestMigrateTreatsBlankCurrencyAsIncompatibleWithLabeled(t *testing.T) {
+	s := NewStore(t.TempDir())
+	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200}
+
+	blank := base
+	blank.ID = "blank-watch"
+	blank.Currency = ""
+	blank.LowestPrice = 30
+	blank.LastCheck = time.Now().Add(-48 * time.Hour)
+
+	jpy := base
+	jpy.ID = "jpy-watch"
+	jpy.Currency = "JPY"
+	jpy.LowestPrice = 10000
+	jpy.LastCheck = time.Now()
+
+	s.watches = []Watch{blank, jpy}
+
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	watches := s.List()
+	if len(watches) != 1 || watches[0].ID != "jpy-watch" {
+		t.Fatalf("expected jpy-watch alone to survive, got %+v", watches)
+	}
+	if watches[0].LowestPrice != 0 {
+		t.Errorf("LowestPrice = %v, want 0 (blank-currency price must not be inherited by a labeled survivor)", watches[0].LowestPrice)
+	}
+}
+
+// A chain can merge two same-currency duplicates first and only hit a
+// currency mismatch on the THIRD record. The earlier same-currency pair's
+// idMap entry (e.g. second -> first) must not be blindly re-pointed onto the
+// cross-currency final survivor, or second's EUR history leaks into third's
+// JPY series one hop later than the direct two-watch case. Found by
+// adversarial review, 2026-07-29 (round 2).
+func TestMigrateStopsHistoryLeakAtCurrencyBoundaryMidChain(t *testing.T) {
+	s := NewStore(t.TempDir())
+	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200}
+
+	first := base
+	first.ID = "first"
+	first.Currency = "EUR"
+	first.LowestPrice = 80
+	first.LastCheck = time.Now().Add(-72 * time.Hour)
+
+	second := base
+	second.ID = "second"
+	second.Currency = "EUR"
+	second.LowestPrice = 50
+	second.LastCheck = time.Now().Add(-48 * time.Hour)
+
+	third := base
+	third.ID = "third"
+	third.Currency = "JPY"
+	third.LowestPrice = 10000
+	third.LastCheck = time.Now()
+
+	s.watches = []Watch{first, second, third}
+	s.history = []PricePoint{
+		{WatchID: "first", Price: 80, Currency: "EUR", Timestamp: first.LastCheck},
+		{WatchID: "second", Price: 50, Currency: "EUR", Timestamp: second.LastCheck},
+		{WatchID: "third", Price: 10000, Currency: "JPY", Timestamp: third.LastCheck},
+	}
+
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	watches := s.List()
+	if len(watches) != 1 || watches[0].ID != "third" {
+		t.Fatalf("expected third (JPY, most recent) alone to survive, got %+v", watches)
+	}
+	for _, p := range s.history {
+		if p.Currency == "EUR" {
+			t.Errorf("EUR history point (WatchID %q) leaked past the currency boundary onto the JPY survivor", p.WatchID)
+		}
+		if p.WatchID != "third" {
+			t.Errorf("history point still tagged with a collapsed-away chain ID %q", p.WatchID)
+		}
+	}
+}
+
 // Compaction is what actually recovers the memory: the retention caps otherwise
 // apply only to NEW writes, leaving an existing 39MB / 320k-point file exactly
 // as large as it was.
