@@ -194,6 +194,13 @@ func TestRunPreflight_Tier4RecoveryDoesNotDeadlock(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
+	// Tier 3a has to decline for Tier 4 to be reached at all. It reads the warm
+	// cache before it reaches kooky, and that cache is package-global, so an
+	// entry left behind by an earlier test for this host would let 3a recover
+	// first. The resolveCalls assertion below would catch that and fail loudly
+	// rather than pass falsely, but a loud flake is still a flake.
+	resetWarmCache(t)
+
 	// Substitute the seam. Restoring it is not optional: the var is
 	// package-global and a leaked stub would answer for every later test.
 	prevResolve := headlessFirstResolve
