@@ -269,6 +269,135 @@ func TestMigrateMergesLowestPriceAcrossDuplicates(t *testing.T) {
 	}
 }
 
+// lowerPositive previously let a negative b escape as the "merged lowest" when
+// a was 0 (unset): it checked a's sign first and returned b unconditionally
+// on that branch, without checking whether b was itself non-positive. Found
+// by adversarial review, 2026-07-29.
+func TestLowerPositiveTreatsBothNonPositiveAsAbsent(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b float64
+		want float64
+	}{
+		{"both unset", 0, 0, 0},
+		{"a unset, b negative", 0, -5, 0},
+		{"a negative, b unset", -5, 0, 0},
+		{"a unset, b positive", 0, 30, 30},
+		{"a positive, b unset", 30, 0, 30},
+		{"both positive, a lower", 30, 50, 30},
+		{"both positive, b lower", 50, 30, 30},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := lowerPositive(c.a, c.b); got != c.want {
+				t.Errorf("lowerPositive(%v, %v) = %v, want %v", c.a, c.b, got, c.want)
+			}
+		})
+	}
+}
+
+// A duplicate group can legitimately span two currencies (SameTarget ignores
+// Currency; a route can be re-watched in a different one). Merging LowestPrice
+// numerically across currencies would mislabel one currency's amount as
+// another's -- e.g. reporting a EUR low as if it were JPY. Found by
+// adversarial review, 2026-07-29.
+func TestMigrateDoesNotMergeLowestPriceAcrossCurrencies(t *testing.T) {
+	s := NewStore(t.TempDir())
+	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200}
+
+	eur := base
+	eur.ID = "eur-watch"
+	eur.Currency = "EUR"
+	eur.LowestPrice = 50
+	eur.LastCheck = time.Now().Add(-48 * time.Hour)
+
+	jpy := base
+	jpy.ID = "jpy-watch"
+	jpy.Currency = "JPY"
+	jpy.LowestPrice = 10000
+	jpy.LastCheck = time.Now()
+
+	s.watches = []Watch{eur, jpy}
+
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	watches := s.List()
+	if len(watches) != 1 {
+		t.Fatalf("duplicate group collapsed to %d watches, want 1", len(watches))
+	}
+	survivor := watches[0]
+	if survivor.ID != "jpy-watch" {
+		t.Fatalf("expected the more-recently-checked record to win identity, got %q", survivor.ID)
+	}
+	// The survivor is JPY; a EUR 50 has no meaning as a JPY price, and the JPY
+	// 10000 belongs to the LOSING record's own currency history, not this
+	// merge. Neither number is safe to carry forward as-is, so the merged
+	// price must reset to unset (0) rather than silently mislabel a currency.
+	if survivor.LowestPrice != 0 {
+		t.Errorf("LowestPrice = %v, want 0 (cross-currency merge must not carry forward either side's number)", survivor.LowestPrice)
+	}
+}
+
+// Duplicate chains run more than two deep in practice (one real store held 380
+// copies of a single watch). Every collapsed ID in the chain must resolve to
+// the FINAL survivor, not an intermediate record superseded by a later merge.
+func TestMigrateReassignsHistoryAcrossChainOfThreeOrMoreDuplicates(t *testing.T) {
+	s := NewStore(t.TempDir())
+	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}
+
+	first := base
+	first.ID = "first"
+	first.LowestPrice = 80
+	first.LastCheck = time.Now().Add(-72 * time.Hour)
+
+	second := base
+	second.ID = "second"
+	second.LowestPrice = 50
+	second.LastCheck = time.Now().Add(-24 * time.Hour)
+
+	third := base
+	third.ID = "third"
+	third.LowestPrice = 100
+	third.LastCheck = time.Now()
+
+	s.watches = []Watch{first, second, third}
+	s.history = []PricePoint{
+		{WatchID: "first", Price: 80, Timestamp: first.LastCheck},
+		{WatchID: "second", Price: 50, Timestamp: second.LastCheck},
+		{WatchID: "third", Price: 100, Timestamp: third.LastCheck},
+	}
+
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	watches := s.List()
+	if len(watches) != 1 {
+		t.Fatalf("duplicate chain collapsed to %d watches, want 1", len(watches))
+	}
+	survivor := watches[0]
+	if survivor.ID != "third" {
+		t.Fatalf("expected the most-recently-checked record to win identity, got %q", survivor.ID)
+	}
+	if survivor.LowestPrice != 50 {
+		t.Errorf("LowestPrice = %v, want 50 (true low across the whole chain, not just the final pairwise merge)", survivor.LowestPrice)
+	}
+
+	var prices []float64
+	for _, p := range s.history {
+		if p.WatchID != "third" {
+			t.Errorf("history point still tagged with a collapsed-away chain ID %q", p.WatchID)
+			continue
+		}
+		prices = append(prices, p.Price)
+	}
+	if len(prices) != 3 {
+		t.Fatalf("history after migrate has %d points for the survivor, want 3 (80, 50, and 100 all preserved)", len(prices))
+	}
+}
+
 // Compaction is what actually recovers the memory: the retention caps otherwise
 // apply only to NEW writes, leaving an existing 39MB / 320k-point file exactly
 // as large as it was.

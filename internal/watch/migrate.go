@@ -153,7 +153,20 @@ func (s *Store) collapseDuplicatesLocked() (int, map[string]string) {
 			continue
 		}
 		survivor := kept[idx]
-		mergedLowest := lowerPositive(survivor.LowestPrice, w.LowestPrice)
+		// SameTarget deliberately ignores Currency (a route/room can be re-watched
+		// in a different currency), so a duplicate group can legitimately span two
+		// currencies. Numerically merging LowestPrice across currencies would
+		// silently mislabel one currency's amount as another's -- e.g. a €50 low
+		// reported as "¥50". Store.Add's applyIntent already treats a currency
+		// change as invalidating the previously observed price (resets
+		// LastPrice/LowestPrice/etc. to 0); mirror that policy here instead of
+		// comparing incompatible magnitudes. Found by adversarial review, 2026-07-29.
+		var mergedLowest float64
+		if survivor.Currency != "" && w.Currency != "" && survivor.Currency != w.Currency {
+			mergedLowest = 0
+		} else {
+			mergedLowest = lowerPositive(survivor.LowestPrice, w.LowestPrice)
+		}
 		var loserID string
 		if richer(w, survivor) {
 			// Keep the incoming record but do not lose an earlier creation date:
@@ -190,9 +203,15 @@ func (s *Store) collapseDuplicatesLocked() (int, map[string]string) {
 }
 
 // lowerPositive returns the lower of two prices, treating a non-positive
-// value (unset) as absent rather than as a real zero-price low.
+// value (unset) as absent rather than as a real zero-price low. If both are
+// absent the result is 0 (still unset) -- checking a's sign alone before
+// falling through to "return b" previously let a negative b escape as the
+// merged result (lowerPositive(0, -5) returned -5). Found by adversarial
+// review, 2026-07-29.
 func lowerPositive(a, b float64) float64 {
 	switch {
+	case a <= 0 && b <= 0:
+		return 0
 	case a <= 0:
 		return b
 	case b <= 0:
