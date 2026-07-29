@@ -122,11 +122,15 @@ func TestExtractViaNab_BoundedAndDetached(t *testing.T) {
 	writeFakeNab(t, "sleep 30")
 
 	start := time.Now()
-	got := extractViaNab(context.Background(), "brave", testDomain)
+	got, err := extractViaNab(context.Background(), "brave", testDomain)
 	elapsed := time.Since(start)
 
 	if got != "" {
 		t.Fatalf("expected no cookies from a hung helper, got %q", got)
+	}
+	// A timed-out helper is a cannot-work outcome, not an ordinary miss (#529).
+	if err == nil {
+		t.Error("a wedged helper reported success; the caller cannot tell it apart from a domain with no cookies")
 	}
 	if elapsed > nabCookieTimeout+3*time.Second {
 		t.Fatalf("cookie extraction took %v; a search must not wait on a wedged helper (bound is %v)", elapsed, nabCookieTimeout)

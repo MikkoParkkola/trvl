@@ -42,8 +42,12 @@ func TestExtractViaNabRefusesWhenDeclined(t *testing.T) {
 	}
 
 	t.Setenv(DisableEnv, "1")
-	if got := extractViaNab(context.Background(), "auto", "thetrainline.com"); got != "" {
+	if got, err := extractViaNab(context.Background(), "auto", "thetrainline.com"); got != "" {
 		t.Errorf("extractViaNab returned %q despite an explicit decline", got)
+	} else if err != nil {
+		// A refusal is not a failure. Reporting it would announce that a read
+		// was attempted, which is what the opt-out exists to prevent (#529).
+		t.Errorf("a decline was reported as a cookie-reader failure: %v", err)
 	}
 	if ran() {
 		t.Fatal("nab was started despite an explicit decline")
@@ -53,7 +57,7 @@ func TestExtractViaNabRefusesWhenDeclined(t *testing.T) {
 	// check above would pass on a function that never runs nab at all.
 	t.Setenv(DisableEnv, "")
 	resetCookieCache()
-	_ = extractViaNab(context.Background(), "auto", "thetrainline.com")
+	_, _ = extractViaNab(context.Background(), "auto", "thetrainline.com")
 	if !ran() {
 		t.Fatal("nab was not started without a decline; the gate refuses more than it should")
 	}

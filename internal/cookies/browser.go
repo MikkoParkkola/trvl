@@ -103,11 +103,20 @@ func BrowserCookiesContext(ctx context.Context, domain string) string {
 		bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), nabCookieBudget)
 		defer cancel()
 
+		var readErr error
 		for _, browser := range []string{"brave", "chrome"} {
 			if bctx.Err() != nil {
 				break
 			}
-			if c := extractViaNab(bctx, browser, domain); c != "" {
+			c, err := extractViaNab(bctx, browser, domain)
+			if err != nil {
+				// Keep going: Brave failing says nothing about Chrome. The
+				// causes are joined so the report below can tell a machine
+				// without the helper from one that has it and cannot read.
+				readErr = errors.Join(readErr, err)
+				continue
+			}
+			if c != "" {
 				slog.Debug("browser cookies found", "browser", browser, "domain", domain)
 				return c, nil
 			}
@@ -117,6 +126,7 @@ func BrowserCookiesContext(ctx context.Context, domain string) string {
 		// across every property in a result set, and without this each one
 		// re-pays the full budget for the same answer.
 		noteCookieFailure(domain)
+		reportCookieReadFailure(domain, readErr)
 		return "", nil
 	})
 
@@ -170,9 +180,115 @@ func resetCookieCache() {
 	for _, d := range domains {
 		cookieGroup.Forget(d)
 	}
+	cookieWarnMu.Lock()
+	cookieWarnSeen = map[string]bool{}
+	cookieWarnMu.Unlock()
 }
 
 var errCookieSuppressed = errors.New("cookie extraction suppressed after a recent failure")
+
+// The two ways the reader can fail to work at all, as opposed to running fine
+// and finding nothing. #529: the old reader collapsed both of these and the
+// ordinary miss into a single empty string, so a provider fallback that could
+// never return a cookie looked exactly like a user who happens not to be logged
+// in, and a search degraded to blocked-or-empty results with nothing said.
+var (
+	// errNabUnavailable means the helper is not installed. Every cookie
+	// fallback on this machine is a no-op until that changes, so it is worth
+	// telling the user once.
+	errNabUnavailable = errors.New("the nab helper is not installed, so browser cookies cannot be read")
+	// errNabExtractFailed means the helper ran and could not produce cookies:
+	// a Keychain denial, a locked profile, a timeout. Distinct from the above
+	// because the user's fix is different, and distinct from an ordinary miss
+	// because there is a fix at all.
+	errNabExtractFailed = errors.New("the browser cookie store could not be read")
+)
+
+var (
+	cookieWarnMu   sync.Mutex
+	cookieWarnSeen = map[string]bool{}
+)
+
+// warnOnce reports whether cause has yet to be reported in this process.
+//
+// Once per process and not once per domain, which is the "do not spam" half of
+// #529. Both causes are machine-level facts: nab is installed or it is not, the
+// Keychain is unlocked or it is not. A WAF challenge fires for every property in
+// a result set, so a per-domain signal would put one line per property on the
+// user's terminal to say the same thing. The 30s suppression above is the wrong
+// gate for this — it is scoped per domain and exists to bound cost, not noise.
+func warnOnce(cause string) bool {
+	cookieWarnMu.Lock()
+	defer cookieWarnMu.Unlock()
+	if cookieWarnSeen[cause] {
+		return false
+	}
+	cookieWarnSeen[cause] = true
+	return true
+}
+
+// announceCookieRead tells the user that trvl is about to read their browser
+// cookie store, and how to refuse.
+//
+// The opt-out settled in #521 is only a control for someone who already knows it
+// exists. Everything else about this read is silent: it starts from an ordinary
+// search, it reaches a local credential store, and on macOS it can raise a
+// Keychain prompt whose own text says nothing about trvl. A user who never asked
+// for any of that had no way to see it coming, which was the actual complaint in
+// #507 and the half of #521 the env var does not answer.
+//
+// It says three things and each is established at this point in the code: the
+// helper exists (LookupPath returned above), the domain is the one about to be
+// passed to it, and the variable declines it. It does NOT say a browser will be
+// read successfully, that cookies exist, or that any search will benefit --
+// nothing here establishes those, and promising them is the defect #528 exists
+// to stop, in a second place.
+//
+// Once per process, via the same gate as the failure warnings and for the same
+// reason: a WAF challenge fires for every property in a result set, and a notice
+// repeated per domain is a notice the user learns to skip.
+func announceCookieRead(domain string) {
+	if !warnOnce("browser-cookie-read") {
+		return
+	}
+	slog.Warn("about to read your browser's cookie store so this search can use your logged-in session; on macOS this can ask for Keychain access",
+		"domain", domain,
+		"decline_with", consent.CookiesEnv+"=1")
+}
+
+// reportCookieReadFailure surfaces the cannot-work outcomes and stays quiet
+// about everything else.
+//
+// A nil err means the reader ran and this domain simply has no cookies, which is
+// the ordinary case and not a failure. Reporting it would drown the two cases
+// that are.
+//
+// A decline reaches here with a nil err by construction — extractViaNab returns
+// no error when the user has opted out — and that is deliberate. Warning on the
+// decline path would announce that a read was attempted and that cookies were or
+// were not there, which is the disclosure the opt-out exists to prevent (#507,
+// #521, #530). Refusals stay at Debug, as they do in the provider-side reader.
+func reportCookieReadFailure(domain string, err error) {
+	if err == nil {
+		slog.Debug("no browser cookies for domain", "domain", domain)
+		return
+	}
+	switch {
+	case errors.Is(err, errNabUnavailable):
+		// Checked first: it is the more actionable of the two and it subsumes
+		// the other, since a helper that is absent cannot also have failed for
+		// an interesting reason.
+		if warnOnce("nab-unavailable") {
+			slog.Warn("browser cookie fallback unavailable: nab is not installed, so searches that need your logged-in session will fall back to blocked or empty results",
+				"domain", domain, "err", err)
+		}
+	default:
+		if warnOnce("nab-failed") {
+			slog.Warn("browser cookie fallback failed: nab could not read your browser cookie store, so searches that need your logged-in session may return blocked or empty results",
+				"domain", domain, "err", err)
+		}
+	}
+}
 
 // extractViaNab uses the nab CLI to export cookies for the given browser and domain.
 // nab handles keychain access and AES decryption transparently.
@@ -186,30 +302,46 @@ var errCookieSuppressed = errors.New("cookie extraction suppressed after a recen
 // shape that produced #507: a credential prompt appearing mid-search and a
 // helper that never returns.
 //
+// It returns three outcomes and not one, which is #529. An empty string with a
+// nil error means the read worked and this domain has no cookies; an error means
+// the read could not happen, and which error says whether the fix is installing
+// the helper or unlocking the store. Collapsing those into "" left every caller
+// with a fallback that could be permanently dead and look idle.
+//
 // The decline is re-checked here even though the only caller already checked it.
 // This function is the seam where the helper process is actually started, and
 // three rounds of review on #521 each found the same failure shape: a gate placed
 // on the caller rather than the seam, and then a caller that did not have it. The
 // duplicate check costs one env read on a path that is about to fork a process.
-func extractViaNab(ctx context.Context, browser, domain string) string {
+// It returns a nil error: a refusal is not a failure to report.
+func extractViaNab(ctx context.Context, browser, domain string) (string, error) {
 	if Disabled() {
-		return ""
+		return "", nil
 	}
 
 	nabPath, err := trvlnab.LookupPath()
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("%w: %w", errNabUnavailable, err)
 	}
+
+	// Said before the helper is started, not after, because a disclosure that
+	// arrives once the Keychain prompt is already on screen is not a disclosure.
+	announceCookieRead(domain)
 
 	cmd, _, cancel := safeexec.Command(ctx, nabCookieTimeout,
 		nabPath, "cookies", "export", domain, "--cookies", browser)
 	defer cancel()
 
 	out, err := safeexec.Output(cmd)
-	if err != nil || len(out) == 0 {
-		return ""
+	if err != nil {
+		return "", fmt.Errorf("%w (%s): %w", errNabExtractFailed, browser, err)
 	}
-	return parseNetscapeCookies(string(out))
+	// Ran clean and said nothing: the user has no cookies for this domain. An
+	// ordinary miss, reported as one.
+	if len(out) == 0 {
+		return "", nil
+	}
+	return parseNetscapeCookies(string(out)), nil
 }
 
 // parseNetscapeCookies converts Netscape cookie file format into a Cookie header value.
