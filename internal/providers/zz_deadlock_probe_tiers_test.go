@@ -112,7 +112,7 @@ func TestRunPreflight_Tier3aRecoveryDoesNotDeadlock(t *testing.T) {
 	pc := &providerClient{
 		config: &ProviderConfig{
 			ID: "preflight-deadlock-3a", Name: "PD3A", Category: "hotels",
-			Endpoint: preflightSrv.URL,
+			Endpoint: "https://" + exampleFixtureHost,
 			Cookies:  CookieConfig{Browser: hint},
 			Auth: &AuthConfig{
 				Type:         "preflight",

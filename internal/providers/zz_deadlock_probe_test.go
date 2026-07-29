@@ -35,22 +35,23 @@ func TestTier3aBrowserCookieRetry_NoDeadlockUnderCallerHeldWriteLock(t *testing.
 	}))
 	defer srv.Close()
 
-	targetURL := srv.URL + "/page"
+	targetURL := "https://" + exampleFixtureHost + "/page"
 	resetWarmCache(t)
 	entry := &warmCacheEntry{done: make(chan struct{})}
-	u, _ := url.Parse(srv.URL)
-	entry.cookies = []*http.Cookie{{Name: "sid", Value: "test", Domain: u.Hostname()}}
+	entry.cookies = []*http.Cookie{{Name: "sid", Value: "test", Domain: exampleFixtureHost}}
 	close(entry.done)
 	warmCache.mu.Lock()
 	warmCache.entries[warmCacheKey(targetURL, "")] = entry
 	warmCache.mu.Unlock()
 
-	cl := srv.Client()
+	cl := &http.Client{Transport: &hostSwitchTransport{fallbackTarget: srv.URL}}
 	cl.Jar = newCookieVault()
 	pc := &providerClient{
 		config: &ProviderConfig{
 			ID: "tier3a-deadlock", Name: "T3A", Category: "hotels",
-			Endpoint: srv.URL,
+			// https on the provider's own site: the shape a consented config
+			// has, and the only shape browser cookies are released for.
+			Endpoint: "https://" + exampleFixtureHost,
 			Cookies:  CookieConfig{Source: "browser"},
 		},
 		client:     cl,

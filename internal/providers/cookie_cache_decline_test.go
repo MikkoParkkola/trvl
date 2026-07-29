@@ -24,6 +24,11 @@ import (
 // Without it, a typo in the temporary HOME would make the decline case pass
 // against a cache that was never there -- which is exactly how the first draft
 // of the hotel test in this branch fooled itself.
+// The fixture is written through a vault seeded from the browser, because that
+// is what makes the entry browser-derived on disk (#534). The refusal is now
+// targeted at those entries rather than at the whole file, so a fixture saved
+// from a plain jar would be site-derived, would legitimately survive the
+// decline, and would prove nothing about this bypass.
 func TestCachedCookiesAreRefusedAfterADecline(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
@@ -33,11 +38,13 @@ func TestCachedCookiesAreRefusedAfterADecline(t *testing.T) {
 		t.Fatalf("parsing the test URL: %v", err)
 	}
 
-	seed, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatalf("building the seed jar: %v", err)
+	seed := newCookieVault()
+	if seed == nil {
+		t.Fatal("building the seed vault")
 	}
-	seed.SetCookies(u, []*http.Cookie{{Name: "session", Value: "harvested-from-the-browser"}})
+	if !seed.seedFromBrowser(u, []*http.Cookie{{Name: "session", Value: "harvested-from-the-browser"}}) {
+		t.Fatal("the seed vault refused the browser cookies, so the fixture is not browser-derived")
+	}
 	saveCachedCookies(&http.Client{Jar: seed}, target)
 
 	// Control: the cache is real and loadable when nothing has been declined.

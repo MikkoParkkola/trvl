@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -78,10 +79,11 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 
 	// Tier 0: try loading persisted cookies from a previous successful session.
 	// This makes browser escape hatch a one-time setup rather than per-search.
-	// The file carries no provenance, so anything it yields is treated as
-	// browser-derived — the conservative reading, and the one #534 exists to
-	// replace with a recorded one. loadCachedCookies records that itself, on the
-	// vault, in the same critical section it commits the cookies in.
+	// The file records which save site wrote each entry, so a user who has
+	// declined browser cookie reads gets the site-issued entries and not the
+	// harvested ones. Entries written before that field existed read as
+	// browser-derived. loadCachedCookies records what it seeded on the vault,
+	// in the same critical section it commits the cookies in.
 	loadCachedCookies(pc.client, resolvedURL)
 
 	resp, body, err := doPreflightRequest(ctx, pc.client, &resolvedAuth)
@@ -599,6 +601,94 @@ func isAkamaiChallenge(statusCode int, body []byte) bool {
 		bytes.Contains(body, []byte("awswaf"))
 }
 
+// providerCookieSite returns the registrable site of the endpoint the user
+// approved. That endpoint's domain is the exact string the consent elicitation
+// displays (mcp/tools_providers.go), so it is the only host in a provider
+// config the user has actually seen and agreed to. Empty when the config is
+// missing or its endpoint has no host, which fails the check closed.
+func providerCookieSite(cfg *ProviderConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	u, err := url.Parse(cfg.Endpoint)
+	if err != nil {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return ""
+	}
+	return registrableSuffix(host)
+}
+
+// cookieTargetPermitted reports whether targetURL may carry the user's browser
+// cookies for this provider.
+//
+// The defect being closed is a confused deputy: PreflightURL rides in the same
+// configure_provider call as Endpoint but is never shown in the consent
+// elicitation, so a caller can name a host the user never approved and get the
+// user's live session for it read and replayed. The property that fixes that is
+// therefore SAME-SITE-AS-THE-CONSENTED-ENDPOINT, and nothing more.
+//
+// It is deliberately NOT cookies.IsHTTPSOnSite alone. That predicate carries a
+// second, unrelated requirement — https plus an ordinary public DNS name — which
+// is right for Booking.com, whose address trvl hardcodes, and wrong here, where
+// the user types the endpoint themselves. Requiring it would refuse every
+// self-hosted or on-LAN provider config while closing no part of the confused
+// deputy, since those endpoints are same-site with their own preflight.
+//
+// So the rule splits on what the user approved:
+//
+//   - A public DNS endpoint keeps the full cookies.IsHTTPSOnSite check. Nothing
+//     is relaxed for the hosts that matter.
+//   - An IP-literal or localhost endpoint — only reachable because the user
+//     entered it — requires an exact host match and forbids a scheme downgrade.
+//     Same-site still holds; a foreign PreflightURL is still refused.
+func cookieTargetPermitted(cfg *ProviderConfig, targetURL string) bool {
+	site := providerCookieSite(cfg)
+	if site == "" {
+		return false
+	}
+	endpoint, err := url.Parse(cfg.Endpoint)
+	if err != nil {
+		return false
+	}
+	endpointHost := strings.ToLower(endpoint.Hostname())
+	if !isLiteralOrLocalHost(endpointHost) {
+		return cookies.IsHTTPSOnSite(targetURL, site)
+	}
+
+	target, err := url.Parse(targetURL)
+	if err != nil {
+		return false
+	}
+	// No downgrade: an https endpoint may not have its cookies replayed over
+	// plaintext, even to itself.
+	if endpoint.Scheme == "https" && target.Scheme != "https" {
+		return false
+	}
+	if target.Scheme != "http" && target.Scheme != "https" {
+		return false
+	}
+	// Exact match, not a suffix. "127.0.0.1" has no registrable site to be a
+	// subdomain of, and a suffix rule over a bare literal is how host smuggling
+	// gets back in.
+	return strings.ToLower(target.Hostname()) == endpointHost
+}
+
+// isLiteralOrLocalHost reports whether host is an IP literal or a loopback name
+// rather than an ordinary public DNS name. Such a host reaches a provider config
+// only by the user typing it.
+func isLiteralOrLocalHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	return host == "localhost" || strings.HasSuffix(host, ".localhost")
+}
+
 // applyBrowserCookies reads cookies from the user's browsers for the given
 // URL and seeds them into the client's cookie jar. When browserHint is
 // non-empty, reads only from that specific browser to avoid cross-browser
@@ -611,6 +701,19 @@ func isAkamaiChallenge(statusCode int, body []byte) bool {
 // it, so the provenance is recorded here where it cannot be forgotten.
 func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool {
 	if pc == nil || pc.client == nil {
+		return false
+	}
+	// The URL this runs for is caller-supplied and is NOT always the endpoint
+	// the user consented to: cfg.Auth.PreflightURL rides in the same
+	// configure_provider call, is never shown in the consent elicitation, and
+	// reaches this function at four of the five call sites. Reading cookies for
+	// it means reading whatever live session the user holds for a host the
+	// caller named, then sending it there and returning a body snippet — a
+	// confused deputy, not a cross-origin leak, which is why a target-derived
+	// site would be a tautology and the site is pinned to the endpoint instead.
+	if !cookieTargetPermitted(pc.config, targetURL) {
+		slog.Debug("refusing browser cookies: target is not https on the consented provider site",
+			"url", targetURL, "site", providerCookieSite(pc.config))
 		return false
 	}
 	// Fail closed: browser cookies only enter a jar that can revoke them. A

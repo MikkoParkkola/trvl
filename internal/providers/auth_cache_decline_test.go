@@ -24,6 +24,14 @@ import (
 // while nothing is declined, so the assertion afterwards is about the decline
 // rather than about a cache that was never warm.
 func TestAuthCacheDiscardsBrowserSeededStateAfterADecline(t *testing.T) {
+	// Hermetic HOME: this test is about in-memory state, but the preflight it
+	// provokes reads the on-disk cookie cache, and other tests in this package
+	// write one for this host into the real home directory. That used to be
+	// invisible because a decline refused the whole file; now that the decline
+	// only withholds the browser-derived entries, a stray site-derived entry
+	// would seed the jar and fail the assertion below for the wrong reason.
+	t.Setenv("HOME", t.TempDir())
+
 	const preflight = "https://example.test/preflight"
 
 	newPC := func() *providerClient {
@@ -110,6 +118,7 @@ func TestAuthCacheDiscardsBrowserSeededStateAfterADecline(t *testing.T) {
 // Discarding it would punish a user for a control that says nothing about it,
 // and would turn the opt-out into a general cache-buster.
 func TestAuthCacheKeepsNonBrowserStateAfterADecline(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // same reason as the test above
 	const preflight = "https://example.test/preflight"
 
 	// A vault, but one no browser ever touched: cookies arrived the ordinary

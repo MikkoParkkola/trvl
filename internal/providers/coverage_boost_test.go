@@ -213,22 +213,24 @@ func TestTryBrowserCookieRetry_Success(t *testing.T) {
 
 	cfg := &ProviderConfig{
 		ID: "br-ok", Name: "BROk", Category: "hotels",
-		Endpoint: srv.URL,
+		// An https provider host routed to the local server, the shape a real
+		// config has: browser cookies are refused for a target that is not
+		// https on the endpoint's own site.
+		Endpoint: "https://" + exampleFixtureHost,
 		Cookies:  CookieConfig{Source: "browser"},
 	}
 	// A vault, not a bare jar: browser cookies only enter a jar that can hand
 	// them back, so a plain-jar client refuses the seed by design.
-	targetURL := srv.URL + "/page"
+	targetURL := "https://" + exampleFixtureHost + "/page"
 	resetWarmCache(t)
 	entry := &warmCacheEntry{done: make(chan struct{})}
-	u, _ := url.Parse(srv.URL)
-	entry.cookies = []*http.Cookie{{Name: "sid", Value: "test", Domain: u.Hostname()}}
+	entry.cookies = []*http.Cookie{{Name: "sid", Value: "test", Domain: exampleFixtureHost}}
 	close(entry.done)
 	warmCache.mu.Lock()
 	warmCache.entries[warmCacheKey(targetURL, "")] = entry
 	warmCache.mu.Unlock()
 
-	cl := srv.Client()
+	cl := &http.Client{Transport: &hostSwitchTransport{fallbackTarget: srv.URL}}
 	cl.Jar = newCookieVault()
 	pc := &providerClient{
 		config:     cfg,
@@ -318,7 +320,11 @@ func TestApplyBrowserCookies_WithSyntheticCookies(t *testing.T) {
 	warmCache.mu.Unlock()
 
 	client := &http.Client{Jar: newCookieVault()}
-	if !applyBrowserCookies(&providerClient{config: &ProviderConfig{ID: "t"}, client: client}, targetURL, hint) {
+	pc := &providerClient{
+		config: &ProviderConfig{ID: "t", Endpoint: "https://www.testprovider-synth.com/api"},
+		client: client,
+	}
+	if !applyBrowserCookies(pc, targetURL, hint) {
 		t.Error("expected true when warm cache has cookies")
 	}
 }

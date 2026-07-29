@@ -69,9 +69,9 @@ func (v *cookieVault) Cookies(u *url.URL) []*http.Cookie {
 }
 
 // seedFromBrowser commits cookies that came from the user's browser — read live
-// via kooky/CDP, recovered from a browser window, or restored from the on-disk
-// cache, which carries no provenance and so is treated as browser-derived
-// (#534) — and records that provenance in the same critical section.
+// via kooky/CDP, recovered from a browser window, or restored from the entries
+// the on-disk cache records as browser-derived — and records that provenance in
+// the same critical section.
 //
 // The decline is re-checked here, under the lock, rather than only at the call
 // site: the browser read that produced these cookies takes seconds, and the
