@@ -148,12 +148,24 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 		tosLine = fmt.Sprintf("\n\n**Terms of Service:** %s", tosURL)
 	}
 
+	// A provider config can name a second host in auth_preflight_url, which
+	// trvl contacts before the endpoint -- and, on the browser escape hatch
+	// below, opens in the user's own browser with their cookies. A consent
+	// prompt that names only the endpoint asks the user to approve one address
+	// while a second travels with it unseen, so name it. Named even when it is
+	// the same host as the endpoint: the fact being consented to is "trvl also
+	// contacts this before searching", not "this is somewhere else".
+	preflightLine := ""
+	if config.Auth != nil && config.Auth.PreflightURL != "" {
+		preflightLine = fmt.Sprintf("\n- Contact `%s` first to obtain a session or token", extractDomain(config.Auth.PreflightURL))
+	}
+
 	consentMsg := fmt.Sprintf(
 		"**Configure external provider: %s**\n\n"+
 			"trvl wants to connect to `%s` for %s search.\n\n"+
 			"This service may restrict automated access in its Terms of Service.%s\n\n"+
 			"**What trvl will do:**\n"+
-			"- Send search queries to %s on your behalf\n"+
+			"- Send search queries to %s on your behalf%s\n"+
 			"- Rate-limit requests to %.1f/sec\n"+
 			"- Cache responses locally under ~/.trvl/\n\n"+
 			"**What trvl will NOT do:**\n"+
@@ -161,7 +173,7 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 			"- Store credentials beyond this session\n"+
 			"- Make purchases or bookings automatically\n\n"+
 			"Do you want to enable this provider?",
-		config.Name, domain, config.Category, tosLine, domain, config.RateLimit.RequestsPerSecond,
+		config.Name, domain, config.Category, tosLine, domain, preflightLine, config.RateLimit.RequestsPerSecond,
 	)
 
 	consentSchema := map[string]interface{}{

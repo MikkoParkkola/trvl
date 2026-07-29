@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -16,6 +17,56 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/waf"
 )
+
+// BodySnippetEnv opts a process in to putting part of a provider's response
+// body into the error strings this package hands back to its caller.
+//
+// It is off by default because a provider config names its own endpoint, and
+// the caller who writes that config is not always a human: configure_provider
+// arguments arrive as MCP tool arguments and are routinely model-generated. A
+// body snippet in a returned error turns "fetch a URL" into "fetch a URL and
+// read the answer", which is the half of an SSRF that carries data back.
+//
+// What survives the default is the shape of the response -- how many bytes,
+// what content type -- which is what someone debugging a response-mapping
+// failure looks at first, and which cannot carry the response itself.
+//
+// An environment variable rather than a provider config field, for the same
+// reason AllowLocalEnv is one (see destination.go): a config field travels
+// with the config, so whoever supplies the provider would also be supplying
+// the permission.
+const BodySnippetEnv = "TRVL_PROVIDER_BODY_SNIPPETS"
+
+// bodySnippetsAllowed reads the opt-in per call rather than caching it, so a
+// long-running process picks it up the way it picks up the other consent
+// variables, and so a test can set it with t.Setenv.
+func bodySnippetsAllowed() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(BodySnippetEnv))) {
+	case "", "0", "false":
+		return false
+	default:
+		return true
+	}
+}
+
+// describeBody renders a response body for an error string that will reach the
+// caller: size and declared content type by default, leading bytes as well
+// when BodySnippetEnv is set. resp may be nil.
+func describeBody(body []byte, resp *http.Response, limit int) string {
+	if bodySnippetsAllowed() {
+		if len(body) > limit {
+			return string(body[:limit]) + "..."
+		}
+		return string(body)
+	}
+	ct := "unknown"
+	if resp != nil {
+		if v := resp.Header.Get("Content-Type"); v != "" {
+			ct = v
+		}
+	}
+	return fmt.Sprintf("<%d bytes, content-type %s; set %s=1 to include a body snippet>", len(body), ct, BodySnippetEnv)
+}
 
 func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, location string, lat, lon float64, checkin, checkout, currency string, guests int, filters *HotelFilterParams) ([]models.HotelResult, error) {
 	// Pick up on-disk edits without an MCP restart. If the file mtime has
@@ -400,11 +451,11 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 		}
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, fmt.Errorf("rate limit: %d retries exhausted (http 429): %s", maxRetries429, string(body[:min(len(body), 200)]))
+		return nil, fmt.Errorf("rate limit: %d retries exhausted (http 429): %s", maxRetries429, describeBody(body, resp, 200))
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, string(body[:min(len(body), 200)]))
+		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, describeBody(body, resp, 200))
 	}
 
 	// If the provider embeds its API response inside an HTML body (e.g.
@@ -575,15 +626,13 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	// returns 0 results and other providers (Google, Trivago, Airbnb,
 	// Hostelworld) provide coverage.
 	if !ok {
-		// Include a body snippet + detected top-level keys so the LLM (and
-		// human) can see what actually came back. This is the difference
-		// between "mystery failure" and "ah, persistedQueryNotFound".
-		snippet := string(body)
-		if len(snippet) > 400 {
-			snippet = snippet[:400] + "..."
-		}
+		// Describe what actually came back, so the failure is "the body was
+		// 40kB of text/html" rather than a mystery. The body itself, and the
+		// JSON key names taken from it, are response content from a host the
+		// provider config chose, so both sit behind BodySnippetEnv; what is
+		// left is shape, which is the part that names the usual causes.
 		var topKeys string
-		if topObj, ok := raw.(map[string]any); ok {
+		if topObj, ok := raw.(map[string]any); ok && bodySnippetsAllowed() {
 			keys := make([]string, 0, len(topObj))
 			for k := range topObj {
 				keys = append(keys, k)
@@ -591,7 +640,7 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 			topKeys = fmt.Sprintf(" (top-level keys: %v)", keys)
 		}
 		return nil, fmt.Errorf("results_path %q did not resolve to an array%s; body: %s",
-			cfg.ResponseMapping.ResultsPath, topKeys, snippet)
+			cfg.ResponseMapping.ResultsPath, topKeys, describeBody(body, resp, 400))
 	}
 
 	// Map each element to HotelResult and tag with provider source.
