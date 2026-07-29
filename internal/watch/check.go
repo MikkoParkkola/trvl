@@ -255,27 +255,54 @@ func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Sto
 			w.LowestPrice = price
 		}
 
-		// Proactive price-drop alert: capture/track a baseline and fire exactly
-		// one alert when the fare falls past the configured threshold. State is
-		// stored on the watch so it survives daemon restarts and reloads.
-		alertState, alert, alertFired := pricealert.Evaluate(
-			pricealert.State{Baseline: w.BaselinePrice, LastAlertedAt: w.LastAlertedPrice},
-			price,
-			pricealert.Threshold{DropPercent: w.AlertDropPct, DropAbsolute: w.AlertDropAbs},
-		)
-		w.BaselinePrice = alertState.Baseline
-		w.LastAlertedPrice = alertState.LastAlertedAt
+		// Persist updates.
+		//
+		// The check holds a detached copy of the watch taken before the provider
+		// call, so writing that whole copy back would revert anything a concurrent
+		// tool call changed in the meantime — a threshold edit, a webhook URL, an
+		// alert setting (#512, TRVL.STORE.TXN.2). Mutate re-reads the committed
+		// record inside the store transaction and applies only the fields the
+		// check owns. Everything else survives untouched.
+		var alert pricealert.Alert
+		var alertFired bool
+		saved, err := store.Mutate(w.ID, func(cur *Watch) {
+			cur.LastCheck = w.LastCheck
+			cur.LastPrice = w.LastPrice
+			cur.Currency = w.Currency
+			if cheapestDate != "" {
+				cur.CheapestDate = w.CheapestDate
+			}
+			if cur.LowestPrice == 0 || price < cur.LowestPrice {
+				cur.LowestPrice = price
+			}
+
+			// Proactive price-drop alert: capture/track a baseline and fire exactly
+			// one alert when the fare falls past the configured threshold. State is
+			// stored on the watch so it survives daemon restarts and reloads.
+			//
+			// Evaluated here, against the committed record, rather than against the
+			// pre-provider copy: Baseline and LastAlertedPrice are running state, so
+			// deriving them from a stale copy re-arms the dedup window a concurrent
+			// round just set and alerts twice for one drop (#512).
+			state, a, fired := pricealert.Evaluate(
+				pricealert.State{Baseline: cur.BaselinePrice, LastAlertedAt: cur.LastAlertedPrice},
+				price,
+				pricealert.Threshold{DropPercent: cur.AlertDropPct, DropAbsolute: cur.AlertDropAbs},
+			)
+			cur.BaselinePrice = state.Baseline
+			cur.LastAlertedPrice = state.LastAlertedAt
+			alert, alertFired = a, fired
+		})
+		if err != nil {
+			result.Error = fmt.Errorf("update watch: %w", err)
+			return result
+		}
 		if alertFired {
 			result.PriceDropAlert = true
 			result.AlertBaseline = alert.Baseline
 			result.AlertDropPercent = alert.DropPercent
 		}
-
-		// Persist updates.
-		if err := store.UpdateWatch(w); err != nil {
-			result.Error = fmt.Errorf("update watch: %w", err)
-			return result
-		}
+		w = saved
 
 		if err := store.RecordPrice(w.ID, price, currency); err != nil {
 			result.Error = fmt.Errorf("record price: %w", err)
@@ -368,11 +395,30 @@ func checkRoomWithWebhookContext(checkCtx, webhookCtx context.Context, store *St
 		w.LastCheck = time.Now()
 	}
 
-	// Persist updates.
-	if err := store.UpdateWatch(w); err != nil {
+	// Persist updates. Same reasoning as checkOneWithWebhookContext: apply only
+	// the fields this room check owns to the freshly reloaded record, so a
+	// concurrent edit to the watch's own settings is not reverted (#512).
+	newPrice, newCurrency, matched, lastCheck := w.LastPrice, w.Currency, w.MatchedRoom, w.LastCheck
+	haveMatch := len(matches) > 0
+	saved, err := store.Mutate(w.ID, func(cur *Watch) {
+		cur.LastCheck = lastCheck
+		if !haveMatch {
+			return
+		}
+		cur.MatchedRoom = matched
+		if result.NewPrice > 0 {
+			cur.LastPrice = newPrice
+			cur.Currency = newCurrency
+			if cur.LowestPrice == 0 || newPrice < cur.LowestPrice {
+				cur.LowestPrice = newPrice
+			}
+		}
+	})
+	if err != nil {
 		result.Error = fmt.Errorf("update watch: %w", err)
 		return result
 	}
+	w = saved
 	if result.NewPrice > 0 {
 		if err := store.RecordPrice(w.ID, result.NewPrice, result.Currency); err != nil {
 			result.Error = fmt.Errorf("record price: %w", err)

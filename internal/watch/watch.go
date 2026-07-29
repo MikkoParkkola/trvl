@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -23,11 +24,6 @@ const (
 	// maxObservationsPerRoute caps retained points per route key, bounding the
 	// price-history file to cap x number-of-routes.
 	maxObservationsPerRoute = 1000
-	// maxRouteObservations caps the TOTAL number of ad-hoc route-keyed points
-	// across all routes, evicting the oldest first. Watch-keyed points (which
-	// back the existing sparkline/fareintel features) are NEVER evicted here, so
-	// this bounds the new ad-hoc corpus without touching the watch corpus.
-	maxRouteObservations = 20000
 	// observationThrottle suppresses near-identical repeat observations for the
 	// same route+currency within this window.
 	observationThrottle = 15 * time.Minute
@@ -35,6 +31,18 @@ const (
 	// observation is treated as a duplicate.
 	observationEpsilonPct = 0.005
 )
+
+// maxRouteObservations caps the TOTAL number of ad-hoc route-keyed points across
+// all routes. Eviction is fair rather than globally-oldest-first (see
+// pruneGlobalRouteLocked), so a busy route cannot erase a quiet one. Watch-keyed
+// points (which back the existing sparkline/fareintel features) are NEVER
+// evicted here, so this bounds the new ad-hoc corpus without touching the watch
+// corpus.
+//
+// It is a var, not a const, so eviction tests can drive the real public write
+// path to saturation instead of reaching past it to poke the pruner directly.
+// Nothing in production ever assigns to it.
+var maxRouteObservations = 20000
 
 // Watch represents a price tracking rule for a flight or hotel route.
 //
@@ -334,7 +342,12 @@ func (s *Store) ensureDir() error {
 func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.loadLocked()
+}
 
+// loadLocked is Load for callers already holding s.mu. Go mutexes are not
+// reentrant, so every in-transaction reload must come through here.
+func (s *Store) loadLocked() error {
 	s.watches = nil
 	s.history = nil
 
@@ -347,10 +360,26 @@ func (s *Store) Load() error {
 	return nil
 }
 
-// Save writes watches and history to disk atomically.
+// Save writes the store's current in-memory snapshot to disk atomically.
+//
+// Save deliberately does NOT reload first: it means "publish what I am holding",
+// which is last-writer-wins by construction. It takes the cross-process lock so
+// it cannot interleave with another writer's transaction, but a caller that
+// loaded long ago and then calls Save can still discard another process's
+// committed work. Mutating callers should use Add / Remove / Mutate /
+// RecordPrice / RecordObservation, all of which reload inside the lock.
 func (s *Store) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if err := s.ensureDir(); err != nil {
+		return fmt.Errorf("create storage dir: %w", err)
+	}
+	lock, err := acquireFileLock(s.lockPath())
+	if err != nil {
+		return err
+	}
+	defer releaseFileLock(lock)
 	return s.saveLocked()
 }
 
@@ -368,19 +397,22 @@ func (s *Store) saveLocked() error {
 }
 
 // Add inserts a new watch and persists to disk. Returns the assigned ID.
+//
+// The insert is a single transaction against committed on-disk state, so a
+// concurrent writer adding a different watch cannot be overwritten
+// (TRVL.STORE.TXN.1).
 func (s *Store) Add(w Watch) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if err := w.Validate(); err != nil {
 		return "", err
 	}
 
 	w.ID = shortID()
 	w.CreatedAt = time.Now()
-	s.watches = append(s.watches, w)
 
-	if err := s.saveLocked(); err != nil {
+	if err := s.withTxn(func() error {
+		s.watches = append(s.watches, w)
+		return nil
+	}); err != nil {
 		return "", err
 	}
 	return w.ID, nil
@@ -411,47 +443,70 @@ func (s *Store) Get(id string) (Watch, bool) {
 
 // Remove deletes a watch by ID. Returns true if found and removed.
 func (s *Store) Remove(id string) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i, w := range s.watches {
-		if w.ID == id {
-			s.watches = append(s.watches[:i], s.watches[i+1:]...)
-			if err := s.saveLocked(); err != nil {
-				return false, err
+	found := false
+	err := s.withTxn(func() error {
+		for i, w := range s.watches {
+			if w.ID == id {
+				s.watches = append(s.watches[:i], s.watches[i+1:]...)
+				found = true
+				return nil
 			}
-			return true, nil
 		}
+		// Nothing matched, so there is nothing to publish: skip the write rather
+		// than rewriting both files with identical content.
+		return errTxnNoop
+	})
+	if err != nil {
+		return false, err
 	}
-	return false, nil
+	return found, nil
 }
 
 // UpdateWatch replaces a watch in-place by ID and persists.
+//
+// Whole-record replacement is inherently last-writer-wins for the fields of
+// that one record: a caller that read the watch, went away, and came back writes
+// its stale copy of every field. The transaction stops it from clobbering OTHER
+// watches, not other fields of this one. In-package callers persist through
+// Mutate instead, which edits the freshly reloaded record field by field.
+// UpdateWatch stays as the exported whole-record write for callers outside this
+// package; as of this change no such caller exists in-tree (mcp/ and cmd/trvl/
+// use Add, Remove, Get, List and History only), so nothing in the repo is
+// exposed to the last-writer-wins behaviour today. Any future out-of-package
+// read-modify-write should go through a field-level path instead.
 func (s *Store) UpdateWatch(updated Watch) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i, w := range s.watches {
-		if w.ID == updated.ID {
-			s.watches[i] = updated
-			return s.saveLocked()
+	found := false
+	err := s.withTxn(func() error {
+		for i, w := range s.watches {
+			if w.ID == updated.ID {
+				s.watches[i] = updated
+				found = true
+				return nil
+			}
 		}
+		// Unknown ID: unwind without writing, then report the error below.
+		return errTxnNoop
+	})
+	if err != nil {
+		return err
 	}
-	return fmt.Errorf("watch %s not found", updated.ID)
+	if !found {
+		return fmt.Errorf("watch %s not found", updated.ID)
+	}
+	return nil
 }
 
 // RecordPrice appends a price point to history and persists.
 func (s *Store) RecordPrice(watchID string, price float64, currency string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.history = append(s.history, PricePoint{
-		WatchID:   watchID,
-		Price:     price,
-		Currency:  currency,
-		Timestamp: time.Now(),
+	return s.withTxn(func() error {
+		s.history = append(s.history, PricePoint{
+			WatchID:   watchID,
+			Price:     price,
+			Currency:  currency,
+			Timestamp: time.Now(),
+		})
+		return nil
 	})
-	return s.saveLocked()
 }
 
 // History returns all price points for a given watch ID, ordered by time.
@@ -484,53 +539,158 @@ func (s *Store) RecordObservation(routeKey string, price float64, currency strin
 	if routeKey == "" || price <= 0 {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	cur := strings.ToUpper(strings.TrimSpace(currency))
-	if last, ok := s.lastObservationLocked(routeKey, cur); ok && last.Price > 0 {
-		if time.Since(last.Timestamp) < observationThrottle &&
-			math.Abs(price-last.Price)/last.Price <= observationEpsilonPct {
-			return nil // redundant near-duplicate; skip the write entirely
-		}
-	}
 
-	s.history = append(s.history, PricePoint{
-		RouteKey:  routeKey,
-		Price:     price,
-		Currency:  cur,
-		Timestamp: time.Now(),
+	// The throttle is a check whose outcome decides a mutation, so it has to run
+	// against committed state inside the transaction — evaluating it against a
+	// stale in-memory snapshot was itself a check-then-act race (#512).
+	return s.withTxn(func() error {
+		if last, ok := s.lastObservationLocked(routeKey, cur); ok && last.Price > 0 {
+			if time.Since(last.Timestamp) < observationThrottle &&
+				math.Abs(price-last.Price)/last.Price <= observationEpsilonPct {
+				return errTxnNoop // redundant near-duplicate; skip the write entirely
+			}
+		}
+
+		s.history = append(s.history, PricePoint{
+			RouteKey:  routeKey,
+			Price:     price,
+			Currency:  cur,
+			Timestamp: time.Now(),
+		})
+		s.pruneRouteLocked(routeKey)
+		s.pruneGlobalRouteLocked()
+		return nil
 	})
-	s.pruneRouteLocked(routeKey)
-	s.pruneGlobalRouteLocked()
-	return s.saveLocked()
 }
 
-// pruneGlobalRouteLocked evicts the oldest ad-hoc route-keyed observations once
-// their total exceeds maxRouteObservations, bounding the file regardless of how
-// many distinct routes are searched. Watch-keyed points (WatchID set) are never
-// touched. Caller holds s.mu.
+// pruneGlobalRouteLocked bounds the total number of ad-hoc route-keyed
+// observations to maxRouteObservations. Watch-keyed points (WatchID set) are
+// never touched.
+//
+// Eviction is fair, not oldest-first (#511). Oldest-first across the whole
+// corpus lets one busy route's recent points push a quiet route's entire history
+// past the eviction boundary: the quiet route loses everything while never
+// exceeding its own per-route cap, and the loss is silent and permanent.
+//
+// The policy is water-filling. Find the largest per-route quota q for which
+// sum over routes of min(len(route), q) fits the global cap, then keep the
+// newest q points of every route. Routes below quota are untouched, so pressure
+// falls entirely on the largest contributors (TRVL.WATCH.EVICT.2), every route
+// keeps a floor of q (EVICT.1), what survives is always the newest points —
+// the ones sparklines and drop detection read (EVICT.4) — and the retained
+// total never exceeds the cap (EVICT.5).
+//
+// Degradation when routes outnumber the cap: q would be 0 and fairness cannot
+// be satisfied, since not even one point per route fits. In that case the
+// most-recently-active maxRouteObservations routes keep their newest point each
+// and the rest are dropped, which still bounds the file and still favours the
+// newest data. maxRouteObservations is 20000, so this is a theoretical branch,
+// not an operational one.
 func (s *Store) pruneGlobalRouteLocked() {
-	var routeIdx []int
-	for i, p := range s.history {
+	// Cheap counting pass first. Compaction runs on every observation, so the
+	// overwhelming majority of calls are under-cap no-ops; grouping by route
+	// before knowing that costs a map build (~5x the whole pass, measured by
+	// BenchmarkPruneAtCap*) for nothing.
+	total := 0
+	for _, p := range s.history {
 		if p.RouteKey != "" && p.WatchID == "" {
-			routeIdx = append(routeIdx, i)
+			total++
 		}
 	}
-	if len(routeIdx) <= maxRouteObservations {
+	if total <= maxRouteObservations {
 		return
 	}
-	drop := make(map[int]bool, len(routeIdx)-maxRouteObservations)
-	for _, i := range routeIdx[:len(routeIdx)-maxRouteObservations] {
-		drop[i] = true
+
+	// Over cap: index every route-keyed point by route, in insertion
+	// (chronological) order.
+	order := make([]string, 0, 8)
+	byRoute := make(map[string][]int)
+	for i, p := range s.history {
+		if p.RouteKey == "" || p.WatchID != "" {
+			continue
+		}
+		if _, seen := byRoute[p.RouteKey]; !seen {
+			order = append(order, p.RouteKey)
+		}
+		byRoute[p.RouteKey] = append(byRoute[p.RouteKey], i)
 	}
+
+	keep := make(map[int]bool, maxRouteObservations)
+	if len(byRoute) > maxRouteObservations {
+		// More routes than budget: keep the newest point of the most recently
+		// active routes until the budget is spent.
+		type lastPoint struct {
+			idx int
+			ts  time.Time
+		}
+		newest := make([]lastPoint, 0, len(byRoute))
+		for _, key := range order {
+			idxs := byRoute[key]
+			last := idxs[len(idxs)-1]
+			newest = append(newest, lastPoint{idx: last, ts: s.history[last].Timestamp})
+		}
+		sort.SliceStable(newest, func(a, b int) bool { return newest[a].ts.After(newest[b].ts) })
+		for _, lp := range newest[:maxRouteObservations] {
+			keep[lp.idx] = true
+		}
+	} else {
+		quota := routeQuota(byRoute, maxRouteObservations)
+		for _, idxs := range byRoute {
+			tail := idxs
+			if len(tail) > quota {
+				tail = tail[len(tail)-quota:] // newest quota points
+			}
+			for _, i := range tail {
+				keep[i] = true
+			}
+		}
+	}
+
 	kept := s.history[:0:0]
 	for i, p := range s.history {
-		if !drop[i] {
+		if p.RouteKey == "" || p.WatchID != "" || keep[i] {
 			kept = append(kept, p)
 		}
 	}
 	s.history = kept
+}
+
+// routeQuota returns the largest per-route retention quota whose water-filled
+// total fits cap. Callers guarantee len(byRoute) <= cap, so the result is >= 1.
+func routeQuota(byRoute map[string][]int, limit int) int {
+	longest := 0
+	for _, idxs := range byRoute {
+		if len(idxs) > longest {
+			longest = len(idxs)
+		}
+	}
+	fits := func(q int) bool {
+		sum := 0
+		for _, idxs := range byRoute {
+			if len(idxs) < q {
+				sum += len(idxs)
+			} else {
+				sum += q
+			}
+			if sum > limit {
+				return false
+			}
+		}
+		return true
+	}
+	// Binary search the largest q in [1, longest] that fits.
+	lo, hi, best := 1, longest, 1
+	for lo <= hi {
+		mid := lo + (hi-lo)/2
+		if fits(mid) {
+			best = mid
+			lo = mid + 1
+		} else {
+			hi = mid - 1
+		}
+	}
+	return best
 }
 
 // lastObservationLocked returns the most recent price point for a route key,
