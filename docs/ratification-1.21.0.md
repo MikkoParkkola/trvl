@@ -354,3 +354,105 @@ Two related gaps, same category: the consent prompt names the endpoint host but 
 preflight host, so the user approves one address and a second travels with it unseen; and
 the response-body snippet returned to callers is an exfiltration channel independent of
 cookies.
+
+## Final amendment (2026-07-30) — four things changed after the above was written
+
+This section supersedes anything above that it contradicts. Read it last.
+
+### 1. The body-snippet channel is now closed, and filed
+
+The paragraph above calls the response-body snippet an exfiltration channel independent
+of cookies, and says it was not yet filed. Both halves have moved.
+
+It is filed as **#538**, and the disclosure half is fixed on this branch. Two error paths
+used to return a provider's raw response body to the caller; both now return a shape-only
+description — byte count and content type — plus the name of the variable that would
+include a real snippet. Including one requires `TRVL_PROVIDER_BODY_SNIPPETS=1`, which
+defaults to off and is read on every call rather than once at startup, so a value that was
+set and later cleared does not leave the process opted in. The same gate covers the debug
+log line, so a body withheld from the caller is not written to the log instead.
+
+Five separate sabotage breaks were verified, each failing only the test named for it:
+returning the raw body from either path, and forcing the opt-in to read false.
+
+What is **not** fixed is the other half of #538: a custom provider can still be pointed at
+any public address. That is the allow-listing product decision the paragraph above
+describes, and it is still not a release-branch call. #538 stays open for that half only,
+with a note asking for the title to be narrowed so the fixed half does not read as broken.
+
+### 2. "The full suite is green" was true on a quiet machine and is false on a busy one
+
+The claim above of 11,051 passing across 102 packages was measured on an idle machine. Run
+the same suite while something heavy occupies the cores and four tests fail:
+
+- `TestDefaultOpenURL_ReportsAPlainLauncherThatStartsThenFails` at 2.00s (providers)
+- `TestBrowserCookies_SilentWhenTheStoreSimplyHasNothing` at 5.22s (cookies)
+- `TestExtractViaNab_DistinguishesItsOutcomes` at 11.83s (cookies)
+- `TestOutput_ContainsDescendantsOnTimeout` at 7.01s (safeexec)
+
+All four pass when their package runs alone — the cookies pair passed 18 of 18 attempts.
+So this is not a defect in the code under test. It is four assertions that depend on wall
+clock time a loaded machine does not provide, and every failure lands on a timeout
+boundary, which is the signature.
+
+The cause of the cookies pair is named: `internal/cookies/browser.go:31` fixes the
+cookie-export budget at five seconds, and both tests install a fake helper that is a real
+shell script. Each therefore pays a process spawn out of that five-second budget, so under
+load the shell does not finish, the reader correctly reports a helper failure, and a test
+about outcome classification sees a warning it did not expect. The neighbouring test that
+genuinely is about the budget — a helper that hangs for thirty seconds — is not flaky,
+because load only makes its assertion more true. That asymmetry is what identified the
+cause.
+
+Filed as **#540** for the providers test and the cookies pair; **#533** already owned the
+safeexec test and has been corrected, because an earlier note on it claimed a commit had
+fixed it and today's run disproves that.
+
+None of the four is repaired here. Making a shipped timeout injectable is a change to
+production code for testability, and it deserves its own review rather than riding along
+in a documentation-and-issues sweep. **This is the one item that would make a strict
+reading of the release checklist fail**: the full suite does not reach a clean exit under
+load, and that is disclosed rather than fixed.
+
+### 3. Seventy commit messages were rewritten before publishing
+
+The branch's messages carried an internal review-round counter — "Review 9 found…" — which
+outside this session reads as a tally of how many attempts a fix took and carries no other
+meaning. Fifteen subjects also ran past the column width GitHub truncates at, and one
+subject announced a README rewrite while saying nothing about the security fix underneath
+it, which an auditor would have found by accident rather than by reading.
+
+All seventy messages were rewritten by a filter keyed on exact subject lines. Verification:
+no round counters remain, no subject exceeds the limit, the commit count is unchanged at
+seventy, and the resulting tree is byte-identical to the pre-rewrite tree — the diff between
+the backup branch and the rewritten head is empty. The pre-rewrite state is kept on
+`backup/pre-msg-rewrite-1.21.0` and is not deleted.
+
+Two things were deliberately left alone. The twenty-commit sequence on the cookie opt-out
+keeps its full history, because that record is what lets a reader verify the opt-out
+actually holds; tidying it away would be the genuinely embarrassing act. And phrases that
+count defect *sites* rather than attempts were preserved, because those describe the code.
+
+**This is a history rewrite.** It is reversible only while the backup branch exists and only
+before anyone else fetches the branch. It is listed under escalation for that reason.
+
+### 4. The independent second opinion did not complete
+
+The release process asks for an adversarial review by a different model before merge. Three
+attempts were made. The first two were killed at a hard ten-minute ceiling while the
+reviewer was still reading files, and the third, run with the four relevant files supplied
+directly so no exploration was needed, hit repeated network reconnects.
+
+So the gate is **unmet**, and no finding from it is claimed either way. Treat the security
+claims in this brief as verified by sabotage tests and by a first-model audit, but not by an
+independent second model. That is weaker than the process asks for, and it is the second
+thing worth your attention.
+
+### Sequencing recorded on two open issues
+
+**#510** (no way to unset a webhook or an alert setting) and **#514** (retention caps are
+unvalidated constants) were both marked as worth doing after **#508**, which is open and
+mergeable and rewrites the same watch-store write path both would touch. Doing either first
+means writing it against a path that is about to change, then rewriting it. Priorities and
+acceptance criteria are unchanged; this is sequencing only, and in both cases the note says
+plainly which part of the reasoning is unverified.
