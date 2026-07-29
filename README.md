@@ -26,6 +26,40 @@
 
 ---
 
+## How it works, in one paragraph
+
+trvl is a single binary that runs on your machine. Your AI client talks to it over MCP; it talks to two dozen travel sources in parallel — flight metasearch, hotel metasearch, rail and bus operators, weather and places APIs — then merges, de-duplicates and optimizes the results before handing back one answer. Most sources are free public endpoints, so there is nothing to sign up for. The ones behind bot protection work by reusing the browser session you already have, which is the one thing worth reading about before you install: see [What trvl reads, and what it keeps](#what-trvl-reads-and-what-it-keeps).
+
+## Why trvl, not the alternatives
+
+- **Whole journey, door to door.** It plans the entire trip across modes — home to airport, flight, arrival transfer, hotel, onward train — and prices each leg in its real mode. Most tools stop at one flight, one hotel.
+- **No API keys, no signup, no bill.** Every core source works the moment you install it — no Amadeus key to apply for, no subscription, no per-call cost. A handful of optional providers switch on if you supply a key of your own; none is required.
+- **Your assistant, your machine.** One local binary, any MCP client, not locked to a vendor. Searching sends the query to the providers being searched, the same as any travel site would: route, dates and traveller count go to Google, Kiwi, Booking and the rest. What trvl keeps for itself stays on your machine, apart from a daily anonymous heartbeat you can switch off and any webhook you configure yourself — both spelled out below.
+- **It optimizes, not just lists.** Shift-day pricing, split-airline routing, hidden-city checks, award sweet spots, round-trip fares. It hands back the cheaper option and shows what it saved.
+- **It is honest when a source fails.** Typed statuses and labelled estimates, never an empty result dressed up as "nothing found."
+
+Full head-to-head against Google Flights, KAYAK, Skyscanner, Kiwi, and other travel MCPs: [docs/COMPARISON.md](docs/COMPARISON.md).
+
+## What it can do
+
+| Area | Highlights | Reference |
+|------|-----------|-----------|
+| **MCP tools** | 1 smart `travel` router — a natural-language tool that advertises a single tool (~378 tokens) instead of a full per-domain list (~33,500 tokens): ~98.9% smaller `tools/list` footprint. Older clients that call legacy tool names still work (66 legacy-compatible capabilities). | [MCP-TOOLS-REFERENCE.md](docs/MCP-TOOLS-REFERENCE.md) |
+| **Flights** | Google Flights + Kiwi + Skiplagged merged; LCC fares, AFKLM award scan, round-trip (both legs) | [PROVIDERS.md](docs/PROVIDERS.md) |
+| **Ground** | 22 train/bus/ferry providers across Europe, API-first | [PROVIDERS.md](docs/PROVIDERS.md) |
+| **Hotels** | 6 sources, discovery → verification trust model | [PROVIDERS.md](docs/PROVIDERS.md) |
+| **Travel hacks** | 36 parallel detectors (hidden-city, positioning, stopover, multimodal, error-fare…) | [PROVIDERS.md](docs/PROVIDERS.md) |
+| **CLI** | Standalone tool, 56 commands, table/JSON output | [CLI.md](docs/CLI.md) |
+| **Profile** | Learns home airports, FF status, luggage, preferences from your booking history | [traveller-workspace.md](docs/traveller-workspace.md) |
+
+## Is this for you?
+
+**Yes** if you already plan trips with an AI assistant and want it to search real flights, hotels, trains, buses, ferries, and transfers instead of guessing — or if you're building an app that needs travel intent without a paid travel API.
+
+**Probably not** if you just want to book on a website (use Google Flights), or you want a hosted product with an account and dashboard. trvl is a tool you run, not a service you log into.
+
+Full positioning: [docs/POSITIONING.md](docs/POSITIONING.md).
+
 ## Install
 
 **Let your AI do it** — paste into Claude Code, Cursor, Windsurf, or Codex:
@@ -80,16 +114,6 @@ Create a mistake-fare watch for HEL→BCN, July 1–8, and alert me below €90.
 
 More starter prompts and what good answers look like: [docs/DEMO.md](docs/DEMO.md).
 
-## Why trvl, not the alternatives
-
-- **Whole journey, door to door.** It plans the entire trip across modes — home to airport, flight, arrival transfer, hotel, onward train — and prices each leg in its real mode. Most tools stop at one flight, one hotel.
-- **No API keys, no signup, no bill.** Every core source works the moment you install it — no Amadeus key to apply for, no subscription, no per-call cost. Some optional providers can be switched on with a key of your own (AF-KLM, SerpAPI, Travelpayouts and others); none of them is required. Separately from keys, trvl reads your browser's cookie stores to get past the bot protection that hotel and rail sites put in front of their search APIs: see [What trvl reads from your browser](#what-trvl-reads-from-your-browser).
-- **Your assistant, your machine.** One local binary, any MCP client, not locked to a vendor. Where your data goes, stated plainly rather than promised away. Searching sends the query to the providers being searched, the same as any travel site: route, dates and traveller count go to Google, Kiwi, Booking and the rest. A key or cookie you have configured is sent to the service it authenticates, when that provider is used, because that is what authenticating means. What trvl keeps for itself stays under `~/.trvl` and is not sent anywhere: saved trips, preferences, watches, search history. One command publishes deliberately, since that is what you ran it for: the calendar helper writes an event to your Google calendar. `trvl share` does not — it prints the trip card, or copies it to your clipboard, and you decide who receives it. It used to upload the card as a public GitHub gist; that was removed in [#527](https://github.com/MikkoParkkola/trvl/issues/527), because a card carries destinations and dates, and those together say when your home is empty.
-- **It optimizes, not just lists.** Shift-day pricing, split-airline routing, hidden-city checks, award sweet spots, round-trip fares. It hands back the cheaper option and shows what it saved.
-- **It is honest when a source fails.** Typed statuses and labelled estimates, never an empty result dressed up as "nothing found."
-
-Full head-to-head against Google Flights, KAYAK, Skyscanner, Kiwi, and other travel MCPs: [docs/COMPARISON.md](docs/COMPARISON.md).
-
 ## Why trust it
 
 An AI agent acts on trvl's output without a human checking every result, so the bar is correctness, not just coverage.
@@ -99,74 +123,36 @@ An AI agent acts on trvl's output without a human checking every result, so the 
 - **It degrades gracefully.** Providers run concurrently with per-provider timeouts; one source failing returns partial results instead of aborting the search.
 - **It's observable.** `trvl status` (or the local `/dashboard` in HTTP mode) shows per-provider success rate, latency, freshness, and circuit-breaker state.
 
-### A note on hotel prices
+**On hotel prices specifically.** Hotel metasearch exposes list-level rates first; some are real, some only firm up after the property detail page reveals the room/tax/cancellation matrix. So trvl separates **discovery** (`search_hotels` — fast, lead-in prices) from **decisions** (`search_accommodations` — verifies room-level offers before ranking) and **drill-down** (`search_hotels_with_details`, `hotel_rooms`). It provides booking links for manual handoff but never books, holds, or guarantees a rate. Detail: [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
-Hotel metasearch exposes list-level rates first; some are real, some only firm up after the property detail page reveals the room/tax/cancellation matrix. So trvl separates **discovery** (`search_hotels` — fast, lead-in prices) from **decisions** (`search_accommodations` — verifies room-level offers before ranking) and **drill-down** (`search_hotels_with_details`, `hotel_rooms`). It provides booking links for manual handoff but never books, holds, or guarantees a rate. Detail: [docs/PROVIDERS.md](docs/PROVIDERS.md).
+## What trvl reads, and what it keeps
 
-### Stealth: opt-in, authorized first-party access only
+Two things happen without you asking for them. Neither is obvious, so both are stated here rather than left to a linked page.
 
-`trvl flights` and `trvl hotels` accept an optional `--stealth` flag that routes the fetch through trvl's existing Chrome HTTP/2 fingerprint transport. It is built as a fail-safe scope fence:
+**It reads your browser's cookies, automatically.** Hotel and rail sites put bot protection in front of their search APIs, and trvl gets past it by reusing the browser session you already have — that is why searches work with no API key. The reads start when trvl launches, before any search. No flag turns them on. On macOS, browser cookie stores are encrypted, so reading them means Keychain access and you should expect a Keychain prompt. What is read is your own session cookies for the site being searched, and they go into the request to that same site. What guarantees that differs by provider: the rail providers send to addresses written into trvl's own source, so there is nowhere else for the cookies to go; the one place that accepts a web address from the caller — the room lookup — checks the destination host before attaching anything, and a test fails if that stops being true. If a site redirects trvl to a different host, the cookies do not follow: Go's HTTP client refuses to carry them across a change of host. That check compares hosts and not schemes, so a site redirecting its own `https://` address to plain `http://` would keep them — a site downgrading its own traffic to cleartext is the one case that would put a session on the wire unencrypted. trvl reports your cookies to no endpoint of its own.
 
-- **Default off.** Stealth is inactive unless you explicitly pass `--stealth`.
-- **Authorized hosts only.** Even with `--stealth`, it activates only for hosts on an operator-authorized allowlist read from the `TRVL_STEALTH_ALLOWLIST` environment variable (comma-separated hostnames; case-insensitive; exact match plus leading-dot suffix such as `.google.com`). An empty allowlist means stealth never activates — refuse by default.
-- **No silent evasion.** With `--stealth` set for a host that is not on the allowlist, trvl runs the normal fetch path and logs one line (`stealth not authorized for host <host>`); it does not error, it does not abort.
-- **Scope-fenced.** Only flight and hotel search honour `--stealth`. Other paths never receive it.
+**It keeps working state under `~/.trvl`:** saved trips, preferences and traveller profile, price watches, search history, cached cookies and provider tokens, a provider health log, upgrade and provider self-heal bookkeeping, and a random install id. That state is local, and trvl uploads none of it — with two exceptions it would be dishonest to bury. The install id is the one field the telemetry heartbeat sends, described below, and `TRVL_NO_TELEMETRY=1` stops it. A price watch you give a webhook URL to POSTs that watch's route and price data to the address you supplied, which is the point of a webhook.
 
-Using stealth against sites whose terms prohibit automated access is the operator's responsibility.
-
-Example:
+You can decline either behaviour:
 
 ```bash
-export TRVL_STEALTH_ALLOWLIST=".google.com"
-trvl flights HEL NRT 2026-09-01 --stealth
-trvl hotels "Helsinki" --checkin 2026-09-01 --checkout 2026-09-04 --stealth
+export TRVL_NO_BROWSER_COOKIES=1   # never read your browsers or the sessions in them, and never open a window in your real browser
+export TRVL_NO_TIER2_CDP=1         # never start a headless browser of its own
 ```
 
-## What it can do
+Both cost you results, and it is worth knowing how: a site that answers with a bot challenge simply returns nothing, which looks like trvl finding no trains rather than like a setting you chose. That is the trade, stated so you can make it deliberately.
 
-| Area | Highlights | Reference |
-|------|-----------|-----------|
-| **MCP tools** | 1 smart `travel` router — a natural-language tool that advertises a single tool (~378 tokens) instead of a full per-domain list (~33,500 tokens): ~98.9% smaller `tools/list` footprint. Older clients that call legacy tool names still work (66 legacy-compatible capabilities). | [MCP-TOOLS-REFERENCE.md](docs/MCP-TOOLS-REFERENCE.md) |
-| **Flights** | Google Flights + Kiwi + Skiplagged merged; LCC fares, AFKLM award scan, round-trip (both legs) | [PROVIDERS.md](docs/PROVIDERS.md) |
-| **Ground** | 22 train/bus/ferry providers across Europe, API-first | [PROVIDERS.md](docs/PROVIDERS.md) |
-| **Hotels** | 6 sources, discovery → verification trust model | [PROVIDERS.md](docs/PROVIDERS.md) |
-| **Travel hacks** | 36 parallel detectors (hidden-city, positioning, stopover, multimodal, error-fare…) | [PROVIDERS.md](docs/PROVIDERS.md) |
-| **CLI** | Standalone tool, 56 commands, table/JSON output | [CLI.md](docs/CLI.md) |
-| **Profile** | Learns home airports, FF status, luggage, preferences from your booking history | [traveller-workspace.md](docs/traveller-workspace.md) |
+Full mechanism — what is read at which point, the exact difference between those two switches, the headless-browser fallback, and the AF-KLM credential rules: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#browser-sessions-credentials-and-local-state).
 
-## Is this for you?
-
-**Yes** if you already plan trips with an AI assistant and want it to search real flights, hotels, trains, buses, ferries, and transfers instead of guessing — or if you're building an app that needs travel intent without a paid travel API.
-
-**Probably not** if you just want to book on a website (use Google Flights), or you want a hosted product with an account and dashboard. trvl is a tool you run, not a service you log into.
-
-Full positioning: [docs/POSITIONING.md](docs/POSITIONING.md).
-
-## Run it as an HTTP / remote server
-
-Local stdio is the default and safest transport. `trvl mcp --http` binds to `127.0.0.1`, requires a bearer token, and generates one at startup if unset. Remote exposure, scoped read/write tokens, and OAuth 2.1 introspection: [docs/REMOTE-MCP-OAUTH.md](docs/REMOTE-MCP-OAUTH.md).
-
-## Available on
-
-[Glama](https://glama.ai/mcp/servers/MikkoParkkola/trvl) · [LobeHub](https://lobehub.com/mcp/mikkoparkkola-trvl) · [Smithery](https://smithery.ai/server/@MikkoParkkola/trvl) · [MCPHub](https://www.mcphub.com/mcp-servers/MikkoParkkola/trvl) · [Cursor Directory](https://cursor.directory/mcp/trvl) · [PulseMCP](https://www.pulsemcp.com/servers/mikkoparkkola-trvl) · [MCP Market](https://mcpmarket.com/server/trvl) · [pkg.go.dev](https://pkg.go.dev/github.com/MikkoParkkola/trvl)
-
-**Independent coverage:** Roberto Reale's [Budget Travel Pipeline](https://blog-roberto-reale.vercel.app) — an independent build-and-test that surfaced real fixes and shaped the v1.10 trust roadmap.
-
-## Troubleshooting
-
-- **No tools showing?** Restart your AI client after `trvl mcp install`; confirm `which trvl` is on `$PATH`.
-- **Empty flight results?** Some routes have no Google Flights data — try a major pair like `trvl flights HEL LHR 2026-07-01`.
-- **Ground transport times out?** Rail/ferry providers throttle; retry after 30s or pass `--timeout 3m`.
-
-Full troubleshooting: [docs/CLI.md](docs/CLI.md).
+One command publishes deliberately, because that is what you ran it for: the calendar helper writes an event to your Google calendar. `trvl share` does not — it prints the trip card, or copies it to your clipboard, and you decide who receives it. It used to upload the card as a public GitHub gist; that was removed in [#527](https://github.com/MikkoParkkola/trvl/issues/527), because a card carries destinations and dates, and those together say when your home is empty.
 
 ## Optional credentialed providers
 
-Every source trvl uses by default is free and needs no account. A number of extras switch on only if you supply a key of your own, and stay silent otherwise:
+Every source trvl uses by default is free and needs no account. These extras switch on only if you supply a key of your own, and stay silent otherwise:
 
 | Variable | Enables |
 | --- | --- |
-| `AFKLM_KEY` | AF-KLM native round-trip fares (see below) |
+| `AFKLM_KEY` | AF-KLM native round-trip and rail+fly fares |
 | `AFKL_KLM_COOKIES` | AF-KLM Flying Blue award / miles search |
 | `SERPAPI_KEY` | Detail-verified hotel provider prices (`trvl serpapi`) |
 | `TRAVELPAYOUTS_TOKEN` | Historical price trends |
@@ -178,141 +164,7 @@ Every source trvl uses by default is free and needs no account. A number of extr
 | `TICKETMASTER_API_KEY` | Events |
 | `TRVL_GMAIL_APP_PASSWORD` | Emailing trip digests |
 
-Every one of these reads its key from the environment. AF-KLM is the single exception and only when you ask for it: under an explicit `--provider afklm` it can also read the macOS Keychain or 1Password, which is described in full below. Nothing in this table reaches a credential manager during an ordinary search.
-
-## What trvl reads from your browser
-
-Hotel and rail sites put bot protection in front of their search APIs. trvl gets past
-it by reusing the browser session you already have, which is why searches work at all
-without an API key. That means it reads local state, so here is exactly what and when.
-
-**At startup, before any search.** Creating the provider runtime kicks off background
-reads of your browser cookie stores for every provider configured to use them
-(`internal/providers/runtime_core.go:179`). On macOS the first such read goes through
-the Keychain and takes six to ten seconds cold, which is precisely why it is started
-early rather than on demand.
-
-**On a hotel search.** Booking.com needs an `aws-waf-token`. trvl looks for one in
-this order: the cache at `~/.trvl/cookies`, then your installed browser's cookies via
-[kooky](https://github.com/browserutils/kooky), then a headless harvest driven through
-your installed Chrome. A token obtained that way is written back to that cache and
-reused for days.
-
-**On a rail search.** When Trainline, Eurostar or SNCF answers with a 403 challenge,
-trvl runs [nab](https://github.com/MikkoParkkola/nab) to read your cookies for that
-operator and retries with them.
-
-Three things follow, and they are the reason this section exists:
-
-- **It is automatic.** No flag turns it on and none turns it off. Running trvl at all
-  starts the startup reads.
-- **It reads credential storage.** Browser cookie databases are encrypted, so getting
-  at them means Keychain access on macOS. What is read is your own session cookies for
-  the site being searched.
-- **Some of it persists and some of it launches a browser.** The Booking.com token is
-  written to `~/.trvl/cookies`. The headless harvest starts your Chrome.
-
-Where those cookies go: into the request trvl makes to the site they were read from, so
-that operator receives its own cookies back, which is the point of reading them. trvl
-sends them nowhere else, and does not report them to any endpoint of its own. The only
-thing written to disk is that one token cache.
-
-Documenting this took three attempts, and each earlier version claimed a narrower
-scope than the code has: first that trvl never looked at local credentials
-unrequested, then that rail search was the sole exception. Both were wrong.
-
-**Two settings, two different questions.** They are easy to confuse, so state them
-plainly:
-
-| Setting | The question it answers | What it covers |
-| --- | --- | --- |
-| `TRVL_NO_BROWSER_COOKIES=1` | May trvl touch **my** browsers and the sessions I am logged into? | Every read of a browser cookie store (including via nab), the `~/.trvl/cookies` cache, and every window trvl opens in your real browser — the escape hatch and the Trainline/SNCF human-verification fallbacks |
-| `TRVL_NO_TIER2_CDP=1` | May trvl **run a browser process** at all? | Every headless browser trvl starts itself — all three places in the code that can start one |
-
-Setting the first one does **not** stop the headless browser, and that is deliberate:
-the headless browser starts from an empty profile, so it never touches your sessions.
-Setting the second one does **not** stop trvl reading cookies you already have. Set
-both to refuse everything browser-related.
-
-**Turning off cookie reads.** Set `TRVL_NO_BROWSER_COOKIES=1` and trvl reads no browser cookie
-store at all — no nab, no Keychain, nothing. The nab part of that sentence is newer than
-the rest of it: the variable used to stop only the reader inside trvl, while the three
-rail providers went on to run nab as a fallback and nab read the same stores from its own
-process. It is now refused at the point that helper would be started, so the claim above
-covers both. It stays on by default because it is what
-makes hotel and rail search work against sites that block non-browser traffic, and
-switching it off does not make those searches fall back to something else: an operator
-that answers with a bot challenge simply returns no results, and it looks like trvl
-finding no trains rather than like a setting you chose. That is the trade, stated so
-you can make it deliberately. Decided in
-[#521](https://github.com/MikkoParkkola/trvl/issues/521).
-
-**The headless browser.** When a site answers with a bot challenge, trvl can drive a
-copy of Chrome, Brave or Edge you already have installed, let the challenge resolve
-itself, and keep the resulting cookies. It runs headless: no window opens, focus is
-never taken, and nothing appears on screen. It bundles no browser of its own. It also
-starts from an empty profile, so it does not read the cookies you already have — that
-is the separate switch above, and they are separate because they are separate things:
-one reads the session you are already logged into, this one starts a new anonymous
-session and keeps what that session is given. Because it reads nothing of yours,
-`TRVL_NO_BROWSER_COOKIES=1` leaves it running: if it did not, declining access to your
-own browser would also take away the one path that still works without it, and hotel
-search would return nothing for no gain in privacy. One exception, and it is a real
-one: on the sites trvl signs into on your behalf, a cookie decline does still switch
-this recovery path off. Those sites hand the recovered cookies to the same store that
-can also hold cookies copied out of your real browser, and that store keeps no note of
-which is which, so a cookie decline refuses all of it rather than guess. Separating the
-two is tracked as its own change. Hotel and rail search keep this recovery browser
-either way. This also runs by default, for the same reason — with it off, a
-challenged search returns nothing
-and looks like an empty result rather than a switched-off feature. Set
-`TRVL_NO_TIER2_CDP=1` to decline. It costs a browser process for a few seconds per
-challenged search, which is the reason someone might want it off. The check sits on
-each of the three places in trvl that can start a browser, rather than on the
-entry points above them, so a provider reaching past the usual route still cannot
-spawn one. It governs the *headless* browser only —
-the separate visible-window escape hatch, which asks before it opens anything and
-requires its own per-provider opt-in, is described under
-[What trvl reads from your browser](#what-trvl-reads-from-your-browser).
-
-This is also what gets trvl past the rail sites' bot walls. A one-off measurement on
-2026-07-27 — a snapshot of how those three sites behaved that day, not a promise about
-how they behave now — found that reading cookies off disk returned nothing at all for
-Trainline, SNCF Connect and Rome2Rio, because the tokens those sites check are issued
-to a live browsing session and are not sitting in the cookie store. A headless visit
-cleared the wall for two of them and returned usable cookies — Trainline's `datadome`,
-Rome2Rio's Cloudflare `__cf_bm` — so declining this is likely to leave those two empty.
-SNCF Connect was the exception: the headless visit reached a challenge that needs a
-human, and trvl only reuses cookies from a challenge that actually cleared, so tier 2
-was not what fixed SNCF either way. Bot walls change without notice and nothing in CI
-re-checks this, so treat the specifics as dated. To re-measure, run the probe test with
-`TRVL_COOKIE_PROBE=1`.
-
-AF-KLM is the single exception, and it is worth explaining. Ordinary round-trips are already covered in the default merge: Kiwi returns both legs of a paired itinerary, and Google returns the genuine round-trip fare with the matching return chosen at booking. AF-KLM is there for what neither offers — the rail+fly itineraries it sells, where a train leg from Brussels Midi, Antwerp or Brussels is ticketed as part of the flight instead of being a separate rail booking you have to make and risk yourself. It also returns both legs on KL/AF metal in full detail. It is the only provider whose **API key** can come from a credential manager, under tight rules. (Browser cookie access is a separate matter and is covered in [What trvl reads from your browser](#what-trvl-reads-from-your-browser); several providers do that, and it also touches the Keychain.)
-
-| Variable | Effect |
-| --- | --- |
-| `AFKLM_KEY` | The API key itself. Once set, AF-KLM native round-trips join your default searches automatically. |
-| `AFKLM_OP_REF` | A 1Password secret reference, e.g. `op://Private/AF-KLM/credential`. Read via the `op` CLI **only** when you run `--provider afklm` explicitly. |
-| `AFKLM_KEYCHAIN_SERVICE` | Overrides the macOS Keychain service name (default `afklm-api-key`). Read under `--provider afklm` only. |
-
-Set `AFKLM_OP_REF` without `AFKLM_KEY` and a default search will tell you AF-KLM was skipped and why, rather than quietly leaving it out.
-
-The rule, and why it exists: a search you didn't ask for never runs an AF-KLM credential helper. (Scoped to AF-KLM on purpose. Browser cookie reads are a different mechanism with a different answer, described above.) `op` and `security` are third-party programs that can block, can pop an interactive prompt, and can leave stray processes behind — so an opportunistic lookup on the default path is limited to reading an environment variable, which costs nothing and cannot prompt. Only an explicit `--provider afklm` may reach an external store, where a prompt is something you asked for. Reported as [#507](https://github.com/MikkoParkkola/trvl/issues/507).
-
-If you use the macOS Keychain (`security add-generic-password -a "$USER" -s afklm-api-key -w <key>`), it is consulted under `--provider afklm` only, for the same reason.
-
-### One limitation on Windows
-
-Every helper trvl runs is bounded by a deadline on every platform, so none of them can hang a search. Cleaning up what a helper leaves behind is weaker on Windows than elsewhere.
-
-On Unix a helper is signalled as a process group, so anything it started dies with it. On Windows it goes into a job object, and a job can only be assigned to a process that already exists, so there is a window of microseconds after the helper starts during which a child it creates is not yet a member. A helper that forks something in its first instants can therefore leave that child running after the helper itself has been killed.
-
-None of the programs trvl actually invokes behaves that way, so in practice you should not see stray processes. It is a real gap rather than a theoretical one, though, and closing it needs a suspended start whose own failure mode is worse than the gap, so it is documented instead of half-fixed. The reasoning is in [#526](https://github.com/MikkoParkkola/trvl/issues/526).
-
-## Ecosystem
-
-Part of a suite of MCP tools: [mcp-gateway](https://github.com/MikkoParkkola/mcp-gateway) (universal gateway) · [nab](https://github.com/MikkoParkkola/nab) (web extraction with anti-bot) · [axterminator](https://github.com/MikkoParkkola/axterminator) (macOS GUI automation).
+Every one of these reads its key from the environment. AF-KLM is the single exception, and only when you ask for it: under an explicit `--provider afklm` it may also read the macOS Keychain or 1Password. Nothing in this table reaches a credential manager during an ordinary search — the reasoning is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#af-klm-the-one-credential-that-may-come-from-a-credential-manager).
 
 ## Privacy & telemetry
 
@@ -323,7 +175,7 @@ trvl sends one anonymous heartbeat per install per day so the project knows roug
 - the Go runtime string (OS, architecture, Go version, e.g. `darwin/arm64/go1.26.5`)
 - a random install id generated locally on first run (stored in `~/.trvl/install-id`)
 
-The payload contains nothing else: no hostname, no username, no search queries, no travel data. Two things the list above does not make obvious, stated rather than left to inference. Your IP is not in the payload, but the request reveals it as any HTTP request does, and the collector uses it server-side to derive coarse geography, which it reports only in aggregate with a minimum group size of 5. And the install id is stable, so repeated heartbeats from one machine are linkable to each other over time; it is random and contains nothing about you, but it is not a fresh value each time. The request has a 3-second timeout and fails silently. If the collector is down or slow, trvl behaves exactly as if telemetry were off.
+No hostname, no username, no search queries, no travel data. Two things that list does not make obvious, stated rather than left to inference. Your IP is not in the payload, but the request reveals it as any HTTP request does, and the collector uses it server-side to derive coarse geography, reported only in aggregate with a minimum group size of 5. And the install id is stable, so repeated heartbeats from one machine are linkable to each other over time; it is random and contains nothing about you, but it is not a fresh value each time. The request has a 3-second timeout and fails silently — if the collector is down, trvl behaves exactly as if telemetry were off.
 
 To turn it off, set any one of these before running trvl:
 
@@ -335,9 +187,38 @@ export DO_NOT_TRACK=1        # cross-tool Do-Not-Track signal
 
 It is also skipped automatically in CI and for development builds. Override the endpoint with `TRVL_TELEMETRY_ENDPOINT` if you run your own collector.
 
+## Run it as an HTTP / remote server
+
+Local stdio is the default and safest transport. `trvl mcp --http` binds to `127.0.0.1`, requires a bearer token, and generates one at startup if unset. Remote exposure, scoped read/write tokens, and OAuth 2.1 introspection: [docs/REMOTE-MCP-OAUTH.md](docs/REMOTE-MCP-OAUTH.md).
+
+## Troubleshooting
+
+- **No tools showing?** Restart your AI client after `trvl mcp install`; confirm `which trvl` is on `$PATH`.
+- **Empty flight results?** Some routes have no Google Flights data — try a major pair like `trvl flights HEL LHR 2026-07-01`.
+- **Ground transport times out?** Rail/ferry providers throttle; retry after 30s or pass `--timeout 3m`.
+
+Full troubleshooting: [docs/CLI.md](docs/CLI.md).
+
+## Available on
+
+[Glama](https://glama.ai/mcp/servers/MikkoParkkola/trvl) · [LobeHub](https://lobehub.com/mcp/mikkoparkkola-trvl) · [Smithery](https://smithery.ai/server/@MikkoParkkola/trvl) · [MCPHub](https://www.mcphub.com/mcp-servers/MikkoParkkola/trvl) · [Cursor Directory](https://cursor.directory/mcp/trvl) · [PulseMCP](https://www.pulsemcp.com/servers/mikkoparkkola-trvl) · [MCP Market](https://mcpmarket.com/server/trvl) · [pkg.go.dev](https://pkg.go.dev/github.com/MikkoParkkola/trvl)
+
+**Independent coverage:** Roberto Reale's [Budget Travel Pipeline](https://blog-roberto-reale.vercel.app) — an independent build-and-test that surfaced real fixes and shaped the v1.10 trust roadmap.
+
+## Ecosystem
+
+Part of a suite of MCP tools: [mcp-gateway](https://github.com/MikkoParkkola/mcp-gateway) (universal gateway) · [nab](https://github.com/MikkoParkkola/nab) (web extraction with anti-bot) · [axterminator](https://github.com/MikkoParkkola/axterminator) (macOS GUI automation).
+
 ## Legal & license
 
 trvl is a **personal-use tool** that reads public-facing web APIs (Google Flights, Google Hotels, and others). It does not bypass authentication or circumvent rate limits; request patterns are throttled to look like manual browsing. Automated access may violate some providers' Terms of Service — you are responsible for compliance in your jurisdiction.
+
+`trvl flights` and `trvl hotels` accept an optional `--stealth` flag that routes the fetch through trvl's Chrome HTTP/2 fingerprint transport. It is off unless you pass it, activates only for hosts you list in `TRVL_STEALTH_ALLOWLIST`, and does nothing but log one line for any host not on that list — an empty allowlist means it never activates. Only flight and hotel search honour it. Using stealth against sites whose terms prohibit automated access is your responsibility.
+
+```bash
+export TRVL_STEALTH_ALLOWLIST=".google.com"
+trvl flights HEL NRT 2026-09-01 --stealth
+```
 
 Licensed under [PolyForm Noncommercial 1.0](LICENSE) — free for personal and noncommercial use. Commercial use (company-internal, hosted service, embedding in paid platforms) requires a separate license: EUR 500/month per named project via [GitHub Sponsors](https://github.com/sponsors/MikkoParkkola), see [COMMERCIAL.md](COMMERCIAL.md).
 

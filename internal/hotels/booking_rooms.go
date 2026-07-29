@@ -3,6 +3,7 @@ package hotels
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -51,6 +52,15 @@ var FetchBookingRooms = defaultFetchBookingRooms
 func defaultFetchBookingRooms(ctx context.Context, bookingURL, checkIn, checkOut, currency string) ([]RoomType, error) {
 	if bookingURL == "" {
 		return nil, fmt.Errorf("booking URL is required")
+	}
+	// The URL arrives from outside: an MCP booking_url argument, or a link
+	// carried on a search result. Pin it to Booking.com before the first
+	// request, not merely before the cookies. hotel_rooms is advertised as a
+	// read-only tool, so without this any client holding a read token could
+	// aim trvl's HTTP client at localhost, a private network, or a cloud
+	// metadata endpoint and use the response as an oracle.
+	if !bookingHostAllowed(bookingURL, bookingCookieSite) {
+		return nil, ErrNotBookingURL
 	}
 
 	// Append date and currency parameters to the Booking URL so the
@@ -129,6 +139,21 @@ func buildBookingDetailURL(baseURL, checkIn, checkOut, currency string) string {
 	return baseURL + "?" + strings.Join(params, "&")
 }
 
+// bookingCookieSite is the site the Booking.com session cookies belong to.
+// It is both the domain they are read for and the only domain they may be
+// sent to; see the origin check in fetchBookingPage.
+const bookingCookieSite = "booking.com"
+
+// ErrNotBookingURL is returned when the room lookup is handed a URL that is not
+// an https Booking.com address. It is a distinct error rather than an empty
+// room list so a caller can tell "refused" from "found nothing".
+// bookingHostAllowed is the destination pin. It is a var only so the parser
+// tests can point the lookup at a local fixture server; production code must
+// never reassign it, and the guard tests exercise the default.
+var bookingHostAllowed = cookiesconsent.IsHTTPSOnSite
+
+var ErrNotBookingURL = errors.New("room lookup refused: not an https booking.com URL")
+
 // browserCookies is overridable in tests; defaults to providers.BrowserCookiesForURL.
 var browserCookies = defaultBrowserCookies
 
@@ -158,12 +183,18 @@ func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
 	// bkng cookie from the user's browser via kooky.
 	//
 	// The read itself is gated inside providers (permittedAfterRead), which is
-	// where the guarantee lives. The HeaderIfPermitted wraps below are the second
-	// layer: they sit on the last line before transmission, so a decline arriving
-	// even later than the read still stops the credential. Round 11 of review
-	// found this path sending live Booking.com credentials with neither.
+	// where the guarantee lives. The HeaderIfPermittedForURL wraps below are the
+	// second layer: they sit on the last line before transmission, so a decline
+	// arriving even later than the read still stops the credential. Round 11 of
+	// review found this path sending live Booking.com credentials with neither.
+	//
+	// They also carry the origin check. pageURL is derived from a caller-supplied
+	// booking_url (an MCP argument, or a link carried on a search result), and
+	// buildBookingDetailURL concatenates rather than validates, so the host here
+	// is not trustworthy. Without the check, pointing booking_url at any host
+	// that answers 202/403/503 would hand it the user's live Booking.com session.
 	if status == 202 || status == 403 || status == 503 {
-		cookies := browserCookies("https://www.booking.com")
+		cookies := browserCookies("https://www." + bookingCookieSite)
 		var cookieStr string
 		for _, c := range cookies {
 			if c.Name == "bkng" && c.Value != "" {
@@ -173,7 +204,7 @@ func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
 		}
 		if cookieStr != "" {
 			slog.Debug("booking.com challenge, retrying with browser cookie", "status", status)
-			status, body, err = client.GetWithCookie(ctx, pageURL, cookiesconsent.HeaderIfPermitted(cookieStr))
+			status, body, err = client.GetWithCookie(ctx, pageURL, cookiesconsent.HeaderIfPermittedForURL(cookieStr, pageURL, bookingCookieSite))
 			if err == nil && status == 200 {
 				return string(body), nil
 			}
@@ -191,7 +222,7 @@ func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
 		}
 		if cookieStr != "" {
 			slog.Debug("booking.com challenge, retrying with all browser cookies", "status", status)
-			status, body, err = client.GetWithCookie(ctx, pageURL, cookiesconsent.HeaderIfPermitted(cookieStr))
+			status, body, err = client.GetWithCookie(ctx, pageURL, cookiesconsent.HeaderIfPermittedForURL(cookieStr, pageURL, bookingCookieSite))
 			if err == nil && status == 200 {
 				return string(body), nil
 			}

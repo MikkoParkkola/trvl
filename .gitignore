@@ -54,3 +54,7 @@ docs/plans/
 /*.jpg
 /*.jpeg
 /*.png
+
+# GPT second-opinion scratch (diff sent to the reviewer, its output)
+/.gptreview-input.diff
+/.gptreview*.out

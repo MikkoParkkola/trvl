@@ -119,7 +119,15 @@ func TestProvidersDoNotSendBrowserCookiesDirectly(t *testing.T) {
 		walked++
 		permitted := func(line string) bool {
 			return strings.Contains(line, "HeaderIfPermitted(") ||
+				strings.Contains(line, "HeaderIfPermittedForURL(") ||
 				strings.Contains(line, "AttachBrowserCookies(")
+		}
+		// The transmission line is held to the stricter wrapper. Accepting the
+		// plain HeaderIfPermitted here would let this test pass against the
+		// origin bug it is named for: that wrapper checks the user's consent
+		// and nothing about where the credential is going.
+		originChecked := func(line string) bool {
+			return strings.Contains(line, "HeaderIfPermittedForURL(")
 		}
 		for _, line := range strings.Split(string(src), "\n") {
 			// Every read of the user's browser must be wrapped where it is read,
@@ -132,9 +140,9 @@ func TestProvidersDoNotSendBrowserCookiesDirectly(t *testing.T) {
 			}
 			// The last line before transmission. Round 11 found two of these in
 			// booking_rooms.go handing a raw browser Cookie header to the client.
-			if strings.Contains(line, ".GetWithCookie(") && !permitted(line) {
+			if strings.Contains(line, ".GetWithCookie(") && !originChecked(line) {
 				t.Errorf("internal/%s sends a raw Cookie header: %s\n\twrap the value in "+
-					"cookies.HeaderIfPermitted(...), or add the file to the allowlist in "+
+					"cookies.HeaderIfPermittedForURL(...), or add the file to the allowlist in "+
 					"this test with the reason its cookies are not browser-derived",
 					rel, strings.TrimSpace(line))
 			}

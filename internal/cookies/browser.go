@@ -9,11 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/MikkoParkkola/trvl/internal/consent"
 	trvlnab "github.com/MikkoParkkola/trvl/internal/nab"
@@ -372,4 +375,71 @@ func HeaderIfPermitted(header string) string {
 		return ""
 	}
 	return header
+}
+
+// HeaderIfPermittedForURL is HeaderIfPermitted plus the origin check the
+// consent layer cannot make on its own: cookies read for one site must only
+// ever be sent to that site. Callers that derive a request URL from untrusted
+// input (an MCP argument, a scraped listing link) MUST use this form, because
+// consent alone would happily hand a live session cookie to whatever host the
+// URL names.
+//
+// site is the registrable domain the cookies were read for, e.g. "booking.com".
+// The header survives only when the request is https and its host is that
+// domain or a subdomain of it. Matching is on the parsed hostname, so neither
+// "https://evil.com/?x=www.booking.com" nor the userinfo trick
+// "https://www.booking.com@evil.com/" gets through.
+func HeaderIfPermittedForURL(header, rawURL, site string) string {
+	if Disabled() || header == "" {
+		return ""
+	}
+	if !IsHTTPSOnSite(rawURL, site) {
+		slog.Debug("withholding browser cookies: request host is not the site they were read for",
+			"site", site)
+		return ""
+	}
+	return header
+}
+
+// IsHTTPSOnSite reports whether rawURL is an https URL on site or a subdomain
+// of it. It is the check behind HeaderIfPermittedForURL, exported so a caller
+// that takes a URL from outside can refuse the request outright rather than
+// only withholding credentials from it.
+func IsHTTPSOnSite(rawURL, site string) bool {
+	site = strings.ToLower(strings.TrimSpace(site))
+	if site == "" {
+		return false
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+
+	// url.Hostname strips the brackets from an IPv6 literal but keeps the zone
+	// identifier, so "https://[::1%25.booking.com]/" arrives here as the string
+	// "::1%.booking.com" -- which ends in ".booking.com" and would otherwise pass,
+	// while the dialer connects to IPv6 loopback. A hostname that survives to a
+	// suffix comparison must be a DNS name: no zone identifier, no colons, and
+	// not an IP address in any form.
+	if strings.ContainsAny(host, "%:[]") || net.ParseIP(host) != nil {
+		return false
+	}
+
+	// The clause above matches ASCII punctuation, so a fullwidth homoglyph host
+	// such as "：：１％.booking.com" walks straight past it and suffix-matches.
+	// Measured, not assumed: Go's IDNA profile REJECTS U+FF1A rather than folding
+	// it to ":", so that host resolves to the punycode label
+	// "xn--1-kn0i4ba.booking.com" and never reaches loopback -- the reviewer's
+	// claimed exploit does not reproduce. It is refused anyway. This function
+	// admits one host and its subdomains, all of which are ASCII, so a non-ASCII
+	// hostname is by definition not one of them and does not need a theory of
+	// harm to be turned away.
+	for i := 0; i < len(host); i++ {
+		if host[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+
+	return host == site || strings.HasSuffix(host, "."+site)
 }

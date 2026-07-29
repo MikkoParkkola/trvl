@@ -100,6 +100,7 @@ func TestFetchBookingRooms_WithJSONLD(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	allowLocalBookingHost(t)
 	rooms, err := FetchBookingRooms(context.Background(), srv.URL, "2026-07-01", "2026-07-05", "EUR")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -139,6 +140,7 @@ func TestFetchBookingRooms_FallsBackToSSR(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	allowLocalBookingHost(t)
 	rooms, err := FetchBookingRooms(context.Background(), srv.URL, "2026-07-01", "2026-07-05", "USD")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -157,6 +159,7 @@ func TestFetchBookingRooms_NoOffers(t *testing.T) {
 		_, _ = fmt.Fprint(w, "<html><body>empty page</body></html>")
 	}))
 	defer srv.Close()
+	allowLocalBookingHost(t)
 	_, err := FetchBookingRooms(context.Background(), srv.URL, "2026-07-01", "2026-07-05", "USD")
 	if err == nil || !strings.Contains(err.Error(), "no room offers") {
 		t.Errorf("expected 'no room offers' error, got: %v", err)
@@ -168,6 +171,7 @@ func TestFetchBookingRooms_FetchError(t *testing.T) {
 	cancel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	srv.Close()
+	allowLocalBookingHost(t)
 	_, err := FetchBookingRooms(ctx, srv.URL, "2026-07-01", "2026-07-05", "USD")
 	if err == nil || !strings.Contains(err.Error(), "fetch booking detail page") {
 		t.Errorf("expected fetch error, got: %v", err)
@@ -188,6 +192,7 @@ func TestFetchBookingRooms_CurrencyFallback(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	allowLocalBookingHost(t)
 	rooms, err := FetchBookingRooms(context.Background(), srv.URL, "2026-07-01", "2026-07-05", "GBP")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
