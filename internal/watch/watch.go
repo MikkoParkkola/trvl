@@ -401,6 +401,14 @@ func (s *Store) saveLocked() error {
 // The insert is a single transaction against committed on-disk state, so a
 // concurrent writer adding a different watch cannot be overwritten
 // (TRVL.STORE.TXN.1).
+//
+// Adds are idempotent on identity: if a watch with the same dedupeKey (polled
+// target plus price threshold) is already stored, its ID is returned and
+// nothing is written. Repeating an identical request therefore cannot
+// accumulate duplicates (#509, MULTIPRICE.4), while a request differing only
+// in threshold is a distinct intent and is stored alongside (MULTIPRICE.1).
+// The lookup runs inside the transaction, so it sees committed state rather
+// than this process's snapshot and two processes cannot both win the race.
 func (s *Store) Add(w Watch) (string, error) {
 	if err := w.Validate(); err != nil {
 		return "", err
@@ -409,13 +417,23 @@ func (s *Store) Add(w Watch) (string, error) {
 	w.ID = shortID()
 	w.CreatedAt = time.Now()
 
+	id := w.ID
+	key := w.dedupeKey()
 	if err := s.withTxn(func() error {
+		if existing, ok := findByDedupeKey(s.watches, key); ok {
+			// Identical intent already stored: adopt its ID and skip the write
+			// entirely rather than rewriting both files with the same content.
+			// The existing record keeps its history, lowest price and creation
+			// date (MULTIPRICE.5); nothing about it is overwritten.
+			id = existing.ID
+			return errTxnNoop
+		}
 		s.watches = append(s.watches, w)
 		return nil
 	}); err != nil {
 		return "", err
 	}
-	return w.ID, nil
+	return id, nil
 }
 
 // List returns all active watches.

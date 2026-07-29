@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/watch"
 )
@@ -212,5 +213,67 @@ func TestHandleWatchPrice_NoThresholdErrors(t *testing.T) {
 	}, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected an error when neither target_price nor alert_drop is set")
+	}
+}
+
+// TestHandleWatchPrice_ThresholdsAndRepeats proves the MCP surface inherits the
+// #509 store semantics: two thresholds on one route are two watches, an
+// identical repeat is neither a second watch nor a new creation timestamp.
+func TestHandleWatchPrice_ThresholdsAndRepeats(t *testing.T) {
+	watchHome := t.TempDir()
+	t.Setenv("HOME", watchHome)
+	t.Setenv("USERPROFILE", watchHome)
+
+	call := func(target float64) map[string]any {
+		t.Helper()
+		_, structured, err := handleWatchPrice(context.Background(), map[string]any{
+			"type":         "flight",
+			"origin":       "AMS",
+			"destination":  "VLC",
+			"depart_date":  "2027-03-01",
+			"target_price": target,
+			"currency":     "EUR",
+		}, nil, nil, nil)
+		if err != nil {
+			t.Fatalf("handleWatchPrice(%v): %v", target, err)
+		}
+		raw, err := json.Marshal(structured)
+		if err != nil {
+			t.Fatalf("marshal response: %v", err)
+		}
+		var out map[string]any
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("unmarshal response: %v", err)
+		}
+		return out
+	}
+
+	first := call(200)
+	second := call(120)
+	if first["watch_id"] == second["watch_id"] {
+		t.Fatalf("MULTIPRICE.1: distinct thresholds returned the same watch_id %v", first["watch_id"])
+	}
+
+	// created_at is RFC3339, i.e. second resolution: cross a second boundary so
+	// a regression that re-stamps "now" is actually visible in the comparison
+	// below rather than hidden by two calls landing in the same second.
+	time.Sleep(1100 * time.Millisecond)
+	repeat := call(200)
+	if repeat["watch_id"] != first["watch_id"] {
+		t.Fatalf("MULTIPRICE.4: repeat returned watch_id %v, want existing %v", repeat["watch_id"], first["watch_id"])
+	}
+	if repeat["created_at"] != first["created_at"] {
+		t.Fatalf("MULTIPRICE.4: repeat claimed a new creation time %v, want %v", repeat["created_at"], first["created_at"])
+	}
+
+	store, err := watch.DefaultStore()
+	if err != nil {
+		t.Fatalf("DefaultStore: %v", err)
+	}
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := len(store.List()); got != 2 {
+		t.Fatalf("MULTIPRICE.4: store holds %d watches after 3 calls, want 2", got)
 	}
 }

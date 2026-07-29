@@ -103,6 +103,11 @@ func CheckAllWithRoomsAndWebhookContext(checkCtx, webhookCtx context.Context, st
 func checkWatchesWithRoomsAndWebhookContext(checkCtx, webhookCtx context.Context, store *Store, checker PriceChecker, roomChecker RoomChecker, watches []Watch) []CheckResult {
 	checkCtx, webhookCtx = normalizeCheckAndWebhookContexts(checkCtx, webhookCtx)
 
+	// One provider call per distinct polled target for the whole round. Watches
+	// that differ only in price threshold share the search and are then
+	// evaluated independently below (#509, MULTIPRICE.2).
+	checker = newRoundCache(checker)
+
 	results := make([]CheckResult, 0, len(watches))
 
 	for i, w := range watches {
@@ -172,6 +177,10 @@ func CheckAllBounded(ctx context.Context, store *Store, checker PriceChecker, ro
 	results := make([]CheckResult, len(watches))
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
+
+	// Single-flight per polled target: duplicate routes issue one provider call
+	// for the round even under concurrency (#509, MULTIPRICE.2).
+	checker = newRoundCache(checker)
 
 	for i, w := range watches {
 		wg.Add(1)
