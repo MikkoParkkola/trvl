@@ -241,3 +241,116 @@ the cookie gate each have a named test that fails when the guard is removed, and
 disclosure test fails the moment a new file starts writing under `~/.trvl` without
 being disclosed. The cost of *not* shipping is that the room-lookup hole stays open on
 a branch that is otherwise ready.
+
+---
+
+## Pending, operator-approved 2026-07-29
+
+**Build the trvl GitNexus index and install the staleness hook**, sequenced *after*
+the in-flight fix workflows land — indexing a tree that agents are still writing to
+produces an index that is stale on arrival.
+
+State found: the scaffolding at `scripts/gitnexus/` (`refresh.sh`,
+`check-staleness.sh`, `install-hooks.sh`) is committed but was never activated. There
+is no `.gitnexus/` index, no entry in `~/.gitnexus/registry.json`, and no staleness
+hook in `.git/hooks/`. Other repos in the portfolio are indexed; this one is not.
+
+Why it is not cosmetic: the destination-check work in this very commit was done with
+plain text search rather than a call graph, and that missed a second unguarded caller
+— `configure_provider` (`internal/mcp/tools_providers.go`) attaches browser cookies to
+a caller-supplied endpoint through `internal/providers/runtime_provider.go`. An
+independent audit found it; a call-graph query would likely have surfaced it in one
+step. That is the cost of the gap, observed rather than theorised.
+
+---
+
+## Corrections to this brief (2026-07-29, after an independent audit)
+
+An audit of this document against the code found two statements above that were
+**false** and three that were **overstated**. They are corrected here rather than
+edited away, because a brief that quietly rewrites itself is not evidence.
+
+### False, now fixed in code
+
+**1. "Only the room lookup accepts a web address from the caller."** It did not.
+`configure_provider` accepts a *preflight URL* in the same call as the endpoint, and
+that preflight URL — unlike the endpoint — is never shown in the consent prompt. It
+reached the browser-cookie reader unchecked at four of five call sites. So a client
+could name any host, and trvl would read whatever live session you hold for it and
+replay it there. This is a confused deputy, not a cross-origin leak, and it was the
+second instance of the exact defect this release exists to fix.
+
+Now closed: cookies are refused unless the destination is the site whose domain the
+consent prompt actually displayed. Sabotage-checked twice — removing the check fails
+the end-to-end test at the discriminating line (*"jar holds 1 cookies for
+`https://mail.google.com/`, want 0"*), and removing only the host-equality rule fails
+exactly the four cases that name it.
+
+One deliberate narrowing, made while fixing this: the check is **same-site as the
+consented endpoint**, not the stricter public-HTTPS test used for Booking.com. Those
+differ only for a self-hosted or on-LAN endpoint — which reaches a provider config
+only by you typing it. Requiring public HTTPS there would break every such config
+while closing nothing, since those endpoints are same-site with their own preflight.
+Same-site is still enforced for them, by exact host, and an HTTPS endpoint may not be
+downgraded to plaintext. That is a judgement call and it is flagged as one.
+
+**2. "Nothing was dropped in the move."** Something was. The README's candour note —
+recording that documenting the cookie reads took three attempts, and that the two
+earlier versions each claimed a narrower scope than the code had — was deleted and
+landed in neither file. Losing precisely the paragraph that admits earlier
+understatement is the worst possible thing to lose. Restored, in
+`docs/ARCHITECTURE.md`, next to the scope it qualifies.
+
+### Overstated, now narrowed
+
+- **The homoglyph fix.** Go's IDNA conversion returns *both* a punycode result and an
+  error for that host, and nothing on this path runs that conversion. No test pins the
+  behaviour. The guard is still right; the account of why was tidier than the evidence.
+- **Sabotage coverage.** Three cases across two tests, not two.
+- **"4163 tests pass" is weaker evidence than it reads.** Five tests in the hotel
+  package reach a local server by reassigning the production destination-check
+  variable. They therefore run with the guard disabled. The dedicated destination
+  tests do not, and they are the ones that carry the claim.
+
+### Also fixed since the brief was written
+
+A refusal by the destination check was logged at debug level and returned as an empty
+result, so a caller saw "no rooms found" rather than "that address was refused". It
+now surfaces. Unrelated fixes for a file-corruption bug and a cookie-scope bug landed
+in the same sweep; the full suite is green at **11,051 passing across 102 packages**,
+`go build ./...` and `gofmt` clean.
+
+### Process notes
+
+- This brief was written by the same agent that wrote the code. The audit above was
+  not, which is the only reason the two false claims surfaced. Treat any unaudited
+  self-written brief accordingly.
+- Issue #537 was silently repointed from the original leak to the narrower redirect
+  question. Reasonable, but it was not asked for.
+- The README's disclosure text is frozen by a test in `cmd/trvl`, so the wording above
+  cannot drift from the code without a failure.
+
+### One correction to the correction
+
+The audit said `configure_provider` was itself a second unguarded fetch. That is not
+quite right, and precision matters here. `configure_provider` does not fetch anything.
+What it does is *accept* the preflight URL, which later reaches the browser-cookie reader
+(`applyBrowserCookies`) from three call sites. The defect and the fix are unchanged; the
+name of the guilty function was wrong.
+
+### Still open, and disclosed rather than fixed
+
+The guard stops the user's **cookies** going to a host they never approved. It does not
+stop the **fetch**. A provider config still accepts any scheme and any host, so a caller
+can point trvl at `localhost` or at a cloud metadata address and get an uncredentialed
+request made on its behalf, with a few hundred bytes of the response body returned. That
+is a smaller problem than replaying a live session, and it is the reason the guard was
+scoped to cookies rather than to addresses: refusing plaintext and loopback outright
+would break local development against a mock provider while closing no part of the
+credential defect. It needs a product decision about allow-listing, which is not a
+release-branch call. **Not yet filed as an issue.**
+
+Two related gaps, same category: the consent prompt names the endpoint host but never the
+preflight host, so the user approves one address and a second travels with it unseen; and
+the response-body snippet returned to callers is an exfiltration channel independent of
+cookies.

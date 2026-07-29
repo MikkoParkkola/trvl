@@ -358,10 +358,21 @@ Where those cookies go: into the request trvl makes to the site they were read f
 that operator receives its own cookies back, which is the point of reading them. trvl
 sends them nowhere else and reports them to no endpoint of its own.
 
-That is enforced, not merely intended. On the one path where the request URL comes from
+Documenting this took three attempts, and each earlier version claimed a narrower scope
+than the code has: first that trvl never looked at local credentials unrequested, then
+that rail search was the sole exception. Both were wrong. The list above is the third
+attempt, and it is written to be checkable rather than reassuring — a test in
+`cmd/trvl` fails if the README's version of it drifts from this one.
+
+That is enforced, not merely intended. On the two paths where the request URL comes from
 outside — the Booking.com room lookup takes a URL from an MCP argument or from a link
-carried on a search result — the cookie header is withheld unless the request is HTTPS and
-its host is `booking.com` or a subdomain. The check runs on the parsed hostname at the last
+carried on a search result, and a custom provider's preflight URL arrives inside the same
+`configure_provider` call as the endpoint — the cookies are withheld unless the
+destination is the site the user actually approved. For the room lookup that is
+`booking.com` or a subdomain over HTTPS. For a custom provider it is the endpoint domain
+the consent prompt displayed, which is the only host in that config the user has seen:
+a preflight URL pointing anywhere else gets no cookies, because it was never shown to
+them. The check runs on the parsed hostname at the last
 line before transmission (`cookies.HeaderIfPermittedForURL`), so neither a lookalike domain
 nor a `https://www.booking.com@elsewhere/` userinfo trick collects the session. Sending the
 cookies to a host they were not read for is a test failure, in `internal/hotels`
