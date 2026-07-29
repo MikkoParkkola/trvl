@@ -211,6 +211,64 @@ func TestMigrateKeepsRichestDuplicate(t *testing.T) {
 	}
 }
 
+// Regression for the adversarial-review finding, 2026-07-29: when both
+// duplicates in a group already carry observations, the surviving record's
+// LowestPrice must be the true minimum of the two, not whichever duplicate
+// happens to win on recency. A duplicate group with lows of 50 and 100 must
+// never let migration keep 100 and silently erase the 50.
+func TestMigrateMergesLowestPriceAcrossDuplicates(t *testing.T) {
+	s := NewStore(t.TempDir())
+	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}
+
+	older := base
+	older.ID = "older-cheaper"
+	older.LowestPrice = 50
+	older.LastCheck = time.Now().Add(-48 * time.Hour)
+	older.CreatedAt = time.Now().Add(-90 * 24 * time.Hour)
+
+	newer := base
+	newer.ID = "newer-pricier"
+	newer.LowestPrice = 100
+	newer.LastCheck = time.Now()
+	newer.CreatedAt = time.Now().Add(-1 * time.Hour)
+
+	s.watches = []Watch{older, newer}
+	s.history = []PricePoint{
+		{WatchID: "older-cheaper", Price: 50, Timestamp: older.LastCheck},
+		{WatchID: "newer-pricier", Price: 100, Timestamp: newer.LastCheck},
+	}
+
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	watches := s.List()
+	if len(watches) != 1 {
+		t.Fatalf("duplicate group collapsed to %d watches, want 1", len(watches))
+	}
+	survivor := watches[0]
+	if survivor.ID != "newer-pricier" {
+		t.Fatalf("expected the more-recently-checked record to win identity, got %q", survivor.ID)
+	}
+	if survivor.LowestPrice != 50 {
+		t.Errorf("LowestPrice = %v, want 50 (the group's true low must survive, not just the winner's recency)", survivor.LowestPrice)
+	}
+
+	// Neither duplicate's observation may be lost: both points must survive,
+	// reassigned onto the surviving watch ID rather than dropped as orphans.
+	var prices []float64
+	for _, p := range s.history {
+		if p.WatchID != "newer-pricier" {
+			t.Errorf("history point still tagged with a collapsed-away ID %q", p.WatchID)
+			continue
+		}
+		prices = append(prices, p.Price)
+	}
+	if len(prices) != 2 {
+		t.Fatalf("history after migrate has %d points for the survivor, want 2 (50 and 100 both preserved)", len(prices))
+	}
+}
+
 // Compaction is what actually recovers the memory: the retention caps otherwise
 // apply only to NEW writes, leaving an existing 39MB / 320k-point file exactly
 // as large as it was.

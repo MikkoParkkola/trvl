@@ -84,7 +84,9 @@ func (s *Store) Migrate() (MigrationReport, error) {
 	}
 	rep.BackupPath = backup
 
-	rep.DuplicatesRemoved = s.collapseDuplicatesLocked()
+	removed, idMap := s.collapseDuplicatesLocked()
+	rep.DuplicatesRemoved = removed
+	s.reassignHistoryLocked(idMap)
 
 	now := time.Now()
 	for i := range s.watches {
@@ -115,13 +117,29 @@ func (s *Store) Migrate() (MigrationReport, error) {
 }
 
 // collapseDuplicatesLocked merges watches monitoring the same target, keeping
-// the richest record of each group. Returns how many were removed.
+// the richest record of each group. Returns how many were removed and a map
+// from every removed watch's ID to the ID of the record that survives its
+// group, so callers can reassign (not discard) that watch's price history.
 // Caller holds s.mu.
-func (s *Store) collapseDuplicatesLocked() int {
+//
+// Found by adversarial review, 2026-07-29: richer() only chose which record's
+// OTHER fields (currency, thresholds, LastCheck-derived identity) survive. It
+// never compared the two records' actual LowestPrice values, so a duplicate
+// group where both rows already had observations silently kept whichever had
+// the more recent LastCheck and discarded the other's LowestPrice outright --
+// e.g. a €50 low recorded by the older, less-recently-checked duplicate was
+// lost in favor of a newer duplicate's €100 low. The group's true lowest
+// price must survive regardless of which record wins on recency.
+func (s *Store) collapseDuplicatesLocked() (int, map[string]string) {
 	if len(s.watches) < 2 {
-		return 0
+		return 0, nil
 	}
 	kept := make([]Watch, 0, len(s.watches))
+	// idMap tracks every collapsed watch's ID to the ID of whichever record
+	// ultimately survives its duplicate group (groups can be more than 2
+	// deep, so an ID already mapped to a now-superseded survivor is
+	// re-pointed at the new one).
+	idMap := make(map[string]string)
 	for _, w := range s.watches {
 		idx := -1
 		for i := range kept {
@@ -134,22 +152,74 @@ func (s *Store) collapseDuplicatesLocked() int {
 			kept = append(kept, w)
 			continue
 		}
-		if richer(w, kept[idx]) {
+		survivor := kept[idx]
+		mergedLowest := lowerPositive(survivor.LowestPrice, w.LowestPrice)
+		var loserID string
+		if richer(w, survivor) {
 			// Keep the incoming record but do not lose an earlier creation date:
 			// the group's history is older than any single surviving row.
-			if !kept[idx].CreatedAt.IsZero() &&
-				(w.CreatedAt.IsZero() || kept[idx].CreatedAt.Before(w.CreatedAt)) {
-				w.CreatedAt = kept[idx].CreatedAt
+			if !survivor.CreatedAt.IsZero() &&
+				(w.CreatedAt.IsZero() || survivor.CreatedAt.Before(w.CreatedAt)) {
+				w.CreatedAt = survivor.CreatedAt
 			}
+			w.LowestPrice = mergedLowest
 			kept[idx] = w
-		} else if !w.CreatedAt.IsZero() &&
-			(kept[idx].CreatedAt.IsZero() || w.CreatedAt.Before(kept[idx].CreatedAt)) {
-			kept[idx].CreatedAt = w.CreatedAt
+			loserID = survivor.ID
+		} else {
+			if !w.CreatedAt.IsZero() &&
+				(survivor.CreatedAt.IsZero() || w.CreatedAt.Before(survivor.CreatedAt)) {
+				survivor.CreatedAt = w.CreatedAt
+			}
+			survivor.LowestPrice = mergedLowest
+			kept[idx] = survivor
+			loserID = w.ID
+		}
+		survivorID := kept[idx].ID
+		if loserID != survivorID {
+			idMap[loserID] = survivorID
+		}
+		for old, cur := range idMap {
+			if cur == loserID {
+				idMap[old] = survivorID
+			}
 		}
 	}
 	removed := len(s.watches) - len(kept)
 	s.watches = kept
-	return removed
+	return removed, idMap
+}
+
+// lowerPositive returns the lower of two prices, treating a non-positive
+// value (unset) as absent rather than as a real zero-price low.
+func lowerPositive(a, b float64) float64 {
+	switch {
+	case a <= 0:
+		return b
+	case b <= 0:
+		return a
+	case a < b:
+		return a
+	default:
+		return b
+	}
+}
+
+// reassignHistoryLocked repoints price-history points belonging to watches
+// collapsed by collapseDuplicatesLocked onto the survivor's ID, so
+// compactHistoryLocked's live-watch filter keeps them instead of dropping
+// them as orphans of a now-removed duplicate. Caller holds s.mu.
+func (s *Store) reassignHistoryLocked(idMap map[string]string) {
+	if len(idMap) == 0 {
+		return
+	}
+	for i := range s.history {
+		if s.history[i].WatchID == "" {
+			continue
+		}
+		if survivor, ok := idMap[s.history[i].WatchID]; ok {
+			s.history[i].WatchID = survivor
+		}
+	}
 }
 
 // richer reports whether a should win over b as a duplicate group's survivor.
@@ -256,7 +326,9 @@ func (s *Store) MigrateDryRun() (MigrationReport, error) {
 		WatchesBefore: len(shadow.watches),
 		HistoryBefore: len(shadow.history),
 	}
-	rep.DuplicatesRemoved = shadow.collapseDuplicatesLocked()
+	removed, idMap := shadow.collapseDuplicatesLocked()
+	rep.DuplicatesRemoved = removed
+	shadow.reassignHistoryLocked(idMap)
 	for i := range shadow.watches {
 		if shadow.watches[i].RenewedAt.IsZero() {
 			rep.RenewalsStamped++
