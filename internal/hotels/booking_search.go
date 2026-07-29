@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
 	"golang.org/x/time/rate"
@@ -238,7 +239,7 @@ func parseBookingApollo(blob, currency string) ([]models.HotelResult, error) {
 		// page shape rotated underneath us. Surface a typed parse failure so the
 		// caller records it against the circuit breaker instead of a false
 		// healthy-empty result.
-		slog.Debug("booking apollo: top-level unmarshal failed", "error", err)
+		slog.Debug("booking apollo: top-level unmarshal failed", "error", logredact.Err(err))
 		return nil, fmt.Errorf("booking apollo: store JSON could not be parsed: %w", models.ErrParseFailed)
 	}
 

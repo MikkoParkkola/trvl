@@ -2,9 +2,11 @@ package hotels
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -118,7 +120,16 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	if opts.BookingURL != "" {
 		br, brErr := FetchBookingRooms(ctx, opts.BookingURL, opts.CheckIn, opts.CheckOut, opts.Currency)
 		if brErr != nil {
-			slog.Debug("booking rooms fetch failed", "error", brErr)
+			// The destination pin refused this URL: the caller asked for a
+			// host that is not an https booking.com page, so no request was
+			// made. That is a bad request, not a thin result. Degrading to an
+			// empty room list here would make a refused destination
+			// indistinguishable from a hotel that genuinely has no rooms, and
+			// the caller would keep re-sending the URL that can never work.
+			if errors.Is(brErr, ErrNotBookingURL) {
+				return nil, fmt.Errorf("booking_url %q: %w", opts.BookingURL, brErr)
+			}
+			slog.Debug("booking rooms fetch failed", "error", logredact.Err(brErr))
 			// A bot-wall / 429 / transient 5xx is retryable, not a genuine
 			// "no rooms" result. Surface it so the caller knows Booking room
 			// pricing was withheld this time rather than silently absent — the

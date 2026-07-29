@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	cookiesconsent "github.com/MikkoParkkola/trvl/internal/cookies"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -74,7 +75,7 @@ func defaultFetchBookingRooms(ctx context.Context, bookingURL, checkIn, checkOut
 
 	offers, err := parseBookingJSONLD(body)
 	if err != nil {
-		slog.Debug("booking JSON-LD parse failed, trying Apollo cache", "error", err)
+		slog.Debug("booking JSON-LD parse failed, trying Apollo cache", "error", logredact.Err(err))
 		// Fall back to Apollo/SSR cache parsing.
 		offers = parseBookingApolloRooms(body)
 	}
@@ -144,14 +145,14 @@ func buildBookingDetailURL(baseURL, checkIn, checkOut, currency string) string {
 // sent to; see the origin check in fetchBookingPage.
 const bookingCookieSite = "booking.com"
 
-// ErrNotBookingURL is returned when the room lookup is handed a URL that is not
-// an https Booking.com address. It is a distinct error rather than an empty
-// room list so a caller can tell "refused" from "found nothing".
 // bookingHostAllowed is the destination pin. It is a var only so the parser
 // tests can point the lookup at a local fixture server; production code must
 // never reassign it, and the guard tests exercise the default.
 var bookingHostAllowed = cookiesconsent.IsHTTPSOnSite
 
+// ErrNotBookingURL is returned when the room lookup is handed a URL that is not
+// an https Booking.com address. It is a distinct error rather than an empty
+// room list so a caller can tell "refused" from "found nothing".
 var ErrNotBookingURL = errors.New("room lookup refused: not an https booking.com URL")
 
 // browserCookies is overridable in tests; defaults to providers.BrowserCookiesForURL.

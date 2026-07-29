@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/cache"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/stealth"
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/http2"
@@ -336,7 +337,7 @@ func (c *Client) doWithRetryVia(ctx context.Context, httpClient *http.Client, bu
 			return 0, nil, err
 		}
 
-		slog.Debug("request", "method", req.Method, "url", req.URL.String(), "payload_len", req.ContentLength)
+		slog.Debug("request", "method", req.Method, "url", logredact.URL(req.URL.String()), "payload_len", req.ContentLength)
 		start := time.Now()
 
 		resp, err := httpClient.Do(req)
@@ -344,7 +345,9 @@ func (c *Client) doWithRetryVia(ctx context.Context, httpClient *http.Client, bu
 			lastErr = err
 			if attempt < defaultMaxRetries {
 				backoff := defaultBaseBackoff << attempt
-				slog.Warn("retry", "attempt", attempt, "error", err.Error(), "backoff_ms", backoff.Milliseconds())
+				// net/http wraps transport failures in *url.Error, whose
+				// Error() embeds the full request URL, query string included.
+				slog.Warn("retry", "attempt", attempt, "error", logredact.Err(err), "backoff_ms", backoff.Milliseconds())
 				if sleepErr := backoffSleep(ctx, attempt); sleepErr != nil {
 					return 0, nil, sleepErr
 				}
@@ -361,7 +364,7 @@ func (c *Client) doWithRetryVia(ctx context.Context, httpClient *http.Client, bu
 			lastErr = readErr
 			if attempt < defaultMaxRetries {
 				backoff := defaultBaseBackoff << attempt
-				slog.Warn("retry", "attempt", attempt, "error", readErr.Error(), "backoff_ms", backoff.Milliseconds())
+				slog.Warn("retry", "attempt", attempt, "error", logredact.Err(readErr), "backoff_ms", backoff.Milliseconds())
 				if sleepErr := backoffSleep(ctx, attempt); sleepErr != nil {
 					return 0, nil, sleepErr
 				}
@@ -611,7 +614,7 @@ func (t *chromeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	if err == nil {
 		return resp, nil
 	}
-	slog.Debug("chrome h2 failed, falling back to h1", "err", err)
+	slog.Debug("chrome h2 failed, falling back to h1", "err", logredact.Err(err))
 	return t.h1.RoundTrip(req)
 }
 
