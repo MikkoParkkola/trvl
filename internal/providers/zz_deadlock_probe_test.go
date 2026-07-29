@@ -267,13 +267,14 @@ func TestRecoveryTiersDoNotReferenceAuthMu(t *testing.T) {
 // be lock-free or caller-locked — a self-locking one re-enters a
 // non-reentrant sync.RWMutex and hangs the process.
 //
-// Why this exists on top of the behavioural tests: only one of the three commit
-// sites (Tier 3b) can be driven end-to-end from a test — 3a needs a real browser
-// profile and Tier 4 needs an interactive terminal. Swapping the commit at the
-// other two sites for the self-locking variant would reintroduce the exact
-// shipped bug with nothing failing. This reads text instead of executing it,
-// which is the weaker instrument, but it covers all three sites and any site
-// added later.
+// Why this exists on top of the behavioural tests: all three commit sites are
+// now driven end-to-end (Tier 3b here, 3a and Tier 4 in
+// zz_deadlock_probe_tiers_test.go), so this no longer covers a hole. What it
+// still covers is the site that does not exist yet. A fourth tier added later
+// would be committed by whoever adds it, and nothing would fail if they reached
+// for the self-locking variant. This reads text instead of executing it, which
+// is the weaker instrument, but unlike the behavioural probes it needs no one to
+// remember to write a test.
 func TestRunPreflightCriticalSectionTakesNoLock(t *testing.T) {
 	src, err := os.ReadFile("auth.go")
 	if err != nil {
