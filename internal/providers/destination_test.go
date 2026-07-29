@@ -164,3 +164,43 @@ func TestDialControlRefusalUnwraps(t *testing.T) {
 		t.Fatalf("error %v does not unwrap to ErrDestinationRefused through url.Error/net.OpError", err)
 	}
 }
+
+// TestDialControlRefusesAZonedLoopbackAddress closes a fail-open hole an
+// independent reviewer found in this policy.
+//
+// dialControl classified with net.ParseIP, which returns nil for an address
+// carrying a zone identifier -- "::1%lo0" is a dialable loopback address that
+// ParseIP reports as not an address at all. The old code treated "cannot
+// classify" as "allow", so a caller who wrote the loopback address in its zoned
+// form reached loopback through a policy whose entire purpose is refusing it.
+//
+// The test goes through dialControl rather than refusedIP because refusedIP was
+// never the broken part: it judges an IP correctly and always did. The defect
+// was in what reached it, so a test calling it directly would pass against the
+// bug. Sabotage-verified: restoring "return nil" for the unparseable case makes
+// this fail and leaves TestDialControlRefusalUnwraps green, because the plain
+// form of the same address never needed the zone-aware parser.
+func TestDialControlRefusesAZonedLoopbackAddress(t *testing.T) {
+	t.Setenv(AllowLocalEnv, "")
+
+	for _, address := range []string{
+		"[::1%lo0]:8080",   // loopback wearing a zone
+		"[fe80::1%en0]:80", // link-local wearing a zone
+	} {
+		err := dialControl("tcp", address, nil)
+		if err == nil {
+			t.Fatalf("dialControl allowed %s; a zone identifier must not turn a refused address into an allowed one", address)
+		}
+		if !errors.Is(err, ErrDestinationRefused) {
+			t.Fatalf("dialControl(%s) returned %v, want ErrDestinationRefused", address, err)
+		}
+	}
+
+	// The other half of the same decision: something that is genuinely not an
+	// address is now refused rather than waved through. Control is documented to
+	// receive a resolved address, so this branch should be unreachable in
+	// practice -- which is exactly why it must not be the permissive one.
+	if err := dialControl("tcp", "not-an-address:80", nil); err == nil {
+		t.Fatal("dialControl allowed a destination it could not classify; the unclassifiable case must fail closed")
+	}
+}

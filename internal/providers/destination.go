@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -144,10 +145,22 @@ func dialControl(_, address string, _ syscall.RawConn) error {
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
-		// Control is documented to receive the resolved address; if it is
-		// somehow not an IP we have nothing to judge and let the dial proceed
-		// rather than refusing traffic we cannot classify.
-		return nil
+		// net.ParseIP rejects a zone identifier, so "::1%lo0" parses as nil
+		// even though it is a perfectly dialable loopback address. Ask the
+		// zone-aware parser before concluding this is not an address, then drop
+		// the zone so refusedIP sees the bare IP it knows how to classify.
+		if addr, err := netip.ParseAddr(host); err == nil {
+			ip = net.IP(addr.WithZone("").AsSlice())
+		}
+	}
+	if ip == nil {
+		// Control is documented to receive the resolved address, so anything
+		// that is not an address here is a form this policy does not
+		// understand. Refuse it: an unclassifiable destination that is allowed
+		// through is a hole shaped exactly like the one this policy exists to
+		// close, and a false refusal is visible and reportable while a false
+		// allow is neither.
+		return fmt.Errorf("%w: %q is not an address this policy can classify", ErrDestinationRefused, host)
 	}
 	if reason := refusedIP(ip); reason != "" {
 		return fmt.Errorf("%w: %s is a %s (set %s=1 to allow local providers)", ErrDestinationRefused, host, reason, AllowLocalEnv)
