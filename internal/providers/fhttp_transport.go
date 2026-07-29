@@ -109,7 +109,7 @@ func dialTLSChrome146(ctx context.Context, network, addr string) (net.Conn, erro
 		return nil, fmt.Errorf("split host: %w", err)
 	}
 
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	dialer := guardedDialer()
 	rawConn, err := dialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("dial tcp: %w", err)

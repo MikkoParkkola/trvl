@@ -115,6 +115,11 @@ func NewTier1Client(opts ...Tier1Option) (*Tier1Client, error) {
 		tlsclient.WithClientProfile(cfg.profile),
 		tlsclient.WithTimeoutSeconds(cfg.timeoutSeconds),
 		tlsclient.WithCookieJar(tlsclient.NewCookieJar()),
+		// The tier-1 client builds its own transport, so it does not inherit
+		// the destination policy from anything in this package; WithDialer is
+		// how it takes one. Without this line tier 1 is the way around the
+		// policy that every other request path is subject to.
+		tlsclient.WithDialer(*guardedDialer()),
 	}
 	if !cfg.followRedirect {
 		clientOpts = append(clientOpts, tlsclient.WithNotFollowRedirects())
@@ -183,7 +188,9 @@ func (c *Tier1Client) SeedCookies(targetURL string) int {
 // revoke path of its own. This is the same shape the vault had in round 8, and
 // the fix is the same: swap the jar, which is the tls-client's own documented
 // way to clear it. The cache is left alone deliberately — loadCachedCookies
-// already refuses every read after a decline, so nothing can be served from it.
+// withholds the browser-derived entries after a decline, so nothing harvested
+// from the user's browser can be served from it. Site-issued entries can be,
+// and are meant to be: this opt-out is about the user's own browser store.
 // The check and the swap are one exclusive critical section, and requests hold
 // the same lock for reading while they are in flight (see Do). Without that, the
 // swap is a bare pointer assignment racing every in-flight request: a data race,

@@ -54,7 +54,10 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 	if cfg.TLS.Fingerprint == "chrome" && cfg.Cookies.Source != "browser" {
 		httpClient = newChromeH2Client()
 	} else {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		// Not http.DefaultTransport: this client must carry the same
+		// destination policy as the search path (destination.go), or the
+		// provider-test tool becomes the way around it.
+		httpClient = &http.Client{Transport: guardedTransport(), Timeout: 30 * time.Second}
 	}
 	if httpClient.Jar == nil {
 		jar, _ := cookiejar.New(nil)

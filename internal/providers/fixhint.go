@@ -1,6 +1,9 @@
 package providers
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
 
 // FixHintCode is a typed enum identifying the root cause of a provider failure.
 // It is surfaced in MCP search responses and the health log so an orchestrating
@@ -16,6 +19,7 @@ const (
 	FixHintRateLimited           FixHintCode = "RATE_LIMITED"
 	FixHintResponseShapeChanged  FixHintCode = "RESPONSE_SHAPE_CHANGED"
 	FixHintPreflightFailed       FixHintCode = "PREFLIGHT_FAILED"
+	FixHintDestinationRefused    FixHintCode = "DESTINATION_REFUSED"
 	FixHintUnclassified          FixHintCode = "UNCLASSIFIED"
 )
 
@@ -31,6 +35,16 @@ func classifyProviderError(err error) (FixHintCode, string) {
 		return FixHintUnclassified, "No error — check caller logic."
 	}
 	msg := strings.ToLower(err.Error())
+
+	// A destination refusal is checked first, and by sentinel rather than by
+	// message text. It is a decision this program made, not a failure of the
+	// network, and every other branch here would describe it as one -- a dial
+	// that never happened reads a lot like a host that would not answer. A
+	// caller told "connection failed" would go looking for the wrong problem.
+	if errors.Is(err, ErrDestinationRefused) {
+		return FixHintDestinationRefused,
+			"Refused by the destination policy: the provider points at a loopback, private, or link-local address. Point it at a public host, or set " + AllowLocalEnv + "=1 if this is a local mock you meant to reach."
+	}
 
 	switch {
 	// Missing browser cookies beats the generic cookie-expired branch: the

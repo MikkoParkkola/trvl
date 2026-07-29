@@ -231,13 +231,21 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 			// flag is one argument away from being settable, and the failure it
 			// would cause — a browser opening for a user who declined — is not
 			// one to discover in production.
-			warmingNote = warmingNoteDeclined
+			warmingNote = consent.WarmingNote(consent.WarmingFacts{
+				ProviderName: config.Name,
+				PreflightURL: config.Auth.PreflightURL,
+				Declined:     true,
+			})
 		} else {
 			err := providers.OpenURLInBrowser(config.Auth.PreflightURL, "")
 			if err != nil {
 				log.Printf("cookie warming: failed to open browser for %s: %v", config.Name, err)
 			}
-			warmingNote = browserWarmingNote(config.Auth.PreflightURL, config.Name, err)
+			warmingNote = consent.WarmingNote(consent.WarmingFacts{
+				ProviderName: config.Name,
+				PreflightURL: config.Auth.PreflightURL,
+				LaunchErr:    err,
+			})
 		}
 	}
 
@@ -246,42 +254,10 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 	return textContent(summary), config, nil
 }
 
-// browserWarmingNote is the sentence the caller sees after trvl asks the platform to
-// open a preflight URL.
-//
-// It says "asked", never "opened", and the distinction is load-bearing rather than
-// pedantic. A nil error from the launcher means it accepted the request without
-// failing immediately. It cannot mean a browser appeared: the launcher is watched
-// only for a brief window, so one that fails after it, which a cold launcher can,
-// looks identical to one that succeeded. The previous wording promised that the
-// browser had opened and that future searches would use the cookies, neither of which
-// this code establishes, and a user whose browser silently failed to launch would sit
-// waiting for cookies that could never arrive.
-//
-// An error is reported rather than hidden, because a launcher that failed inside the
-// window is the one case where something is definitely known.
-//
-// The two templates are constants so a test can pin their wording once and then check
-// that every input renders one of them unchanged. That combination is what forbids a
-// promise being added for one provider or one error while examples of other inputs stay
-// green.
-const (
-	warmingNoteAsked  = "\n\nAsked your browser to open %s so cookies for %s can be reused. If no window appeared, open that URL yourself."
-	warmingNoteFailed = "\n\nCould not start a browser for %s (%v). Open %s yourself so those cookies can be reused."
-	// warmingNoteDeclined says what was NOT done and why, because the alternative
-	// is silence: the provider is enabled, no browser appears, and the user is
-	// left guessing whether the setup half-failed. It names the variable so the
-	// answer is actionable by whoever set it.
-	warmingNoteDeclined = "\n\nDid not open a browser to warm cookies: " + consent.CookiesEnv +
-		" declines access to your browser. The provider is enabled and will start without warm cookies."
-)
-
-func browserWarmingNote(preflightURL, providerName string, err error) string {
-	if err != nil {
-		return fmt.Sprintf(warmingNoteFailed, providerName, err, preflightURL)
-	}
-	return fmt.Sprintf(warmingNoteAsked, preflightURL, providerName)
-}
+// The wording of that note, and the conditions that entitle trvl to each
+// sentence of it, live in internal/consent (warming.go). They were free-form
+// format strings here, which is where two false statements about the user's own
+// machine were introduced by ordinary edits (#528).
 
 // parseProviderConfig extracts a ProviderConfig from MCP tool arguments.
 func parseProviderConfig(args map[string]any) (*providers.ProviderConfig, error) {
@@ -344,6 +320,21 @@ func parseProviderConfig(args map[string]any) (*providers.ProviderConfig, error)
 	// Parse field_mapping into ResponseMapping.Fields.
 	if v, ok := args["field_mapping"]; ok {
 		config.ResponseMapping.Fields = parseStringMap(v)
+	}
+
+	// Refuse a destination the policy will not dial anyway, here at the seam
+	// where a caller hands us the URL, so the answer is a stated refusal
+	// rather than a connection error later in a search. The request-time check
+	// in internal/providers stays the authority -- this one cannot see what a
+	// hostname will resolve to at request time -- but it is the only place
+	// that can refuse a non-HTTP scheme, which never reaches a dialer.
+	if err := providers.CheckDestinationURL(config.Endpoint); err != nil {
+		return nil, fmt.Errorf("endpoint: %w", err)
+	}
+	if config.Auth != nil {
+		if err := providers.CheckDestinationURL(config.Auth.PreflightURL); err != nil {
+			return nil, fmt.Errorf("auth_preflight_url: %w", err)
+		}
 	}
 
 	return config, nil

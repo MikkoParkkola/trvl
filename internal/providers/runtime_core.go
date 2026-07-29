@@ -249,14 +249,10 @@ func (rt *Runtime) getOrCreateClient(cfg *ProviderConfig) *providerClient {
 		httpClient = newChromeH2Client()
 	} else {
 		httpClient = &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				TLSHandshakeTimeout: 10 * time.Second,
-				ForceAttemptHTTP2:   true,
-			},
-			Timeout: 30 * time.Second,
+			// guardedTransport carries the destination policy on its dialer;
+			// see destination.go for why the check lives at dial time.
+			Transport: guardedTransport(),
+			Timeout:   30 * time.Second,
 		}
 	}
 	if httpClient.Jar == nil {
