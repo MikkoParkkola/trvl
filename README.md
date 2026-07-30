@@ -133,6 +133,8 @@ Two things happen without you asking for them. Neither is obvious, so both are s
 
 **It keeps working state under `~/.trvl`:** saved trips, preferences and traveller profile, price watches, search history, cached cookies and provider tokens, a provider health log, upgrade and provider self-heal bookkeeping, and a random install id. That state is local, and trvl uploads none of it — with two exceptions it would be dishonest to bury. The install id is the one field the telemetry heartbeat sends, described below, and `TRVL_NO_TELEMETRY=1` stops it. A price watch you give a webhook URL to POSTs that watch's route and price data to the address you supplied, which is the point of a webhook.
 
+Every one of those files is written to a temp file and then renamed over the target, so a crash cannot leave a half-written file behind. What it can leave behind is the temp file itself: a process killed between the write and the rename leaves **orphaned temp files from interrupted writes**, each a full copy of the file it was about to replace. trvl does not delete them on its own, because the orphan is occasionally the only surviving copy of the target. `trvl tempfiles` reports what is there with sizes and ages; `trvl tempfiles --delete` removes only the ones whose writing process is provably gone.
+
 You can decline either behaviour:
 
 ```bash

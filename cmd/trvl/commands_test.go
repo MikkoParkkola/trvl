@@ -25,7 +25,9 @@ func TestRootCmd_SubcommandCount(t *testing.T) {
 	// 70 -> 71 with `digest` (MIK-3067 daily Gmail deal-radar digest).
 	// 71 -> 73 with `import-inbox` + `plan-days` (MIK-3088 trip-composition
 	// wiring: inbox confirmation import and day-graph itinerary compose).
-	const want = 73
+	// 73 -> 74 with `tempfiles` (#513: report orphaned temp files left by
+	// interrupted atomic writes, and delete only provably dead owners).
+	const want = 74
 	got := len(rootCmd.Commands())
 	if got != want {
 		names := make([]string, 0, got)
