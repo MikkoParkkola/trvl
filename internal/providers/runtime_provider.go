@@ -68,6 +68,29 @@ func describeBody(body []byte, resp *http.Response, limit int) string {
 	return fmt.Sprintf("<%d bytes, content-type %s; set %s=1 to include a body snippet>", len(body), ct, BodySnippetEnv)
 }
 
+// describeGraphQLError renders a provider's own GraphQL error text for a message
+// that reaches the caller, and puts it behind the same opt-in as a body snippet.
+//
+// The message and extensions.code come from the response, so they are provider-
+// chosen content, not ours: a provider that echoes request data -- a search
+// destination, a header we sent -- back inside its error message would otherwise
+// route that content to the warning log, the stored provider status and the MCP
+// reply while the gate is off, which is the exact disclosure the gate promises to
+// hold. The code is withheld too; it is provider-controlled text like the rest.
+func describeGraphQLError(msg, code string) string {
+	if bodySnippetsAllowed() {
+		if code != "" {
+			return msg + " [" + code + "]"
+		}
+		return msg
+	}
+	withheld := ""
+	if code != "" {
+		withheld = ", code withheld"
+	}
+	return fmt.Sprintf("<graphql error, %d-byte message%s; set %s=1 to include it>", len(msg), withheld, BodySnippetEnv)
+}
+
 func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, location string, lat, lon float64, checkin, checkout, currency string, guests int, filters *HotelFilterParams) ([]models.HotelResult, error) {
 	// Pick up on-disk edits without an MCP restart. If the file mtime has
 	// advanced since we last parsed it, ReloadIfChanged swaps in the fresh
@@ -471,7 +494,7 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 			slog.Debug("body_extract_pattern did not match",
 				"provider", cfg.ID,
 				"body_len", len(body),
-				"body_prefix", string(body[:min(len(body), 300)]))
+				"body_prefix", describeBody(body, resp, 300))
 			return nil, fmt.Errorf("body_extract_pattern %q did not match response body", pattern)
 		}
 		slog.Debug("body_extract_pattern matched", "provider", cfg.ID, "extract_len", len(m[1]))
@@ -580,12 +603,7 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 					if msg == "" && code == "" {
 						msg = "unknown graphql error"
 					}
-					return nil, fmt.Errorf("graphql error: %s%s", msg, func() string {
-						if code != "" {
-							return " [" + code + "]"
-						}
-						return ""
-					}())
+					return nil, fmt.Errorf("graphql error: %s", describeGraphQLError(msg, code))
 				}
 			}
 			// Partial success: log the errors at debug level but continue

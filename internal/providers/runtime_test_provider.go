@@ -266,20 +266,14 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 	// Detect Akamai/WAF challenge pages that use HTTP 202 (which is in the
 	// 2xx success range but is actually an interstitial challenge page).
 	if isAkamaiChallenge(resp.StatusCode, body) {
-		snippet := string(body)
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
-		}
+		snippet := describeBody(body, resp, 500)
 		result.BodySnippet = snippet
 		result.Error = fmt.Sprintf("request: http %d WAF/JS challenge page detected — provider needs browser cookie refresh", resp.StatusCode)
 		return result
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		snippet := string(body)
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
-		}
+		snippet := describeBody(body, resp, 500)
 		result.BodySnippet = snippet
 		result.Error = fmt.Sprintf("request: http %d", resp.StatusCode)
 		return result
@@ -299,10 +293,7 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 		}
 		m := re.FindSubmatch(body)
 		if len(m) < 2 {
-			snippet := string(body)
-			if len(snippet) > 500 {
-				snippet = snippet[:500]
-			}
+			snippet := describeBody(body, resp, 500)
 			result.BodySnippet = snippet
 			result.Error = fmt.Sprintf("response_parse: body_extract_pattern %q did not match response body", pattern)
 			return result
@@ -312,10 +303,7 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 
 	var raw any
 	if err := json.Unmarshal(body, &raw); err != nil {
-		snippet := string(body)
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
-		}
+		snippet := describeBody(body, resp, 500)
 		result.BodySnippet = snippet
 		result.Error = fmt.Sprintf("response_parse: %v", err)
 		return result
@@ -354,12 +342,9 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 				}
 				// Keep a snippet of the full response body so the LLM can
 				// inspect the extensions/data fields beyond the first error.
-				snippet := string(body)
-				if len(snippet) > 500 {
-					snippet = snippet[:500]
-				}
+				snippet := describeBody(body, resp, 500)
 				result.BodySnippet = snippet
-				result.Error = "response_parse: graphql error: " + detail
+				result.Error = "response_parse: graphql error: " + describeGraphQLError(detail, "")
 				return result
 			}
 		}
@@ -371,10 +356,7 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 		result.Error = fmt.Sprintf("response_parse: results_path %q did not resolve to an array", cfg.ResponseMapping.ResultsPath)
 		// Include a snippet of the actual API response so the LLM can see
 		// what came back instead of guessing.
-		snippet := string(body)
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
-		}
+		snippet := describeBody(body, resp, 500)
 		result.BodySnippet = snippet
 		result.Suggestions = discoverArrayPaths(raw, "")
 		if len(result.Suggestions) > 0 {
@@ -454,10 +436,7 @@ func runTestPreflight(ctx context.Context, pc *providerClient, cfg *ProviderConf
 	}
 	result.HTTPStatus = resp.StatusCode
 
-	snippet := string(body)
-	if len(snippet) > 500 {
-		snippet = snippet[:500]
-	}
+	snippet := describeBody(body, resp, 500)
 	result.BodySnippet = snippet
 
 	// Run extractions (attempt 1).

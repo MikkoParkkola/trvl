@@ -163,3 +163,74 @@ func TestBodySnippetOptInIsReadPerCall(t *testing.T) {
 		t.Fatal(`"false" should not enable snippets`)
 	}
 }
+
+// TRVL.SSRF.PUBLIC.6 -- a GraphQL error is response content too.
+//
+// A provider that answers with a top-level errors array and no data had its
+// errors[0].message and extensions.code put verbatim into the returned error,
+// which reaches the warning log, the stored provider status and the MCP reply.
+// The message is written by the host the provider config names, so with the
+// opt-in off it must be withheld exactly like a body snippet. Sabotage-verified:
+// restoring the verbatim fmt.Errorf makes this fail.
+func TestGraphQLErrorWithholdsProviderMessage(t *testing.T) {
+	t.Setenv(AllowLocalEnv, "1")
+	t.Setenv(BodySnippetEnv, "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errors":[{"message":"` + bodyCanary + `","extensions":{"code":"` + bodyCanary + `-CODE"}}]}`))
+	}))
+	defer srv.Close()
+
+	rt, cfg := newCanaryProvider(t, srv.URL)
+	msg := searchCanary(t, rt, cfg)
+	if strings.Contains(msg, bodyCanary) {
+		t.Fatalf("error %q carries the provider's own GraphQL text while %s is off", msg, BodySnippetEnv)
+	}
+	if !strings.Contains(msg, BodySnippetEnv) {
+		t.Fatalf("error %q does not say how to see the withheld message", msg)
+	}
+}
+
+// The other half of the same decision: with the opt-in on, the operator who
+// asked for provider content gets it, so the gate is a gate and not a deletion.
+func TestGraphQLErrorIncludesMessageUnderOptIn(t *testing.T) {
+	t.Setenv(AllowLocalEnv, "1")
+	t.Setenv(BodySnippetEnv, "1")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errors":[{"message":"` + bodyCanary + `"}]}`))
+	}))
+	defer srv.Close()
+
+	rt, cfg := newCanaryProvider(t, srv.URL)
+	if msg := searchCanary(t, rt, cfg); !strings.Contains(msg, bodyCanary) {
+		t.Fatalf("under %s=1 the error %q withholds the message the operator opted in to", BodySnippetEnv, msg)
+	}
+}
+
+// TRVL.SSRF.PUBLIC.7 -- the same content must not escape through the provider
+// test tool, which returns a body_snippet field straight to the caller. That
+// field was assigned string(body) with no gate at seven sites, so a config
+// pointed at any reachable host could read it back through trvl_test_provider.
+func TestTestProviderWithholdsBodySnippet(t *testing.T) {
+	t.Setenv(AllowLocalEnv, "1")
+	t.Setenv(BodySnippetEnv, "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"detail":"` + bodyCanary + `"}`))
+	}))
+	defer srv.Close()
+
+	_, cfg := newCanaryProvider(t, srv.URL)
+	result := TestProvider(context.Background(), cfg, "Kyoto", 35.0, 135.7, "2026-06-01", "2026-06-03", "EUR", 2)
+	if strings.Contains(result.BodySnippet, bodyCanary) {
+		t.Fatalf("body_snippet %q carries response content while %s is off", result.BodySnippet, BodySnippetEnv)
+	}
+	if strings.Contains(result.Error, bodyCanary) {
+		t.Fatalf("error %q carries response content while %s is off", result.Error, BodySnippetEnv)
+	}
+}
