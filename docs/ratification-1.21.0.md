@@ -436,17 +436,59 @@ count defect *sites* rather than attempts were preserved, because those describe
 **This is a history rewrite.** It is reversible only while the backup branch exists and only
 before anyone else fetches the branch. It is listed under escalation for that reason.
 
-### 4. The independent second opinion did not complete
+### 4. The independent second opinion completed on the fourth attempt, and said do not ship
 
 The release process asks for an adversarial review by a different model before merge. Three
-attempts were made. The first two were killed at a hard ten-minute ceiling while the
-reviewer was still reading files, and the third, run with the four relevant files supplied
-directly so no exploration was needed, hit repeated network reconnects.
+attempts died — two killed at a ten-minute ceiling while the reviewer was still reading, one
+lost to network reconnects. The fourth, with the four relevant files supplied directly,
+finished and returned **DO-NOT-SHIP**. It refuted all four security claims I had made. Two
+of the four refutations were checked against the code and are correct; here is what happened
+to each.
 
-So the gate is **unmet**, and no finding from it is claimed either way. Treat the security
-claims in this brief as verified by sabotage tests and by a first-model audit, but not by an
-independent second model. That is weaker than the process asks for, and it is the second
-thing worth your attention.
+**Refuted and fixed here — the dial policy let loopback through.** I claimed the outbound
+dial policy stops a provider reaching loopback. It did not, for one input. `net.ParseIP`
+returns nil for `::1%lo0` — a perfectly dialable loopback address wearing a zone identifier —
+and the code read "cannot classify" as "allow". Link-local behaved the same way, which
+includes the cloud metadata address. Now fixed: classification falls through to the
+zone-aware parser, and anything still unparseable is refused rather than waved through.
+Sabotage-verified, and the informative part is that restoring the fail-open leaves the
+*existing* dial test green. That test was covering less than it appeared to.
+
+**Refuted and NOT fixed — the body-snippet opt-in is not a confidentiality boundary.** This
+is the reviewer's headline finding and it is correct. My amendment above claims a provider's
+response content no longer reaches the caller or the log unless the opt-in is set. Three
+paths say otherwise: a GraphQL error response returns its message and error code verbatim
+(`runtime_provider.go:583`), and from there into a warning log, the saved last-error, the
+health file on disk, and the status tool; a failed extraction pattern logs the first 300
+bytes of the response; and the test-provider tool returns raw snippets with no gate at all.
+What the earlier fix genuinely closed is narrower than I wrote — two error paths that
+returned the body directly. Recorded on #538, with the recommendation not to describe the
+opt-in as a boundary until the other doors are shut.
+
+**Refuted, disclosed, not fixed — the CI security gate accepts an empty report.** The
+workflow checks only that the scanner wrote a non-empty file, and a report of `{}` passes as
+a clean scan. Deleting that check leaves every one of the gate's self-tests green, because
+they cover the comparison logic and never the wiring. Recorded on #532.
+
+**Not refuted — the Booking pin itself.** The reviewer tried the zone identifier, the
+homoglyph, userinfo, a foreign host and a plaintext downgrade against the URL check and found
+no bypass. Its objection is the redirect, which this brief already discloses and
+`docs/ARCHITECTURE.md` already documents; the reviewer could not establish a live redirect to
+exploit. It also flags that no redirect guard or redirect test exists, which is fair.
+
+The honest summary: the second opinion was worth the four attempts. It found a real
+fail-open in a security guard I had claimed worked, and it found that a confidentiality claim
+I made in an issue comment was wrong in three places. Both corrections are now recorded where
+someone will find them.
+
+### The decision-gap audit did not report
+
+The process also asks an independent auditor to name the decisions in this work that cannot
+be traced back to the original ask. Two were dispatched; neither returned, including after a
+direct request for partial results. So the decision list in this brief is **self-reported and
+uncorroborated**, which is the weaker form. The known omission risk is exactly the kind of
+thing that audit exists to catch — the previous version of this brief contained two false
+claims, and it took an outside reader to surface them.
 
 ### Sequencing recorded on two open issues
 
