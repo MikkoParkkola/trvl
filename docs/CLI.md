@@ -221,6 +221,8 @@ trvl watch list                                       # Show all active watches
 trvl watch check                                      # Check current prices
 trvl watch daemon --every 6h                          # Keep checking on a schedule
 trvl watch history <id>                               # Price history for a watch
+trvl watch update <id> --clear-webhook                # Remove the webhook, keep the watch
+trvl watch update <id> --clear-alert-drop --clear-last-minute
 trvl watch remove <id>                                # Remove a watch
 ```
 
@@ -350,7 +352,7 @@ The AI uses these to give you actionable handoff links. For accommodation decisi
 | **Data** | Real-time from Google Flights (+ Kiwi, Ryanair, Wizz Air, easyJet, Vueling, Norwegian; Transavia/Skiplagged/AFKLM/Travelpayouts opt-in) + 6 hotel sources (Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld, HomeToGo) + 22 ground providers (FlixBus, RegioJet, Eurostar, DB, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, Trenitalia, Italo, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS, Ferryhopper) + free destination/enrichment APIs (weather, air quality, sun times, bike-share, holidays, currency) |
 | **Auth** | No personal API keys required. Two providers (NS, Digitransit/VR) use public keys embedded in the binary. Optional browser/cookie fallbacks are available for protected providers when explicitly enabled. |
 | **MCP** | Full v2025-11-25 — 1 smart MCP tool, 66 legacy-compatible capabilities (incl. 4 profile, 3 price-watch, provider-health, award sweet-spot capabilities), 7 prompts, resources, structured content, progress notifications, resource subscriptions, tool description orchestration |
-| **CLI** | 56 commands (+ 7 watch subcommands) with table/JSON output, color, shell completion |
+| **CLI** | 56 commands (+ 8 watch subcommands) with table/JSON output, color, shell completion |
 | **Booking links** | Flight and hotel results include manual handoff links; hotel search prices must be verified before treating them as final |
 | **Travel hacks** | 36 detectors (throwaway, hidden-city, positioning, ferry, multi-modal, stopover, date-flex, error fare, back-to-back, rail competition, and more) |
 | **Personal profile** | Learns from your booking history (email parsing + LLM). Remembers FF status, luggage needs, favourite properties, departure preferences, travel hacks used, accommodation preferences, family composition. Pre-search interviews skip questions the profile already answers. |
