@@ -76,13 +76,32 @@ func newSafeWebhookClient() *http.Client {
 	return &http.Client{
 		Timeout:   10 * time.Second,
 		Transport: &http.Transport{DialContext: dialer.DialContext},
-		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return fmt.Errorf("webhook: too many redirects")
-			}
-			return nil
-		},
+		// Round 25: a hop-count cap alone still lets Go's default redirect
+		// handling run -- which builds a Referer header from the FULL prior
+		// URL (path + query, exactly where the Slack/Discord-style webhook
+		// tokens documented above live) and sends it cross-origin, and
+		// replays the JSON body on a 307/308 to whatever host the response
+		// names. A watch's WebhookURL is not a trusted redirect chain: the
+		// receiving server controls where it points next. Refuse to follow
+		// redirects at all and surface the 3xx as-is; no legitimate webhook
+		// receiver needs its notifier to chase a redirect. Found by GPT
+		// second-opinion review, 2026-07-31 (round 25).
+		// Hoisted to the package-level webhookCheckRedirect var (rather
+		// than inlined) so the regression test in
+		// webhook_redirect_round25_test.go exercises the SAME policy value
+		// production uses, not a hand-copied duplicate that could silently
+		// drift out of sync (Grok second-opinion review, round 25,
+		// optional finding 3).
+		CheckRedirect: webhookCheckRedirect,
 	}
+}
+
+// webhookCheckRedirect is the shared redirect policy for outbound webhook
+// requests: never follow, always surface the 3xx as-is. Defined once so
+// newSafeWebhookClient (production) and the round-25 redirect regression test
+// build their *http.Client from the identical func value.
+var webhookCheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
 // specialUseWebhookBlocks lists IETF special-use / non-public address ranges
@@ -807,4 +826,12 @@ func fireWebhook(ctx context.Context, r CheckResult) {
 		return
 	}
 	_ = resp.Body.Close()
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		// Round 25: with CheckRedirect refusing to follow, a redirecting
+		// receiver now surfaces here as a 3xx instead of silently succeeding
+		// -- log it as an undelivered notification rather than treating a
+		// redirect response as delivery.
+		safeHost := parsedURL.Scheme + "://" + parsedURL.Host
+		slog.Warn("webhook: receiver redirected, notification not delivered", "watch_id", r.Watch.ID, "host", safeHost, "status", resp.StatusCode)
+	}
 }

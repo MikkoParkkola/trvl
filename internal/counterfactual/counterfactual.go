@@ -71,23 +71,24 @@ func ShiftDay(grid []models.DatePriceResult, currentDate string, minDelta float6
 			continue
 		}
 		cur := strings.ToUpper(strings.TrimSpace(d.Currency))
-		// Round 24 found this grid can hold rows fetched across different
-		// searches/providers carrying different currencies: subtracting raw
-		// price magnitudes across a genuine currency mismatch fabricates a
-		// "saving" that is not real money (e.g. 100 EUR - 80 JPY reported as
-		// "20 JPY saved"). Only compare rows that share the reference date's
-		// currency, or that omit one (matching the pre-existing display
-		// fallback just below) -- never across a known mismatch. Found by
-		// GPT second-opinion review, 2026-07-31 (round 24).
-		if currency != "" && cur != "" && cur != currency {
+		// Round 24's guard here only rejected a KNOWN mismatch (both sides
+		// labeled and different), so an empty-currency row still slipped
+		// through unchecked and got compared by raw magnitude against the
+		// reference's labeled currency -- the exact fabricated-saving bug
+		// class round 24 meant to close, just reachable via the
+		// empty-string escape hatch. Round 25 requires exact equality
+		// after normalization instead: both blank is treated as
+		// compatible (matches the pre-existing unknown-unknown display
+		// convention), one blank and one labeled is now correctly
+		// rejected, and any known mismatch is still rejected. Found
+		// independently by both GPT and Grok second-opinion review,
+		// 2026-07-31 (round 25).
+		if cur != currency {
 			continue
 		}
 		delta := current - d.Price
 		if delta < minDelta {
 			continue
-		}
-		if cur == "" {
-			cur = currency
 		}
 		out = append(out, Saving{
 			Kind:        KindShiftDay,
@@ -125,13 +126,15 @@ func SameDayAlternative(flights []models.FlightResult, minDelta float64, asOf ti
 		if f.Price <= 0 || f.Price >= cheapest.Price {
 			continue
 		}
-		// Adjacent hardening while fixing ShiftDay's identical bug class
-		// (round 24): never let a different-currency flight win this
-		// comparison -- comparing raw price magnitudes across currencies can
-		// fabricate a "cheaper" same-day fare that isn't actually cheaper in
-		// real money.
+		// Round 25: the round-24 guard below had the same empty-currency
+		// escape hatch as ShiftDay's -- an unlabeled candidate fare could
+		// still win against a labeled headline by raw magnitude. Require
+		// exact equality after normalization (both blank is compatible,
+		// one blank one labeled is rejected, known mismatch is rejected).
+		// Found independently by both GPT and Grok second-opinion review,
+		// 2026-07-31 (round 25).
 		fCur := strings.ToUpper(strings.TrimSpace(f.Currency))
-		if headlineCur != "" && fCur != "" && fCur != headlineCur {
+		if fCur != headlineCur {
 			continue
 		}
 		cheapest = f
@@ -140,11 +143,18 @@ func SameDayAlternative(flights []models.FlightResult, minDelta float64, asOf ti
 	if delta < minDelta {
 		return nil // headline already is (within minDelta of) the cheapest
 	}
+	// Round 25: use the normalized currency, not the raw field, for both the
+	// returned Saving and the description -- ShiftDay already normalizes
+	// (see cur above); SameDayAlternative returning cheapest.Currency raw
+	// meant "eur" passed the equality gate above but was then emitted
+	// lowercase downstream, inconsistent with ShiftDay's always-uppercase
+	// output for the same bug class.
+	cheapestCur := strings.ToUpper(strings.TrimSpace(cheapest.Currency))
 	return &Saving{
 		Kind:        KindSameDay,
-		Description: fmt.Sprintf("The cheapest same-day fare (%.0f %s) saves %.0f %s over the top-listed result (%.0f %s)", cheapest.Price, cheapest.Currency, delta, headline.Currency, headline.Price, headline.Currency),
+		Description: fmt.Sprintf("The cheapest same-day fare (%.0f %s) saves %.0f %s over the top-listed result (%.0f %s)", cheapest.Price, cheapestCur, delta, cheapestCur, headline.Price, cheapestCur),
 		Amount:      delta,
-		Currency:    cheapest.Currency,
+		Currency:    cheapestCur,
 		AsOf:        asOf,
 		CallFree:    true,
 	}
