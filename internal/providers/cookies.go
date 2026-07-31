@@ -706,7 +706,14 @@ func startAndReap(cmd *exec.Cmd) error {
 // fails within tens of milliseconds. It costs nothing on the success path either,
 // since `open` hands the URL off and exits rather than staying with the browser, so
 // this window is only ever spent on a failure.
-const launcherFailureWindow = 500 * time.Millisecond
+//
+// A var rather than a const so a test can substitute a value. Both windows are
+// wall-clock budgets, and a test that leaves them at their production sizes is
+// asserting against how promptly this machine happened to fork a shell; two of
+// the tests below did exactly that and went red under load (#533). Nothing
+// outside this file reads either name, and the tests that substitute them all
+// call t.Setenv, which forbids t.Parallel, so no reader runs concurrently.
+var launcherFailureWindow = 500 * time.Millisecond
 
 // launcherStartupWindow is the same idea for the launchers with no fallback behind
 // them, and it is far shorter because here the window IS spent on success: `xdg-open`
@@ -723,7 +730,10 @@ const launcherFailureWindow = 500 * time.Millisecond
 //
 // 150ms buys that at a cost nobody perceives, against a cookie wait measured in tens
 // of seconds.
-const launcherStartupWindow = 150 * time.Millisecond
+//
+// A var for the reason given on launcherFailureWindow: 150ms is a production
+// tradeoff, not a size any test should have to beat.
+var launcherStartupWindow = 150 * time.Millisecond
 
 // startAndReapWithin starts cmd and then looks briefly for an early failure.
 //
