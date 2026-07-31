@@ -263,7 +263,107 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 
 	summary := fmt.Sprintf("Provider %q enabled for %s search (domain: %s, rate limit: %.1f rps).%s",
 		config.Name, config.Category, domain, config.RateLimit.RequestsPerSecond, warmingNote)
-	return textContent(summary), config, nil
+	return textContent(summary), newProviderConfigView(config), nil
+}
+
+// providerConfigView is what configure_provider returns to the caller.
+//
+// It exists because ProviderConfig is not safe to hand back. Its Headers,
+// QueryParams, BodyTemplate and Auth carry whatever the caller supplied to
+// authenticate against the provider -- API keys, bearer tokens, session
+// cookies -- and returning the struct serialized every one of them into the
+// tool result, from where they reach transcripts, client-side logs and any
+// model in the loop. The declared OutputSchema never advertised those fields,
+// but the server does not enforce output schemas, so the schema was a
+// description of intent and this type is the enforcement.
+//
+// The rule for adding a field here: it must be something the caller could
+// already read off their own request without the secret. Anything derived from
+// Headers, QueryParams, BodyTemplate or Auth does not qualify.
+type providerConfigView struct {
+	ID             string               `json:"id"`
+	Name           string               `json:"name"`
+	Category       string               `json:"category"`
+	Endpoint       string               `json:"endpoint"`
+	Method         string               `json:"method"`
+	ResultsPath    string               `json:"results_path"`
+	FieldMapping   map[string]string    `json:"field_mapping,omitempty"`
+	RateLimitRPS   float64              `json:"rate_limit_rps"`
+	TLSFingerprint string               `json:"tls_fingerprint,omitempty"`
+	Consent        *providerConsentView `json:"consent,omitempty"`
+}
+
+type providerConsentView struct {
+	Granted   bool   `json:"granted"`
+	Timestamp string `json:"timestamp,omitempty"`
+	Domain    string `json:"domain,omitempty"`
+}
+
+// redactedEndpoint returns the endpoint with the two parts that most often
+// carry a credential removed: userinfo and the query string.
+//
+// The endpoint is not itself a secret and the caller of configure_provider
+// supplied it in the same call, so this is not about hiding it from them. It is
+// about what the value becomes afterwards. A structured MCP result is written
+// to the client's transcript and to whatever the host logs, which is a wider
+// and longer-lived audience than the one request -- and API keys live in query
+// strings ("?apikey=...") and in userinfo ("https://user:pass@host/") often
+// enough that echoing them back is a disclosure with no reader who needs it.
+//
+// Scheme, host and path survive, so the value still answers the question the
+// caller asked it: that the endpoint stored is the one they meant. A path can
+// carry a secret too (that is exactly what a Slack webhook is), but for a
+// provider endpoint the path is the API route and dropping it would leave the
+// confirmation useless; the two fields removed here cost nothing to lose.
+func redactedEndpoint(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		// Unparseable or host-less: return nothing rather than guess which part
+		// of an unrecognised string was safe.
+		return "invalid"
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.Fragment = ""
+	// The path goes too, not just the query. A secret in a URL path is not an
+	// exotic shape -- it is how Telegram, Slack and every "bot/<token>/method"
+	// API is addressed -- and keeping the path meant this view still returned a
+	// live credential for those providers, having removed the two places a
+	// credential is easier to spot. Scheme and host answer the question this
+	// view exists for ("which service is this pointed at"); the path only
+	// answers "with what key".
+	u.Path = ""
+	u.RawPath = ""
+	u.Opaque = ""
+	return u.String()
+}
+
+func newProviderConfigView(c *providers.ProviderConfig) *providerConfigView {
+	if c == nil {
+		return nil
+	}
+	v := &providerConfigView{
+		ID:             c.ID,
+		Name:           c.Name,
+		Category:       c.Category,
+		Endpoint:       redactedEndpoint(c.Endpoint),
+		Method:         c.Method,
+		ResultsPath:    c.ResponseMapping.ResultsPath,
+		FieldMapping:   c.ResponseMapping.Fields,
+		RateLimitRPS:   c.RateLimit.RequestsPerSecond,
+		TLSFingerprint: c.TLS.Fingerprint,
+	}
+	if c.Consent != nil {
+		v.Consent = &providerConsentView{
+			Granted:   c.Consent.Granted,
+			Timestamp: c.Consent.Timestamp.UTC().Format(time.RFC3339),
+			Domain:    c.Consent.Domain,
+		}
+	}
+	return v
 }
 
 // The wording of that note, and the conditions that entitle trvl to each
