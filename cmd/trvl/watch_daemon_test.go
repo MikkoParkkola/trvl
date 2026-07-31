@@ -194,7 +194,13 @@ func TestRunWatchCheckCycleWithRooms_WebhookUsesDaemonContext(t *testing.T) {
 		Destination: "NRT",
 		DepartDate:  "2099-07-01",
 		LastPrice:   500,
-		WebhookURL:  "http://example.test/webhook",
+		// Round 19 (internal/watch): w.Currency=="" with a prior LastPrice
+		// is now treated as untrustworthy history and triggers a
+		// currency-change reset (skipping threshold/webhook-trigger
+		// checks) -- not what this test exercises. Known matching
+		// currency required.
+		Currency:   "EUR",
+		WebhookURL: "http://example.test/webhook",
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}

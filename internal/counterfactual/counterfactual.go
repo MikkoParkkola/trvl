@@ -12,6 +12,7 @@ package counterfactual
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -57,7 +58,7 @@ func ShiftDay(grid []models.DatePriceResult, currentDate string, minDelta float6
 	for _, d := range grid {
 		if d.Date == currentDate {
 			current = d.Price
-			currency = d.Currency
+			currency = strings.ToUpper(strings.TrimSpace(d.Currency))
 			break
 		}
 	}
@@ -69,11 +70,22 @@ func ShiftDay(grid []models.DatePriceResult, currentDate string, minDelta float6
 		if d.Date == currentDate || d.Price <= 0 {
 			continue
 		}
+		cur := strings.ToUpper(strings.TrimSpace(d.Currency))
+		// Round 24 found this grid can hold rows fetched across different
+		// searches/providers carrying different currencies: subtracting raw
+		// price magnitudes across a genuine currency mismatch fabricates a
+		// "saving" that is not real money (e.g. 100 EUR - 80 JPY reported as
+		// "20 JPY saved"). Only compare rows that share the reference date's
+		// currency, or that omit one (matching the pre-existing display
+		// fallback just below) -- never across a known mismatch. Found by
+		// GPT second-opinion review, 2026-07-31 (round 24).
+		if currency != "" && cur != "" && cur != currency {
+			continue
+		}
 		delta := current - d.Price
 		if delta < minDelta {
 			continue
 		}
-		cur := d.Currency
 		if cur == "" {
 			cur = currency
 		}
@@ -107,11 +119,22 @@ func SameDayAlternative(flights []models.FlightResult, minDelta float64, asOf ti
 	if headline.Price <= 0 {
 		return nil
 	}
+	headlineCur := strings.ToUpper(strings.TrimSpace(headline.Currency))
 	cheapest := headline
 	for _, f := range flights[1:] {
-		if f.Price > 0 && f.Price < cheapest.Price {
-			cheapest = f
+		if f.Price <= 0 || f.Price >= cheapest.Price {
+			continue
 		}
+		// Adjacent hardening while fixing ShiftDay's identical bug class
+		// (round 24): never let a different-currency flight win this
+		// comparison -- comparing raw price magnitudes across currencies can
+		// fabricate a "cheaper" same-day fare that isn't actually cheaper in
+		// real money.
+		fCur := strings.ToUpper(strings.TrimSpace(f.Currency))
+		if headlineCur != "" && fCur != "" && fCur != headlineCur {
+			continue
+		}
+		cheapest = f
 	}
 	delta := headline.Price - cheapest.Price
 	if delta < minDelta {

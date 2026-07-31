@@ -309,6 +309,21 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 				"currency", r.Currency,
 			)
 		}
+		// Round 22: the scheduler is the automatic, unattended check path (CLI
+		// daemon and the MCP-owned check_watches background loop both run
+		// through it) -- unlike an interactive CLI check, there is no
+		// Notifier.Notify call here to surface AlertsClearedByCurrencyChange,
+		// so a currency-change reset could silently erase a watch's alert
+		// threshold with zero durable record. Log it at Warn so it survives
+		// in scheduler output/log aggregation even with nobody watching in
+		// real time. Found by GPT second-opinion review, 2026-07-30 (round 22).
+		if r.AlertsClearedByCurrencyChange {
+			slog.Warn("scheduler: alert threshold cleared by currency change",
+				"watch_id", r.Watch.ID,
+				"route", r.Watch.Origin+"→"+r.Watch.Destination,
+				"new_currency", r.Currency,
+			)
+		}
 	}
 
 	slog.Info("scheduler: check complete",

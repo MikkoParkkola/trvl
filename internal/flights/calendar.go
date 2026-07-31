@@ -109,8 +109,10 @@ func SearchCalendar(ctx context.Context, origin, dest string, opts CalendarOptio
 	// Currency conversion, if needed, happens in the CLI display layer.
 	if len(dates) > 0 && dates[0].Currency == "" {
 		sourceCurrency := detectSourceCurrencyWithClient(ctx, client, origin, dest, dates[0].Date)
-		for i := range dates {
-			dates[i].Currency = sourceCurrency
+		if sourceCurrency != "" {
+			for i := range dates {
+				dates[i].Currency = sourceCurrency
+			}
 		}
 	}
 
@@ -410,25 +412,33 @@ func detectSourceCurrencyWithClient(ctx context.Context, client *batchexec.Clien
 	opts := SearchOptions{}
 	opts.defaults()
 
+	// Round 22 found defaulting every failure path here to "EUR" fabricates a
+	// currency label for the ENTIRE date range (backfilled onto every
+	// DatePriceResult below), which then reads as a genuine currency change
+	// in checkOneWithWebhookContext and wipes alert thresholds/history on a
+	// simple transient probe failure (timeout, non-200, decode error) with no
+	// relation to the actual market currency. Return "" (genuinely unknown)
+	// instead; callers must not backfill an empty detection onto real data.
+	// Found by GPT second-opinion review, 2026-07-30 (round 22).
 	filters := buildFilters(origin, dest, date, opts)
 	encoded, err := batchexec.EncodeFlightFilters(filters)
 	if err != nil {
-		return "EUR"
+		return ""
 	}
 
 	status, body, err := client.SearchFlights(quickCtx, encoded)
 	if err != nil || status != 200 {
-		return "EUR"
+		return ""
 	}
 
 	inner, err := batchexec.DecodeFlightResponse(body)
 	if err != nil {
-		return "EUR"
+		return ""
 	}
 
 	rawFlights, err := batchexec.ExtractFlightData(inner)
 	if err != nil {
-		return "EUR"
+		return ""
 	}
 
 	// Parse one flight to get the raw currency (before conversion).
@@ -436,5 +446,5 @@ func detectSourceCurrencyWithClient(ctx context.Context, client *batchexec.Clien
 	if len(flights) > 0 && flights[0].Currency != "" {
 		return flights[0].Currency
 	}
-	return "EUR"
+	return ""
 }

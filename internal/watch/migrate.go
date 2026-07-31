@@ -134,126 +134,109 @@ func (s *Store) collapseDuplicatesLocked() (int, map[string]string) {
 	if len(s.watches) < 2 {
 		return 0, nil
 	}
-	kept := make([]Watch, 0, len(s.watches))
-	// idMap tracks every collapsed watch's ID to the ID of whichever record
-	// ultimately survives its duplicate group (groups can be more than 2
-	// deep, so an ID already mapped to a now-superseded survivor is
-	// re-pointed at the new one).
-	idMap := make(map[string]string)
+	// Materialize whole duplicate groups before deciding anything. Earlier
+	// versions merged pairwise as watches were scanned, folding each new
+	// arrival's LowestPrice into a single running scalar. That is lossy: once
+	// a cross-currency merge reset the scalar to 0 (unset), a LATER
+	// same-currency duplicate's own merge could only compare against that 0,
+	// so it always "won" and silently discarded a real, still-valid
+	// same-currency low recorded by an earlier group member -- e.g. EUR 80 ->
+	// JPY 5,000 (reset to 0 on the currency mismatch) -> JPY 10,000 (merged
+	// against the 0, producing LowestPrice 10,000 and losing the true JPY low
+	// of 5,000). Found by adversarial review, 2026-07-29 (round 3). Grouping
+	// first and recomputing LowestPrice/CheapestDate from every group
+	// member's ORIGINAL value -- filtered to the survivor's own currency --
+	// removes the lossy intermediate scalar entirely.
+	groups := make([][]Watch, 0, len(s.watches))
 	for _, w := range s.watches {
-		idx := -1
-		for i := range kept {
-			if kept[i].SameTarget(w) {
-				idx = i
+		gi := -1
+		for i := range groups {
+			if groups[i][0].SameTarget(w) {
+				gi = i
 				break
 			}
 		}
-		if idx < 0 {
-			kept = append(kept, w)
+		if gi < 0 {
+			groups = append(groups, []Watch{w})
 			continue
 		}
-		survivor := kept[idx]
-		// SameTarget deliberately ignores Currency (a route/room can be re-watched
-		// in a different currency), so a duplicate group can legitimately span two
-		// currencies. Numerically merging LowestPrice across currencies would
-		// silently mislabel one currency's amount as another's -- e.g. a €50 low
-		// reported as "¥50". Store.Add's applyIntent already treats a currency
-		// change as invalidating the previously observed price (resets
-		// LastPrice/LowestPrice/CheapestDate/etc. to 0/""); mirror that policy
-		// here instead of comparing incompatible magnitudes.
-		//
-		// A direct inequality (not "both non-empty and different") also covers a
-		// blank Currency paired with a labeled one: a blank-currency record's
-		// price has no known currency, so it is not safe to treat as "compatible"
-		// with an explicitly labeled survivor either. Found by adversarial
-		// review, 2026-07-29 (two rounds: first the numeric merge, then the
-		// leftover blank-currency gap and untouched history/CheapestDate).
-		sameCurrency := survivor.Currency == w.Currency
-		var mergedLowest float64
-		if sameCurrency {
-			mergedLowest = lowerPositive(survivor.LowestPrice, w.LowestPrice)
-		} else {
-			mergedLowest = 0
+		groups[gi] = append(groups[gi], w)
+	}
+
+	kept := make([]Watch, 0, len(groups))
+	idMap := make(map[string]string)
+	for _, group := range groups {
+		if len(group) == 1 {
+			kept = append(kept, group[0])
+			continue
 		}
-		var loserID string
-		if richer(w, survivor) {
-			// Keep the incoming record but do not lose an earlier creation date:
-			// the group's history is older than any single surviving row.
-			if !survivor.CreatedAt.IsZero() &&
-				(w.CreatedAt.IsZero() || survivor.CreatedAt.Before(w.CreatedAt)) {
-				w.CreatedAt = survivor.CreatedAt
-			}
-			w.LowestPrice = mergedLowest
-			if !sameCurrency {
-				w.CheapestDate = ""
-			}
-			kept[idx] = w
-			loserID = survivor.ID
-		} else {
-			if !w.CreatedAt.IsZero() &&
+
+		// Found by adversarial review, 2026-07-29: richer() only chose which
+		// record's OTHER fields (currency, thresholds, LastCheck-derived
+		// identity) survive. It never compared the group's actual LowestPrice
+		// values itself, so picking a survivor by recency alone would discard
+		// a real low recorded by a less-recently-checked duplicate.
+		survivor := group[0]
+		for _, w := range group[1:] {
+			if richer(w, survivor) {
+				if !survivor.CreatedAt.IsZero() &&
+					(w.CreatedAt.IsZero() || survivor.CreatedAt.Before(w.CreatedAt)) {
+					w.CreatedAt = survivor.CreatedAt
+				}
+				survivor = w
+			} else if !w.CreatedAt.IsZero() &&
 				(survivor.CreatedAt.IsZero() || w.CreatedAt.Before(survivor.CreatedAt)) {
 				survivor.CreatedAt = w.CreatedAt
 			}
-			survivor.LowestPrice = mergedLowest
-			if !sameCurrency {
-				survivor.CheapestDate = ""
+		}
+
+		// SameTarget deliberately ignores Currency (a route/room can be
+		// re-watched in a different currency), so a duplicate group can
+		// legitimately span two currencies. A group's LowestPrice/CheapestDate
+		// can only ever reflect ONE currency, so recompute both from scratch
+		// across every member that shares the survivor's final currency --
+		// never from a member in a different (or blank, which carries no
+		// known currency either) one. This mirrors Store.Add's applyIntent,
+		// which already treats a currency change as invalidating the
+		// previously observed price.
+		var lowest float64
+		var cheapestDate string
+		for _, w := range group {
+			if w.Currency != survivor.Currency || w.LowestPrice <= 0 {
+				continue
 			}
-			kept[idx] = survivor
-			loserID = w.ID
+			if lowest <= 0 || w.LowestPrice < lowest {
+				lowest = w.LowestPrice
+				cheapestDate = w.CheapestDate
+			}
 		}
-		survivorID := kept[idx].ID
-		// A currency-mismatched loser's own price history belongs to a currency
-		// the survivor no longer claims (its LowestPrice/CheapestDate were just
-		// reset above), so it must not be retagged onto the survivor -- that
-		// would mix incompatible currencies into one numeric series for
-		// Sparkline/TrendArrow. Leaving loserID out of idMap lets
-		// compactHistoryLocked's live-watch filter drop it as an orphan instead,
-		// same as Store.Add already does on a currency change.
-		if sameCurrency && loserID != survivorID {
-			idMap[loserID] = survivorID
-		}
-		// Re-point the rest of the chain only when this merge stayed within one
-		// currency. If it did not, any earlier chain member already mapped to
-		// loserID (e.g. idMap[B]=loserID from a prior same-currency merge) must
-		// NOT be re-pointed to survivorID -- that would walk B's history across
-		// the currency boundary one hop later than the direct A-vs-C case, the
-		// same bug this whole guard exists to prevent. Leaving those entries
-		// pointing at loserID (now absent from kept) is safe: reassignHistoryLocked
-		// still rewrites their WatchID to loserID, and compactHistoryLocked's
-		// live-watch filter then drops them as orphans, exactly like a direct
-		// currency-mismatched pair.
-		if sameCurrency {
-			for old, cur := range idMap {
-				if cur == loserID {
-					idMap[old] = survivorID
-				}
+		survivor.LowestPrice = lowest
+		survivor.CheapestDate = cheapestDate
+		kept = append(kept, survivor)
+
+		// Every other member of the group maps directly onto the final
+		// survivor in one shot -- no pairwise chain to re-point, and no risk
+		// of an intermediate ID leaking through a stale mapping. A member
+		// whose currency does not match the survivor's is excluded from
+		// idMap on purpose: its own price-history points belong to a
+		// currency the survivor no longer claims, so retagging them onto the
+		// survivor would still mix currencies into one Sparkline/TrendArrow
+		// series even though the scalar LowestPrice above is now correct.
+		// Leaving it out of idMap lets compactHistoryLocked's live-watch
+		// filter drop that history as an orphan instead, same as a direct
+		// two-watch currency mismatch.
+		for _, w := range group {
+			if w.ID == survivor.ID {
+				continue
+			}
+			if w.Currency == survivor.Currency {
+				idMap[w.ID] = survivor.ID
 			}
 		}
 	}
 	removed := len(s.watches) - len(kept)
 	s.watches = kept
 	return removed, idMap
-}
-
-// lowerPositive returns the lower of two prices, treating a non-positive
-// value (unset) as absent rather than as a real zero-price low. If both are
-// absent the result is 0 (still unset) -- checking a's sign alone before
-// falling through to "return b" previously let a negative b escape as the
-// merged result (lowerPositive(0, -5) returned -5). Found by adversarial
-// review, 2026-07-29.
-func lowerPositive(a, b float64) float64 {
-	switch {
-	case a <= 0 && b <= 0:
-		return 0
-	case a <= 0:
-		return b
-	case b <= 0:
-		return a
-	case a < b:
-		return a
-	default:
-		return b
-	}
 }
 
 // reassignHistoryLocked repoints price-history points belonging to watches
@@ -291,6 +274,66 @@ func richer(a, b Watch) bool {
 // compactHistoryLocked applies the retention caps to history that already
 // exists, which the per-write pruning never touches. Caller holds s.mu.
 func (s *Store) compactHistoryLocked() {
+	// Drop points belonging to watches that no longer exist, including the
+	// duplicates just collapsed. Orphaned history is dead weight that the caps
+	// would otherwise let linger behind live watches.
+	//
+	// Also drop points whose CURRENCY no longer matches the live watch's
+	// current currency. History written by the pre-round-14/15 poller (or by
+	// any future currency change) can leave points denominated in the watch's
+	// OLD currency sitting beside points in its current currency under the
+	// same WatchID -- reassignHistoryLocked above repoints history by ID only,
+	// with no currency check, and the live-watch filter below only asks "does
+	// this ID still exist," not "is this point in the ID's current currency."
+	// Mixed-currency history under one ID corrupts any consumer that averages
+	// or charts a watch's series without checking each point's Currency field
+	// individually. A point with no Currency recorded (legacy data predating
+	// that field) is kept, since there is nothing to compare against.
+	// Found by adversarial review, 2026-07-30 (round 15).
+	//
+	// Round 18: this filter used to run AFTER the retention-cap pruning
+	// below. Provider currency is IP/market-driven and can flip poll-to-poll
+	// (round 14/15/16), so a stale-currency point is NOT guaranteed to be
+	// chronologically older than every live-currency point under the same
+	// WatchID. evictOldestLocked only looks at recency, not currency: capping
+	// first could keep a doomed stale-currency point (because it happened to
+	// be the newer of the two) at the direct cost of evicting an older but
+	// currency-VALID point -- which then never got a chance to survive to
+	// this filter, because it was already gone. Filtering orphaned/
+	// mismatched-currency points out FIRST guarantees the caps below only
+	// ever spend their eviction budget on history that is actually staying.
+	// Found by adversarial review, 2026-07-30 (round 18).
+	watchCurrency := make(map[string]string, len(s.watches))
+	for _, w := range s.watches {
+		watchCurrency[w.ID] = w.Currency
+	}
+	live := make(map[string]bool, len(s.watches))
+	for _, w := range s.watches {
+		live[w.ID] = true
+	}
+	// Compact in place (write index n <= read index i, always) instead of
+	// allocating a second backing array via `s.history[:0:0]`. This filter
+	// now runs before the retention caps below (round 18), so it sees the
+	// full pre-cap history -- on a large legacy store that is exactly the
+	// case where forcing an extra full-size copy costs the most transient
+	// memory for no benefit, since every surviving point gets written
+	// exactly once either way. Found by GPT second-opinion review,
+	// 2026-07-30 (round 18).
+	n := 0
+	for _, p := range s.history {
+		if p.WatchID != "" && !live[p.WatchID] {
+			continue
+		}
+		if p.WatchID != "" && p.Currency != "" {
+			if cur := watchCurrency[p.WatchID]; cur != "" && cur != p.Currency {
+				continue
+			}
+		}
+		s.history[n] = p
+		n++
+	}
+	s.history = s.history[:n]
+
 	perWatch := map[string]int{}
 	for _, p := range s.history {
 		if p.WatchID != "" {
@@ -316,22 +359,6 @@ func (s *Store) compactHistoryLocked() {
 		}
 	}
 	s.pruneGlobalRouteLocked()
-
-	// Drop points belonging to watches that no longer exist, including the
-	// duplicates just collapsed. Orphaned history is dead weight that the caps
-	// would otherwise let linger behind live watches.
-	live := make(map[string]bool, len(s.watches))
-	for _, w := range s.watches {
-		live[w.ID] = true
-	}
-	kept := s.history[:0:0]
-	for _, p := range s.history {
-		if p.WatchID != "" && !live[p.WatchID] {
-			continue
-		}
-		kept = append(kept, p)
-	}
-	s.history = kept
 }
 
 // backupLocked copies the current on-disk store beside itself, timestamped.

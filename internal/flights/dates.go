@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -127,16 +128,15 @@ func SearchDates(ctx context.Context, origin, destination string, opts DateSearc
 				return
 			}
 
-			// Find the cheapest flight with a positive price for this date.
-			var cheapest *models.FlightResult
-			for i := range result.Flights {
-				if result.Flights[i].Price > 0 {
-					if cheapest == nil || result.Flights[i].Price < cheapest.Price {
-						cheapest = &result.Flights[i]
-					}
-				}
-			}
-
+			// Find the representative flight for this date. Round 22 found this
+			// picked the raw-magnitude cheapest positive price across ALL
+			// currencies on the date, before livecheck.cheapestByCurrency ever
+			// saw the aggregated per-date results -- e.g. an 80 GBP fare could
+			// displace a 100 EUR fare here, silently discarding the EUR sibling
+			// a EUR watch needed. Group by currency first so a same-currency
+			// (or, absent one, the largest same-currency group) fare is never
+			// lost to a cheaper foreign-currency quote at this stage.
+			cheapest := cheapestFlightByCurrency(result.Flights)
 			if cheapest == nil {
 				return // no priced flights for this date
 			}
@@ -181,4 +181,61 @@ func SearchDates(ctx context.Context, origin, destination string, opts DateSearc
 		DateRange: fmt.Sprintf("%s to %s", opts.FromDate, opts.ToDate),
 		Dates:     dates,
 	}, nil
+}
+
+// cheapestFlightByCurrency picks a representative flight for one date without
+// ever comparing prices across different currencies. It mirrors
+// livecheck.cheapestByCurrency's grouping tiers (that function can't be
+// imported directly here: livecheck already imports flights, and Go forbids
+// the reverse). This call site has no preferred/watch currency to prioritize
+// -- SearchDates runs before any watch is known -- so it starts at the
+// "largest same-currency group" tier: group positive-priced flights by
+// normalized (trimmed, uppercased) currency, pick the largest group
+// (lexicographically-smallest currency code breaks ties, for determinism),
+// and return the cheapest flight within it. Falls back to the cheapest
+// currencyless flight if none carry a currency, and nil if nothing is
+// priced. Found by GPT second-opinion review, 2026-07-30 (round 22).
+func cheapestFlightByCurrency(items []models.FlightResult) *models.FlightResult {
+	byCur := map[string][]int{}
+	for i := range items {
+		if items[i].Price <= 0 {
+			continue
+		}
+		cur := strings.ToUpper(strings.TrimSpace(items[i].Currency))
+		byCur[cur] = append(byCur[cur], i)
+	}
+
+	pick := func(idxs []int) *models.FlightResult {
+		if len(idxs) == 0 {
+			return nil
+		}
+		best := &items[idxs[0]]
+		for _, i := range idxs[1:] {
+			if items[i].Price < best.Price {
+				best = &items[i]
+			}
+		}
+		return best
+	}
+
+	var knownCurrencies []string
+	for cur := range byCur {
+		if cur != "" {
+			knownCurrencies = append(knownCurrencies, cur)
+		}
+	}
+	switch {
+	case len(knownCurrencies) == 1:
+		return pick(byCur[knownCurrencies[0]])
+	case len(knownCurrencies) > 1:
+		chosenCur, chosenCount := "", -1
+		for _, cur := range knownCurrencies {
+			n := len(byCur[cur])
+			if n > chosenCount || (n == chosenCount && cur < chosenCur) {
+				chosenCur, chosenCount = cur, n
+			}
+		}
+		return pick(byCur[chosenCur])
+	}
+	return pick(byCur[""])
 }

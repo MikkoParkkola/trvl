@@ -272,10 +272,16 @@ func parsePrice(raw any) (float64, string) {
 		}
 	}
 
-	// Default currency if still not found
-	if amount > 0 && currency == "" {
-		currency = "USD"
-	}
+	// Round 22 found defaulting an undetected currency to "USD" here fabricates
+	// an authoritative-looking label: it passes IsValidCurrencyFormat and is
+	// then compared against the watch's real currency in
+	// checkOneWithWebhookContext, so a transient parse miss (token decode
+	// failure, unexpected array shape) reads as a genuine currency CHANGE and
+	// wipes the watch's alert threshold and price history. Leaving currency
+	// empty routes it through check.go's existing "provider gave no currency"
+	// handling instead, which errors out the single check rather than
+	// destructively resetting watch state. Found by GPT second-opinion
+	// review, 2026-07-30 (round 22).
 
 	return amount, currency
 }

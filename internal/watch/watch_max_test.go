@@ -192,6 +192,12 @@ func TestCheckRoom_PriceDropTracking(t *testing.T) {
 		ReturnDate:   "2026-07-08",
 		LastPrice:    250,
 		LowestPrice:  250,
+		// Round 19 found w.Currency=="" with prior observations is treated
+		// as untrustworthy history (unknown currency), triggering a reset
+		// rather than a same-currency price-drop comparison. This test
+		// verifies drop-tracking, not currency-mismatch handling, so it
+		// must establish a known currency matching the checker's quote.
+		Currency: "EUR",
 	}
 	id, _, err := store.Add(w)
 	if err != nil {
@@ -364,6 +370,16 @@ func TestCheckOne_TracksLowestPrice(t *testing.T) {
 		DepartDate:  "2026-07-01",
 		LowestPrice: 300,
 		LastPrice:   300,
+		// Round 20: without a matching Currency, w.Currency=="" plus a prior
+		// observation (LastPrice>0) is treated as an unknown-currency-with-
+		// history mismatch (round 19), which resets LowestPrice to 0 before
+		// the tracking comparison below runs. This test's assertion then
+		// passed by coincidence -- the reset-then-set-to-current-price path
+		// produces the same 250 a genuine "250 < 300" comparison would, for
+		// an unrelated reason. Give the watch a matching Currency so this
+		// test actually exercises lowest-price tracking, not a currency
+		// reset. Found by GPT second-opinion review, 2026-07-30 (round 20).
+		Currency: "EUR",
 	}
 	id, _, err := store.Add(w)
 	if err != nil {

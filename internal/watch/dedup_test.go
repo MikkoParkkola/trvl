@@ -99,6 +99,99 @@ func TestStoreAddRewatchDoesNotClearOmittedSettings(t *testing.T) {
 	}
 }
 
+// A currency-changing re-watch that omits a fresh absolute threshold must not
+// leave the OLD currency's absolute threshold silently attached to the NEW
+// currency. Found by adversarial review, 2026-07-30 (round 15): applyIntent
+// only ever overwrote BelowPrice/AlertDropAbs when the caller supplied a new
+// positive value, so a JPY->EUR re-watch that only touches AlertDropPct kept
+// comparing quotes against a stale JPY BelowPrice as if it were EUR.
+func TestStoreAddRewatchClearsAbsoluteThresholdsOnCurrencyChange(t *testing.T) {
+	s := NewStore(t.TempDir())
+
+	if _, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "JPY", BelowPrice: 20000, AlertDropAbs: 2000,
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	// Re-watch switches currency to EUR and only sets AlertDropPct -- BelowPrice
+	// and AlertDropAbs are omitted (zero-value), same as any caller that isn't
+	// specifically re-supplying an absolute threshold on every re-watch call.
+	if _, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "EUR", AlertDropPct: 10,
+	}); err != nil {
+		t.Fatalf("re-add: %v", err)
+	}
+
+	w := s.List()[0]
+	if w.Currency != "EUR" {
+		t.Fatalf("Currency = %q, want EUR", w.Currency)
+	}
+	if w.BelowPrice != 0 {
+		t.Errorf("BelowPrice = %v, want 0 (stale JPY 20000 must not survive a currency change to EUR)", w.BelowPrice)
+	}
+	if w.AlertDropAbs != 0 {
+		t.Errorf("AlertDropAbs = %v, want 0 (stale JPY 2000 must not survive a currency change to EUR)", w.AlertDropAbs)
+	}
+	if w.AlertDropPct != 10 {
+		t.Errorf("AlertDropPct = %v, want 10 (percentage is currency-invariant and should be applied)", w.AlertDropPct)
+	}
+}
+
+// Round 17 (adversarial review, 2026-07-30): applyIntent has the identical
+// regression check.go's currencyMismatch handling had -- zeroing
+// AlertDropAbs on a currency-changing re-watch that was the watch's ONLY
+// threshold (AlertDropPct <= 0) must not let pricealert.Evaluate's
+// Threshold.effective() silently substitute DefaultDropPercent (10%) on the
+// next poll. AlertDropAbsClearedByCurrency must be set when the re-watch
+// omits a fresh threshold, and cleared the instant a later re-watch
+// re-supplies either limb.
+func TestStoreAddRewatchMarksAbsOnlyThresholdClearedByCurrency(t *testing.T) {
+	s := NewStore(t.TempDir())
+
+	if _, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "JPY", AlertDropAbs: 2000, // absolute-only: AlertDropPct never set.
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	// Re-watch switches currency and supplies no fresh threshold at all.
+	if _, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "EUR",
+	}); err != nil {
+		t.Fatalf("re-add: %v", err)
+	}
+
+	w := s.List()[0]
+	if w.AlertDropAbs != 0 {
+		t.Errorf("AlertDropAbs = %v, want 0", w.AlertDropAbs)
+	}
+	if !w.AlertDropAbsClearedByCurrency {
+		t.Fatalf("AlertDropAbsClearedByCurrency = false, want true (the watch's only threshold was force-cleared with no replacement)")
+	}
+
+	// A THIRD re-watch that finally supplies a fresh absolute threshold in
+	// the new currency must clear the marker and resume normal evaluation.
+	if _, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "EUR", AlertDropAbs: 30,
+	}); err != nil {
+		t.Fatalf("re-add 2: %v", err)
+	}
+
+	w = s.List()[0]
+	if w.AlertDropAbs != 30 {
+		t.Errorf("AlertDropAbs = %v, want 30", w.AlertDropAbs)
+	}
+	if w.AlertDropAbsClearedByCurrency {
+		t.Errorf("AlertDropAbsClearedByCurrency = true, want false (a fresh threshold was supplied -- alerting must resume)")
+	}
+}
+
 // Genuinely different targets must still create separate watches. Dedup that is
 // too aggressive is a worse bug than no dedup.
 func TestStoreAddKeepsDistinctTargetsSeparate(t *testing.T) {
@@ -493,5 +586,61 @@ func TestStoreAddPreservesStateWhenCurrencyIsUnchanged(t *testing.T) {
 	}
 	if got := s.History(id); len(got) != 1 {
 		t.Errorf("history for this watch = %d points, want 1 (unchanged currency must not purge history)", len(got))
+	}
+}
+
+// TestCompactHistoryLockedFiltersCurrencyMismatchBeforeRetentionCap is the
+// regression test for round 18's reordering of compactHistoryLocked: the
+// orphan/currency-mismatch filter must run BEFORE the per-watch retention
+// cap, not after. Provider currency can flip poll-to-poll, so a
+// stale-currency point is not guaranteed to be older (in slice/chronological
+// order) than every currency-valid point under the same watch. If the cap
+// (evictOldestLocked, recency-only) ran first, it could evict a real,
+// currency-valid point purely for being the oldest by position -- while a
+// currency-mismatched point survives the cap only to be dropped by the
+// filter afterward anyway. Net effect of the bug: the store ends up BELOW
+// its own retention cap, having sacrificed a valid point for nothing.
+func TestCompactHistoryLockedFiltersCurrencyMismatchBeforeRetentionCap(t *testing.T) {
+	s := NewStore(t.TempDir())
+
+	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "USD"})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	// Fill to exactly the retention cap with valid USD points, oldest first
+	// (slice order mirrors chronological append order, as it does in
+	// production).
+	base := time.Now().Add(-24 * time.Hour)
+	s.history = nil
+	for i := 0; i < maxObservationsPerWatch; i++ {
+		s.history = append(s.history, PricePoint{
+			WatchID:   id,
+			Price:     float64(100 + i),
+			Currency:  "USD",
+			Timestamp: base.Add(time.Duration(i) * time.Minute),
+		})
+	}
+	// One extra point: newest by slice position, but in the watch's stale
+	// (mismatched) currency -- e.g. left over from before a provider
+	// currency flip. This is the one point that must not survive, no matter
+	// how recent it looks.
+	s.history = append(s.history, PricePoint{
+		WatchID:   id,
+		Price:     999,
+		Currency:  "EUR",
+		Timestamp: base.Add(time.Duration(maxObservationsPerWatch) * time.Minute),
+	})
+
+	s.compactHistoryLocked()
+
+	got := s.History(id)
+	if len(got) != maxObservationsPerWatch {
+		t.Fatalf("history after compact = %d points, want %d (currency filter must run before the retention cap, not sacrifice a valid point to it)", len(got), maxObservationsPerWatch)
+	}
+	for _, p := range got {
+		if p.Currency != "USD" {
+			t.Errorf("surviving point has Currency=%q, want all-USD (stale-currency point must not survive the cap at a valid point's expense)", p.Currency)
+		}
 	}
 }

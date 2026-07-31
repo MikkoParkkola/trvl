@@ -9,6 +9,7 @@ package livecheck
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/dategrid"
@@ -62,6 +63,105 @@ func cheapest[T any](items []T, price func(T) float64) T {
 	return best
 }
 
+// cheapestByCurrency picks the cheapest positive-priced item using the same
+// currency-tiered selection watch.checkRoomWithWebhookContext (round 20)
+// applies to room matches: (1) cheapest in preferredCurrency (the watch's
+// own currency) if any item carries it; else (2) cheapest within the single
+// largest same-currency group among items that DO carry a currency --
+// NEVER comparing magnitudes across DIFFERENT currencies to pick a winner,
+// tie-broken by lexicographically smallest currency code so the result is
+// deterministic regardless of provider order; else (3) cheapest among
+// currencyless items.
+//
+// Replaces the plain cheapest() above for flight/date-range/hotel
+// selection: that raw-magnitude minimum compared prices across DIFFERENT
+// currencies (e.g. a JPY offer numerically "winning" over a EUR offer)
+// exactly the bug class round 20 eliminated from room selection, and could
+// strand a valid same-currency sibling behind a cheaper foreign-currency or
+// currencyless offer, or trigger a false currency-change reset downstream
+// in the watch package. Confirmed unsafe to leave deferred by GPT
+// second-opinion review, 2026-07-30 (round 21).
+func cheapestByCurrency[T any](items []T, price func(T) float64, currency func(T) string, preferredCurrency string) T {
+	pick := func(pool []T) (T, bool) {
+		var best T
+		bestP := -1.0
+		found := false
+		for _, it := range pool {
+			p := price(it)
+			if p > 0 && (!found || p < bestP) {
+				best, bestP, found = it, p, true
+			}
+		}
+		return best, found
+	}
+
+	// Round 22 found grouping on the RAW currency string let "EUR", "eur",
+	// and " EUR " land in three separate buckets -- normalization only
+	// happens later, in watch.checkOneWithWebhookContext. A cheaper
+	// lowercase-EUR offer could lose the group-size tiebreak to USD, handing
+	// back a USD quote for a EUR watch and triggering a false currency-change
+	// reset downstream. Canonicalize (trim+uppercase) at this boundary too,
+	// same treatment check.go already gives the checker's overall return
+	// value. Found by GPT second-opinion review, 2026-07-30 (round 22).
+	normCur := func(c string) string { return strings.ToUpper(strings.TrimSpace(c)) }
+
+	// Round 24 found zero/negative-price rows were still being counted here
+	// even though pick() can never choose one as a winner (it requires
+	// p > 0): a currency whose only rows were zero-price could still win the
+	// largest-group tie-break below on row count alone, then fail to
+	// produce a result and fall through past a currency that actually had a
+	// valid positive-price offer -- silently discarding a real quote in
+	// favor of the currencyless pool or the raw items[0] fallback. Exclude
+	// non-positive-price rows from grouping so group size (and thus which
+	// currency wins the tie-break) reflects only rows that could actually
+	// win selection. Found by GPT second-opinion review, 2026-07-31 (round
+	// 24).
+	byCur := map[string][]T{}
+	for _, it := range items {
+		if price(it) <= 0 {
+			continue
+		}
+		c := normCur(currency(it))
+		byCur[c] = append(byCur[c], it)
+	}
+
+	preferredCurrency = normCur(preferredCurrency)
+	if preferredCurrency != "" {
+		if best, ok := pick(byCur[preferredCurrency]); ok {
+			return best
+		}
+	}
+
+	var knownCurrencies []string
+	for cur := range byCur {
+		if cur != "" {
+			knownCurrencies = append(knownCurrencies, cur)
+		}
+	}
+	switch {
+	case len(knownCurrencies) == 1:
+		if best, ok := pick(byCur[knownCurrencies[0]]); ok {
+			return best
+		}
+	case len(knownCurrencies) > 1:
+		chosenCur, chosenCount := "", -1
+		for _, cur := range knownCurrencies {
+			n := len(byCur[cur])
+			if n > chosenCount || (n == chosenCount && cur < chosenCur) {
+				chosenCur, chosenCount = cur, n
+			}
+		}
+		if best, ok := pick(byCur[chosenCur]); ok {
+			return best
+		}
+	}
+
+	if best, ok := pick(byCur[""]); ok {
+		return best
+	}
+	return items[0]
+}
+
 func checkFlight(ctx context.Context, w watch.Watch) (float64, string, string, error) {
 	// Route watch or date range: use calendar/dates search.
 	if w.IsRouteWatch() || w.IsDateRange() {
@@ -69,6 +169,20 @@ func checkFlight(ctx context.Context, w watch.Watch) (float64, string, string, e
 	}
 
 	// Specific date search.
+	//
+	// NOTE: an earlier round of this fix pinned SearchOptions.Currency to
+	// w.Currency here to stop a spurious-flip source (see check.go's
+	// currency-change reset). That pin was reverted: SearchOptions.Currency
+	// is a misnomer -- search.go:725-726 maps it to Google's `gl` (country
+	// market) parameter, not a `curr` (display-currency) parameter
+	// (batchexec/client.go:437-440 confirms gl selects which fares are
+	// shown; curr exists separately and is never wired here). Pinning it
+	// would silently change which market's flights get searched, not just
+	// the currency label -- a materially different and larger bug than the
+	// one this PR fixes. Wiring the real `curr` parameter through
+	// SearchFlightsGLCurrStealth (leaving gl untouched) is tracked as a
+	// separate follow-up, out of scope for this PR's currency-change-reset
+	// fix. Found by adversarial review, 2026-07-29 (round 9).
 	opts := flights.SearchOptions{ReturnDate: w.ReturnDate}
 	result, err := flights.SearchFlights(ctx, w.Origin, w.Destination, w.DepartDate, opts)
 	if err != nil {
@@ -78,7 +192,7 @@ func checkFlight(ctx context.Context, w watch.Watch) (float64, string, string, e
 		return 0, "", "", nil
 	}
 
-	cheapest := cheapest(result.Flights, func(f models.FlightResult) float64 { return f.Price })
+	cheapest := cheapestByCurrency(result.Flights, func(f models.FlightResult) float64 { return f.Price }, func(f models.FlightResult) string { return f.Currency }, w.Currency)
 	return cheapest.Price, cheapest.Currency, w.DepartDate, nil
 }
 
@@ -107,7 +221,7 @@ func checkFlightRange(ctx context.Context, w watch.Watch) (float64, string, stri
 	// with zero new provider calls. Best-effort: never affect the check result.
 	persistDateGrid(w.Origin, w.Destination, result.Dates)
 
-	cheapest := cheapest(result.Dates, func(d models.DatePriceResult) float64 { return d.Price })
+	cheapest := cheapestByCurrency(result.Dates, func(d models.DatePriceResult) float64 { return d.Price }, func(d models.DatePriceResult) string { return d.Currency }, w.Currency)
 	return cheapest.Price, cheapest.Currency, cheapest.Date, nil
 }
 
@@ -172,6 +286,6 @@ func checkHotel(ctx context.Context, w watch.Watch) (float64, string, string, er
 		return 0, "", "", nil
 	}
 
-	cheapest := cheapest(result.Hotels, func(h models.HotelResult) float64 { return h.Price })
+	cheapest := cheapestByCurrency(result.Hotels, func(h models.HotelResult) float64 { return h.Price }, func(h models.HotelResult) string { return h.Currency }, w.Currency)
 	return cheapest.Price, cheapest.Currency, checkIn, nil
 }

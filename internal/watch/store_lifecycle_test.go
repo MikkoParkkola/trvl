@@ -269,32 +269,14 @@ func TestMigrateMergesLowestPriceAcrossDuplicates(t *testing.T) {
 	}
 }
 
-// lowerPositive previously let a negative b escape as the "merged lowest" when
-// a was 0 (unset): it checked a's sign first and returned b unconditionally
-// on that branch, without checking whether b was itself non-positive. Found
-// by adversarial review, 2026-07-29.
-func TestLowerPositiveTreatsBothNonPositiveAsAbsent(t *testing.T) {
-	cases := []struct {
-		name string
-		a, b float64
-		want float64
-	}{
-		{"both unset", 0, 0, 0},
-		{"a unset, b negative", 0, -5, 0},
-		{"a negative, b unset", -5, 0, 0},
-		{"a unset, b positive", 0, 30, 30},
-		{"a positive, b unset", 30, 0, 30},
-		{"both positive, a lower", 30, 50, 30},
-		{"both positive, b lower", 50, 30, 30},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := lowerPositive(c.a, c.b); got != c.want {
-				t.Errorf("lowerPositive(%v, %v) = %v, want %v", c.a, c.b, got, c.want)
-			}
-		})
-	}
-}
+// The pairwise-merge scalar (and its lowerPositive helper) that used to carry
+// LowestPrice across a duplicate group is gone: collapseDuplicatesLocked now
+// recomputes the group's low from every member's original value in one pass
+// (see TestMigrateRecoversTrueLowAcrossCurrencyResetMidChain), so there is no
+// running merge value left to unit-test in isolation. A negative LowestPrice
+// is excluded by the `w.LowestPrice <= 0` guard in that recomputation, which
+// is what previously needed lowerPositive's explicit both-non-positive
+// handling.
 
 // A duplicate group can legitimately span two currencies (SameTarget ignores
 // Currency; a route can be re-watched in a different one). Merging LowestPrice
@@ -331,12 +313,17 @@ func TestMigrateDoesNotMergeLowestPriceAcrossCurrencies(t *testing.T) {
 	if survivor.ID != "jpy-watch" {
 		t.Fatalf("expected the more-recently-checked record to win identity, got %q", survivor.ID)
 	}
-	// The survivor is JPY; a EUR 50 has no meaning as a JPY price, and the JPY
-	// 10000 belongs to the LOSING record's own currency history, not this
-	// merge. Neither number is safe to carry forward as-is, so the merged
-	// price must reset to unset (0) rather than silently mislabel a currency.
-	if survivor.LowestPrice != 0 {
-		t.Errorf("LowestPrice = %v, want 0 (cross-currency merge must not carry forward either side's number)", survivor.LowestPrice)
+	// The survivor is JPY; a EUR 50 has no meaning as a JPY price and must
+	// never be inherited. The survivor's OWN JPY 10000 is still a valid JPY
+	// observation, though, and collapseDuplicatesLocked recomputes the low
+	// from every group member that shares the survivor's currency -- so the
+	// correct result is the JPY side's own true low, not a blanket reset to
+	// 0. (A reset to 0 was this test's expectation until round 3 of
+	// adversarial review showed the blanket-reset version discarded a real
+	// same-currency low when a chain mixed in a THIRD, same-currency record;
+	// see TestMigrateRecoversTrueLowAcrossCurrencyResetMidChain.)
+	if survivor.LowestPrice != 10000 {
+		t.Errorf("LowestPrice = %v, want 10000 (the survivor's own JPY low; the EUR 50 must not be inherited, but the JPY 10000 must not be discarded either)", survivor.LowestPrice)
 	}
 }
 
@@ -398,7 +385,59 @@ func TestMigrateReassignsHistoryAcrossChainOfThreeOrMoreDuplicates(t *testing.T)
 	}
 }
 
-// A cross-currency merge resets the survivor's LowestPrice to 0, but the
+// A currency-mismatched merge resets LowestPrice to 0 (unset), which the
+// PREVIOUS pairwise-merge implementation then fed straight into comparing
+// against a LATER same-currency duplicate's own price -- so 0 always "won"
+// as the lower value and a real, still-valid same-currency low from an
+// earlier chain member was silently discarded. EUR 80 -> JPY 5,000 -> JPY
+// 10,000 must keep the true JPY low of 5,000, not the second JPY record's
+// value alone. Found by adversarial review, 2026-07-29 (round 3).
+func TestMigrateRecoversTrueLowAcrossCurrencyResetMidChain(t *testing.T) {
+	s := NewStore(t.TempDir())
+	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200}
+
+	eur := base
+	eur.ID = "eur-watch"
+	eur.Currency = "EUR"
+	eur.LowestPrice = 80
+	eur.LastCheck = time.Now().Add(-72 * time.Hour)
+
+	jpyLow := base
+	jpyLow.ID = "jpy-low"
+	jpyLow.Currency = "JPY"
+	jpyLow.LowestPrice = 5000
+	jpyLow.CheapestDate = "2026-08-15"
+	jpyLow.LastCheck = time.Now().Add(-24 * time.Hour)
+
+	jpyHigh := base
+	jpyHigh.ID = "jpy-high"
+	jpyHigh.Currency = "JPY"
+	jpyHigh.LowestPrice = 10000
+	jpyHigh.CheapestDate = "2026-09-01"
+	jpyHigh.LastCheck = time.Now()
+
+	s.watches = []Watch{eur, jpyLow, jpyHigh}
+
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	watches := s.List()
+	if len(watches) != 1 {
+		t.Fatalf("duplicate chain collapsed to %d watches, want 1", len(watches))
+	}
+	survivor := watches[0]
+	if survivor.Currency != "JPY" {
+		t.Fatalf("survivor currency = %q, want JPY", survivor.Currency)
+	}
+	if survivor.LowestPrice != 5000 {
+		t.Errorf("LowestPrice = %v, want 5000 (the true JPY low across both JPY records, not just the winner of the final pairwise step)", survivor.LowestPrice)
+	}
+	if survivor.CheapestDate != "2026-08-15" {
+		t.Errorf("CheapestDate = %q, want 2026-08-15 (must track whichever record actually supplied the surviving low)", survivor.CheapestDate)
+	}
+}
+
 // losing record's own price-history points are a currency series in their own
 // right (EUR history under a EUR watch). Retagging them onto a JPY survivor
 // via idMap would still mix the two currencies into one numeric series for
@@ -447,10 +486,15 @@ func TestMigrateDoesNotRetagHistoryAcrossCurrencies(t *testing.T) {
 }
 
 // CheapestDate is documented (dedup_test.go) as tied to LowestPrice: whenever
-// LowestPrice resets to unset, CheapestDate must reset alongside it. A
-// cross-currency merge resets LowestPrice but had left CheapestDate untouched,
-// so a stale date from the discarded currency's low would survive next to a
-// "0" price. Found by adversarial review, 2026-07-29 (round 2).
+// LowestPrice is recomputed, CheapestDate must come from the SAME record the
+// price came from, never a stale date left over from a different currency's
+// entry. The survivor here is JPY (more recent LastCheck); the EUR side's
+// price AND date must both be excluded, but the JPY side's own true price and
+// date must survive intact -- the group-materialization rewrite (round 3)
+// recomputes the low from every group member sharing the survivor's
+// currency, so a lone same-currency member keeps its own number rather than
+// being blanket-reset to 0/empty. Found by adversarial review, 2026-07-29
+// (round 2); assertion updated for the round-3 fix.
 func TestMigrateClearsCheapestDateOnCrossCurrencyMerge(t *testing.T) {
 	s := NewStore(t.TempDir())
 	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200}
@@ -479,16 +523,20 @@ func TestMigrateClearsCheapestDateOnCrossCurrencyMerge(t *testing.T) {
 	if len(watches) != 1 {
 		t.Fatalf("duplicate group collapsed to %d watches, want 1", len(watches))
 	}
-	if watches[0].CheapestDate != "" {
-		t.Errorf("CheapestDate = %q, want empty (tied to the reset LowestPrice)", watches[0].CheapestDate)
+	if watches[0].CheapestDate != jpy.CheapestDate {
+		t.Errorf("CheapestDate = %q, want %q (survivor's own JPY date; EUR's date must never leak in)", watches[0].CheapestDate, jpy.CheapestDate)
 	}
 }
 
 // The scalar currency guard must fire on ANY inequality, not just "both sides
 // labeled and different" -- a blank Currency has no known currency either, so
 // treating blank-vs-labeled as compatible let a labeled survivor inherit a
-// price with no verified currency. Found by adversarial review, 2026-07-29
-// (round 2).
+// price with no verified currency. The survivor's OWN currency's true low
+// must still be preserved, though -- the group-materialization rewrite
+// (round 3) recomputes it from every group member sharing the survivor's
+// currency, so the guarantee under test is "blank's 30 never leaks in", not
+// "the survivor's own JPY number gets discarded". Found by adversarial
+// review, 2026-07-29 (round 2); assertion updated for the round-3 fix.
 func TestMigrateTreatsBlankCurrencyAsIncompatibleWithLabeled(t *testing.T) {
 	s := NewStore(t.TempDir())
 	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200}
@@ -515,8 +563,8 @@ func TestMigrateTreatsBlankCurrencyAsIncompatibleWithLabeled(t *testing.T) {
 	if len(watches) != 1 || watches[0].ID != "jpy-watch" {
 		t.Fatalf("expected jpy-watch alone to survive, got %+v", watches)
 	}
-	if watches[0].LowestPrice != 0 {
-		t.Errorf("LowestPrice = %v, want 0 (blank-currency price must not be inherited by a labeled survivor)", watches[0].LowestPrice)
+	if watches[0].LowestPrice != jpy.LowestPrice {
+		t.Errorf("LowestPrice = %v, want %v (survivor's own JPY low; blank-currency price must not be inherited)", watches[0].LowestPrice, jpy.LowestPrice)
 	}
 }
 
@@ -626,6 +674,37 @@ func TestMigrateDropsOrphanedHistory(t *testing.T) {
 		if p.WatchID == "dupe" {
 			t.Error("history for a collapsed duplicate was left behind")
 		}
+	}
+}
+
+// History points denominated in a watch's OLD currency must not linger
+// alongside points in its current currency under the same live WatchID.
+// Found by adversarial review, 2026-07-30 (round 15): compactHistoryLocked's
+// live-watch filter only checked "does this ID still exist," never "is this
+// point in the ID's CURRENT currency" -- so history left mixed-currency by
+// the pre-round-14/15 poller (or any future currency change) survived
+// compaction indefinitely under a live ID.
+func TestMigrateDropsMixedCurrencyHistory(t *testing.T) {
+	s := NewStore(t.TempDir())
+	w := Watch{ID: "w1", Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR", CreatedAt: time.Now()}
+	s.watches = []Watch{w}
+	s.history = []PricePoint{
+		{WatchID: "w1", Price: 15000, Currency: "JPY", Timestamp: time.Now().Add(-time.Hour)},
+		{WatchID: "w1", Price: 180, Currency: "EUR", Timestamp: time.Now()},
+		{WatchID: "w1", Price: 999, Currency: "", Timestamp: time.Now()}, // legacy, no currency recorded
+	}
+
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	h := s.History("w1")
+	for _, p := range h {
+		if p.Currency == "JPY" {
+			t.Error("stale JPY history point survived compaction under a watch now denominated in EUR")
+		}
+	}
+	if len(h) != 2 {
+		t.Errorf("history len = %d, want 2 (EUR point + legacy no-currency point kept, JPY point dropped)", len(h))
 	}
 }
 

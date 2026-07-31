@@ -60,6 +60,18 @@ type Watch struct {
 	BaselinePrice    float64 `json:"baseline_price,omitempty"`
 	LastAlertedPrice float64 `json:"last_alerted_price,omitempty"`
 
+	// AlertDropAbsClearedByCurrency marks that AlertDropAbs was force-zeroed
+	// by a currency mismatch (check.go) or a currency-changing re-watch
+	// (store.go's applyIntent) while it was the watch's ONLY alert threshold
+	// (AlertDropPct was already <= 0). Without this marker, pricealert's
+	// Evaluate silently substitutes DefaultDropPercent (10%) once both
+	// limbs read zero -- swapping the user's chosen absolute-drop diligence
+	// for an unrequested default with no notification. While true, check.go
+	// suspends proactive alerting entirely instead of falling back to the
+	// default; applyIntent clears it the moment the user re-supplies either
+	// threshold limb. Found by adversarial review, 2026-07-30 (round 17).
+	AlertDropAbsClearedByCurrency bool `json:"alert_drop_abs_cleared_by_currency,omitempty"`
+
 	// Room watch fields (Type == "room").
 	HotelName    string   `json:"hotel_name,omitempty"`    // hotel name for room availability lookups
 	RoomKeywords []string `json:"room_keywords,omitempty"` // all keywords must match room name+description
@@ -182,6 +194,21 @@ func (w Watch) Validate() error {
 	}
 	if err := validateWatchDate("date range end", w.DepartTo); err != nil {
 		return err
+	}
+
+	// Round 21 found provider-observed currencies were validated
+	// (IsValidCurrencyFormat, check.go/store.go) but USER-supplied currency
+	// at watch-creation/re-watch time never was -- only normalized
+	// (trim+uppercase). A caller could create or re-watch with a malformed
+	// currency like "EU R" and, because it's non-empty, have it treated as
+	// a genuine currency CHANGE on the very next poll -- immediately
+	// wiping alert thresholds and price history via applyIntent. Reject it
+	// here instead of trusting it. Store.Add's own normalization runs
+	// AFTER Validate, so check the trimmed+uppercased form explicitly
+	// rather than relying on w.Currency already being clean. Found by GPT
+	// second-opinion review, 2026-07-30 (round 21).
+	if cur := strings.ToUpper(strings.TrimSpace(w.Currency)); cur != "" && !IsValidCurrencyFormat(cur) {
+		return fmt.Errorf("invalid currency %q: must be a 3-letter code (e.g. USD, EUR)", w.Currency)
 	}
 
 	// Room watch validation.
