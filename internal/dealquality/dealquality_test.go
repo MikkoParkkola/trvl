@@ -1,7 +1,6 @@
 package dealquality
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -9,12 +8,23 @@ import (
 	"time"
 )
 
+// recentDate returns a date daysAgo days before today, formatted the way
+// samples are stored.
+//
+// Fixtures must be relative. Query and load both drop samples older than 90
+// days, so a hardcoded date is a fuse: the test passes until the literal
+// crosses the retention window, then fails on a day nobody touched the code.
+// That is exactly what happened on 2026-07-31 to a fixture dated 2026-05-01.
+func recentDate(daysAgo int) string {
+	return time.Now().AddDate(0, 0, -daysAgo).Format(historyLayout)
+}
+
 // makeSamples creates n synthetic samples for route "HEL-BCN", kind "flight", season "Q2".
 // Prices are evenly distributed from minPrice to maxPrice.
 func makeSamples(n int, minPrice, maxPrice float64) []Sample {
 	samples := make([]Sample, n)
 	if n == 1 {
-		samples[0] = Sample{Route: "HEL-BCN", Season: "Q2", Date: "2026-05-01", Price: minPrice, Kind: "flight"}
+		samples[0] = Sample{Route: "HEL-BCN", Season: "Q2", Date: recentDate(1), Price: minPrice, Kind: "flight"}
 		return samples
 	}
 	for i := 0; i < n; i++ {
@@ -22,7 +32,7 @@ func makeSamples(n int, minPrice, maxPrice float64) []Sample {
 		samples[i] = Sample{
 			Route:  "HEL-BCN",
 			Season: "Q2",
-			Date:   "2026-05-01",
+			Date:   recentDate(1),
 			Price:  price,
 			Kind:   "flight",
 		}
@@ -150,14 +160,26 @@ func TestConcurrentAppends(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make(chan error, 50)
 
+	// One date, computed once, with the season derived from it. Fixed May-2026
+	// dates made this test a fuse that would start failing on its own once they
+	// fell outside the 90-day retention window, and varying the date per
+	// goroutine would straddle a quarter boundary and split the season the query
+	// below asks for. What is under test is concurrent appends, so the prices
+	// vary and nothing else needs to.
+	day := recentDate(1)
+	season := SeasonOf(day)
+
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
 			err := store.Append(Sample{
-				Route:  "HEL-BCN",
-				Season: "Q2",
-				Date:   fmt.Sprintf("2026-05-%02d", (i%28)+1),
+				Route: "HEL-BCN",
+				// Season must match the date, and both must stay inside the
+				// 90-day retention window: fixed May-2026 dates made this test
+				// a fuse that would fail on its own from late August 2026.
+				Season: season,
+				Date:   day,
 				Price:  float64(100 + i),
 				Kind:   "flight",
 			})
@@ -173,9 +195,13 @@ func TestConcurrentAppends(t *testing.T) {
 		t.Errorf("concurrent append error: %v", err)
 	}
 
-	samples := store.Query("HEL-BCN", "flight", "Q2")
-	if len(samples) == 0 {
-		t.Error("expected samples after concurrent appends")
+	// Exactly 50, not "more than none". The point of Append reloading from disk
+	// under the lock is that a concurrent writer cannot lose another's sample, and
+	// only an exact count can observe a lost one. The 50 prices are distinct, so
+	// none of them is dropped by the dedupe on route+kind+date+price.
+	samples := store.Query("HEL-BCN", "flight", season)
+	if len(samples) != 50 {
+		t.Errorf("concurrent appends lost samples: got %d, want 50", len(samples))
 	}
 }
 
@@ -183,12 +209,14 @@ func TestDedup(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	sample := Sample{Route: "HEL-BCN", Season: "Q2", Date: "2026-05-01", Price: 150, Kind: "flight"}
+	day := recentDate(1)
+	season := SeasonOf(day)
+	sample := Sample{Route: "HEL-BCN", Season: season, Date: day, Price: 150, Kind: "flight"}
 	_ = store.Append(sample)
 	_ = store.Append(sample) // duplicate
 	_ = store.Append(sample) // duplicate
 
-	samples := store.Query("HEL-BCN", "flight", "Q2")
+	samples := store.Query("HEL-BCN", "flight", season)
 	if len(samples) != 1 {
 		t.Errorf("expected 1 sample after dedup, got %d", len(samples))
 	}
@@ -226,9 +254,9 @@ func TestQueryFilters(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	_ = store.Append(Sample{Route: "HEL-BCN", Season: "Q2", Date: "2026-05-01", Price: 150, Kind: "flight"})
-	_ = store.Append(Sample{Route: "HEL-BCN", Season: "Q2", Date: "2026-05-02", Price: 200, Kind: "hotel"})
-	_ = store.Append(Sample{Route: "HEL-PRG", Season: "Q2", Date: "2026-05-01", Price: 100, Kind: "flight"})
+	_ = store.Append(Sample{Route: "HEL-BCN", Season: "Q2", Date: recentDate(1), Price: 150, Kind: "flight"})
+	_ = store.Append(Sample{Route: "HEL-BCN", Season: "Q2", Date: recentDate(2), Price: 200, Kind: "hotel"})
+	_ = store.Append(Sample{Route: "HEL-PRG", Season: "Q2", Date: recentDate(1), Price: 100, Kind: "flight"})
 
 	flights := store.Query("HEL-BCN", "flight", "Q2")
 	if len(flights) != 1 {
@@ -259,7 +287,7 @@ func TestStoreLoad(t *testing.T) {
 	}
 
 	// Append a sample, then create a new store and load it.
-	_ = store.Append(Sample{Route: "HEL-BCN", Season: "Q2", Date: "2026-05-01", Price: 150, Kind: "flight"})
+	_ = store.Append(Sample{Route: "HEL-BCN", Season: "Q2", Date: recentDate(1), Price: 150, Kind: "flight"})
 
 	store2 := NewStore(dir)
 	if err := store2.Load(); err != nil {
