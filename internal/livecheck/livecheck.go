@@ -130,6 +130,30 @@ func cheapestByCurrency[T any](items []T, price func(T) float64, currency func(T
 		if best, ok := pick(byCur[preferredCurrency]); ok {
 			return best
 		}
+		// Grok round-25 optional finding #2 proposed short-circuiting to
+		// "no quote" here on a preferred-currency miss, reasoning that
+		// falling through to the largest-other-known-currency tier below
+		// would let a transient provider gap masquerade as a real currency
+		// change downstream. Round-26 second-opinion review (Grok) found
+		// that fix was applied at the wrong layer: checkOneWithWebhookContext
+		// (check.go) already handles this correctly and with more
+		// information than this generic helper has -- its hasPriorObservation/
+		// currencyChanged/firstQuoteMismatch logic (rounds 14-21) safely
+		// ADOPTS a new currency on both a genuine change and a first-ever
+		// quote, resetting only the currency-denominated scalars
+		// (LastPrice/LowestPrice/CheapestDate/BaselinePrice/
+		// LastAlertedPrice) and clearing BelowPrice/AlertDropAbs with an
+		// explicit AlertsClearedByCurrencyChange flag the user can see --
+		// it never silently drops the quote. Short-circuiting here instead
+		// returned the zero value unconditionally on ANY preferred miss,
+		// which (a) duplicated that protection redundantly and (b) broke
+		// first-quote establishment entirely: a brand-new watch whose
+		// preferred currency the provider never quotes on poll 1 would
+		// never adopt any price, because check.go's firstQuoteMismatch path
+		// can only run on a quote this function actually returns. Reverted;
+		// fall through to the known-currency-group tier below, same as
+		// round 22. Found by Grok second-opinion review, 2026-07-31 (round
+		// 26).
 	}
 
 	var knownCurrencies []string

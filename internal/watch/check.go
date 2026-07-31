@@ -833,5 +833,19 @@ func fireWebhook(ctx context.Context, r CheckResult) {
 		// redirect response as delivery.
 		safeHost := parsedURL.Scheme + "://" + parsedURL.Host
 		slog.Warn("webhook: receiver redirected, notification not delivered", "watch_id", r.Watch.ID, "host", safeHost, "status", resp.StatusCode)
+		return
+	}
+	if resp.StatusCode >= 400 {
+		// Grok round-25 optional finding #1: only the 3xx branch above ever
+		// logged a non-2xx response -- a receiver returning 4xx (bad
+		// payload, auth failure, rate limit) or 5xx (outage) failed the
+		// delivery just as silently as a redirect, with nothing in the logs
+		// to explain a "why did my webhook never fire" report. Treat 4xx/5xx
+		// the same as a redirect: log host + status as undelivered, never
+		// the response body (could echo the request back, including any
+		// token embedded in the URL by the receiver's own error page).
+		// Fixed as trvl#547.
+		safeHost := parsedURL.Scheme + "://" + parsedURL.Host
+		slog.Warn("webhook: receiver returned an error status, notification not delivered", "watch_id", r.Watch.ID, "host", safeHost, "status", resp.StatusCode)
 	}
 }

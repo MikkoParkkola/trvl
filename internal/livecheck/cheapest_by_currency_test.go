@@ -28,7 +28,12 @@ func TestCheapestByCurrencyPrefersPreferredCurrency(t *testing.T) {
 
 // TestCheapestByCurrencySingleKnownCurrencyGroupFallback proves the fallback
 // tier: when no item matches the preferred currency but exactly one other
-// currency is present, pick the cheapest within that group.
+// currency is present, pick the cheapest within that group. Round 26
+// (second-opinion review by Grok, 2026-07-31) reconfirmed this fallthrough is
+// correct: checkOneWithWebhookContext (check.go) is the layer responsible for
+// safely handling a preferred-currency miss (adopt + reset stale scalars +
+// clear/flag thresholds, or establish a first quote), not this helper -- see
+// the comment on cheapestByCurrency's preferred-currency branch.
 func TestCheapestByCurrencySingleKnownCurrencyGroupFallback(t *testing.T) {
 	items := []priced{
 		{price: 500, currency: "USD"},

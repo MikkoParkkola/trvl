@@ -147,6 +147,20 @@ func TestSameDayAlternativeCrossCurrencyMismatch(t *testing.T) {
 	if s := SameDayAlternative(mismatch, 10, asOf); s != nil {
 		t.Fatalf("cross-currency mismatch must yield no saving, got %+v", s)
 	}
+
+	// Both unlabeled -> saving still allowed (same documented unknown-unknown
+	// convention as ShiftDay's bothBlank case above). Grok round-25 optional
+	// finding #4: ShiftDay had an explicit positive both-blank test but
+	// SameDayAlternative did not, even though the production logic (line
+	// `fCur != headlineCur`, "" == "" is true) already takes this path --
+	// parity-only, no behavior change. Fixed as trvl#548.
+	bothBlank := []models.FlightResult{
+		{Price: 220}, // headline, no currency
+		{Price: 150}, // cheaper, no currency
+	}
+	if s := SameDayAlternative(bothBlank, 10, asOf); s == nil || s.Amount != 70 {
+		t.Fatalf("both-blank flights should still allow a saving, got %+v", s)
+	}
 }
 
 func TestVsHistoryHonesty(t *testing.T) {
