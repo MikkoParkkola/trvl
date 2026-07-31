@@ -9,6 +9,50 @@ import (
 	"time"
 )
 
+// withLauncherWindows substitutes the two observation windows startAndReap consults
+// and restores them when the test ends.
+//
+// It exists to keep the host's scheduling out of the verdict. Both windows are
+// production tradeoffs sized in the low hundreds of milliseconds, and a test that
+// races them is measuring how promptly this machine forked a shell rather than what
+// the code did with the result. Two tests in this file were written that way and went
+// red under load (#533).
+//
+// Both are set together, because the interesting regressions are about WHICH window a
+// path consults. A test can make them far enough apart that the answer is legible
+// from the elapsed time without a tight bound.
+func withLauncherWindows(t *testing.T, startup, failure time.Duration) {
+	t.Helper()
+	priorStartup, priorFailure := launcherStartupWindow, launcherFailureWindow
+	t.Cleanup(func() {
+		launcherStartupWindow, launcherFailureWindow = priorStartup, priorFailure
+	})
+	launcherStartupWindow, launcherFailureWindow = startup, failure
+}
+
+// TestLauncherWindows_ShippedDefaults pins the two window values the product actually
+// ships.
+//
+// Every other launcher test in this file calls withLauncherWindows, which is right for
+// them — they assert which window a path consults, and racing the real values under
+// load is what made two of them flake (#533). The cost is that nothing was left
+// checking the values themselves: both could drift to five seconds and the whole file
+// would stay green while a cookie export blocked a search for ten. This test is the one
+// place that reads them unsubstituted.
+//
+// The numbers are tradeoffs, not invariants, so a deliberate change is meant to edit
+// this test. What it stops is an accidental change, and a bound would not: 150ms and
+// 500ms differ by more than 3x on purpose, and any bound loose enough to hold both is
+// loose enough to admit the drift this guards against.
+func TestLauncherWindows_ShippedDefaults(t *testing.T) {
+	if got, want := launcherStartupWindow, 150*time.Millisecond; got != want {
+		t.Errorf("launcherStartupWindow = %v, want %v; a launcher with no fallback spends this window on every success, so raising it slows every cookie export", got, want)
+	}
+	if got, want := launcherFailureWindow, 500*time.Millisecond; got != want {
+		t.Errorf("launcherFailureWindow = %v, want %v; the preferred-browser attempt spends this only when it fails, which is why it can afford to be the longer of the two", got, want)
+	}
+}
+
 // TestDefaultOpenURL_DoesNotWaitForTheBrowser pins the reason these launches use
 // Start rather than Run.
 //
@@ -24,6 +68,17 @@ func TestDefaultOpenURL_DoesNotWaitForTheBrowser(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell-script fixtures are POSIX")
 	}
+
+	// The regression to catch is a build that routes a plain launcher through the
+	// failure window, which a launcher that keeps running spends in full. That was an
+	// earlier attempt at the launcher-failure fix, and on Linux a persistent launcher
+	// is the normal case, so the cost would be paid on every challenge.
+	//
+	// This used to be caught by a 300ms bound against the 150ms production window: a
+	// 2x margin, decided by scheduling under load, and it flaked (#533). Separating
+	// the windows by 500x instead makes the elapsed time say which one was consulted,
+	// and no amount of load can make 20ms look like ten seconds.
+	withLauncherWindows(t, 20*time.Millisecond, 10*time.Second)
 
 	launcher := "open"
 	if runtime.GOOS == "linux" {
@@ -43,12 +98,7 @@ func TestDefaultOpenURL_DoesNotWaitForTheBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error launching the browser: %v", err)
 	}
-	// Tight on purpose. A first attempt at the launcher-failure fix routed every
-	// launcher through the observation window, which meant this path paid the full
-	// window even though a launcher that keeps running is the normal case on Linux.
-	// Three seconds was loose enough to hide that, so the bound is now well under
-	// the window itself.
-	if elapsed > 300*time.Millisecond {
+	if elapsed > 2*time.Second {
 		t.Fatalf("defaultOpenURL waited %v for a launcher that keeps running; that is the normal case for xdg-open and must not be paid on every challenge", elapsed)
 	}
 }
@@ -139,6 +189,21 @@ func TestDefaultOpenURL_ReportsAPlainLauncherThatStartsThenFails(t *testing.T) {
 		t.Skip("shell-script fixtures are POSIX")
 	}
 
+	// A window the fixture cannot lose to, rather than the production 150ms, and the
+	// reason is worth recording because it cost a confusing failure. The FIRST
+	// execution of a script written moments ago can take longer than 150ms on macOS,
+	// so its exit is not observed inside the window and the launcher is classified as
+	// still-running, which counts as success. That is the safe direction in
+	// production, where a launcher is already in the page cache, but in a test it lets
+	// the fixture's own cold start decide the verdict.
+	//
+	// The previous answer here was one throwaway execution to warm the cache first,
+	// which narrowed that race without closing it and left the test with a wall-clock
+	// dependency it has no business having (#533). Five seconds closes it: a cold exec
+	// of a two-line shell script does not lose to that, and the property under test is
+	// whether a non-zero exit reaches the caller, not how quickly it arrives.
+	withLauncherWindows(t, 5*time.Second, 5*time.Second)
+
 	launcher := "open"
 	if runtime.GOOS == "linux" {
 		launcher = "xdg-open"
@@ -149,18 +214,6 @@ func TestDefaultOpenURL_ReportsAPlainLauncherThatStartsThenFails(t *testing.T) {
 		t.Fatalf("write failing %s: %v", launcher, err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	// Execute the fake once before asserting, and the reason is worth recording
-	// because it cost a confusing failure. The FIRST execution of a script written
-	// moments ago can take longer than the 150ms window on macOS, so its exit is not
-	// observed inside the window and the launcher is classified as still-running,
-	// which counts as success. That is the safe direction in production, where a
-	// launcher is already in the page cache, but in a test it lets the fixture's own
-	// cold start decide the result. One prior execution removes that variable and
-	// leaves the property under test, which is whether the error reaches the caller.
-	if first := startAndReapWithin(exec.Command(launcher, "https://example.invalid/first"), 2*time.Second); first == nil {
-		t.Fatalf("precondition: the fake %s should exit non-zero, so the fixture is not doing what this test needs", launcher)
-	}
 
 	// No browser preference, so this exercises the plain launcher rather than the
 	// `open -a` attempt that already had its own fallback.
