@@ -157,6 +157,13 @@ func NewServer() *Server {
 		// actually re-prices watches; NoopChecker here meant the scheduler ran
 		// every 30 minutes but never updated any price.
 		s.scheduler = watch.NewScheduler(watchDir, 30*time.Minute, livecheck.Checker{})
+		// Wire a real room checker so room-type watches actually get
+		// checked by this scheduler. Without this, room watches silently
+		// went unchecked whenever the cross-process scheduler singleton
+		// gave this (MCP-embedded) scheduler the lock instead of the
+		// standalone `trvl watch daemon` -- found by adversarial review,
+		// 2026-07-28. See liveRoomChecker's doc comment (watch_room_checker.go).
+		s.scheduler.SetRoomChecker(&liveRoomChecker{})
 		// MIK-6234 Tier-1: the scheduler pre-computes counterfactual probes for
 		// one watched route per tick, budget-gated, so a later flight search
 		// serves them call-free. ON by default; set TRVL_TIER1_PROBE=0 to disable.

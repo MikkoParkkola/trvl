@@ -13,7 +13,7 @@ import (
 func TestSchedulerProbeHookInvoked(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	if _, err := store.Add(Watch{Type: "flight", Origin: "AMS", Destination: "VLC", Currency: "EUR"}); err != nil {
+	if _, _, err := store.Add(Watch{Type: "flight", Origin: "AMS", Destination: "VLC", Currency: "EUR"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
@@ -52,7 +52,7 @@ func TestSchedulerProbeHookInvoked(t *testing.T) {
 func TestSchedulerNilProbeHookNoop(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_, _ = store.Add(Watch{Type: "flight", Origin: "AMS", Destination: "VLC", Currency: "EUR"})
+	_, _, _ = store.Add(Watch{Type: "flight", Origin: "AMS", Destination: "VLC", Currency: "EUR"})
 
 	s := NewScheduler(dir, time.Hour, NoopChecker{})
 	s.Start()

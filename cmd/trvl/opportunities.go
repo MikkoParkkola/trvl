@@ -151,7 +151,7 @@ Examples:
 				MaxNights:  maxNights,
 			}
 
-			id, err := store.Add(w)
+			id, created, err := store.Add(w)
 			if err != nil {
 				return fmt.Errorf("create opportunity watch: %w", err)
 			}
@@ -160,7 +160,11 @@ Examples:
 			if favStr == "" {
 				favStr = "(from profile)"
 			}
-			fmt.Printf("Created opportunity watch %s\n", id)
+			verb := "Created"
+			if !created {
+				verb = "Updated existing"
+			}
+			fmt.Printf("%s opportunity watch %s\n", verb, id)
 			fmt.Printf("  Favourites: %s\n", favStr)
 			fmt.Printf("  Window: %s → %s\n", windowFrom, windowTo)
 			fmt.Printf("  Min score: %d | Nights: %d-%d\n", minScore, minNights, maxNights)

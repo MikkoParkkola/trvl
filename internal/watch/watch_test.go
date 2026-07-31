@@ -28,7 +28,7 @@ func TestStoreAddListRemove(t *testing.T) {
 		BelowPrice:  200,
 		Currency:    "EUR",
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestStorePersistence(t *testing.T) {
 
 	// Create and save.
 	store1 := NewStore(dir)
-	_, err := store1.Add(Watch{
+	_, _, err := store1.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "TYO",
@@ -122,7 +122,7 @@ func TestStorePersistenceUsesPrivateAtomicFiles(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "store")
 	store := NewStore(dir)
 
-	id, err := store.Add(Watch{
+	id, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -182,7 +182,7 @@ func TestStoreAddRejectsMalformedDates(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -204,7 +204,7 @@ func TestStoreAddRejectsPartialDateRange(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -223,7 +223,7 @@ func TestStoreAddRejectsInvertedDateRange(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -243,7 +243,7 @@ func TestPriceHistory(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	id, err := store.Add(Watch{
+	id, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -288,7 +288,7 @@ func TestUpdateWatch(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	id, err := store.Add(Watch{
+	id, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -357,7 +357,7 @@ func TestJSONFileFormat(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "hotel",
 		Origin:      "Helsinki",
 		Destination: "Barcelona",
@@ -400,7 +400,7 @@ func TestCheckAllThreshold(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -435,7 +435,7 @@ func TestCheckAllPriceDrop(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	id, err := store.Add(Watch{
+	id, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -479,7 +479,7 @@ func TestCheckAllError(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -502,7 +502,7 @@ func TestCheckAllZeroPrice(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",
@@ -624,7 +624,7 @@ func TestHistoryPersistence(t *testing.T) {
 
 	// Store 1: add watch and record price.
 	store1 := NewStore(dir)
-	id, err := store1.Add(Watch{
+	id, _, err := store1.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",

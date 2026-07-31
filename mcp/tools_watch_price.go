@@ -36,7 +36,7 @@ func watchPriceTool() ToolDef {
 				"check_in":             {Type: "string", Description: "Hotel check-in date YYYY-MM-DD (hotels only)"},
 				"check_out":            {Type: "string", Description: "Hotel check-out date YYYY-MM-DD (hotels only)"},
 				"target_price":         {Type: "number", Description: "Alert threshold: notify when price drops below this amount. Optional when alert_drop or alert_drop_abs is set."},
-				"currency":             {Type: "string", Description: "Currency code (e.g. EUR, USD). Default: EUR"},
+				"currency":             {Type: "string", Description: "Currency code (e.g. EUR, USD). Optional -- if omitted, the watch adopts whatever currency the first price check returns."},
 				"webhook":              {Type: "string", Description: "URL to POST a JSON payload to on price drop, mirroring CLI --webhook"},
 				"depart_from":          {Type: "string", Description: "Flight date-range start (scan for the cheapest fare across a window, mirrors CLI --from). Use with depart_to instead of a single date."},
 				"depart_to":            {Type: "string", Description: "Flight date-range end (scan for the cheapest fare across a window, mirrors CLI --to). Use with depart_from instead of a single date."},
@@ -87,10 +87,18 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 		return nil, nil, fmt.Errorf("set target_price, alert_drop, or alert_drop_abs to a positive value")
 	}
 
+	// Round 24: previously defaulted an omitted currency to "EUR", but the
+	// flight checker cannot request EUR quotes from the provider -- so the
+	// FIRST real (non-EUR) quote was treated as a currency mismatch against
+	// the fabricated "EUR" baseline, clearing BelowPrice/AlertDropAbs. Every
+	// subsequent re-watch (also defaulting to EUR) repeated the same
+	// clear-on-first-quote loop, so the default MCP flow could never hold an
+	// absolute threshold. Leave it empty like the CLI does: the watch's
+	// Currency then gets established from the first real provider quote
+	// (checkOneWithWebhookContext's !hasPriorObservation branch), which does
+	// not trip currencyMismatch. Found by GPT second-opinion review,
+	// 2026-07-31 (round 24).
 	currency := argString(args, "currency")
-	if currency == "" {
-		currency = "EUR"
-	}
 
 	w := watch.Watch{
 		Type:              watchType,
@@ -167,7 +175,7 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 		return nil, nil, fmt.Errorf("load watch store: %w", err)
 	}
 
-	id, err := store.Add(w)
+	id, created, err := store.Add(w)
 	if err != nil {
 		return nil, nil, fmt.Errorf("add watch: %w", err)
 	}
@@ -182,10 +190,15 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 		TargetPrice float64 `json:"target_price"`
 		Currency    string  `json:"currency"`
 		CreatedAt   string  `json:"created_at"`
+		// False when an existing watch for the same target was updated instead.
+		// Add is idempotent, so re-watching returns the ORIGINAL id; reporting it
+		// as newly created would be a falsehood the agent then repeats to the user.
+		Created bool `json:"created"`
 	}
 
 	resp := watchResponse{
 		Success:     true,
+		Created:     created,
 		WatchID:     id,
 		Type:        watchType,
 		TargetPrice: targetPrice,
@@ -387,7 +400,15 @@ func checkWatchesTool() ToolDef {
 						"price_drop":    schemaNum(),
 						"below_goal":    schemaBool(),
 						"currency":      schemaString(),
-						"error":         schemaString(),
+						// Round 22: the DTO below has emitted this field since
+						// round 21, but the schema never declared it, so a
+						// schema-driven client validating strictly against
+						// OutputSchema could drop or reject it -- exactly the
+						// class of client this warning most needs to reach.
+						// Found by GPT second-opinion review, 2026-07-30
+						// (round 22).
+						"alert_cleared_by_currency_change": schemaBool(),
+						"error":                            schemaString(),
 					},
 				}),
 			},
@@ -438,7 +459,14 @@ func handleCheckWatches(ctx context.Context, _ map[string]any, _ ElicitFunc, _ S
 		PriceDrop    float64 `json:"price_drop,omitempty"`
 		BelowGoal    bool    `json:"below_goal"`
 		Currency     string  `json:"currency,omitempty"`
-		Error        string  `json:"error,omitempty"`
+		// AlertClearedByCurrencyChange is true when this check detected a
+		// currency mismatch and, as a side effect, cleared the watch's
+		// price-alert threshold (BelowPrice/AlertDropAbs). Round 21 found
+		// this happened with no signal in the JSON response, leaving MCP
+		// callers unable to tell the user their threshold was wiped. Found
+		// by GPT second-opinion review, 2026-07-30 (round 21).
+		AlertClearedByCurrencyChange bool   `json:"alert_cleared_by_currency_change,omitempty"`
+		Error                        string `json:"error,omitempty"`
 	}
 
 	type triggeredItem struct {
@@ -454,13 +482,14 @@ func handleCheckWatches(ctx context.Context, _ map[string]any, _ ElicitFunc, _ S
 	items := make([]resultItem, 0, len(results))
 	for _, r := range results {
 		item := resultItem{
-			ID:           r.Watch.ID,
-			Route:        watchRoute(r.Watch),
-			CurrentPrice: r.NewPrice,
-			PrevPrice:    r.PrevPrice,
-			PriceDrop:    r.PriceDrop,
-			BelowGoal:    r.BelowGoal,
-			Currency:     r.Currency,
+			ID:                           r.Watch.ID,
+			Route:                        watchRoute(r.Watch),
+			CurrentPrice:                 r.NewPrice,
+			PrevPrice:                    r.PrevPrice,
+			PriceDrop:                    r.PriceDrop,
+			BelowGoal:                    r.BelowGoal,
+			Currency:                     r.Currency,
+			AlertClearedByCurrencyChange: r.AlertsClearedByCurrencyChange,
 		}
 		if r.Error != nil {
 			item.Error = r.Error.Error()
@@ -495,6 +524,20 @@ func handleCheckWatches(ctx context.Context, _ map[string]any, _ ElicitFunc, _ S
 
 	var lines []string
 	lines = append(lines, fmt.Sprintf("Checked %d watch(es).", len(results)))
+	// Round 22: the JSON DTO has carried alert_cleared_by_currency_change
+	// since round 21, but the text summary never mentioned it -- a
+	// content-only client (reads the text block, ignores/lacks the
+	// structured result) got no warning at all that a threshold was wiped.
+	// Found by GPT second-opinion review, 2026-07-30 (round 22).
+	var clearedCount int
+	for _, it := range items {
+		if it.AlertClearedByCurrencyChange {
+			clearedCount++
+		}
+	}
+	if clearedCount > 0 {
+		lines = append(lines, fmt.Sprintf("%d watch(es) had their price alert threshold cleared due to a currency change -- re-watch to set a new one.", clearedCount))
+	}
 	if len(triggered) > 0 {
 		lines = append(lines, fmt.Sprintf("%d watch(es) triggered (price below target):", len(triggered)))
 		for _, t := range triggered {

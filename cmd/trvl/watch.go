@@ -37,6 +37,7 @@ Examples:
 		watchCheckCmd(),
 		watchDaemonCmd(),
 		watchHistoryCmd(),
+		watchMigrateCmd(),
 	)
 	return cmd
 }
@@ -109,7 +110,7 @@ Examples:
 				AlertDropAbs:      alertDropAbs,
 			}
 
-			id, err := store.Add(w)
+			id, created, err := store.Add(w)
 			if err != nil {
 				return fmt.Errorf("add watch: %w", err)
 			}
@@ -124,7 +125,11 @@ Examples:
 				mode = fmt.Sprintf("on %s", w.DepartDate)
 			}
 
-			fmt.Printf("Added %s watch %s: %s -> %s %s",
+			verb := "Added"
+			if !created {
+				verb = "Updated existing"
+			}
+			fmt.Printf("%s %s watch %s: %s -> %s %s", verb,
 				w.Type, id, w.Origin, w.Destination, mode)
 			if w.ReturnDate != "" {
 				fmt.Printf(" (return %s)", w.ReturnDate)
@@ -226,12 +231,16 @@ Examples:
 				Currency:     currency,
 			}
 
-			id, err := store.Add(w)
+			id, created, err := store.Add(w)
 			if err != nil {
 				return fmt.Errorf("add room watch: %w", err)
 			}
 
-			fmt.Printf("Added room watch %s: %s (%s to %s)\n", id, hotelName, checkIn, checkOut)
+			verb := "Added"
+			if !created {
+				verb = "Updated existing"
+			}
+			fmt.Printf("%s room watch %s: %s (%s to %s)\n", verb, id, hotelName, checkIn, checkOut)
 			fmt.Printf("  Keywords: %s\n", strings.Join(kws, ", "))
 			if belowPrice > 0 {
 				fmt.Printf("  Alert below: %.0f %s\n", belowPrice, currency)
@@ -309,6 +318,14 @@ func watchListCmd() *cobra.Command {
 				}
 
 				checked := formatLastCheck(w.LastCheck)
+
+				// A watch that has stopped being checked must say so. Expiry is
+				// silent otherwise: the row looks identical to a healthy watch
+				// while no price is ever fetched again, so a missed price drop
+				// is indistinguishable from "no drop happened".
+				if !watch.IsActiveNow(w) {
+					checked += " (expired)"
+				}
 
 				rows = append(rows, []string{
 					w.ID, w.Type, route, dates,
@@ -420,6 +437,61 @@ func watchCheckCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func watchMigrateCmd() *cobra.Command {
+	var dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "migrate",
+		Short: "Collapse duplicate watches and compact oversized price history",
+		Long: `Bring an existing watch store up to current invariants.
+
+Watches only became de-duplicated on creation recently, so a store built before
+that keeps every copy ever added — one real store held 468 route watches
+covering 4 destinations, plus 380 copies of a single room watch. Price history
+retention likewise applies only to new observations, so an existing oversized
+history file stays exactly as large as it was and keeps costing memory in every
+running trvl process.
+
+This command fixes both, once, explicitly. It is idempotent and takes a
+timestamped backup of the store before writing anything.
+
+Duplicates are merged rather than dropped: the surviving watch is the one
+carrying real price observations, then the most recently checked, keeping the
+earliest creation date of the group so its history is not shortened.`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			store, err := watch.DefaultStore()
+			if err != nil {
+				return err
+			}
+			if err := store.Load(); err != nil {
+				return err
+			}
+
+			if dryRun {
+				preview, err := store.MigrateDryRun()
+				if err != nil {
+					return err
+				}
+				fmt.Println(preview.Summary())
+				if preview.Changed() {
+					fmt.Println("\nRe-run without --dry-run to apply.")
+				}
+				return nil
+			}
+
+			report, err := store.Migrate()
+			if err != nil {
+				return err
+			}
+			fmt.Println(report.Summary())
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would change without writing")
+	return cmd
 }
 
 func watchHistoryCmd() *cobra.Command {

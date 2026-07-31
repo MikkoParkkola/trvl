@@ -118,15 +118,21 @@ func TestFormatTime_ZeroYear(t *testing.T) {
 
 // --- parsePrice with currency in token ---
 
-func TestParsePrice_DefaultCurrency(t *testing.T) {
-	// Price present but no currency info -> defaults to USD
+// TestParsePrice_NoFabricatedDefaultCurrency proves round 22's fix: a price
+// with no currency information found anywhere in the token must come back
+// with an EMPTY currency, not a fabricated "USD" default. The old default
+// let a parse miss on a genuinely non-USD flight masquerade as a real
+// currency, which fed a false currency-change reset in check.go (destructive
+// threshold/history reset) downstream. Found by GPT second-opinion review,
+// 2026-07-30 (round 22).
+func TestParsePrice_NoFabricatedDefaultCurrency(t *testing.T) {
 	raw := []any{[]any{nil, float64(100)}}
 	price, currency := parsePrice(raw)
 	if price != 100 {
 		t.Errorf("price = %v, want 100", price)
 	}
-	if currency != "USD" {
-		t.Errorf("currency = %q, want USD", currency)
+	if currency != "" {
+		t.Errorf("currency = %q, want empty (no fabricated default)", currency)
 	}
 }
 
@@ -150,9 +156,11 @@ func TestDetectSourceCurrencyWithClient_Success(t *testing.T) {
 
 	client := batchexec.NewTestClient(ts.URL)
 	got := detectSourceCurrencyWithClient(t.Context(), client, "HEL", "NRT", "2026-06-15")
-	// Should return some currency (from parsed flights or fallback)
-	if got == "" {
-		t.Error("expected non-empty currency")
+	// The fixture body carries no currency token, so an honest empty result
+	// is correct here -- round 22 removed the fabricated "EUR" fallback that
+	// used to mask this. See TestParsePrice_NoFabricatedDefaultCurrency.
+	if got != "" {
+		t.Errorf("got %q, want empty (fixture has no currency data)", got)
 	}
 }
 
@@ -162,8 +170,12 @@ func TestDetectSourceCurrencyWithClient_ServerError(t *testing.T) {
 
 	client := batchexec.NewTestClient(ts.URL)
 	got := detectSourceCurrencyWithClient(t.Context(), client, "HEL", "NRT", "2026-06-15")
-	if got != "EUR" {
-		t.Errorf("expected EUR fallback on error, got %q", got)
+	// Round 22: a detection failure must return "", not fabricate "EUR" --
+	// a fabricated label backfilled onto a whole date range and read as a
+	// genuine currency change downstream. Found by GPT second-opinion
+	// review, 2026-07-30 (round 22).
+	if got != "" {
+		t.Errorf("got %q, want empty on server error (no fabricated fallback)", got)
 	}
 }
 
@@ -173,13 +185,13 @@ func TestDetectSourceCurrencyWithClient_BadBody(t *testing.T) {
 
 	client := batchexec.NewTestClient(ts.URL)
 	got := detectSourceCurrencyWithClient(t.Context(), client, "HEL", "NRT", "2026-06-15")
-	if got != "EUR" {
-		t.Errorf("expected EUR fallback on bad body, got %q", got)
+	if got != "" {
+		t.Errorf("got %q, want empty on bad body (no fabricated fallback)", got)
 	}
 }
 
 func TestDetectSourceCurrencyWithClient_EmptyFlights(t *testing.T) {
-	// Valid structure but no flights -> EUR fallback
+	// Valid structure but no flights -> empty, no fabricated fallback.
 	inner := make([]any, 2)
 	innerJSON, _ := json.Marshal(inner)
 	outer := []any{[]any{nil, nil, string(innerJSON)}}
@@ -191,8 +203,8 @@ func TestDetectSourceCurrencyWithClient_EmptyFlights(t *testing.T) {
 
 	client := batchexec.NewTestClient(ts.URL)
 	got := detectSourceCurrencyWithClient(t.Context(), client, "HEL", "NRT", "2026-06-15")
-	if got != "EUR" {
-		t.Errorf("expected EUR for empty flights, got %q", got)
+	if got != "" {
+		t.Errorf("got %q, want empty for empty flights (no fabricated fallback)", got)
 	}
 }
 
@@ -210,11 +222,11 @@ func TestDetectSourceCurrencyWithClient_CacheHit(t *testing.T) {
 
 	client := batchexec.NewTestClient(ts.URL)
 
-	// First call populates cache
+	// First call populates cache. The fixture carries no currency token, so
+	// "" is the honest, expected result post-round-22 (no fabricated
+	// fallback) -- this test's purpose is the cache-hit equality below, not
+	// asserting non-empty.
 	first := DetectSourceCurrencyWithClient(t.Context(), client, "HEL", "NRT")
-	if first == "" {
-		t.Fatal("expected non-empty currency from first call")
-	}
 
 	// Second call should hit cache (even with a dead server)
 	ts.Close()

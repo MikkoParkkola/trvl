@@ -24,6 +24,15 @@ import (
 // gets in their way; it only governs the tests that would otherwise hit the
 // network by accident.
 func TestMain(m *testing.M) {
+	// Redirect HOME so nothing in this package can reach the developer's real
+	// ~/.trvl. watch.DefaultStore() resolves it from os.UserHomeDir(); an
+	// unguarded run wrote to a maintainer's live watch store on 2026-07-26.
+	if dir, err := os.MkdirTemp("", "trvl-test-home-"); err == nil {
+		defer func() { _ = os.RemoveAll(dir) }()
+		_ = os.Setenv("HOME", dir)
+		_ = os.Setenv("USERPROFILE", dir) // windows
+	}
+
 	destinationEnricher = func(context.Context, string, models.DateRange) (*models.DestinationInfo, error) {
 		return nil, nil
 	}

@@ -224,7 +224,7 @@ func TestReadWatchResource_IDLookup(t *testing.T) {
 	s.watchStore = store
 
 	// Add a watch and get its ID.
-	id, err := store.Add(watch.Watch{
+	id, _, err := store.Add(watch.Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "BCN",

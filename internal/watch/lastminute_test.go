@@ -24,7 +24,7 @@ func TestCheckOneFlagsLastMinuteHotelDeal(t *testing.T) {
 		LastMinuteMode:    true,
 		LastMinuteDropPct: 25,
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}

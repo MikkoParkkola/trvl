@@ -218,13 +218,17 @@ func TestHandleWatchPrice_DefaultCurrency(t *testing.T) {
 		"origin":       "JFK",
 		"destination":  "LHR",
 		"date":         "2099-06-15",
-		// no currency — should default to EUR
+		// no currency — round 24: leaves it empty (provider-derived on first
+		// quote) instead of defaulting to "EUR", which previously made the
+		// first non-EUR quote look like a currency mismatch and clear the
+		// threshold it had just been set to. Found by GPT second-opinion
+		// review, 2026-07-31 (round 24).
 	}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !containsString(content[0].Text, "EUR") {
-		t.Errorf("expected default EUR currency, got: %s", content[0].Text)
+	if containsString(content[0].Text, "EUR") {
+		t.Errorf("expected no fabricated EUR currency for an omitted currency, got: %s", content[0].Text)
 	}
 }
 

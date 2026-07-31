@@ -81,9 +81,14 @@ func TestCheckOne_WebhookUsesCallerContext(t *testing.T) {
 		Destination: "NRT",
 		DepartDate:  "2099-07-01",
 		LastPrice:   500,
-		WebhookURL:  "http://example.test/webhook",
+		// Round 19: w.Currency=="" with a prior LastPrice is now treated as
+		// untrustworthy history and triggers a currency-change reset
+		// (skipping threshold/webhook-trigger checks) -- not what this test
+		// is exercising. Set a known, matching currency.
+		Currency:   "EUR",
+		WebhookURL: "http://example.test/webhook",
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -116,9 +121,12 @@ func TestCheckRoom_WebhookUsesCallerContext(t *testing.T) {
 		DepartDate:   "2099-07-01",
 		ReturnDate:   "2099-07-08",
 		LastPrice:    250,
-		WebhookURL:   "http://example.test/webhook",
+		// Round 19: same reasoning as above -- known currency required so
+		// this stays a same-currency continuation, not a mismatch reset.
+		Currency:   "EUR",
+		WebhookURL: "http://example.test/webhook",
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -146,13 +154,16 @@ func TestSchedulerRunOnce_WebhookUsesSchedulerContext(t *testing.T) {
 
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "NRT",
 		DepartDate:  "2099-07-01",
 		LastPrice:   500,
-		WebhookURL:  "http://example.test/webhook",
+		// Round 19: same reasoning as above -- known currency required so
+		// this stays a same-currency continuation, not a mismatch reset.
+		Currency:   "EUR",
+		WebhookURL: "http://example.test/webhook",
 	})
 	if err != nil {
 		t.Fatalf("Add: %v", err)
@@ -184,7 +195,7 @@ func TestSchedulerRunOnce_WebhookUsesSchedulerContext(t *testing.T) {
 func TestCheckAllWithRooms_NilContextFallsBackToBackgroundForPriceChecks(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "NRT",
@@ -210,7 +221,7 @@ func TestCheckAllWithRooms_NilContextFallsBackToBackgroundForPriceChecks(t *test
 func TestCheckAllWithRooms_NilContextFallsBackToBackgroundForRoomChecks(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	_, err := store.Add(Watch{
+	_, _, err := store.Add(Watch{
 		Type:         "room",
 		HotelName:    "Test Hotel",
 		RoomKeywords: []string{"suite"},

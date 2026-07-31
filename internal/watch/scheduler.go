@@ -15,6 +15,16 @@ type Scheduler struct {
 	interval time.Duration // how often to run checks
 	checker  PriceChecker  // injected for testability
 
+	// roomChecker handles room-type watches. Nil by default (runOnce then
+	// passes nil to checkWatchesWithRoomsAndWebhookContext, same as before
+	// this field existed: a room watch reports "room checker not
+	// configured" rather than being silently skipped). Settable via
+	// SetRoomChecker, the same injection-seam pattern PriceChecker and
+	// probeHook already use in this package: callers (cmd/trvl, mcp) each
+	// own their real hotels-API-backed implementation, keeping this
+	// package itself checker-agnostic.
+	roomChecker RoomChecker
+
 	mu        sync.Mutex
 	doneOnce  sync.Once
 	startOnce sync.Once
@@ -24,12 +34,33 @@ type Scheduler struct {
 	cancel    context.CancelFunc
 	done      chan struct{}
 
+	// lock is the cross-process scheduler singleton, held for the scheduler's
+	// lifetime. Nil when this process is not the scheduler.
+	lock *SchedulerLock
+
 	// probeHook, when set, runs after each check round with the active watches.
 	// It is the injection seam for the MIK-6234 Tier-1 scheduler-amortized
 	// counterfactual probe: the daemon wires a budget-gated probe here (the
 	// watch package never imports the hacks/probe engines, avoiding a cycle).
 	// Nil by default, so standard scheduler behaviour is unchanged.
 	probeHook func(ctx context.Context, active []Watch)
+
+	// lockRetryInterval overrides schedulerLockRetryInterval for this
+	// instance. Zero (the default) means "use the package constant" --
+	// tests set this via SetLockRetryIntervalForTest to a small value so a
+	// lock-failover test doesn't have to wait out the real 30s production
+	// interval. Same pattern as SetWebhookHTTPClientForTest (check.go).
+	lockRetryInterval time.Duration
+}
+
+// SetLockRetryIntervalForTest overrides how often this Scheduler retries
+// the singleton lock after losing it. Test-only: production callers should
+// never need a value other than schedulerLockRetryInterval. Must be called
+// before Start.
+func (s *Scheduler) SetLockRetryIntervalForTest(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lockRetryInterval = d
 }
 
 // SetProbeHook installs an optional per-round hook invoked with the active
@@ -38,6 +69,27 @@ func (s *Scheduler) SetProbeHook(hook func(ctx context.Context, active []Watch))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.probeHook = hook
+}
+
+// SetRoomChecker installs the checker used for room-type watches. Safe to
+// call before Start. Pass nil to disable room-watch checking (the
+// scheduler's default, unchanged from before this method existed).
+//
+// Found by adversarial review, 2026-07-28: mcp/server.go constructed its
+// embedded scheduler with no room checker at all (this field/method did
+// not exist), which was harmless before the cross-process scheduler
+// singleton -- the standalone `trvl watch daemon` always had a real one,
+// and before the lock both schedulers ran independently, so the daemon's
+// covered room watches regardless of what MCP could do. The singleton
+// lock means only ONE scheduler runs across the whole store now; in the
+// normal MCP-first startup order, MCP wins the lock and the daemon exits
+// immediately on its own lock attempt, so without this wiring room
+// watches would never be periodically checked or alerted for as long as
+// MCP holds the lock.
+func (s *Scheduler) SetRoomChecker(checker RoomChecker) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.roomChecker = checker
 }
 
 // NoopChecker is a PriceChecker that always returns zero price.
@@ -65,19 +117,81 @@ func NewScheduler(dir string, interval time.Duration, checker PriceChecker) *Sch
 	}
 }
 
+// schedulerLockRetryInterval is how often a process that lost the singleton
+// lock race re-attempts it. See acquireAndRun's doc comment for why a retry
+// loop exists at all. Frequent enough to notice a dead holder promptly (the
+// OS releases the lock immediately on process death; nothing here needs to
+// wait out any timeout), cheap enough that polling it costs nothing next to
+// the 30-minute-default scheduling interval it guards.
+const schedulerLockRetryInterval = 30 * time.Second
+
 // Start launches the background goroutine. Idempotent — subsequent calls are no-ops.
 func (s *Scheduler) Start() {
 	s.startOnce.Do(func() {
 		s.mu.Lock()
-		defer s.mu.Unlock()
 		if s.stopped {
+			s.mu.Unlock()
 			return
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		s.cancel = cancel
 		s.started = true
-		go s.run(ctx)
+		s.mu.Unlock()
+		go s.acquireAndRun(ctx)
 	})
+}
+
+// acquireAndRun retries the cross-process singleton lock until acquired or
+// ctx is cancelled (via Stop), then runs scheduling rounds for as long as
+// this process holds it.
+//
+// Found by adversarial review, 2026-07-28: the original one-shot lock
+// attempt gave up permanently if another process held the lock at Start()
+// time -- there was no retry of any kind. TryLockScheduler's own doc
+// comment promises "the OS releases the lock automatically if the holder
+// dies, so a crashed or SIGKILLed process cannot wedge scheduling for
+// everyone else," but nothing here ever re-attempted the lock, so that
+// promise went unfulfilled for every OTHER process that had already lost
+// the race: if the winner later died while a loser stayed alive -- the
+// exact multi-process-coexistence scenario this whole singleton exists to
+// handle; 15 orphaned `trvl mcp` processes were observed alive
+// simultaneously in the incident that motivated it -- nothing would ever
+// notice and reacquire. All scheduling would silently stop until some
+// THIRD, brand-new process happened to start and win the now-free lock.
+func (s *Scheduler) acquireAndRun(ctx context.Context) {
+	s.mu.Lock()
+	retryInterval := s.lockRetryInterval
+	s.mu.Unlock()
+	if retryInterval <= 0 {
+		retryInterval = schedulerLockRetryInterval
+	}
+	ticker := time.NewTicker(retryInterval)
+	defer ticker.Stop()
+
+	for {
+		lock, held, err := TryLockScheduler(s.dir)
+		if err != nil {
+			slog.Warn("scheduler: acquire singleton lock", "err", err)
+		} else if held {
+			s.mu.Lock()
+			s.lock = lock
+			s.mu.Unlock()
+			s.run(ctx) // run() closes s.done itself on return.
+			return
+		} else {
+			slog.Debug("scheduler: another process owns the scheduler; will retry",
+				"retry_after", retryInterval)
+		}
+
+		select {
+		case <-ctx.Done():
+			// Exiting without ever having called run(): that is the only
+			// other path that closes s.done, so this one must too.
+			s.closeDone()
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // Stop signals the background goroutine to exit and waits for it to finish.
@@ -98,6 +212,12 @@ func (s *Scheduler) Stop() {
 		}
 	})
 	<-s.done
+
+	s.mu.Lock()
+	lock := s.lock
+	s.lock = nil
+	s.mu.Unlock()
+	lock.Release()
 }
 
 // run is the background loop. ctx is cancelled when Stop is called.
@@ -144,7 +264,10 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 	checkCtx, cancel := context.WithTimeout(ctx, s.interval/2)
 	defer cancel()
 
-	results := checkWatchesWithRoomsAndWebhookContext(checkCtx, ctx, store, s.checker, nil, active)
+	s.mu.Lock()
+	roomChecker := s.roomChecker
+	s.mu.Unlock()
+	results := checkWatchesWithRoomsAndWebhookContext(checkCtx, ctx, store, s.checker, roomChecker, active)
 
 	triggered := 0
 	for _, r := range results {
@@ -184,6 +307,21 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 				"price", r.NewPrice,
 				"target", r.Watch.BelowPrice,
 				"currency", r.Currency,
+			)
+		}
+		// Round 22: the scheduler is the automatic, unattended check path (CLI
+		// daemon and the MCP-owned check_watches background loop both run
+		// through it) -- unlike an interactive CLI check, there is no
+		// Notifier.Notify call here to surface AlertsClearedByCurrencyChange,
+		// so a currency-change reset could silently erase a watch's alert
+		// threshold with zero durable record. Log it at Warn so it survives
+		// in scheduler output/log aggregation even with nobody watching in
+		// real time. Found by GPT second-opinion review, 2026-07-30 (round 22).
+		if r.AlertsClearedByCurrencyChange {
+			slog.Warn("scheduler: alert threshold cleared by currency change",
+				"watch_id", r.Watch.ID,
+				"route", r.Watch.Origin+"→"+r.Watch.Destination,
+				"new_currency", r.Currency,
 			)
 		}
 	}
@@ -231,9 +369,18 @@ func activeWatches(watches []Watch) []Watch {
 
 // isActive returns true if the watch should still be checked.
 func isActive(w Watch, today string) bool {
-	// Route watches (no dates) are always active.
+	// Route watches have no travel date to expire against, so they age out on
+	// renewal instead: created or re-watched within routeWatchTTL. Without this
+	// they were active forever and accumulated indefinitely.
 	if w.IsRouteWatch() {
-		return true
+		renewed := w.RenewedAt
+		if renewed.IsZero() {
+			renewed = w.CreatedAt
+		}
+		if renewed.IsZero() {
+			return true // no timestamps at all: do not silently drop it
+		}
+		return time.Since(renewed) < routeWatchTTL
 	}
 
 	// Date-range watches: active if the range end is today or later.
@@ -247,4 +394,24 @@ func isActive(w Watch, today string) bool {
 	}
 
 	return true
+}
+
+// ActiveWatches filters to watches that should still be checked: travel date not
+// passed, and dateless route watches renewed within routeWatchTTL.
+//
+// Exported so the CLI and daemon apply the SAME rule as the in-process
+// scheduler. They previously checked every stored watch, so a route watch the
+// scheduler had aged out was still being re-priced by the daemon — the expiry
+// held in one path and not the others.
+func ActiveWatches(watches []Watch) []Watch {
+	return activeWatches(watches)
+}
+
+// IsActiveNow reports whether a watch is still being checked, as of now.
+//
+// Exposed so user-facing surfaces can show expiry rather than let it be silent:
+// an expired watch otherwise renders identically to a healthy one while no price
+// is ever fetched for it again.
+func IsActiveNow(w Watch) bool {
+	return isActive(w, time.Now().Format("2006-01-02"))
 }

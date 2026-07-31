@@ -4,36 +4,10 @@
 package watch
 
 import (
-	"crypto/rand"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"math"
-	"os"
-	"path/filepath"
+	"sort"
 	"strings"
-	"sync"
 	"time"
-
-	"github.com/MikkoParkkola/trvl/internal/atomicjson"
-)
-
-// Scaling guards for ad-hoc route observations (MIK-6229 improve pass).
-const (
-	// maxObservationsPerRoute caps retained points per route key, bounding the
-	// price-history file to cap x number-of-routes.
-	maxObservationsPerRoute = 1000
-	// maxRouteObservations caps the TOTAL number of ad-hoc route-keyed points
-	// across all routes, evicting the oldest first. Watch-keyed points (which
-	// back the existing sparkline/fareintel features) are NEVER evicted here, so
-	// this bounds the new ad-hoc corpus without touching the watch corpus.
-	maxRouteObservations = 20000
-	// observationThrottle suppresses near-identical repeat observations for the
-	// same route+currency within this window.
-	observationThrottle = 15 * time.Minute
-	// observationEpsilonPct is the relative price delta below which a throttled
-	// observation is treated as a duplicate.
-	observationEpsilonPct = 0.005
 )
 
 // Watch represents a price tracking rule for a flight or hotel route.
@@ -59,6 +33,13 @@ type Watch struct {
 	LowestPrice  float64   `json:"lowest_price"`
 	CheapestDate string    `json:"cheapest_date,omitempty"` // which date had the lowest price
 
+	// RenewedAt is the last time a USER expressed interest in this watch: set on
+	// creation and refreshed whenever Store.Add is called for the same target.
+	// It is deliberately distinct from LastCheck, which the scheduler updates on
+	// its own and therefore never signals abandonment. Route watches age out
+	// against this (see isActive / routeWatchTTL).
+	RenewedAt time.Time `json:"renewed_at,omitempty"`
+
 	// Last-minute hotel mode flags sub-48h availability when the current price
 	// is materially below LastPrice. Drop threshold defaults to 25%.
 	LastMinuteMode    bool    `json:"last_minute_mode,omitempty"`
@@ -79,6 +60,18 @@ type Watch struct {
 	BaselinePrice    float64 `json:"baseline_price,omitempty"`
 	LastAlertedPrice float64 `json:"last_alerted_price,omitempty"`
 
+	// AlertDropAbsClearedByCurrency marks that AlertDropAbs was force-zeroed
+	// by a currency mismatch (check.go) or a currency-changing re-watch
+	// (store.go's applyIntent) while it was the watch's ONLY alert threshold
+	// (AlertDropPct was already <= 0). Without this marker, pricealert's
+	// Evaluate silently substitutes DefaultDropPercent (10%) once both
+	// limbs read zero -- swapping the user's chosen absolute-drop diligence
+	// for an unrequested default with no notification. While true, check.go
+	// suspends proactive alerting entirely instead of falling back to the
+	// default; applyIntent clears it the moment the user re-supplies either
+	// threshold limb. Found by adversarial review, 2026-07-30 (round 17).
+	AlertDropAbsClearedByCurrency bool `json:"alert_drop_abs_cleared_by_currency,omitempty"`
+
 	// Room watch fields (Type == "room").
 	HotelName    string   `json:"hotel_name,omitempty"`    // hotel name for room availability lookups
 	RoomKeywords []string `json:"room_keywords,omitempty"` // all keywords must match room name+description
@@ -92,6 +85,62 @@ type Watch struct {
 	MinScore   int      `json:"min_score,omitempty"`   // default 85
 	MinNights  int      `json:"min_nights,omitempty"`  // default 3
 	MaxNights  int      `json:"max_nights,omitempty"`  // default 14
+}
+
+// SameTarget reports whether two watches monitor the SAME thing, ignoring
+// accumulated state (prices, check times) and adjustable thresholds.
+//
+// This is watch identity. "Watch HEL->BCN" asked twice is one watch, not two:
+// re-asking expresses the same intent and should update it, not accumulate.
+// Without this, every agent session that called watch_price added another row.
+// One real store reached 468 permanently-active watches covering 4 distinct
+// routes — HEL->BCN alone was watched 319 times — and every one of them was
+// re-checked against live providers every 30 minutes, forever.
+//
+// BelowPrice, Currency, webhook and alert settings are deliberately NOT part of
+// identity: re-watching a route with a new target price updates the target
+// rather than creating a rival watch for the same route.
+func (w Watch) SameTarget(other Watch) bool {
+	if w.Type != other.Type {
+		return false
+	}
+	if w.IsOpportunityWatch() {
+		return w.WindowFrom == other.WindowFrom &&
+			w.WindowTo == other.WindowTo &&
+			w.MinScore == other.MinScore &&
+			w.MinNights == other.MinNights &&
+			w.MaxNights == other.MaxNights &&
+			equalStrings(w.Favourites, other.Favourites)
+	}
+	return w.Origin == other.Origin &&
+		w.Destination == other.Destination &&
+		w.DepartDate == other.DepartDate &&
+		w.ReturnDate == other.ReturnDate &&
+		w.DepartFrom == other.DepartFrom &&
+		w.DepartTo == other.DepartTo &&
+		w.HotelName == other.HotelName &&
+		equalStrings(w.RoomKeywords, other.RoomKeywords)
+}
+
+// equalStrings compares two string slices order-insensitively, treating nil and
+// empty as equal. Keyword order is not part of a watch's meaning.
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	if len(a) == 0 {
+		return true
+	}
+	x := append([]string(nil), a...)
+	y := append([]string(nil), b...)
+	sort.Strings(x)
+	sort.Strings(y)
+	for i := range x {
+		if x[i] != y[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // IsRouteWatch returns true if this watch monitors a route without specific dates.
@@ -145,6 +194,21 @@ func (w Watch) Validate() error {
 	}
 	if err := validateWatchDate("date range end", w.DepartTo); err != nil {
 		return err
+	}
+
+	// Round 21 found provider-observed currencies were validated
+	// (IsValidCurrencyFormat, check.go/store.go) but USER-supplied currency
+	// at watch-creation/re-watch time never was -- only normalized
+	// (trim+uppercase). A caller could create or re-watch with a malformed
+	// currency like "EU R" and, because it's non-empty, have it treated as
+	// a genuine currency CHANGE on the very next poll -- immediately
+	// wiping alert thresholds and price history via applyIntent. Reject it
+	// here instead of trusting it. Store.Add's own normalization runs
+	// AFTER Validate, so check the trimmed+uppercased form explicitly
+	// rather than relying on w.Currency already being clean. Found by GPT
+	// second-opinion review, 2026-07-30 (round 21).
+	if cur := strings.ToUpper(strings.TrimSpace(w.Currency)); cur != "" && !IsValidCurrencyFormat(cur) {
+		return fmt.Errorf("invalid currency %q: must be a 3-letter code (e.g. USD, EUR)", w.Currency)
 	}
 
 	// Room watch validation.
@@ -291,367 +355,4 @@ func TrendArrow(history []PricePoint) string {
 	default:
 		return "→"
 	}
-}
-
-// Store manages persistence of watches and price history to disk.
-// All methods are safe for concurrent use.
-type Store struct {
-	mu      sync.Mutex
-	dir     string
-	watches []Watch
-	history []PricePoint
-}
-
-// NewStore creates a store rooted at the given directory (typically ~/.trvl/).
-// The directory is created on first write if it does not exist.
-func NewStore(dir string) *Store {
-	return &Store{dir: dir}
-}
-
-// DefaultStore returns a store at ~/.trvl/.
-func DefaultStore() (*Store, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("resolve home directory: %w", err)
-	}
-	return NewStore(filepath.Join(home, ".trvl")), nil
-}
-
-func (s *Store) watchesPath() string {
-	return filepath.Join(s.dir, "watches.json")
-}
-
-func (s *Store) historyPath() string {
-	return filepath.Join(s.dir, "price-history.json")
-}
-
-func (s *Store) ensureDir() error {
-	return os.MkdirAll(s.dir, 0o700)
-}
-
-// Load reads watches and history from disk. If the files do not exist,
-// the store starts empty (not an error).
-func (s *Store) Load() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.watches = nil
-	s.history = nil
-
-	if err := loadJSON(s.watchesPath(), &s.watches); err != nil {
-		return fmt.Errorf("load watches: %w", err)
-	}
-	if err := loadJSON(s.historyPath(), &s.history); err != nil {
-		return fmt.Errorf("load history: %w", err)
-	}
-	return nil
-}
-
-// Save writes watches and history to disk atomically.
-func (s *Store) Save() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.saveLocked()
-}
-
-func (s *Store) saveLocked() error {
-	if err := s.ensureDir(); err != nil {
-		return fmt.Errorf("create storage dir: %w", err)
-	}
-	if err := saveJSON(s.watchesPath(), s.watches); err != nil {
-		return fmt.Errorf("save watches: %w", err)
-	}
-	if err := saveJSON(s.historyPath(), s.history); err != nil {
-		return fmt.Errorf("save history: %w", err)
-	}
-	return nil
-}
-
-// Add inserts a new watch and persists to disk. Returns the assigned ID.
-func (s *Store) Add(w Watch) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if err := w.Validate(); err != nil {
-		return "", err
-	}
-
-	w.ID = shortID()
-	w.CreatedAt = time.Now()
-	s.watches = append(s.watches, w)
-
-	if err := s.saveLocked(); err != nil {
-		return "", err
-	}
-	return w.ID, nil
-}
-
-// List returns all active watches.
-func (s *Store) List() []Watch {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	out := make([]Watch, len(s.watches))
-	copy(out, s.watches)
-	return out
-}
-
-// Get returns a single watch by ID, or false if not found.
-func (s *Store) Get(id string) (Watch, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for _, w := range s.watches {
-		if w.ID == id {
-			return w, true
-		}
-	}
-	return Watch{}, false
-}
-
-// Remove deletes a watch by ID. Returns true if found and removed.
-func (s *Store) Remove(id string) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i, w := range s.watches {
-		if w.ID == id {
-			s.watches = append(s.watches[:i], s.watches[i+1:]...)
-			if err := s.saveLocked(); err != nil {
-				return false, err
-			}
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-// UpdateWatch replaces a watch in-place by ID and persists.
-func (s *Store) UpdateWatch(updated Watch) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i, w := range s.watches {
-		if w.ID == updated.ID {
-			s.watches[i] = updated
-			return s.saveLocked()
-		}
-	}
-	return fmt.Errorf("watch %s not found", updated.ID)
-}
-
-// RecordPrice appends a price point to history and persists.
-func (s *Store) RecordPrice(watchID string, price float64, currency string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.history = append(s.history, PricePoint{
-		WatchID:   watchID,
-		Price:     price,
-		Currency:  currency,
-		Timestamp: time.Now(),
-	})
-	return s.saveLocked()
-}
-
-// History returns all price points for a given watch ID, ordered by time.
-func (s *Store) History(watchID string) []PricePoint {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var out []PricePoint
-	for _, p := range s.history {
-		if p.WatchID == watchID {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-// RecordObservation appends an ad-hoc (route-keyed) price observation and
-// persists. This is the MIK-6229 enabler: every flight/hotel search can log its
-// observed price so the history corpus compounds across all searched routes,
-// not only watched ones. A non-positive price is ignored (never a real fare).
-//
-// Two scaling guards (added in the MIK-6229 improve pass) keep the corpus
-// bounded and the per-search write cheap:
-//   - Throttle: a near-identical observation for the same route+currency within
-//     observationThrottle is skipped entirely (no write), so rapid repeat
-//     searches of the same route do not each rewrite the history file.
-//   - Cap: at most maxObservationsPerRoute points are retained per route key;
-//     the oldest are pruned, bounding file growth to cap x number-of-routes.
-func (s *Store) RecordObservation(routeKey string, price float64, currency string) error {
-	if routeKey == "" || price <= 0 {
-		return nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	cur := strings.ToUpper(strings.TrimSpace(currency))
-	if last, ok := s.lastObservationLocked(routeKey, cur); ok && last.Price > 0 {
-		if time.Since(last.Timestamp) < observationThrottle &&
-			math.Abs(price-last.Price)/last.Price <= observationEpsilonPct {
-			return nil // redundant near-duplicate; skip the write entirely
-		}
-	}
-
-	s.history = append(s.history, PricePoint{
-		RouteKey:  routeKey,
-		Price:     price,
-		Currency:  cur,
-		Timestamp: time.Now(),
-	})
-	s.pruneRouteLocked(routeKey)
-	s.pruneGlobalRouteLocked()
-	return s.saveLocked()
-}
-
-// pruneGlobalRouteLocked evicts the oldest ad-hoc route-keyed observations once
-// their total exceeds maxRouteObservations, bounding the file regardless of how
-// many distinct routes are searched. Watch-keyed points (WatchID set) are never
-// touched. Caller holds s.mu.
-func (s *Store) pruneGlobalRouteLocked() {
-	var routeIdx []int
-	for i, p := range s.history {
-		if p.RouteKey != "" && p.WatchID == "" {
-			routeIdx = append(routeIdx, i)
-		}
-	}
-	if len(routeIdx) <= maxRouteObservations {
-		return
-	}
-	drop := make(map[int]bool, len(routeIdx)-maxRouteObservations)
-	for _, i := range routeIdx[:len(routeIdx)-maxRouteObservations] {
-		drop[i] = true
-	}
-	kept := s.history[:0:0]
-	for i, p := range s.history {
-		if !drop[i] {
-			kept = append(kept, p)
-		}
-	}
-	s.history = kept
-}
-
-// lastObservationLocked returns the most recent price point for a route key,
-// optionally filtered to a currency (empty currency matches any). Caller holds s.mu.
-func (s *Store) lastObservationLocked(routeKey, currency string) (PricePoint, bool) {
-	for i := len(s.history) - 1; i >= 0; i-- {
-		p := s.history[i]
-		if p.RouteKey != routeKey {
-			continue
-		}
-		if currency != "" && strings.ToUpper(p.Currency) != currency {
-			continue
-		}
-		return p, true
-	}
-	return PricePoint{}, false
-}
-
-// pruneRouteLocked drops the oldest observations for routeKey beyond the cap,
-// preserving order. Caller holds s.mu.
-func (s *Store) pruneRouteLocked(routeKey string) {
-	var idx []int
-	for i, p := range s.history {
-		if p.RouteKey == routeKey {
-			idx = append(idx, i)
-		}
-	}
-	if len(idx) <= maxObservationsPerRoute {
-		return
-	}
-	drop := make(map[int]bool, len(idx)-maxObservationsPerRoute)
-	for _, i := range idx[:len(idx)-maxObservationsPerRoute] {
-		drop[i] = true
-	}
-	kept := s.history[:0:0]
-	for i, p := range s.history {
-		if !drop[i] {
-			kept = append(kept, p)
-		}
-	}
-	s.history = kept
-}
-
-// AllHistory returns a snapshot of every price point in the store — both
-// watch-keyed (WatchID set) and route-keyed (RouteKey set) — ordered by
-// insertion time. The returned slice is a copy; mutations do not affect the
-// store. Callers that need the full corpus for graph construction (e.g. the
-// travelgraph nudge engine) should prefer this over per-watch History calls so
-// that ad-hoc route observations (MIK-6229) are included alongside the
-// watch-scoped history.
-func (s *Store) AllHistory() []PricePoint {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	out := make([]PricePoint, len(s.history))
-	copy(out, s.history)
-	return out
-}
-
-// RouteHistory returns all price points recorded for a given route key, ordered
-// by insertion (chronological) time.
-func (s *Store) RouteHistory(routeKey string) []PricePoint {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var out []PricePoint
-	for _, p := range s.history {
-		if p.RouteKey == routeKey {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-// RoutePrices returns the price values for a route key, filtered to a currency
-// so callers never mix currencies into a single price-position computation.
-// An empty currency returns every recorded price for the key.
-func (s *Store) RoutePrices(routeKey, currency string) []float64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	cur := strings.ToUpper(strings.TrimSpace(currency))
-	var out []float64
-	for _, p := range s.history {
-		if p.RouteKey != routeKey {
-			continue
-		}
-		if cur != "" && strings.ToUpper(p.Currency) != cur {
-			continue
-		}
-		out = append(out, p.Price)
-	}
-	return out
-}
-
-// shortID generates a 4-byte hex string (8 characters).
-func shortID() string {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		// Fallback: use timestamp-based ID
-		return fmt.Sprintf("%08x", time.Now().UnixNano()&0xFFFFFFFF)
-	}
-	return hex.EncodeToString(b)
-}
-
-// loadJSON reads a JSON file into dst. Returns nil if file does not exist.
-func loadJSON(path string, dst interface{}) error {
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if len(data) == 0 {
-		return nil
-	}
-	return json.Unmarshal(data, dst)
-}
-
-// saveJSON writes data as pretty-printed JSON.
-func saveJSON(path string, data interface{}) error {
-	return atomicjson.Write(path, data)
 }

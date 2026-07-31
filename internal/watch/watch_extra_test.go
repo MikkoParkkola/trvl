@@ -20,7 +20,7 @@ func TestSave_WritesAndLoads(t *testing.T) {
 		BelowPrice:  200,
 		Currency:    "EUR",
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}

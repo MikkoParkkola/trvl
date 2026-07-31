@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -57,6 +58,26 @@ Examples:
 				Desktop:  true,
 			}
 
+			// Exactly one scheduler per store, across every process. The MCP
+			// server takes this same lock; without it a daemon plus a running
+			// server both re-price every watch on their own cadence, doubling
+			// provider load and racing on the same files.
+			store, err := watch.DefaultStore()
+			if err != nil {
+				return err
+			}
+			lock, held, err := watch.TryLockScheduler(store.Dir())
+			if err != nil {
+				return fmt.Errorf("acquire scheduler lock: %w", err)
+			}
+			if !held {
+				return errors.New(
+					"another trvl process is already running price checks for this store " +
+						"(an MCP server or another daemon).\n" +
+						"Run `trvl watch check` for a one-off check, or stop the other process first")
+			}
+			defer lock.Release()
+
 			return runWatchDaemon(ctx, os.Stdout, interval, runNow, func(ctx context.Context) (int, error) {
 				return runWatchCheckCycleWithRooms(ctx, &liveChecker{}, &liveRoomChecker{}, notifier)
 			}, newRealWatchDaemonTicker)
@@ -78,7 +99,10 @@ func runWatchCheckCycleWithRooms(ctx context.Context, checker watch.PriceChecker
 		return 0, err
 	}
 
-	watches := store.List()
+	// Same activity rule as the in-process scheduler. Without this the daemon
+	// kept re-pricing route watches the scheduler had already aged out, so the
+	// TTL held in one path and not the others.
+	watches := watch.ActiveWatches(store.List())
 	if len(watches) == 0 {
 		return 0, nil
 	}
@@ -86,7 +110,15 @@ func runWatchCheckCycleWithRooms(ctx context.Context, checker watch.PriceChecker
 	checkCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	notifier.NotifyAll(watch.CheckAllWithRoomsAndWebhookContext(checkCtx, ctx, store, checker, roomChecker))
+	// Must check exactly `watches` (the filtered slice above), not
+	// CheckAllWithRoomsAndWebhookContext's own unfiltered store.List(). That
+	// variant re-prices every stored watch with a 3-second pause between
+	// each; a store holding many expired watches ahead of one truly active
+	// watch can exhaust this 60-second budget before ever reaching the
+	// active one, which then goes unchecked this cycle while the return
+	// value below still reports success. Found by adversarial review,
+	// 2026-07-28.
+	notifier.NotifyAll(watch.CheckWatchesWithRoomsAndWebhookContext(checkCtx, ctx, store, checker, roomChecker, watches))
 	return len(watches), nil
 }
 
