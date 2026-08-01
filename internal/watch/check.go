@@ -1,33 +1,14 @@
 package watch
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"log/slog"
-	"net/http"
-	"net/url"
 	"sync"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/hotelarb"
 	"github.com/MikkoParkkola/trvl/internal/pricealert"
 )
-
-var webhookHTTPClient = http.DefaultClient
-
-// SetWebhookHTTPClientForTest swaps the webhook HTTP client and returns the previous client.
-func SetWebhookHTTPClientForTest(client *http.Client) *http.Client {
-	prev := webhookHTTPClient
-	if client == nil {
-		webhookHTTPClient = http.DefaultClient
-	} else {
-		webhookHTTPClient = client
-	}
-	return prev
-}
 
 // PriceChecker retrieves the current cheapest price for a route.
 // Implementations bridge to flights.SearchFlights or hotels.SearchHotels
@@ -453,96 +434,4 @@ func normalizeCheckAndWebhookContexts(checkCtx, webhookCtx context.Context) (con
 		webhookCtx = checkCtx
 	}
 	return checkCtx, webhookCtx
-}
-
-// webhookPayload is the JSON body POSTed to a watch's WebhookURL on price drop.
-type webhookPayload struct {
-	WatchID                   string  `json:"watch_id"`
-	Type                      string  `json:"type"`
-	Origin                    string  `json:"origin,omitempty"`
-	Destination               string  `json:"destination,omitempty"`
-	HotelName                 string  `json:"hotel_name,omitempty"`
-	NewPrice                  float64 `json:"new_price"`
-	PrevPrice                 float64 `json:"prev_price"`
-	Currency                  string  `json:"currency"`
-	PriceDrop                 float64 `json:"price_drop"`
-	BelowGoal                 bool    `json:"below_goal"`
-	LastMinuteDeal            bool    `json:"last_minute_deal,omitempty"`
-	LastMinuteDiscountPercent float64 `json:"last_minute_discount_percent,omitempty"`
-	Timestamp                 string  `json:"timestamp"`
-}
-
-// fireWebhook sends a price-drop notification to the watch's WebhookURL.
-// It is fire-and-forget with a 10-second timeout; errors are logged but not returned.
-func fireWebhook(ctx context.Context, r CheckResult) {
-	if r.Watch.WebhookURL == "" {
-		return
-	}
-
-	payload := webhookPayload{
-		WatchID:                   r.Watch.ID,
-		Type:                      r.Watch.Type,
-		Origin:                    r.Watch.Origin,
-		Destination:               r.Watch.Destination,
-		HotelName:                 r.Watch.HotelName,
-		NewPrice:                  r.NewPrice,
-		PrevPrice:                 r.PrevPrice,
-		Currency:                  r.Currency,
-		PriceDrop:                 r.PriceDrop,
-		BelowGoal:                 r.BelowGoal,
-		LastMinuteDeal:            r.LastMinuteDeal,
-		LastMinuteDiscountPercent: r.LastMinuteDiscountPercent,
-		Timestamp:                 time.Now().UTC().Format(time.RFC3339),
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		slog.Warn("webhook: marshal payload", "watch_id", r.Watch.ID, "err", err)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.Watch.WebhookURL, bytes.NewReader(body))
-	if err != nil {
-		slog.Warn("webhook: create request", "watch_id", r.Watch.ID, "err", webhookSafeErr(err))
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := webhookHTTPClient.Do(req)
-	if err != nil {
-		slog.Warn("webhook: POST failed", "watch_id", r.Watch.ID, "host", webhookLogTarget(r.Watch.WebhookURL), "err", webhookSafeErr(err))
-		return
-	}
-	_ = resp.Body.Close()
-}
-
-// webhookLogTarget reduces a user-supplied webhook URL to a form that is safe to
-// log. Slack and Discord both carry the shared secret in the PATH, so the path,
-// query and fragment are all dropped and only the host survives. A URL that does
-// not parse yields a constant rather than an echo of the input, because the
-// unparseable case is precisely where a malformed secret would otherwise ride
-// through.
-func webhookLogTarget(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" {
-		return "invalid"
-	}
-	return u.Host
-}
-
-// webhookSafeErr strips the URL out of a *url.Error.
-//
-// This is the part that is easy to miss: net/http returns *url.Error from both
-// NewRequestWithContext and Client.Do, and url.Error.Error() prints the full URL
-// it was given. Redacting the "url" log attribute alone would therefore still
-// disclose the secret through the "err" attribute on the very same line.
-func webhookSafeErr(err error) error {
-	var ue *url.Error
-	if errors.As(err, &ue) {
-		return fmt.Errorf("%s %s: %w", ue.Op, webhookLogTarget(ue.URL), ue.Err)
-	}
-	return err
 }

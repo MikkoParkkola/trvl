@@ -67,13 +67,15 @@ func TestFireWebhookPostFailureDoesNotLogTheSecret(t *testing.T) {
 	}
 }
 
-// TRVL.WEBHOOKLOG.2 — the request-construction path. net/http returns a
-// *url.Error here whose Error() embeds the raw URL, so this line leaks through
-// the "err" attribute even with no "url" attribute present.
+// TRVL.WEBHOOKLOG.2 — the up-front scheme/parse validation path
+// (fireWebhook's "Reject anything but plain http/https up front" guard, added
+// alongside the SSRF hardening in PR #508). net/url now rejects ASCII control
+// characters anywhere in the URL, so a DEL byte is caught here rather than
+// surviving to reach http.NewRequestWithContext -- the up-front guard fires
+// first and never logs the raw URL/err, only watch_id.
 func TestFireWebhookCreateRequestFailureDoesNotLogTheSecret(t *testing.T) {
 	const secret = "T00000000-B11111111-yyyyyyyyyyyyyyyyyyyyyyyy"
-	// A DEL byte makes url.Parse fail, so NewRequestWithContext returns before
-	// any transport is involved.
+	// A DEL byte makes url.Parse fail in fireWebhook's up-front validation.
 	url := "https://hooks.slack.com/services/" + secret + "\x7f"
 
 	out := captureWebhookLogs(t, func() {
@@ -82,8 +84,8 @@ func TestFireWebhookCreateRequestFailureDoesNotLogTheSecret(t *testing.T) {
 		})
 	})
 
-	if !strings.Contains(out, "webhook: create request") {
-		t.Fatalf("expected the create-request line to be emitted, got: %s", out)
+	if !strings.Contains(out, "webhook: rejecting unsupported URL scheme") {
+		t.Fatalf("expected the URL-rejection line to be emitted, got: %s", out)
 	}
 	if strings.Contains(out, secret) {
 		t.Errorf("webhook secret leaked through the error value.\nsecret: %s\nrecord: %s", secret, out)

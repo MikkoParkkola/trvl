@@ -44,7 +44,7 @@ var trvlHomeWriters = map[string]string{
 	"internal/telemetry/heartbeat.go":      "a random install id",
 	"internal/trips/trips.go":              "saved trips",
 	"internal/upgrade/upgrade.go":          "upgrade and provider self-heal bookkeeping",
-	"internal/watch/watch.go":              "price watches",
+	"internal/watch/store.go":              "price watches",
 }
 
 func TestTrvlHomeWritersAreDisclosedInREADME(t *testing.T) {
