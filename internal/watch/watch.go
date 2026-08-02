@@ -5,34 +5,10 @@ package watch
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
-
-// Scaling guards for ad-hoc route observations (MIK-6229 improve pass).
-const (
-	// maxObservationsPerRoute caps retained points per route key, bounding the
-	// price-history file to cap x number-of-routes.
-	maxObservationsPerRoute = 1000
-	// observationThrottle suppresses near-identical repeat observations for the
-	// same route+currency within this window.
-	observationThrottle = 15 * time.Minute
-	// observationEpsilonPct is the relative price delta below which a throttled
-	// observation is treated as a duplicate.
-	observationEpsilonPct = 0.005
-)
-
-// maxRouteObservations caps the TOTAL number of ad-hoc route-keyed points across
-// all routes. Eviction is fair rather than globally-oldest-first (see
-// pruneGlobalRouteLocked), so a busy route cannot erase a quiet one. Watch-keyed
-// points (which back the existing sparkline/fareintel features) are NEVER
-// evicted here, so this bounds the new ad-hoc corpus without touching the watch
-// corpus.
-//
-// It is a var, not a const, so eviction tests can drive the real public write
-// path to saturation instead of reaching past it to poke the pruner directly.
-// Nothing in production ever assigns to it.
-var maxRouteObservations = 20000
 
 // Watch represents a price tracking rule for a flight or hotel route.
 //
@@ -57,6 +33,13 @@ type Watch struct {
 	LowestPrice  float64   `json:"lowest_price"`
 	CheapestDate string    `json:"cheapest_date,omitempty"` // which date had the lowest price
 
+	// RenewedAt is the last time a USER expressed interest in this watch: set on
+	// creation and refreshed whenever Store.Add is called for the same target.
+	// It is deliberately distinct from LastCheck, which the scheduler updates on
+	// its own and therefore never signals abandonment. Route watches age out
+	// against this (see isActive / routeWatchTTL).
+	RenewedAt time.Time `json:"renewed_at,omitempty"`
+
 	// Last-minute hotel mode flags sub-48h availability when the current price
 	// is materially below LastPrice. Drop threshold defaults to 25%.
 	LastMinuteMode    bool    `json:"last_minute_mode,omitempty"`
@@ -77,6 +60,18 @@ type Watch struct {
 	BaselinePrice    float64 `json:"baseline_price,omitempty"`
 	LastAlertedPrice float64 `json:"last_alerted_price,omitempty"`
 
+	// AlertDropAbsClearedByCurrency marks that AlertDropAbs was force-zeroed
+	// by a currency mismatch (check.go) or a currency-changing re-watch
+	// (store.go's applyIntent) while it was the watch's ONLY alert threshold
+	// (AlertDropPct was already <= 0). Without this marker, pricealert's
+	// Evaluate silently substitutes DefaultDropPercent (10%) once both
+	// limbs read zero -- swapping the user's chosen absolute-drop diligence
+	// for an unrequested default with no notification. While true, check.go
+	// suspends proactive alerting entirely instead of falling back to the
+	// default; applyIntent clears it the moment the user re-supplies either
+	// threshold limb. Found by adversarial review, 2026-07-30 (round 17).
+	AlertDropAbsClearedByCurrency bool `json:"alert_drop_abs_cleared_by_currency,omitempty"`
+
 	// Room watch fields (Type == "room").
 	HotelName    string   `json:"hotel_name,omitempty"`    // hotel name for room availability lookups
 	RoomKeywords []string `json:"room_keywords,omitempty"` // all keywords must match room name+description
@@ -90,6 +85,62 @@ type Watch struct {
 	MinScore   int      `json:"min_score,omitempty"`   // default 85
 	MinNights  int      `json:"min_nights,omitempty"`  // default 3
 	MaxNights  int      `json:"max_nights,omitempty"`  // default 14
+}
+
+// SameTarget reports whether two watches monitor the SAME thing, ignoring
+// accumulated state (prices, check times) and adjustable thresholds.
+//
+// This is watch identity. "Watch HEL->BCN" asked twice is one watch, not two:
+// re-asking expresses the same intent and should update it, not accumulate.
+// Without this, every agent session that called watch_price added another row.
+// One real store reached 468 permanently-active watches covering 4 distinct
+// routes — HEL->BCN alone was watched 319 times — and every one of them was
+// re-checked against live providers every 30 minutes, forever.
+//
+// BelowPrice, Currency, webhook and alert settings are deliberately NOT part of
+// identity: re-watching a route with a new target price updates the target
+// rather than creating a rival watch for the same route.
+func (w Watch) SameTarget(other Watch) bool {
+	if w.Type != other.Type {
+		return false
+	}
+	if w.IsOpportunityWatch() {
+		return w.WindowFrom == other.WindowFrom &&
+			w.WindowTo == other.WindowTo &&
+			w.MinScore == other.MinScore &&
+			w.MinNights == other.MinNights &&
+			w.MaxNights == other.MaxNights &&
+			equalStrings(w.Favourites, other.Favourites)
+	}
+	return w.Origin == other.Origin &&
+		w.Destination == other.Destination &&
+		w.DepartDate == other.DepartDate &&
+		w.ReturnDate == other.ReturnDate &&
+		w.DepartFrom == other.DepartFrom &&
+		w.DepartTo == other.DepartTo &&
+		w.HotelName == other.HotelName &&
+		equalStrings(w.RoomKeywords, other.RoomKeywords)
+}
+
+// equalStrings compares two string slices order-insensitively, treating nil and
+// empty as equal. Keyword order is not part of a watch's meaning.
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	if len(a) == 0 {
+		return true
+	}
+	x := append([]string(nil), a...)
+	y := append([]string(nil), b...)
+	sort.Strings(x)
+	sort.Strings(y)
+	for i := range x {
+		if x[i] != y[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // IsRouteWatch returns true if this watch monitors a route without specific dates.
@@ -143,6 +194,21 @@ func (w Watch) Validate() error {
 	}
 	if err := validateWatchDate("date range end", w.DepartTo); err != nil {
 		return err
+	}
+
+	// Round 21 found provider-observed currencies were validated
+	// (IsValidCurrencyFormat, check.go/store.go) but USER-supplied currency
+	// at watch-creation/re-watch time never was -- only normalized
+	// (trim+uppercase). A caller could create or re-watch with a malformed
+	// currency like "EU R" and, because it's non-empty, have it treated as
+	// a genuine currency CHANGE on the very next poll -- immediately
+	// wiping alert thresholds and price history via applyIntent. Reject it
+	// here instead of trusting it. Store.Add's own normalization runs
+	// AFTER Validate, so check the trimmed+uppercased form explicitly
+	// rather than relying on w.Currency already being clean. Found by GPT
+	// second-opinion review, 2026-07-30 (round 21).
+	if cur := strings.ToUpper(strings.TrimSpace(w.Currency)); cur != "" && !IsValidCurrencyFormat(cur) {
+		return fmt.Errorf("invalid currency %q: must be a 3-letter code (e.g. USD, EUR)", w.Currency)
 	}
 
 	// Room watch validation.

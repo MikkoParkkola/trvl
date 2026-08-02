@@ -40,7 +40,7 @@ func checkSeq(t *testing.T, store *Store, checker PriceChecker) CheckResult {
 func newAlertWatchStore(t *testing.T, w Watch) *Store {
 	t.Helper()
 	store := NewStore(t.TempDir())
-	if _, err := store.Add(w); err != nil {
+	if _, _, err := store.Add(w); err != nil {
 		t.Fatalf("add watch: %v", err)
 	}
 	return store
@@ -114,7 +114,7 @@ func TestPriceDropAlert_RaisedPriceDoesNotAlert(t *testing.T) {
 func TestPriceDropAlert_BaselineSurvivesReload(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
-	id, err := store.Add(Watch{
+	id, _, err := store.Add(Watch{
 		Type: "flight", Origin: "HEL", Destination: "JFK",
 		Currency: "EUR", AlertDropPct: 10,
 	})

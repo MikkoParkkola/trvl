@@ -183,12 +183,20 @@ func TestDedup(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	sample := Sample{Route: "HEL-BCN", Season: "Q2", Date: "2026-05-01", Price: 150, Kind: "flight"}
+	// trvl#552: use a date relative to "now" instead of a hardcoded literal --
+	// a fixed absolute date ages past the 90-day pruning window as real time
+	// passes, silently turning this into a time-bomb test (it failed in CI
+	// once "now" moved far enough past the old literal, pruning every sample
+	// before Query ever saw it). Same pattern already used by TestPrune below.
+	recentDate := time.Now().AddDate(0, 0, -5).Format(historyLayout)
+	season := SeasonOf(recentDate)
+
+	sample := Sample{Route: "HEL-BCN", Season: season, Date: recentDate, Price: 150, Kind: "flight"}
 	_ = store.Append(sample)
 	_ = store.Append(sample) // duplicate
 	_ = store.Append(sample) // duplicate
 
-	samples := store.Query("HEL-BCN", "flight", "Q2")
+	samples := store.Query("HEL-BCN", "flight", season)
 	if len(samples) != 1 {
 		t.Errorf("expected 1 sample after dedup, got %d", len(samples))
 	}
@@ -226,11 +234,16 @@ func TestQueryFilters(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 
-	_ = store.Append(Sample{Route: "HEL-BCN", Season: "Q2", Date: "2026-05-01", Price: 150, Kind: "flight"})
-	_ = store.Append(Sample{Route: "HEL-BCN", Season: "Q2", Date: "2026-05-02", Price: 200, Kind: "hotel"})
-	_ = store.Append(Sample{Route: "HEL-PRG", Season: "Q2", Date: "2026-05-01", Price: 100, Kind: "flight"})
+	// trvl#552: relative dates -- see TestDedup comment above.
+	d1 := time.Now().AddDate(0, 0, -5).Format(historyLayout)
+	d2 := time.Now().AddDate(0, 0, -4).Format(historyLayout)
+	season := SeasonOf(d1)
 
-	flights := store.Query("HEL-BCN", "flight", "Q2")
+	_ = store.Append(Sample{Route: "HEL-BCN", Season: season, Date: d1, Price: 150, Kind: "flight"})
+	_ = store.Append(Sample{Route: "HEL-BCN", Season: season, Date: d2, Price: 200, Kind: "hotel"})
+	_ = store.Append(Sample{Route: "HEL-PRG", Season: season, Date: d1, Price: 100, Kind: "flight"})
+
+	flights := store.Query("HEL-BCN", "flight", season)
 	if len(flights) != 1 {
 		t.Errorf("expected 1 flight sample, got %d", len(flights))
 	}
@@ -259,13 +272,16 @@ func TestStoreLoad(t *testing.T) {
 	}
 
 	// Append a sample, then create a new store and load it.
-	_ = store.Append(Sample{Route: "HEL-BCN", Season: "Q2", Date: "2026-05-01", Price: 150, Kind: "flight"})
+	// trvl#552: relative date -- see TestDedup comment above.
+	recentDate := time.Now().AddDate(0, 0, -5).Format(historyLayout)
+	season := SeasonOf(recentDate)
+	_ = store.Append(Sample{Route: "HEL-BCN", Season: season, Date: recentDate, Price: 150, Kind: "flight"})
 
 	store2 := NewStore(dir)
 	if err := store2.Load(); err != nil {
 		t.Fatalf("Load() after write error: %v", err)
 	}
-	samples := store2.Query("HEL-BCN", "flight", "Q2")
+	samples := store2.Query("HEL-BCN", "flight", season)
 	if len(samples) != 1 {
 		t.Errorf("expected 1 sample after load, got %d", len(samples))
 	}

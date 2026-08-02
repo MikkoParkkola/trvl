@@ -33,7 +33,7 @@ func TestHandleCheckWatches_ReturnsLivePrice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultStore: %v", err)
 	}
-	if _, err := store.Add(watch.Watch{
+	if _, _, err := store.Add(watch.Watch{
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "CDG",
@@ -217,8 +217,12 @@ func TestHandleWatchPrice_NoThresholdErrors(t *testing.T) {
 }
 
 // TestHandleWatchPrice_ThresholdsAndRepeats proves the MCP surface inherits the
-// #509 store semantics: two thresholds on one route are two watches, an
-// identical repeat is neither a second watch nor a new creation timestamp.
+// #508 store semantics: BelowPrice is deliberately NOT part of watch identity,
+// so re-watching the same route with a different threshold adjusts the
+// existing watch (same id, same creation time) instead of creating a rival
+// watch for the same route. See
+// internal/watch/dedup_test.go:TestStoreAddPreservesAccumulatedStateOnRewatch,
+// the store-level test this MCP-layer test mirrors.
 func TestHandleWatchPrice_ThresholdsAndRepeats(t *testing.T) {
 	watchHome := t.TempDir()
 	t.Setenv("HOME", watchHome)
@@ -250,8 +254,8 @@ func TestHandleWatchPrice_ThresholdsAndRepeats(t *testing.T) {
 
 	first := call(200)
 	second := call(120)
-	if first["watch_id"] == second["watch_id"] {
-		t.Fatalf("MULTIPRICE.1: distinct thresholds returned the same watch_id %v", first["watch_id"])
+	if first["watch_id"] != second["watch_id"] {
+		t.Fatalf("MULTIPRICE.1: different thresholds on the same route created a rival watch_id %v, want existing %v", second["watch_id"], first["watch_id"])
 	}
 
 	// created_at is RFC3339, i.e. second resolution: cross a second boundary so
@@ -273,7 +277,7 @@ func TestHandleWatchPrice_ThresholdsAndRepeats(t *testing.T) {
 	if err := store.Load(); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := len(store.List()); got != 2 {
-		t.Fatalf("MULTIPRICE.4: store holds %d watches after 3 calls, want 2", got)
+	if got := len(store.List()); got != 1 {
+		t.Fatalf("MULTIPRICE.4: store holds %d watches after 3 calls, want 1", got)
 	}
 }

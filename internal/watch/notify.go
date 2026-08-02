@@ -22,6 +22,25 @@ type Notifier struct {
 // Notify prints a check result to the writer with color coding.
 // Green = price dropped, Red = price increased, bold alert if below threshold.
 func (n *Notifier) Notify(r CheckResult) {
+	// Round 22: this warning used to sit below the room dispatch, so any
+	// room watch returned at the "IsRoomWatch" branch immediately below
+	// before ever reaching it -- a currency change that wiped a room
+	// watch's thresholds (check_room.go) produced no notice at all. Surface
+	// it first, unconditionally, before either dispatch path can return.
+	// Found by GPT second-opinion review, 2026-07-30 (round 22).
+	if r.AlertsClearedByCurrencyChange {
+		route := notifyRoute(r.Watch)
+		line := fmt.Sprintf("CURRENCY CHANGED  %s  now quoted in %s -- your price alert threshold was cleared, re-watch to set a new one",
+			route, r.Currency)
+		_, _ = fmt.Fprintln(n.Out, n.yellow(line))
+		if n.Desktop {
+			n.desktopNotify(
+				"trvl: Alert Threshold Cleared",
+				fmt.Sprintf("%s now quoted in %s -- re-watch to set a new price alert", route, r.Currency),
+			)
+		}
+	}
+
 	// Dispatch room watches to their own formatter.
 	if r.Watch.IsRoomWatch() {
 		n.notifyRoom(r)

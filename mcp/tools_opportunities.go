@@ -90,15 +90,19 @@ func handleWatchOpportunities(_ context.Context, args map[string]any, _ ElicitFu
 		return nil, nil, fmt.Errorf("load watch store: %w", err)
 	}
 
-	id, err := store.Add(w)
+	id, created, err := store.Add(w)
 	if err != nil {
 		return nil, nil, fmt.Errorf("add opportunity watch: %w", err)
 	}
 
 	type oppResponse struct {
-		Success    bool     `json:"success"`
-		WatchID    string   `json:"watch_id"`
-		CreatedAt  string   `json:"created_at"`
+		Success   bool   `json:"success"`
+		WatchID   string `json:"watch_id"`
+		CreatedAt string `json:"created_at"`
+		// False when an existing watch for the same target was updated instead.
+		// Add is idempotent, so re-watching returns the ORIGINAL id; reporting it
+		// as newly created would be a falsehood the agent then repeats to the user.
+		Created    bool     `json:"created"`
 		Favourites []string `json:"favourites,omitempty"`
 		WindowFrom string   `json:"window_from"`
 		WindowTo   string   `json:"window_to"`
@@ -109,6 +113,7 @@ func handleWatchOpportunities(_ context.Context, args map[string]any, _ ElicitFu
 
 	resp := oppResponse{
 		Success:    true,
+		Created:    created,
 		WatchID:    id,
 		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
 		Favourites: favourites,

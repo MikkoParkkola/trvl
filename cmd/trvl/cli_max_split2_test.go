@@ -442,7 +442,7 @@ func TestWatchHistoryCmd_Found(t *testing.T) {
 		Destination: "BCN",
 		DepartDate:  "2026-07-01",
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -74,6 +74,95 @@ func TestSameDayAlternative(t *testing.T) {
 	}
 }
 
+// TestShiftDayCrossCurrencyMismatch: round 25 (GPT + Grok convergent
+// second-opinion review, 2026-07-31) -- an unlabeled grid row must never be
+// compared by raw magnitude against a labeled reference currency, in either
+// direction, and a known currency mismatch must never produce a saving.
+func TestShiftDayCrossCurrencyMismatch(t *testing.T) {
+	// Labeled reference, unlabeled cheaper row -> no fabricated saving.
+	blankCheaper := []models.DatePriceResult{
+		{Date: "2026-07-14", Price: 80},                   // no currency
+		{Date: "2026-07-15", Price: 200, Currency: "EUR"}, // current
+	}
+	if out := ShiftDay(blankCheaper, "2026-07-15", 5, asOf); out != nil {
+		t.Fatalf("labeled-vs-blank must yield no saving, got %+v", out)
+	}
+
+	// Unlabeled reference, labeled cheaper row -> no fabricated saving.
+	refBlank := []models.DatePriceResult{
+		{Date: "2026-07-14", Price: 80, Currency: "EUR"},
+		{Date: "2026-07-15", Price: 200}, // current, no currency
+	}
+	if out := ShiftDay(refBlank, "2026-07-15", 5, asOf); out != nil {
+		t.Fatalf("blank-vs-labeled must yield no saving, got %+v", out)
+	}
+
+	// Known mismatch -> no saving (already covered by round 24, kept for
+	// regression alongside the new blank-vs-labeled cases above).
+	mismatch := []models.DatePriceResult{
+		{Date: "2026-07-14", Price: 80, Currency: "JPY"},
+		{Date: "2026-07-15", Price: 200, Currency: "EUR"},
+	}
+	if out := ShiftDay(mismatch, "2026-07-15", 5, asOf); out != nil {
+		t.Fatalf("cross-currency mismatch must yield no saving, got %+v", out)
+	}
+
+	// Both unlabeled -> saving still allowed (documented unknown-unknown
+	// convention: two currencyless rows are treated as compatible).
+	bothBlank := []models.DatePriceResult{
+		{Date: "2026-07-14", Price: 80},
+		{Date: "2026-07-15", Price: 200}, // current
+	}
+	if out := ShiftDay(bothBlank, "2026-07-15", 5, asOf); len(out) != 1 || out[0].Amount != 120 {
+		t.Fatalf("both-blank rows should still allow a saving, got %+v", out)
+	}
+}
+
+// TestSameDayAlternativeCrossCurrencyMismatch: same bug class, same fix, on
+// the same-day selector. Round 25.
+func TestSameDayAlternativeCrossCurrencyMismatch(t *testing.T) {
+	// Labeled headline, unlabeled cheaper candidate -> must not win.
+	blankCandidate := []models.FlightResult{
+		{Price: 200, Currency: "EUR"},
+		{Price: 50}, // cheaper by raw number, no currency
+	}
+	if s := SameDayAlternative(blankCandidate, 10, asOf); s != nil {
+		t.Fatalf("labeled headline vs blank candidate must yield no saving, got %+v", s)
+	}
+
+	// Unlabeled headline, labeled cheaper candidate -> must not win.
+	blankHeadline := []models.FlightResult{
+		{Price: 200}, // no currency
+		{Price: 50, Currency: "EUR"},
+	}
+	if s := SameDayAlternative(blankHeadline, 10, asOf); s != nil {
+		t.Fatalf("blank headline vs labeled candidate must yield no saving, got %+v", s)
+	}
+
+	// Known mismatch -> no saving.
+	mismatch := []models.FlightResult{
+		{Price: 200, Currency: "EUR"},
+		{Price: 50, Currency: "JPY"},
+	}
+	if s := SameDayAlternative(mismatch, 10, asOf); s != nil {
+		t.Fatalf("cross-currency mismatch must yield no saving, got %+v", s)
+	}
+
+	// Both unlabeled -> saving still allowed (same documented unknown-unknown
+	// convention as ShiftDay's bothBlank case above). Grok round-25 optional
+	// finding #4: ShiftDay had an explicit positive both-blank test but
+	// SameDayAlternative did not, even though the production logic (line
+	// `fCur != headlineCur`, "" == "" is true) already takes this path --
+	// parity-only, no behavior change. Fixed as trvl#548.
+	bothBlank := []models.FlightResult{
+		{Price: 220}, // headline, no currency
+		{Price: 150}, // cheaper, no currency
+	}
+	if s := SameDayAlternative(bothBlank, 10, asOf); s == nil || s.Amount != 70 {
+		t.Fatalf("both-blank flights should still allow a saving, got %+v", s)
+	}
+}
+
 func TestVsHistoryHonesty(t *testing.T) {
 	// Not confident -> no claim.
 	if VsHistory(&pricesignal.Position{Confident: false, Median: 200, Current: 150}, "EUR", asOf) != nil {

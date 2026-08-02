@@ -96,7 +96,7 @@ func TestRemove_SaveError(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartDate: "2026-07-01"}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestAdd_SaveError(t *testing.T) {
 
 	// First add succeeds.
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartDate: "2026-07-01"}
-	if _, err := store.Add(w); err != nil {
+	if _, _, err := store.Add(w); err != nil {
 		t.Fatal(err)
 	}
 
@@ -138,7 +138,7 @@ func TestAdd_SaveError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := store.Add(w)
+	_, _, err := store.Add(w)
 	if err == nil {
 		t.Fatal("expected error when save fails during Add")
 	}
@@ -236,7 +236,7 @@ func TestCheckRoom_RecordPriceError(t *testing.T) {
 		DepartDate:   "2026-07-01",
 		ReturnDate:   "2026-07-08",
 	}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestCheckOne_RecordPriceError(t *testing.T) {
 	dir := t.TempDir()
 	store := NewStore(dir)
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartDate: "2026-07-01"}
-	id, err := store.Add(w)
+	id, _, err := store.Add(w)
 	if err != nil {
 		t.Fatal(err)
 	}

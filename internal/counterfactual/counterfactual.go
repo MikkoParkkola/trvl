@@ -12,6 +12,7 @@ package counterfactual
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -57,7 +58,7 @@ func ShiftDay(grid []models.DatePriceResult, currentDate string, minDelta float6
 	for _, d := range grid {
 		if d.Date == currentDate {
 			current = d.Price
-			currency = d.Currency
+			currency = strings.ToUpper(strings.TrimSpace(d.Currency))
 			break
 		}
 	}
@@ -69,13 +70,25 @@ func ShiftDay(grid []models.DatePriceResult, currentDate string, minDelta float6
 		if d.Date == currentDate || d.Price <= 0 {
 			continue
 		}
+		cur := strings.ToUpper(strings.TrimSpace(d.Currency))
+		// Round 24's guard here only rejected a KNOWN mismatch (both sides
+		// labeled and different), so an empty-currency row still slipped
+		// through unchecked and got compared by raw magnitude against the
+		// reference's labeled currency -- the exact fabricated-saving bug
+		// class round 24 meant to close, just reachable via the
+		// empty-string escape hatch. Round 25 requires exact equality
+		// after normalization instead: both blank is treated as
+		// compatible (matches the pre-existing unknown-unknown display
+		// convention), one blank and one labeled is now correctly
+		// rejected, and any known mismatch is still rejected. Found
+		// independently by both GPT and Grok second-opinion review,
+		// 2026-07-31 (round 25).
+		if cur != currency {
+			continue
+		}
 		delta := current - d.Price
 		if delta < minDelta {
 			continue
-		}
-		cur := d.Currency
-		if cur == "" {
-			cur = currency
 		}
 		out = append(out, Saving{
 			Kind:        KindShiftDay,
@@ -107,21 +120,41 @@ func SameDayAlternative(flights []models.FlightResult, minDelta float64, asOf ti
 	if headline.Price <= 0 {
 		return nil
 	}
+	headlineCur := strings.ToUpper(strings.TrimSpace(headline.Currency))
 	cheapest := headline
 	for _, f := range flights[1:] {
-		if f.Price > 0 && f.Price < cheapest.Price {
-			cheapest = f
+		if f.Price <= 0 || f.Price >= cheapest.Price {
+			continue
 		}
+		// Round 25: the round-24 guard below had the same empty-currency
+		// escape hatch as ShiftDay's -- an unlabeled candidate fare could
+		// still win against a labeled headline by raw magnitude. Require
+		// exact equality after normalization (both blank is compatible,
+		// one blank one labeled is rejected, known mismatch is rejected).
+		// Found independently by both GPT and Grok second-opinion review,
+		// 2026-07-31 (round 25).
+		fCur := strings.ToUpper(strings.TrimSpace(f.Currency))
+		if fCur != headlineCur {
+			continue
+		}
+		cheapest = f
 	}
 	delta := headline.Price - cheapest.Price
 	if delta < minDelta {
 		return nil // headline already is (within minDelta of) the cheapest
 	}
+	// Round 25: use the normalized currency, not the raw field, for both the
+	// returned Saving and the description -- ShiftDay already normalizes
+	// (see cur above); SameDayAlternative returning cheapest.Currency raw
+	// meant "eur" passed the equality gate above but was then emitted
+	// lowercase downstream, inconsistent with ShiftDay's always-uppercase
+	// output for the same bug class.
+	cheapestCur := strings.ToUpper(strings.TrimSpace(cheapest.Currency))
 	return &Saving{
 		Kind:        KindSameDay,
-		Description: fmt.Sprintf("The cheapest same-day fare (%.0f %s) saves %.0f %s over the top-listed result (%.0f %s)", cheapest.Price, cheapest.Currency, delta, headline.Currency, headline.Price, headline.Currency),
+		Description: fmt.Sprintf("The cheapest same-day fare (%.0f %s) saves %.0f %s over the top-listed result (%.0f %s)", cheapest.Price, cheapestCur, delta, cheapestCur, headline.Price, cheapestCur),
 		Amount:      delta,
-		Currency:    cheapest.Currency,
+		Currency:    cheapestCur,
 		AsOf:        asOf,
 		CallFree:    true,
 	}

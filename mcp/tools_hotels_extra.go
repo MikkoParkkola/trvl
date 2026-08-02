@@ -111,7 +111,7 @@ func handleWatchRoomAvailability(ctx context.Context, args map[string]any, elici
 		Currency:     currency,
 	}
 
-	id, err := store.Add(w)
+	id, created, err := store.Add(w)
 	if err != nil {
 		return nil, nil, fmt.Errorf("add room watch: %w", err)
 	}
@@ -125,10 +125,15 @@ func handleWatchRoomAvailability(ctx context.Context, args map[string]any, elici
 		Keywords []string `json:"keywords"`
 		Below    float64  `json:"below,omitempty"`
 		Currency string   `json:"currency"`
+		// False when an existing watch for the same target was updated instead.
+		// Add is idempotent, so re-watching returns the ORIGINAL id; reporting it
+		// as newly created would be a falsehood the agent then repeats to the user.
+		Created bool `json:"created"`
 	}
 
 	resp := watchRoomResponse{
 		Success:  true,
+		Created:  created,
 		WatchID:  id,
 		Hotel:    hotelName,
 		CheckIn:  checkIn,
