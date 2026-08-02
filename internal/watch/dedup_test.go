@@ -52,6 +52,12 @@ func TestStoreAddPreservesAccumulatedStateOnRewatch(t *testing.T) {
 			s.watches[i].LastCheck = checked
 		}
 	}
+	// Persisted, not just poked in memory: store mutations are transactional
+	// and reload committed state from disk, so an unsaved in-memory edit is
+	// (correctly) invisible to the call under test.
+	if err := s.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
 	created := s.watches[0].CreatedAt
 
 	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 150, Currency: "EUR"}); err != nil {
@@ -359,6 +365,12 @@ func TestWatchLowestPriceSurvivesHistoryEviction(t *testing.T) {
 			s.watches[i].CheapestDate = "2026-05-01"
 		}
 	}
+	// Persisted, not just poked in memory: store mutations are transactional
+	// and reload committed state from disk, so an unsaved in-memory edit is
+	// (correctly) invisible to the call under test.
+	if err := s.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
 
 	for i := 0; i < maxObservationsPerWatch+50; i++ {
 		if err := s.RecordPrice(id, 300, "EUR"); err != nil {
@@ -570,6 +582,12 @@ func TestStoreAddPreservesStateWhenCurrencyIsUnchanged(t *testing.T) {
 			s.watches[i].LastPrice = 450
 			s.watches[i].LowestPrice = 400
 		}
+	}
+	// Persisted, not just poked in memory: store mutations are transactional
+	// and reload committed state from disk, so an unsaved in-memory edit is
+	// (correctly) invisible to the call under test.
+	if err := s.Save(); err != nil {
+		t.Fatalf("save: %v", err)
 	}
 	if err := s.RecordPrice(id, 450, "EUR"); err != nil {
 		t.Fatalf("record price: %v", err)

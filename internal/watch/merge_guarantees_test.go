@@ -220,3 +220,111 @@ func (c *editingChecker) CheckPrice(_ context.Context, _ Watch) (float64, string
 }
 
 func strPtr(s string) *string { return &s }
+
+// TRVL.MERGE.TXN.3 -- a currency migration completed by another process while
+// this check was in flight must NOT be re-applied by this check.
+//
+// This is the defect adversarial review found in the first cut of the merge
+// (2026-08-02). The merge reloaded committed state but still DECIDED the
+// destructive currency branches from the pre-provider snapshot, then replayed
+// them onto the reloaded record. Replaying a migration that committed state has
+// already finished zeroes the threshold the other process just re-set and
+// purges the history it just wrote in the new currency -- destroying exactly
+// the concurrent state the field-scoped write existed to protect.
+//
+// The window is the provider round trip, where no lock is held. That is the
+// only place another process can get in, and it is where the injection happens.
+//
+// Sabotage check (run 2026-08-02): computing currencyChanged/currencyMismatch
+// from the detached `w` instead of from `cur` inside the callback -- i.e.
+// restoring the shape this test was written against -- makes it fail at both
+// "threshold was wiped" and "new-currency history was purged".
+func TestCompletedCurrencyMigrationIsNotReapplied(t *testing.T) {
+	if !lockSupported {
+		t.Skip("store transactions are not enforced on this platform")
+	}
+
+	dir := t.TempDir()
+	s := NewStore(dir)
+	id, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "JPY", BelowPrice: 15000,
+	})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := s.RecordPrice(id, 20000, "JPY"); err != nil {
+		t.Fatalf("seed history: %v", err)
+	}
+
+	// The stale copy: JPY, with prior observations. Taken before the check.
+	w, _ := s.Get(id)
+
+	other := NewStore(dir)
+	var migrateErr error
+	checker := &editingChecker{
+		price:    150,
+		currency: "EUR",
+		duringCall: func() {
+			// Another process performs the whole migration and moves on:
+			// re-watch in EUR (purges the JPY history), then re-set a fresh
+			// EUR threshold, then observe a real EUR price.
+			if _, _, err := other.Add(Watch{
+				Type: "flight", Origin: "HEL", Destination: "BCN",
+				Currency: "EUR",
+			}); err != nil {
+				migrateErr = err
+				return
+			}
+			if _, err := other.Update(id, WatchUpdate{AlertDropAbs: f64Ptr(250)}); err != nil {
+				migrateErr = err
+				return
+			}
+			if err := other.RecordPrice(id, 160, "EUR"); err != nil {
+				migrateErr = err
+			}
+		},
+	}
+
+	res := checkOne(context.Background(), s, checker, w)
+	if res.Error != nil {
+		t.Fatalf("check: %v", res.Error)
+	}
+	if migrateErr != nil {
+		t.Fatalf("concurrent migration failed: %v", migrateErr)
+	}
+
+	reader := NewStore(dir)
+	if err := reader.Load(); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	got, ok := reader.Get(id)
+	if !ok {
+		t.Fatalf("watch %s vanished", id)
+	}
+	if got.Currency != "EUR" {
+		t.Fatalf("currency = %q, want EUR", got.Currency)
+	}
+	if got.AlertDropAbs != 250 {
+		t.Errorf("threshold was wiped: AlertDropAbs = %v, want 250 -- this check "+
+			"re-applied a currency migration another process had already completed",
+			got.AlertDropAbs)
+	}
+	if got.AlertDropAbsClearedByCurrency {
+		t.Errorf("watch was marked pending currency reconfirmation, but the currency " +
+			"had already been reconciled by the other process before this check wrote")
+	}
+	eur := 0
+	for _, p := range reader.History(id) {
+		if p.Currency == "EUR" {
+			eur++
+		}
+	}
+	// The other process's EUR observation plus this check's own.
+	if eur < 2 {
+		t.Errorf("new-currency history was purged: %d EUR point(s), want >= 2 -- "+
+			"a stale currencyChanged purged history written in the CURRENT currency", eur)
+	}
+}
+
+func f64Ptr(v float64) *float64 { return &v }

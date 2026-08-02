@@ -146,15 +146,18 @@ func (s *Store) Mutate(id string, apply func(*Watch)) (Watch, error) {
 // property) and the resulting history mutation is written by the same save
 // (UpdateWatchAndRecordPrice's property).
 //
-// purgeHistory drops every PricePoint for this watch BEFORE the new one is
-// appended. Callers set it when the provider's currency differs from the
-// watch's: existing points are denominated in the old currency and History /
-// Sparkline / TrendArrow make no currency distinction within one watch's
-// series. Purge rather than convert -- no FX rate is available at this layer.
+// purgeHistory is decided BY the callback, from the reloaded record, rather
+// than passed in by the caller. That distinction is the whole point: a caller
+// computing "the currency changed" from the snapshot it took before its
+// provider round trip can be wrong by the time the lock is acquired. Another
+// process may have already performed that migration -- re-applying it here
+// would purge the history the other process just wrote in the NEW currency and
+// zero the threshold it just re-set. The decision has to be made against the
+// state being written, not against a copy from before the network call.
 //
 // TRVL.STORE.TXN.4: apply must never perform network I/O; the lock is held for
 // its whole duration.
-func (s *Store) MutateAndRecordPrice(id string, purgeHistory bool, price float64, currency string, apply func(*Watch)) (Watch, error) {
+func (s *Store) MutateAndRecordPrice(id string, price float64, currency string, apply func(cur *Watch) (purgeHistory bool)) (Watch, error) {
 	var out Watch
 	err := s.withTxn(func() error {
 		idx := -1
@@ -167,7 +170,7 @@ func (s *Store) MutateAndRecordPrice(id string, purgeHistory bool, price float64
 		if idx < 0 {
 			return fmt.Errorf("watch %s not found", id)
 		}
-		apply(&s.watches[idx])
+		purgeHistory := apply(&s.watches[idx])
 		out = s.watches[idx]
 
 		if purgeHistory {

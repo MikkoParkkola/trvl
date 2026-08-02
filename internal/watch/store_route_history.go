@@ -23,26 +23,29 @@ func (s *Store) RecordObservation(routeKey string, price float64, currency strin
 	if routeKey == "" || price <= 0 {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	cur := strings.ToUpper(strings.TrimSpace(currency))
-	if last, ok := s.lastObservationLocked(routeKey, cur); ok && last.Price > 0 {
-		if time.Since(last.Timestamp) < observationThrottle &&
-			math.Abs(price-last.Price)/last.Price <= observationEpsilonPct {
-			return nil // redundant near-duplicate; skip the write entirely
+	return s.withTxn(func() error {
+		cur := strings.ToUpper(strings.TrimSpace(currency))
+		if last, ok := s.lastObservationLocked(routeKey, cur); ok && last.Price > 0 {
+			if time.Since(last.Timestamp) < observationThrottle &&
+				math.Abs(price-last.Price)/last.Price <= observationEpsilonPct {
+				// Redundant near-duplicate. errTxnNoop unwinds without writing:
+				// saving here would republish this process's whole snapshot
+				// over a concurrent writer's for an observation we decided not
+				// to keep.
+				return errTxnNoop
+			}
 		}
-	}
 
-	s.history = append(s.history, PricePoint{
-		RouteKey:  routeKey,
-		Price:     price,
-		Currency:  cur,
-		Timestamp: time.Now(),
+		s.history = append(s.history, PricePoint{
+			RouteKey:  routeKey,
+			Price:     price,
+			Currency:  cur,
+			Timestamp: time.Now(),
+		})
+		s.pruneRouteLocked(routeKey)
+		s.pruneGlobalRouteLocked()
+		return nil
 	})
-	s.pruneRouteLocked(routeKey)
-	s.pruneGlobalRouteLocked()
-	return s.saveLocked()
 }
 
 // pruneGlobalRouteLocked bounds the total number of ad-hoc route-keyed

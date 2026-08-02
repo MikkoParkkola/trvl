@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -10,6 +11,12 @@ import (
 // separator so it cannot collide with anything a user can type into a city
 // name, a hotel name or a room keyword.
 const keySep = "\x1f"
+
+// errAmbiguousTarget is returned when a caller omits the price threshold on a
+// re-watch of a target that carries several thresholds, so "the watch on this
+// target" does not name one record. See findByTargetIndex.
+var errAmbiguousTarget = errors.New(
+	"several watches on this target with different price targets: name the price you mean, or update the watch by id")
 
 // pollKey identifies the *thing being polled*: the route, dates and search
 // parameters a provider call is made from. It deliberately excludes
@@ -43,13 +50,36 @@ func (w Watch) pollKey() string {
 func (w Watch) targetKey(withCurrency bool) string {
 	norm := func(s string) string { return strings.ToUpper(strings.TrimSpace(s)) }
 
-	// Sorted copies: keyword and favourite matching is order-insensitive
-	// (MatchRoomKeywords requires all keywords), so two watches listing the same
-	// set in a different order are the same search.
-	keywords := append([]string(nil), w.RoomKeywords...)
-	slices.Sort(keywords)
-	favourites := append([]string(nil), w.Favourites...)
-	slices.Sort(favourites)
+	// Normalise BEFORE sorting, de-duplicate, and join with the unit separator
+	// rather than a comma.
+	//
+	// All three matter, and the original order got each of them wrong:
+	//   - sorting raw values put ["king","Balcony"] and ["KING","balcony"] in
+	//     different orders, so two identical searches produced different keys
+	//     and were polled twice;
+	//   - a comma join let the single value "KRK,PRG" collide with the two
+	//     values ["KRK","PRG"], so two different intents deduplicated into one;
+	//   - without de-duplication ["king","king"] differed from ["king"].
+	// Found by GPT second-opinion review, 2026-08-02.
+	normSet := func(in []string) string {
+		seen := make(map[string]struct{}, len(in))
+		out := make([]string, 0, len(in))
+		for _, v := range in {
+			v = norm(v)
+			if v == "" {
+				continue
+			}
+			if _, dup := seen[v]; dup {
+				continue
+			}
+			seen[v] = struct{}{}
+			out = append(out, v)
+		}
+		slices.Sort(out)
+		return strings.Join(out, keySep)
+	}
+	keywords := normSet(w.RoomKeywords)
+	favourites := normSet(w.Favourites)
 
 	currency := ""
 	if withCurrency {
@@ -66,8 +96,8 @@ func (w Watch) targetKey(withCurrency bool) string {
 		strings.TrimSpace(w.DepartTo),
 		currency,
 		norm(w.HotelName),
-		norm(strings.Join(keywords, ",")),
-		norm(strings.Join(favourites, ",")),
+		keywords,
+		favourites,
 		strings.TrimSpace(w.WindowFrom),
 		strings.TrimSpace(w.WindowTo),
 		strconv.Itoa(w.MinScore),
@@ -113,8 +143,9 @@ func findByDedupeKeyIndex(watches []Watch, key string) int {
 	return -1
 }
 
-// findByTargetIndex returns the index of the first watch on the same target,
-// ignoring the price threshold, or -1.
+// findByTargetIndex returns the index of the watch on the same target,
+// ignoring the price threshold. It returns -1 when nothing matches, and
+// errAmbiguousTarget when MORE THAN ONE watch shares that target.
 //
 // This is the "omitted, not zero" rule. Threshold-aware identity (#509) is
 // right when the caller NAMES a price: "alert me at 200" and "alert me at 120"
@@ -124,11 +155,23 @@ func findByDedupeKeyIndex(watches []Watch, key string) int {
 // Treating that absence as a distinct identity forks a duplicate watch on every
 // settings-only re-watch, which is the exact duplicate-accumulation bug #509
 // existed to stop.
-func findByTargetIndex(watches []Watch, target string) int {
+//
+// The ambiguity guard is the other half of that rule, and it matters precisely
+// because #509 succeeded: once a route can legitimately carry several
+// thresholds, "the watch on this target" no longer names one record. Silently
+// taking the first would land a webhook or alert edit on whichever intent
+// happened to be stored first — a coin flip the user never sees. Refusing is
+// the only honest answer; the caller can name a threshold to disambiguate.
+func findByTargetIndex(watches []Watch, target string) (int, error) {
+	found := -1
 	for i := range watches {
-		if watches[i].targetKey(false) == target {
-			return i
+		if watches[i].targetKey(false) != target {
+			continue
 		}
+		if found >= 0 {
+			return -1, errAmbiguousTarget
+		}
+		found = i
 	}
-	return -1
+	return found, nil
 }

@@ -29,7 +29,7 @@ func checkRoomWithWebhookContext(checkCtx, webhookCtx context.Context, store *St
 	// section after that block needs to know whether a currency change
 	// happened this poll, to purge this watch's (now stale-currency) history
 	// before recording the new-currency observation.
-	var currencyChanged bool
+	var matchedRoom string
 
 	// If matches found, record the cheapest matching room price.
 	if len(matches) > 0 {
@@ -194,148 +194,118 @@ func checkRoomWithWebhookContext(checkCtx, webhookCtx context.Context, store *St
 		}
 		result.RoomMatches = usableOnly
 
-		// A currency change invalidates every scalar this watch has
-		// previously observed, same invariant and same fix as
-		// checkOneWithWebhookContext (round 4 of adversarial review found
-		// this path was missed the first time -- round 5). BelowPrice and
-		// AlertDropAbs are also cleared, not just skipped for this poll --
-		// same round-7 finding as the flight path: this poller has no fresh
-		// user-supplied threshold to fall back on, so leaving them set would
-		// silently reinterpret an old-currency magnitude as the new currency
-		// on every later poll.
-		//
-		// Round 14 found the same first-poll false-positive as the flight
-		// path: gate the DESTRUCTIVE reset on w.LastPrice > 0 so a watch's
-		// first-ever observation establishes the baseline currency instead of
-		// "changing" against a user-intent field it never actually observed a
-		// price in.
-		// Found by adversarial review, 2026-07-29 (round 14).
-		//
-		// Round 15 found the same gap as the flight path: gating the guard
-		// ENTIRELY on w.LastPrice > 0 let a first quote whose currency
-		// differs from the watch's assumed/created currency fall straight
-		// through to the BelowGoal comparison below, comparing a NEW-currency
-		// price directly against a BelowPrice set in the OLD assumed
-		// currency. skipThresholdChecks covers both the real transition and
-		// this first-quote mismatch. Found by adversarial review, 2026-07-30
-		// (round 15).
-		//
-		// Round 16 found leaving BelowPrice/AlertDropAbs live through a
-		// first-quote mismatch only POSTPONED round 15's bug: w.Currency is
-		// still set to the newly-adopted currency below, so a later,
-		// currency-STABLE poll silently reinterprets the OLD currency's
-		// numeric threshold as the NEW currency (same false-BelowGoal
-		// failure, one poll later). Zero BelowPrice/AlertDropAbs on ANY
-		// currencyMismatch, not just the real transition -- unlike LastPrice/
-		// LowestPrice/CheapestDate/BaselinePrice/LastAlertedPrice, which only
-		// need invalidating when there was a prior OBSERVATION to begin with.
-		// Found by adversarial review, 2026-07-30 (round 16).
-		//
-		// Round 18: same LastPrice==0 unreliability as the flight path
-		// (checkOneWithWebhookContext) -- migrate.go's dedup merge can leave a
-		// survivor with LastPrice==0 but LowestPrice>0 inherited from a
-		// merged-away duplicate. Treat LowestPrice>0 as an equally valid
-		// prior-observation signal so that case takes the currencyChanged
-		// (reset) path instead of being misread as a fresh first quote.
-		// Found by adversarial review, 2026-07-30 (round 18).
-		hasPriorObservation := w.LastPrice > 0 || w.LowestPrice > 0
-		// Round 19: mirrors the flight-path fix above -- w.Currency=="" with
-		// real prior history is an untrustworthy-currency signal, not a
-		// safe "no mismatch possible" signal. Found by GPT second-opinion
-		// review, 2026-07-30 (round 19).
-		unknownCurrencyWithHistory := w.Currency == "" && hasPriorObservation
-		currencyMismatch := cheapest.Price > 0 && cheapest.Currency != "" && ((w.Currency != "" && w.Currency != cheapest.Currency) || unknownCurrencyWithHistory)
-		currencyChanged = hasPriorObservation && currencyMismatch
-		firstQuoteMismatch := !hasPriorObservation && currencyMismatch
-		skipThresholdChecks := currencyChanged || firstQuoteMismatch
-		if currencyMismatch {
-			// Round 23: match checkOneWithWebhookContext's predicate exactly
-			// (gate on an actual threshold being lost, not merely on
-			// currencyChanged) -- the round-22 version set the flag whenever
-			// currencyChanged was true, unconditionally, which could both
-			// under-fire (currencyMismatch without currencyChanged, e.g.
-			// firstQuoteMismatch, also zeroes BelowPrice/AlertDropAbs just
-			// below but was never flagged) and mislabel a no-op reset as a
-			// lost alert. Found by GPT second-opinion review, 2026-07-30
-			// (round 23).
-			if w.BelowPrice > 0 || w.AlertDropAbs > 0 {
-				result.AlertsClearedByCurrencyChange = true
-			}
-			w.BelowPrice = 0
-			w.AlertDropAbs = 0
-		}
-		if currencyChanged {
-			w.LastPrice = 0
-			w.LowestPrice = 0
-			w.CheapestDate = ""
-			w.BaselinePrice = 0
-			w.LastAlertedPrice = 0
-		}
-
-		// Check threshold. BelowPrice is skipped on a currency change (real or
-		// first-quote mismatch) for the same reason as checkOneWithWebhookContext:
-		// it is a user-set magnitude in the OLD/assumed currency, and comparing
-		// it straight against a NEW-currency price reinterprets the threshold
-		// rather than converting it, which can fire a false BelowGoal alert on
-		// an unrelated magnitude (e.g. a JPY 15,000 target vs. a EUR 180 quote).
-		// Found by adversarial review, 2026-07-29 (round 6); widened round 15.
-		if !skipThresholdChecks && w.BelowPrice > 0 && cheapest.Price > 0 && cheapest.Price <= w.BelowPrice {
-			result.BelowGoal = true
-		}
-
-		// Calculate price change from last check.
-		result.PrevPrice = w.LastPrice
-		if !skipThresholdChecks && w.LastPrice > 0 && cheapest.Price > 0 {
-			result.PriceDrop = cheapest.Price - w.LastPrice
-		}
-
-		// Round 19: mirrors the flight-path fix -- a genuinely absent
-		// currency (not whitespace-garbage, which the usable-filter above
-		// already rejects) must not blank out an already-known watch
-		// currency. Found by GPT second-opinion review, 2026-07-30
-		// (round 19).
+		// Round 19: a genuinely absent currency (not whitespace-garbage, which
+		// the usable-filter above already rejects) must not blank out an
+		// already-known watch currency. Checked before the transaction opens:
+		// it aborts the whole check rather than deciding what to persist.
 		if cheapest.Price > 0 && cheapest.Currency == "" && w.Currency != "" {
 			return CheckResult{Watch: w, Error: fmt.Errorf("checker returned no currency for price %v on a watch already tracking %s", cheapest.Price, w.Currency)}
 		}
-
-		// Update watch state.
-		w.LastCheck = time.Now()
-		w.MatchedRoom = cheapest.Name
-		if cheapest.Price > 0 {
-			w.LastPrice = cheapest.Price
-			w.Currency = cheapest.Currency
-			if w.LowestPrice == 0 || cheapest.Price < w.LowestPrice {
-				w.LowestPrice = cheapest.Price
-			}
-		}
-	} else {
-		// No matches — still mark as checked.
-		w.LastCheck = time.Now()
+		matchedRoom = cheapest.Name
 	}
 
-	// Persist updates. When a new price was found, the watch update and the
-	// new price point are persisted atomically (a single lock+save),
-	// purging prior-currency history first when currencyChanged -- same
-	// crash-window fix as checkOneWithWebhookContext. Found by adversarial
-	// review, 2026-07-29 (round 11).
+	// Persist. Same structure, and the same reasoning, as
+	// checkOneWithWebhookContext: the currency decision, the threshold wipes,
+	// the observation resets and every derived signal are computed INSIDE the
+	// transaction against the committed record.
 	//
-	// Same scope caveat as checkOneWithWebhookContext above: "atomically"
-	// covers the in-memory multi-call race on this *Store instance only, not
-	// cross-process coordination or on-disk two-file crash atomicity -- both
-	// pre-existing, store-wide, documented in
-	// docs/design/2026-07-26-watch-store-coordination.md and persistLocked's
-	// comment.
+	// The room path previously wrote a whole detached Watch through
+	// UpdateWatchAndRecordPrice, which held only s.mu -- no advisory lock, no
+	// reload. A concurrent settings edit during a room check was silently
+	// reverted and two processes last-writer-wins'd each other, which is the
+	// hazard the flight path had already been fixed for. Found by adversarial
+	// review, 2026-08-02.
+	var (
+		alertsCleared bool
+		prevPrice     float64
+		priceDrop     float64
+		belowGoal     bool
+		saved         Watch
+	)
 	if result.NewPrice > 0 {
-		if err := store.UpdateWatchAndRecordPrice(w, currencyChanged, result.NewPrice, result.Currency); err != nil {
-			result.Error = fmt.Errorf("update watch and record price: %w", err)
-			return result
-		}
+		price, currency := result.NewPrice, result.Currency
+		saved, err = store.MutateAndRecordPrice(w.ID, price, currency, func(cur *Watch) bool {
+			prevPrice = cur.LastPrice
+
+			// Round 18: cur.LastPrice == 0 is not a reliable "no prior
+			// observation" signal -- migrate.go's dedup merge can leave a
+			// survivor with LastPrice == 0 beside a nonzero LowestPrice
+			// inherited from a merged-away duplicate.
+			hasPriorObservation := cur.LastPrice > 0 || cur.LowestPrice > 0
+			// Round 19: cur.Currency == "" with real prior history is an
+			// untrustworthy-currency signal, not a safe "no mismatch possible".
+			unknownCurrencyWithHistory := cur.Currency == "" && hasPriorObservation
+			currencyMismatch := currency != "" && ((cur.Currency != "" && cur.Currency != currency) || unknownCurrencyWithHistory)
+			currencyChanged := hasPriorObservation && currencyMismatch
+			firstQuoteMismatch := !hasPriorObservation && currencyMismatch
+			skipThresholdChecks := currencyChanged || firstQuoteMismatch
+
+			// Round 6 (widened round 15): BelowPrice is skipped on any currency
+			// mismatch. It is a user-set magnitude in the OLD/assumed currency,
+			// and comparing it straight against a NEW-currency price
+			// reinterprets the threshold rather than converting it -- a JPY
+			// 15,000 target would fire against a EUR 180 quote.
+			if !skipThresholdChecks {
+				if cur.BelowPrice > 0 && price > 0 && price <= cur.BelowPrice {
+					belowGoal = true
+				}
+				if cur.LastPrice > 0 && price > 0 {
+					priceDrop = price - cur.LastPrice
+				}
+			}
+
+			if currencyMismatch {
+				// Round 23: gate on an actual threshold being lost, not merely
+				// on currencyChanged, so a no-op reset is not mislabelled as a
+				// lost alert and a firstQuoteMismatch is not missed.
+				if cur.BelowPrice > 0 || cur.AlertDropAbs > 0 {
+					alertsCleared = true
+				}
+				cur.BelowPrice = 0
+				cur.AlertDropAbs = 0
+			}
+			if currencyChanged {
+				cur.LowestPrice = 0
+				cur.CheapestDate = ""
+				cur.BaselinePrice = 0
+				cur.LastAlertedPrice = 0
+				prevPrice = 0
+				priceDrop = 0
+			}
+
+			cur.LastCheck = time.Now()
+			cur.MatchedRoom = matchedRoom
+			cur.LastPrice = price
+			cur.Currency = currency
+			if cur.LowestPrice == 0 || price < cur.LowestPrice {
+				cur.LowestPrice = price
+			}
+
+			// Decided from committed state: if another process already migrated
+			// this watch, currencyChanged is false here and its new-currency
+			// history survives.
+			return currencyChanged
+		})
 	} else {
-		if err := store.UpdateWatch(w); err != nil {
-			result.Error = fmt.Errorf("update watch: %w", err)
-			return result
-		}
+		// No usable price: only the checked-at stamp (and the matched room, if
+		// any) is owned by this check. Still transactional, so it cannot revert
+		// a concurrent edit either.
+		saved, err = store.Mutate(w.ID, func(cur *Watch) {
+			cur.LastCheck = time.Now()
+			if matchedRoom != "" {
+				cur.MatchedRoom = matchedRoom
+			}
+		})
 	}
+	if err != nil {
+		result.Error = fmt.Errorf("update watch and record price: %w", err)
+		return result
+	}
+	result.PrevPrice = prevPrice
+	result.PriceDrop = priceDrop
+	result.BelowGoal = belowGoal
+	result.AlertsClearedByCurrencyChange = alertsCleared
+	w = saved
 
 	result.Watch = w
 

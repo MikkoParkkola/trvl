@@ -219,8 +219,13 @@ func (s *Store) Add(w Watch) (string, bool, error) {
 		if i < 0 && w.BelowPrice == 0 {
 			// No price named: this is a settings-or-currency re-watch, not a
 			// new price intent. Match the target alone rather than forking a
-			// duplicate. See findByTargetIndex.
-			i = findByTargetIndex(s.watches, w.targetKey(false))
+			// duplicate. Refuses rather than guessing when the target carries
+			// several thresholds. See findByTargetIndex.
+			match, err := findByTargetIndex(s.watches, w.targetKey(false))
+			if err != nil {
+				return err
+			}
+			i = match
 		}
 		if i >= 0 {
 			// Same intent already stored. Accumulated price history
@@ -371,33 +376,37 @@ func (s *Store) Get(id string) (Watch, bool) {
 
 // Remove deletes a watch by ID. Returns true if found and removed.
 func (s *Store) Remove(id string) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i, w := range s.watches {
-		if w.ID == id {
-			s.watches = append(s.watches[:i], s.watches[i+1:]...)
-			if err := s.saveLocked(); err != nil {
-				return false, err
+	found := false
+	err := s.withTxn(func() error {
+		for i, w := range s.watches {
+			if w.ID == id {
+				s.watches = append(s.watches[:i], s.watches[i+1:]...)
+				found = true
+				return nil
 			}
-			return true, nil
 		}
+		// Nothing to remove: unwind without rewriting both files. Saving here
+		// would republish this process's whole snapshot over a concurrent
+		// writer's, which is the #512 hazard on a no-op path.
+		return errTxnNoop
+	})
+	if err != nil {
+		return false, err
 	}
-	return false, nil
+	return found, nil
 }
 
 // UpdateWatch replaces a watch in-place by ID and persists.
 func (s *Store) UpdateWatch(updated Watch) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i, w := range s.watches {
-		if w.ID == updated.ID {
-			s.watches[i] = updated
-			return s.saveLocked()
+	return s.withTxn(func() error {
+		for i, w := range s.watches {
+			if w.ID == updated.ID {
+				s.watches[i] = updated
+				return nil
+			}
 		}
-	}
-	return fmt.Errorf("watch %s not found", updated.ID)
+		return fmt.Errorf("watch %s not found", updated.ID)
+	})
 }
 
 // UpdateWatchAndRecordPrice updates a watch and records a new price point
@@ -496,10 +505,10 @@ func (s *Store) UpdateWatchAndRecordPrice(updated Watch, purgeHistory bool, pric
 // rather than convert: no FX rate is available at this layer. Found by
 // adversarial review, 2026-07-29 (round 10).
 func (s *Store) PurgeHistory(watchID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.purgeHistoryLocked(watchID)
-	return s.saveLocked()
+	return s.withTxn(func() error {
+		s.purgeHistoryLocked(watchID)
+		return nil
+	})
 }
 
 // purgeHistoryLocked drops every PricePoint recorded for watchID. Caller
@@ -552,76 +561,75 @@ func (s *Store) purgeHistoryLocked(watchID string) {
 // first observation, mirroring the poll path's own first-quote handling.
 // Found by GPT second-opinion review, 2026-07-30 (round 20).
 func (s *Store) RecordPrice(watchID string, price float64, currency string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	rawCurrency := currency
-	cur := strings.ToUpper(strings.TrimSpace(currency))
-	if price > 0 && cur != "" && !IsValidCurrencyFormat(cur) {
-		return fmt.Errorf("record price: malformed currency %q", rawCurrency)
-	}
-	if price > 0 && cur == "" && rawCurrency != "" {
-		return fmt.Errorf("record price: unusable currency %q", rawCurrency)
-	}
-
-	if price > 0 {
-		for i := range s.watches {
-			if s.watches[i].ID != watchID {
-				continue
-			}
-			hasPriorObservation := s.watches[i].LastPrice > 0 || s.watches[i].LowestPrice > 0
-			watchCurrency := s.watches[i].Currency
-			unknownCurrencyWithHistory := watchCurrency == "" && hasPriorObservation
-			// Round 21 found two remaining gaps in this gate. First, reject
-			// was previously conditioned on `mismatch && hasPriorObservation`:
-			// a watch with an explicit non-empty Currency (set at
-			// watch-creation, before any observation) but zero prior
-			// observations fell through this gate untouched -- it silently
-			// accepted a differently-labeled first observation, kept its
-			// stale Currency label, and stored mismatched-currency
-			// scalars/history under it. The Currency field IS the
-			// established baseline the moment it's non-empty; it does not
-			// need a prior observation to mean something. Second, an
-			// empty-currency observation was unconditionally accepted onto
-			// an established (non-empty Currency) watch because the
-			// mismatch formula required `cur != ""` -- reject that too,
-			// rather than mixing an unlabeled scalar/history point into a
-			// series the rest of the package assumes is single-currency.
-			// Found by GPT second-opinion review, 2026-07-30 (round 21).
-			if watchCurrency != "" && cur != "" && watchCurrency != cur {
-				return fmt.Errorf("record price: currency %q does not match watch currency %q", cur, watchCurrency)
-			}
-			if watchCurrency != "" && cur == "" {
-				return fmt.Errorf("record price: missing currency for watch established in %q", watchCurrency)
-			}
-			if unknownCurrencyWithHistory && cur != "" {
-				// Round 20: a currencyless watch that already has real
-				// price history cannot safely accept ANY labeled
-				// observation through this raw recorder -- that requires
-				// the full reset check.go's poll path performs, which
-				// RecordPrice does not.
-				return fmt.Errorf("record price: currency %q does not match watch currency %q", cur, watchCurrency)
-			}
-			if watchCurrency == "" && cur != "" {
-				s.watches[i].Currency = cur
-			}
-			s.watches[i].LastPrice = price
-			if s.watches[i].LowestPrice == 0 || price < s.watches[i].LowestPrice {
-				s.watches[i].LowestPrice = price
-			}
-			break
+	return s.withTxn(func() error {
+		rawCurrency := currency
+		cur := strings.ToUpper(strings.TrimSpace(currency))
+		if price > 0 && cur != "" && !IsValidCurrencyFormat(cur) {
+			return fmt.Errorf("record price: malformed currency %q", rawCurrency)
 		}
-	}
+		if price > 0 && cur == "" && rawCurrency != "" {
+			return fmt.Errorf("record price: unusable currency %q", rawCurrency)
+		}
 
-	s.history = append(s.history, PricePoint{
-		WatchID:   watchID,
-		Price:     price,
-		Currency:  cur,
-		Timestamp: time.Now(),
+		if price > 0 {
+			for i := range s.watches {
+				if s.watches[i].ID != watchID {
+					continue
+				}
+				hasPriorObservation := s.watches[i].LastPrice > 0 || s.watches[i].LowestPrice > 0
+				watchCurrency := s.watches[i].Currency
+				unknownCurrencyWithHistory := watchCurrency == "" && hasPriorObservation
+				// Round 21 found two remaining gaps in this gate. First, reject
+				// was previously conditioned on `mismatch && hasPriorObservation`:
+				// a watch with an explicit non-empty Currency (set at
+				// watch-creation, before any observation) but zero prior
+				// observations fell through this gate untouched -- it silently
+				// accepted a differently-labeled first observation, kept its
+				// stale Currency label, and stored mismatched-currency
+				// scalars/history under it. The Currency field IS the
+				// established baseline the moment it's non-empty; it does not
+				// need a prior observation to mean something. Second, an
+				// empty-currency observation was unconditionally accepted onto
+				// an established (non-empty Currency) watch because the
+				// mismatch formula required `cur != ""` -- reject that too,
+				// rather than mixing an unlabeled scalar/history point into a
+				// series the rest of the package assumes is single-currency.
+				// Found by GPT second-opinion review, 2026-07-30 (round 21).
+				if watchCurrency != "" && cur != "" && watchCurrency != cur {
+					return fmt.Errorf("record price: currency %q does not match watch currency %q", cur, watchCurrency)
+				}
+				if watchCurrency != "" && cur == "" {
+					return fmt.Errorf("record price: missing currency for watch established in %q", watchCurrency)
+				}
+				if unknownCurrencyWithHistory && cur != "" {
+					// Round 20: a currencyless watch that already has real
+					// price history cannot safely accept ANY labeled
+					// observation through this raw recorder -- that requires
+					// the full reset check.go's poll path performs, which
+					// RecordPrice does not.
+					return fmt.Errorf("record price: currency %q does not match watch currency %q", cur, watchCurrency)
+				}
+				if watchCurrency == "" && cur != "" {
+					s.watches[i].Currency = cur
+				}
+				s.watches[i].LastPrice = price
+				if s.watches[i].LowestPrice == 0 || price < s.watches[i].LowestPrice {
+					s.watches[i].LowestPrice = price
+				}
+				break
+			}
+		}
+
+		s.history = append(s.history, PricePoint{
+			WatchID:   watchID,
+			Price:     price,
+			Currency:  cur,
+			Timestamp: time.Now(),
+		})
+		s.pruneWatchLocked(watchID)
+		s.pruneGlobalWatchLocked()
+		return nil
 	})
-	s.pruneWatchLocked(watchID)
-	s.pruneGlobalWatchLocked()
-	return s.saveLocked()
 }
 
 // pruneWatchLocked drops the oldest observations for watchID beyond

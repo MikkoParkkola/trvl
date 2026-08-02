@@ -147,17 +147,31 @@ func (s *Store) collapseDuplicatesLocked() (int, map[string]string) {
 	// first and recomputing LowestPrice/CheapestDate from every group
 	// member's ORIGINAL value -- filtered to the survivor's own currency --
 	// removes the lossy intermediate scalar entirely.
+	// Grouped by dedupeKey, NOT SameTarget. SameTarget ignores BelowPrice, so
+	// migration would merge "alert me at 200" and "alert me at 120" into one
+	// record -- silently destroying an intent that Store.Add deliberately keeps
+	// separate (#509). Migration and Add must agree on what "the same watch"
+	// means, or `trvl watch migrate` quietly undoes multi-threshold watches the
+	// user created on purpose. Found by GPT second-opinion review, 2026-08-02.
+	//
+	// dedupeKey excludes Currency for the same reason Add does: a route
+	// re-watched in a different currency is one intent, so such duplicates
+	// still group together and the currency-aware LowestPrice recomputation
+	// below still applies.
 	groups := make([][]Watch, 0, len(s.watches))
+	groupKeys := make([]string, 0, len(s.watches))
 	for _, w := range s.watches {
+		key := w.dedupeKey()
 		gi := -1
 		for i := range groups {
-			if groups[i][0].SameTarget(w) {
+			if groupKeys[i] == key {
 				gi = i
 				break
 			}
 		}
 		if gi < 0 {
 			groups = append(groups, []Watch{w})
+			groupKeys = append(groupKeys, key)
 			continue
 		}
 		groups[gi] = append(groups[gi], w)
