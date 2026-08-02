@@ -1,7 +1,6 @@
 package watch
 
 import (
-	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,22 +11,19 @@ import (
 // name, a hotel name or a room keyword.
 const keySep = "\x1f"
 
-// errAmbiguousTarget is returned when a caller omits the price threshold on a
-// re-watch of a target that carries several thresholds, so "the watch on this
-// target" does not name one record. See findByTargetIndex.
-var errAmbiguousTarget = errors.New(
-	"several watches on this target with different price targets: name the price you mean, or update the watch by id")
-
 // pollKey identifies the *thing being polled*: the route, dates and search
-// parameters a provider call is made from. It deliberately excludes
-// BelowPrice, because the target price is a user policy, not an input to the
-// search — two watches on AMS→VLC differing only in threshold produce the
-// identical provider request and must therefore cost exactly one round trip
-// (#509, MULTIPRICE.2).
+// parameters a provider call is made from. It excludes BelowPrice, because the
+// target price is a user policy, not an input to the search.
+//
+// Since identity is now target-level (see dedupeKey), a target carries at most
+// one watch, so pollKey no longer collapses several watches onto one call. It
+// still earns its place: pollcache keys on it, so concurrent checks of the same
+// target wait for the one in-flight provider call instead of racing to issue
+// their own.
 //
 // Currency is included: providers honour the requested currency, so two
-// watches asking for different currencies are genuinely different searches and
-// must not be collapsed into one provider call.
+// requests asking for different currencies are genuinely different searches and
+// must not share a call.
 func (w Watch) pollKey() string {
 	return w.targetKey(true)
 }
@@ -45,8 +41,6 @@ func (w Watch) pollKey() string {
 //
 // Collapsing these into one key forces a choice between polling a currency
 // change incorrectly and forking a duplicate watch on every currency change.
-// Keeping them separate is what lets #509's threshold-aware identity and the
-// round-18/28 currency-migration behaviour both hold.
 func (w Watch) targetKey(withCurrency bool) string {
 	norm := func(s string) string { return strings.ToUpper(strings.TrimSpace(s)) }
 
@@ -106,16 +100,21 @@ func (w Watch) targetKey(withCurrency bool) string {
 	}, keySep)
 }
 
-// dedupeKey identifies a stored watch as a *user intent*: the polled target
-// plus the price threshold attached to it.
+// dedupeKey identifies a stored watch as a *user intent*: the polled target.
 //
-// Making the threshold part of the identity is the whole point of #509.
-// Deduplicating on the target alone would collapse "alert me at 200" and
-// "alert me at 120" into one record and silently discard the second intent;
-// deduplicating on nothing lets a repeated identical request accumulate
-// unbounded duplicates, which is what produced 468 watches over 4
-// destinations. Threshold-aware identity keeps distinct intents (MULTIPRICE.1)
-// while collapsing exact repeats (MULTIPRICE.4).
+// The price threshold is NOT part of the identity. Re-watching a route with a
+// different target price ADJUSTS the existing watch rather than adding a second
+// one, so a user ends up with one watch per route and re-running the watch
+// command is how they change their mind about the price. Operator decision,
+// 2026-08-02.
+//
+// This deliberately reverses #509's threshold-aware identity, which made
+// "alert me at 200" and "alert me at 120" two coexisting records. That design
+// was chosen to stop a repeated request silently discarding the second intent;
+// the duplicate-accumulation bug it was really fixing (468 watches over 4
+// destinations) is addressed by target-level dedupe just as well, and without
+// the surprise of a settings-only re-watch forking a rival record. The cost is
+// real and accepted: there is no way to hold two price targets on one route.
 //
 // Currency is excluded (targetKey(false)) even though pollKey includes it: a
 // re-watch in a new currency is the same intent re-expressed and must MATCH the
@@ -124,10 +123,10 @@ func (w Watch) targetKey(withCurrency bool) string {
 // forking a rival watch that would then be polled and alerted independently.
 //
 // Notification settings (webhook, alert thresholds, last-minute mode) are NOT
-// part of the identity. A repeat request that differs only in those fields
-// matches the existing watch; applyIntent decides what it may overwrite.
+// part of the identity either. applyIntent decides what a re-watch may
+// overwrite; notably a re-watch that OMITS a setting must not delete it.
 func (w Watch) dedupeKey() string {
-	return w.targetKey(false) + keySep + strconv.FormatFloat(w.BelowPrice, 'f', -1, 64)
+	return w.targetKey(false)
 }
 
 // findByDedupeKeyIndex returns the index of the first watch sharing key, or -1.
@@ -141,37 +140,4 @@ func findByDedupeKeyIndex(watches []Watch, key string) int {
 		}
 	}
 	return -1
-}
-
-// findByTargetIndex returns the index of the watch on the same target,
-// ignoring the price threshold. It returns -1 when nothing matches, and
-// errAmbiguousTarget when MORE THAN ONE watch shares that target.
-//
-// This is the "omitted, not zero" rule. Threshold-aware identity (#509) is
-// right when the caller NAMES a price: "alert me at 200" and "alert me at 120"
-// are two intents. It is wrong when the caller names no price at all — a
-// re-watch that only changes the currency or a notification setting carries
-// BelowPrice == 0 as an absence, not as a request for a zero-price alert.
-// Treating that absence as a distinct identity forks a duplicate watch on every
-// settings-only re-watch, which is the exact duplicate-accumulation bug #509
-// existed to stop.
-//
-// The ambiguity guard is the other half of that rule, and it matters precisely
-// because #509 succeeded: once a route can legitimately carry several
-// thresholds, "the watch on this target" no longer names one record. Silently
-// taking the first would land a webhook or alert edit on whichever intent
-// happened to be stored first — a coin flip the user never sees. Refusing is
-// the only honest answer; the caller can name a threshold to disambiguate.
-func findByTargetIndex(watches []Watch, target string) (int, error) {
-	found := -1
-	for i := range watches {
-		if watches[i].targetKey(false) != target {
-			continue
-		}
-		if found >= 0 {
-			return -1, errAmbiguousTarget
-		}
-		found = i
-	}
-	return found, nil
 }

@@ -215,19 +215,7 @@ func (s *Store) Add(w Watch) (string, bool, error) {
 	var id string
 	created := false
 	err := s.withTxn(func() error {
-		i := findByDedupeKeyIndex(s.watches, key)
-		if i < 0 && w.BelowPrice == 0 {
-			// No price named: this is a settings-or-currency re-watch, not a
-			// new price intent. Match the target alone rather than forking a
-			// duplicate. Refuses rather than guessing when the target carries
-			// several thresholds. See findByTargetIndex.
-			match, err := findByTargetIndex(s.watches, w.targetKey(false))
-			if err != nil {
-				return err
-			}
-			i = match
-		}
-		if i >= 0 {
+		if i := findByDedupeKeyIndex(s.watches, key); i >= 0 {
 			// Same intent already stored. Accumulated price history
 			// (LowestPrice, BaselinePrice, LastCheck, ...) is preserved — that
 			// history is the value of a long-running watch and must survive a
