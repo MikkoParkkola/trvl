@@ -8,9 +8,14 @@ import "fmt"
 // struct cannot distinguish "the caller omitted this" from "the caller wants
 // zero here", and that ambiguity is exactly what made clearing impossible.
 //
-// Identity fields (route, dates, currency, BelowPrice) are deliberately absent:
-// they compose the dedupe key, so changing one would make the record a
-// different watch rather than an edited one (#509).
+// Identity fields (route, dates, currency) are deliberately absent: they
+// compose the dedupe key, so changing one would make the record a different
+// watch rather than an edited one.
+//
+// BelowPrice is absent for a different reason. It is no longer part of the
+// identity (operator decision, 2026-08-02), so it COULD be edited here -- but
+// re-watching the route with the new price is the way that is meant to work,
+// and offering two surfaces for one change invites them to drift apart.
 //
 // WebhookURL has no third state on disk — it is `omitempty`, so the empty
 // string IS "no webhook". Clearing and setting-to-empty are therefore the same

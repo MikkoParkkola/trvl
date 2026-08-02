@@ -181,11 +181,10 @@ func (s *Store) persistLocked() error {
 // "Added watch <id>" unconditionally and hand back an ID that was not new, which
 // is simply false on every re-watch.
 //
-// Identity is dedupeKey (polled target + price threshold), not SameTarget
-// (#509). Deduplicating on the target alone collapses "alert me at 200" and
-// "alert me at 120" into one record and silently discards the second intent.
-// The two share a pollKey, so the scheduler still costs one provider round trip
-// for both (MULTIPRICE.2).
+// Identity is dedupeKey, which is the polled TARGET alone. Re-watching a route
+// with a different target price ADJUSTS the existing watch rather than adding a
+// second one (operator decision, 2026-08-02, reversing #509's threshold-aware
+// identity -- see dedupeKey for what that costs and why it was accepted).
 //
 // DIVERGENCE resolved here, worth knowing about: the release line folded
 // Currency into the SAME key it deduplicated on, which made a re-watch in a new
@@ -333,7 +332,20 @@ func (w *Watch) applyIntent(next Watch) (currencyChanged bool) {
 	if next.LastMinuteMode {
 		w.LastMinuteMode = true
 	}
-	if next.LastMinuteDropPct > 0 {
+	// Gated on LastMinuteMode, not merely on a positive value.
+	//
+	// Callers supply a 25% default for this field whether or not the request
+	// mentions last-minute mode at all (mcp/tools_watch_price.go argFloat
+	// default, and the CLI's --last-minute-drop flag default). A positive value
+	// therefore does NOT mean "the caller asked for 25" -- it usually means the
+	// caller said nothing. Applying it anyway overwrote a stored custom
+	// threshold with the default on every re-watch.
+	//
+	// That became a main-path bug when re-watching turned into the way a user
+	// changes their target price (operator decision, 2026-08-02): adjusting the
+	// price on a hotel watch silently reset a 40% last-minute threshold to 25%.
+	// Found by grok second-opinion review, 2026-08-02.
+	if next.LastMinuteMode && next.LastMinuteDropPct > 0 {
 		w.LastMinuteDropPct = next.LastMinuteDropPct
 	}
 	return currencyChanged
@@ -395,90 +407,6 @@ func (s *Store) UpdateWatch(updated Watch) error {
 		}
 		return fmt.Errorf("watch %s not found", updated.ID)
 	})
-}
-
-// UpdateWatchAndRecordPrice updates a watch and records a new price point
-// (optionally purging the watch's prior-currency history first) as ONE
-// in-memory mutation under a SINGLE lock+save call, instead of up to three
-// separate lock-mutate-save round trips (UpdateWatch, then on a currency
-// change PurgeHistory, then RecordPrice).
-//
-// What this closes: the multi-call race where another goroutine sharing THIS
-// SAME *Store instance could interleave a read or write between those
-// separate calls and observe (or persist over) a partially-transitioned
-// watch -- e.g. a currency-change poll's UpdateWatch landing, then a
-// concurrent RecordPrice from a stale in-flight poll on the same Store
-// appending an old-currency point before this call's own
-// PurgeHistory+RecordPrice ran.
-//
-// What this does NOT close, both pre-existing and store-WIDE (not introduced
-// or worsened by this PR's currency-change work):
-//
-//  1. Cross-process coordination. s.mu is a field on ONE *Store value, not a
-//     cross-process lock. The scheduler (internal/watch/scheduler.go, runOnce)
-//     and the MCP `watch_price` tool (mcp/tools_watch_price.go,
-//     handleCheckWatches) each construct their OWN independent *Store pointed
-//     at the same directory, with their own separate sync.Mutex. Two
-//     concurrent checks -- a scheduler tick and a manual MCP check -- on the
-//     same watch can genuinely interleave watches.json/price-history.json
-//     writes with NO CRASH REQUIRED; the store is last-writer-wins across
-//     processes. Documented, dated before this PR, in
-//     docs/design/2026-07-26-watch-store-coordination.md.
-//  2. On-disk crash atomicity. saveLocked -> persistLocked still writes
-//     watches.json and price-history.json as two independent atomic renames
-//     (store.go persistLocked, ~line 140); a process crash between those two
-//     renames can still leave a new-currency watch next to old-currency
-//     history on disk. Every Store write (Add, RecordPrice, PurgeHistory, a
-//     plain same-currency poll) has always split its persistence across
-//     these same two files with no cross-file transaction
-//     (persistLocked's two-saveJSON-call shape was introduced in 90b7202,
-//     before any of this effort).
-//
-// Closing either for real needs the same kind of store-wide change (an
-// advisory file lock around the read-modify-write cycle, or a store-format
-// change to a single combined snapshot / WAL with replay-on-Load) applied to
-// the whole Store -- NOT a per-call patch here. Note internal/watch/lock.go
-// already has the flock/LockFileEx primitive this would need, but today it's
-// wired only to SchedulerLock (a narrower singleton lock so at most one
-// scheduler runs per directory), not to a general read-modify-write lock
-// around every Store mutation -- that wiring is exactly the "advisory file
-// lock" option docs/design/2026-07-26-watch-store-coordination.md's
-// "what a real fix looks like" section proposes and has not been built yet.
-// Either way this is a separate follow-up, not this PR's job. Found by
-// adversarial review, 2026-07-29 (round 11 in-memory fix, round 12 found the
-// on-disk claim above was overstated, round 13 corrected it, round 14 found
-// this comment's own "or process" claim in the closes-list above was itself
-// overstated and corrected it into the does-not-close list).
-func (s *Store) UpdateWatchAndRecordPrice(updated Watch, purgeHistory bool, price float64, currency string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	found := false
-	for i, w := range s.watches {
-		if w.ID == updated.ID {
-			s.watches[i] = updated
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("watch %s not found", updated.ID)
-	}
-
-	if purgeHistory {
-		s.purgeHistoryLocked(updated.ID)
-	}
-
-	s.history = append(s.history, PricePoint{
-		WatchID:   updated.ID,
-		Price:     price,
-		Currency:  currency,
-		Timestamp: time.Now(),
-	})
-	s.pruneWatchLocked(updated.ID)
-	s.pruneGlobalWatchLocked()
-
-	return s.saveLocked()
 }
 
 // PurgeHistory drops every PricePoint recorded for watchID and persists.

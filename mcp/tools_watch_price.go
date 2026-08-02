@@ -101,14 +101,24 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 	currency := argString(args, "currency")
 
 	w := watch.Watch{
-		Type:              watchType,
-		BelowPrice:        targetPrice,
-		Currency:          currency,
-		WebhookURL:        argString(args, "webhook"),
-		AlertDropPct:      alertDropPct,
-		AlertDropAbs:      alertDropAbs,
-		LastMinuteMode:    argBool(args, "last_minute", false),
-		LastMinuteDropPct: argFloat(args, "last_minute_drop_pct", 25),
+		Type:           watchType,
+		BelowPrice:     targetPrice,
+		Currency:       currency,
+		WebhookURL:     argString(args, "webhook"),
+		AlertDropPct:   alertDropPct,
+		AlertDropAbs:   alertDropAbs,
+		LastMinuteMode: argBool(args, "last_minute", false),
+	}
+	// Only carry a last-minute threshold when the request is actually about
+	// last-minute mode. A blanket 25% default here reads downstream as "the
+	// caller asked for 25", and applyIntent would stamp it over a stored custom
+	// threshold on every re-watch -- which, since re-watching is how a user now
+	// changes their target price, means adjusting a price silently reset the
+	// last-minute threshold. Found by grok second-opinion review, 2026-08-02.
+	if w.LastMinuteMode {
+		w.LastMinuteDropPct = argFloat(args, "last_minute_drop_pct", 25)
+	} else if v, ok := args["last_minute_drop_pct"]; ok && v != nil {
+		w.LastMinuteDropPct = argFloat(args, "last_minute_drop_pct", 25)
 	}
 
 	switch watchType {
@@ -205,18 +215,39 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 		Created bool `json:"created"`
 	}
 
+	// Report the STORED record, not the request.
+	//
+	// Add is idempotent and a re-watch may legitimately omit fields: adjusting
+	// only the alert settings leaves BelowPrice and Currency untouched on the
+	// stored watch, but the request carries them as zero. Echoing the request
+	// would tell the agent "target_price: 0, currency: ''" about a watch that
+	// still has 200 EUR, and the agent repeats that to the user. Found by grok
+	// second-opinion review, 2026-08-02.
+	//
+	// WebhookURL is deliberately NOT copied into the DTO: the webhook URL is
+	// the credential, and MCP structured output is exactly where it must not
+	// appear.
+	stored := w
+	if s, err := watch.DefaultStore(); err == nil {
+		if err := s.Load(); err == nil {
+			if got, ok := s.Get(id); ok {
+				stored = got
+			}
+		}
+	}
+
 	resp := watchResponse{
 		Success:     true,
 		Created:     created,
 		WatchID:     id,
 		Type:        watchType,
-		TargetPrice: targetPrice,
-		Currency:    currency,
+		TargetPrice: stored.BelowPrice,
+		Currency:    stored.Currency,
 		CreatedAt:   createdAt.Format(time.RFC3339),
 	}
 
 	var summary string
-	alert := watchAlertClause(w)
+	alert := watchAlertClause(stored)
 	switch watchType {
 	case "flight":
 		resp.Origin = w.Origin
@@ -234,8 +265,8 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 		resp.Location = w.Destination
 		summary = fmt.Sprintf("Hotel watch %s created: %s (%s to %s). %s",
 			id, w.Destination, w.DepartFrom, w.DepartTo, alert)
-		if w.LastMinuteMode {
-			summary += fmt.Sprintf(" Last-minute mode enabled at %.0f%% below last seen price.", w.LastMinuteDropPct)
+		if stored.LastMinuteMode {
+			summary += fmt.Sprintf(" Last-minute mode enabled at %.0f%% below last seen price.", stored.LastMinuteDropPct)
 		}
 	}
 	summary += " Use check_watches to re-check all active watches."

@@ -8,10 +8,15 @@ import (
 // roundCache is a PriceChecker decorator that collapses duplicate provider
 // calls within a single check round.
 //
-// Several watches may legitimately share one polled target — the point of
-// #509 is that two price thresholds on AMS→VLC are two intents but one
-// search. Without this, N duplicate watches meant N provider round trips per
-// round, so the store's growth multiplied outbound traffic (MULTIPRICE.2).
+// Several checks may legitimately hit one polled target in a round: the same
+// route re-checked from different entry points, or the parallel fan-out racing
+// on one watch. Without this, each meant its own provider round trip, so the
+// store's growth multiplied outbound traffic.
+//
+// (This once also covered several watches sharing a target, which #509's
+// threshold-aware identity made possible. That identity was reversed on
+// 2026-08-02 -- one watch per target now -- so single-flight is what remains
+// load-bearing here, not the multi-watch collapse.)
 //
 // The cache lives for exactly one round: it is created inside the fan-out and
 // dropped when the round returns, so it never serves a stale price to a later

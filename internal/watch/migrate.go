@@ -147,17 +147,21 @@ func (s *Store) collapseDuplicatesLocked() (int, map[string]string) {
 	// first and recomputing LowestPrice/CheapestDate from every group
 	// member's ORIGINAL value -- filtered to the survivor's own currency --
 	// removes the lossy intermediate scalar entirely.
-	// Grouped by dedupeKey, NOT SameTarget. SameTarget ignores BelowPrice, so
-	// migration would merge "alert me at 200" and "alert me at 120" into one
-	// record -- silently destroying an intent that Store.Add deliberately keeps
-	// separate (#509). Migration and Add must agree on what "the same watch"
-	// means, or `trvl watch migrate` quietly undoes multi-threshold watches the
-	// user created on purpose. Found by GPT second-opinion review, 2026-08-02.
+	// Grouped by dedupeKey, the SAME identity Store.Add uses. The two must agree
+	// on what "the same watch" means, or `trvl watch migrate` silently undoes
+	// what Add just did. Found by GPT second-opinion review, 2026-08-02, when
+	// this grouped by SameTarget while Add keyed on something else.
 	//
-	// dedupeKey excludes Currency for the same reason Add does: a route
-	// re-watched in a different currency is one intent, so such duplicates
-	// still group together and the currency-aware LowestPrice recomputation
-	// below still applies.
+	// dedupeKey excludes Currency, so a route re-watched in a different currency
+	// groups with its predecessor and the currency-aware LowestPrice
+	// recomputation below still applies.
+	//
+	// Note for anyone migrating a store written before 2026-08-02: identity was
+	// briefly threshold-aware (#509), so such a store can hold several watches
+	// per target. Migration collapses them, keeping the richest. That is
+	// intended -- the operator reversed that design -- but it IS lossy for the
+	// superseded thresholds, which is why it lives in an explicit command that
+	// backs up first rather than in Load.
 	groups := make([][]Watch, 0, len(s.watches))
 	groupKeys := make([]string, 0, len(s.watches))
 	for _, w := range s.watches {

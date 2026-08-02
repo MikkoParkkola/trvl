@@ -297,9 +297,9 @@ func CheckWatchesWithRoomsAndWebhookContext(checkCtx, webhookCtx context.Context
 func checkWatchesWithRoomsAndWebhookContext(checkCtx, webhookCtx context.Context, store *Store, checker PriceChecker, roomChecker RoomChecker, watches []Watch) []CheckResult {
 	checkCtx, webhookCtx = normalizeCheckAndWebhookContexts(checkCtx, webhookCtx)
 
-	// One provider call per distinct polled target for the whole round. Watches
-	// that differ only in price threshold share the search and are then
-	// evaluated independently below (#509, MULTIPRICE.2).
+	// One provider call per distinct polled target for the whole round, and
+	// single-flight within it, so concurrent checks of one target wait for the
+	// in-flight call rather than issuing their own.
 	checker = newRoundCache(checker)
 
 	results := make([]CheckResult, 0, len(watches))
