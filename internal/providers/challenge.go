@@ -1,8 +1,9 @@
 // challenge.go implements HEADLESS-FIRST anti-bot challenge resolution. When a
-// provider preflight is blocked by a JS/WAF interstitial, we first drive the
-// user's installed Chrome/Brave HEADLESS (no visible window, no focus steal) via
-// the Chrome DevTools Protocol to let the challenge solve itself silently. Only
-// when a genuinely interactive captcha (Datadome / hCaptcha / reCAPTCHA) remains
+// provider preflight is blocked by a JS/WAF interstitial, we first drive a
+// PROFILE-LESS headless browser (the user's installed Chrome/Brave binary, but a
+// blank session — no logins, no history, none of their cookies) via the Chrome
+// DevTools Protocol to let the challenge solve itself silently. Only when a
+// genuinely interactive captcha (Datadome / hCaptcha / reCAPTCHA) remains
 // — something a headless browser cannot clear without a human — does the caller
 // fall back to opening a VISIBLE window.
 //
@@ -108,9 +109,10 @@ func DetectInteractiveCaptcha(body []byte) (bool, string) {
 // offline without spawning a real browser.
 var cdpChallengeRunner = runCDPChallenge
 
-// ResolveChallenge launches the user's installed browser HEADLESS (no window, no
-// focus steal), lets the anti-bot challenge at targetURL resolve, then inspects
-// the resulting page:
+// ResolveChallenge starts a HEADLESS browser (no window, no focus steal) with a
+// clean, profile-less session — it borrows the user's installed Chrome/Brave
+// only as an executable, never their profile, logins or stored cookies — lets
+// the anti-bot challenge at targetURL resolve, then inspects the resulting page:
 //
 //   - If an interactive captcha interstitial remains (Datadome / hCaptcha /
 //     reCAPTCHA), it returns ChallengeNeedsHuman with the detected vendor — the
@@ -119,19 +121,28 @@ var cdpChallengeRunner = runCDPChallenge
 //     harvested cookies to the ~/.trvl/cookies cache for Tier-1 reuse, and
 //     returns ChallengeCleared.
 //
-// Like RefreshCookiesViaCDP it is gated: without the opt-in (TRVL_TIER2_CDP=1 or
-// WithTier2Force) it returns ErrTier2Disabled. It reuses the Tier2Option set so
-// callers configure it the same way as the lower-level CDP refresh.
+// Gating: the path runs by default and returns ErrTier2Disabled when the user
+// declined it (TRVL_NO_TIER2_CDP, or TRVL_TIER2_CDP=0). TRVL_NO_BROWSER_COOKIES
+// does NOT stop it: that variable governs access to the user's own browsers and
+// their stored sessions, and this path opens a profile-less browser that has
+// none of them. It also refuses inside a `go test` binary, so the suite stays
+// offline; TRVL_ALLOW_BROWSER_COOKIES lifts that. It reuses the Tier2Option set
+// so callers configure it the same way as the lower-level CDP refresh.
 func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option) (*ChallengeResult, error) {
 	cfg := tier2Config{challengeWait: defaultChallengeWait}
 	for _, o := range opts {
 		o(&cfg)
 	}
 
-	if !cfg.force && !Tier2Enabled() {
+	// An explicit decline is absolute; see RefreshCookiesViaCDP.
+	if Tier2Declined() {
 		return nil, ErrTier2Disabled
 	}
 
+	// A browser-COOKIE decline deliberately does NOT stop this path — see
+	// RefreshCookiesViaCDP. runCDPChallenge starts the browser with no user
+	// profile, so the challenge is cleared by a session this process created,
+	// not by one taken from the user.
 	if _, err := url.Parse(targetURL); err != nil {
 		return nil, err
 	}
@@ -171,6 +182,19 @@ func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option
 // stolen (Headless + DefaultExecAllocatorOptions; no activation/foreground
 // flags).
 func runCDPChallenge(ctx context.Context, execPath, targetURL string, challengeWait time.Duration) ([]*network.Cookie, string, error) {
+	// Same reason as runCDPCollect: an explicit decline is absolute and is
+	// enforced on the spawning function, so a caller that reaches past
+	// ResolveChallenge still cannot start a browser.
+	if Tier2Declined() {
+		return nil, "", ErrTier2Disabled
+	}
+
+	// Same reason as runCDPCollect: with Tier-2 on by default, the driver is
+	// what must refuse inside a test binary, so stubbed tests still run.
+	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
+		return nil, "", ErrTier2Disabled
+	}
+
 	allocOpts := append([]chromedp.ExecAllocatorOption{},
 		chromedp.DefaultExecAllocatorOptions[:]...)
 	allocOpts = append(allocOpts,
@@ -226,7 +250,5 @@ func defaultHeadlessFirstResolve(ctx context.Context, targetURL string) (*Challe
 	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
 		return nil, ErrTier2Disabled
 	}
-	// Force past the env opt-in: the Tier-4 caller has already gated this on
-	// per-provider BrowserEscapeHatch + an interactive context.
-	return ResolveChallenge(ctx, targetURL, WithTier2Force())
+	return ResolveChallenge(ctx, targetURL)
 }

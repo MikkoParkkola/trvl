@@ -116,7 +116,7 @@ func TestTryBrowserCookieRetry_NilJar(t *testing.T) {
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: "https://example.com/page"}
-	if tryBrowserCookieRetry(context.Background(), pc, auth) {
+	if _, ok := tryBrowserCookieRetry(context.Background(), pc, auth); ok {
 		t.Error("expected false when client has no jar")
 	}
 }
@@ -159,7 +159,7 @@ func TestTryBrowserCookieRetry_PreflightFails(t *testing.T) {
 		Extractions:  map[string]Extraction{},
 	}
 
-	if tryBrowserCookieRetry(context.Background(), pc, auth) {
+	if _, ok := tryBrowserCookieRetry(context.Background(), pc, auth); ok {
 		t.Error("expected false when retry preflight returns 403")
 	}
 }
@@ -198,7 +198,7 @@ func TestTryBrowserCookieRetry_AkamaiChallengeOnRetry(t *testing.T) {
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: targetURL, Extractions: map[string]Extraction{}}
-	if tryBrowserCookieRetry(context.Background(), pc, auth) {
+	if _, ok := tryBrowserCookieRetry(context.Background(), pc, auth); ok {
 		t.Error("expected false when retry returns Akamai challenge page")
 	}
 }
@@ -213,29 +213,32 @@ func TestTryBrowserCookieRetry_Success(t *testing.T) {
 
 	cfg := &ProviderConfig{
 		ID: "br-ok", Name: "BROk", Category: "hotels",
-		Endpoint: srv.URL,
+		// An https provider host routed to the local server, the shape a real
+		// config has: browser cookies are refused for a target that is not
+		// https on the endpoint's own site.
+		Endpoint: "https://" + exampleFixtureHost,
 		Cookies:  CookieConfig{Source: "browser"},
 	}
-	jar, _ := cookiejar.New(nil)
-	targetURL := srv.URL + "/page"
+	// A vault, not a bare jar: browser cookies only enter a jar that can hand
+	// them back, so a plain-jar client refuses the seed by design.
+	targetURL := "https://" + exampleFixtureHost + "/page"
 	resetWarmCache(t)
 	entry := &warmCacheEntry{done: make(chan struct{})}
-	u, _ := url.Parse(srv.URL)
-	entry.cookies = []*http.Cookie{{Name: "sid", Value: "test", Domain: u.Hostname()}}
+	entry.cookies = []*http.Cookie{{Name: "sid", Value: "test", Domain: exampleFixtureHost}}
 	close(entry.done)
 	warmCache.mu.Lock()
 	warmCache.entries[warmCacheKey(targetURL, "")] = entry
 	warmCache.mu.Unlock()
 
-	cl := srv.Client()
-	cl.Jar = jar
+	cl := &http.Client{Transport: &hostSwitchTransport{fallbackTarget: srv.URL}}
+	cl.Jar = newCookieVault()
 	pc := &providerClient{
 		config:     cfg,
 		client:     cl,
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: targetURL, Extractions: map[string]Extraction{}}
-	if !tryBrowserCookieRetry(context.Background(), pc, auth) {
+	if _, ok := tryBrowserCookieRetry(context.Background(), pc, auth); !ok {
 		t.Error("expected true when retry preflight returns 200")
 	}
 }
@@ -255,7 +258,7 @@ func TestTryWAFSolve_200Status(t *testing.T) {
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: "https://example.com/page"}
-	if tryWAFSolve(context.Background(), pc, auth, http.StatusOK, []byte("body")) {
+	if _, ok := tryWAFSolve(context.Background(), pc, auth, http.StatusOK, []byte("body")); ok {
 		t.Error("expected false for status 200")
 	}
 }
@@ -271,7 +274,7 @@ func TestTryWAFSolve_302Status(t *testing.T) {
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: "https://example.com/page"}
-	if tryWAFSolve(context.Background(), pc, auth, http.StatusFound, []byte("body")) {
+	if _, ok := tryWAFSolve(context.Background(), pc, auth, http.StatusFound, []byte("body")); ok {
 		t.Error("expected false for status 302")
 	}
 }
@@ -288,8 +291,8 @@ func TestTryWAFSolve_202NoMarkers(t *testing.T) {
 	}
 	auth := &AuthConfig{PreflightURL: "https://example.com/challenge"}
 	// Body has no challenge markers → WAF solver fails → false
-	if tryWAFSolve(context.Background(), pc, auth, http.StatusAccepted,
-		[]byte("<html><body>Please wait</body></html>")) {
+	if _, ok := tryWAFSolve(context.Background(), pc, auth, http.StatusAccepted,
+		[]byte("<html><body>Please wait</body></html>")); ok {
 		t.Error("expected false when body has no WAF challenge markers")
 	}
 }
@@ -316,9 +319,12 @@ func TestApplyBrowserCookies_WithSyntheticCookies(t *testing.T) {
 	warmCache.entries[warmCacheKey(targetURL, hint)] = entry
 	warmCache.mu.Unlock()
 
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar}
-	if !applyBrowserCookies(client, targetURL, hint) {
+	client := &http.Client{Jar: newCookieVault()}
+	pc := &providerClient{
+		config: &ProviderConfig{ID: "t", Endpoint: "https://www.testprovider-synth.com/api"},
+		client: client,
+	}
+	if !applyBrowserCookies(pc, targetURL, hint) {
 		t.Error("expected true when warm cache has cookies")
 	}
 }
@@ -344,7 +350,7 @@ func TestApplyBrowserCookies_BadURLPath(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
 	// url.Parse("://no-scheme-here") → error or empty host → returns false
-	got := applyBrowserCookies(client, targetURL, "")
+	got := applyBrowserCookies(&providerClient{config: &ProviderConfig{ID: "t"}, client: client}, targetURL, "")
 	// Result may be false (url.Parse error) — just confirm no panic
 	_ = got
 }

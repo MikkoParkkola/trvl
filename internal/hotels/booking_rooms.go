@@ -3,6 +3,7 @@ package hotels
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	cookiesconsent "github.com/MikkoParkkola/trvl/internal/cookies"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -51,6 +54,15 @@ func defaultFetchBookingRooms(ctx context.Context, bookingURL, checkIn, checkOut
 	if bookingURL == "" {
 		return nil, fmt.Errorf("booking URL is required")
 	}
+	// The URL arrives from outside: an MCP booking_url argument, or a link
+	// carried on a search result. Pin it to Booking.com before the first
+	// request, not merely before the cookies. hotel_rooms is advertised as a
+	// read-only tool, so without this any client holding a read token could
+	// aim trvl's HTTP client at localhost, a private network, or a cloud
+	// metadata endpoint and use the response as an oracle.
+	if !bookingHostAllowed(bookingURL, bookingCookieSite) {
+		return nil, ErrNotBookingURL
+	}
 
 	// Append date and currency parameters to the Booking URL so the
 	// detail page returns availability-specific room pricing.
@@ -63,7 +75,7 @@ func defaultFetchBookingRooms(ctx context.Context, bookingURL, checkIn, checkOut
 
 	offers, err := parseBookingJSONLD(body)
 	if err != nil {
-		slog.Debug("booking JSON-LD parse failed, trying Apollo cache", "error", err)
+		slog.Debug("booking JSON-LD parse failed, trying Apollo cache", "error", logredact.Err(err))
 		// Fall back to Apollo/SSR cache parsing.
 		offers = parseBookingApolloRooms(body)
 	}
@@ -128,6 +140,21 @@ func buildBookingDetailURL(baseURL, checkIn, checkOut, currency string) string {
 	return baseURL + "?" + strings.Join(params, "&")
 }
 
+// bookingCookieSite is the site the Booking.com session cookies belong to.
+// It is both the domain they are read for and the only domain they may be
+// sent to; see the origin check in fetchBookingPage.
+const bookingCookieSite = "booking.com"
+
+// bookingHostAllowed is the destination pin. It is a var only so the parser
+// tests can point the lookup at a local fixture server; production code must
+// never reassign it, and the guard tests exercise the default.
+var bookingHostAllowed = cookiesconsent.IsHTTPSOnSite
+
+// ErrNotBookingURL is returned when the room lookup is handed a URL that is not
+// an https Booking.com address. It is a distinct error rather than an empty
+// room list so a caller can tell "refused" from "found nothing".
+var ErrNotBookingURL = errors.New("room lookup refused: not an https booking.com URL")
+
 // browserCookies is overridable in tests; defaults to providers.BrowserCookiesForURL.
 var browserCookies = defaultBrowserCookies
 
@@ -153,10 +180,22 @@ func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
 		return string(body), nil
 	}
 
-	// Booking.com returns 202/403/503 for WAF challenge pages.
-	// Try reading the bkng cookie from the user's browser via kooky.
+	// Booking.com returns 202/403/503 for WAF challenge pages. Try reading the
+	// bkng cookie from the user's browser via kooky.
+	//
+	// The read itself is gated inside providers (permittedAfterRead), which is
+	// where the guarantee lives. The HeaderIfPermittedForURL wraps below are the
+	// second layer: they sit on the last line before transmission, so a decline
+	// arriving even later than the read still stops the credential. Round 11 of
+	// review found this path sending live Booking.com credentials with neither.
+	//
+	// They also carry the origin check. pageURL is derived from a caller-supplied
+	// booking_url (an MCP argument, or a link carried on a search result), and
+	// buildBookingDetailURL concatenates rather than validates, so the host here
+	// is not trustworthy. Without the check, pointing booking_url at any host
+	// that answers 202/403/503 would hand it the user's live Booking.com session.
 	if status == 202 || status == 403 || status == 503 {
-		cookies := browserCookies("https://www.booking.com")
+		cookies := browserCookies("https://www." + bookingCookieSite)
 		var cookieStr string
 		for _, c := range cookies {
 			if c.Name == "bkng" && c.Value != "" {
@@ -166,7 +205,7 @@ func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
 		}
 		if cookieStr != "" {
 			slog.Debug("booking.com challenge, retrying with browser cookie", "status", status)
-			status, body, err = client.GetWithCookie(ctx, pageURL, cookieStr)
+			status, body, err = client.GetWithCookie(ctx, pageURL, cookiesconsent.HeaderIfPermittedForURL(cookieStr, pageURL, bookingCookieSite))
 			if err == nil && status == 200 {
 				return string(body), nil
 			}
@@ -184,7 +223,7 @@ func fetchBookingPage(ctx context.Context, pageURL string) (string, error) {
 		}
 		if cookieStr != "" {
 			slog.Debug("booking.com challenge, retrying with all browser cookies", "status", status)
-			status, body, err = client.GetWithCookie(ctx, pageURL, cookieStr)
+			status, body, err = client.GetWithCookie(ctx, pageURL, cookiesconsent.HeaderIfPermittedForURL(cookieStr, pageURL, bookingCookieSite))
 			if err == nil && status == 200 {
 				return string(body), nil
 			}
@@ -473,233 +512,6 @@ func ldBoolPtr(obj map[string]any, key string) (*bool, bool) {
 		}
 	}
 	return nil, false
-}
-
-// --- Description text extractors ---
-
-// bedTypePatterns maps keywords in room names/descriptions to standardized
-// bed type strings.
-var bedTypeKeywords = []struct {
-	keyword string
-	bedType string
-}{
-	// Explicit bed descriptions (most specific first).
-	{"king bed", "1 king bed"},
-	{"queen bed", "1 queen bed"},
-	{"double bed", "1 double bed"},
-	{"twin bed", "2 twin beds"},
-	{"single bed", "1 single bed"},
-	{"bunk bed", "bunk beds"},
-	{"sofa bed", "sofa bed"},
-	{"king-size", "1 king bed"},
-	{"queen-size", "1 queen bed"},
-	{"2 single", "2 single beds"},
-	{"2 twin", "2 twin beds"},
-	{"1 double", "1 double bed"},
-	{"1 king", "1 king bed"},
-	{"1 queen", "1 queen bed"},
-	// Room type names that imply bed type.
-	{"double room", "1 double bed"},
-	{"twin room", "2 twin beds"},
-	{"single room", "1 single bed"},
-	{"king suite", "1 king bed"},
-	{"king room", "1 king bed"},
-	{"queen suite", "1 queen bed"},
-	{"queen room", "1 queen bed"},
-}
-
-// extractBedType identifies bed type from a room name or description string.
-func extractBedType(text string) string {
-	lower := strings.ToLower(text)
-	for _, bt := range bedTypeKeywords {
-		if strings.Contains(lower, bt.keyword) {
-			return bt.bedType
-		}
-	}
-	return ""
-}
-
-// sizePattern matches room size in square meters, e.g. "35 m²", "28m2", "40 sqm".
-var sizePattern = regexp.MustCompile(`(\d+)\s*(?:m²|m2|sqm|sq\.?\s*m)`)
-
-// extractSizeM2 extracts room size in square meters from a description.
-func extractSizeM2(text string) float64 {
-	m := sizePattern.FindStringSubmatch(text)
-	if len(m) < 2 {
-		return 0
-	}
-	f, err := strconv.ParseFloat(m[1], 64)
-	if err != nil {
-		return 0
-	}
-	return f
-}
-
-// guestPattern matches max guest counts, e.g. "max 4 guests", "sleeps 6",
-// "for 2 adults", "accommodates 3".
-var guestPattern = regexp.MustCompile(`(?i)(?:max(?:imum)?|sleeps|for|accommodates|up to)\s+(\d+)\s*(?:guests?|adults?|people|persons?)`)
-
-// extractMaxGuests extracts the maximum guest count from a description.
-func extractMaxGuests(text string) int {
-	m := guestPattern.FindStringSubmatch(text)
-	if len(m) < 2 {
-		return 0
-	}
-	n, err := strconv.Atoi(m[1])
-	if err != nil || n <= 0 || n > 20 {
-		return 0
-	}
-	return n
-}
-
-// roomAmenityKeywords are amenities that can be detected from room
-// names and descriptions (not property-level amenities).
-var roomAmenityKeywords = []string{
-	"balcony", "terrace", "sea view", "ocean view", "mountain view",
-	"garden view", "pool view", "city view", "lake view", "river view",
-	"minibar", "kitchenette", "kitchen", "air conditioning",
-	"bathtub", "jacuzzi", "hot tub", "sauna", "private pool",
-	"fireplace", "washing machine", "dishwasher", "oven",
-	"coffee machine", "espresso", "microwave", "refrigerator",
-	"soundproofing", "blackout curtains", "safe", "desk",
-	"private bathroom", "shared bathroom", "en-suite",
-	"free wifi", "flat-screen tv", "satellite tv",
-	"breakfast included", "all inclusive",
-	"parking", "rooftop", "patio", "courtyard",
-}
-
-// extractRoomAmenities detects room-level amenities from a text string.
-func extractRoomAmenities(text string) []string {
-	if text == "" {
-		return nil
-	}
-	lower := strings.ToLower(text)
-	var amenities []string
-	for _, kw := range roomAmenityKeywords {
-		if strings.Contains(lower, kw) {
-			amenities = append(amenities, titleCase(kw))
-		}
-	}
-	return amenities
-}
-
-func extractCancellationMetadata(text string) (string, *bool, *bool) {
-	lower := normalizeRoomMetadataText(text)
-	if lower == "" {
-		return "", nil, nil
-	}
-	if strings.Contains(lower, "non-refundable") ||
-		strings.Contains(lower, "nonrefundable") ||
-		strings.Contains(lower, "no refund") {
-		return "non_refundable", boolValue(false), boolValue(false)
-	}
-	if strings.Contains(lower, "free cancellation") ||
-		strings.Contains(lower, "cancel free") ||
-		strings.Contains(lower, "free to cancel") {
-		return "free_cancellation", boolValue(true), boolValue(true)
-	}
-	if strings.Contains(lower, "refundable") ||
-		strings.Contains(lower, "flexible cancellation") {
-		return "refundable", boolValue(true), nil
-	}
-	return "", nil, nil
-}
-
-func extractBoardMetadata(text string) (string, *bool) {
-	lower := normalizeRoomMetadataText(text)
-	if lower == "" {
-		return "", nil
-	}
-	if strings.Contains(lower, "all inclusive") {
-		return "all_inclusive", boolValue(true)
-	}
-	if strings.Contains(lower, "full board") {
-		return "full_board", boolValue(true)
-	}
-	if strings.Contains(lower, "half board") {
-		return "half_board", boolValue(true)
-	}
-	if strings.Contains(lower, "room only") ||
-		strings.Contains(lower, "without breakfast") ||
-		strings.Contains(lower, "breakfast not included") ||
-		strings.Contains(lower, "no breakfast") ||
-		strings.Contains(lower, "no meals") {
-		return "room_only", boolValue(false)
-	}
-	if strings.Contains(lower, "breakfast included") ||
-		strings.Contains(lower, "included breakfast") ||
-		strings.Contains(lower, "free breakfast") ||
-		strings.Contains(lower, "with breakfast") {
-		return "breakfast_included", boolValue(true)
-	}
-	return "", nil
-}
-
-func extractTaxesFeesIncluded(text string) *bool {
-	lower := normalizeRoomMetadataText(text)
-	if lower == "" {
-		return nil
-	}
-	if strings.Contains(lower, "taxes and fees not included") ||
-		strings.Contains(lower, "taxes not included") ||
-		strings.Contains(lower, "fees not included") ||
-		strings.Contains(lower, "excluding taxes") ||
-		strings.Contains(lower, "excludes taxes") ||
-		strings.Contains(lower, "does not include taxes") {
-		return boolValue(false)
-	}
-	if strings.Contains(lower, "taxes and fees included") ||
-		strings.Contains(lower, "taxes included") ||
-		strings.Contains(lower, "fees included") ||
-		strings.Contains(lower, "including taxes") ||
-		strings.Contains(lower, "includes taxes") {
-		return boolValue(true)
-	}
-	return nil
-}
-
-func normalizeRoomMetadataText(text string) string {
-	lower := strings.ToLower(strings.TrimSpace(text))
-	lower = strings.ReplaceAll(lower, "non refundable", "non-refundable")
-	return lower
-}
-
-func boolValue(v bool) *bool {
-	return &v
-}
-
-// titleCase capitalizes the first letter of each word in s.
-func titleCase(s string) string {
-	words := strings.Fields(s)
-	for i, w := range words {
-		if len(w) > 0 {
-			words[i] = strings.ToUpper(w[:1]) + w[1:]
-		}
-	}
-	return strings.Join(words, " ")
-}
-
-// mergeStringSlices combines two string slices, deduplicating by lowercase.
-func mergeStringSlices(a, b []string) []string {
-	if len(a) == 0 {
-		return b
-	}
-	if len(b) == 0 {
-		return a
-	}
-	seen := make(map[string]bool, len(a))
-	for _, s := range a {
-		seen[strings.ToLower(s)] = true
-	}
-	merged := make([]string, len(a))
-	copy(merged, a)
-	for _, s := range b {
-		if !seen[strings.ToLower(s)] {
-			seen[strings.ToLower(s)] = true
-			merged = append(merged, s)
-		}
-	}
-	return merged
 }
 
 // deduplicateOffers removes duplicate room offers by name (case-insensitive).

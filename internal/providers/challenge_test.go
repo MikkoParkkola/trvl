@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/chromedp/cdproto/network"
 )
 
@@ -64,7 +65,7 @@ func TestChallengeStatusString(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestResolveChallenge_DisabledByDefault(t *testing.T) {
-	t.Setenv(tier2EnableEnv, "")
+	t.Setenv(tier2DisableEnv, "1")
 	_, err := ResolveChallenge(context.Background(), "https://example.com/")
 	if !errors.Is(err, ErrTier2Disabled) {
 		t.Fatalf("err = %v, want ErrTier2Disabled", err)
@@ -76,7 +77,7 @@ func TestResolveChallenge_NoBrowserFound(t *testing.T) {
 	fileExists = func(string) bool { return false }
 	defer func() { fileExists = prevExists }()
 
-	_, err := ResolveChallenge(context.Background(), "https://example.com/", WithTier2Force())
+	_, err := ResolveChallenge(context.Background(), "https://example.com/")
 	if !errors.Is(err, ErrNoBrowserFound) {
 		t.Fatalf("err = %v, want ErrNoBrowserFound", err)
 	}
@@ -94,7 +95,7 @@ func TestResolveChallenge_RunnerError(t *testing.T) {
 	}
 	defer func() { cdpChallengeRunner = prevRunner }()
 
-	_, err := ResolveChallenge(context.Background(), "https://example.com/", WithTier2Force())
+	_, err := ResolveChallenge(context.Background(), "https://example.com/")
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want boom", err)
 	}
@@ -121,7 +122,7 @@ func TestResolveChallenge_ClearedPersistsCookies(t *testing.T) {
 	defer func() { cdpChallengeRunner = prevRunner }()
 
 	target := "https://example.com/"
-	res, err := ResolveChallenge(context.Background(), target, WithTier2Force())
+	res, err := ResolveChallenge(context.Background(), target)
 	if err != nil {
 		t.Fatalf("ResolveChallenge: %v", err)
 	}
@@ -162,7 +163,7 @@ func TestResolveChallenge_NeedsHumanDoesNotPersist(t *testing.T) {
 	defer func() { cdpChallengeRunner = prevRunner }()
 
 	target := "https://example.com/"
-	res, err := ResolveChallenge(context.Background(), target, WithTier2Force())
+	res, err := ResolveChallenge(context.Background(), target)
 	if err != nil {
 		t.Fatalf("ResolveChallenge: %v", err)
 	}
@@ -211,10 +212,11 @@ func TestTryBrowserEscapeHatch_HeadlessClears_NoVisibleWindow(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	jar, _ := cookiejar.New(nil)
+	// A vault: the escape-hatch tail seeds cookies recovered from the user's
+	// own browser window, and those only enter a jar that can revoke them.
 	pc := &providerClient{
 		config:     &ProviderConfig{ID: "headless-clear", Name: "HeadlessClear"},
-		client:     &http.Client{Jar: jar},
+		client:     &http.Client{Jar: newCookieVault()},
 		authValues: make(map[string]string),
 	}
 	auth := &AuthConfig{PreflightURL: srv.URL, BrowserEscapeHatch: true}
@@ -232,7 +234,7 @@ func TestTryBrowserEscapeHatch_HeadlessClears_NoVisibleWindow(t *testing.T) {
 		return nil
 	})
 
-	if got := tryBrowserEscapeHatch(context.Background(), pc, auth); !got {
+	if _, got := tryBrowserEscapeHatch(context.Background(), pc, auth); !got {
 		t.Fatal("expected true when headless clears and preflight retry succeeds")
 	}
 	if openerCalls != 0 {
@@ -269,7 +271,7 @@ func TestTryBrowserEscapeHatch_NeedsHuman_OpensVisibleOnce(t *testing.T) {
 	// Cookie source returns a stable (unchanged) set so the wait reports no change.
 	withCookieSource(t, func(string) []*http.Cookie { return nil })
 
-	got := tryBrowserEscapeHatch(ctx, pc, auth)
+	_, got := tryBrowserEscapeHatch(ctx, pc, auth)
 	if got {
 		t.Fatal("expected false: visible path opened but no cookie change observed")
 	}
@@ -303,8 +305,62 @@ func TestTryBrowserEscapeHatch_HeadlessUnresolved_FallsThrough(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
 
-	_ = tryBrowserEscapeHatch(ctx, pc, auth)
+	_, _ = tryBrowserEscapeHatch(ctx, pc, auth)
 	if openerCalls != 1 {
 		t.Fatalf("visible opener called %d times, want exactly 1 (headless errored)", openerCalls)
+	}
+}
+
+// TestTryBrowserEscapeHatch_CookieDecline_NeverOpensBrowser is the consent gate.
+//
+// The setup is deliberately the one that DOES open a window: the headless seam
+// errors, so control reaches the visible-window fallback, which the test above
+// proves calls the opener exactly once. The only difference here is the decline.
+//
+// Gating the cookie reads alone is not enough and that is the point of counting
+// opener calls rather than just the return value. browserCookiesForURL already
+// returns nil when declined, so a version with no gate in this function still
+// returns false — it just does so after opening the user's real browser and
+// waiting out the deadline. A test that asserted only on the return value would
+// pass against the bug.
+func TestTryBrowserEscapeHatch_CookieDecline_NeverOpensBrowser(t *testing.T) {
+	t.Setenv(consent.Tier2Env, "")
+	t.Setenv(consent.Tier2LegacyEnv, "")
+	t.Setenv(consent.CookiesEnv, "1")
+
+	if Tier2Declined() {
+		t.Fatalf("precondition: Tier2Declined must be FALSE here, or this test passes for the wrong reason")
+	}
+
+	jar, _ := cookiejar.New(nil)
+	pc := &providerClient{
+		config:     &ProviderConfig{ID: "cookie-declined", Name: "CookieDeclined"},
+		client:     &http.Client{Jar: jar},
+		authValues: make(map[string]string),
+	}
+	auth := &AuthConfig{PreflightURL: "https://example.com/page", BrowserEscapeHatch: true}
+
+	// Same seam as the fall-through test: headless cannot resolve, so without the
+	// gate the visible path runs.
+	withHeadlessResolve(t, func(ctx context.Context, targetURL string) (*ChallengeResult, error) {
+		return nil, ErrNoBrowserFound
+	})
+
+	var openerCalls int
+	withOpener(t, func(goos, pref, target string) error {
+		openerCalls++
+		return nil
+	})
+	withCookieSource(t, func(string) []*http.Cookie { return nil })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+
+	if _, got := tryBrowserEscapeHatch(ctx, pc, auth); got {
+		t.Error("the escape hatch reported success after the user declined browser cookie access")
+	}
+	if openerCalls != 0 {
+		t.Fatalf("opener called %d times, want 0: %s declined browser access and the escape hatch "+
+			"opened the user's real browser anyway", openerCalls, consent.CookiesEnv)
 	}
 }

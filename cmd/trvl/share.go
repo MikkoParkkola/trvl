@@ -51,13 +51,15 @@ func shareCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "share [trip_id]",
 		Short: "Generate a shareable trip summary",
-		Long: `Generate a formatted trip summary for sharing on Slack, email, or social media.
+		Long: `Generate a formatted trip summary you can paste into email, chat, or a message.
+
+The summary is written to stdout or your clipboard. trvl never uploads it
+anywhere — you review the text and choose who receives it.
 
 Examples:
   trvl share trip_abc123
   trvl share --last
-  trvl share --last --format clipboard
-  trvl share trip_abc123 --format link`,
+  trvl share --last --format clipboard`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if last {
 				return shareLastSearch(formatOut)
@@ -70,7 +72,7 @@ Examples:
 	}
 
 	cmd.Flags().BoolVar(&last, "last", false, "Share the most recent search results")
-	cmd.Flags().StringVar(&formatOut, "format", "markdown", "Output format: markdown, clipboard, link")
+	cmd.Flags().StringVar(&formatOut, "format", "markdown", "Output format: markdown (alias stdout), clipboard")
 
 	return cmd
 }
@@ -100,16 +102,42 @@ func shareLastSearch(formatOut string) error {
 	return outputShare(md, formatOut)
 }
 
-// outputShare routes the markdown to stdout, clipboard, or gist.
+// shareFormats is the closed set of accepted --format values, and the single
+// source of truth for where a trip card may go. Every entry is local: stdout or
+// the system clipboard. A card carries destinations and dates, which together
+// say when a home is empty, so trvl hands the text to the user and lets them
+// choose the recipient. It publishes nowhere.
+//
+// TestOutputShare_FormatSurfaceIsClosed asserts this slice element for element,
+// so a new destination cannot be added without a failing test that forces
+// whoever adds it to say so out loud. That is the seam the removed gist upload
+// slipped through: it was reachable via a format string nobody had enumerated.
+var shareFormats = []string{"", "markdown", "stdout", "clipboard"}
+
+// outputShare routes the markdown to one of shareFormats.
+//
+// Anything absent from that set is an error rather than a silent fallback to
+// stdout. A caller asking for a format trvl no longer has is scripting against
+// behaviour that changed, and printing an itinerary where they expected
+// something else is the wrong way to tell them.
 func outputShare(md, formatOut string) error {
 	switch formatOut {
+	case "", "markdown", "stdout":
+		fmt.Print(md)
+		return nil
 	case "clipboard":
 		return copyToClipboard(md)
 	case "link":
-		return createGist(md)
+		// Removed in #527. This published the card as a public GitHub gist.
+		// Wording matches the changelog entry on purpose: this error is the one
+		// place the affected population self-selects, so it is also where the
+		// cleanup pointer earns the most, and it must not read as a graver
+		// notice than the release note a user might read alongside it.
+		return fmt.Errorf("--format link has been removed: it created a public GitHub gist of the trip card. " +
+			"Use the default output or --format clipboard and send the text yourself. " +
+			"Gists it created are still on your account (gh gist list)")
 	default:
-		fmt.Print(md)
-		return nil
+		return fmt.Errorf("unsupported --format %q: use markdown or clipboard", formatOut)
 	}
 }
 
@@ -310,28 +338,6 @@ func copyToClipboard(text string) error {
 		return fmt.Errorf("copy to clipboard: %w", err)
 	}
 	_, _ = fmt.Fprintln(os.Stderr, "Copied to clipboard.")
-	return nil
-}
-
-// --- Gist ---
-
-func createGist(md string) error {
-	if _, err := exec.LookPath("gh"); err != nil {
-		// Fallback: just print markdown.
-		_, _ = fmt.Fprintln(os.Stderr, "gh CLI not found — printing markdown instead. Install gh for gist support.")
-		fmt.Print(md)
-		return nil
-	}
-
-	cmd := exec.Command("gh", "gist", "create", "--public", "-f", "trip.md", "-")
-	cmd.Stdin = strings.NewReader(md)
-	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("create gist: %w", err)
-	}
-	url := strings.TrimSpace(string(out))
-	fmt.Println(url)
 	return nil
 }
 

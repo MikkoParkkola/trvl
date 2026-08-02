@@ -3,10 +3,36 @@ package mcp
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
+
+// redirectHomeForTests points the home directory this package's tests resolve
+// at a throwaway location, so no test can read or mutate the developer's real
+// ~/.trvl. Handlers here persist preferences, trips, watches, alerts, price
+// history and provider state under os.UserHomeDir with no other injection
+// point, so the environment IS the seam.
+//
+// All three variables move together: os.UserHomeDir reads HOME on unix and
+// USERPROFILE on Windows, and os.UserConfigDir reads XDG_CONFIG_HOME on unix.
+//
+// This is done once in TestMain rather than per test with t.Setenv because
+// t.Setenv panics inside a test that has called t.Parallel, and this package
+// uses t.Parallel widely. A package-wide floor also covers tests written later,
+// which a per-test call cannot. Tests wanting their own isolated home on top of
+// this floor still call t.Setenv/t.TempDir.
+func redirectHomeForTests() (cleanup func()) {
+	dir, err := os.MkdirTemp("", "trvl-test-home-")
+	if err != nil {
+		panic("test home: " + err.Error())
+	}
+	os.Setenv("HOME", dir)
+	os.Setenv("USERPROFILE", dir)
+	os.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	return func() { os.RemoveAll(dir) }
+}
 
 // TestMain installs a fast no-op destination enricher for the whole package so
 // unit tests never reach the live destination-intelligence APIs.
@@ -27,14 +53,11 @@ func TestMain(m *testing.M) {
 	// Redirect HOME so nothing in this package can reach the developer's real
 	// ~/.trvl. watch.DefaultStore() resolves it from os.UserHomeDir(); an
 	// unguarded run wrote to a maintainer's live watch store on 2026-07-26.
-	if dir, err := os.MkdirTemp("", "trvl-test-home-"); err == nil {
-		defer func() { _ = os.RemoveAll(dir) }()
-		_ = os.Setenv("HOME", dir)
-		_ = os.Setenv("USERPROFILE", dir) // windows
-	}
-
+	cleanup := redirectHomeForTests()
 	destinationEnricher = func(context.Context, string, models.DateRange) (*models.DestinationInfo, error) {
 		return nil, nil
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }

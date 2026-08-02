@@ -1,0 +1,172 @@
+{
+  "_readme": [
+    "Committed baseline of pre-existing gosec HIGH findings (issue #532).",
+    "The gate in .github/scripts/gosec-gate.sh fails CI on any HIGH finding that is",
+    "NOT covered here. It never lowers gosec's own severity threshold: gosec runs",
+    "unfiltered over ./... and every finding is reported; this file only records the",
+    "HIGH findings that were present when the gate was introduced, each with a",
+    "reason. MEDIUM and LOW are counted and printed, not gated (issue #532",
+    "TRVL.GOSEC.4 tracks their triage separately).",
+    "",
+    "Match key is (rule, file, count). Line numbers and code snippets are",
+    "deliberately NOT part of the key: gosec's snippet spans neighbouring lines, so",
+    "a snippet-keyed baseline would red-fail on edits that have nothing to do with",
+    "the finding, and a scanner that fails every PR gets switched off. Known gap of",
+    "the count key: swapping one finding of a rule for a different finding of the",
+    "same rule in the same file stays suppressed. Accepted deliberately.",
+    "",
+    "To accept a new HIGH: add an entry with a real reason, or prefer an inline",
+    "#nosec in the source, which is narrower. To retire one: drop the entry (the",
+    "gate warns, it does not fail, when actual < allowed).",
+    "",
+    "status: 'accepted' = read, verdict written below. 'deferred' = NOT yet read;",
+    "the gate holds the line at today's count while triage happens. Do not relabel",
+    "a deferred entry to accepted without writing the verdict."
+  ],
+  "gosec_version": "v2.28.0",
+  "scan_command": "gosec -quiet -fmt json ./...",
+  "generated": "2026-07-29",
+  "gated_severity": "HIGH",
+  "entries": [
+    {
+      "rule": "G101",
+      "file": "internal/cars/search.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Constant is the NAME of an environment variable (SKYSCANNER_API_KEY), not a key. The secret itself is read from the environment at runtime."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/deals/deals.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "SourceFeeds is a map of public RSS feed URLs. G101 pattern-matches the word 'secret' in a source key, not a credential."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/destinations/osm.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Public Overpass API endpoint URL. No authentication of any kind is involved."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/flights/roundtrip_native.go",
+      "count": 2,
+      "status": "accepted",
+      "reason": "Two long English warning strings shown to the user about round-trip pricing. High-entropy prose, not a credential."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/ground/digitransit.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Public subscription key that matka.fi ships to every visitor in its JS bundle. Not a private credential; rotating it would break parity with the public site."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/ground/finnlines.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Public API key embedded in the Finnlines booking SPA bundle and served to every visitor. Not a private credential."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/ground/ns.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Public API key embedded in the NS website JS and served to every visitor. Not a private credential."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/lounges/search.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Public Priority Pass search endpoint URL, overridable in tests. No credential."
+    },
+    {
+      "rule": "G101",
+      "file": "internal/waf/solver.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Cookie NAME constant ('aws-waf-token'). The value is issued by the remote WAF at runtime and never appears in source."
+    },
+    {
+      "rule": "G115",
+      "file": "internal/awards/awards.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "int -> rune on '0' + single decimal digit. The digit is produced by dividing by a power of ten, so the range is 0-9 by construction."
+    },
+    {
+      "rule": "G115",
+      "file": "internal/flights/parse.go",
+      "count": 2,
+      "status": "accepted",
+      "reason": "int -> byte in fixed-width numeric padding helpers, where each operand is already reduced by /1000, /10 or %10 to a single digit."
+    },
+    {
+      "rule": "G115",
+      "file": "internal/hotels/agoda_parse.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "int64 -> byte after an explicit 8-bit shift-and-mask in a byte-packing loop; truncation is the intended operation."
+    },
+    {
+      "rule": "G118",
+      "file": "internal/flights/afklm/client.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "Deliberate detached background refresh: the goroutine outlives the request that triggered it, so inheriting the request context would cancel the refresh on response. It builds its own context with a timeout."
+    },
+    {
+      "rule": "G404",
+      "file": "internal/batchexec/client.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "math/rand is used only for retry backoff jitter. Jitter is a thundering-herd mitigation, not a security control, and needs no CSPRNG."
+    },
+    {
+      "rule": "G702",
+      "file": "cmd/trvl/prefs.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "ACCEPTED RISK (V). runPrefsEdit builds exec.Command(editor, path) with no shell: argv is exactly two elements, so $EDITOR cannot smuggle arguments (a value like 'vim -c ...' is looked up as one binary name and fails). editor resolves $EDITOR -> $VISUAL -> 'vi' at cmd/trvl/prefs.go:216-222; path is os.UserHomeDir()+/.trvl/preferences.json at :201-205, never user-supplied. The residual risk is an attacker who already controls the operator's environment, who by then already has code execution as that user. CLI-only path, not reachable from the MCP server."
+    },
+    {
+      "rule": "G703",
+      "file": "cmd/trvl/mcp_install.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "NOT REACHABLE (V). The tainted value is cfgPath, and the sink at cmd/trvl/mcp_install.go:277 writes cfgPath+\".trvl.bak\". cfgPath comes only from clientConfigPath (:66-109), a closed switch over literal home-relative paths; this particular sink sits behind the isCodexTOML/'codex' branch, and any unrecognised client returns an error at :109 instead of a path. No caller-supplied string ever reaches the write, so the backup can only land next to a known config file."
+    },
+    {
+      "rule": "G703",
+      "file": "internal/upgrade/upgrade.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "ACCEPTED RISK (V). Not the download write: internal/upgrade/upgrade.go:242 writes the preferences BACKUP, dst = prefsPathIn(dir)+\".bak.\"+oldVersion (:237, :54-56). dir is ~/.trvl (:40-46; the sole external caller cmd/trvl/upgrade.go passes \"\"), and oldVersion is the trimmed content of ~/.trvl/version.stamp (ReadStamp :59-68), which is only ever written from the compiled-in Version (WriteStamp :71-77). Traversal therefore requires an attacker who can already write inside the user's own ~/.trvl, and the payload is the user's own prefs file at 0600. Hardening candidate, not a live vulnerability: validate the stamp against a semver pattern before using it in a filename."
+    },
+    {
+      "rule": "G704",
+      "file": "internal/batchexec/client.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "NOT REACHABLE (V) as shipped. The sink is inside testRedirectTransport.RoundTrip (internal/batchexec/client.go:128-140), which rewrites every request to a baseURL that can only be set by NewTestClient (:112-120). At 4bf48ee the only callers of NewTestClient are *_test.go files under internal/flights (roundtrip, flights_max, vueling, stealth_wiring, easyjet, eligibility_boost, singleflight_regression, norwegian); a repo-wide search excluding _test.go finds the declaration and its doc comment and nothing else. Caveat, recorded because the (rule, file, count) key cannot see it: this is an exported helper in a non-test file, so a future production caller would make it reachable without changing the count. Hardening candidate: move it behind a _test-only build tag or an export_test.go shim."
+    },
+    {
+      "rule": "G704",
+      "file": "internal/destinations/attractions.go",
+      "count": 2,
+      "status": "accepted",
+      "reason": "NOT REACHABLE (V), both findings. internal/destinations/attractions.go:72-73 builds the URL with fmt.Sprintf from a base plus %d and two %.6f and the API key: GetAttractions takes lat/lon as float64 and radius as int (:50), so no string from a caller can reach the host or path. The base is openTripMapAPIURL (:18-20), a package var initialised from a literal const and overridden only in tests, and the key comes from os.Getenv(OPENTRIPMAP_API_KEY) (:51) and is appended last in the query. Separate hardening note, not this finding: internal/destinations/http.go:13 uses a plain http.Client with no dial guard and default redirect following, so a compromised upstream could steer a request at a private address - unlike internal/providers, which installs guardedTransport."
+    },
+    {
+      "rule": "G704",
+      "file": "internal/providers/auth.go",
+      "count": 2,
+      "status": "accepted",
+      "reason": "NOT REACHABLE (V), both findings. doSearchRequest (internal/providers/auth.go:382-407) replays orig.URL of a request that was already built and already sent; the URL originates from substituteVars(cfg.Endpoint, vars) in internal/providers/runtime_provider.go:208. What holds unconditionally is the dial-time guard: guardedDialer/guardedTransport installs dialControl on every provider client (internal/providers/destination.go:137-181, wired in runtime_core.go), and dialControl refuses the connection on the RESOLVED IP - loopback, private, link-local, unspecified and multicast (refusedIP :57-79) - so a redirected or substituted host cannot reach an internal address regardless of how the string was built. The parse-time providers.CheckDestinationURL on Endpoint and Auth.PreflightURL (mcp/tools_providers.go, destination.go:90-125) is a secondary check only: substituteVars is a raw strings.ReplaceAll with no escaping (internal/providers/mapping.go:12-18) and runs after it. Scheme and host are literal in the shipped templates (I, checked by search, not enforced by code). Sole opt-out is the operator-set env var TRVL_ALLOW_LOCAL_PROVIDERS (destination.go:27, :41-48)."
+    }
+  ]
+}

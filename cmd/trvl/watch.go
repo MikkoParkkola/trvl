@@ -24,6 +24,7 @@ Examples:
   trvl watch add HEL BCN --depart 2026-07-01 --return 2026-07-08 --below 200
   trvl watch rooms "Beverly Hills Heights, Tenerife" --checkin 2026-07-01 --checkout 2026-07-08 --keywords "2 bedroom,balcony,sea view"
   trvl watch list
+  trvl watch update <id> --clear-webhook
   trvl watch check
   trvl watch history <id>
   trvl watch remove <id>`,
@@ -33,6 +34,7 @@ Examples:
 		watchAddCmd(),
 		watchRoomsCmd(),
 		watchListCmd(),
+		watchUpdateCmd(),
 		watchRemoveCmd(),
 		watchCheckCmd(),
 		watchDaemonCmd(),
@@ -384,6 +386,112 @@ func formatLastCheck(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 	}
+}
+
+func watchUpdateCmd() *cobra.Command {
+	var (
+		webhookURL      string
+		alertDropPct    float64
+		alertDropAbs    float64
+		lastMinute      bool
+		lastMinuteDrop  float64
+		clearWebhook    bool
+		clearAlertDrop  bool
+		clearLastMinute bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update ID",
+		Short: "Change or clear a watch's notification settings",
+		Long: `Change or clear the notification settings of an existing watch without
+removing it. Only the flags you pass are written; everything else — price
+history, lowest price, creation date and the route itself — is left alone.
+
+Clearing an alert-drop threshold restores the built-in default (10% below
+baseline); it does not switch proactive alerting off.
+
+Examples:
+  trvl watch update abc123 --clear-webhook
+  trvl watch update abc123 --clear-alert-drop --clear-last-minute
+  trvl watch update abc123 --webhook https://example.com/hook --alert-drop 15`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := cmd.Flags()
+			// Set-and-clear on one field is a contradiction with no defensible
+			// winner, so it is rejected rather than silently resolved.
+			for _, pair := range []struct{ set, clear string }{
+				{"webhook", "clear-webhook"},
+				{"alert-drop", "clear-alert-drop"},
+				{"alert-drop-abs", "clear-alert-drop"},
+				{"last-minute", "clear-last-minute"},
+				{"last-minute-drop", "clear-last-minute"},
+			} {
+				if flags.Changed(pair.set) && flags.Changed(pair.clear) {
+					return fmt.Errorf("cannot combine --%s with --%s", pair.set, pair.clear)
+				}
+			}
+
+			var u watch.WatchUpdate
+			if flags.Changed("webhook") {
+				u.WebhookURL = &webhookURL
+			}
+			if flags.Changed("alert-drop") {
+				u.AlertDropPct = &alertDropPct
+			}
+			if flags.Changed("alert-drop-abs") {
+				u.AlertDropAbs = &alertDropAbs
+			}
+			if flags.Changed("last-minute") {
+				u.LastMinuteMode = &lastMinute
+			}
+			if flags.Changed("last-minute-drop") {
+				u.LastMinuteDropPct = &lastMinuteDrop
+			}
+			if clearWebhook {
+				empty := ""
+				u.WebhookURL = &empty
+			}
+			if clearAlertDrop {
+				zero := 0.0
+				u.AlertDropPct = &zero
+				u.AlertDropAbs = &zero
+			}
+			if clearLastMinute {
+				// Last-minute mode is a pair: the flag and its threshold. Clearing
+				// only the flag would leave a stale percentage to resurface if the
+				// mode were re-enabled without a threshold.
+				off, zero := false, 0.0
+				u.LastMinuteMode = &off
+				u.LastMinuteDropPct = &zero
+			}
+			if u.Empty() {
+				return fmt.Errorf("nothing to update: pass a --clear-* flag or a value to set")
+			}
+
+			store, err := watch.DefaultStore()
+			if err != nil {
+				return err
+			}
+			updated, err := store.Update(args[0], u)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("Updated watch %s\n", updated.ID)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&webhookURL, "webhook", "", "Set the webhook URL")
+	cmd.Flags().Float64Var(&alertDropPct, "alert-drop", 0, "Set the proactive alert threshold (percent below baseline)")
+	cmd.Flags().Float64Var(&alertDropAbs, "alert-drop-abs", 0, "Set the proactive alert threshold (absolute drop from baseline)")
+	cmd.Flags().BoolVar(&lastMinute, "last-minute", false, "Set last-minute mode (hotel watches only)")
+	cmd.Flags().Float64Var(&lastMinuteDrop, "last-minute-drop", 0, "Set the last-minute drop threshold (percent)")
+	cmd.Flags().BoolVar(&clearWebhook, "clear-webhook", false, "Remove the webhook URL")
+	cmd.Flags().BoolVar(&clearAlertDrop, "clear-alert-drop", false, "Remove both alert-drop thresholds (the 10% default resumes)")
+	cmd.Flags().BoolVar(&clearLastMinute, "clear-last-minute", false, "Turn off last-minute mode and its threshold")
+
+	return cmd
 }
 
 func watchRemoveCmd() *cobra.Command {

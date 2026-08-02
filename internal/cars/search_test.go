@@ -6,9 +6,39 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// TestMain points the home directory this package's tests resolve at a
+// throwaway location, so no test can mutate the developer's real ~/.trvl.
+// Search calls providers.LogHealth, which appends to ~/.trvl/health.jsonl with
+// no injection point other than os.UserHomeDir -- so the environment IS the
+// seam.
+//
+// It has to be here rather than per test with t.Setenv for a reason specific to
+// this path: LogHealth is asynchronous (internal/providers/health_log.go:136
+// enqueues, a writer goroutine resolves the directory later). A t.Setenv would
+// be restored when the test returns, so a queued entry could still land in the
+// real home afterwards. A process-wide redirect has no such window. It also
+// covers tests added later, which a per-test call cannot.
+//
+// os.UserHomeDir reads HOME on unix and USERPROFILE on Windows, and
+// os.UserConfigDir reads XDG_CONFIG_HOME on unix, so all three move together.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "trvl-test-home-")
+	if err != nil {
+		panic("test home: " + err.Error())
+	}
+	os.Setenv("HOME", dir)
+	os.Setenv("USERPROFILE", dir)
+	os.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
 
 func TestSearch_RequiresPickupAndDates(t *testing.T) {
 	t.Parallel()

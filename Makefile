@@ -2,11 +2,12 @@ GOTOOLCHAIN ?= go1.26.5
 GO ?= go
 GO_RUN = GOTOOLCHAIN=$(GOTOOLCHAIN) $(GO)
 GOLANGCI_LINT_VERSION ?= v2.12.2
+GOSEC_VERSION ?= v2.28.0
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION) -X github.com/MikkoParkkola/trvl/mcp.serverVersion=$(VERSION)"
 
-.PHONY: build test test-proof test-coverage test-live-integrations test-live-probes lint repo-hygiene distribution-metrics clean cross install safe-clean force-clean
+.PHONY: build test test-proof test-coverage test-live-integrations test-live-probes lint repo-hygiene security-gosec distribution-metrics clean cross install safe-clean force-clean
 
 build:
 	@mkdir -p bin
@@ -52,6 +53,19 @@ lint: repo-hygiene
 		exit 1; \
 	fi
 	GOTOOLCHAIN=$(GOTOOLCHAIN) govulncheck ./...
+
+# Local mirror of the CI `gosec` job. Same scan scope, same pinned version and
+# same baseline, so a clean run here means a clean run there.
+security-gosec:
+	.github/scripts/gosec-gate_test.sh
+	@if ! command -v gosec >/dev/null 2>&1; then \
+		echo "gosec not installed. Install with: GOTOOLCHAIN=$(GOTOOLCHAIN) go install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)" >&2; \
+		exit 1; \
+	fi
+	@mkdir -p bin
+	@GOTOOLCHAIN=$(GOTOOLCHAIN) gosec -quiet -fmt json -out bin/gosec-report.json ./... || true
+	@test -s bin/gosec-report.json
+	.github/scripts/gosec-gate.sh bin/gosec-report.json
 
 distribution-metrics:
 	$(GO_RUN) run ./cmd/distribution-metrics

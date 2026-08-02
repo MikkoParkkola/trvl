@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/MikkoParkkola/trvl/internal/destinations"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -70,7 +71,7 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 		defer wg.Done()
 		res, err := SearchHotels(ctx, query, opts)
 		if err != nil {
-			slog.Warn("search_by_name: google hotels failed", "error", err)
+			slog.Warn("search_by_name: google hotels failed", "error", logredact.Err(err))
 			return
 		}
 		resultCh <- providerResult{hotels: res.Hotels, source: "google_hotels"}
@@ -86,7 +87,7 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 		}
 		res, err := SearchTrivago(ctx, location, opts)
 		if err != nil {
-			slog.Warn("search_by_name: trivago failed", "error", err)
+			slog.Warn("search_by_name: trivago failed", "error", logredact.Err(err))
 			return
 		}
 		resultCh <- providerResult{hotels: res, source: "trivago"}
@@ -103,12 +104,12 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 			}
 			lat, lon, err := ResolveLocation(ctx, searchLoc)
 			if err != nil {
-				slog.Warn("search_by_name: geocode failed", "error", err)
+				slog.Warn("search_by_name: geocode failed", "error", logredact.Err(err))
 				return
 			}
 			res, _, err := eprt.SearchHotels(ctx, query, lat, lon, checkIn, checkOut, currency, 2, nil)
 			if err != nil {
-				slog.Warn("search_by_name: external providers failed", "error", err)
+				slog.Warn("search_by_name: external providers failed", "error", logredact.Err(err))
 				return
 			}
 			resultCh <- providerResult{hotels: res, source: "external"}

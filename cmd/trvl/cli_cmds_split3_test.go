@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os/exec"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/providers"
@@ -188,7 +191,11 @@ func TestShareCmd_GistFlagWithLastSearchV20(t *testing.T) {
 	cmd := shareCmd()
 	cmd.SetArgs([]string{"--last", "--gist"})
 
-	_ = cmd.Execute()
+	// --gist is not a flag and never was; cobra must reject it rather than
+	// silently sharing. The old assertion-free `_ = cmd.Execute()` hid that.
+	if err := cmd.Execute(); err == nil {
+		t.Error("expected unknown-flag error for --gist, got nil")
+	}
 }
 
 func TestTripsAlertsCmd_TableWithAlertsV20(t *testing.T) {
@@ -545,10 +552,61 @@ func TestUpgradeCmd_DefaultRunV24(t *testing.T) {
 	}
 }
 
-func TestCreateGist_NoGhV24(t *testing.T) {
+// TestOutputShare_FormatSurfaceIsClosed pins the set of share destinations.
+//
+// It does not claim to detect an uploader in general — an HTTP call from inside
+// outputShare would defeat any such check, and no unit test here would catch it.
+// What it does enforce is that the destination set is declared: it asserts
+// shareFormats element for element, so adding a destination fails this test
+// until someone edits the expectation and states what they added. That is the
+// seam the removed gist upload slipped through — it was reachable through a
+// format string nobody had enumerated (#527).
+func TestOutputShare_FormatSurfaceIsClosed(t *testing.T) {
+	// Element-for-element. Adding a destination must land here first.
+	want := []string{"", "markdown", "stdout", "clipboard"}
+	if !slices.Equal(shareFormats, want) {
+		t.Fatalf("shareFormats = %q, want %q — a share destination changed; "+
+			"confirm the new one is local and never publishes, then update this expectation",
+			shareFormats, want)
+	}
 
-	err := createGist("# Test trip\n\nSome markdown content here.")
-	_ = err
+	t.Setenv("PATH", t.TempDir())
+	if _, err := exec.LookPath("gh"); err == nil {
+		t.Fatal("gh still resolvable after PATH override; the isolation this test relies on is broken")
+	}
+
+	const card = "**AMS -> HEL** | 10Jun-20Jun\n"
+
+	// "clipboard" is exercised elsewhere: it shells out to pbcopy/xclip, which
+	// the emptied PATH deliberately blocks. It is a local paste buffer, not a
+	// publish.
+	for _, format := range []string{"", "markdown", "stdout"} {
+		if err := outputShare(card, format); err != nil {
+			t.Errorf("outputShare(%q) = %v, want nil", format, err)
+		}
+	}
+
+	// Anything outside the set is refused, not quietly printed.
+	for _, format := range []string{"link", "gist", "upload", "publish", "typo"} {
+		if err := outputShare(card, format); err == nil {
+			t.Errorf("outputShare(%q) = nil; formats outside shareFormats must be rejected", format)
+		}
+	}
+
+	// The retired format explains itself rather than reading as a typo.
+	err := outputShare(card, "link")
+	if err == nil || !strings.Contains(err.Error(), "removed") {
+		t.Errorf("outputShare(\"link\") = %v, want an error saying the format was removed", err)
+	}
+
+	// It also has to say what to do about a gist created before the removal.
+	// This error is the only surface where the affected population self-selects:
+	// nobody else can reach it, and someone who does has a public gist on their
+	// account right now. Losing the pointer would leave the cleanup advice only
+	// in a changelog they have no reason to open.
+	if err != nil && !strings.Contains(err.Error(), "gh gist list") {
+		t.Errorf("outputShare(\"link\") = %v, want it to point at gh gist list so an affected user can clean up", err)
+	}
 }
 
 func TestRunEvents_MissingAPIKeyV24(t *testing.T) {

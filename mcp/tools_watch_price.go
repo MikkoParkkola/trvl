@@ -180,6 +180,15 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 		return nil, nil, fmt.Errorf("add watch: %w", err)
 	}
 
+	// Add is idempotent on identity: an identical request (same target, same
+	// threshold) returns the existing watch instead of creating a second one
+	// (#509). Report that record's real creation time — stamping "now" would
+	// claim a fresh watch was made when none was.
+	createdAt := time.Now().UTC()
+	if stored, ok := store.Get(id); ok && !stored.CreatedAt.IsZero() {
+		createdAt = stored.CreatedAt.UTC()
+	}
+
 	type watchResponse struct {
 		Success     bool    `json:"success"`
 		WatchID     string  `json:"watch_id"`
@@ -203,7 +212,7 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 		Type:        watchType,
 		TargetPrice: targetPrice,
 		Currency:    currency,
-		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+		CreatedAt:   createdAt.Format(time.RFC3339),
 	}
 
 	var summary string

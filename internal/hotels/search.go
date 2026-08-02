@@ -11,6 +11,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/breaker"
 	"github.com/MikkoParkkola/trvl/internal/fareintel"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
 	"github.com/MikkoParkkola/trvl/internal/searchctx"
@@ -387,7 +388,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 			res, err := search(providerCtx, location, auxOpts)
 			if err != nil {
 				hotelBreaker.RecordFailure(id)
-				slog.Warn(id+" search failed", "error", err)
+				slog.Warn(id+" search failed", "error", logredact.Err(err))
 				addProviderStatus(hotelProviderStatusFromError(id, name, err))
 				return
 			}
@@ -489,7 +490,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		res, err := SearchExpedia(providerCtx, location, auxOpts)
 		if err != nil {
 			hotelBreaker.RecordFailure("expedia")
-			slog.Warn("expedia search failed", "error", err)
+			slog.Warn("expedia search failed", "error", logredact.Err(err))
 			addProviderStatus(hotelProviderStatusFromError("expedia", "Expedia", err))
 			return
 		}
@@ -517,7 +518,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 			defer auxWg.Done()
 			lat, lon, err := ResolveLocation(ctx, location)
 			if err != nil {
-				slog.Warn("external providers: geocode failed", "error", err)
+				slog.Warn("external providers: geocode failed", "error", logredact.Err(err))
 				return
 			}
 			filters := &providers.HotelFilterParams{
@@ -549,7 +550,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 			res, statuses, err := eprt.SearchHotels(ctx, location, lat, lon,
 				auxOpts.CheckIn, auxOpts.CheckOut, auxOpts.Currency, auxOpts.Guests, filters)
 			if err != nil {
-				slog.Warn("external providers search failed", "error", err)
+				slog.Warn("external providers search failed", "error", logredact.Err(err))
 				addProviderStatuses(statuses) // keep statuses even on error
 				return
 			}
@@ -609,7 +610,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 			opts.CenterLat = lat
 			opts.CenterLon = lon
 		} else {
-			slog.Warn("geocode failed, falling back to hotel median", "location", location, "error", err)
+			slog.Warn("geocode failed, falling back to hotel median", "location", location, "error", logredact.Err(err))
 			// Fallback: use the median of hotel coordinates as the center.
 			// This gives a reasonable approximation when the external geocoder
 			// is unavailable (rate-limited, network error, etc.).

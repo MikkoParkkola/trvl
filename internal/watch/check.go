@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -296,6 +297,11 @@ func CheckWatchesWithRoomsAndWebhookContext(checkCtx, webhookCtx context.Context
 func checkWatchesWithRoomsAndWebhookContext(checkCtx, webhookCtx context.Context, store *Store, checker PriceChecker, roomChecker RoomChecker, watches []Watch) []CheckResult {
 	checkCtx, webhookCtx = normalizeCheckAndWebhookContexts(checkCtx, webhookCtx)
 
+	// One provider call per distinct polled target for the whole round. Watches
+	// that differ only in price threshold share the search and are then
+	// evaluated independently below (#509, MULTIPRICE.2).
+	checker = newRoundCache(checker)
+
 	results := make([]CheckResult, 0, len(watches))
 
 	for i, w := range watches {
@@ -365,6 +371,10 @@ func CheckAllBounded(ctx context.Context, store *Store, checker PriceChecker, ro
 	results := make([]CheckResult, len(watches))
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
+
+	// Single-flight per polled target: duplicate routes issue one provider call
+	// for the round even under concurrency (#509, MULTIPRICE.2).
+	checker = newRoundCache(checker)
 
 	for i, w := range watches {
 		wg.Add(1)
@@ -581,9 +591,12 @@ func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Sto
 			// nothing to lose) so notify.go and the MCP JSON DTO can tell
 			// the user. Found by GPT second-opinion review, 2026-07-30
 			// (round 21).
-			if w.BelowPrice > 0 || w.AlertDropAbs > 0 {
-				result.AlertsClearedByCurrencyChange = true
-			}
+			// result.AlertsClearedByCurrencyChange is NOT set here. It is decided
+			// inside the store transaction below, against the committed record:
+			// judging it from this pre-provider copy would report a threshold as
+			// lost when a concurrent edit had already cleared it, and vice versa.
+			// The w.* writes that follow stay, because the reads further down
+			// (PriceDrop, threshold checks) run off this local copy.
 			w.BelowPrice = 0
 			// Round 17 found zeroing AlertDropAbs here, when it was the
 			// watch's ONLY alert threshold (AlertDropPct <= 0), left
@@ -647,57 +660,107 @@ func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Sto
 			w.LowestPrice = price
 		}
 
-		// Proactive price-drop alert: capture/track a baseline and fire exactly
-		// one alert when the fare falls past the configured threshold. State is
-		// stored on the watch so it survives daemon restarts and reloads.
+		// Persist the watch update and the new price point in ONE store
+		// transaction, purging prior-currency history first when currencyChanged.
 		//
-		// Round 17: when AlertDropAbs was force-zeroed above as the watch's
-		// only threshold (AlertDropAbsClearedByCurrency, both limbs now
-		// read <= 0), skip Evaluate entirely rather than let
-		// Threshold.effective() substitute pricealert.DefaultDropPercent --
-		// that would silently re-enable alerting under a policy the user
-		// never chose. Suspended until the user re-supplies a threshold via
-		// applyIntent, which clears the marker. Found by adversarial
-		// review, 2026-07-30 (round 17).
-		if !(w.AlertDropAbsClearedByCurrency && w.AlertDropPct <= 0 && w.AlertDropAbs <= 0) {
-			alertState, alert, alertFired := pricealert.Evaluate(
-				pricealert.State{Baseline: w.BaselinePrice, LastAlertedAt: w.LastAlertedPrice},
-				price,
-				pricealert.Threshold{DropPercent: w.AlertDropPct, DropAbsolute: w.AlertDropAbs},
-			)
-			w.BaselinePrice = alertState.Baseline
-			w.LastAlertedPrice = alertState.LastAlertedAt
-			if alertFired {
-				result.PriceDropAlert = true
-				result.AlertBaseline = alert.Baseline
-				result.AlertDropPercent = alert.DropPercent
+		// This combines two fixes developed independently, each of which solved
+		// half the problem:
+		//
+		//  1. Atomicity (round 11, 2026-07-29). Separate lock+save round trips left
+		//     a crash-between-them window where the store could persist the new
+		//     currency without yet purging/appending history. The purge, the append
+		//     and the watch update now share one transaction and one save.
+		//  2. Read-modify-write against committed state (#512, TRVL.STORE.TXN.2).
+		//     The check holds a detached copy of the watch taken BEFORE the provider
+		//     call, so writing that whole copy back reverts anything a concurrent
+		//     tool call changed meanwhile -- a threshold edit, a webhook URL, an
+		//     alert setting. The callback receives the freshly reloaded record and
+		//     writes only the fields this check owns.
+		//
+		// Neither subsumes the other: (1) is about a crash between two writes,
+		// (2) is about two writers with no crash at all.
+		//
+		// The currency-change resets are replayed onto cur rather than copied from
+		// w. They must land on the committed record, and a field-copy of only the
+		// price fields would silently drop them -- leaving a threshold the user was
+		// told was cleared still armed on disk.
+		//
+		// TRVL.STORE.TXN.4: the callback is pure bookkeeping. Every provider round
+		// trip already happened above; the lock covers a reload and two writes,
+		// never network I/O.
+		var alert pricealert.Alert
+		var alertFired bool
+		var alertsCleared bool
+		saved, err := store.MutateAndRecordPrice(w.ID, currencyChanged, price, currency, func(cur *Watch) {
+			if currencyMismatch {
+				// Round 21: record that a real threshold was lost, judged against
+				// the committed record rather than the pre-provider copy.
+				if cur.BelowPrice > 0 || cur.AlertDropAbs > 0 {
+					alertsCleared = true
+				}
+				cur.BelowPrice = 0
+				// Round 17: mark pending currency reconfirmation so the Evaluate
+				// below suspends alerting entirely, rather than letting
+				// Threshold.effective() substitute pricealert.DefaultDropPercent
+				// for a policy the user never chose.
+				if cur.AlertDropAbs > 0 && cur.AlertDropPct <= 0 {
+					cur.AlertDropAbsClearedByCurrency = true
+				}
+				cur.AlertDropAbs = 0
 			}
-		}
+			if currencyChanged {
+				cur.LowestPrice = 0
+				cur.CheapestDate = ""
+				cur.BaselinePrice = 0
+				cur.LastAlertedPrice = 0
+			}
 
-		// Persist the watch update and the new price point atomically (a
-		// single lock+save), purging prior-currency history first when
-		// currencyChanged -- separate lock+save round trips here left a
-		// crash-between-them window where the store could persist the new
-		// currency without yet purging/appending history. Found by
-		// adversarial review, 2026-07-29 (round 11).
-		//
-		// Scope of "atomically" here: this closes the IN-MEMORY multi-call
-		// race on THIS `store` instance -- no other goroutine using the same
-		// *Store can observe or interleave a partial update between the
-		// watch-replace, purge, and append. It does NOT provide cross-process
-		// coordination: the scheduler and the MCP `watch_price` tool each
-		// construct their own independent *Store, so two concurrent checks
-		// against the same on-disk files can still last-writer-wins each
-		// other with no crash required, and persistLocked's two-file save is
-		// not atomic as a unit even within one process. Both are pre-existing,
-		// store-wide properties (not introduced or worsened by currency-change
-		// handling) -- see docs/design/2026-07-26-watch-store-coordination.md
-		// for the cross-process gap and persistLocked's own comment for the
-		// on-disk two-file gap.
-		if err := store.UpdateWatchAndRecordPrice(w, currencyChanged, price, currency); err != nil {
+			cur.LastCheck = w.LastCheck
+			cur.LastPrice = w.LastPrice
+			cur.Currency = w.Currency
+			if cheapestDate != "" {
+				cur.CheapestDate = w.CheapestDate
+			}
+			if cur.LowestPrice == 0 || price < cur.LowestPrice {
+				cur.LowestPrice = price
+			}
+
+			// Proactive price-drop alert: capture/track a baseline and fire exactly
+			// one alert when the fare falls past the configured threshold. State is
+			// stored on the watch so it survives daemon restarts and reloads.
+			//
+			// Evaluated against the committed record, not the pre-provider copy:
+			// Baseline and LastAlertedPrice are running state, so deriving them
+			// from a stale copy re-arms a dedup window a concurrent round just set
+			// and alerts twice for one drop (#512).
+			//
+			// Round 17 guard, now reading cur: when AlertDropAbs was force-zeroed
+			// as the watch's only threshold, skip Evaluate entirely until the user
+			// re-supplies a threshold via applyIntent, which clears the marker.
+			if !(cur.AlertDropAbsClearedByCurrency && cur.AlertDropPct <= 0 && cur.AlertDropAbs <= 0) {
+				state, a, fired := pricealert.Evaluate(
+					pricealert.State{Baseline: cur.BaselinePrice, LastAlertedAt: cur.LastAlertedPrice},
+					price,
+					pricealert.Threshold{DropPercent: cur.AlertDropPct, DropAbsolute: cur.AlertDropAbs},
+				)
+				cur.BaselinePrice = state.Baseline
+				cur.LastAlertedPrice = state.LastAlertedAt
+				alert, alertFired = a, fired
+			}
+		})
+		if err != nil {
 			result.Error = fmt.Errorf("update watch and record price: %w", err)
 			return result
 		}
+		if alertsCleared {
+			result.AlertsClearedByCurrencyChange = true
+		}
+		if alertFired {
+			result.PriceDropAlert = true
+			result.AlertBaseline = alert.Baseline
+			result.AlertDropPercent = alert.DropPercent
+		}
+		w = saved
 
 		// Update the result's watch to reflect saved state.
 		result.Watch = w
@@ -801,28 +864,20 @@ func fireWebhook(ctx context.Context, r CheckResult) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, parsedURL.String(), bytes.NewReader(body))
 	if err != nil {
-		slog.Warn("webhook: create request", "watch_id", r.Watch.ID, "err", err)
+		slog.Warn("webhook: create request", "watch_id", r.Watch.ID, "err", webhookSafeErr(err))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := webhookHTTPClient.Do(req)
 	if err != nil {
-		// Round 24: log only scheme+host+port, not url.Redacted(). Redacted()
-		// only masks an embedded userinfo password -- it still preserves
-		// username, path, and query, which is exactly where Slack/Discord-
-		// style webhook tokens live. Worse, net/http wraps Do()'s failure in
-		// a *url.Error whose Error() string re-embeds the FULL request URL
-		// (path/query included), so logging "err" directly undid the
-		// redaction anyway. Unwrap *url.Error and log only the underlying
-		// cause plus a host-only address. Found by GPT second-opinion
-		// review, 2026-07-31 (round 24).
-		safeHost := parsedURL.Scheme + "://" + parsedURL.Host
-		logErr := error(err)
-		if uerr, ok := err.(*url.Error); ok {
-			logErr = uerr.Err
-		}
-		slog.Warn("webhook: POST failed", "watch_id", r.Watch.ID, "host", safeHost, "err", logErr)
+		// Round 24: log scheme+host only, never url.Redacted(). Redacted() masks
+		// only an embedded userinfo password -- it preserves username, path and
+		// query, which is exactly where Slack/Discord-style webhook tokens live.
+		// webhookSafeErr additionally unwraps *url.Error, whose Error() string
+		// re-embeds the FULL request URL and would otherwise undo the redaction on
+		// the same log line. Found by GPT second-opinion review, 2026-07-31.
+		slog.Warn("webhook: POST failed", "watch_id", r.Watch.ID, "host", webhookLogTarget(r.Watch.WebhookURL), "err", webhookSafeErr(err))
 		return
 	}
 	_ = resp.Body.Close()
@@ -848,4 +903,32 @@ func fireWebhook(ctx context.Context, r CheckResult) {
 		safeHost := parsedURL.Scheme + "://" + parsedURL.Host
 		slog.Warn("webhook: receiver returned an error status, notification not delivered", "watch_id", r.Watch.ID, "host", safeHost, "status", resp.StatusCode)
 	}
+}
+
+// webhookLogTarget reduces a user-supplied webhook URL to a form that is safe to
+// log. Slack and Discord both carry the shared secret in the PATH, so the path,
+// query and fragment are all dropped and only the host survives. A URL that does
+// not parse yields a constant rather than an echo of the input, because the
+// unparseable case is precisely where a malformed secret would otherwise ride
+// through.
+func webhookLogTarget(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "invalid"
+	}
+	return u.Host
+}
+
+// webhookSafeErr strips the URL out of a *url.Error.
+//
+// This is the part that is easy to miss: net/http returns *url.Error from both
+// NewRequestWithContext and Client.Do, and url.Error.Error() prints the full URL
+// it was given. Redacting the "url" log attribute alone would therefore still
+// disclose the secret through the "err" attribute on the very same line.
+func webhookSafeErr(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return fmt.Errorf("%s %s: %w", ue.Op, webhookLogTarget(ue.URL), ue.Err)
+	}
+	return err
 }

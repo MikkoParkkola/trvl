@@ -112,8 +112,10 @@ func TestRunPreflight_SnapshotIsCityBound(t *testing.T) {
 // The Tier-3/3b/4 recovery paths used to clear+repopulate pc.authValues in
 // place with no lock, racing concurrent readers that hold pc.authMu.RLock. The
 // fix builds the fresh map off-lock and swaps it in under pc.authMu.Lock. This
-// test hammers replaceAuthValuesLocked from many writers while readers take the
-// RLock snapshot path; run under -race it fails if the lock window regresses.
+// test hammers that sequence — extractAuthValues then commitAuthValues, exactly
+// as the search-path recovery in runtime_provider.go composes it — from many
+// writers while readers take the RLock snapshot path; run under -race it fails
+// if the lock window regresses.
 func TestReplaceAuthValuesLocked_ConcurrentReadersNoRace(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprint(w, `<html>csrf_token=FRESH_TOK</html>`)
@@ -144,17 +146,18 @@ func TestReplaceAuthValuesLocked_ConcurrentReadersNoRace(t *testing.T) {
 	for i := 0; i < iterations; i++ {
 		go func() {
 			defer wg.Done()
-			replaceAuthValuesLocked(context.Background(), pc, auth, resp, body)
+			vals := extractAuthValues(context.Background(), pc, auth, resp, body)
+			commitAuthValues(pc, vals)
 		}()
 		go func() {
 			defer wg.Done()
-			snap := snapshotAuthValuesLocked(pc)
+			snap := snapshotAuthValues(pc)
 			_ = snap["csrf_token"]
 		}()
 	}
 	wg.Wait()
 
-	if got := snapshotAuthValuesLocked(pc)["csrf_token"]; got != "FRESH_TOK" {
+	if got := snapshotAuthValues(pc)["csrf_token"]; got != "FRESH_TOK" {
 		t.Errorf("final csrf_token = %q, want FRESH_TOK", got)
 	}
 }

@@ -54,7 +54,10 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 	if cfg.TLS.Fingerprint == "chrome" && cfg.Cookies.Source != "browser" {
 		httpClient = newChromeH2Client()
 	} else {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		// Not http.DefaultTransport: this client must carry the same
+		// destination policy as the search path (destination.go), or the
+		// provider-test tool becomes the way around it.
+		httpClient = &http.Client{Transport: guardedTransport(), Timeout: 30 * time.Second}
 	}
 	if httpClient.Jar == nil {
 		jar, _ := cookiejar.New(nil)
@@ -138,7 +141,7 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 		if cfg.Auth != nil && cfg.Auth.PreflightURL != "" {
 			targetURL = substituteVars(cfg.Auth.PreflightURL, vars)
 		}
-		browserCookiesApplied = applyBrowserCookies(pc.client, targetURL, cfg.Cookies.Browser)
+		browserCookiesApplied = applyBrowserCookies(pc, targetURL, cfg.Cookies.Browser)
 	}
 
 	// Step 1: Preflight auth.
@@ -263,20 +266,14 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 	// Detect Akamai/WAF challenge pages that use HTTP 202 (which is in the
 	// 2xx success range but is actually an interstitial challenge page).
 	if isAkamaiChallenge(resp.StatusCode, body) {
-		snippet := string(body)
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
-		}
+		snippet := describeBody(body, resp, 500)
 		result.BodySnippet = snippet
 		result.Error = fmt.Sprintf("request: http %d WAF/JS challenge page detected — provider needs browser cookie refresh", resp.StatusCode)
 		return result
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		snippet := string(body)
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
-		}
+		snippet := describeBody(body, resp, 500)
 		result.BodySnippet = snippet
 		result.Error = fmt.Sprintf("request: http %d", resp.StatusCode)
 		return result
@@ -296,10 +293,7 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 		}
 		m := re.FindSubmatch(body)
 		if len(m) < 2 {
-			snippet := string(body)
-			if len(snippet) > 500 {
-				snippet = snippet[:500]
-			}
+			snippet := describeBody(body, resp, 500)
 			result.BodySnippet = snippet
 			result.Error = fmt.Sprintf("response_parse: body_extract_pattern %q did not match response body", pattern)
 			return result
@@ -309,10 +303,7 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 
 	var raw any
 	if err := json.Unmarshal(body, &raw); err != nil {
-		snippet := string(body)
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
-		}
+		snippet := describeBody(body, resp, 500)
 		result.BodySnippet = snippet
 		result.Error = fmt.Sprintf("response_parse: %v", err)
 		return result
@@ -351,12 +342,9 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 				}
 				// Keep a snippet of the full response body so the LLM can
 				// inspect the extensions/data fields beyond the first error.
-				snippet := string(body)
-				if len(snippet) > 500 {
-					snippet = snippet[:500]
-				}
+				snippet := describeBody(body, resp, 500)
 				result.BodySnippet = snippet
-				result.Error = "response_parse: graphql error: " + detail
+				result.Error = "response_parse: graphql error: " + describeGraphQLError(detail, "")
 				return result
 			}
 		}
@@ -368,10 +356,7 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 		result.Error = fmt.Sprintf("response_parse: results_path %q did not resolve to an array", cfg.ResponseMapping.ResultsPath)
 		// Include a snippet of the actual API response so the LLM can see
 		// what came back instead of guessing.
-		snippet := string(body)
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
-		}
+		snippet := describeBody(body, resp, 500)
 		result.BodySnippet = snippet
 		result.Suggestions = discoverArrayPaths(raw, "")
 		if len(result.Suggestions) > 0 {
@@ -451,10 +436,7 @@ func runTestPreflight(ctx context.Context, pc *providerClient, cfg *ProviderConf
 	}
 	result.HTTPStatus = resp.StatusCode
 
-	snippet := string(body)
-	if len(snippet) > 500 {
-		snippet = snippet[:500]
-	}
+	snippet := describeBody(body, resp, 500)
 	result.BodySnippet = snippet
 
 	// Run extractions (attempt 1).
@@ -467,7 +449,7 @@ func runTestPreflight(ctx context.Context, pc *providerClient, cfg *ProviderConf
 	// (escape hatch — open URL in browser and wait for fresh cookies).
 	if needsBrowserCookieFallback(resp.StatusCode, matched, cfg.Auth.Extractions) {
 		tier = ""
-		if applied := applyBrowserCookies(pc.client, cfg.Auth.PreflightURL, cfg.Cookies.Browser); applied {
+		if applied := applyBrowserCookies(pc, cfg.Auth.PreflightURL, cfg.Cookies.Browser); applied {
 			resp2, body2, err2 := doPreflightRequest(ctx, pc.client, cfg.Auth)
 			if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 && !isAkamaiChallenge(resp2.StatusCode, body2) {
 				resp, body = resp2, body2
@@ -517,9 +499,11 @@ func runTestPreflight(ctx context.Context, pc *providerClient, cfg *ProviderConf
 		// the context interactive. Non-interactive callers (this test
 		// harness by default) never spawn a browser.
 		if tier == "" && cfg.Auth.BrowserEscapeHatch && isInteractive(ctx) {
-			if tryBrowserEscapeHatch(ctx, pc, cfg.Auth) {
-				// tryBrowserEscapeHatch already wrote fresh values into
-				// pc.authValues; re-issue preflight once more here only
+			if vals, ok := tryBrowserEscapeHatch(ctx, pc, cfg.Auth); ok {
+				// No lock held here, so commit with the self-locking variant.
+				commitAuthValues(pc, vals)
+				// tryBrowserEscapeHatch already produced fresh values;
+				// re-issue preflight once more here only
 				// to capture the body for diagnostics.
 				resp2, body2, err2 := doPreflightRequest(ctx, pc.client, cfg.Auth)
 				if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 && !isAkamaiChallenge(resp2.StatusCode, body2) {

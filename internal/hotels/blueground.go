@@ -48,6 +48,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
 	"golang.org/x/time/rate"
@@ -161,7 +162,7 @@ func SearchBlueground(ctx context.Context, location string, opts HotelSearchOpti
 				h.Description = h.Description + fmt.Sprintf(" · %d-month min", minStay)
 			}
 		} else {
-			slog.Debug("blueground detail hop failed", "path", p.Path, "error", derr)
+			slog.Debug("blueground detail hop failed", "path", logredact.Path(p.Path), "error", logredact.Err(derr))
 		}
 		if h.Price <= 0 {
 			continue // not comparable without a price

@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -170,9 +172,9 @@ func TestHandleConfigureProvider_ElicitYes(t *testing.T) {
 	if structured == nil {
 		t.Fatal("expected structured output")
 	}
-	config, ok := structured.(*providers.ProviderConfig)
+	config, ok := structured.(*providerConfigView)
 	if !ok {
-		t.Fatalf("structured output type = %T, want *providers.ProviderConfig", structured)
+		t.Fatalf("structured output type = %T, want *providerConfigView", structured)
 	}
 	if config.Consent == nil || !config.Consent.Granted {
 		t.Error("consent should be granted")
@@ -744,4 +746,77 @@ func TestListProvidersConcurrentWithBreakerMarks(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+// TRVL.PROVIDERSECRET.1 - configure_provider must not hand the caller's own
+// credentials back in its structured result.
+//
+// The canaries are the four places a provider config carries one: an
+// authorization header, an API key in the query string, a token baked into the
+// body template, and the endpoint itself -- which routinely carries a key in
+// its query string, in userinfo, or -- Telegram-style -- in the path itself. Returning *providers.ProviderConfig
+// serialized all of them, which is what this test exists to keep from coming
+// back.
+func TestHandleConfigureProvider_DoesNotEchoCredentials(t *testing.T) {
+	t.Parallel()
+	reg := testRegistry(t)
+	const (
+		headerSecret   = "CANARY-header-77c1f0"
+		querySecret    = "CANARY-query-3ab99e"
+		bodySecret     = "CANARY-body-5f20dd"
+		endpointQuery  = "CANARY-endpointq-91be4c"
+		endpointUserpw = "CANARY-endpointu-0d7a3e"
+		endpointPath   = "CANARY-endpointp-4c8e12"
+	)
+	args := map[string]any{
+		"id":           "secretive",
+		"name":         "Secretive",
+		"category":     "hotels",
+		"endpoint":     "https://svc:" + endpointUserpw + "@api.secretive.test/bot" + endpointPath + "/search?apikey=" + endpointQuery,
+		"results_path": "$.results",
+		"field_mapping": map[string]any{
+			"name": "$.hotel_name",
+		},
+		"headers":       map[string]any{"Authorization": headerSecret},
+		"query_params":  map[string]any{"api_key": querySecret},
+		"body_template": `{"token":"` + bodySecret + `"}`,
+	}
+
+	elicit := func(string, map[string]interface{}) (map[string]interface{}, error) {
+		return map[string]interface{}{"enable": "yes"}, nil
+	}
+
+	content, structured, err := handleConfigureProvider(context.Background(), args, elicit, nil, nil, reg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if structured == nil {
+		t.Fatal("expected structured output")
+	}
+
+	// Marshalled rather than field-inspected: what reaches the caller is the
+	// JSON, so a field that leaks through an embedded struct is caught here and
+	// would not be caught by naming fields.
+	blob, err := json.Marshal(structured)
+	if err != nil {
+		t.Fatalf("marshal structured output: %v", err)
+	}
+	haystacks := map[string]string{"structured output": string(blob)}
+	for i, c := range content {
+		haystacks[fmt.Sprintf("content block %d", i)] = c.Text
+	}
+	for where, hay := range haystacks {
+		for name, secret := range map[string]string{
+			"authorization header": headerSecret,
+			"query parameter":      querySecret,
+			"body template token":  bodySecret,
+			"endpoint query key":   endpointQuery,
+			"endpoint userinfo":    endpointUserpw,
+			"endpoint path token":  endpointPath,
+		} {
+			if strings.Contains(hay, secret) {
+				t.Errorf("%s leaked the %s: %s", where, name, hay)
+			}
+		}
+	}
 }

@@ -27,9 +27,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -100,6 +102,54 @@ func wizzProbeVersion(ctx context.Context, host, v string) string {
 	}
 }
 
+// wizzConfigVersionRe extracts the API version from the version-stamped Api base
+// URL that the Wizz homepage embeds in its inline bootstrap config
+// (apiUrl:"https://be.wizzair.com/<version>/Api").
+var wizzConfigVersionRe = regexp.MustCompile(`be\.wizzair\.com/(\d+\.\d+\.\d+)/Api`)
+
+// wizzConfigURL is the page whose inline config names the version. Derived from
+// host so tests stay hermetic (an httptest host serves its own /en-gb).
+func wizzConfigURL(host string) string {
+	if wizzRealHost(host) {
+		return "https://www.wizzair.com/en-gb"
+	}
+	return host + "/en-gb"
+}
+
+// wizzDiscoverFromConfig reads the version the real browser client is told to
+// use, straight from the homepage bootstrap config. This is the authoritative
+// source: the blind candidate walk (wizzNextCandidates) can only find rotations
+// inside its bounded range, so a larger jump leaves the client stuck on a dead
+// version even though the answer is published in plain HTML, no JS, no cookies.
+// Returns "" on any failure — the caller then falls back to the walk, so this is
+// strictly additive. The result is a claim, not a fact: the caller MUST confirm
+// it with wizzProbeVersion before adopting it.
+func wizzDiscoverFromConfig(ctx context.Context, host string) string {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, wizzConfigURL(host), nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("User-Agent", wizzBrowserUA)
+	resp, err := wizzClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	// Bounded read: the homepage is ~2MB and is attacker-adjacent input, so it
+	// must never be able to grow this into unbounded memory.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return ""
+	}
+	if m := wizzConfigVersionRe.FindSubmatch(body); m != nil {
+		return string(m[1])
+	}
+	return ""
+}
+
 // wizzNextCandidates returns likely rotation targets from the stale X.Y.Z, most
 // likely first: next minors (history shows minor +1 is the common rotation),
 // then patches, then the next majors. Bounded; a jump beyond this range is left
@@ -163,20 +213,41 @@ func wizzVersionNewer(a, b string) bool {
 // ever writes wizzHostVersions[host] — it can never mutate the global, so a
 // concurrent search against a different host (production or another override)
 // cannot be healed onto a version that was only verified live against this one.
+// Discovery order: the homepage config first (authoritative — it is the version
+// the browser client is served, and it survives a rotation of any size), then the
+// bounded candidate walk as fallback. Either way the version is only adopted
+// after wizzProbeVersion confirms it live against this host, and every adoption
+// is logged with its source.
 func wizzHeal(ctx context.Context, host, stale string) (string, bool) {
 	wizzVersionMu.Lock()
 	defer wizzVersionMu.Unlock()
 	if cur := wizzLockedVersion(host); cur != stale {
 		return cur, true // another goroutine already healed
 	}
+	if c := wizzDiscoverFromConfig(ctx, host); c != "" && c != stale {
+		if wizzProbeVersion(ctx, host, c) == "live" {
+			wizzAdoptVersion(host, stale, c, "config")
+			return c, true
+		}
+	}
 	for _, c := range wizzNextCandidates(stale) {
 		_ = wizzHealLimiter.Wait(ctx)
 		if wizzProbeVersion(ctx, host, c) == "live" {
-			wizzSetLockedVersion(host, c)
+			wizzAdoptVersion(host, stale, c, "walk")
 			return c, true
 		}
 	}
 	return "", false
+}
+
+// wizzAdoptVersion is the single point at which a discovered version becomes the
+// one in use. It logs there rather than at the call sites so a rotation is never
+// silent: an adoption by a goroutine whose caller then takes the already-healed
+// early return would otherwise leave no trace at all. Callers must hold
+// wizzVersionMu for writing.
+func wizzAdoptVersion(host, from, to, source string) {
+	slog.Info("wizzair api version rotated", "from", from, "to", to, "source", source, "host", host)
+	wizzSetLockedVersion(host, to)
 }
 
 // wizzLockedVersion returns the currently-known version for host. Callers must

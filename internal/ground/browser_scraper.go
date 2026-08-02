@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/providers"
 	"github.com/chromedp/cdproto/network"
 	cdppage "github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -42,10 +43,26 @@ Object.defineProperty(navigator, 'languages', {get: () => ['en-GB', 'en']});
 window.chrome = window.chrome || {runtime: {}};
 `
 
-// BrowserScrapeRoutes fetches opt-in browser-assisted ground routes using the
-// repo's existing Go CDP stack. It intentionally does not spawn an external
-// language runtime; callers already treat non-nil errors as provider-unavailable.
+// BrowserScrapeRoutes fetches browser-assisted ground routes using the repo's
+// existing Go CDP stack. It intentionally does not spawn an external language
+// runtime; callers already treat non-nil errors as provider-unavailable.
+//
+// It runs by default and returns providers.ErrTier2Disabled when the user has
+// declined the headless browser. Its doc comment used to say "opt-in", which was
+// stale: nothing gated it, and both callers (trainline.go, sncf.go) invoke it
+// unconditionally after the challenge path fails.
 func BrowserScrapeRoutes(ctx context.Context, provider, from, to, date, currency string) ([]models.GroundRoute, error) {
+	// Tier-2 only, and deliberately not the cookie decline as well. This browser
+	// starts from an empty profile and never opens the user's own, so the control
+	// that governs it is TRVL_NO_TIER2_CDP. A cookie gate here would refuse an
+	// access the user never objected to, and collapse two opt-outs the consent
+	// package keeps separate on purpose (internal/consent/consent.go:35-39). The
+	// escape hatch in providers.ResolveChallenge does drive the user's real
+	// profile, which is why the cookie gate belongs there and not here.
+	if providers.Tier2Declined() {
+		return nil, providers.ErrTier2Disabled
+	}
+
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	if currency == "" {
 		currency = "EUR"
@@ -236,7 +253,10 @@ func trainlineSlug(s string) string {
 }
 
 func chromedpNavigateText(ctx context.Context, targetURL string, dwell time.Duration) (string, error) {
-	taskCtx, cancel := newBrowserScraperContext(ctx)
+	taskCtx, cancel, err := newBrowserScraperContext(ctx)
+	if err != nil {
+		return "", err
+	}
 	defer cancel()
 
 	var bodyText string
@@ -254,7 +274,10 @@ func chromedpNavigateText(ctx context.Context, targetURL string, dwell time.Dura
 }
 
 func chromedpCaptureHeader(ctx context.Context, targetURLs []string, headerName string, dwell time.Duration) (string, error) {
-	taskCtx, cancel := newBrowserScraperContext(ctx)
+	taskCtx, cancel, err := newBrowserScraperContext(ctx)
+	if err != nil {
+		return "", err
+	}
 	defer cancel()
 
 	var (
@@ -295,7 +318,10 @@ func chromedpCaptureHeader(ctx context.Context, targetURLs []string, headerName 
 }
 
 func chromedpSNCFResponses(ctx context.Context, bookingURL string, fromStation, toStation SNCFStation, date string) ([]map[string]any, string, error) {
-	taskCtx, cancel := newBrowserScraperContext(ctx)
+	taskCtx, cancel, err := newBrowserScraperContext(ctx)
+	if err != nil {
+		return nil, "", err
+	}
 	defer cancel()
 
 	var (
@@ -399,7 +425,22 @@ func decodeBrowserJSONBodies(raws []string) []map[string]any {
 	return responses
 }
 
-func newBrowserScraperContext(ctx context.Context) (context.Context, context.CancelFunc) {
+func newBrowserScraperContext(ctx context.Context) (context.Context, context.CancelFunc, error) {
+	// An explicit decline is absolute and is checked HERE, on the function that
+	// builds the allocator, for the same reason internal/providers checks it on
+	// runCDPCollect rather than on its entrypoints: this is the third place in
+	// the repo that can start a browser, and gating only the two in
+	// internal/providers left this one spawning Chrome after the user said no
+	// (#521). A caller that reaches past BrowserScrapeRoutes still cannot.
+	//
+	// Tier-2 is the only decline that applies. The allocator below sets no
+	// user-data-dir, so this is chromedp's throwaway profile rather than the
+	// user's; see the note on BrowserScrapeRoutes for why the cookie decline is
+	// not a second gate here.
+	if providers.Tier2Declined() {
+		return nil, nil, providers.ErrTier2Disabled
+	}
+
 	allocOpts := append([]chromedp.ExecAllocatorOption{}, chromedp.DefaultExecAllocatorOptions[:]...)
 	allocOpts = append(allocOpts,
 		chromedp.UserAgent(trainlineChromeUA),
@@ -417,7 +458,7 @@ func newBrowserScraperContext(ctx context.Context) (context.Context, context.Can
 	return taskCtx, func() {
 		cancelTask()
 		cancelAlloc()
-	}
+	}, nil
 }
 
 func browserBaseActions() []chromedp.Action {

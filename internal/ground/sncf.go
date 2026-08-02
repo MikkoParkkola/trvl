@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	trvlnab "github.com/MikkoParkkola/trvl/internal/nab"
@@ -49,7 +50,7 @@ var (
 	// sncfResolveChallenge escalates SNCF's anti-bot wall HEADLESS-first (no
 	// window, no focus steal) via providers.ResolveChallenge. Overridable in tests.
 	sncfResolveChallenge = func(ctx context.Context, targetURL string) (*providers.ChallengeResult, error) {
-		return providers.ResolveChallenge(ctx, targetURL, providers.WithTier2Force())
+		return providers.ResolveChallenge(ctx, targetURL)
 	}
 	// sncfOpenBrowser opens a VISIBLE browser window so a human can solve an
 	// interactive captcha. Only invoked on ChallengeNeedsHuman. Overridable in tests.
@@ -514,9 +515,13 @@ func SearchSNCF(ctx context.Context, from, to, date, currency string, allowBrows
 			}
 		}
 	} else if res != nil && res.Status == providers.ChallengeNeedsHuman {
-		slog.Warn("sncf requires human verification — opening browser", "vendor", res.Marker)
-		_, _ = fmt.Fprintf(os.Stderr, "⚠️  SNCF requires verification. Opening browser — complete verification, then retry.\n")
-		_ = sncfOpenBrowser(sncfHomeURL)
+		if err := sncfOpenBrowser(sncfHomeURL); errors.Is(err, cookies.ErrBrowserAuthDeclined) {
+			slog.Warn("sncf requires human verification — browser not opened, user opted out", "vendor", res.Marker)
+			_, _ = fmt.Fprintf(os.Stderr, "⚠️  SNCF requires verification. Not opening your browser (%s is set) — complete it yourself, then retry.\n", consent.CookiesEnv)
+		} else {
+			slog.Warn("sncf requires human verification — opening browser", "vendor", res.Marker)
+			_, _ = fmt.Fprintf(os.Stderr, "⚠️  SNCF requires verification. Opening browser — complete verification, then retry.\n")
+		}
 	}
 
 	if bRoutes, bErr := BrowserScrapeRoutes(ctx, "sncf", from, to, date, currency); bErr == nil && len(bRoutes) > 0 {
@@ -569,7 +574,7 @@ func searchSNCFCalendar(ctx context.Context, fromStation, toStation SNCFStation,
 		_ = resp.Body.Close()
 
 		if allowBrowserCookies {
-			cookieHeader := sncfBrowserCookies(ctx, "sncf-connect.com")
+			cookieHeader := cookies.HeaderIfPermitted(sncfBrowserCookies(ctx, "sncf-connect.com"))
 			if cookieHeader != "" {
 				slog.Debug("retrying sncf calendar api with browser cookies")
 				req2, err2 := newSNCFRequest(cookieHeader)

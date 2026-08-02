@@ -84,7 +84,7 @@ func TestNeedsBrowserCookieFallback(t *testing.T) {
 // cookie jar is configured.
 func TestApplyBrowserCookies_NilJar(t *testing.T) {
 	client := &http.Client{}
-	if applyBrowserCookies(client, "https://example.com", "") {
+	if applyBrowserCookies(&providerClient{config: &ProviderConfig{ID: "t"}, client: client}, "https://example.com", "") {
 		t.Error("expected false when client has no jar")
 	}
 }
@@ -93,7 +93,7 @@ func TestApplyBrowserCookies_NilJar(t *testing.T) {
 func TestApplyBrowserCookies_BadURL(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
-	if applyBrowserCookies(client, "::not a url::", "") {
+	if applyBrowserCookies(&providerClient{config: &ProviderConfig{ID: "t"}, client: client}, "::not a url::", "") {
 		t.Error("expected false for bad URL")
 	}
 }
@@ -534,5 +534,100 @@ func TestIsAkamaiChallenge(t *testing.T) {
 					tc.status, tc.body[:min(len(tc.body), 40)], got, tc.want)
 			}
 		})
+	}
+}
+
+// TestCookieTargetPermitted pins browser cookies to the endpoint domain the
+// consent elicitation displayed. The preflight URL travels in the same
+// configure_provider call, is never shown to the user, and used to be handed
+// straight to the browser cookie reader.
+func TestCookieTargetPermitted(t *testing.T) {
+	const endpoint = "https://www.booking.com/dml/graphql"
+
+	cases := []struct {
+		name     string
+		endpoint string
+		target   string
+		want     bool
+	}{
+		{"endpoint itself", endpoint, endpoint, true},
+		{"sibling subdomain", endpoint, "https://secure.booking.com/login", true},
+		{"apex", endpoint, "https://booking.com/", true},
+		{"foreign host holding a live session", endpoint, "https://mail.google.com/mail/u/0/", false},
+		{"suffix lookalike", endpoint, "https://www.booking.com.evil.com/", false},
+		{"userinfo prefix", endpoint, "https://www.booking.com@evil.com/", false},
+		{"site only in the query", endpoint, "https://evil.com/?x=www.booking.com", false},
+		{"loopback", endpoint, "http://localhost:9200/_search", false},
+		{"link-local metadata", endpoint, "http://169.254.169.254/latest/meta-data/", false},
+		{"plaintext on the right site", endpoint, "http://www.booking.com/dml/graphql", false},
+		{"ipv6 zone smuggling", endpoint, "https://[::1%25.booking.com]/", false},
+		{"empty endpoint fails closed", "", "https://www.booking.com/", false},
+		{"hostless endpoint fails closed", "file:///etc/passwd", "https://www.booking.com/", false},
+
+		// A self-hosted or on-LAN endpoint reaches a provider config only by the
+		// user typing it, so plaintext there is their choice and refusing it
+		// would break the config while closing nothing: such an endpoint is
+		// same-site with its own preflight. Same-site is still enforced, by
+		// exact host — a bare literal has no registrable site to be a subdomain
+		// of, and a suffix rule over one is how host smuggling returns.
+		{"self-hosted endpoint, its own preflight", "http://127.0.0.1:8080/api", "http://127.0.0.1:8080/preflight", true},
+		{"self-hosted endpoint, foreign preflight", "http://127.0.0.1:8080/api", "https://mail.google.com/mail/u/0/", false},
+		{"self-hosted endpoint, neighbour on the LAN", "http://127.0.0.1:8080/api", "http://192.168.1.4/admin", false},
+		{"self-hosted endpoint, metadata service", "http://127.0.0.1:8080/api", "http://169.254.169.254/latest/meta-data/", false},
+		{"localhost by name, its own preflight", "http://localhost:8080/api", "http://localhost:8080/preflight", true},
+		{"localhost by name, loopback literal is a different host", "http://localhost:8080/api", "http://127.0.0.1:8080/preflight", false},
+		// No downgrade: cookies approved for a TLS endpoint may not be replayed
+		// over plaintext, not even back to the same host.
+		{"self-hosted https endpoint, plaintext preflight", "https://127.0.0.1:8443/api", "http://127.0.0.1:8443/preflight", false},
+		{"self-hosted endpoint, non-web scheme", "http://127.0.0.1:8080/api", "file:///etc/passwd", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &ProviderConfig{ID: "t", Endpoint: tc.endpoint}
+			if got := cookieTargetPermitted(cfg, tc.target); got != tc.want {
+				t.Errorf("cookieTargetPermitted(%q, %q) = %v, want %v",
+					tc.endpoint, tc.target, got, tc.want)
+			}
+		})
+	}
+
+	if cookieTargetPermitted(nil, "https://www.booking.com/") {
+		t.Error("cookieTargetPermitted(nil, ...) = true, want false")
+	}
+}
+
+// TestApplyBrowserCookies_OffSitePreflightGetsNoCookies is the end-to-end form:
+// cookies are available for the caller-named host, and the jar must still come
+// out empty because that host is not the provider the user approved.
+func TestApplyBrowserCookies_OffSitePreflightGetsNoCookies(t *testing.T) {
+	resetWarmCache(t)
+
+	const preflightURL = "https://mail.google.com/mail/u/0/"
+	entry := &warmCacheEntry{done: make(chan struct{})}
+	entry.cookies = []*http.Cookie{
+		{Name: "SID", Value: "live-session", Domain: ".google.com"},
+	}
+	close(entry.done)
+
+	warmCache.mu.Lock()
+	warmCache.entries[warmCacheKey(preflightURL, "")] = entry
+	warmCache.mu.Unlock()
+
+	vault := newCookieVault()
+	pc := &providerClient{
+		config: &ProviderConfig{ID: "t", Endpoint: "https://www.booking.com/dml/graphql"},
+		client: &http.Client{Jar: vault},
+	}
+
+	if applyBrowserCookies(pc, preflightURL, "") {
+		t.Error("applyBrowserCookies sent browser cookies to an off-site preflight URL, want refusal")
+	}
+	u, _ := url.Parse(preflightURL)
+	if got := vault.Cookies(u); len(got) != 0 {
+		t.Errorf("jar holds %d cookies for %s, want 0", len(got), preflightURL)
+	}
+	if vault.isBrowserSeeded() {
+		t.Error("vault marked browser-seeded after a refused off-site read")
 	}
 }

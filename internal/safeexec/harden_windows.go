@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"golang.org/x/sys/windows"
 )
 
@@ -81,12 +82,16 @@ func (c *containment) hold(p *os.Process) {
 	}
 	ph, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(p.Pid))
 	if err != nil {
-		slog.Debug("safeexec: could not open helper process for containment", "pid", p.Pid, "err", err)
+		// These two errors are redacted like any other. They are Windows-only,
+		// so no log-record test in this package can run on a non-Windows host;
+		// the static guard in internal/logredact parses this file regardless of
+		// GOOS and is what keeps the wrapping here from being dropped.
+		slog.Debug("safeexec: could not open helper process for containment", "pid", p.Pid, "err", logredact.Err(err))
 		return
 	}
 	defer windows.CloseHandle(ph)
 	if err := windows.AssignProcessToJobObject(c.job, ph); err != nil {
-		slog.Debug("safeexec: could not assign helper to job object", "pid", p.Pid, "err", err)
+		slog.Debug("safeexec: could not assign helper to job object", "pid", p.Pid, "err", logredact.Err(err))
 	}
 }
 

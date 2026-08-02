@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/net/html"
 
+	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
 )
@@ -188,9 +189,8 @@ func fetchRome2Rio(ctx context.Context, from, to string, allowBrowser bool) (str
 	if allowBrowser {
 		if tier1, terr := providers.NewTier1Client(); terr == nil {
 			req.Header.Set("User-Agent", rome2rioChromeUA)
-			for _, ck := range providers.BrowserCookiesForURL(target) {
-				req.AddCookie(ck)
-			}
+			// Browser-harvested; the seam re-checks the opt-out after the read.
+			cookies.AttachBrowserCookies(req, providers.BrowserCookiesForURL(target))
 			doer = tier1.Do
 		} else {
 			req.Header.Set("User-Agent", rome2rioChromeUA)

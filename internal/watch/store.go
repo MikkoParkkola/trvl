@@ -19,9 +19,6 @@ const (
 	// maxObservationsPerRoute caps retained points per route key, bounding the
 	// price-history file to cap x number-of-routes.
 	maxObservationsPerRoute = 1000
-	// maxRouteObservations caps the TOTAL number of ad-hoc route-keyed points
-	// across all routes, evicting the oldest first.
-	maxRouteObservations = 20000
 	// maxObservationsPerWatch caps retained points per watch. Watch-keyed points
 	// were originally exempt from every cap, which left the only truly unbounded
 	// corpus in the store: one real price-history.json reached 320,028 points in
@@ -94,7 +91,14 @@ func (s *Store) ensureDir() error {
 func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.loadLocked()
+}
 
+// loadLocked is Load for callers that already hold s.mu -- notably withTxn,
+// which reloads committed state inside a transaction so a mutation is applied
+// to what is on disk rather than to whatever snapshot this process was holding
+// (#512). Caller holds s.mu.
+func (s *Store) loadLocked() error {
 	s.watches = nil
 	s.history = nil
 
@@ -170,16 +174,31 @@ func (s *Store) persistLocked() error {
 	return nil
 }
 
-// Add inserts a watch, or updates the existing watch for the same target, and
-// persists. Returns the watch ID and whether a NEW watch was created.
+// Add inserts a watch, or returns the existing watch for the same user intent,
+// and persists. Returns the watch ID and whether a NEW watch was created.
 //
 // The `created` flag matters because Add is idempotent: callers used to report
 // "Added watch <id>" unconditionally and hand back an ID that was not new, which
 // is simply false on every re-watch.
+//
+// Identity is dedupeKey (polled target + price threshold), not SameTarget
+// (#509). Deduplicating on the target alone collapses "alert me at 200" and
+// "alert me at 120" into one record and silently discards the second intent.
+// The two share a pollKey, so the scheduler still costs one provider round trip
+// for both (MULTIPRICE.2).
+//
+// DIVERGENCE resolved here, worth knowing about: the release line folded
+// Currency into the SAME key it deduplicated on, which made a re-watch in a new
+// currency fork a second watch. main's SameTarget excluded Currency so the
+// re-watch migrated the existing one. Both rationales were written
+// deliberately, and both are right about their own job — see targetKey. Poll
+// identity keeps currency (two currencies are two provider requests); dedupe
+// identity drops it (a currency change is the same intent re-expressed).
+//
+// Runs inside a store transaction: the existence check and the append must be
+// atomic against another process doing the same thing, or both observe "absent"
+// and both append (#512).
 func (s *Store) Add(w Watch) (string, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if err := w.Validate(); err != nil {
 		return "", false, err
 	}
@@ -192,43 +211,49 @@ func (s *Store) Add(w Watch) (string, bool, error) {
 	// thresholds. Found by adversarial review, 2026-07-30 (round 18).
 	w.Currency = strings.ToUpper(strings.TrimSpace(w.Currency))
 
-	// Idempotent on target: re-watching something already watched updates the
-	// existing watch instead of appending a duplicate. Accumulated price history
-	// (LowestPrice, BaselinePrice, LastCheck, ...) is preserved — that history is
-	// the value of a long-running watch and must survive a re-watch.
-	for i := range s.watches {
-		if !s.watches[i].SameTarget(w) {
-			continue
+	key := w.dedupeKey()
+	var id string
+	created := false
+	err := s.withTxn(func() error {
+		i := findByDedupeKeyIndex(s.watches, key)
+		if i < 0 && w.BelowPrice == 0 {
+			// No price named: this is a settings-or-currency re-watch, not a
+			// new price intent. Match the target alone rather than forking a
+			// duplicate. See findByTargetIndex.
+			i = findByTargetIndex(s.watches, w.targetKey(false))
 		}
-		if s.watches[i].applyIntent(w) {
-			// Currency changed. applyIntent already reset this watch's own
-			// currency-denominated fields (LastPrice, LowestPrice, ...); the
-			// history corpus needs the same treatment. Every PricePoint
-			// recorded for this watch is denominated in the OLD currency, and
-			// Sparkline/TrendArrow/RoutePrices make no currency distinction
-			// within a single watch's series — leaving them in place would
-			// plot (and could re-derive a "low") from numbers in a currency
-			// that no longer matches what the watch reports. Purge rather
-			// than convert: no FX rate is available at this layer, and a
-			// fresh baseline in the new currency is correct, not merely
-			// simpler. Found by adversarial review, 2026-07-28.
-			s.purgeHistoryLocked(s.watches[i].ID)
+		if i >= 0 {
+			// Same intent already stored. Accumulated price history
+			// (LowestPrice, BaselinePrice, LastCheck, ...) is preserved — that
+			// history is the value of a long-running watch and must survive a
+			// re-watch.
+			if s.watches[i].applyIntent(w) {
+				// Currency changed. applyIntent already reset this watch's own
+				// currency-denominated fields; the history corpus needs the
+				// same treatment. Every PricePoint recorded for this watch is
+				// denominated in the OLD currency, and Sparkline/TrendArrow/
+				// RoutePrices make no currency distinction within a single
+				// watch's series — leaving them in place would plot (and could
+				// re-derive a "low" from) numbers in a currency the watch no
+				// longer reports. Purge rather than convert: no FX rate is
+				// available at this layer. Found by adversarial review,
+				// 2026-07-28.
+				s.purgeHistoryLocked(s.watches[i].ID)
+			}
+			id = s.watches[i].ID
+			return nil
 		}
-		if err := s.saveLocked(); err != nil {
-			return "", false, err
-		}
-		return s.watches[i].ID, false, nil
-	}
-
-	w.ID = shortID()
-	w.CreatedAt = time.Now()
-	w.RenewedAt = w.CreatedAt
-	s.watches = append(s.watches, w)
-
-	if err := s.saveLocked(); err != nil {
+		w.ID = shortID()
+		w.CreatedAt = time.Now()
+		w.RenewedAt = w.CreatedAt
+		s.watches = append(s.watches, w)
+		id, created = w.ID, true
+		return nil
+	})
+	if err != nil {
 		return "", false, err
 	}
-	return w.ID, true, nil
+	return id, created, nil
 }
 
 // applyIntent copies the caller-adjustable fields of `next` onto an existing

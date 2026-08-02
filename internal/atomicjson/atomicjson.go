@@ -16,6 +16,12 @@ import (
 	"runtime"
 )
 
+// testHookBeforeRename, when non-nil, is called with the fully written temp
+// file path immediately before the rename that publishes it. It is nil in
+// production and exists so a test can park a real process at exactly the point
+// a SIGKILL orphans a temp file, instead of racing a timer against a write.
+var testHookBeforeRename func(string)
+
 // Write marshals v as indented JSON and writes it to path atomically: it is
 // rendered to a temp file in the same directory (0600), fsynced, then renamed
 // over path so a reader never observes a partial file. The parent directory is
@@ -45,7 +51,12 @@ func WriteBytes(path string, b []byte) error {
 	if _, err := rand.Read(rnd); err != nil {
 		return fmt.Errorf("atomicjson: generate temp name: %w", err)
 	}
-	tmpPath := filepath.Join(dir, filepath.Base(path)+".tmp-"+hex.EncodeToString(rnd))
+	// The writer's PID is stamped into the name so a temp left behind by a
+	// SIGKILL can later be attributed to a process and checked for liveness.
+	// Without it "orphaned" and "in flight" are indistinguishable and no
+	// cleanup can ever be safe. The crypto-random suffix is retained: it, not
+	// the PID, is what makes the name unpredictable for O_EXCL.
+	tmpPath := filepath.Join(dir, tempName(filepath.Base(path), os.Getpid(), hex.EncodeToString(rnd)))
 	//nolint:gosec // mode 0600 is intentional — store files must be owner-only
 	tmp, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
@@ -69,6 +80,10 @@ func WriteBytes(path string, b []byte) error {
 	}
 	if err := tmp.Close(); err != nil {
 		return err
+	}
+
+	if hook := testHookBeforeRename; hook != nil {
+		hook(tmpPath)
 	}
 
 	if err := os.Rename(tmpPath, path); err != nil {
