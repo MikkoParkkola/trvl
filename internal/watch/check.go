@@ -242,7 +242,17 @@ type CheckResult struct {
 	// JSON DTOs) MUST surface this so the user knows to re-set their
 	// threshold. Found by GPT second-opinion review, 2026-07-30 (round 21).
 	AlertsClearedByCurrencyChange bool
-	Error                         error
+
+	// Stale reports that the watch was re-targeted (route, dates or currency)
+	// by someone else while this poll was in flight, so the provider's answer
+	// was discarded rather than written. Nothing fired: no alert, no webhook,
+	// no history point. The next scheduled round polls the new target.
+	//
+	// Callers should treat this as "no observation this round", not as an
+	// error, and must NOT report the price it carries as current.
+	Stale bool
+
+	Error error
 }
 
 // CheckAll checks all watches using the provided price checker and records
@@ -418,6 +428,12 @@ func checkOne(ctx context.Context, store *Store, checker PriceChecker, w Watch) 
 func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Store, checker PriceChecker, w Watch) CheckResult {
 	checkCtx, webhookCtx = normalizeCheckAndWebhookContexts(checkCtx, webhookCtx)
 
+	// The poll identity this check is about to ask the provider for, captured
+	// BEFORE the call. If the committed record no longer matches it when the
+	// answer comes back, the answer is stale and must be discarded rather than
+	// applied. See MutateAndRecordPrice's staleness gate.
+	pollKey := w.pollKey()
+
 	price, currency, cheapestDate, err := checker.CheckPrice(checkCtx, w)
 	if err != nil {
 		return CheckResult{Watch: w, Error: err}
@@ -502,7 +518,7 @@ func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Sto
 			lastMinute    bool
 			lastMinutePct float64
 		)
-		saved, err := store.MutateAndRecordPrice(w.ID, price, currency, func(cur *Watch) bool {
+		saved, applied, err := store.MutateAndRecordPrice(w.ID, pollKey, price, currency, func(cur *Watch) bool {
 			prevPrice = cur.LastPrice
 
 			// Round 18: cur.LastPrice == 0 is not a reliable "no prior
@@ -614,6 +630,15 @@ func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Sto
 		})
 		if err != nil {
 			result.Error = fmt.Errorf("update watch and record price: %w", err)
+			return result
+		}
+		if !applied {
+			// The watch was re-targeted while this poll was in flight, so the
+			// quote answers a stale question. Report the committed record and
+			// fire nothing: no alert, no webhook, no history point. The next
+			// scheduled round polls the new target.
+			result.Watch = saved
+			result.Stale = true
 			return result
 		}
 		result.PrevPrice = prevPrice

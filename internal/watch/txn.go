@@ -157,8 +157,9 @@ func (s *Store) Mutate(id string, apply func(*Watch)) (Watch, error) {
 //
 // TRVL.STORE.TXN.4: apply must never perform network I/O; the lock is held for
 // its whole duration.
-func (s *Store) MutateAndRecordPrice(id string, price float64, currency string, apply func(cur *Watch) (purgeHistory bool)) (Watch, error) {
+func (s *Store) MutateAndRecordPrice(id string, expectPollKey string, price float64, currency string, apply func(cur *Watch) (purgeHistory bool)) (Watch, bool, error) {
 	var out Watch
+	applied := false
 	err := s.withTxn(func() error {
 		idx := -1
 		for i := range s.watches {
@@ -170,6 +171,29 @@ func (s *Store) MutateAndRecordPrice(id string, price float64, currency string, 
 		if idx < 0 {
 			return fmt.Errorf("watch %s not found", id)
 		}
+		out = s.watches[idx]
+
+		// Staleness gate. expectPollKey is the poll identity the caller's
+		// provider call was made FOR, captured before that call. If the
+		// committed record no longer matches it, this result answers a question
+		// nobody is asking any more and must be discarded, not applied.
+		//
+		// The race this closes (found by GPT second-opinion review, 2026-08-02):
+		// livecheck selects results in the SNAPSHOT's currency
+		// (cheapestByCurrency(..., w.Currency)), so a poll started against a JPY
+		// watch returns a JPY quote. If another process re-watches the target in
+		// EUR while that poll is in flight, the returning check sees committed
+		// EUR against a JPY quote, reads it as a currency change, and wipes the
+		// fresh EUR threshold, purges the EUR history and drags the watch back
+		// to JPY -- on the strength of a quote that predates the re-watch.
+		//
+		// Deciding inside the transaction is not enough on its own: the decision
+		// is correct about state, but the INPUT is stale. Only comparing the
+		// poll identity catches that.
+		if expectPollKey != "" && s.watches[idx].pollKey() != expectPollKey {
+			return errTxnNoop
+		}
+
 		purgeHistory := apply(&s.watches[idx])
 		out = s.watches[idx]
 
@@ -184,7 +208,8 @@ func (s *Store) MutateAndRecordPrice(id string, price float64, currency string, 
 		})
 		s.pruneWatchLocked(id)
 		s.pruneGlobalWatchLocked()
+		applied = true
 		return nil
 	})
-	return out, err
+	return out, applied, err
 }

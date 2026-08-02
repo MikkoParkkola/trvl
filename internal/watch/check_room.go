@@ -14,6 +14,10 @@ func checkRoom(ctx context.Context, store *Store, checker RoomChecker, w Watch) 
 func checkRoomWithWebhookContext(checkCtx, webhookCtx context.Context, store *Store, checker RoomChecker, w Watch) CheckResult {
 	checkCtx, webhookCtx = normalizeCheckAndWebhookContexts(checkCtx, webhookCtx)
 
+	// See checkOneWithWebhookContext: poll identity captured before the
+	// provider call, so a result for a re-targeted watch is discarded.
+	pollKey := w.pollKey()
+
 	matches, err := checker.CheckRooms(checkCtx, w)
 	if err != nil {
 		return CheckResult{Watch: w, Error: err}
@@ -221,10 +225,11 @@ func checkRoomWithWebhookContext(checkCtx, webhookCtx context.Context, store *St
 		priceDrop     float64
 		belowGoal     bool
 		saved         Watch
+		applied       = true
 	)
 	if result.NewPrice > 0 {
 		price, currency := result.NewPrice, result.Currency
-		saved, err = store.MutateAndRecordPrice(w.ID, price, currency, func(cur *Watch) bool {
+		saved, applied, err = store.MutateAndRecordPrice(w.ID, pollKey, price, currency, func(cur *Watch) bool {
 			prevPrice = cur.LastPrice
 
 			// Round 18: cur.LastPrice == 0 is not a reliable "no prior
@@ -299,6 +304,13 @@ func checkRoomWithWebhookContext(checkCtx, webhookCtx context.Context, store *St
 	}
 	if err != nil {
 		result.Error = fmt.Errorf("update watch and record price: %w", err)
+		return result
+	}
+	if !applied {
+		// Re-targeted mid-poll: this result is for a question nobody is asking
+		// any more. Same reasoning as checkOneWithWebhookContext.
+		result.Watch = saved
+		result.Stale = true
 		return result
 	}
 	result.PrevPrice = prevPrice

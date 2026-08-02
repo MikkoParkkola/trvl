@@ -315,15 +315,141 @@ func TestCompletedCurrencyMigrationIsNotReapplied(t *testing.T) {
 			"had already been reconciled by the other process before this check wrote")
 	}
 	eur := 0
+	jpy := 0
 	for _, p := range reader.History(id) {
-		if p.Currency == "EUR" {
+		switch p.Currency {
+		case "EUR":
 			eur++
+		case "JPY":
+			jpy++
 		}
 	}
-	// The other process's EUR observation plus this check's own.
-	if eur < 2 {
-		t.Errorf("new-currency history was purged: %d EUR point(s), want >= 2 -- "+
+	// The other process's EUR observation must survive. This check's own quote
+	// does NOT land: the migration changed the watch's poll identity, so the
+	// staleness gate discards a result that was requested for the old target.
+	if eur < 1 {
+		t.Errorf("new-currency history was purged: %d EUR point(s), want >= 1 -- "+
 			"a stale currencyChanged purged history written in the CURRENT currency", eur)
+	}
+	if jpy != 0 {
+		t.Errorf("old-currency history survived the migration: %d JPY point(s), want 0", jpy)
+	}
+	if !res.Stale {
+		t.Errorf("the poll was applied rather than discarded: this check was started " +
+			"against the pre-migration target, so its answer is stale")
+	}
+}
+
+// TRVL.MERGE.TXN.4 -- a poll that returns the OLD currency after another
+// process migrated the watch must be DISCARDED, not applied.
+//
+// This is the direction TXN.3 does not reach, and the one that actually loses
+// data. livecheck selects results in the SNAPSHOT's currency
+// (cheapestByCurrency(..., w.Currency)), so a poll started against a JPY watch
+// comes back holding a JPY quote. If EUR was committed meanwhile, the returning
+// check reads committed-EUR-versus-JPY-quote as a currency change and wipes the
+// fresh EUR threshold, purges the EUR history and drags the watch back to JPY --
+// on the strength of a quote that predates the re-watch.
+//
+// Deciding inside the transaction does not help here: the decision is correct
+// about the state, but the INPUT is stale. Only comparing the poll identity
+// catches it. Found by GPT second-opinion review, 2026-08-02, which noted
+// TXN.3's fake provider returns the NEW currency and therefore never exercises
+// this.
+//
+// Sabotage check: passing "" as expectPollKey (disabling the gate) fails this
+// at the threshold and history assertions.
+func TestStalePollInOldCurrencyIsDiscarded(t *testing.T) {
+	if !lockSupported {
+		t.Skip("store transactions are not enforced on this platform")
+	}
+
+	dir := t.TempDir()
+	s := NewStore(dir)
+	id, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "JPY", BelowPrice: 15000,
+	})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := s.RecordPrice(id, 20000, "JPY"); err != nil {
+		t.Fatalf("seed history: %v", err)
+	}
+
+	// The stale copy: JPY. The poll below is made FOR this target.
+	w, _ := s.Get(id)
+
+	other := NewStore(dir)
+	var migrateErr error
+	checker := &editingChecker{
+		// The provider answers in the currency the poll asked for -- JPY --
+		// because livecheck selects on the snapshot's currency.
+		price:    19000,
+		currency: "JPY",
+		duringCall: func() {
+			if _, _, err := other.Add(Watch{
+				Type: "flight", Origin: "HEL", Destination: "BCN",
+				Currency: "EUR",
+			}); err != nil {
+				migrateErr = err
+				return
+			}
+			if _, err := other.Update(id, WatchUpdate{AlertDropAbs: f64Ptr(250)}); err != nil {
+				migrateErr = err
+				return
+			}
+			if err := other.RecordPrice(id, 160, "EUR"); err != nil {
+				migrateErr = err
+			}
+		},
+	}
+
+	res := checkOne(context.Background(), s, checker, w)
+	if res.Error != nil {
+		t.Fatalf("check: %v", res.Error)
+	}
+	if migrateErr != nil {
+		t.Fatalf("concurrent migration failed: %v", migrateErr)
+	}
+	if !res.Stale {
+		t.Errorf("a poll for a re-targeted watch was applied instead of discarded")
+	}
+	if res.PriceDropAlert || res.BelowGoal {
+		t.Errorf("a discarded poll still fired an alert: PriceDropAlert=%v BelowGoal=%v",
+			res.PriceDropAlert, res.BelowGoal)
+	}
+
+	reader := NewStore(dir)
+	if err := reader.Load(); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	got, ok := reader.Get(id)
+	if !ok {
+		t.Fatalf("watch %s vanished", id)
+	}
+	if got.Currency != "EUR" {
+		t.Errorf("a stale JPY quote dragged the watch back to %q; the committed currency was EUR",
+			got.Currency)
+	}
+	if got.AlertDropAbs != 250 {
+		t.Errorf("a stale quote wiped the freshly re-set threshold: AlertDropAbs = %v, want 250",
+			got.AlertDropAbs)
+	}
+	eur, jpy := 0, 0
+	for _, p := range reader.History(id) {
+		switch p.Currency {
+		case "EUR":
+			eur++
+		case "JPY":
+			jpy++
+		}
+	}
+	if eur < 1 {
+		t.Errorf("a stale quote purged the new-currency history: %d EUR point(s), want >= 1", eur)
+	}
+	if jpy != 0 {
+		t.Errorf("a stale JPY quote was recorded anyway: %d JPY point(s), want 0", jpy)
 	}
 }
 
