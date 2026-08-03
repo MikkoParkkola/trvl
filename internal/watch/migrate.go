@@ -73,6 +73,22 @@ func (s *Store) Migrate() (MigrationReport, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// #553: take the cross-process lock for the whole migrate-and-persist
+	// cycle, same as every other Store mutation, so a concurrent scheduler
+	// tick or MCP call cannot write between this method's backup/collapse
+	// and its final persistLocked. Migrate deliberately does NOT reload
+	// (like Save, not like withTxnLocked): it reports before/after counts
+	// against whatever the caller already Load()ed, and reloading here would
+	// silently change what "before" means out from under that report.
+	if err := s.ensureDir(); err != nil {
+		return MigrationReport{}, fmt.Errorf("create storage dir: %w", err)
+	}
+	lock, err := acquireFileLock(s.lockPath())
+	if err != nil {
+		return MigrationReport{}, fmt.Errorf("acquire store lock: %w", err)
+	}
+	defer releaseFileLock(lock)
+
 	rep := MigrationReport{
 		WatchesBefore: len(s.watches),
 		HistoryBefore: len(s.history),

@@ -53,6 +53,13 @@ func TestStoreAddPreservesAccumulatedStateOnRewatch(t *testing.T) {
 		}
 	}
 	created := s.watches[0].CreatedAt
+	// #553: Add now reloads committed state inside its cross-process
+	// transaction, so simulated accumulated state must be persisted (as it
+	// always would be in production, via RecordPrice/UpdateWatchAndRecordPrice)
+	// rather than left as an unsaved in-memory mutation.
+	if err := s.Save(); err != nil {
+		t.Fatalf("save simulated state: %v", err)
+	}
 
 	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 150, Currency: "EUR"}); err != nil {
 		t.Fatalf("re-add: %v", err)
@@ -359,6 +366,11 @@ func TestWatchLowestPriceSurvivesHistoryEviction(t *testing.T) {
 			s.watches[i].CheapestDate = "2026-05-01"
 		}
 	}
+	// #553: RecordPrice reloads committed state inside its cross-process
+	// transaction; persist the simulated all-time low first.
+	if err := s.Save(); err != nil {
+		t.Fatalf("save simulated state: %v", err)
+	}
 
 	for i := 0; i < maxObservationsPerWatch+50; i++ {
 		if err := s.RecordPrice(id, 300, "EUR"); err != nil {
@@ -570,6 +582,11 @@ func TestStoreAddPreservesStateWhenCurrencyIsUnchanged(t *testing.T) {
 			s.watches[i].LastPrice = 450
 			s.watches[i].LowestPrice = 400
 		}
+	}
+	// #553: RecordPrice reloads committed state inside its cross-process
+	// transaction; persist the simulated prior observation first.
+	if err := s.Save(); err != nil {
+		t.Fatalf("save simulated state: %v", err)
 	}
 	if err := s.RecordPrice(id, 450, "EUR"); err != nil {
 		t.Fatalf("record price: %v", err)

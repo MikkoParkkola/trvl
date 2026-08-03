@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -89,12 +90,78 @@ func (s *Store) ensureDir() error {
 	return os.MkdirAll(s.dir, 0o700)
 }
 
+// lockPath is the dedicated advisory-lock file for this store directory.
+//
+// It is deliberately NOT one of the data files. atomicjson.Write persists by
+// writing a temporary file and renaming it over the target, which swaps the
+// inode; a lock held on watches.json would be silently dropped by the very
+// save it was meant to guard. The lock file is created once and never
+// replaced.
+func (s *Store) lockPath() string {
+	return filepath.Join(s.dir, ".lock")
+}
+
+// errTxnNoop is returned by a withTxnLocked callback that decided, after
+// seeing committed state, that there is nothing to write. The transaction
+// unwinds without saving and withTxnLocked reports success. It is never
+// surfaced to callers.
+var errTxnNoop = errors.New("watch: transaction is a no-op")
+
+// withTxnLocked runs apply as a single atomic read-modify-write against the
+// on-disk store: acquire the cross-process advisory lock, reload committed
+// state from disk, apply the mutation, save, release. Caller holds s.mu.
+//
+// This restores the cross-process coordination #553 identified as lost when
+// this branch took main's #508 refactor wholesale: main's own
+// docs/design/2026-07-26-watch-store-coordination.md documents the gap and
+// names this exact shape ("advisory file lock around the whole
+// read-modify-write cycle", using the lock.go primitive) as "what a real fix
+// looks like" -- it names the shape, not the wiring, which is done here.
+//
+// Without this, every mutating Store method applied to whatever snapshot the
+// process happened to be holding and then rewrote both files wholesale: two
+// processes (a scheduler round and a concurrent MCP tool call are the normal
+// case, not an edge case -- 15 orphaned `trvl mcp` processes have been
+// observed alive at once) silently clobbered each other's committed writes,
+// no error, no torn file, no warning.
+//
+// On platforms without a lock implementation (lockSupported == false),
+// acquireFileLock is a no-op returning (nil, nil) and this degrades to
+// in-process serialisation only (s.mu), same as before -- see lock_other.go.
+func (s *Store) withTxnLocked(apply func() error) error {
+	if err := s.ensureDir(); err != nil {
+		return fmt.Errorf("create storage dir: %w", err)
+	}
+	lock, err := acquireFileLock(s.lockPath())
+	if err != nil {
+		return fmt.Errorf("acquire store lock: %w", err)
+	}
+	defer releaseFileLock(lock)
+
+	if err := s.loadLocked(); err != nil {
+		return err
+	}
+	if err := apply(); err != nil {
+		if errors.Is(err, errTxnNoop) {
+			return nil
+		}
+		return err
+	}
+	return s.persistLocked()
+}
+
 // Load reads watches and history from disk. If the files do not exist,
 // the store starts empty (not an error).
 func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.loadLocked()
+}
 
+// loadLocked is Load for callers already holding s.mu. It is also the reload
+// step inside withTxnLocked, so every in-transaction reload sees the same
+// normalization Load always applied.
+func (s *Store) loadLocked() error {
 	s.watches = nil
 	s.history = nil
 
@@ -137,9 +204,27 @@ func (s *Store) Load() error {
 }
 
 // Save writes watches and history to disk atomically.
+//
+// Save deliberately does NOT reload first: it means "publish what I am
+// holding", which is last-writer-wins across processes by construction (a
+// caller that loaded long ago and calls Save can still discard another
+// process's committed work). It still takes the cross-process lock so it
+// cannot interleave with another writer's transaction mid read-modify-write.
+// Mutating callers should use Add / Remove / UpdateWatch /
+// UpdateWatchAndRecordPrice / RecordPrice / PurgeHistory, all of which reload
+// inside the lock via withTxnLocked.
 func (s *Store) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if err := s.ensureDir(); err != nil {
+		return fmt.Errorf("create storage dir: %w", err)
+	}
+	lock, err := acquireFileLock(s.lockPath())
+	if err != nil {
+		return fmt.Errorf("acquire store lock: %w", err)
+	}
+	defer releaseFileLock(lock)
 	return s.saveLocked()
 }
 
@@ -177,9 +262,6 @@ func (s *Store) persistLocked() error {
 // "Added watch <id>" unconditionally and hand back an ID that was not new, which
 // is simply false on every re-watch.
 func (s *Store) Add(w Watch) (string, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if err := w.Validate(); err != nil {
 		return "", false, err
 	}
@@ -192,43 +274,51 @@ func (s *Store) Add(w Watch) (string, bool, error) {
 	// thresholds. Found by adversarial review, 2026-07-30 (round 18).
 	w.Currency = strings.ToUpper(strings.TrimSpace(w.Currency))
 
-	// Idempotent on target: re-watching something already watched updates the
-	// existing watch instead of appending a duplicate. Accumulated price history
-	// (LowestPrice, BaselinePrice, LastCheck, ...) is preserved — that history is
-	// the value of a long-running watch and must survive a re-watch.
-	for i := range s.watches {
-		if !s.watches[i].SameTarget(w) {
-			continue
-		}
-		if s.watches[i].applyIntent(w) {
-			// Currency changed. applyIntent already reset this watch's own
-			// currency-denominated fields (LastPrice, LowestPrice, ...); the
-			// history corpus needs the same treatment. Every PricePoint
-			// recorded for this watch is denominated in the OLD currency, and
-			// Sparkline/TrendArrow/RoutePrices make no currency distinction
-			// within a single watch's series — leaving them in place would
-			// plot (and could re-derive a "low") from numbers in a currency
-			// that no longer matches what the watch reports. Purge rather
-			// than convert: no FX rate is available at this layer, and a
-			// fresh baseline in the new currency is correct, not merely
-			// simpler. Found by adversarial review, 2026-07-28.
-			s.purgeHistoryLocked(s.watches[i].ID)
-		}
-		if err := s.saveLocked(); err != nil {
-			return "", false, err
-		}
-		return s.watches[i].ID, false, nil
-	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	w.ID = shortID()
-	w.CreatedAt = time.Now()
-	w.RenewedAt = w.CreatedAt
-	s.watches = append(s.watches, w)
+	var id string
+	var created bool
+	err := s.withTxnLocked(func() error {
+		// Idempotent on target: re-watching something already watched updates the
+		// existing watch instead of appending a duplicate. Accumulated price history
+		// (LowestPrice, BaselinePrice, LastCheck, ...) is preserved — that history is
+		// the value of a long-running watch and must survive a re-watch.
+		for i := range s.watches {
+			if !s.watches[i].SameTarget(w) {
+				continue
+			}
+			if s.watches[i].applyIntent(w) {
+				// Currency changed. applyIntent already reset this watch's own
+				// currency-denominated fields (LastPrice, LowestPrice, ...); the
+				// history corpus needs the same treatment. Every PricePoint
+				// recorded for this watch is denominated in the OLD currency, and
+				// Sparkline/TrendArrow/RoutePrices make no currency distinction
+				// within a single watch's series — leaving them in place would
+				// plot (and could re-derive a "low") from numbers in a currency
+				// that no longer matches what the watch reports. Purge rather
+				// than convert: no FX rate is available at this layer, and a
+				// fresh baseline in the new currency is correct, not merely
+				// simpler. Found by adversarial review, 2026-07-28.
+				s.purgeHistoryLocked(s.watches[i].ID)
+			}
+			id = s.watches[i].ID
+			created = false
+			return nil
+		}
 
-	if err := s.saveLocked(); err != nil {
+		w.ID = shortID()
+		w.CreatedAt = time.Now()
+		w.RenewedAt = w.CreatedAt
+		s.watches = append(s.watches, w)
+		id = w.ID
+		created = true
+		return nil
+	})
+	if err != nil {
 		return "", false, err
 	}
-	return w.ID, true, nil
+	return id, created, nil
 }
 
 // applyIntent copies the caller-adjustable fields of `next` onto an existing
@@ -349,16 +439,21 @@ func (s *Store) Remove(id string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for i, w := range s.watches {
-		if w.ID == id {
-			s.watches = append(s.watches[:i], s.watches[i+1:]...)
-			if err := s.saveLocked(); err != nil {
-				return false, err
+	var found bool
+	err := s.withTxnLocked(func() error {
+		for i, w := range s.watches {
+			if w.ID == id {
+				s.watches = append(s.watches[:i], s.watches[i+1:]...)
+				found = true
+				return nil
 			}
-			return true, nil
 		}
+		return errTxnNoop
+	})
+	if err != nil {
+		return false, err
 	}
-	return false, nil
+	return found, nil
 }
 
 // UpdateWatch replaces a watch in-place by ID and persists.
@@ -366,13 +461,15 @@ func (s *Store) UpdateWatch(updated Watch) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for i, w := range s.watches {
-		if w.ID == updated.ID {
-			s.watches[i] = updated
-			return s.saveLocked()
+	return s.withTxnLocked(func() error {
+		for i, w := range s.watches {
+			if w.ID == updated.ID {
+				s.watches[i] = updated
+				return nil
+			}
 		}
-	}
-	return fmt.Errorf("watch %s not found", updated.ID)
+		return fmt.Errorf("watch %s not found", updated.ID)
+	})
 }
 
 // UpdateWatchAndRecordPrice updates a watch and records a new price point
@@ -389,74 +486,51 @@ func (s *Store) UpdateWatch(updated Watch) error {
 // appending an old-currency point before this call's own
 // PurgeHistory+RecordPrice ran.
 //
-// What this does NOT close, both pre-existing and store-WIDE (not introduced
-// or worsened by this PR's currency-change work):
+// #553: cross-process coordination is now also closed. This runs inside
+// withTxnLocked, which takes the advisory file lock (internal/watch/lock.go
+// primitives) around a reload-apply-save cycle, so the scheduler's *Store and
+// the MCP `watch_price` tool's independent *Store (each pointed at the same
+// directory with their own sync.Mutex) no longer silently clobber each
+// other's committed writes. See docs/design/2026-07-26-watch-store-coordination.md
+// for the failure sequence this closes and why an advisory lock (its "what a
+// real fix looks like" option 1) was the chosen shape over batching or a
+// store-format change.
 //
-//  1. Cross-process coordination. s.mu is a field on ONE *Store value, not a
-//     cross-process lock. The scheduler (internal/watch/scheduler.go, runOnce)
-//     and the MCP `watch_price` tool (mcp/tools_watch_price.go,
-//     handleCheckWatches) each construct their OWN independent *Store pointed
-//     at the same directory, with their own separate sync.Mutex. Two
-//     concurrent checks -- a scheduler tick and a manual MCP check -- on the
-//     same watch can genuinely interleave watches.json/price-history.json
-//     writes with NO CRASH REQUIRED; the store is last-writer-wins across
-//     processes. Documented, dated before this PR, in
-//     docs/design/2026-07-26-watch-store-coordination.md.
-//  2. On-disk crash atomicity. saveLocked -> persistLocked still writes
-//     watches.json and price-history.json as two independent atomic renames
-//     (store.go persistLocked, ~line 140); a process crash between those two
-//     renames can still leave a new-currency watch next to old-currency
-//     history on disk. Every Store write (Add, RecordPrice, PurgeHistory, a
-//     plain same-currency poll) has always split its persistence across
-//     these same two files with no cross-file transaction
-//     (persistLocked's two-saveJSON-call shape was introduced in 90b7202,
-//     before any of this effort).
-//
-// Closing either for real needs the same kind of store-wide change (an
-// advisory file lock around the read-modify-write cycle, or a store-format
-// change to a single combined snapshot / WAL with replay-on-Load) applied to
-// the whole Store -- NOT a per-call patch here. Note internal/watch/lock.go
-// already has the flock/LockFileEx primitive this would need, but today it's
-// wired only to SchedulerLock (a narrower singleton lock so at most one
-// scheduler runs per directory), not to a general read-modify-write lock
-// around every Store mutation -- that wiring is exactly the "advisory file
-// lock" option docs/design/2026-07-26-watch-store-coordination.md's
-// "what a real fix looks like" section proposes and has not been built yet.
-// Either way this is a separate follow-up, not this PR's job. Found by
-// adversarial review, 2026-07-29 (round 11 in-memory fix, round 12 found the
-// on-disk claim above was overstated, round 13 corrected it, round 14 found
-// this comment's own "or process" claim in the closes-list above was itself
-// overstated and corrected it into the does-not-close list).
+// Still open, store-wide and not this method's job: on-disk crash atomicity.
+// persistLocked still writes watches.json and price-history.json as two
+// independent atomic renames; a process crash between those two renames can
+// still leave a new-currency watch next to old-currency history on disk.
 func (s *Store) UpdateWatchAndRecordPrice(updated Watch, purgeHistory bool, price float64, currency string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	found := false
-	for i, w := range s.watches {
-		if w.ID == updated.ID {
-			s.watches[i] = updated
-			found = true
-			break
+	return s.withTxnLocked(func() error {
+		found := false
+		for i, w := range s.watches {
+			if w.ID == updated.ID {
+				s.watches[i] = updated
+				found = true
+				break
+			}
 		}
-	}
-	if !found {
-		return fmt.Errorf("watch %s not found", updated.ID)
-	}
+		if !found {
+			return fmt.Errorf("watch %s not found", updated.ID)
+		}
 
-	if purgeHistory {
-		s.purgeHistoryLocked(updated.ID)
-	}
+		if purgeHistory {
+			s.purgeHistoryLocked(updated.ID)
+		}
 
-	s.history = append(s.history, PricePoint{
-		WatchID:   updated.ID,
-		Price:     price,
-		Currency:  currency,
-		Timestamp: time.Now(),
+		s.history = append(s.history, PricePoint{
+			WatchID:   updated.ID,
+			Price:     price,
+			Currency:  currency,
+			Timestamp: time.Now(),
+		})
+		s.pruneWatchLocked(updated.ID)
+		s.pruneGlobalWatchLocked()
+		return nil
 	})
-	s.pruneWatchLocked(updated.ID)
-	s.pruneGlobalWatchLocked()
-
-	return s.saveLocked()
 }
 
 // PurgeHistory drops every PricePoint recorded for watchID and persists.
@@ -473,8 +547,10 @@ func (s *Store) UpdateWatchAndRecordPrice(updated Watch, purgeHistory bool, pric
 func (s *Store) PurgeHistory(watchID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.purgeHistoryLocked(watchID)
-	return s.saveLocked()
+	return s.withTxnLocked(func() error {
+		s.purgeHistoryLocked(watchID)
+		return nil
+	})
 }
 
 // purgeHistoryLocked drops every PricePoint recorded for watchID. Caller
@@ -527,9 +603,6 @@ func (s *Store) purgeHistoryLocked(watchID string) {
 // first observation, mirroring the poll path's own first-quote handling.
 // Found by GPT second-opinion review, 2026-07-30 (round 20).
 func (s *Store) RecordPrice(watchID string, price float64, currency string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	rawCurrency := currency
 	cur := strings.ToUpper(strings.TrimSpace(currency))
 	if price > 0 && cur != "" && !IsValidCurrencyFormat(cur) {
@@ -539,64 +612,69 @@ func (s *Store) RecordPrice(watchID string, price float64, currency string) erro
 		return fmt.Errorf("record price: unusable currency %q", rawCurrency)
 	}
 
-	if price > 0 {
-		for i := range s.watches {
-			if s.watches[i].ID != watchID {
-				continue
-			}
-			hasPriorObservation := s.watches[i].LastPrice > 0 || s.watches[i].LowestPrice > 0
-			watchCurrency := s.watches[i].Currency
-			unknownCurrencyWithHistory := watchCurrency == "" && hasPriorObservation
-			// Round 21 found two remaining gaps in this gate. First, reject
-			// was previously conditioned on `mismatch && hasPriorObservation`:
-			// a watch with an explicit non-empty Currency (set at
-			// watch-creation, before any observation) but zero prior
-			// observations fell through this gate untouched -- it silently
-			// accepted a differently-labeled first observation, kept its
-			// stale Currency label, and stored mismatched-currency
-			// scalars/history under it. The Currency field IS the
-			// established baseline the moment it's non-empty; it does not
-			// need a prior observation to mean something. Second, an
-			// empty-currency observation was unconditionally accepted onto
-			// an established (non-empty Currency) watch because the
-			// mismatch formula required `cur != ""` -- reject that too,
-			// rather than mixing an unlabeled scalar/history point into a
-			// series the rest of the package assumes is single-currency.
-			// Found by GPT second-opinion review, 2026-07-30 (round 21).
-			if watchCurrency != "" && cur != "" && watchCurrency != cur {
-				return fmt.Errorf("record price: currency %q does not match watch currency %q", cur, watchCurrency)
-			}
-			if watchCurrency != "" && cur == "" {
-				return fmt.Errorf("record price: missing currency for watch established in %q", watchCurrency)
-			}
-			if unknownCurrencyWithHistory && cur != "" {
-				// Round 20: a currencyless watch that already has real
-				// price history cannot safely accept ANY labeled
-				// observation through this raw recorder -- that requires
-				// the full reset check.go's poll path performs, which
-				// RecordPrice does not.
-				return fmt.Errorf("record price: currency %q does not match watch currency %q", cur, watchCurrency)
-			}
-			if watchCurrency == "" && cur != "" {
-				s.watches[i].Currency = cur
-			}
-			s.watches[i].LastPrice = price
-			if s.watches[i].LowestPrice == 0 || price < s.watches[i].LowestPrice {
-				s.watches[i].LowestPrice = price
-			}
-			break
-		}
-	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	s.history = append(s.history, PricePoint{
-		WatchID:   watchID,
-		Price:     price,
-		Currency:  cur,
-		Timestamp: time.Now(),
+	return s.withTxnLocked(func() error {
+		if price > 0 {
+			for i := range s.watches {
+				if s.watches[i].ID != watchID {
+					continue
+				}
+				hasPriorObservation := s.watches[i].LastPrice > 0 || s.watches[i].LowestPrice > 0
+				watchCurrency := s.watches[i].Currency
+				unknownCurrencyWithHistory := watchCurrency == "" && hasPriorObservation
+				// Round 21 found two remaining gaps in this gate. First, reject
+				// was previously conditioned on `mismatch && hasPriorObservation`:
+				// a watch with an explicit non-empty Currency (set at
+				// watch-creation, before any observation) but zero prior
+				// observations fell through this gate untouched -- it silently
+				// accepted a differently-labeled first observation, kept its
+				// stale Currency label, and stored mismatched-currency
+				// scalars/history under it. The Currency field IS the
+				// established baseline the moment it's non-empty; it does not
+				// need a prior observation to mean something. Second, an
+				// empty-currency observation was unconditionally accepted onto
+				// an established (non-empty Currency) watch because the
+				// mismatch formula required `cur != ""` -- reject that too,
+				// rather than mixing an unlabeled scalar/history point into a
+				// series the rest of the package assumes is single-currency.
+				// Found by GPT second-opinion review, 2026-07-30 (round 21).
+				if watchCurrency != "" && cur != "" && watchCurrency != cur {
+					return fmt.Errorf("record price: currency %q does not match watch currency %q", cur, watchCurrency)
+				}
+				if watchCurrency != "" && cur == "" {
+					return fmt.Errorf("record price: missing currency for watch established in %q", watchCurrency)
+				}
+				if unknownCurrencyWithHistory && cur != "" {
+					// Round 20: a currencyless watch that already has real
+					// price history cannot safely accept ANY labeled
+					// observation through this raw recorder -- that requires
+					// the full reset check.go's poll path performs, which
+					// RecordPrice does not.
+					return fmt.Errorf("record price: currency %q does not match watch currency %q", cur, watchCurrency)
+				}
+				if watchCurrency == "" && cur != "" {
+					s.watches[i].Currency = cur
+				}
+				s.watches[i].LastPrice = price
+				if s.watches[i].LowestPrice == 0 || price < s.watches[i].LowestPrice {
+					s.watches[i].LowestPrice = price
+				}
+				break
+			}
+		}
+
+		s.history = append(s.history, PricePoint{
+			WatchID:   watchID,
+			Price:     price,
+			Currency:  cur,
+			Timestamp: time.Now(),
+		})
+		s.pruneWatchLocked(watchID)
+		s.pruneGlobalWatchLocked()
+		return nil
 	})
-	s.pruneWatchLocked(watchID)
-	s.pruneGlobalWatchLocked()
-	return s.saveLocked()
 }
 
 // pruneWatchLocked drops the oldest observations for watchID beyond
