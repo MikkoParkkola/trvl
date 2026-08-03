@@ -213,3 +213,46 @@ func (s *Store) MutateAndRecordPrice(id string, expectPollKey string, price floa
 	})
 	return out, applied, err
 }
+
+// MutateValidated is Mutate with the caller's edit validated against the
+// COMMITTED record, inside the transaction.
+//
+// Mutate's callback cannot reject, so callers that need validation had to build
+// a candidate from a snapshot taken BEFORE the transaction opened, validate
+// that, and then apply blind to whatever the transaction reloaded. Two edits
+// that are each valid against their own snapshot can combine into an invalid
+// record -- e.g. one enables last-minute mode while another writes a negative
+// drop percentage that Validate only rejects once the mode is on. Neither
+// caller sees an error; the store ends up holding a record that Validate would
+// refuse.
+//
+// Here the candidate is built from the reloaded record and validated with the
+// lock held, so the check and the write it guards are one atomic step.
+//
+// TESTING NOTE: the window this closes is not reachable through the public API.
+// It sits between the caller's validate and its Mutate, and nothing can pause a
+// function mid-call from outside -- injecting at a transaction hook instead
+// deadlocks, because the lock is already held by then. The guarantee is
+// therefore structural rather than demonstrated: there is no regression test,
+// deliberately, rather than one that passes whether or not the fix is present.
+// See #544.
+func (s *Store) MutateValidated(id string, apply func(*Watch)) (Watch, error) {
+	var out Watch
+	err := s.withTxn(func() error {
+		for i := range s.watches {
+			if s.watches[i].ID != id {
+				continue
+			}
+			candidate := s.watches[i]
+			apply(&candidate)
+			if err := candidate.Validate(); err != nil {
+				return err
+			}
+			s.watches[i] = candidate
+			out = candidate
+			return nil
+		}
+		return fmt.Errorf("watch %s not found", id)
+	})
+	return out, err
+}
