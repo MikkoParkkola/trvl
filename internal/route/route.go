@@ -19,6 +19,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -81,7 +82,10 @@ func SearchRoute(ctx context.Context, origin, destination, date string, opts Opt
 		destHub = Hub{City: destCity, Airports: []string{strings.ToUpper(destination)}}
 	}
 
-	slog.Debug("route search", "origin", originHub.City, "dest", destHub.City, "date", date)
+	// The origin/destination/date triple is the journey itself: logging it puts
+	// a user's travel plan in plaintext at Debug. Flow tracing only needs to
+	// know the search ran; the counts logged below carry the diagnostic value.
+	slog.Debug("route search")
 
 	// Build candidate paths.
 	paths := buildPaths(originHub, destHub, opts)
@@ -275,7 +279,7 @@ func searchFlightLeg(ctx context.Context, from, to Hub, date string, opts Option
 
 	result, err := searchFlightsFunc(ctx, origin, dest, date, flights.SearchOptions{})
 	if err != nil {
-		slog.Debug("route flight search failed", "from", origin, "to", dest, "err", err)
+		slog.Debug("route flight search failed", "err", logredact.Err(err))
 		return nil
 	}
 
@@ -339,7 +343,7 @@ func searchGroundLeg(ctx context.Context, from, to Hub, date string, opts Option
 		AllowBrowserFallbacks: opts.AllowBrowserFallbacks,
 	})
 	if err != nil {
-		slog.Debug("route ground search failed", "from", from.City, "to", to.City, "err", err)
+		slog.Debug("route ground search failed", "err", logredact.Err(err))
 		return nil
 	}
 

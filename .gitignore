@@ -54,3 +54,13 @@ docs/plans/
 /*.jpg
 /*.jpeg
 /*.png
+
+# GPT second-opinion scratch (diff sent to the reviewer, its output)
+/.gptreview-input.diff
+/.gptreview*.out
+
+# GitNexus analyze scratch log
+.gitnexus-build.log
+
+# GitNexus generated skill docs
+.claude/skills/gitnexus/

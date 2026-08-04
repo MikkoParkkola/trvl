@@ -162,6 +162,18 @@ type providerClient struct {
 	rl429Mu sync.Mutex
 }
 
+// isBrowserSeeded reports whether this client's jar currently holds cookies
+// that came from the user's browser. The provenance lives in the jar rather
+// than beside it (see cookie_vault.go): a flag next to the jar can be written
+// after a revocation has already read it, which is the race round 8 of review
+// found.
+func (pc *providerClient) isBrowserSeeded() bool {
+	if pc == nil {
+		return false
+	}
+	return vaultOf(pc.client).isBrowserSeeded()
+}
+
 // effectiveCacheTTL returns the adaptive TTL when the AIMD controller has
 // accumulated a positive value; otherwise falls back to authCacheDuration.
 // Must be called with pc.authMu held (read or write).
@@ -237,19 +249,22 @@ func (rt *Runtime) getOrCreateClient(cfg *ProviderConfig) *providerClient {
 		httpClient = newChromeH2Client()
 	} else {
 		httpClient = &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				TLSHandshakeTimeout: 10 * time.Second,
-				ForceAttemptHTTP2:   true,
-			},
-			Timeout: 30 * time.Second,
+			// guardedTransport carries the destination policy on its dialer;
+			// see destination.go for why the check lives at dial time.
+			Transport: guardedTransport(),
+			Timeout:   30 * time.Second,
 		}
 	}
 	if httpClient.Jar == nil {
-		jar, _ := cookiejar.New(nil)
-		httpClient.Jar = jar
+		// A vault rather than a bare jar: browser-derived cookies may only enter
+		// a jar that records where they came from and can hand them back. See
+		// cookie_vault.go.
+		if v := newCookieVault(); v != nil {
+			httpClient.Jar = v
+		} else {
+			jar, _ := cookiejar.New(nil)
+			httpClient.Jar = jar
+		}
 	}
 
 	rps := cfg.RateLimit.RequestsPerSecond

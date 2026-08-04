@@ -74,6 +74,105 @@ func advertisedToolSurface(legacyTools []ToolDef) []ToolDef {
 	}
 }
 
+// secretParamKeys are request parameters whose VALUE is itself a credential.
+//
+// A webhook URL is the bearer token for Slack/Discord-style endpoints: anyone
+// holding the URL can post as you. The standing rule is that it must never
+// reach MCP structured output, logs or error strings, while the storage file
+// and the CLI keep it by design. This router echoes the caller's params back as
+// structured output, so without redaction a single watch_price call through the
+// `travel` tool published the credential into model context, transcripts and
+// client logs. Found by GPT second-opinion review, 2026-08-02.
+var secretParamKeys = map[string]bool{
+	"webhook":     true,
+	"webhook_url": true,
+}
+
+// redactSecretParams returns a copy of params with credential-valued entries
+// replaced by a non-reversible marker, and the same treatment applied to nested
+// maps and slices.
+//
+// A copy, not an in-place edit: params is the live argument map the dispatched
+// handler also reads, and blanking a webhook there would silently stop the
+// watch from ever notifying.
+func redactSecretParams(params map[string]any) map[string]any {
+	if params == nil {
+		return nil
+	}
+	out := make(map[string]any, len(params))
+	for k, v := range params {
+		if secretParamKeys[strings.ToLower(k)] {
+			if s, ok := v.(string); ok && s != "" {
+				out[k] = "[redacted]"
+				continue
+			}
+		}
+		out[k] = redactSecretValue(v)
+	}
+	return out
+}
+
+func redactSecretValue(v any) any {
+	switch tv := v.(type) {
+	case map[string]any:
+		return redactSecretParams(tv)
+	case []any:
+		out := make([]any, len(tv))
+		for i, e := range tv {
+			out[i] = redactSecretValue(e)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+// redactSecretsInText masks webhook-shaped URLs inside free text, so a query a
+// user typed the URL into does not leak it either.
+//
+// The host is kept deliberately: it is what makes a line diagnosable, and it is
+// not the secret -- the path and query are, which is where Slack/Discord-style
+// tokens live.
+//
+// Scanning advances past each rewrite. An earlier version searched from index 0
+// every iteration, so it re-found the URL it had just masked and span forever;
+// the package test suite hit the 10-minute timeout rather than failing an
+// assertion.
+func redactSecretsInText(s string) string {
+	const mask = "/[redacted]"
+	var b strings.Builder
+	for pos := 0; ; {
+		rel, scheme := -1, ""
+		for _, cand := range []string{"https://", "http://"} {
+			if i := strings.Index(s[pos:], cand); i >= 0 && (rel < 0 || i < rel) {
+				rel, scheme = i, cand
+			}
+		}
+		if rel < 0 {
+			b.WriteString(s[pos:])
+			return b.String()
+		}
+		urlStart := pos + rel + len(scheme)
+		b.WriteString(s[pos : pos+rel])
+		b.WriteString(scheme)
+
+		rest := s[urlStart:]
+		end := strings.IndexAny(rest, " \t\n\r\"'")
+		if end < 0 {
+			end = len(rest)
+		}
+		raw := rest[:end]
+		if slash := strings.Index(raw, "/"); slash >= 0 {
+			b.WriteString(raw[:slash])
+			b.WriteString(mask)
+		} else {
+			// Bare host, no path or query: nothing secret to strip.
+			b.WriteString(raw)
+		}
+		pos = urlStart + end
+	}
+}
+
 type travelSmartResult struct {
 	Query        string         `json:"query,omitempty"`
 	Intent       string         `json:"intent"`
@@ -113,21 +212,21 @@ func (s *Server) handleTravel(ctx context.Context, args map[string]any, elicit E
 	content, structured, err := handler(ctx, params, elicit, sampling, progress)
 	if err != nil {
 		return content, travelSmartResult{
-			Query:        query,
+			Query:        redactSecretsInText(query),
 			Intent:       resolvedIntent,
 			Action:       action,
 			DispatchedTo: target,
-			Params:       params,
+			Params:       redactSecretParams(params),
 			Result:       structured,
 		}, err
 	}
 
 	return content, travelSmartResult{
-		Query:        query,
+		Query:        redactSecretsInText(query),
 		Intent:       resolvedIntent,
 		Action:       action,
 		DispatchedTo: target,
-		Params:       params,
+		Params:       redactSecretParams(params),
 		Result:       structured,
 	}, nil
 }

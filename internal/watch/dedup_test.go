@@ -52,6 +52,12 @@ func TestStoreAddPreservesAccumulatedStateOnRewatch(t *testing.T) {
 			s.watches[i].LastCheck = checked
 		}
 	}
+	// Persisted, not just poked in memory: store mutations are transactional
+	// and reload committed state from disk, so an unsaved in-memory edit is
+	// (correctly) invisible to the call under test.
+	if err := s.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
 	created := s.watches[0].CreatedAt
 
 	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 150, Currency: "EUR"}); err != nil {
@@ -359,6 +365,12 @@ func TestWatchLowestPriceSurvivesHistoryEviction(t *testing.T) {
 			s.watches[i].CheapestDate = "2026-05-01"
 		}
 	}
+	// Persisted, not just poked in memory: store mutations are transactional
+	// and reload committed state from disk, so an unsaved in-memory edit is
+	// (correctly) invisible to the call under test.
+	if err := s.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
 
 	for i := 0; i < maxObservationsPerWatch+50; i++ {
 		if err := s.RecordPrice(id, 300, "EUR"); err != nil {
@@ -571,6 +583,12 @@ func TestStoreAddPreservesStateWhenCurrencyIsUnchanged(t *testing.T) {
 			s.watches[i].LowestPrice = 400
 		}
 	}
+	// Persisted, not just poked in memory: store mutations are transactional
+	// and reload committed state from disk, so an unsaved in-memory edit is
+	// (correctly) invisible to the call under test.
+	if err := s.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
 	if err := s.RecordPrice(id, 450, "EUR"); err != nil {
 		t.Fatalf("record price: %v", err)
 	}
@@ -642,5 +660,83 @@ func TestCompactHistoryLockedFiltersCurrencyMismatchBeforeRetentionCap(t *testin
 		if p.Currency != "USD" {
 			t.Errorf("surviving point has Currency=%q, want all-USD (stale-currency point must not survive the cap at a valid point's expense)", p.Currency)
 		}
+	}
+}
+
+// WATCHID.6 -- adjusting the price on a hotel watch must not reset a custom
+// last-minute threshold to the caller's default.
+//
+// Callers supply LastMinuteDropPct=25 whether or not the request is about
+// last-minute mode (the MCP argFloat default and the CLI --last-minute-drop
+// flag default both do). applyIntent used to treat any positive value as
+// intentional, so a re-watch that only changed the target price stamped 25 over
+// a stored 40. That became a main-path bug the moment re-watching became the
+// way to change a price. Found by grok second-opinion review, 2026-08-02.
+func TestRewatchKeepsCustomLastMinuteThreshold(t *testing.T) {
+	s := NewStore(t.TempDir())
+
+	base := Watch{
+		Type: "hotel", Destination: "Lisbon",
+		DepartFrom: "2027-03-01", DepartTo: "2027-03-05",
+		Currency: "EUR", BelowPrice: 200,
+		LastMinuteMode: true, LastMinuteDropPct: 40,
+	}
+	id, _, err := s.Add(base)
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	// Re-watch to change ONLY the price. The caller's default threshold rides
+	// along uninvited, exactly as the real MCP and CLI call sites send it.
+	adjust := base
+	adjust.BelowPrice = 150
+	adjust.LastMinuteMode = false
+	adjust.LastMinuteDropPct = 25
+	if _, _, err := s.Add(adjust); err != nil {
+		t.Fatalf("adjust: %v", err)
+	}
+
+	w, ok := s.Get(id)
+	if !ok {
+		t.Fatalf("watch %s vanished", id)
+	}
+	if w.BelowPrice != 150 {
+		t.Errorf("WATCHID.6: target price = %v, want the adjusted 150", w.BelowPrice)
+	}
+	if w.LastMinuteDropPct != 40 {
+		t.Errorf("WATCHID.6: last-minute threshold reset to %v%%, want the stored 40%% -- "+
+			"a price adjustment must not carry the caller's default over a custom value",
+			w.LastMinuteDropPct)
+	}
+	if !w.LastMinuteMode {
+		t.Errorf("WATCHID.6: last-minute mode was switched off by a price adjustment")
+	}
+}
+
+// WATCHID.7 -- deliberately changing the last-minute threshold still works.
+// Without this, WATCHID.6 could be satisfied by never applying the field at all.
+func TestRewatchCanStillChangeLastMinuteThreshold(t *testing.T) {
+	s := NewStore(t.TempDir())
+
+	base := Watch{
+		Type: "hotel", Destination: "Porto",
+		DepartFrom: "2027-04-01", DepartTo: "2027-04-04",
+		Currency: "EUR", BelowPrice: 300,
+		LastMinuteMode: true, LastMinuteDropPct: 40,
+	}
+	id, _, err := s.Add(base)
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	change := base
+	change.LastMinuteDropPct = 15
+	if _, _, err := s.Add(change); err != nil {
+		t.Fatalf("re-add: %v", err)
+	}
+
+	w, _ := s.Get(id)
+	if w.LastMinuteDropPct != 15 {
+		t.Errorf("WATCHID.7: last-minute threshold = %v%%, want the requested 15%%", w.LastMinuteDropPct)
 	}
 }

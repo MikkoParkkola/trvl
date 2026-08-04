@@ -7,6 +7,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-07-28
+
+### Added
+
+- **`TRVL_NO_BROWSER_COOKIES` — decline browser cookie reads.** Set it to anything but
+  `0` or `false` and trvl reads no browser cookie store: neither the in-process reader
+  used by hotel and rail search, nor the nab helper used by the rail 403 retry. The
+  check sits on the low-level readers rather than the exported wrapper, because
+  recovery code reaches them directly and a gate on the public name alone would have
+  ignored the user. It also stops the last-resort escape hatch, which opens the user's
+  own logged-in browser and then waits for its cookie store to change. Gating only the
+  reads left that one failing in the worst direction: the reads returned nothing, but
+  the window had already opened, so a user who declined got the browser they refused,
+  a wait that could never succeed, and no result at the end of it. Default is
+  unchanged. ([#521](https://github.com/MikkoParkkola/trvl/issues/521))
+
+  The two browser opt-outs answer two different questions, and this release makes the
+  code match that. `TRVL_NO_BROWSER_COOKIES` answers "may trvl touch my browsers and
+  the sessions I am logged into?" — it covers every cookie-store read, the
+  `~/.trvl/cookies` cache, and every path that opens the user's own browser — the
+  provider escape hatch, and the Trainline and SNCF rail fallbacks that open a window
+  when a challenge needs a human. Those two rail paths called the browser opener
+  directly and were never gated; an independent review of this release caught it
+  before it shipped, so the check now sits on the opener itself, where any future
+  caller inherits it, and the message the user sees says the browser is not opening
+  rather than announcing one that never appears.
+  `TRVL_NO_TIER2_CDP` answers "may trvl run a browser process at all?" — it covers
+  every headless browser trvl starts itself. Those browsers attach no user profile, so
+  a cookie decline does not stop them; if it did, declining access to your own browser
+  would also remove the one acquisition path that still works without it, and hotel
+  search would return nothing in exchange for no privacy gained. Known gap: on the
+  sites trvl signs into on your behalf, a cookie decline does still switch that
+  recovery path off, because the recovered cookies go through the same store that can
+  hold cookies copied out of a real browser and that store records no note of which is
+  which. Splitting it is tracked as its own change; hotel and rail search keep this
+  recovery browser either way. An earlier attempt at
+  this release gated the headless paths on the cookie variable and did exactly that. It
+  is reverted, both directions are asserted by tests, and a source-level invariant test
+  now fails the build if any launch site is ever given a user profile — the claim the
+  whole separation rests on.
+- `AFKLM_KEYCHAIN_SERVICE` overrides the macOS Keychain service name, so a user who
+  files the key under their own name is not forced to adopt trvl's.
+
+### Changed
+
+- **The headless cookie harvest now runs by default; `TRVL_NO_TIER2_CDP` turns it
+  off.** It was opt-in behind `TRVL_TIER2_CDP`, which meant that for anyone who had
+  not read the README, a site answering with a bot challenge produced an empty result
+  and no explanation. The path drives an already-installed Chrome, Brave or Edge in
+  headless mode — no window, no focus steal, no bundled browser — so the cost of it
+  running is a browser process for a few seconds, not an interruption. An explicit
+  `TRVL_TIER2_CDP=0` is still honoured: someone who set that meant it. The decline is
+  checked at each of the three places in trvl that can start a browser — the two CDP
+  drivers in the provider layer and the ground-provider scraper — rather than at the
+  entry points above them, so a caller that reaches past those cannot route around it.
+- **`TRVL_NO_BROWSER_COOKIES` now also stops the `nab` helper.** The three rail
+  providers call `nab` as a fallback once the in-process cookie reader has failed, and
+  every one of those calls hands it `--cookies`, so the helper went and read the same
+  browser cookie stores the opt-out had just refused to read — the README's "no nab"
+  was untrue. The decline is now checked inside the nab client, at the point the helper
+  process would be started, so all three call sites are covered at once. The rule for
+  reading the variable is written twice rather than shared, because `internal/cookies`
+  already imports `internal/nab` and reusing it would close an import cycle; a test in
+  `internal/cookies`, the one package that can see both, fails if the two ever disagree.
+  The `WithTier2Force` option every rail and hotel caller used to pass is gone: it was
+  checked as `!cfg.force && !Tier2Enabled()`, which left the opt-out with no effect on
+  any real search. It governs the headless browser only — the visible-window escape
+  hatch is a separate path with its own per-provider opt-in and its own confirmation
+  prompt.
+- **BREAKING — AF-KLM credentials are no longer discovered automatically.** A default
+  flight search now reads the `AFKLM_KEY` environment variable and nothing else. It no
+  longer consults the macOS Keychain or 1Password, so it starts no subprocess, cannot
+  block a search, and cannot surface a credential prompt. If you relied on a Keychain
+  entry or a 1Password item, export `AFKLM_KEY` to restore AF-KLM in default searches,
+  or run `--provider afklm` explicitly. This matters most for AF-KLM's rail+fly
+  itineraries (a train leg from Brussels Midi, Antwerp or Brussels ticketed as part of
+  the flight), which no other provider exposes. External credential stores are now
+  reachable only under the explicit flag.
+  ([#507](https://github.com/MikkoParkkola/trvl/issues/507))
+- The 1Password lookup requires a secret reference you supply in `AFKLM_OP_REF`, e.g.
+  `op://Private/AF-KLM/credential`. The previously hardcoded reference was a leftover
+  from experimental work and named an item only the maintainer had.
+
+### Removed
+
+- **`trvl share --format link` no longer publishes anything.** The option was
+  opt-in and never the default: choosing the `link` format created a public GitHub
+  gist of the trip card under your own account. On review it caused more trouble
+  than it was worth, and the clipboard format already gives you something to
+  paste. `trvl share` now prints the card or copies it to your clipboard, and you
+  decide who receives it. ([#527](https://github.com/MikkoParkkola/trvl/issues/527))
+
+  If you used `--format link`, the gists it created are still on your account.
+  `gh gist list` shows them, `gh gist delete <id>` removes them.
+
 ### Known limitations
 
 - **On Windows, a helper that forks something in its first instants can leave that
@@ -34,28 +129,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   needs it, and nothing turns any of this off today. Whether any of it should be opt-in
   is open at [#521](https://github.com/MikkoParkkola/trvl/issues/521).
 
-### Added
-
-- `AFKLM_KEYCHAIN_SERVICE` overrides the macOS Keychain service name, so a user who
-  files the key under their own name is not forced to adopt trvl's.
-
-### Changed
-
-- **BREAKING — AF-KLM credentials are no longer discovered automatically.** A default
-  flight search now reads the `AFKLM_KEY` environment variable and nothing else. It no
-  longer consults the macOS Keychain or 1Password, so it starts no subprocess, cannot
-  block a search, and cannot surface a credential prompt. If you relied on a Keychain
-  entry or a 1Password item, export `AFKLM_KEY` to restore AF-KLM in default searches,
-  or run `--provider afklm` explicitly. This matters most for AF-KLM's rail+fly
-  itineraries (a train leg from Brussels Midi, Antwerp or Brussels ticketed as part of
-  the flight), which no other provider exposes. External credential stores are now
-  reachable only under the explicit flag.
-  ([#507](https://github.com/MikkoParkkola/trvl/issues/507))
-- The 1Password lookup requires a secret reference you supply in `AFKLM_OP_REF`, e.g.
-  `op://Private/AF-KLM/credential`. The previously hardcoded reference was a leftover
-  from experimental work and named an item only the maintainer had.
-
 ### Fixed
+
+- **Signing in to a provider could hang forever — and take every later search for
+  that provider with it.** When the first attempt at a provider's session failed and
+  any of the three recovery routes then *succeeded*, the request never returned. It
+  was the success path that hung, so it needed no unusual input; and because the hang
+  happened while holding a write lock, every subsequent search for the same provider
+  queued behind it and hung too. The recovery routes were reaching for a lock the
+  caller was already holding. They no longer take that lock at all: they hand back
+  the recovered session values and whichever caller asked for them stores them. Found
+  by an independent review of this release; the defect itself predates it, so this is
+  a fix to behaviour that shipped earlier, not to anything the release introduced.
 
 - A credential lookup on the default search path could hang forever and accumulate
   stalled helper processes, and could surface an interactive 1Password account-setup
@@ -71,6 +156,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A search that skips AF-KLM because `AFKLM_OP_REF` is set but `AFKLM_KEY` is not now
   says so, with a hint naming the fix. Silently dropping a provider the user had
   configured looked like a broken provider.
+- **Wizz Air searches work again.** trvl addressed the airline's API by a version
+  number that Wizz had retired, and every search against it returned nothing. The
+  default now names the version that is live, confirmed against the airline's own
+  site rather than guessed. A test refuses any future change that moves it backwards.
+  ([#506](https://github.com/MikkoParkkola/trvl/issues/506))
+
+### Security
+
+- **A configured webhook URL is no longer written to the log.** `trvl watch` can post
+  price changes to a webhook, and Slack and Discord both carry the shared secret
+  inside that URL. When a post failed, the whole URL went into the log at the default
+  level — so anyone who attached logs to a bug report handed over a working
+  credential. Only the host is logged now. The error text was carrying the URL too,
+  which is the half that a smaller fix would have missed.
+  ([#536](https://github.com/MikkoParkkola/trvl/issues/536))
 
   All of the above reported by [@JoshTristram](https://github.com/JoshTristram) in
   [#507](https://github.com/MikkoParkkola/trvl/issues/507), who found around twenty
@@ -1005,7 +1105,9 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.19.1...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.0...HEAD
+[1.21.0]: https://github.com/MikkoParkkola/trvl/compare/v1.20.0...v1.21.0
+[1.20.0]: https://github.com/MikkoParkkola/trvl/compare/v1.19.1...v1.20.0
 [1.19.1]: https://github.com/MikkoParkkola/trvl/compare/v1.19.0...v1.19.1
 [1.19.0]: https://github.com/MikkoParkkola/trvl/compare/v1.18.0...v1.19.0
 [1.17.6]: https://github.com/MikkoParkkola/trvl/compare/v1.17.5...v1.17.6

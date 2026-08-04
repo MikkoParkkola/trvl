@@ -320,3 +320,206 @@ trvl has 21 direct dependencies. The CLI/runtime core is small; most of the list
 | `golang.org/x/{net,time,term,sync,text}` | HTTP/2 + proxy, rate limiting, terminal width, errgroup, text transforms |
 
 Everything else is Go stdlib: `net/http`, `encoding/json`, `sync`, `context`, `time`, `sort`, `strings`, `fmt`.
+
+## Browser sessions, credentials, and local state
+
+Hotel and rail sites put bot protection in front of their search APIs. trvl gets past it
+by reusing the browser session you already have, which is why searches work at all
+without an API key. That mechanism reads local state, so this section states exactly
+what, when, and where it goes. The README carries a summary; this is the full account.
+
+### What is read, and when
+
+**At startup, before any search.** Creating the provider runtime kicks off background
+reads of the browser cookie stores for every provider configured to use them. On macOS
+the first such read goes through the Keychain and takes six to ten seconds cold, which
+is precisely why it is started early rather than on demand.
+
+**On a hotel search.** Booking.com needs an `aws-waf-token`. trvl looks for one in this
+order: the cache under `~/.trvl`, then the installed browser's cookies via
+[kooky](https://github.com/browserutils/kooky), then a headless harvest driven through
+the installed Chrome. A token obtained that way is written back to that cache and reused
+for days.
+
+**On a rail search.** When Trainline, Eurostar or SNCF answers with a 403 challenge,
+trvl runs [nab](https://github.com/MikkoParkkola/nab) to read cookies for that operator
+and retries with them.
+
+Three things follow:
+
+- **It is automatic.** No flag turns it on. Running trvl at all starts the startup reads.
+- **It reads credential storage.** Browser cookie databases are encrypted, so getting at
+  them means Keychain access on macOS. What is read is the user's own session cookies for
+  the site being searched.
+- **Some of it persists and some of it launches a browser.** The Booking.com token is
+  written under `~/.trvl`. The headless harvest starts Chrome.
+
+Where those cookies go: into the request trvl makes to the site they were read from, so
+that operator receives its own cookies back, which is the point of reading them. trvl
+sends them nowhere else and reports them to no endpoint of its own.
+
+Documenting this took three attempts, and each earlier version claimed a narrower scope
+than the code has: first that trvl never looked at local credentials unrequested, then
+that rail search was the sole exception. Both were wrong. The list above is the third
+attempt, and it is written to be checkable rather than reassuring — a test in
+`cmd/trvl` fails if the README's version of it drifts from this one.
+
+That is enforced, not merely intended. On the two paths where the request URL comes from
+outside — the Booking.com room lookup takes a URL from an MCP argument or from a link
+carried on a search result, and a custom provider's preflight URL arrives inside the same
+`configure_provider` call as the endpoint — the cookies are withheld unless the
+destination is the site the user actually approved. For the room lookup that is
+`booking.com` or a subdomain over HTTPS. For a custom provider it is the endpoint domain
+the consent prompt displayed, which is the only host in that config the user has seen:
+a preflight URL pointing anywhere else gets no cookies, because it was never shown to
+them. The check runs on the parsed hostname at the last
+line before transmission (`cookies.HeaderIfPermittedForURL`), so neither a lookalike domain
+nor a `https://www.booking.com@elsewhere/` userinfo trick collects the session. Sending the
+cookies to a host they were not read for is a test failure, in `internal/hotels`
+(`TestFetchBookingPage_WithholdsCookiesFromForeignHost`) and in `internal/cookies`.
+
+A URL that is not Booking.com is now refused before the first connection is made, so it
+gets no request at all rather than a request without credentials. The check requires
+HTTPS, requires the host to be `booking.com` or a subdomain, and requires the host to be
+an ordinary DNS name — the last clause exists because Go's URL parser keeps an IPv6 zone
+identifier in the hostname, which let `https://[::1%25.booking.com]/` suffix-match
+`.booking.com` while the dialer connected to loopback.
+
+What remains is redirects. Only the initial URL is checked, and the shared HTTP client
+sets no redirect policy, so a Booking.com address that redirects can still produce a
+request to another host. Session cookies do not follow it — Go's client refuses to carry
+an explicitly-set `Cookie` header across a change of host
+(`net/http/client.go`, `shouldCopyHeaderOnRedirect`) — so the exposure is the response
+body, not the credential. One caveat on that stdlib guarantee: it compares hosts via
+`isDomainOrSubdomain` and never inspects the scheme, so a same-host `https://` → `http://`
+redirect keeps the header and puts the session on the wire in cleartext. Closing both
+means giving a client shared by every provider its own redirect policy. Tracked in
+[#537](https://github.com/MikkoParkkola/trvl/issues/537).
+
+The host check above lives on the room-lookup path because that is the only path taking a
+web address from the caller. The rail providers (Trainline, Eurostar, SNCF) attach browser
+cookies through `cookies.HeaderIfPermitted`, which enforces the user's consent but not a
+destination — they do not need one, because their request URLs are constants in this
+repository rather than caller input. That is safety by construction, not by check: if any
+of those providers ever starts building a URL from caller data, it must move to
+`HeaderIfPermittedForURL` first.
+
+### Two settings, two different questions
+
+They are easy to confuse, so state them plainly:
+
+| Setting | The question it answers | What it covers |
+| --- | --- | --- |
+| `TRVL_NO_BROWSER_COOKIES=1` | May trvl touch **my** browsers and the sessions I am logged into? | Every read of a browser cookie store (including via nab), the cookie cache under `~/.trvl`, and every window trvl opens in your real browser — the escape hatch and the Trainline/SNCF human-verification fallbacks |
+| `TRVL_NO_TIER2_CDP=1` | May trvl **run a browser process** at all? | Every headless browser trvl starts itself — all three places in the code that can start one |
+
+Setting the first does **not** stop the headless browser, and that is deliberate: the
+headless browser starts from an empty profile, so it never touches your sessions. Setting
+the second does **not** stop trvl reading cookies you already have. Set both to refuse
+everything browser-related.
+
+`TRVL_NO_BROWSER_COOKIES=1` covers nab as well as the reader inside trvl: the helper is
+refused at the point it would be started, so no cookie store is read from any process.
+Cookie reads stay on by default because they are what makes hotel and rail search work
+against sites that block non-browser traffic, and switching them off does not make those
+searches fall back to something else — an operator that answers with a bot challenge
+simply returns no results, which looks like trvl finding no trains rather than like a
+setting you chose. That is the trade, stated so it can be made deliberately. Decided in
+[#521](https://github.com/MikkoParkkola/trvl/issues/521).
+
+### The headless browser
+
+When a site answers with a bot challenge, trvl can drive a copy of Chrome, Brave or Edge
+already installed, let the challenge resolve itself, and keep the resulting cookies. It
+runs headless: no window opens, focus is never taken, nothing appears on screen. It
+bundles no browser of its own.
+
+It starts from an empty profile, so it does not read cookies you already have — that is
+the separate switch above, and they are separate because they are separate things: one
+reads the session you are already logged into, this one starts a new anonymous session
+and keeps what that session is given. Because it reads nothing of yours,
+`TRVL_NO_BROWSER_COOKIES=1` leaves it running: if it did not, declining access to your own
+browser would also take away the one path that still works without it, and hotel search
+would return nothing for no gain in privacy.
+
+One exception, and it is a real one: on the sites trvl signs into on your behalf, a cookie
+decline does switch this recovery path off. Those sites hand the recovered cookies to the
+same store that can also hold cookies copied out of a real browser, and that store keeps
+no note of which is which, so a cookie decline refuses all of it rather than guess.
+Separating the two is tracked as its own change. Hotel and rail search keep this recovery
+browser either way.
+
+This also runs by default, for the same reason — with it off, a challenged search returns
+nothing and looks like an empty result rather than a switched-off feature. Set
+`TRVL_NO_TIER2_CDP=1` to decline. It costs a browser process for a few seconds per
+challenged search, which is the reason someone might want it off. The check sits on each
+of the three places in trvl that can start a browser, rather than on the entry points
+above them, so a provider reaching past the usual route still cannot spawn one. It governs
+the *headless* browser only — the separate visible-window escape hatch asks before it opens
+anything and requires its own per-provider opt-in.
+
+### Dated measurement: what actually got past the rail bot walls
+
+A one-off measurement on 2026-07-27 — a snapshot of how three sites behaved that day, not
+a promise about how they behave now — found that reading cookies off disk returned nothing
+at all for Trainline, SNCF Connect and Rome2Rio, because the tokens those sites check are
+issued to a live browsing session and are not sitting in the cookie store. A headless visit
+cleared the wall for two of them and returned usable cookies (Trainline's `datadome`,
+Rome2Rio's Cloudflare `__cf_bm`), so declining the headless browser is likely to leave
+those two empty. SNCF Connect was the exception: the headless visit reached a challenge
+that needs a human, and trvl only reuses cookies from a challenge that actually cleared, so
+the headless path was not what fixed SNCF either way.
+
+Bot walls change without notice and nothing in CI re-checks this, so treat the specifics as
+dated. To re-measure, run the probe test with `TRVL_COOKIE_PROBE=1`.
+
+### AF-KLM: the one credential that may come from a credential manager
+
+Ordinary round-trips are already covered in the default merge: Kiwi returns both legs of a
+paired itinerary, and Google returns the genuine round-trip fare with the matching return
+chosen at booking. AF-KLM is there for what neither offers — the rail+fly itineraries it
+sells, where a train leg from Brussels Midi, Antwerp or Brussels is ticketed as part of the
+flight instead of being a separate rail booking you have to make and risk yourself. It also
+returns both legs on KL/AF metal in full detail.
+
+It is the only provider whose **API key** can come from a credential manager, under tight
+rules. Browser cookie access is a separate mechanism, covered above; several providers do
+that, and it also touches the Keychain.
+
+| Variable | Effect |
+| --- | --- |
+| `AFKLM_KEY` | The API key itself. Once set, AF-KLM native round-trips join default searches automatically. |
+| `AFKLM_OP_REF` | A 1Password secret reference, e.g. `op://Private/AF-KLM/credential`. Read via the `op` CLI **only** under an explicit `--provider afklm`. |
+| `AFKLM_KEYCHAIN_SERVICE` | Overrides the macOS Keychain service name (default `afklm-api-key`). Read under `--provider afklm` only. |
+
+Set `AFKLM_OP_REF` without `AFKLM_KEY` and a default search reports that AF-KLM was skipped
+and why, rather than quietly leaving it out.
+
+The rule, and why it exists: a search you didn't ask for never runs an AF-KLM credential
+helper. `op` and `security` are third-party programs that can block, can pop an interactive
+prompt, and can leave stray processes behind — so an opportunistic lookup on the default
+path is limited to reading an environment variable, which costs nothing and cannot prompt.
+Only an explicit `--provider afklm` may reach an external store, where a prompt is
+something the user asked for. Reported as
+[#507](https://github.com/MikkoParkkola/trvl/issues/507).
+
+The Keychain entry is created with
+`security add-generic-password -a "$USER" -s afklm-api-key -w <key>` and is consulted under
+`--provider afklm` only, for the same reason.
+
+### One limitation on Windows
+
+Every helper trvl runs is bounded by a deadline on every platform, so none of them can hang
+a search. Cleaning up what a helper leaves behind is weaker on Windows than elsewhere.
+
+On Unix a helper is signalled as a process group, so anything it started dies with it. On
+Windows it goes into a job object, and a job can only be assigned to a process that already
+exists, so there is a window of microseconds after the helper starts during which a child it
+creates is not yet a member. A helper that forks something in its first instants can
+therefore leave that child running after the helper itself has been killed.
+
+None of the programs trvl actually invokes behaves that way, so in practice stray processes
+should not appear. It is a real gap rather than a theoretical one, though, and closing it
+needs a suspended start whose own failure mode is worse than the gap, so it is documented
+instead of half-fixed. The reasoning is in
+[#526](https://github.com/MikkoParkkola/trvl/issues/526).

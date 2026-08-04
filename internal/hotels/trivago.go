@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
 	"golang.org/x/time/rate"
@@ -470,13 +471,15 @@ func SearchTrivago(ctx context.Context, location string, opts HotelSearchOptions
 		}
 		toolName = selected
 	} else {
-		slog.Debug("trivago tools/list failed, using default tool", "tool", toolName, "error", lerr)
+		slog.Debug("trivago tools/list failed, using default tool", "tool", toolName, "error", logredact.Err(lerr))
 	}
 
 	// Step 2: Search accommodations. The current tool resolves the location
 	// from a free-text query, so no separate suggestions lookup is required.
-	slog.Debug("trivago accommodation search", "location", location, "tool", toolName,
-		"arrival", opts.CheckIn, "departure", opts.CheckOut, "guests", opts.Guests)
+	// Location plus check-in, check-out and guest count is the journey itself.
+	// Only the resolved tool name is kept: it is the thing that varies between
+	// runs and the only field this line was ever diagnosed from.
+	slog.Debug("trivago accommodation search", "tool", toolName)
 	accomArgs := map[string]any{
 		"query":     location,
 		"arrival":   opts.CheckIn,
@@ -503,7 +506,7 @@ func SearchTrivago(ctx context.Context, location string, opts HotelSearchOptions
 		return nil, fmt.Errorf("trivago accommodation parse: %w", err)
 	}
 
-	slog.Debug("trivago results", "location", location, "count", len(hotels))
+	slog.Debug("trivago results", "count", len(hotels))
 	return hotels, nil
 }
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -237,7 +238,7 @@ func fetchHotelPageFull(ctx context.Context, client *batchexec.Client, location 
 			body = body2
 		} else {
 			slog.Warn("consent cookie retry did not bypass consent page",
-				"status", status2, "err", err2)
+				"status", status2, "err", logredact.Err(err2))
 			return parseResult{}, fmt.Errorf("google consent page: unable to bypass (EU cookie wall)")
 		}
 	}

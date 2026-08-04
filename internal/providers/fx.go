@@ -110,9 +110,13 @@ func convertViaPeg(from, to string) (float64, bool) {
 
 func newFXCache() *fxCache {
 	return &fxCache{
-		rates:   make(map[string]map[string]float64),
-		ttl:     24 * time.Hour,
-		client:  &http.Client{Timeout: 5 * time.Second},
+		rates: make(map[string]map[string]float64),
+		ttl:   24 * time.Hour,
+		// The destination policy applies here for the same reason it applies
+		// to provider traffic: baseURL is a field, and a field is something a
+		// future caller can set. A plain http.Client would make this the one
+		// outbound path in the package that dials whatever it is pointed at.
+		client:  &http.Client{Timeout: 5 * time.Second, Transport: guardedTransport()},
 		baseURL: "https://api.frankfurter.app",
 	}
 }

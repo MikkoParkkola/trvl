@@ -10,6 +10,18 @@ import (
 	"time"
 )
 
+// maxRouteObservations caps the TOTAL number of ad-hoc route-keyed points across
+// all routes. Eviction is fair rather than globally-oldest-first (see
+// pruneGlobalRouteLocked), so a busy route cannot erase a quiet one. Watch-keyed
+// points (which back the existing sparkline/fareintel features) are NEVER
+// evicted here, so this bounds the new ad-hoc corpus without touching the watch
+// corpus.
+//
+// It is a var, not a const, so eviction tests can drive the real public write
+// path to saturation instead of reaching past it to poke the pruner directly.
+// Nothing in production ever assigns to it.
+var maxRouteObservations = 20000
+
 // Watch represents a price tracking rule for a flight or hotel route.
 //
 // Three watch modes:

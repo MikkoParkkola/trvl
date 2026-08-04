@@ -1,17 +1,10 @@
 package watch
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"log/slog"
-	"net"
-	"net/http"
-	"net/url"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/hotelarb"
@@ -43,145 +36,6 @@ func IsValidCurrencyFormat(c string) bool {
 		}
 	}
 	return true
-}
-
-// newSafeWebhookClient builds the HTTP client used for user-supplied webhook
-// URLs. Round 22 found the previous default (http.DefaultClient, no
-// restriction at all) let a watch's WebhookURL reach ANY address reachable
-// from this process -- loopback, RFC1918/RFC4193 private ranges, and
-// link-local metadata endpoints included -- a classic SSRF (server-side
-// request forgery: tricking a server into making a request the attacker
-// couldn't make directly) primitive. The guard lives in the dial's Control
-// hook rather than a one-time URL check so it also re-validates every
-// redirect hop's resolved address, not just the original host. Found by GPT
-// second-opinion review, 2026-07-30 (round 22).
-func newSafeWebhookClient() *http.Client {
-	dialer := &net.Dialer{
-		Timeout: 5 * time.Second,
-		Control: func(_, address string, c syscall.RawConn) error {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				return fmt.Errorf("webhook: invalid dial address: %w", err)
-			}
-			ip := net.ParseIP(host)
-			if ip == nil {
-				return fmt.Errorf("webhook: refusing to dial non-literal address %q", host)
-			}
-			if !isPublicWebhookIP(ip) {
-				return fmt.Errorf("webhook: refusing to dial non-public address")
-			}
-			return nil
-		},
-	}
-	return &http.Client{
-		Timeout:   10 * time.Second,
-		Transport: &http.Transport{DialContext: dialer.DialContext},
-		// Round 25: a hop-count cap alone still lets Go's default redirect
-		// handling run -- which builds a Referer header from the FULL prior
-		// URL (path + query, exactly where the Slack/Discord-style webhook
-		// tokens documented above live) and sends it cross-origin, and
-		// replays the JSON body on a 307/308 to whatever host the response
-		// names. A watch's WebhookURL is not a trusted redirect chain: the
-		// receiving server controls where it points next. Refuse to follow
-		// redirects at all and surface the 3xx as-is; no legitimate webhook
-		// receiver needs its notifier to chase a redirect. Found by GPT
-		// second-opinion review, 2026-07-31 (round 25).
-		// Hoisted to the package-level webhookCheckRedirect var (rather
-		// than inlined) so the regression test in
-		// webhook_redirect_round25_test.go exercises the SAME policy value
-		// production uses, not a hand-copied duplicate that could silently
-		// drift out of sync (Grok second-opinion review, round 25,
-		// optional finding 3).
-		CheckRedirect: webhookCheckRedirect,
-	}
-}
-
-// webhookCheckRedirect is the shared redirect policy for outbound webhook
-// requests: never follow, always surface the 3xx as-is. Defined once so
-// newSafeWebhookClient (production) and the round-25 redirect regression test
-// build their *http.Client from the identical func value.
-var webhookCheckRedirect = func(_ *http.Request, _ []*http.Request) error {
-	return http.ErrUseLastResponse
-}
-
-// specialUseWebhookBlocks lists IETF special-use / non-public address ranges
-// that net.IP.IsPrivate() and friends do NOT cover, so a webhook URL could
-// still be steered at internal infrastructure through them. Found by GPT
-// second-opinion review, 2026-07-30 (round 23): the round-22 SSRF guard only
-// checked IsLoopback/IsPrivate/IsLinkLocalUnicast/IsLinkLocalMulticast/
-// IsUnspecified/IsMulticast, which lets RFC 6598 shared/CGNAT space and
-// several RFC 5735/6890 reserved-for-documentation-or-testing blocks through
-// untouched -- all of them can be assigned to real internal infrastructure
-// behind a NAT or shared address translator.
-var specialUseWebhookBlocks = mustParseWebhookCIDRs(
-	"0.0.0.0/8",       // "this" network
-	"100.64.0.0/10",   // RFC 6598 carrier-grade NAT / shared address space
-	"192.0.0.0/24",    // IETF protocol assignments
-	"192.0.2.0/24",    // TEST-NET-1 documentation
-	"198.18.0.0/15",   // benchmarking
-	"198.51.100.0/24", // TEST-NET-2 documentation
-	"203.0.113.0/24",  // TEST-NET-3 documentation
-	"240.0.0.0/4",     // reserved for future use
-	"2001:db8::/32",   // IPv6 documentation
-
-	// Round 24: net.IP.IsPrivate() only covers RFC1918 (IPv4) and RFC4193 ULA
-	// (fc00::/7) -- it does NOT cover the older/adjacent IPv6 special-use
-	// ranges below, so without these entries a literal like
-	// "http://[fec0::1]/" passed isPublicWebhookIP as "public" and was
-	// dialed if the host happened to route that prefix. Found by GPT
-	// second-opinion review, 2026-07-31 (round 24).
-	"fec0::/10",      // deprecated IPv6 site-local (RFC 3879 -- existing deployments may still route it)
-	"64:ff9b:1::/48", // NAT64 local-use translation prefix (RFC 8215, explicitly non-globally-reachable)
-	"2001::/32",      // Teredo tunneling (RFC 4380)
-	"2002::/16",      // 6to4 (RFC 3056)
-	"100::/64",       // discard-only prefix (RFC 6666)
-	"2001:2::/48",    // benchmarking (RFC 5180)
-	"3fff::/20",      // documentation (RFC 9637)
-	"5f00::/16",      // segment routing SRv6 (RFC 9602)
-)
-
-func mustParseWebhookCIDRs(cidrs ...string) []*net.IPNet {
-	nets := make([]*net.IPNet, 0, len(cidrs))
-	for _, c := range cidrs {
-		_, n, err := net.ParseCIDR(c)
-		if err != nil {
-			panic(fmt.Sprintf("webhook: invalid special-use CIDR %q: %v", c, err))
-		}
-		nets = append(nets, n)
-	}
-	return nets
-}
-
-// isPublicWebhookIP reports whether ip is safe to let a user-supplied webhook
-// URL resolve to: routable on the public internet, not loopback, not
-// RFC1918/RFC4193 private, not link-local (includes the 169.254.169.254
-// cloud-metadata address class), not unspecified, not multicast, and not one
-// of the IETF special-use ranges in specialUseWebhookBlocks (CGNAT,
-// documentation/test, reserved).
-func isPublicWebhookIP(ip net.IP) bool {
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
-		return false
-	}
-	for _, n := range specialUseWebhookBlocks {
-		if n.Contains(ip) {
-			return false
-		}
-	}
-	return true
-}
-
-var webhookHTTPClient = newSafeWebhookClient()
-
-// SetWebhookHTTPClientForTest swaps the webhook HTTP client and returns the previous client.
-func SetWebhookHTTPClientForTest(client *http.Client) *http.Client {
-	prev := webhookHTTPClient
-	if client == nil {
-		webhookHTTPClient = newSafeWebhookClient()
-	} else {
-		webhookHTTPClient = client
-	}
-	return prev
 }
 
 // PriceChecker retrieves the current cheapest price for a route.
@@ -241,7 +95,17 @@ type CheckResult struct {
 	// JSON DTOs) MUST surface this so the user knows to re-set their
 	// threshold. Found by GPT second-opinion review, 2026-07-30 (round 21).
 	AlertsClearedByCurrencyChange bool
-	Error                         error
+
+	// Stale reports that the watch was re-targeted (route, dates or currency)
+	// by someone else while this poll was in flight, so the provider's answer
+	// was discarded rather than written. Nothing fired: no alert, no webhook,
+	// no history point. The next scheduled round polls the new target.
+	//
+	// Callers should treat this as "no observation this round", not as an
+	// error, and must NOT report the price it carries as current.
+	Stale bool
+
+	Error error
 }
 
 // CheckAll checks all watches using the provided price checker and records
@@ -295,6 +159,11 @@ func CheckWatchesWithRoomsAndWebhookContext(checkCtx, webhookCtx context.Context
 
 func checkWatchesWithRoomsAndWebhookContext(checkCtx, webhookCtx context.Context, store *Store, checker PriceChecker, roomChecker RoomChecker, watches []Watch) []CheckResult {
 	checkCtx, webhookCtx = normalizeCheckAndWebhookContexts(checkCtx, webhookCtx)
+
+	// One provider call per distinct polled target for the whole round, and
+	// single-flight within it, so concurrent checks of one target wait for the
+	// in-flight call rather than issuing their own.
+	checker = newRoundCache(checker)
 
 	results := make([]CheckResult, 0, len(watches))
 
@@ -366,6 +235,10 @@ func CheckAllBounded(ctx context.Context, store *Store, checker PriceChecker, ro
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
 
+	// Single-flight per polled target: duplicate routes issue one provider call
+	// for the round even under concurrency (#509, MULTIPRICE.2).
+	checker = newRoundCache(checker)
+
 	for i, w := range watches {
 		wg.Add(1)
 		go func(i int, w Watch) {
@@ -407,6 +280,12 @@ func checkOne(ctx context.Context, store *Store, checker PriceChecker, w Watch) 
 
 func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Store, checker PriceChecker, w Watch) CheckResult {
 	checkCtx, webhookCtx = normalizeCheckAndWebhookContexts(checkCtx, webhookCtx)
+
+	// The poll identity this check is about to ask the provider for, captured
+	// BEFORE the call. If the committed record no longer matches it when the
+	// answer comes back, the answer is stale and must be discarded rather than
+	// applied. See MutateAndRecordPrice's staleness gate.
+	pollKey := w.pollKey()
 
 	price, currency, cheapestDate, err := checker.CheckPrice(checkCtx, w)
 	if err != nil {
@@ -465,239 +344,168 @@ func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Sto
 	}
 
 	if price > 0 {
-		// A currency change invalidates every scalar this watch has previously
-		// observed -- LastPrice, LowestPrice, CheapestDate, and the alert
-		// baseline are all magnitudes in the OLD currency, and comparing or
-		// carrying them forward against a price in a NEW currency silently
-		// mixes the two (a stale "EUR 50" surviving next to a fresh
-		// "Currency=JPY" reads as a false JPY 50 low). This mirrors
-		// Watch.applyIntent's currency-change reset (store.go) for the
-		// re-watch path; checkOneWithWebhookContext is the periodic-check path
-		// and needs the identical reset. Found by adversarial review,
-		// 2026-07-29 (round 4).
+		// Everything below -- the currency decision, the threshold wipes, the
+		// observation resets and the derived result signals -- is computed
+		// INSIDE the store transaction, against the committed record, not
+		// against the copy taken before the provider call.
 		//
-		// BelowPrice is a user-set alert THRESHOLD, not a watch-derived
-		// scalar, so it is never reset here -- but it is a magnitude in the
-		// watch's PRIOR currency, exactly like the scalars above. Comparing a
-		// fresh price straight against it after a currency change reinterprets
-		// the user's threshold in the new currency (e.g. a JPY 15,000 target
-		// compared against a EUR 180 quote sets BelowGoal=true because
-		// 180 <= 15000, firing a false "deal" alert on an unrelated
-		// magnitude). Skip the threshold check entirely on a currency change,
-		// same as PriceDrop and the last-minute-deal signal below -- there is
-		// no safe way to convert the threshold without a live FX rate, so the
-		// correct move is to not alert on this check, not to alert wrongly.
-		// Found by adversarial review, 2026-07-29 (round 6).
+		// That placement is the fix for a data-loss race found by adversarial
+		// review (2026-08-02). The old shape decided "the currency changed"
+		// from the pre-provider snapshot and replayed the consequences onto
+		// freshly reloaded state. If another process performed that same
+		// migration while this check was in flight, the replay zeroed the
+		// threshold that process had just re-set and purged the history it had
+		// just written in the new currency. A field-scoped write does not help
+		// when the DECISION is stale; only the decision moving under the lock
+		// does.
 		//
-		// Round 7 found that skipping the check on the transition poll alone
-		// was not enough: this function (unlike Watch.applyIntent's re-watch
-		// path, store.go) fires automatically with no fresh user-supplied
-		// threshold to fall back on, so BelowPrice and AlertDropAbs -- both
-		// ABSOLUTE currency-denominated magnitudes -- would otherwise persist
-		// unchanged in the OLD currency and get silently reinterpreted as the
-		// NEW currency on every subsequent poll from then on, not just this
-		// one. Clear both to 0 (disabled) on a currency change; there is no
-		// FX rate available at this layer to convert them, and the user must
-		// re-set a threshold denominated in the new currency. AlertDropPct is
-		// a percentage and is currency-invariant, so it is left untouched.
-		// Found by adversarial review, 2026-07-29 (round 7).
-		//
-		// Round 14 found this still fires on a watch's very FIRST successful
-		// poll: w.Currency is set at watch-creation from user intent, but the
-		// underlying search backend's quote currency is IP/market-driven, not
-		// user-selectable (see livecheck.go's SearchOptions.Currency note) --
-		// so an ordinary first check from a different egress region reports a
-		// "currency change" against a watch that never actually changed
-		// anything. Gate the DESTRUCTIVE reset on w.LastPrice > 0: only a
-		// transition BETWEEN TWO OBSERVED prices is a real currency change
-		// that should zero prior state; the first observation always just
-		// establishes the baseline currency.
-		// Found by adversarial review, 2026-07-29 (round 14).
-		//
-		// Round 15 found gating the guard ENTIRELY on w.LastPrice > 0 went
-		// too far the other way: a first quote whose currency differs from
-		// the watch's assumed/created currency fell straight through to the
-		// threshold checks below, comparing a NEW-currency price directly
-		// against BelowPrice/AlertDropAbs set in the OLD assumed currency
-		// (e.g. a 500 USD watch's first quote comes back 450 EUR: 450 <= 500
-		// fires a false BelowGoal, and the stale USD thresholds then persist
-		// silently attached to the newly-adopted EUR currency). A
-		// first-quote mismatch must skip the same threshold comparisons a
-		// real transition skips -- there is just no prior OBSERVATION to
-		// invalidate, only an untrustworthy assumption to correct.
-		// Found by adversarial review, 2026-07-30 (round 15).
-		//
-		// Round 16 found leaving BelowPrice/AlertDropAbs live through a
-		// first-quote mismatch only POSTPONED round 15's bug: w.Currency is
-		// still set to the newly-adopted currency below, so a later,
-		// currency-STABLE poll silently reinterprets the OLD currency's
-		// numeric threshold as if denominated in the NEW currency (the exact
-		// same false-BelowGoal/mislabeled-threshold failure, one poll later).
-		// BelowPrice/AlertDropAbs are absolute-currency-denominated and
-		// cannot survive ANY currency adoption -- unlike LastPrice/
-		// LowestPrice/CheapestDate/BaselinePrice/LastAlertedPrice, which only
-		// need invalidating when there was a prior OBSERVATION to begin with.
-		// Found by adversarial review, 2026-07-30 (round 16).
-		//
-		// Round 18 found w.LastPrice==0 is not a reliable "no prior
-		// observation" signal on its own: Store.dedupWatchesLocked's merge
-		// (migrate.go) recomputes a surviving watch's LowestPrice/CheapestDate
-		// from a currency-matching DUPLICATE it is merging away, without
-		// touching the survivor's own LastPrice (which stays whatever the
-		// survivor itself last observed, possibly still 0 if the survivor was
-		// the newer/emptier half of the pair). That leaves LastPrice==0 next
-		// to a nonzero LowestPrice -- a real prior observation this guard
-		// would otherwise miss entirely, letting a currency-mismatched poll
-		// treat it as a fresh first quote (skipping the LowestPrice/
-		// CheapestDate reset below) and silently compare a NEW-currency price
-		// against the OLD-currency LowestPrice at the unconditional "if
-		// w.LowestPrice == 0 || price < w.LowestPrice" update further down.
-		// Treat LowestPrice>0 as an equally valid prior-observation signal.
-		// Found by adversarial review, 2026-07-30 (round 18).
-		hasPriorObservation := w.LastPrice > 0 || w.LowestPrice > 0
-		// Round 19 found w.Currency=="" is NOT a safe "no currency mismatch
-		// possible" signal once hasPriorObservation is true: Load (round 18)
-		// normalizes any legacy whitespace-only stored currency to "", so a
-		// watch can carry real price history denominated in an unknown
-		// currency while w.Currency reads empty. The old `w.Currency != ""`
-		// guard let a fresh EUR quote compare directly against that
-		// unknown-currency history (e.g. a stale 20000 vs a new 180),
-		// firing a fabricated drop/below-goal alert without ever purging
-		// the untrustworthy history. A genuinely brand-new watch (no prior
-		// observation) still gets no false mismatch here -- it takes the
-		// firstQuoteMismatch/baseline path below, unchanged. Found by GPT
-		// second-opinion review, 2026-07-30 (round 19).
-		unknownCurrencyWithHistory := w.Currency == "" && hasPriorObservation
-		currencyMismatch := currency != "" && ((w.Currency != "" && w.Currency != currency) || unknownCurrencyWithHistory)
-		currencyChanged := hasPriorObservation && currencyMismatch
-		firstQuoteMismatch := !hasPriorObservation && currencyMismatch
-		skipThresholdChecks := currencyChanged || firstQuoteMismatch
-		if currencyMismatch {
-			// Round 21 found this branch silently wiped BelowPrice/
-			// AlertDropAbs with no notification or error -- the user's
-			// alert threshold vanished and they had no way to know short of
-			// noticing alerts stopped firing. Record that a real threshold
-			// was lost (not just that a currency mismatch occurred with
-			// nothing to lose) so notify.go and the MCP JSON DTO can tell
-			// the user. Found by GPT second-opinion review, 2026-07-30
-			// (round 21).
-			if w.BelowPrice > 0 || w.AlertDropAbs > 0 {
-				result.AlertsClearedByCurrencyChange = true
+		// TRVL.STORE.TXN.4 still holds: this callback is pure bookkeeping. The
+		// provider round trip already happened above.
+		var (
+			alert         pricealert.Alert
+			alertFired    bool
+			alertsCleared bool
+			prevPrice     float64
+			priceDrop     float64
+			belowGoal     bool
+			lastMinute    bool
+			lastMinutePct float64
+		)
+		saved, applied, err := store.MutateAndRecordPrice(w.ID, pollKey, price, currency, func(cur *Watch) bool {
+			prevPrice = cur.LastPrice
+
+			// Round 18: cur.LastPrice == 0 is not a reliable "no prior
+			// observation" signal on its own. dedupWatchesLocked's merge
+			// (migrate.go) can recompute a survivor's LowestPrice from a
+			// duplicate it merges away without touching the survivor's own
+			// LastPrice, leaving LastPrice == 0 beside a nonzero LowestPrice --
+			// a real prior observation this guard would otherwise miss, letting
+			// a currency-mismatched poll compare a NEW-currency price against
+			// the OLD-currency LowestPrice.
+			hasPriorObservation := cur.LastPrice > 0 || cur.LowestPrice > 0
+			// Round 19: cur.Currency == "" is NOT a safe "no mismatch possible"
+			// signal once there is prior history. Load normalizes a legacy
+			// whitespace-only stored currency to "", so a watch can carry real
+			// history denominated in an unknown currency while reading empty.
+			unknownCurrencyWithHistory := cur.Currency == "" && hasPriorObservation
+			currencyMismatch := currency != "" && ((cur.Currency != "" && cur.Currency != currency) || unknownCurrencyWithHistory)
+			currencyChanged := hasPriorObservation && currencyMismatch
+			firstQuoteMismatch := !hasPriorObservation && currencyMismatch
+			skipThresholdChecks := currencyChanged || firstQuoteMismatch
+
+			// Signals derived from the committed prior price and the committed
+			// threshold. Deriving them from the stale copy let a late poll
+			// recompute a drop against a price a concurrent check had already
+			// advanced, and fire a second webhook for one move.
+			if cur.LastPrice > 0 {
+				priceDrop = price - cur.LastPrice
 			}
-			w.BelowPrice = 0
-			// Round 17 found zeroing AlertDropAbs here, when it was the
-			// watch's ONLY alert threshold (AlertDropPct <= 0), left
-			// pricealert.Evaluate's Threshold.effective() reading both
-			// limbs as zero on every later poll -- silently substituting
-			// pricealert.DefaultDropPercent (10%) for a threshold the user
-			// never asked for, with no notification. Mark it pending
-			// currency reconfirmation instead so the Evaluate call below
-			// suspends alerting entirely until the user re-supplies a
-			// threshold via applyIntent (re-watch). Found by adversarial
-			// review, 2026-07-30 (round 17).
-			if w.AlertDropAbs > 0 && w.AlertDropPct <= 0 {
-				w.AlertDropAbsClearedByCurrency = true
+			if !skipThresholdChecks {
+				if signal := detectWatchLastMinuteDeal(*cur, price); signal.Triggered {
+					lastMinute = true
+					lastMinutePct = signal.DiscountPercent
+				}
+				if cur.BelowPrice > 0 && price <= cur.BelowPrice {
+					belowGoal = true
+				}
 			}
-			w.AlertDropAbs = 0
-		}
-		if currencyChanged {
-			w.LastPrice = 0
-			w.LowestPrice = 0
-			w.CheapestDate = ""
-			w.BaselinePrice = 0
-			w.LastAlertedPrice = 0
-			// result.PrevPrice was captured above, before this reset, straight
-			// from w.LastPrice in the OLD currency -- left as-is it surfaces an
-			// old-currency price next to this result's NEW currency (MCP and
-			// the notifier both read PrevPrice+Currency as one pair), and a
-			// transition the notifier can't express renders as "unchanged"
-			// instead of "currency changed, no comparable prior price." Mask
-			// it to 0 so callers see "no prior observation," matching
-			// w.LastPrice's own reset above. The room path (below) captures
-			// PrevPrice AFTER its equivalent reset and needs no such mask.
-			// Found by adversarial review, 2026-07-30 (round 15).
-			result.PrevPrice = 0
-		}
 
-		// Calculate price change.
-		if w.LastPrice > 0 {
-			result.PriceDrop = price - w.LastPrice
-		}
-
-		if !skipThresholdChecks {
-			if signal := detectWatchLastMinuteDeal(w, price); signal.Triggered {
-				result.LastMinuteDeal = true
-				result.LastMinuteDiscountPercent = signal.DiscountPercent
+			if currencyMismatch {
+				// Round 21: record that a REAL threshold was lost, so notify.go
+				// and the MCP DTO can say so. Silently wiping BelowPrice left
+				// users with no way to know short of noticing alerts stopped.
+				if cur.BelowPrice > 0 || cur.AlertDropAbs > 0 {
+					alertsCleared = true
+				}
+				// Round 16: BelowPrice/AlertDropAbs are absolute and
+				// currency-denominated, so they cannot survive ANY currency
+				// adoption -- not merely a change with prior observations.
+				cur.BelowPrice = 0
+				// Round 17: zeroing AlertDropAbs when it is the watch's ONLY
+				// threshold leaves Threshold.effective() reading both limbs as
+				// zero and silently substituting DefaultDropPercent -- a policy
+				// the user never chose. Mark it pending reconfirmation so the
+				// Evaluate below suspends alerting until applyIntent supplies a
+				// fresh threshold.
+				if cur.AlertDropAbs > 0 && cur.AlertDropPct <= 0 {
+					cur.AlertDropAbsClearedByCurrency = true
+				}
+				cur.AlertDropAbs = 0
 			}
-		}
-
-		// Check threshold.
-		if !skipThresholdChecks && w.BelowPrice > 0 && price <= w.BelowPrice {
-			result.BelowGoal = true
-		}
-
-		// Update watch state.
-		w.LastCheck = time.Now()
-		w.LastPrice = price
-		w.Currency = currency
-		if cheapestDate != "" {
-			w.CheapestDate = cheapestDate
-		}
-		if w.LowestPrice == 0 || price < w.LowestPrice {
-			w.LowestPrice = price
-		}
-
-		// Proactive price-drop alert: capture/track a baseline and fire exactly
-		// one alert when the fare falls past the configured threshold. State is
-		// stored on the watch so it survives daemon restarts and reloads.
-		//
-		// Round 17: when AlertDropAbs was force-zeroed above as the watch's
-		// only threshold (AlertDropAbsClearedByCurrency, both limbs now
-		// read <= 0), skip Evaluate entirely rather than let
-		// Threshold.effective() substitute pricealert.DefaultDropPercent --
-		// that would silently re-enable alerting under a policy the user
-		// never chose. Suspended until the user re-supplies a threshold via
-		// applyIntent, which clears the marker. Found by adversarial
-		// review, 2026-07-30 (round 17).
-		if !(w.AlertDropAbsClearedByCurrency && w.AlertDropPct <= 0 && w.AlertDropAbs <= 0) {
-			alertState, alert, alertFired := pricealert.Evaluate(
-				pricealert.State{Baseline: w.BaselinePrice, LastAlertedAt: w.LastAlertedPrice},
-				price,
-				pricealert.Threshold{DropPercent: w.AlertDropPct, DropAbsolute: w.AlertDropAbs},
-			)
-			w.BaselinePrice = alertState.Baseline
-			w.LastAlertedPrice = alertState.LastAlertedAt
-			if alertFired {
-				result.PriceDropAlert = true
-				result.AlertBaseline = alert.Baseline
-				result.AlertDropPercent = alert.DropPercent
+			if currencyChanged {
+				cur.LowestPrice = 0
+				cur.CheapestDate = ""
+				cur.BaselinePrice = 0
+				cur.LastAlertedPrice = 0
+				// Round 15: PrevPrice was captured above in the OLD currency.
+				// Left as-is it surfaces an old-currency price beside this
+				// result's NEW currency -- MCP and the notifier read
+				// PrevPrice+Currency as one pair -- and a transition the
+				// notifier cannot express renders as "unchanged". Mask it so
+				// callers see "no comparable prior price".
+				prevPrice = 0
+				priceDrop = 0
 			}
-		}
 
-		// Persist the watch update and the new price point atomically (a
-		// single lock+save), purging prior-currency history first when
-		// currencyChanged -- separate lock+save round trips here left a
-		// crash-between-them window where the store could persist the new
-		// currency without yet purging/appending history. Found by
-		// adversarial review, 2026-07-29 (round 11).
-		//
-		// Scope of "atomically" here: this closes the IN-MEMORY multi-call
-		// race on THIS `store` instance -- no other goroutine using the same
-		// *Store can observe or interleave a partial update between the
-		// watch-replace, purge, and append. It does NOT provide cross-process
-		// coordination: the scheduler and the MCP `watch_price` tool each
-		// construct their own independent *Store, so two concurrent checks
-		// against the same on-disk files can still last-writer-wins each
-		// other with no crash required, and persistLocked's two-file save is
-		// not atomic as a unit even within one process. Both are pre-existing,
-		// store-wide properties (not introduced or worsened by currency-change
-		// handling) -- see docs/design/2026-07-26-watch-store-coordination.md
-		// for the cross-process gap and persistLocked's own comment for the
-		// on-disk two-file gap.
-		if err := store.UpdateWatchAndRecordPrice(w, currencyChanged, price, currency); err != nil {
+			cur.LastCheck = time.Now()
+			cur.LastPrice = price
+			cur.Currency = currency
+			if cheapestDate != "" {
+				cur.CheapestDate = cheapestDate
+			}
+			if cur.LowestPrice == 0 || price < cur.LowestPrice {
+				cur.LowestPrice = price
+			}
+
+			// Proactive price-drop alert: capture/track a baseline and fire
+			// exactly one alert when the fare falls past the configured
+			// threshold. State is stored on the watch so it survives daemon
+			// restarts and reloads.
+			//
+			// Round 17 guard, reading cur: when AlertDropAbs was force-zeroed as
+			// the watch's only threshold, skip Evaluate entirely rather than let
+			// Threshold.effective() substitute DefaultDropPercent.
+			if !(cur.AlertDropAbsClearedByCurrency && cur.AlertDropPct <= 0 && cur.AlertDropAbs <= 0) {
+				state, a, fired := pricealert.Evaluate(
+					pricealert.State{Baseline: cur.BaselinePrice, LastAlertedAt: cur.LastAlertedPrice},
+					price,
+					pricealert.Threshold{DropPercent: cur.AlertDropPct, DropAbsolute: cur.AlertDropAbs},
+				)
+				cur.BaselinePrice = state.Baseline
+				cur.LastAlertedPrice = state.LastAlertedAt
+				alert, alertFired = a, fired
+			}
+
+			// Purge decided here, from committed state: if another process
+			// already migrated this watch, cur.Currency now matches the quote,
+			// currencyChanged is false, and its new-currency history survives.
+			return currencyChanged
+		})
+		if err != nil {
 			result.Error = fmt.Errorf("update watch and record price: %w", err)
 			return result
 		}
+		if !applied {
+			// The watch was re-targeted while this poll was in flight, so the
+			// quote answers a stale question. Report the committed record and
+			// fire nothing: no alert, no webhook, no history point. The next
+			// scheduled round polls the new target.
+			result.Watch = saved
+			result.Stale = true
+			return result
+		}
+		result.PrevPrice = prevPrice
+		result.PriceDrop = priceDrop
+		result.BelowGoal = belowGoal
+		result.LastMinuteDeal = lastMinute
+		result.LastMinuteDiscountPercent = lastMinutePct
+		result.AlertsClearedByCurrencyChange = alertsCleared
+		if alertFired {
+			result.PriceDropAlert = true
+			result.AlertBaseline = alert.Baseline
+			result.AlertDropPercent = alert.DropPercent
+		}
+		w = saved
 
 		// Update the result's watch to reflect saved state.
 		result.Watch = w
@@ -738,114 +546,4 @@ func normalizeCheckAndWebhookContexts(checkCtx, webhookCtx context.Context) (con
 		webhookCtx = checkCtx
 	}
 	return checkCtx, webhookCtx
-}
-
-// webhookPayload is the JSON body POSTed to a watch's WebhookURL on price drop.
-type webhookPayload struct {
-	WatchID                   string  `json:"watch_id"`
-	Type                      string  `json:"type"`
-	Origin                    string  `json:"origin,omitempty"`
-	Destination               string  `json:"destination,omitempty"`
-	HotelName                 string  `json:"hotel_name,omitempty"`
-	NewPrice                  float64 `json:"new_price"`
-	PrevPrice                 float64 `json:"prev_price"`
-	Currency                  string  `json:"currency"`
-	PriceDrop                 float64 `json:"price_drop"`
-	BelowGoal                 bool    `json:"below_goal"`
-	LastMinuteDeal            bool    `json:"last_minute_deal,omitempty"`
-	LastMinuteDiscountPercent float64 `json:"last_minute_discount_percent,omitempty"`
-	Timestamp                 string  `json:"timestamp"`
-}
-
-// fireWebhook sends a price-drop notification to the watch's WebhookURL.
-// It is fire-and-forget with a 10-second timeout; errors are logged but not returned.
-func fireWebhook(ctx context.Context, r CheckResult) {
-	if r.Watch.WebhookURL == "" {
-		return
-	}
-
-	// Round 22: reject anything but plain http/https up front -- a scheme
-	// like "file://" or "gopher://" has no business here and some of Go's
-	// non-HTTP RoundTrippers (if ever configured) would otherwise treat it
-	// as a local resource read rather than a network request.
-	parsedURL, err := url.Parse(r.Watch.WebhookURL)
-	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		slog.Warn("webhook: rejecting unsupported URL scheme", "watch_id", r.Watch.ID)
-		return
-	}
-
-	payload := webhookPayload{
-		WatchID:                   r.Watch.ID,
-		Type:                      r.Watch.Type,
-		Origin:                    r.Watch.Origin,
-		Destination:               r.Watch.Destination,
-		HotelName:                 r.Watch.HotelName,
-		NewPrice:                  r.NewPrice,
-		PrevPrice:                 r.PrevPrice,
-		Currency:                  r.Currency,
-		PriceDrop:                 r.PriceDrop,
-		BelowGoal:                 r.BelowGoal,
-		LastMinuteDeal:            r.LastMinuteDeal,
-		LastMinuteDiscountPercent: r.LastMinuteDiscountPercent,
-		Timestamp:                 time.Now().UTC().Format(time.RFC3339),
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		slog.Warn("webhook: marshal payload", "watch_id", r.Watch.ID, "err", err)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, parsedURL.String(), bytes.NewReader(body))
-	if err != nil {
-		slog.Warn("webhook: create request", "watch_id", r.Watch.ID, "err", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := webhookHTTPClient.Do(req)
-	if err != nil {
-		// Round 24: log only scheme+host+port, not url.Redacted(). Redacted()
-		// only masks an embedded userinfo password -- it still preserves
-		// username, path, and query, which is exactly where Slack/Discord-
-		// style webhook tokens live. Worse, net/http wraps Do()'s failure in
-		// a *url.Error whose Error() string re-embeds the FULL request URL
-		// (path/query included), so logging "err" directly undid the
-		// redaction anyway. Unwrap *url.Error and log only the underlying
-		// cause plus a host-only address. Found by GPT second-opinion
-		// review, 2026-07-31 (round 24).
-		safeHost := parsedURL.Scheme + "://" + parsedURL.Host
-		logErr := error(err)
-		if uerr, ok := err.(*url.Error); ok {
-			logErr = uerr.Err
-		}
-		slog.Warn("webhook: POST failed", "watch_id", r.Watch.ID, "host", safeHost, "err", logErr)
-		return
-	}
-	_ = resp.Body.Close()
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		// Round 25: with CheckRedirect refusing to follow, a redirecting
-		// receiver now surfaces here as a 3xx instead of silently succeeding
-		// -- log it as an undelivered notification rather than treating a
-		// redirect response as delivery.
-		safeHost := parsedURL.Scheme + "://" + parsedURL.Host
-		slog.Warn("webhook: receiver redirected, notification not delivered", "watch_id", r.Watch.ID, "host", safeHost, "status", resp.StatusCode)
-		return
-	}
-	if resp.StatusCode >= 400 {
-		// Grok round-25 optional finding #1: only the 3xx branch above ever
-		// logged a non-2xx response -- a receiver returning 4xx (bad
-		// payload, auth failure, rate limit) or 5xx (outage) failed the
-		// delivery just as silently as a redirect, with nothing in the logs
-		// to explain a "why did my webhook never fire" report. Treat 4xx/5xx
-		// the same as a redirect: log host + status as undelivered, never
-		// the response body (could echo the request back, including any
-		// token embedded in the URL by the receiver's own error page).
-		// Fixed as trvl#547.
-		safeHost := parsedURL.Scheme + "://" + parsedURL.Host
-		slog.Warn("webhook: receiver returned an error status, notification not delivered", "watch_id", r.Watch.ID, "host", safeHost, "status", resp.StatusCode)
-	}
 }

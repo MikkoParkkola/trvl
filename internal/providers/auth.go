@@ -30,11 +30,20 @@ import (
 // search to a different city can swap the values out from under us. See
 // MIK-3070 for the race that motivated this signature.
 func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars map[string]string) (map[string]string, error) {
+	// Before every cache read below, including the no-preflight early return.
+	// The auth cache lives in memory and the MCP server is long-lived, so a jar
+	// seeded from the user's browser outlives the moment it was permitted: the
+	// cache hit returns without reaching loadCachedCookies, tryBrowserCookieRetry
+	// or any other guarded reader, and the browser-derived cookies keep going out
+	// on the wire. Discarding the seeded state costs a preflight; keeping it
+	// costs the user the control they set.
+	discardBrowserSeededAuth(pc)
+
 	if pc.config.Auth == nil || pc.config.Auth.PreflightURL == "" {
 		// No preflight needed — but the caller may still rely on existing
 		// pc.authValues populated by other paths (header-based auth, env tokens).
 		// Return a snapshot so the caller's later read is race-free.
-		return snapshotAuthValuesLocked(pc), nil
+		return snapshotAuthValues(pc), nil
 	}
 
 	// Resolve search-specific vars in the preflight URL so that ${city_id}
@@ -67,6 +76,11 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 
 	// Tier 0: try loading persisted cookies from a previous successful session.
 	// This makes browser escape hatch a one-time setup rather than per-search.
+	// The file records which save site wrote each entry, so a user who has
+	// declined browser cookie reads gets the site-issued entries and not the
+	// harvested ones. Entries written before that field existed read as
+	// browser-derived. loadCachedCookies records what it seeded on the vault,
+	// in the same critical section it commits the cookies in.
 	loadCachedCookies(pc.client, resolvedURL)
 
 	resp, body, err := doPreflightRequest(ctx, pc.client, &resolvedAuth)
@@ -90,15 +104,23 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 	// client selected in getOrCreateClient; it runs implicitly on every
 	// request when cfg.TLS.Fingerprint == "chrome".)
 	if needsBrowserCookieFallback(resp.StatusCode, extracted, resolvedAuth.Extractions) {
+		// This whole cascade runs with pc.authMu held for writing (acquired
+		// above), which is what keeps two concurrent searches from both opening
+		// a browser window. The tiers therefore must not take the lock
+		// themselves — they return the recovered values and we commit them here
+		// with the Locked variant.
+		//
 		// Tier 3a: read cookies from user's browser (kooky).
-		if tryBrowserCookieRetry(ctx, pc, &resolvedAuth) {
+		if vals, ok := tryBrowserCookieRetry(ctx, pc, &resolvedAuth); ok {
+			commitAuthValuesLocked(pc, vals)
 			saveCachedCookies(pc.client, resolvedURL)
 			pc.lastPreflightURL = resolvedURL
 			pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
 			return copyAuthValues(pc.authValues), nil
 		}
 		// Tier 3b: run WAF challenge.js in sobek JS engine (pure Go).
-		if tryWAFSolve(ctx, pc, &resolvedAuth, resp.StatusCode, body) {
+		if vals, ok := tryWAFSolve(ctx, pc, &resolvedAuth, resp.StatusCode, body); ok {
+			commitAuthValuesLocked(pc, vals)
 			saveCachedCookies(pc.client, resolvedURL)
 			pc.lastPreflightURL = resolvedURL
 			pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
@@ -106,7 +128,8 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 		}
 		// Tier 4: last-resort escape hatch — open in browser.
 		if resolvedAuth.BrowserEscapeHatch && isInteractive(ctx) {
-			if tryBrowserEscapeHatch(ctx, pc, &resolvedAuth) {
+			if vals, ok := tryBrowserEscapeHatch(ctx, pc, &resolvedAuth); ok {
+				commitAuthValuesLocked(pc, vals)
 				saveCachedCookies(pc.client, resolvedURL)
 				pc.lastPreflightURL = resolvedURL
 				pc.authExpiry = time.Now().Add(pc.effectiveCacheTTL())
@@ -122,88 +145,33 @@ func (rt *Runtime) runPreflight(ctx context.Context, pc *providerClient, vars ma
 	return copyAuthValues(pc.authValues), nil
 }
 
-// copyAuthValues returns a defensive copy of m. Always called under either
-// pc.authMu read or write lock to avoid concurrent-map-iteration. Returns a
-// non-nil map even when m is empty/nil so callers can iterate freely.
-func copyAuthValues(m map[string]string) map[string]string {
-	out := make(map[string]string, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
-}
-
-// snapshotAuthValuesLocked acquires the read lock to take a defensive copy.
-// Used in the no-preflight code path where callers expected pc.authValues
-// directly; the snapshot eliminates the cross-call race in MIK-3070.
-func snapshotAuthValuesLocked(pc *providerClient) map[string]string {
-	pc.authMu.RLock()
-	defer pc.authMu.RUnlock()
-	return copyAuthValues(pc.authValues)
-}
-
-// replaceAuthValuesLocked refreshes pc.authValues from a recovered response. It
-// runs the extractions off-lock (applyURLExtractions performs network I/O) and
-// then clears+swaps the results in under pc.authMu.Lock. Readers hold
-// pc.authMu.RLock, so the older unsynchronized clear+write here raced concurrent
-// searches sharing the providerClient.
-func replaceAuthValuesLocked(ctx context.Context, pc *providerClient, auth *AuthConfig, resp *http.Response, body []byte) {
-	fresh := map[string]string{}
-	applyExtractions(auth.Extractions, resp, body, fresh)
-	applyURLExtractions(ctx, pc.client, auth.Extractions, fresh)
-	pc.authMu.Lock()
-	defer pc.authMu.Unlock()
-	for k := range pc.authValues {
-		delete(pc.authValues, k)
-	}
-	for k, v := range fresh {
-		pc.authValues[k] = v
-	}
-}
-
-// tryBrowserCookieRetry is Tier 3: read cookies from the user's disk-backed
-// browser stores, seed them into the client jar, and retry preflight. Returns
-// true on HTTP 2xx + successful extraction. The auth parameter carries the
-// resolved (city-specific) preflight URL.
-func tryBrowserCookieRetry(ctx context.Context, pc *providerClient, auth *AuthConfig) bool {
-	if !applyBrowserCookies(pc.client, auth.PreflightURL, pc.config.Cookies.Browser) {
-		return false
-	}
-	resp2, body2, err2 := doPreflightRequest(ctx, pc.client, auth)
-	if err2 != nil || resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
-		return false
-	}
-	// Reject 202 challenge pages — they are in the 2xx range but are WAF
-	// interstitials, not real responses.
-	if isAkamaiChallenge(resp2.StatusCode, body2) {
-		return false
-	}
-	replaceAuthValuesLocked(ctx, pc, auth, resp2, body2)
-	return true
-}
+// The auth-value extraction and commit helpers used below live in
+// auth_values.go: extractAuthValues (lock-free) and the commit pair that
+// encodes the two lock disciplines this file's callers run under.
 
 // tryWAFSolve is Tier 3b: if the preflight response looks like an AWS WAF
 // challenge page (HTTP 202 with *.awswaf.com script refs), run challenge.js
 // in the sobek JS engine to obtain an aws-waf-token cookie, then retry
-// preflight. Returns true on success. The auth parameter carries the
-// resolved (city-specific) preflight URL.
-func tryWAFSolve(ctx context.Context, pc *providerClient, auth *AuthConfig, statusCode int, pageBody []byte) bool {
+// preflight. On success it returns the freshly extracted auth values and true;
+// the caller commits them under its own lock discipline. The auth parameter
+// carries the resolved (city-specific) preflight URL.
+func tryWAFSolve(ctx context.Context, pc *providerClient, auth *AuthConfig, statusCode int, pageBody []byte) (map[string]string, bool) {
 	// Only attempt on HTTP 202 (AWS WAF challenge) or 403 (some WAF variants).
 	if statusCode != http.StatusAccepted && statusCode != http.StatusForbidden {
-		return false
+		return nil, false
 	}
 
 	pageURL := auth.PreflightURL
 	cookie, err := waf.SolveAWSWAF(ctx, pc.client, pageURL, string(pageBody), nil)
 	if err != nil {
 		slog.Debug("waf solver did not produce a token", "provider", pc.config.ID, "error", err.Error())
-		return false
+		return nil, false
 	}
 
 	// Install the token cookie into the client jar.
 	u, err := url.Parse(pageURL)
 	if err != nil {
-		return false
+		return nil, false
 	}
 	pc.client.Jar.SetCookies(u, []*http.Cookie{cookie})
 	slog.Info("waf solver obtained aws-waf-token via JS engine", "provider", pc.config.ID)
@@ -211,142 +179,13 @@ func tryWAFSolve(ctx context.Context, pc *providerClient, auth *AuthConfig, stat
 	// Retry preflight with the fresh token.
 	resp2, body2, err2 := doPreflightRequest(ctx, pc.client, auth)
 	if err2 != nil || resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
-		return false
+		return nil, false
 	}
 	// Reject 202 challenge pages — still a WAF interstitial despite being 2xx.
 	if isAkamaiChallenge(resp2.StatusCode, body2) {
-		return false
+		return nil, false
 	}
-	replaceAuthValuesLocked(ctx, pc, auth, resp2, body2)
-	return true
-}
-
-// tryBrowserEscapeHatch is Tier 4: open the preflight URL in the user's
-// browser, wait for the cookie set to visibly change (meaning the WAF/JS
-// challenge was solved), then retry preflight with the fresh cookies. Only
-// fires when the caller has opted in both per-provider
-// (AuthConfig.BrowserEscapeHatch) and per-call (WithInteractive context).
-//
-// When an ElicitConfirmFunc is present in the context (MCP sessions), the
-// user is prompted before the browser opens — this replaces the old silent
-// 15-second timeout that users never noticed. The auth parameter carries the
-// resolved (city-specific) preflight URL.
-func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig) bool {
-	targetURL := auth.PreflightURL
-	browserPref := pc.config.Cookies.Browser
-
-	// Headless-first (MIK-6218): try to clear the challenge SILENTLY by driving
-	// the user's installed browser headless (no window, no focus steal). Only if
-	// an interactive captcha remains do we fall through to the visible-window
-	// path below. A cleared challenge means the user never sees a popup.
-	if res, err := headlessFirstResolve(ctx, targetURL); err == nil && res != nil {
-		switch res.Status {
-		case ChallengeCleared:
-			if finishEscapeHatch(ctx, pc, auth, res.Cookies) {
-				slog.Info("browser escape hatch: cleared headlessly, no window shown",
-					"provider", pc.config.ID)
-				return true
-			}
-			// Headless cleared the page but the preflight retry still failed —
-			// fall through to the visible window as a last resort.
-		case ChallengeNeedsHuman:
-			slog.Info("browser escape hatch: interactive captcha detected, opening visible window",
-				"provider", pc.config.ID, "captcha", res.Marker)
-			// fall through to the visible-window path
-		}
-	}
-
-	// If elicitation is available, ask the user to confirm before opening
-	// the browser. This turns a silent 15s timeout into an explicit user
-	// action that actually succeeds.
-	if elicit := getElicit(ctx); elicit != nil {
-		msg := fmt.Sprintf(
-			"%s needs a browser visit to refresh its WAF session. "+
-				"I'll open %s in your browser — please complete any challenge "+
-				"(CAPTCHA, cookie consent) and then confirm here.",
-			pc.config.Name, targetURL,
-		)
-		confirmed, err := elicit(msg)
-		if err != nil || !confirmed {
-			slog.Info("browser escape hatch: user declined or elicitation failed",
-				"provider", pc.config.ID)
-			return false
-		}
-	}
-
-	slog.Info("opening URL in browser to refresh WAF cookies, waiting up to 30s...",
-		"provider", pc.config.ID,
-		"url", targetURL,
-		"browser", browserPref,
-	)
-
-	// Invalidate warm cache so the escape hatch reads fresh cookies
-	// from the browser after the user completes the challenge.
-	InvalidateWarmCache(targetURL, browserPref)
-
-	prev := browserCookiesForURL(targetURL)
-	if err := openURLInBrowser(targetURL, browserPref); err != nil {
-		slog.Warn("browser escape hatch: open failed",
-			"provider", pc.config.ID, "error", err.Error())
-		return false
-	}
-
-	// With elicitation the user explicitly confirmed they completed the
-	// challenge, so extend the cookie-change wait to 30s. Without
-	// elicitation, keep the original 15s.
-	deadline := 15 * time.Second
-	if getElicit(ctx) != nil {
-		deadline = 30 * time.Second
-	}
-
-	fresh, changed := waitForFreshCookies(ctx, targetURL, prev, time.Second, deadline)
-	if !changed {
-		slog.Warn("browser escape hatch: no cookie change observed within deadline",
-			"provider", pc.config.ID)
-		return false
-	}
-
-	if pc.client == nil || pc.client.Jar == nil {
-		return false
-	}
-	if !finishEscapeHatch(ctx, pc, auth, fresh) {
-		return false
-	}
-	slog.Info("browser escape hatch: preflight recovered", "provider", pc.config.ID)
-	return true
-}
-
-// finishEscapeHatch seeds the recovered cookies into the client jar, retries the
-// preflight, and (on a clean 2xx that is not another challenge page) refreshes
-// the provider's auth values. It is the shared tail of the Tier-4 escape hatch,
-// used by both the silent headless-first path and the visible-window fallback.
-// Returns true when the preflight retry succeeds and yields usable auth state.
-func finishEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig, fresh []*http.Cookie) bool {
-	if pc.client == nil || pc.client.Jar == nil {
-		return false
-	}
-	u, err := url.Parse(auth.PreflightURL)
-	if err != nil {
-		return false
-	}
-	if len(fresh) > 0 {
-		pc.client.Jar.SetCookies(u, fresh)
-	}
-
-	resp2, body2, err2 := doPreflightRequest(ctx, pc.client, auth)
-	if err2 != nil || resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
-		slog.Warn("browser escape hatch: preflight retry still failed",
-			"provider", pc.config.ID)
-		return false
-	}
-	// Reject 202 challenge pages — still a WAF interstitial despite being 2xx.
-	if isAkamaiChallenge(resp2.StatusCode, body2) {
-		slog.Warn("browser escape hatch: preflight retry returned another challenge page",
-			"provider", pc.config.ID)
-		return false
-	}
-	replaceAuthValuesLocked(ctx, pc, auth, resp2, body2)
-	return true
+	return extractAuthValues(ctx, pc, auth, resp2, body2), true
 }
 
 // doSearchRequest clones the given request, executes it via client, reads the
@@ -542,18 +381,6 @@ func applyURLExtractions(ctx context.Context, client *http.Client, extractions m
 	return matched
 }
 
-// needsBrowserCookieFallback reports whether the preflight outcome suggests a
-// bot-detection block that browser cookies might bypass.
-func needsBrowserCookieFallback(status, extracted int, extractions map[string]Extraction) bool {
-	if status == http.StatusAccepted || status == http.StatusForbidden {
-		return true
-	}
-	if len(extractions) > 0 && extracted == 0 {
-		return true
-	}
-	return false
-}
-
 // isAkamaiChallenge reports whether an HTTP response looks like an Akamai (or
 // AWS WAF) JavaScript challenge page. These are characterised by HTTP 202
 // status paired with body markers such as "window.aws", "reportChallengeError",
@@ -575,28 +402,6 @@ func isAkamaiChallenge(statusCode int, body []byte) bool {
 		bytes.Contains(body, []byte("window.aws")) ||
 		bytes.Contains(body, []byte("reportChallengeError")) ||
 		bytes.Contains(body, []byte("awswaf"))
-}
-
-// applyBrowserCookies reads cookies from the user's browsers for the given
-// URL and seeds them into the client's cookie jar. When browserHint is
-// non-empty, reads only from that specific browser to avoid cross-browser
-// cookie contamination. Returns true if any cookies were applied.
-func applyBrowserCookies(client *http.Client, targetURL, browserHint string) bool {
-	if client == nil || client.Jar == nil {
-		return false
-	}
-	cookies := browserCookiesForURLWithHint(targetURL, browserHint)
-	slog.Debug("applyBrowserCookies", "url", targetURL, "browser", browserHint, "count", len(cookies))
-	if len(cookies) == 0 {
-		return false
-	}
-	u, err := url.Parse(targetURL)
-	if err != nil {
-		return false
-	}
-	client.Jar.SetCookies(u, cookies)
-	slog.Debug("applied browser cookies to preflight client", "url", targetURL, "count", len(cookies))
-	return true
 }
 
 // decompressBody reads and decompresses the response body based on the

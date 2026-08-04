@@ -6,9 +6,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strings"
+
+	"github.com/MikkoParkkola/trvl/internal/consent"
 )
+
+// BrowserCookiesDeclined reports whether the user has declined browser cookie
+// reads. Every Fetch passes --cookies to nab, which reads the user's browser
+// cookie stores, so a decline has to stop the call rather than adjust it.
+//
+// The rule lives in internal/consent. It used to be written out again here,
+// because internal/cookies imports this package and reusing its copy would have
+// closed an import cycle; the two copies were held together by a cross-package
+// test that failed if they ever disagreed. There is now one copy and nothing to
+// disagree with.
+func BrowserCookiesDeclined() bool { return consent.CookiesDeclined() }
 
 var ErrNotAvailable = errors.New("nab not available")
 
@@ -63,6 +77,29 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opts FetchOptions) ([
 	if !c.Available() {
 		return nil, ErrNotAvailable
 	}
+
+	// Every Fetch below passes --cookies, so this whole path reads the user's
+	// browser cookie stores. A user who declined that must not have nab started
+	// for them -- the rail providers reach here as a fallback AFTER the gated
+	// in-process extractor already refused, which is how the opt-out was still
+	// leaking cookie reads after #521's first two rounds.
+	//
+	// ErrNotAvailable rather than a new sentinel: every caller already treats it
+	// as "nab is not an option here" and falls through quietly, which is exactly
+	// the desired behaviour. The cost is that a declined read and a broken nab
+	// install look identical to everything downstream, so the one place that can
+	// still tell them apart says so here.
+	if BrowserCookiesDeclined() {
+		// No URL, and no host either. The decline is a global env-var opt-out, so
+		// once it is set EVERY fetch is refused -- which URL was refused tells an
+		// operator nothing they can act on, and rounds 5 to 7 of review spent
+		// three attempts failing to reduce a URL to something provably harmless
+		// (query string, then IPv6 zone, then the hostname itself). The variable
+		// name is the whole actionable content of this line.
+		slog.Debug("nab fetch declined by the user", "env", consent.CookiesEnv)
+		return nil, ErrNotAvailable
+	}
+
 	if opts.Browser == "" {
 		opts.Browser = "auto"
 	}

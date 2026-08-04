@@ -65,6 +65,8 @@ Follow-up product work:
 - Track provider trust tiers separately from price. A lower Google Hotels matrix
   price from a lesser-known OTA can be real, but users may still prefer a
   mainstream OTA, the official hotel site, or a refundable rate.
+  Not shipped. Tracked in issue #535; design options and recommendation in
+  `docs/superpowers/specs/2026-07-29-provider-trust-tiers-decision.md`.
 
 ## Retest log
 

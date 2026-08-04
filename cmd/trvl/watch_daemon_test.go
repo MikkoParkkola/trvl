@@ -183,6 +183,12 @@ func TestRunWatchCheckCycleWithRooms_WebhookUsesDaemonContext(t *testing.T) {
 
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	// USERPROFILE too: os.UserHomeDir reads HOME on unix but USERPROFILE on
+	// Windows, so redirecting only HOME left this test sharing the
+	// package-wide store from TestMain with every sibling test. On Windows it
+	// saw watches those siblings had added and failed with count=3 -- while
+	// passing on Linux and macOS the whole time.
+	t.Setenv("USERPROFILE", tmp)
 
 	store, err := watch.DefaultStore()
 	if err != nil {
@@ -270,6 +276,7 @@ func (c *recordingDaemonPriceChecker) calledFor() []string {
 func TestRunWatchCheckCycleWithRooms_SkipsInactiveWatches(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	store, err := watch.DefaultStore()
 	if err != nil {

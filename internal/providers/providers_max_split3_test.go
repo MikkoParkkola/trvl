@@ -122,7 +122,7 @@ func TestTryBrowserCookieRetry_NoBrowserCookies(t *testing.T) {
 		PreflightURL: "https://no-browser-cookies.example.invalid/page",
 	}
 
-	got := tryBrowserCookieRetry(context.Background(), pc, auth)
+	_, got := tryBrowserCookieRetry(context.Background(), pc, auth)
 	if got {
 		t.Error("expected false when no browser cookies available")
 	}
@@ -145,7 +145,7 @@ func TestTryWAFSolve_NonChallengeStatus(t *testing.T) {
 	}
 
 	// Status 200 — not a WAF challenge.
-	got := tryWAFSolve(context.Background(), pc, auth, 200, []byte("normal page"))
+	_, got := tryWAFSolve(context.Background(), pc, auth, 200, []byte("normal page"))
 	if got {
 		t.Error("expected false for non-challenge status code")
 	}
@@ -164,7 +164,7 @@ func TestTryWAFSolve_403NoWAFMarkers(t *testing.T) {
 	}
 
 	// Status 403 without WAF markers — SolveAWSWAF should fail.
-	got := tryWAFSolve(context.Background(), pc, auth, 403, []byte("<html>Access Denied</html>"))
+	_, got := tryWAFSolve(context.Background(), pc, auth, 403, []byte("<html>Access Denied</html>"))
 	if got {
 		t.Error("expected false when WAF solver doesn't find a token")
 	}
@@ -199,7 +199,7 @@ func TestTryBrowserEscapeHatch_NotInteractive(t *testing.T) {
 		return fmt.Errorf("browser launch blocked in test")
 	})
 
-	got := tryBrowserEscapeHatch(context.Background(), pc, auth)
+	_, got := tryBrowserEscapeHatch(context.Background(), pc, auth)
 	if got {
 		t.Error("expected false when browser open fails")
 	}
@@ -226,7 +226,7 @@ func TestTryBrowserEscapeHatch_ElicitDeclined(t *testing.T) {
 		return false, nil // user declined
 	})
 
-	got := tryBrowserEscapeHatch(ctx, pc, auth)
+	_, got := tryBrowserEscapeHatch(ctx, pc, auth)
 	if got {
 		t.Error("expected false when user declines elicitation")
 	}
@@ -253,7 +253,7 @@ func TestTryBrowserEscapeHatch_ElicitError(t *testing.T) {
 		return false, fmt.Errorf("elicitation failed")
 	})
 
-	got := tryBrowserEscapeHatch(ctx, pc, auth)
+	_, got := tryBrowserEscapeHatch(ctx, pc, auth)
 	if got {
 		t.Error("expected false when elicitation errors")
 	}

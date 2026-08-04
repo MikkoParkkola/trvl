@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	trvlnab "github.com/MikkoParkkola/trvl/internal/nab"
@@ -79,7 +80,7 @@ var (
 	// do we open a real window. Overridable in tests so the orchestration is
 	// exercised offline without spawning a browser.
 	trainlineResolveChallenge = func(ctx context.Context, targetURL string) (*providers.ChallengeResult, error) {
-		return providers.ResolveChallenge(ctx, targetURL, providers.WithTier2Force())
+		return providers.ResolveChallenge(ctx, targetURL)
 	}
 	// trainlineOpenBrowser opens a VISIBLE browser window so a human can solve an
 	// interactive captcha. Only invoked on ChallengeNeedsHuman. Overridable in tests.
@@ -402,7 +403,7 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 
 		// Try 2: use a real browser session cookie extracted from Brave/Chrome.
 		// Requires the user to have visited thetrainline.com in their browser.
-		cookieHeader := trainlineBrowserCookies(ctx, "thetrainline.com")
+		cookieHeader := cookies.HeaderIfPermitted(trainlineBrowserCookies(ctx, "thetrainline.com"))
 		if cookieHeader != "" {
 			slog.Debug("retrying trainline with browser cookies")
 			req3, err3 := newTrainlineRequest(cookieHeader)
@@ -453,9 +454,13 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 				}
 			}
 		} else if res != nil && res.Status == providers.ChallengeNeedsHuman {
-			slog.Warn("trainline requires human verification — opening browser", "vendor", res.Marker)
-			_, _ = fmt.Fprintf(os.Stderr, "⚠️  Trainline requires verification. Opening browser — please solve the challenge, then retry.\n")
-			_ = trainlineOpenBrowser(trainlineHomeURL)
+			if err := trainlineOpenBrowser(trainlineHomeURL); errors.Is(err, cookies.ErrBrowserAuthDeclined) {
+				slog.Warn("trainline requires human verification — browser not opened, user opted out", "vendor", res.Marker)
+				_, _ = fmt.Fprintf(os.Stderr, "⚠️  Trainline requires verification. Not opening your browser (%s is set) — solve it yourself, then retry.\n", consent.CookiesEnv)
+			} else {
+				slog.Warn("trainline requires human verification — opening browser", "vendor", res.Marker)
+				_, _ = fmt.Fprintf(os.Stderr, "⚠️  Trainline requires verification. Opening browser — please solve the challenge, then retry.\n")
+			}
 		}
 
 		// Last resort: opt-in browser scraper via Go CDP.
@@ -497,9 +502,9 @@ func trainlineViaTier1(ctx context.Context, body []byte, cks []*http.Cookie, fro
 	// presents (the default headers carry a Chrome 133 UA, which would mismatch).
 	req.Header.Set("User-Agent", trainlineChromeUA)
 	req.Header.Set("sec-ch-ua", trainlineChromeSecCHUA)
-	for _, ck := range cks {
-		req.AddCookie(ck)
-	}
+	// Browser-harvested (datadome clearance). Attached through the consent seam
+	// so a decline landing during the browser read still stops them.
+	cookies.AttachBrowserCookies(req, cks)
 
 	resp, err := tier1.Do(req)
 	if err != nil {

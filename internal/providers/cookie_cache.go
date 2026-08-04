@@ -9,9 +9,24 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/consent"
 )
 
 const cookieCacheTTL = 24 * time.Hour
+
+// Provenance values recorded on every cached cookie: which kind of save site
+// wrote it. The distinction the opt-out needs is only "came out of the user's
+// own browser store" versus "the site handed it to us", so there are two.
+//
+// provenanceBrowser is also what an entry with NO provenance means. Caches
+// written before this field existed cannot be classified after the fact, and
+// the only safe reading of an unknown cookie under an opt-out is the one that
+// refuses it.
+const (
+	provenanceBrowser = "browser"
+	provenanceSite    = "site"
+)
 
 // cachedCookie is the on-disk representation of an http.Cookie.
 type cachedCookie struct {
@@ -23,7 +38,16 @@ type cachedCookie struct {
 	Secure   bool      `json:"secure"`
 	HttpOnly bool      `json:"http_only"`
 	SavedAt  time.Time `json:"saved_at"`
+	// Provenance is "browser" or "site"; empty means an entry written before
+	// this field existed, which reads as "browser". Written without omitempty
+	// so the file always states it rather than leaving a reader to infer it.
+	Provenance string `json:"provenance"`
 }
+
+// isBrowserDerived reports whether this entry must be withheld from a user who
+// declined browser cookie reads. Anything that is not explicitly site-derived
+// counts, so a value this code has never heard of resolves toward refusing.
+func (c cachedCookie) isBrowserDerived() bool { return c.Provenance != provenanceSite }
 
 // cookieCacheDir returns ~/.trvl/cookies, creating it if needed.
 func cookieCacheDir() (string, error) {
@@ -56,7 +80,25 @@ func cookieCachePath(domain string) (string, error) {
 // loadCachedCookies reads persisted cookies for a URL and seeds them into
 // the HTTP client's jar. Returns true if cookies were loaded and are fresh
 // (saved within cookieCacheTTL).
+//
+// It withholds browser-derived entries when the user has declined browser
+// cookie reads, and that refusal is the fifth bypass of this branch's family --
+// found by review, not by us. Cookies read out of the user's browser are
+// WRITTEN here: auth.go's tier-3 fallback calls saveCachedCookies right after
+// tryBrowserCookieRetry succeeds. So the decline stopped fresh reads while this
+// path kept replaying a previous harvest for the whole cache TTL. Setting the
+// variable would have looked like it worked and changed nothing for a day.
+//
+// It used to refuse the WHOLE cache under that decline, because the file
+// recorded no provenance: a cookie saved after an ordinary preflight and one
+// copied out of Chrome were the same fields on disk. Now each entry says which
+// kind of save site wrote it, so the decline drops the browser-derived entries
+// and keeps the rest. An entry with no provenance -- written by a version
+// before the field existed -- is treated as browser-derived, because an
+// unknown origin under an opt-out has to resolve toward refusing.
 func loadCachedCookies(client *http.Client, targetURL string) bool {
+	declined := consent.CookiesDeclined()
+
 	u, err := url.Parse(targetURL)
 	if err != nil || u.Host == "" {
 		return false
@@ -82,6 +124,21 @@ func loadCachedCookies(client *http.Client, targetURL string) bool {
 		return false
 	}
 
+	if declined {
+		// Filter before the TTL check below, which indexes cached[0].
+		kept := make([]cachedCookie, 0, len(cached))
+		for _, c := range cached {
+			if !c.isBrowserDerived() {
+				kept = append(kept, c)
+			}
+		}
+		if len(kept) == 0 {
+			slog.Debug("cookie cache: all entries browser-derived, declined", "domain", u.Host)
+			return false
+		}
+		cached = kept
+	}
+
 	// Check TTL against the oldest SavedAt.
 	if time.Since(cached[0].SavedAt) > cookieCacheTTL {
 		slog.Debug("cookie cache: expired", "domain", u.Host,
@@ -90,7 +147,11 @@ func loadCachedCookies(client *http.Client, targetURL string) bool {
 	}
 
 	cookies := make([]*http.Cookie, len(cached))
+	anyBrowser := false
 	for i, c := range cached {
+		if c.isBrowserDerived() {
+			anyBrowser = true
+		}
 		cookies[i] = &http.Cookie{
 			Name:     c.Name,
 			Value:    c.Value,
@@ -103,6 +164,17 @@ func loadCachedCookies(client *http.Client, targetURL string) bool {
 	}
 
 	if client.Jar != nil {
+		// Browser-derived contents go into a provider client's vault as such,
+		// in the same critical section that commits them, so a later opt-out
+		// can take them back. A set with no browser-derived entry must NOT go
+		// in that way: marking the vault browser-seeded for site cookies would
+		// make the next saveCachedCookies record them as browser-derived, and
+		// the provenance would be sticky-browser from then on. A plain jar (the
+		// throwaway one CachedCookiesForURL builds) has nothing to record on
+		// and nothing to revoke, so it just takes them.
+		if v := vaultOf(client); v != nil && anyBrowser {
+			return v.seedFromBrowser(u, cookies)
+		}
 		client.Jar.SetCookies(u, cookies)
 		slog.Debug("cookie cache: loaded", "domain", u.Host, "count", len(cookies))
 		return true
@@ -131,6 +203,18 @@ func CachedCookiesForURL(targetURL string) []*http.Cookie {
 }
 
 // saveCachedCookies persists the current cookies for a URL to disk.
+//
+// Provenance is read off the jar rather than passed in by the caller: there are
+// five save sites, and a parameter at each is five chances to write the wrong
+// answer. The vault already knows whether anything browser-derived was ever
+// committed to it, and that is the question being recorded. A client with no
+// vault -- the plain jar the headless tier-2 path saves from -- has never held
+// the user's own browser cookies, so its contents are site-derived.
+//
+// The whole file gets one value, because a jar merges: once browser cookies
+// are in it, an individual cookie handed back cannot be traced. Marking the
+// mixed case browser-derived is the conservative direction, and the cost of
+// getting it wrong that way is a refetch.
 func saveCachedCookies(client *http.Client, targetURL string) {
 	u, err := url.Parse(targetURL)
 	if err != nil || u.Host == "" {
@@ -146,18 +230,24 @@ func saveCachedCookies(client *http.Client, targetURL string) {
 		return
 	}
 
+	provenance := provenanceSite
+	if v := vaultOf(client); v != nil && v.isBrowserSeeded() {
+		provenance = provenanceBrowser
+	}
+
 	now := time.Now()
 	cached := make([]cachedCookie, len(cookies))
 	for i, c := range cookies {
 		cached[i] = cachedCookie{
-			Name:     c.Name,
-			Value:    c.Value,
-			Domain:   c.Domain,
-			Path:     c.Path,
-			Expires:  c.Expires,
-			Secure:   c.Secure,
-			HttpOnly: c.HttpOnly,
-			SavedAt:  now,
+			Name:       c.Name,
+			Value:      c.Value,
+			Domain:     c.Domain,
+			Path:       c.Path,
+			Expires:    c.Expires,
+			Secure:     c.Secure,
+			HttpOnly:   c.HttpOnly,
+			SavedAt:    now,
+			Provenance: provenance,
 		}
 	}
 

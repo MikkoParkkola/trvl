@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/grafana/sobek"
 )
 
@@ -76,7 +78,7 @@ func (h *vmHost) install() error {
 		if h.logger != nil {
 			h.logger("waf-js: " + msg)
 		} else {
-			slog.Debug("waf-js", "msg", msg)
+			slog.Debug("waf-js", "msg", logredact.Text(msg))
 		}
 	}); err != nil {
 		return fmt.Errorf("set log: %w", err)

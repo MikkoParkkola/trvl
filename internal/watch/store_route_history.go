@@ -2,6 +2,7 @@ package watch
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"time"
 )
@@ -22,53 +23,158 @@ func (s *Store) RecordObservation(routeKey string, price float64, currency strin
 	if routeKey == "" || price <= 0 {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	cur := strings.ToUpper(strings.TrimSpace(currency))
-	if last, ok := s.lastObservationLocked(routeKey, cur); ok && last.Price > 0 {
-		if time.Since(last.Timestamp) < observationThrottle &&
-			math.Abs(price-last.Price)/last.Price <= observationEpsilonPct {
-			return nil // redundant near-duplicate; skip the write entirely
+	return s.withTxn(func() error {
+		cur := strings.ToUpper(strings.TrimSpace(currency))
+		if last, ok := s.lastObservationLocked(routeKey, cur); ok && last.Price > 0 {
+			if time.Since(last.Timestamp) < observationThrottle &&
+				math.Abs(price-last.Price)/last.Price <= observationEpsilonPct {
+				// Redundant near-duplicate. errTxnNoop unwinds without writing:
+				// saving here would republish this process's whole snapshot
+				// over a concurrent writer's for an observation we decided not
+				// to keep.
+				return errTxnNoop
+			}
 		}
-	}
 
-	s.history = append(s.history, PricePoint{
-		RouteKey:  routeKey,
-		Price:     price,
-		Currency:  cur,
-		Timestamp: time.Now(),
+		s.history = append(s.history, PricePoint{
+			RouteKey:  routeKey,
+			Price:     price,
+			Currency:  cur,
+			Timestamp: time.Now(),
+		})
+		s.pruneRouteLocked(routeKey)
+		s.pruneGlobalRouteLocked()
+		return nil
 	})
-	s.pruneRouteLocked(routeKey)
-	s.pruneGlobalRouteLocked()
-	return s.saveLocked()
 }
 
-// pruneGlobalRouteLocked evicts the oldest ad-hoc route-keyed observations once
-// their total exceeds maxRouteObservations, bounding the file regardless of how
-// many distinct routes are searched. Watch-keyed points (WatchID set) are never
-// touched. Caller holds s.mu.
+// pruneGlobalRouteLocked bounds the total number of ad-hoc route-keyed
+// observations to maxRouteObservations. Watch-keyed points (WatchID set) are
+// never touched.
+//
+// Eviction is fair, not oldest-first (#511). Oldest-first across the whole
+// corpus lets one busy route's recent points push a quiet route's entire history
+// past the eviction boundary: the quiet route loses everything while never
+// exceeding its own per-route cap, and the loss is silent and permanent.
+//
+// The policy is water-filling. Find the largest per-route quota q for which
+// sum over routes of min(len(route), q) fits the global cap, then keep the
+// newest q points of every route. Routes below quota are untouched, so pressure
+// falls entirely on the largest contributors (TRVL.WATCH.EVICT.2), every route
+// keeps a floor of q (EVICT.1), what survives is always the newest points —
+// the ones sparklines and drop detection read (EVICT.4) — and the retained
+// total never exceeds the cap (EVICT.5).
+//
+// Degradation when routes outnumber the cap: q would be 0 and fairness cannot
+// be satisfied, since not even one point per route fits. In that case the
+// most-recently-active maxRouteObservations routes keep their newest point each
+// and the rest are dropped, which still bounds the file and still favours the
+// newest data. maxRouteObservations is 20000, so this is a theoretical branch,
+// not an operational one.
 func (s *Store) pruneGlobalRouteLocked() {
-	var routeIdx []int
-	for i, p := range s.history {
+	// Cheap counting pass first. Compaction runs on every observation, so the
+	// overwhelming majority of calls are under-cap no-ops; grouping by route
+	// before knowing that costs a map build (~5x the whole pass, measured by
+	// BenchmarkPruneAtCap*) for nothing.
+	total := 0
+	for _, p := range s.history {
 		if p.RouteKey != "" && p.WatchID == "" {
-			routeIdx = append(routeIdx, i)
+			total++
 		}
 	}
-	if len(routeIdx) <= maxRouteObservations {
+	if total <= maxRouteObservations {
 		return
 	}
-	drop := make(map[int]bool, len(routeIdx)-maxRouteObservations)
-	for _, i := range routeIdx[:len(routeIdx)-maxRouteObservations] {
-		drop[i] = true
+
+	// Over cap: index every route-keyed point by route, in insertion
+	// (chronological) order.
+	order := make([]string, 0, 8)
+	byRoute := make(map[string][]int)
+	for i, p := range s.history {
+		if p.RouteKey == "" || p.WatchID != "" {
+			continue
+		}
+		if _, seen := byRoute[p.RouteKey]; !seen {
+			order = append(order, p.RouteKey)
+		}
+		byRoute[p.RouteKey] = append(byRoute[p.RouteKey], i)
 	}
+
+	keep := make(map[int]bool, maxRouteObservations)
+	if len(byRoute) > maxRouteObservations {
+		// More routes than budget: keep the newest point of the most recently
+		// active routes until the budget is spent.
+		type lastPoint struct {
+			idx int
+			ts  time.Time
+		}
+		newest := make([]lastPoint, 0, len(byRoute))
+		for _, key := range order {
+			idxs := byRoute[key]
+			last := idxs[len(idxs)-1]
+			newest = append(newest, lastPoint{idx: last, ts: s.history[last].Timestamp})
+		}
+		sort.SliceStable(newest, func(a, b int) bool { return newest[a].ts.After(newest[b].ts) })
+		for _, lp := range newest[:maxRouteObservations] {
+			keep[lp.idx] = true
+		}
+	} else {
+		quota := routeQuota(byRoute, maxRouteObservations)
+		for _, idxs := range byRoute {
+			tail := idxs
+			if len(tail) > quota {
+				tail = tail[len(tail)-quota:] // newest quota points
+			}
+			for _, i := range tail {
+				keep[i] = true
+			}
+		}
+	}
+
 	kept := s.history[:0:0]
 	for i, p := range s.history {
-		if !drop[i] {
+		if p.RouteKey == "" || p.WatchID != "" || keep[i] {
 			kept = append(kept, p)
 		}
 	}
 	s.history = kept
+}
+
+// routeQuota returns the largest per-route retention quota whose water-filled
+// total fits cap. Callers guarantee len(byRoute) <= cap, so the result is >= 1.
+func routeQuota(byRoute map[string][]int, limit int) int {
+	longest := 0
+	for _, idxs := range byRoute {
+		if len(idxs) > longest {
+			longest = len(idxs)
+		}
+	}
+	fits := func(q int) bool {
+		sum := 0
+		for _, idxs := range byRoute {
+			if len(idxs) < q {
+				sum += len(idxs)
+			} else {
+				sum += q
+			}
+			if sum > limit {
+				return false
+			}
+		}
+		return true
+	}
+	// Binary search the largest q in [1, longest] that fits.
+	lo, hi, best := 1, longest, 1
+	for lo <= hi {
+		mid := lo + (hi-lo)/2
+		if fits(mid) {
+			best = mid
+			lo = mid + 1
+		} else {
+			hi = mid - 1
+		}
+	}
+	return best
 }
 
 // lastObservationLocked returns the most recent price point for a route key,
