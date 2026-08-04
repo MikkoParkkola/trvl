@@ -3,10 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -102,32 +104,51 @@ func shareLastSearch(formatOut string) error {
 	return outputShare(md, formatOut)
 }
 
-// shareFormats is the closed set of accepted --format values, and the single
-// source of truth for where a trip card may go. Every entry is local: stdout or
-// the system clipboard. A card carries destinations and dates, which together
-// say when a home is empty, so trvl hands the text to the user and lets them
-// choose the recipient. It publishes nowhere.
+// shareSinks is the single declaration of where a trip card may go: one entry
+// per accepted --format value, mapping it to the function that delivers it.
+// Every sink is local -- stdout or the system clipboard. A card carries
+// destinations and dates, which together say when a home is empty, so trvl hands
+// the text to the user and lets them choose the recipient. It publishes nowhere.
 //
-// TestOutputShare_FormatSurfaceIsClosed asserts this slice element for element,
-// so a new destination cannot be added without a failing test that forces
-// whoever adds it to say so out loud. That is the seam the removed gist upload
-// slipped through: it was reachable via a format string nobody had enumerated.
-var shareFormats = []string{"", "markdown", "stdout", "clipboard"}
+// Before #542 the accepted set and the dispatch were separate declarations:
+// shareFormats was a hand-written slice that outputShare never read, so its
+// "single source of truth" comment was false. Appending a value to the slice
+// changed no behaviour, and adding a case to the switch changed behaviour
+// without failing any test. Deriving one from the other removes the drift
+// rather than adding a second check that could also fall out of step.
+var shareSinks = map[string]func(string) error{
+	"":          printShare,
+	"markdown":  printShare,
+	"stdout":    printShare,
+	"clipboard": copyToClipboard,
+}
 
-// outputShare routes the markdown to one of shareFormats.
+// shareFormats is the sorted set of accepted --format values, derived from the
+// sinks above so it cannot fall out of step with what actually dispatches.
 //
-// Anything absent from that set is an error rather than a silent fallback to
+// TestOutputShare_FormatSurfaceIsClosed pins this set element for element, so
+// adding a sink fails that test until whoever added it says what it is. That is
+// the seam the removed gist upload slipped through: it was reachable via a
+// format string nobody had enumerated (#527).
+var shareFormats = slices.Sorted(maps.Keys(shareSinks))
+
+// printShare writes the card to stdout.
+func printShare(md string) error {
+	fmt.Print(md)
+	return nil
+}
+
+// outputShare delivers the markdown to the sink named by formatOut.
+//
+// Anything absent from shareSinks is an error rather than a silent fallback to
 // stdout. A caller asking for a format trvl no longer has is scripting against
 // behaviour that changed, and printing an itinerary where they expected
 // something else is the wrong way to tell them.
 func outputShare(md, formatOut string) error {
-	switch formatOut {
-	case "", "markdown", "stdout":
-		fmt.Print(md)
-		return nil
-	case "clipboard":
-		return copyToClipboard(md)
-	case "link":
+	// Handled before the sink lookup because it is deliberately NOT a sink:
+	// keeping it out of shareSinks is what stops it reappearing in the accepted
+	// set, while still letting the retired format explain itself.
+	if formatOut == "link" {
 		// Removed in #527. This published the card as a public GitHub gist.
 		// Wording matches the changelog entry on purpose: this error is the one
 		// place the affected population self-selects, so it is also where the
@@ -136,9 +157,12 @@ func outputShare(md, formatOut string) error {
 		return fmt.Errorf("--format link has been removed: it created a public GitHub gist of the trip card. " +
 			"Use the default output or --format clipboard and send the text yourself. " +
 			"Gists it created are still on your account (gh gist list)")
-	default:
+	}
+	sink, ok := shareSinks[formatOut]
+	if !ok {
 		return fmt.Errorf("unsupported --format %q: use markdown or clipboard", formatOut)
 	}
+	return sink(md)
 }
 
 // formatTripMarkdown renders a saved trip as clean shareable markdown.

@@ -561,9 +561,17 @@ func TestUpgradeCmd_DefaultRunV24(t *testing.T) {
 // until someone edits the expectation and states what they added. That is the
 // seam the removed gist upload slipped through — it was reachable through a
 // format string nobody had enumerated (#527).
+//
+// Since #542 that guarantee is real rather than claimed. shareFormats is derived
+// from the keys of shareSinks, which is also what dispatches, so adding a sink
+// necessarily changes this set and necessarily fails this assertion. Before that
+// the slice was hand-written and outputShare never read it: a new destination
+// could be added to the switch with every test still green, which is the defect
+// this comment used to describe as impossible.
 func TestOutputShare_FormatSurfaceIsClosed(t *testing.T) {
-	// Element-for-element. Adding a destination must land here first.
-	want := []string{"", "markdown", "stdout", "clipboard"}
+	// Element-for-element, in the sorted order shareFormats is derived in.
+	// Adding a destination must land here first.
+	want := []string{"", "clipboard", "markdown", "stdout"}
 	if !slices.Equal(shareFormats, want) {
 		t.Fatalf("shareFormats = %q, want %q — a share destination changed; "+
 			"confirm the new one is local and never publishes, then update this expectation",
@@ -606,6 +614,54 @@ func TestOutputShare_FormatSurfaceIsClosed(t *testing.T) {
 	// in a changelog they have no reason to open.
 	if err != nil && !strings.Contains(err.Error(), "gh gist list") {
 		t.Errorf("outputShare(\"link\") = %v, want it to point at gh gist list so an affected user can clean up", err)
+	}
+}
+
+// TRVL.SHAREFMT.3 -- the declared set and the dispatch cannot diverge.
+//
+// This is the assertion the old arrangement could not make. shareFormats used to
+// be a hand-written slice that outputShare never consulted, so the two were free
+// to disagree: appending to the slice changed no behaviour, and adding a switch
+// case added a destination with every test still green.
+//
+// Both directions are checked here, because "one source of truth" is a claim
+// about both:
+//
+//	dispatch -> declared: every sink appears in shareFormats, so a new
+//	destination cannot exist without showing up in the set the test above pins.
+//	declared -> dispatch: every declared format actually resolves to a sink, so
+//	the set cannot advertise a format that does not work.
+//
+// Verified by sabotage rather than assumed: adding a throwaway sink to
+// shareSinks fails TestOutputShare_FormatSurfaceIsClosed on its element-for-
+// element comparison, which is exactly the forcing function #527 needed and did
+// not have.
+func TestShareFormatsAndSinksCannotDiverge(t *testing.T) {
+	if len(shareFormats) != len(shareSinks) {
+		t.Fatalf("shareFormats has %d entries, shareSinks has %d — the declared set and the "+
+			"dispatch have diverged, which is the #542 defect returning",
+			len(shareFormats), len(shareSinks))
+	}
+
+	for _, format := range shareFormats {
+		if _, ok := shareSinks[format]; !ok {
+			t.Errorf("shareFormats advertises %q but no sink dispatches it", format)
+		}
+	}
+
+	for format := range shareSinks {
+		if !slices.Contains(shareFormats, format) {
+			t.Errorf("sink %q dispatches but is absent from shareFormats, so adding it would not "+
+				"have failed the surface test — a destination could ship unenumerated", format)
+		}
+	}
+
+	// shareFormats must stay sorted, or the element-for-element assertion above
+	// becomes order-dependent on Go's randomized map iteration and starts
+	// failing intermittently for a reason that has nothing to do with sharing.
+	if !slices.IsSorted(shareFormats) {
+		t.Errorf("shareFormats = %q is not sorted; map iteration order would make the surface "+
+			"test flaky", shareFormats)
 	}
 }
 
