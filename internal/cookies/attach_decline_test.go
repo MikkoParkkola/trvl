@@ -99,6 +99,16 @@ func TestProvidersDoNotSendBrowserCookiesDirectly(t *testing.T) {
 		if relErr != nil {
 			return relErr
 		}
+		// Slash-normalised before every lookup and every message.
+		//
+		// filepath.Rel returns backslashes on Windows, while skipDirs and
+		// allowed are written with forward slashes -- so on Windows every
+		// lookup missed, the allowlist was ignored wholesale, and this guard
+		// failed the build on files it had been told to skip. It passed on
+		// Linux and macOS the whole time, which is how a cross-platform bug in
+		// a guard survives: the guard only lies on the platform nobody develops
+		// on.
+		rel = filepath.ToSlash(rel)
 		if info.IsDir() {
 			if skipDirs[rel] {
 				return filepath.SkipDir
