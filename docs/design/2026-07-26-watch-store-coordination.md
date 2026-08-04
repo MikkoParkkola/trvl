@@ -1,8 +1,17 @@
 # Watch store: cross-process coordination gap
 
-Status: **known limitation, not fixed.** Documented so the next attempt starts
-from the constraint rather than rediscovering it.
-Date: 2026-07-26
+Status: **partially fixed 2026-08-04 (#553).** The cross-process file-level
+lock described as option 1 below now wraps every hot-path mutation (`Add`,
+`Remove`, `UpdateWatch`, `UpdateWatchAndRecordPrice`, `RecordPrice`,
+`PurgeHistory`, `RecordObservation`) -- the multi-watch loss scenario in
+"What is not safe" below no longer happens. What remains open: same-record
+field merge (a concurrent edit to one watch's own fields can still be
+reverted by a wholesale in-memory replace -- tracked as #561), and `Migrate`
+takes the lock without reloading first (#562). See PR closing #553 for the
+full closed/partial/open split. Left the rest of this doc as-is below for
+history; do not re-read "not safe" as still describing today's behavior for
+the multi-watch case.
+Date: 2026-07-26 (status updated 2026-08-04)
 
 ## What is safe today
 
@@ -10,6 +19,10 @@ Date: 2026-07-26
 Within one process, `Store`'s mutex serialises mutations.
 
 ## What is not safe
+
+**(Pre-#553 behavior; the multi-watch case below is now fixed -- see status
+above. Kept verbatim as the historical record of the failure this doc was
+written to document.)**
 
 The store is **last-writer-wins across processes**. Every `trvl mcp` process
 holds its own in-memory copy of the whole store and persists by rewriting both
@@ -70,6 +83,11 @@ increasing order of cost:
    released by the OS on process death). Every mutation would take it, reload,
    apply, write, release. Simple and correct; costs a lock round-trip per
    mutation and needs care to avoid holding it across network calls.
+   **Shipped 2026-08-04 (#553)** via `withTxnLocked`, wired into the mutators
+   listed in the status note above. Closes the multi-watch loss scenario in
+   "What is not safe"; does not by itself close same-record field merge
+   (#561) or Migrate's stale-read (#562) -- those still need option 2's
+   approach applied narrowly to those two remaining call sites.
 2. **Field-level merge on write.** Reload before persisting and merge by watch
    ID rather than overwriting wholesale. Avoids blocking but needs an explicit
    conflict rule per field (newest `RenewedAt` wins, highest `BaselinePrice`
