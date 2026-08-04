@@ -943,3 +943,120 @@ func TestBackupNeverOverwritesAnEarlierOne(t *testing.T) {
 		t.Errorf("the first backup's contents changed to %q; a rollback point must be immutable once written", got)
 	}
 }
+
+// TRVL.MIGRATE.3 -- collapsing duplicates must merge the running state, not
+// hand over one record's fields wholesale.
+//
+// richer() picks a survivor on LowestPrice-presence, then LastCheck, then
+// CreatedAt, and the winner's OTHER fields survive intact. LowestPrice,
+// CheapestDate and CreatedAt are merged explicitly; RenewedAt, BaselinePrice
+// and LastAlertedPrice were not. So a recently-renewed duplicate could lose to
+// an older-but-more-recently-checked one and have its state discarded outright
+// (trvl#563):
+//
+//   - a lost RenewedAt leaves the survivor eligible for TTL expiry even though
+//     a group member was renewed moments ago;
+//   - a lost LastAlertedPrice re-alerts for a drop already reported, because
+//     Evaluate stays silent only while current >= LastAlertedAt.
+func TestMigrateMergesRunningStateAcrossDuplicates(t *testing.T) {
+	dir := t.TempDir()
+	base := Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		DepartDate: "2027-01-01", Currency: "EUR", BelowPrice: 200,
+	}
+
+	// Loses richer(): checked longer ago. Carries the newest renewal and the
+	// highest alert state.
+	stale := base
+	stale.ID = "renewed"
+	stale.LowestPrice = 150
+	stale.LastCheck = time.Now().Add(-2 * time.Hour)
+	stale.CreatedAt = time.Now().Add(-30 * 24 * time.Hour)
+	stale.RenewedAt = time.Now()
+	stale.BaselinePrice = 500
+	stale.LastAlertedPrice = 320
+
+	// Wins richer(): checked most recently. Its own state is older/lower.
+	fresh := base
+	fresh.ID = "recent"
+	fresh.LowestPrice = 150
+	fresh.LastCheck = time.Now()
+	fresh.CreatedAt = time.Now().Add(-30 * 24 * time.Hour)
+	fresh.RenewedAt = time.Now().Add(-80 * 24 * time.Hour)
+	fresh.BaselinePrice = 300
+	fresh.LastAlertedPrice = 280
+
+	s := NewStore(dir)
+	s.watches = []Watch{stale, fresh}
+	if err := s.Save(); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	got := s.List()
+	if len(got) != 1 {
+		t.Fatalf("want 1 surviving watch, got %d", len(got))
+	}
+	w := got[0]
+
+	if w.RenewedAt.Before(stale.RenewedAt) {
+		t.Errorf("RenewedAt = %v, want the group's newest (%v) -- the survivor is left eligible for "+
+			"TTL expiry despite a member being renewed moments ago", w.RenewedAt, stale.RenewedAt)
+	}
+	if w.BaselinePrice != 500 {
+		t.Errorf("BaselinePrice = %v, want the group's peak 500 -- a lower reference understates "+
+			"every subsequent drop", w.BaselinePrice)
+	}
+	if w.LastAlertedPrice != 320 {
+		t.Errorf("LastAlertedPrice = %v, want the group's highest 320 -- a lower dedup floor "+
+			"re-alerts for a drop already reported", w.LastAlertedPrice)
+	}
+}
+
+// TRVL.MIGRATE.3 -- and the currency-denominated halves merge only within the
+// survivor's currency, the same rule LowestPrice already follows. Without this
+// the fix would import a JPY baseline into a EUR watch.
+func TestMigrateDoesNotMergeAlertStateAcrossCurrencies(t *testing.T) {
+	dir := t.TempDir()
+	base := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartDate: "2027-01-01"}
+
+	eur := base
+	eur.ID = "eur"
+	eur.Currency = "EUR"
+	eur.LowestPrice = 150
+	eur.LastCheck = time.Now()
+	eur.BaselinePrice = 300
+	eur.LastAlertedPrice = 280
+
+	jpy := base
+	jpy.ID = "jpy"
+	jpy.Currency = "JPY"
+	jpy.LowestPrice = 20000
+	jpy.LastCheck = time.Now().Add(-2 * time.Hour)
+	jpy.BaselinePrice = 50000
+	jpy.LastAlertedPrice = 42000
+
+	s := NewStore(dir)
+	s.watches = []Watch{eur, jpy}
+	if err := s.Save(); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	for _, w := range s.List() {
+		if w.Currency != "EUR" {
+			continue
+		}
+		if w.BaselinePrice > 1000 {
+			t.Errorf("the EUR survivor took a JPY baseline (%v); currency-denominated state must "+
+				"merge only within the survivor's own currency", w.BaselinePrice)
+		}
+		if w.LastAlertedPrice > 1000 {
+			t.Errorf("the EUR survivor took a JPY alert floor (%v)", w.LastAlertedPrice)
+		}
+	}
+}

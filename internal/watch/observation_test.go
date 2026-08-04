@@ -71,8 +71,27 @@ func TestRoutePricesCurrencyFilter(t *testing.T) {
 	if usd := s.RoutePrices(key, "usd"); len(usd) != 1 { // case-insensitive
 		t.Fatalf("want 1 USD price, got %d", len(usd))
 	}
-	if all := s.RoutePrices(key, ""); len(all) != 3 {
-		t.Fatalf("empty currency must return all, got %d", len(all))
+	// An empty currency selects the CURRENCYLESS records, not every record.
+	//
+	// This assertion previously read "empty currency must return all" and
+	// expected 3 -- which contradicts this test's own stated purpose one line
+	// above it. Returning all is precisely the mixing that makes pricesignal
+	// bands garbage: a provider result carrying no currency produced a series
+	// spanning EUR and USD magnitudes, and the percentile a user is shown was
+	// computed across incomparable numbers (trvl#564).
+	if none := s.RoutePrices(key, ""); len(none) != 0 {
+		t.Fatalf("empty currency returned %d labelled price(s) (%v); it must not act as a wildcard",
+			len(none), none)
+	}
+
+	// ...and it is selective, not merely always empty: a currencyless
+	// observation is still recorded and still retrievable on its own terms.
+	_ = s.RecordObservation(key, 999, "")
+	if none := s.RoutePrices(key, ""); len(none) != 1 {
+		t.Fatalf("want the 1 currencyless price, got %d", len(none))
+	}
+	if eur := s.RoutePrices(key, "EUR"); len(eur) != 2 {
+		t.Fatalf("the currencyless observation leaked into the EUR series: got %d, want 2", len(eur))
 	}
 }
 
@@ -160,5 +179,45 @@ func TestGlobalRouteCapPreservesWatchHistory(t *testing.T) {
 	}
 	if got := len(s.History("watch-1")); got != 5 {
 		t.Fatalf("watch history must be preserved, got %d want 5", got)
+	}
+}
+
+// TRVL.OBS.CURRENCY.1 -- the throttle must not compare magnitudes across
+// currencies.
+//
+// RecordObservation skips a near-duplicate within the throttle window by
+// comparing |price-last|/last against an epsilon, finding `last` via
+// lastObservationLocked. An empty currency argument used to match ANY currency,
+// so recording a CURRENCYLESS observation looked up the most recent LABELLED
+// one and compared against it. A currencyless quote that happened to sit near
+// some unrelated currency's magnitude was silently discarded -- and the ratio
+// driving that decision was meaningless (trvl#564).
+//
+// The direction matters, which is why an earlier version of this test was
+// vacuous: two LABELLED observations never trigger it, because a non-empty
+// query filters exactly. Only an empty query reached the wildcard.
+func TestRecordObservationThrottleDoesNotCompareAcrossCurrencies(t *testing.T) {
+	s := NewStore(t.TempDir())
+	key := RouteKey("flight", "HEL", "NRT", "2027-05-01")
+
+	if err := s.RecordObservation(key, 180, "EUR"); err != nil {
+		t.Fatalf("seed EUR: %v", err)
+	}
+	// A currencyless observation at a near-identical MAGNITUDE -- within the
+	// 0.5% epsilon of 180, deliberately, since a delta outside it is not
+	// throttled by anything and the test would prove nothing. Recorded
+	// immediately after, so it is inside the throttle window. There is no
+	// currencyless history at all, so nothing legitimate can suppress it: only
+	// a comparison against the EUR point can.
+	if err := s.RecordObservation(key, 180.5, ""); err != nil {
+		t.Fatalf("record currencyless: %v", err)
+	}
+
+	if none := s.RoutePrices(key, ""); len(none) != 1 {
+		t.Errorf("the currencyless observation was dropped (%d recorded): the throttle compared it "+
+			"against a EUR price, which is not a comparison that means anything", len(none))
+	}
+	if eur := s.RoutePrices(key, "EUR"); len(eur) != 1 {
+		t.Errorf("the EUR observation is missing or was joined by the currencyless one: %d recorded, want 1", len(eur))
 	}
 }

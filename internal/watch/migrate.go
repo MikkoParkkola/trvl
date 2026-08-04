@@ -251,6 +251,44 @@ func (s *Store) collapseDuplicatesLocked() (int, map[string]string) {
 		}
 		survivor.LowestPrice = lowest
 		survivor.CheapestDate = cheapestDate
+
+		// Merge the rest of the running state across the group, rather than
+		// letting richer() hand over one record's fields wholesale.
+		//
+		// richer() decides which record's OTHER fields survive, on
+		// LowestPrice-presence then LastCheck then CreatedAt. LowestPrice,
+		// CheapestDate and CreatedAt are already merged explicitly above and
+		// below; these three were not, so a recently-renewed duplicate could
+		// lose to an older-but-more-recently-checked one and have its state
+		// discarded outright (trvl#563).
+		//
+		//   - RenewedAt: latest wins. It records "the user expressed interest",
+		//     and losing the newest stamp leaves the survivor eligible for TTL
+		//     expiry even though a group member was renewed moments ago.
+		//   - BaselinePrice: the alert high-water reference, so the group's
+		//     highest is the true peak observed for this target. A lower one
+		//     understates every subsequent drop.
+		//   - LastAlertedPrice: the dedup floor. Evaluate stays silent while
+		//     current >= LastAlertedAt, so the HIGHEST value suppresses most,
+		//     and losing it re-alerts for a drop already reported.
+		//
+		// The two price fields are currency-denominated, so they merge only
+		// within the survivor's currency -- same rule as LowestPrice above.
+		for _, w := range group {
+			if w.RenewedAt.After(survivor.RenewedAt) {
+				survivor.RenewedAt = w.RenewedAt
+			}
+			if w.Currency != survivor.Currency {
+				continue
+			}
+			if w.BaselinePrice > survivor.BaselinePrice {
+				survivor.BaselinePrice = w.BaselinePrice
+			}
+			if w.LastAlertedPrice > survivor.LastAlertedPrice {
+				survivor.LastAlertedPrice = w.LastAlertedPrice
+			}
+		}
+
 		kept = append(kept, survivor)
 
 		// Every other member of the group maps directly onto the final

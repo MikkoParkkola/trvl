@@ -185,7 +185,18 @@ func (s *Store) lastObservationLocked(routeKey, currency string) (PricePoint, bo
 		if p.RouteKey != routeKey {
 			continue
 		}
-		if currency != "" && strings.ToUpper(p.Currency) != currency {
+		// Exact match, including when both sides are empty.
+		//
+		// An empty argument used to mean "any currency", so a currencyless
+		// observation matched a labelled one and vice versa. The caller is
+		// RecordObservation's throttle, which then compares magnitudes --
+		// |price-last|/last -- across two different currencies, e.g. a 20000
+		// JPY quote against a 180 EUR one. That comparison is meaningless and
+		// decides whether an observation is recorded at all (trvl#564).
+		//
+		// Currencyless points are still stored and still comparable to each
+		// other; they simply no longer stand in for every currency.
+		if strings.ToUpper(p.Currency) != currency {
 			continue
 		}
 		return p, true
@@ -262,7 +273,12 @@ func (s *Store) RoutePrices(routeKey, currency string) []float64 {
 		if p.RouteKey != routeKey {
 			continue
 		}
-		if cur != "" && strings.ToUpper(p.Currency) != cur {
+		// Exact match, same reasoning as lastObservationLocked: an empty
+		// argument selected EVERY currency, so a provider result that carried
+		// no currency produced a price series mixing magnitudes from different
+		// ones. That series feeds pricesignal.Compute, so the percentile a user
+		// is shown was computed across incomparable numbers (trvl#564).
+		if strings.ToUpper(p.Currency) != cur {
 			continue
 		}
 		out = append(out, p.Price)
