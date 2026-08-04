@@ -286,9 +286,27 @@ func persistDateGridTo(store *dategrid.Store, origin, destination string, dates 
 	_ = store.Put(dategrid.RouteKey(origin, destination), currency, pts, now)
 }
 
-func checkHotel(ctx context.Context, w watch.Watch) (float64, string, string, error) {
-	checkIn := w.DepartDate
-	checkOut := w.ReturnDate
+// hotelStayDates resolves the stay a hotel watch means.
+//
+// Extracted so there is ONE answer to "what stay is this", reachable from a
+// test without issuing a live provider request.
+//
+// DepartDate/ReturnDate are canonical -- both CLI paths write them (`watch add
+// --depart/--return`, `watch rooms --checkin/--checkout`). The MCP watch_price
+// tool historically stored a hotel stay in DepartFrom/DepartTo instead, and
+// this function only read the canonical pair, so an MCP-created hotel watch
+// polled with EMPTY dates and reported nothing. No error was raised anywhere;
+// it simply looked like a watch that never found a price (trvl#557).
+//
+// The MCP writer now stores the canonical pair, but the fallback stays: watches
+// created before that fix are on disk with DepartFrom/DepartTo set, and they
+// must keep working without a migration.
+func hotelStayDates(w watch.Watch) (checkIn, checkOut string) {
+	checkIn = w.DepartDate
+	checkOut = w.ReturnDate
+	if checkIn == "" && checkOut == "" && w.DepartFrom != "" {
+		checkIn, checkOut = w.DepartFrom, w.DepartTo
+	}
 	if w.IsRouteWatch() {
 		// Default to next weekend.
 		now := time.Now()
@@ -296,6 +314,11 @@ func checkHotel(ctx context.Context, w watch.Watch) (float64, string, string, er
 		checkIn = fri.Format("2006-01-02")
 		checkOut = fri.AddDate(0, 0, 2).Format("2006-01-02")
 	}
+	return checkIn, checkOut
+}
+
+func checkHotel(ctx context.Context, w watch.Watch) (float64, string, string, error) {
+	checkIn, checkOut := hotelStayDates(w)
 
 	opts := hotels.HotelSearchOptions{
 		CheckIn:  checkIn,

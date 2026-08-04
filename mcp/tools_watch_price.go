@@ -172,9 +172,20 @@ func handleWatchPrice(_ context.Context, args map[string]any, _ ElicitFunc, _ Sa
 		if checkIn == "" || checkOut == "" {
 			return nil, nil, fmt.Errorf("hotel watches require check_in and check_out dates")
 		}
-		// Store hotel check-in/check-out using the date-range fields.
-		w.DepartFrom = checkIn
-		w.DepartTo = checkOut
+		// Store the stay in the CANONICAL date fields, the same pair both CLI
+		// paths use (`watch add --depart/--return`, `watch rooms
+		// --checkin/--checkout`).
+		//
+		// This used to write DepartFrom/DepartTo -- the date-RANGE fields, which
+		// for a flight mean "scan these dates", not "stay from here to here".
+		// livecheck's checkHotel reads DepartDate/ReturnDate, so an MCP-created
+		// hotel watch polled with empty dates and silently reported nothing
+		// (trvl#557). Writing the canonical pair also makes an MCP-created and a
+		// CLI-created watch for the same stay resolve to the SAME identity, so
+		// they deduplicate against each other instead of accumulating two
+		// records -- targetKey hashes those four date fields separately.
+		w.DepartDate = checkIn
+		w.ReturnDate = checkOut
 	}
 
 	store, err := watch.DefaultStore()

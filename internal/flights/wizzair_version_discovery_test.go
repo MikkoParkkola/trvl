@@ -160,13 +160,13 @@ func TestWizzConfigVersionRequiresWizzOrigin(t *testing.T) {
 		`{"apiUrl":"https://be.wizzair.com/29.8.0/Api","x":1}`,
 	}
 	for _, page := range accept {
-		m := wizzConfigVersionRe.FindStringSubmatch(page)
-		if m == nil {
-			t.Errorf("did not match a genuine config URL, so discovery would silently stop working: %q", page)
+		got := wizzVersionFromConfigBody([]byte(page))
+		if got == "" {
+			t.Errorf("did not accept a genuine config URL, so discovery would silently stop working: %q", page)
 			continue
 		}
-		if m[1] != want {
-			t.Errorf("captured %q, want %q, from %q", m[1], want, page)
+		if got != want {
+			t.Errorf("extracted %q, want %q, from %q", got, want, page)
 		}
 	}
 
@@ -179,10 +179,19 @@ func TestWizzConfigVersionRequiresWizzOrigin(t *testing.T) {
 		`see be.wizzair.com/29.8.0/Api for details`,
 		// Downgrade to cleartext.
 		`apiUrl:"http://be.wizzair.com/29.8.0/Api"`,
+		// The real host embedded in another URL's query -- the shape that
+		// survived the "require https://" attempt and kept CodeQL failing.
+		`apiUrl:"https://evil.example/?u=https://be.wizzair.com/29.8.0/Api"`,
+		// Userinfo trick: the real host as a credential, not the authority.
+		`apiUrl:"https://be.wizzair.com@evil.example/29.8.0/Api"`,
+		// Port-suffixed lookalike authority.
+		`apiUrl:"https://be.wizzair.com.evil.example/29.8.0/Api"`,
+		// Right host, wrong path shape.
+		`apiUrl:"https://be.wizzair.com/29.8.0/NotApi"`,
 	}
 	for _, page := range reject {
-		if m := wizzConfigVersionRe.FindStringSubmatch(page); m != nil {
-			t.Errorf("matched a non-Wizz-origin string and would adopt version %q from it: %q", m[1], page)
+		if got := wizzVersionFromConfigBody([]byte(page)); got != "" {
+			t.Errorf("accepted a non-Wizz-origin string and would adopt version %q from it: %q", got, page)
 		}
 	}
 }

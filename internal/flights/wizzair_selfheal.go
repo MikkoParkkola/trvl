@@ -29,6 +29,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -102,22 +103,57 @@ func wizzProbeVersion(ctx context.Context, host, v string) string {
 	}
 }
 
-// wizzConfigVersionRe extracts the API version from the version-stamped Api base
-// URL that the Wizz homepage embeds in its inline bootstrap config
+// wizzAPIURLCandidateRe finds absolute https URLs in the page so each can be
+// PARSED and checked, rather than pattern-matching the host inside the raw
+// bytes. Deliberately loose: it selects candidates, it does not decide.
+//
+// A regex cannot decide host identity safely. The original
+// `be\.wizzair\.com/(\d+\.\d+\.\d+)/Api` matched `notbe.wizzair.com/...`
+// and `https://evil.example/be.wizzair.com/...` alike; adding an `https://`
+// prefix still matched inside a longer URL such as
+// `https://evil.example/?u=https://be.wizzair.com/1.2.3/Api`. CodeQL flagged
+// both shapes (go/regex/missing-regexp-anchor) and was right each time --
+// there is no anchor that works here, because the match is mid-document by
+// nature. Parsing is the fix, not a stricter pattern.
+var wizzAPIURLCandidateRe = regexp.MustCompile(`https://[^\s"'<>\\]+`)
+
+// wizzAPIPathVersionRe reads the version out of a parsed URL's PATH, anchored
+// end to end. Applied only after the host has been confirmed exactly equal to
+// the Wizz API host.
+var wizzAPIPathVersionRe = regexp.MustCompile(`^/(\d+\.\d+\.\d+)/Api$`)
+
+// wizzAPIHost is the only host whose config may name the version this client
+// then talks to.
+const wizzAPIHost = "be.wizzair.com"
+
+// wizzVersionFromConfigBody extracts the API version from the version-stamped
+// Api base URL that the Wizz homepage embeds in its inline bootstrap config
 // (apiUrl:"https://be.wizzair.com/<version>/Api").
 //
-// The scheme and a host-start boundary are both required. Without them the
-// pattern matched the host anywhere in the page: `notbe.wizzair.com/1.2.3/Api`
-// and `https://evil.example/be.wizzair.com/1.2.3/Api` both satisfied a bare
-// `be\.wizzair\.com/...`, so any page that echoes an attacker-supplied string
-// could dictate which API version this client then talks to. Flagged by CodeQL
-// (go/regex/missing-regexp-anchor) on the 1.21.0 merge.
+// Every candidate is parsed and its host compared for exact equality, so a
+// lookalike host, a URL embedded in another URL, or a plain-text mention cannot
+// contribute a version. Returns "" when nothing qualifies.
 //
-// The capture stays digits-and-dots, so a match could never inject a host --
-// the exposure was version selection, not redirection. Anchoring closes it
-// anyway: choosing the version is how this file decides which upstream API to
-// call, and that decision should come from Wizz's own origin or not at all.
-var wizzConfigVersionRe = regexp.MustCompile(`https://be\.wizzair\.com/(\d+\.\d+\.\d+)/Api`)
+// The captured value was always digits and dots, so a match could never have
+// injected a host -- the exposure was version selection, not redirection.
+// Closed anyway: choosing the version is how this file decides which upstream
+// API to call, and that decision must come from Wizz's own origin or not at
+// all.
+func wizzVersionFromConfigBody(body []byte) string {
+	for _, raw := range wizzAPIURLCandidateRe.FindAll(body, -1) {
+		u, err := url.Parse(string(raw))
+		if err != nil {
+			continue
+		}
+		if u.Scheme != "https" || u.Host != wizzAPIHost {
+			continue
+		}
+		if m := wizzAPIPathVersionRe.FindStringSubmatch(u.Path); m != nil {
+			return m[1]
+		}
+	}
+	return ""
+}
 
 // wizzConfigURL is the page whose inline config names the version. Derived from
 // host so tests stay hermetic (an httptest host serves its own /en-gb).
@@ -156,10 +192,7 @@ func wizzDiscoverFromConfig(ctx context.Context, host string) string {
 	if err != nil {
 		return ""
 	}
-	if m := wizzConfigVersionRe.FindSubmatch(body); m != nil {
-		return string(m[1])
-	}
-	return ""
+	return wizzVersionFromConfigBody(body)
 }
 
 // wizzNextCandidates returns likely rotation targets from the stale X.Y.Z, most
