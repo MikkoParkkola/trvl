@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -70,17 +71,43 @@ func (r MigrationReport) Summary() string {
 // observations first, then most recently checked, then oldest — preserving the
 // longest history rather than the newest empty copy.
 func (s *Store) Migrate() (MigrationReport, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	rep := MigrationReport{
-		WatchesBefore: len(s.watches),
-		HistoryBefore: len(s.history),
+	var rep MigrationReport
+	err := s.withTxn(func() error {
+		return s.migrateLocked(&rep)
+	})
+	if err != nil {
+		return rep, err
 	}
+	if rep.Changed() {
+		slog.Info("watch: store migrated",
+			"duplicates_removed", rep.DuplicatesRemoved,
+			"renewals_stamped", rep.RenewalsStamped,
+			"history_compacted", rep.HistoryCompacted,
+			"backup", rep.BackupPath)
+	}
+	return rep, nil
+}
+
+// migrateLocked is Migrate's body, running inside a store transaction: the
+// cross-process lock is held and committed state has already been reloaded.
+//
+// Both matter, and neither used to hold. Migrate took only s.mu, so it read
+// whatever this process happened to have in memory and published it over the
+// files -- a concurrent writer's watch, added between this process's last load
+// and the migration, was silently deleted. It is the one operation that
+// rewrites the ENTIRE store, so it had the widest blast radius of any writer
+// and the weakest guarantee. Found by round-2 gpt-review and filed as trvl#562.
+//
+// The backup is taken INSIDE the transaction too, so it reflects the same
+// committed state the migration is about to rewrite. Taken outside, it could
+// snapshot a generation that the migration never saw.
+func (s *Store) migrateLocked(rep *MigrationReport) error {
+	rep.WatchesBefore = len(s.watches)
+	rep.HistoryBefore = len(s.history)
 
 	backup, err := s.backupLocked()
 	if err != nil {
-		return rep, fmt.Errorf("back up store before migrating: %w", err)
+		return fmt.Errorf("back up store before migrating: %w", err)
 	}
 	rep.BackupPath = backup
 
@@ -103,17 +130,11 @@ func (s *Store) Migrate() (MigrationReport, error) {
 	rep.HistoryCompacted = rep.HistoryBefore - rep.HistoryAfter
 
 	if !rep.Changed() {
-		return rep, nil
+		// Nothing to write. errTxnNoop unwinds without saving rather than
+		// republishing this process's whole snapshot for a no-op.
+		return errTxnNoop
 	}
-	if err := s.persistLocked(); err != nil {
-		return rep, fmt.Errorf("persist migrated store: %w", err)
-	}
-	slog.Info("watch: store migrated",
-		"duplicates_removed", rep.DuplicatesRemoved,
-		"renewals_stamped", rep.RenewalsStamped,
-		"history_compacted", rep.HistoryCompacted,
-		"backup", rep.BackupPath)
-	return rep, nil
+	return nil
 }
 
 // collapseDuplicatesLocked merges watches monitoring the same target, keeping
@@ -393,8 +414,19 @@ func (s *Store) backupLocked() (string, error) {
 			}
 			return "", err
 		}
-		dst := fmt.Sprintf("%s.bak-%s", path, stamp)
-		if err := os.WriteFile(dst, data, 0o600); err != nil {
+		// O_EXCL: never overwrite an existing backup.
+		//
+		// The stamp is second-resolution, so two migrations in the same second
+		// produced the same filename and the second silently destroyed the
+		// first's rollback point -- the one file whose entire purpose is to
+		// survive a bad migration. A migration that eats its own escape hatch
+		// is worse than one that refuses to start. Found by round-2 gpt-review,
+		// filed as trvl#562.
+		//
+		// A suffix is appended rather than failing outright: refusing to migrate
+		// because a backup exists would be its own footgun on a retry.
+		dst, err := writeNewBackup(path, stamp, data)
+		if err != nil {
 			return "", err
 		}
 		made = append(made, filepath.Base(dst))
@@ -436,4 +468,37 @@ func (s *Store) MigrateDryRun() (MigrationReport, error) {
 	rep.HistoryAfter = len(shadow.history)
 	rep.HistoryCompacted = rep.HistoryBefore - rep.HistoryAfter
 	return rep, nil
+}
+
+// writeNewBackup writes data to <path>.bak-<stamp>, or to the first free
+// -2, -3, ... suffix if that name is taken. It never truncates an existing
+// file: a backup is a rollback point, and silently replacing one loses the
+// state a user would actually want back.
+//
+// Bounded rather than looping forever: 64 collisions in one second means
+// something is wrong that another suffix will not fix.
+func writeNewBackup(path, stamp string, data []byte) (string, error) {
+	base := fmt.Sprintf("%s.bak-%s", path, stamp)
+	for i := 0; i < 64; i++ {
+		dst := base
+		if i > 0 {
+			dst = fmt.Sprintf("%s-%d", base, i+1)
+		}
+		f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if _, err := f.Write(data); err != nil {
+			_ = f.Close()
+			return "", err
+		}
+		if err := f.Close(); err != nil {
+			return "", err
+		}
+		return dst, nil
+	}
+	return "", fmt.Errorf("backup %s: 64 names already taken in the same second", base)
 }

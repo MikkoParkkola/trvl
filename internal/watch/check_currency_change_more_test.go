@@ -22,13 +22,8 @@ func TestCheckOneTreatsNonzeroLowestPriceAsPriorObservation(t *testing.T) {
 	// Simulate a post-merge survivor: LastPrice==0 (this watch object never
 	// itself completed a poll) but LowestPrice>0 (inherited from a merged
 	// duplicate's history during migrate.go's dedup pass).
-	w, ok := store.Get(id)
-	if !ok {
-		t.Fatalf("watch not found after Add")
-	}
-	w.LowestPrice = 450
-	if err := store.UpdateWatch(w); err != nil {
-		t.Fatalf("UpdateWatch: %v", err)
+	if _, err := store.Mutate(id, func(w *Watch) { w.LowestPrice = 450 }); err != nil {
+		t.Fatalf("Mutate: %v", err)
 	}
 
 	checker := &sequencedChecker{steps: []struct {

@@ -198,6 +198,9 @@ func TestMigrateKeepsRichestDuplicate(t *testing.T) {
 	rich.CreatedAt = time.Now().Add(-90 * 24 * time.Hour)
 
 	s.watches = []Watch{empty, rich}
+	if err := s.Save(); err != nil {
+		t.Fatalf("save seeded store: %v", err)
+	}
 	if _, err := s.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -238,6 +241,9 @@ func TestMigrateMergesLowestPriceAcrossDuplicates(t *testing.T) {
 		{WatchID: "newer-pricier", Price: 100, Timestamp: newer.LastCheck},
 	}
 
+	if err := s.Save(); err != nil {
+		t.Fatalf("save seeded store: %v", err)
+	}
 	if _, err := s.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -301,6 +307,9 @@ func TestMigrateDoesNotMergeLowestPriceAcrossCurrencies(t *testing.T) {
 
 	s.watches = []Watch{eur, jpy}
 
+	if err := s.Save(); err != nil {
+		t.Fatalf("save seeded store: %v", err)
+	}
 	if _, err := s.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -356,6 +365,9 @@ func TestMigrateReassignsHistoryAcrossChainOfThreeOrMoreDuplicates(t *testing.T)
 		{WatchID: "third", Price: 100, Timestamp: third.LastCheck},
 	}
 
+	if err := s.Save(); err != nil {
+		t.Fatalf("save seeded store: %v", err)
+	}
 	if _, err := s.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -418,6 +430,9 @@ func TestMigrateRecoversTrueLowAcrossCurrencyResetMidChain(t *testing.T) {
 
 	s.watches = []Watch{eur, jpyLow, jpyHigh}
 
+	if err := s.Save(); err != nil {
+		t.Fatalf("save seeded store: %v", err)
+	}
 	if _, err := s.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -465,6 +480,9 @@ func TestMigrateDoesNotRetagHistoryAcrossCurrencies(t *testing.T) {
 		{WatchID: "jpy-watch", Price: 10000, Currency: "JPY", Timestamp: jpy.LastCheck},
 	}
 
+	if err := s.Save(); err != nil {
+		t.Fatalf("save seeded store: %v", err)
+	}
 	if _, err := s.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -515,6 +533,9 @@ func TestMigrateClearsCheapestDateOnCrossCurrencyMerge(t *testing.T) {
 
 	s.watches = []Watch{eur, jpy}
 
+	if err := s.Save(); err != nil {
+		t.Fatalf("save seeded store: %v", err)
+	}
 	if _, err := s.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -555,6 +576,9 @@ func TestMigrateTreatsBlankCurrencyAsIncompatibleWithLabeled(t *testing.T) {
 
 	s.watches = []Watch{blank, jpy}
 
+	if err := s.Save(); err != nil {
+		t.Fatalf("save seeded store: %v", err)
+	}
 	if _, err := s.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -603,6 +627,9 @@ func TestMigrateStopsHistoryLeakAtCurrencyBoundaryMidChain(t *testing.T) {
 		{WatchID: "third", Price: 10000, Currency: "JPY", Timestamp: third.LastCheck},
 	}
 
+	if err := s.Save(); err != nil {
+		t.Fatalf("save seeded store: %v", err)
+	}
 	if _, err := s.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -636,6 +663,9 @@ func TestMigrateCompactsExistingHistory(t *testing.T) {
 	}
 	before := len(s.history)
 
+	if err := s.Save(); err != nil {
+		t.Fatalf("save seeded store: %v", err)
+	}
 	rep, err := s.Migrate()
 	if err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -694,6 +724,9 @@ func TestMigrateDropsMixedCurrencyHistory(t *testing.T) {
 		{WatchID: "w1", Price: 999, Currency: "", Timestamp: time.Now()}, // legacy, no currency recorded
 	}
 
+	if err := s.Save(); err != nil {
+		t.Fatalf("save seeded store: %v", err)
+	}
 	if _, err := s.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -792,5 +825,121 @@ func TestLoadNeverWrites(t *testing.T) {
 	}
 	if !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
 		t.Error("Load wrote to the store; readers must be pure-read")
+	}
+}
+
+// TRVL.MIGRATE.1 -- Migrate must not publish this process's stale snapshot over
+// a concurrent writer's work.
+//
+// Migrate is the one operation that rewrites the ENTIRE store, so it had the
+// widest blast radius of any writer and, before trvl#562, the weakest
+// guarantee: it took only s.mu, so it migrated whatever this process happened
+// to be holding and wrote that over the files. A watch another process added
+// after this one's last load was silently deleted.
+//
+// The window is real and needs no crash: a CLI `trvl watch migrate` reads at
+// T0, the scheduler adds a watch at T1, the migration publishes T0 at T2.
+//
+// The stale snapshot is seeded with DUPLICATES on purpose. A migration with
+// nothing to change returns errTxnNoop and never writes -- and a test whose
+// dangerous write never happens cannot detect a dangerous write. The first
+// version of this test did exactly that and passed against deliberately broken
+// code; the duplicates are what make the persist actually run.
+func TestMigrateDoesNotClobberAConcurrentWrite(t *testing.T) {
+	if !lockSupported {
+		t.Skip("store transactions are not enforced on this platform")
+	}
+	dir := t.TempDir()
+
+	dup := Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		DepartDate: "2027-01-01", Currency: "EUR", BelowPrice: 200,
+	}
+	a, b := dup, dup
+	a.ID, b.ID = "dup-a", "dup-b"
+	a.CreatedAt, b.CreatedAt = time.Now(), time.Now()
+
+	seed := NewStore(dir)
+	seed.watches = []Watch{a, b}
+	if err := seed.Save(); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// This process loads, and then goes stale.
+	stale := NewStore(dir)
+	if err := stale.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	// Another process adds a watch the stale snapshot has never seen.
+	other := NewStore(dir)
+	if _, _, err := other.Add(Watch{
+		Type: "flight", Origin: "AMS", Destination: "VLC",
+		DepartDate: "2027-02-01", Currency: "EUR", BelowPrice: 150,
+	}); err != nil {
+		t.Fatalf("concurrent add: %v", err)
+	}
+
+	rep, err := stale.Migrate()
+	if err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if !rep.Changed() {
+		t.Fatal("fixture failure: the migration changed nothing, so it never wrote and this test " +
+			"would pass against any implementation")
+	}
+
+	reader := NewStore(dir)
+	if err := reader.Load(); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	var found bool
+	for _, w := range reader.List() {
+		if w.Destination == "VLC" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the concurrently added watch is gone: migrate published a snapshot taken "+
+			"before it existed. Store now holds %d watch(es)", len(reader.List()))
+	}
+}
+
+// TRVL.MIGRATE.2 -- a backup must never overwrite an earlier one.
+//
+// The stamp is second-resolution, so two migrations within the same second
+// produced the same filename and the second silently destroyed the first's
+// rollback point -- the one file whose entire purpose is surviving a bad
+// migration. A migration that eats its own escape hatch is worse than one that
+// refuses to start.
+func TestBackupNeverOverwritesAnEarlierOne(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+	if _, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		DepartDate: "2027-01-01", Currency: "EUR",
+	}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	const stamp = "20260804-120000"
+	first, err := writeNewBackup(s.watchesPath(), stamp, []byte(`["first"]`))
+	if err != nil {
+		t.Fatalf("first backup: %v", err)
+	}
+	second, err := writeNewBackup(s.watchesPath(), stamp, []byte(`["second"]`))
+	if err != nil {
+		t.Fatalf("second backup: %v", err)
+	}
+
+	if first == second {
+		t.Fatalf("both backups wrote to %s; the second destroyed the first's rollback point", first)
+	}
+	got, err := os.ReadFile(first)
+	if err != nil {
+		t.Fatalf("read first backup: %v", err)
+	}
+	if string(got) != `["first"]` {
+		t.Errorf("the first backup's contents changed to %q; a rollback point must be immutable once written", got)
 	}
 }

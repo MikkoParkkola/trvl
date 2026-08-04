@@ -396,19 +396,6 @@ func (s *Store) Remove(id string) (bool, error) {
 	return found, nil
 }
 
-// UpdateWatch replaces a watch in-place by ID and persists.
-func (s *Store) UpdateWatch(updated Watch) error {
-	return s.withTxn(func() error {
-		for i, w := range s.watches {
-			if w.ID == updated.ID {
-				s.watches[i] = updated
-				return nil
-			}
-		}
-		return fmt.Errorf("watch %s not found", updated.ID)
-	})
-}
-
 // PurgeHistory drops every PricePoint recorded for watchID and persists.
 //
 // Callers use this when a watch's currency changes outside of Store.Add's
