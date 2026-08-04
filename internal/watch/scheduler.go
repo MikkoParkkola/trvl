@@ -450,22 +450,42 @@ const orphanMinAge = 1 * time.Hour
 // The scheduler is the right place: it is the long-running process most likely
 // to be killed mid-write, so it is the one that creates these files.
 func (s *Scheduler) reportOrphanedTemps() {
-	res, err := atomicjson.Clean(s.dir, atomicjson.CleanOptions{MinAge: orphanMinAge})
+	orphans, err := atomicjson.FindOrphans(s.dir)
 	if err != nil {
 		// A store directory that cannot be read is not this goroutine's problem
 		// to report -- the next real store operation will fail loudly.
 		return
 	}
+
+	// Reports on AGE, not on reclaimability.
+	//
+	// atomicjson.Clean filters by Orphan.Reclaimable, which requires the owning
+	// process to be provably gone. On Windows processAlive always returns true
+	// -- deliberately, because os.FindProcess there fails for reasons other
+	// than "no such process" and an access-denied result on another user's
+	// process would read as gone and delete a live writer's file. So nothing is
+	// ever reclaimable on Windows, and a report built on Clean was a silent
+	// no-op there: the platform still accumulates the files, it just never
+	// heard about them. Caught by TRVL.ORPHAN.1 on windows-latest.
+	//
+	// Reporting and reclaiming are different questions. This answers the first.
+	now := time.Now()
 	var bytes int64
-	for _, o := range res.Eligible {
+	var count int
+	for _, o := range orphans {
+		if o.Age(now) < orphanMinAge {
+			continue
+		}
 		bytes += o.Size
+		count++
 	}
 	if bytes < orphanWarnBytes {
 		return
 	}
 	slog.Warn("watch: interrupted writes have left temp files behind",
 		"dir", s.dir,
-		"files", len(res.Eligible),
+		"files", count,
 		"bytes", bytes,
+		"inspect_with", "trvl tempfiles",
 		"reclaim_with", "trvl tempfiles --delete")
 }
