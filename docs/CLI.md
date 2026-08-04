@@ -225,6 +225,8 @@ trvl watch migrate                                    # Collapse duplicate watch
 trvl watch migrate --dry-run                          # Preview the above without writing
 trvl watch update <id> --clear-webhook                # Remove the webhook, keep the watch
 trvl watch update <id> --clear-alert-drop --clear-last-minute
+trvl watch update <id> --below 150                    # Change the target price
+trvl watch update <id> --clear-below                  # Stop alerting at a fixed price, keep watching
 trvl watch remove <id>                                # Remove a watch
 ```
 

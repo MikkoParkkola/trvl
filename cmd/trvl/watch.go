@@ -390,11 +390,13 @@ func formatLastCheck(t time.Time) string {
 
 func watchUpdateCmd() *cobra.Command {
 	var (
+		belowPrice      float64
 		webhookURL      string
 		alertDropPct    float64
 		alertDropAbs    float64
 		lastMinute      bool
 		lastMinuteDrop  float64
+		clearBelow      bool
 		clearWebhook    bool
 		clearAlertDrop  bool
 		clearLastMinute bool
@@ -420,6 +422,7 @@ Examples:
 			// Set-and-clear on one field is a contradiction with no defensible
 			// winner, so it is rejected rather than silently resolved.
 			for _, pair := range []struct{ set, clear string }{
+				{"below", "clear-below"},
 				{"webhook", "clear-webhook"},
 				{"alert-drop", "clear-alert-drop"},
 				{"alert-drop-abs", "clear-alert-drop"},
@@ -432,6 +435,9 @@ Examples:
 			}
 
 			var u watch.WatchUpdate
+			if flags.Changed("below") {
+				u.BelowPrice = &belowPrice
+			}
 			if flags.Changed("webhook") {
 				u.WebhookURL = &webhookURL
 			}
@@ -446,6 +452,10 @@ Examples:
 			}
 			if flags.Changed("last-minute-drop") {
 				u.LastMinuteDropPct = &lastMinuteDrop
+			}
+			if clearBelow {
+				zero := 0.0
+				u.BelowPrice = &zero
 			}
 			if clearWebhook {
 				empty := ""
@@ -482,11 +492,13 @@ Examples:
 		},
 	}
 
+	cmd.Flags().Float64Var(&belowPrice, "below", 0, "Set the target price to alert below")
 	cmd.Flags().StringVar(&webhookURL, "webhook", "", "Set the webhook URL")
 	cmd.Flags().Float64Var(&alertDropPct, "alert-drop", 0, "Set the proactive alert threshold (percent below baseline)")
 	cmd.Flags().Float64Var(&alertDropAbs, "alert-drop-abs", 0, "Set the proactive alert threshold (absolute drop from baseline)")
 	cmd.Flags().BoolVar(&lastMinute, "last-minute", false, "Set last-minute mode (hotel watches only)")
 	cmd.Flags().Float64Var(&lastMinuteDrop, "last-minute-drop", 0, "Set the last-minute drop threshold (percent)")
+	cmd.Flags().BoolVar(&clearBelow, "clear-below", false, "Remove the target price, keeping the watch and its history")
 	cmd.Flags().BoolVar(&clearWebhook, "clear-webhook", false, "Remove the webhook URL")
 	cmd.Flags().BoolVar(&clearAlertDrop, "clear-alert-drop", false, "Remove both alert-drop thresholds (the 10% default resumes)")
 	cmd.Flags().BoolVar(&clearLastMinute, "clear-last-minute", false, "Turn off last-minute mode and its threshold")

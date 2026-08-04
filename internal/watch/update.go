@@ -12,15 +12,18 @@ import "fmt"
 // compose the dedupe key, so changing one would make the record a different
 // watch rather than an edited one.
 //
-// BelowPrice is absent for a different reason. It is no longer part of the
-// identity (operator decision, 2026-08-02), so it COULD be edited here -- but
-// re-watching the route with the new price is the way that is meant to work,
-// and offering two surfaces for one change invites them to drift apart.
+// BelowPrice IS editable here, unlike the identity fields. Re-watching the
+// route sets a price, but it cannot UNSET one: applyIntent only applies a
+// positive threshold, so zero is indistinguishable from omission on that path
+// and an existing target could never be removed while keeping the watch and its
+// history (trvl#510). A pointer field can say "clear this", which is the whole
+// reason WatchUpdate uses pointers.
 //
 // WebhookURL has no third state on disk — it is `omitempty`, so the empty
 // string IS "no webhook". Clearing and setting-to-empty are therefore the same
 // operation by construction.
 type WatchUpdate struct {
+	BelowPrice        *float64
 	WebhookURL        *string
 	AlertDropPct      *float64
 	AlertDropAbs      *float64
@@ -30,11 +33,14 @@ type WatchUpdate struct {
 
 // Empty reports whether the update would write nothing at all.
 func (u WatchUpdate) Empty() bool {
-	return u.WebhookURL == nil && u.AlertDropPct == nil && u.AlertDropAbs == nil &&
-		u.LastMinuteMode == nil && u.LastMinuteDropPct == nil
+	return u.BelowPrice == nil && u.WebhookURL == nil && u.AlertDropPct == nil &&
+		u.AlertDropAbs == nil && u.LastMinuteMode == nil && u.LastMinuteDropPct == nil
 }
 
 func (u WatchUpdate) apply(w *Watch) {
+	if u.BelowPrice != nil {
+		w.BelowPrice = *u.BelowPrice
+	}
 	if u.WebhookURL != nil {
 		w.WebhookURL = *u.WebhookURL
 	}

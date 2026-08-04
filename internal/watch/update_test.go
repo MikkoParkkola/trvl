@@ -180,3 +180,67 @@ func TestCurrencyChangeStillSuspendsAlertingUntilReconfirmed(t *testing.T) {
 		t.Errorf("AlertDropAbs = %v, want 0 -- an absolute threshold cannot survive a currency change", w.AlertDropAbs)
 	}
 }
+
+// TRVL.WATCH.UNSET.5 -- an existing target price can be removed while the watch
+// and its accumulated history survive.
+//
+// Re-watching a route can SET a price but never unset one: applyIntent only
+// applies a positive threshold, so zero is indistinguishable from omission on
+// that path. Without a pointer-based update there was no way to say "stop
+// alerting me at a fixed price, keep watching" short of deleting the watch and
+// losing its history (trvl#510).
+func TestUpdateClearsTargetPriceKeepingHistory(t *testing.T) {
+	s := NewStore(t.TempDir())
+	id, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "EUR", BelowPrice: 200,
+	})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := s.RecordPrice(id, 180, "EUR"); err != nil {
+		t.Fatalf("record price: %v", err)
+	}
+	before, _ := s.Get(id)
+
+	zero := 0.0
+	got, err := s.Update(id, WatchUpdate{BelowPrice: &zero})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	if got.BelowPrice != 0 {
+		t.Errorf("BelowPrice = %v, want 0 -- the target price could not be removed", got.BelowPrice)
+	}
+	if len(s.History(id)) != 1 {
+		t.Errorf("clearing the target price cost the watch its history: %d points, want 1", len(s.History(id)))
+	}
+	if !got.CreatedAt.Equal(before.CreatedAt) {
+		t.Errorf("creation date changed %v -> %v", before.CreatedAt, got.CreatedAt)
+	}
+	if got.Currency != "EUR" {
+		t.Errorf("Currency = %q, want EUR -- clearing one field must not disturb the others", got.Currency)
+	}
+}
+
+// TRVL.WATCH.UNSET.5 -- and setting a new target price through the same surface
+// still works, so the clear path cannot be satisfied by ignoring the field.
+func TestUpdateSetsTargetPrice(t *testing.T) {
+	s := NewStore(t.TempDir())
+	id, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "EUR", BelowPrice: 200,
+	})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	want := 150.0
+	got, err := s.Update(id, WatchUpdate{BelowPrice: &want})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got.BelowPrice != want {
+		t.Errorf("BelowPrice = %v, want %v", got.BelowPrice, want)
+	}
+}
