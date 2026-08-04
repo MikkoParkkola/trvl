@@ -218,10 +218,14 @@ func (t *hostSwitchTransport) RoundTrip(req *http.Request) (*http.Response, erro
 // anyone remembering to update it, and it does not care how many calls deep the
 // acquisition sits.
 func TestRecoveryTiersDoNotReferenceAuthMu(t *testing.T) {
-	src, err := os.ReadFile("auth.go")
-	if err != nil {
-		t.Fatalf("read auth.go: %v", err)
-	}
+	// Reads every non-test source file in the package, not one named file.
+	//
+	// The tiers used to live together in auth.go and this guard hardcoded that
+	// path; splitting auth.go (trvl#560) moved three of the four into
+	// auth_browser.go and broke it. Scanning the package instead means the
+	// guard survives the next split too, which is what its own failure message
+	// asked for.
+	src := packageSource(t)
 	helpers := selfLockingHelpers(t)
 	tiers := []string{
 		"tryBrowserCookieRetry",
@@ -233,7 +237,8 @@ func TestRecoveryTiersDoNotReferenceAuthMu(t *testing.T) {
 		re := regexp.MustCompile(`(?ms)^func ` + name + `\(.*?\n\}`)
 		body := re.Find(src)
 		if body == nil {
-			t.Fatalf("could not locate func %s in auth.go — if it moved, move this guard with it", name)
+			t.Fatalf("could not locate func %s anywhere in the package — if it was renamed or removed, "+
+				"move this guard with it", name)
 		}
 		if regexp.MustCompile(`authMu`).Match(body) {
 			t.Errorf("%s references authMu. The recovery tiers run under two different lock disciplines "+
@@ -640,4 +645,39 @@ func TestRunPreflight_SuccessfulRecoveryDoesNotDeadlock(t *testing.T) {
 		t.Fatal("DEADLOCK: runPreflight blocked while committing a successful recovery — " +
 			"a tier or the commit is taking pc.authMu that runPreflight already holds")
 	}
+}
+
+// packageSource concatenates every non-test source file in the package.
+//
+// The structural guards search for function bodies by name. Reading one named
+// file makes them silently weaker the moment that file is split: the guard
+// either fails loudly (which is what happened when auth.go was split for
+// trvl#560) or, worse, finds nothing and passes. Scanning the package keeps the
+// guard tied to the property rather than to a filename.
+//
+// Same traversal as selfLockingHelpers, deliberately: two guards disagreeing
+// about what "the package" means is its own bug.
+func packageSource(t *testing.T) []byte {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package dir: %v", err)
+	}
+	var all []byte
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		all = append(all, src...)
+		all = append(all, '\n')
+	}
+	if len(all) == 0 {
+		t.Fatal("no non-test source files found in the package")
+	}
+	return all
 }

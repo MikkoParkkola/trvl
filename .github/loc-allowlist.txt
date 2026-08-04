@@ -2,5 +2,3 @@
 # Format: path # reason: specific justification (15+ chars).
 CHANGELOG.md # reason: append-only public release history stays root-visible for users and release tooling
 internal/watch/check.go # reason: core watch-check state machine hardened over 21 review rounds; splitting risks regressing currency/dedup/webhook logic, tracked as trvl#551
-internal/providers/auth.go # reason: grew 664->849 on the 1.21.0 line (browser escape hatch and destination policy); security-sensitive, splitting it inside the 91-commit merge would mix an unrelated refactor into it, tracked as trvl#560
-mcp/tools_providers_test.go # reason: grew 747->822 on the 1.21.0 line with destination-policy and consent coverage; splits cleanly by test subject but not inside the merge PR, tracked as trvl#560
