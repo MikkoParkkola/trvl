@@ -138,3 +138,51 @@ func TestWizzDefaultVersionRatchet(t *testing.T) {
 		t.Errorf("wizzDefaultVersion = %q, must not be older than the #506-verified %q", wizzDefaultVersion, verified)
 	}
 }
+
+// TRVL.WIZZ.ANCHOR.1 -- the version pattern must match Wizz's own origin, not
+// the host string appearing anywhere on the page.
+//
+// The pattern was originally `be\.wizzair\.com/(\d+\.\d+\.\d+)/Api` with no
+// scheme and no host-start boundary, so a lookalike host or a URL embedded in
+// someone else's path satisfied it. Any page that echoes an attacker-supplied
+// string could then dictate which API version this client talks to. Flagged by
+// CodeQL (go/regex/missing-regexp-anchor) on the 1.21.0 merge.
+//
+// The capture is digits and dots, so a match could never have injected a host --
+// the exposure was version selection, not redirection. This pins the anchoring
+// regardless: choosing the upstream API version should come from Wizz's origin
+// or not at all.
+func TestWizzConfigVersionRequiresWizzOrigin(t *testing.T) {
+	const want = "29.8.0"
+
+	accept := []string{
+		`apiUrl:"https://be.wizzair.com/29.8.0/Api"`,
+		`{"apiUrl":"https://be.wizzair.com/29.8.0/Api","x":1}`,
+	}
+	for _, page := range accept {
+		m := wizzConfigVersionRe.FindStringSubmatch(page)
+		if m == nil {
+			t.Errorf("did not match a genuine config URL, so discovery would silently stop working: %q", page)
+			continue
+		}
+		if m[1] != want {
+			t.Errorf("captured %q, want %q, from %q", m[1], want, page)
+		}
+	}
+
+	reject := []string{
+		// Lookalike host: a suffix match on the real one.
+		`apiUrl:"https://notbe.wizzair.com/29.8.0/Api"`,
+		// The real host embedded in someone else's path.
+		`apiUrl:"https://evil.example/be.wizzair.com/29.8.0/Api"`,
+		// Plain-text mention with no scheme, e.g. echoed user input.
+		`see be.wizzair.com/29.8.0/Api for details`,
+		// Downgrade to cleartext.
+		`apiUrl:"http://be.wizzair.com/29.8.0/Api"`,
+	}
+	for _, page := range reject {
+		if m := wizzConfigVersionRe.FindStringSubmatch(page); m != nil {
+			t.Errorf("matched a non-Wizz-origin string and would adopt version %q from it: %q", m[1], page)
+		}
+	}
+}

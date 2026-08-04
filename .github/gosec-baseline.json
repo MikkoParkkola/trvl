@@ -148,6 +148,13 @@
       "reason": "ACCEPTED RISK (V). Not the download write: internal/upgrade/upgrade.go:242 writes the preferences BACKUP, dst = prefsPathIn(dir)+\".bak.\"+oldVersion (:237, :54-56). dir is ~/.trvl (:40-46; the sole external caller cmd/trvl/upgrade.go passes \"\"), and oldVersion is the trimmed content of ~/.trvl/version.stamp (ReadStamp :59-68), which is only ever written from the compiled-in Version (WriteStamp :71-77). Traversal therefore requires an attacker who can already write inside the user's own ~/.trvl, and the payload is the user's own prefs file at 0600. Hardening candidate, not a live vulnerability: validate the stamp against a semver pattern before using it in a filename."
     },
     {
+      "rule": "G703",
+      "file": "internal/watch/migrate.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "NOT REACHABLE (V). The sink is internal/watch/migrate.go:397, os.WriteFile(dst, ...) where dst = fmt.Sprintf(\"%s.bak-%s\", path, stamp) in backupLocked. Both components are traced: `path` is s.watchesPath() or s.historyPath(), each filepath.Join(s.dir, <literal>) (store.go:77-83); `stamp` is time.Now().Format (:386), not caller data. s.dir has exactly two production origins -- DefaultStore() at store.go:74, filepath.Join(home, \".trvl\"), and NewScheduler's dir, which its sole non-test caller mcp/server.go:159 also builds as filepath.Join(home, \".trvl\") (:154-155). Migrate itself has one non-test caller, cmd/trvl/watch.go:593, on a DefaultStore(). No CLI flag or env var sets the watch store directory: cmd/trvl/tempfiles.go:68's --dir belongs to the orphan-scan command and never reaches watch.Store. So no caller-supplied string reaches the write, and the backup can only land beside the user's own ~/.trvl data files at 0600. New in the release/1.21.0 merge because backupLocked itself is new there -- it did not exist on main when this baseline was generated."
+    },
+    {
       "rule": "G704",
       "file": "internal/batchexec/client.go",
       "count": 1,

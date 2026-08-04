@@ -26,10 +26,10 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("test home: " + err.Error())
 	}
-	os.Setenv("HOME", dir)
-	os.Setenv("USERPROFILE", dir)
-	os.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	_ = os.Setenv("HOME", dir)
+	_ = os.Setenv("USERPROFILE", dir)
+	_ = os.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 	code := m.Run()
-	os.RemoveAll(dir)
+	_ = os.RemoveAll(dir)
 	os.Exit(code)
 }

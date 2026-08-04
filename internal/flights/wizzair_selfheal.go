@@ -105,7 +105,19 @@ func wizzProbeVersion(ctx context.Context, host, v string) string {
 // wizzConfigVersionRe extracts the API version from the version-stamped Api base
 // URL that the Wizz homepage embeds in its inline bootstrap config
 // (apiUrl:"https://be.wizzair.com/<version>/Api").
-var wizzConfigVersionRe = regexp.MustCompile(`be\.wizzair\.com/(\d+\.\d+\.\d+)/Api`)
+//
+// The scheme and a host-start boundary are both required. Without them the
+// pattern matched the host anywhere in the page: `notbe.wizzair.com/1.2.3/Api`
+// and `https://evil.example/be.wizzair.com/1.2.3/Api` both satisfied a bare
+// `be\.wizzair\.com/...`, so any page that echoes an attacker-supplied string
+// could dictate which API version this client then talks to. Flagged by CodeQL
+// (go/regex/missing-regexp-anchor) on the 1.21.0 merge.
+//
+// The capture stays digits-and-dots, so a match could never inject a host --
+// the exposure was version selection, not redirection. Anchoring closes it
+// anyway: choosing the version is how this file decides which upstream API to
+// call, and that decision should come from Wizz's own origin or not at all.
+var wizzConfigVersionRe = regexp.MustCompile(`https://be\.wizzair\.com/(\d+\.\d+\.\d+)/Api`)
 
 // wizzConfigURL is the page whose inline config names the version. Derived from
 // host so tests stay hermetic (an httptest host serves its own /en-gb).

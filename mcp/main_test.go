@@ -28,10 +28,10 @@ func redirectHomeForTests() (cleanup func()) {
 	if err != nil {
 		panic("test home: " + err.Error())
 	}
-	os.Setenv("HOME", dir)
-	os.Setenv("USERPROFILE", dir)
-	os.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
-	return func() { os.RemoveAll(dir) }
+	_ = os.Setenv("HOME", dir)
+	_ = os.Setenv("USERPROFILE", dir)
+	_ = os.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	return func() { _ = os.RemoveAll(dir) }
 }
 
 // TestMain installs a fast no-op destination enricher for the whole package so

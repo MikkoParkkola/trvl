@@ -25,10 +25,10 @@ func redirectHomeForTests() (cleanup func()) {
 	if err != nil {
 		panic("test home: " + err.Error())
 	}
-	os.Setenv("HOME", dir)
-	os.Setenv("USERPROFILE", dir)
-	os.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
-	return func() { os.RemoveAll(dir) }
+	_ = os.Setenv("HOME", dir)
+	_ = os.Setenv("USERPROFILE", dir)
+	_ = os.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	return func() { _ = os.RemoveAll(dir) }
 }
 
 // TestMain opts this package's tests in to local destinations.
@@ -46,7 +46,7 @@ func redirectHomeForTests() (cleanup func()) {
 // mode to watch for here.
 func TestMain(m *testing.M) {
 	cleanup := redirectHomeForTests()
-	os.Setenv(AllowLocalEnv, "1")
+	_ = os.Setenv(AllowLocalEnv, "1")
 	code := m.Run()
 	cleanup()
 	os.Exit(code)

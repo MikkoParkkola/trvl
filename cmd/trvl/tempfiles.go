@@ -87,7 +87,7 @@ func writeTempFilesReport(cmd *cobra.Command, dir string, res atomicjson.CleanRe
 
 	total := len(res.Removed) + len(res.Retained)
 	if total == 0 {
-		fmt.Fprintf(out, "No orphaned temp files in %s\n", dir)
+		_, _ = fmt.Fprintf(out, "No orphaned temp files in %s\n", dir)
 		return
 	}
 
@@ -98,24 +98,24 @@ func writeTempFilesReport(cmd *cobra.Command, dir string, res atomicjson.CleanRe
 	for _, o := range res.Retained {
 		bytes += o.Size
 	}
-	fmt.Fprintf(out, "Orphaned temp files in %s: %d, %s total\n\n", dir, total, formatTempSize(bytes))
+	_, _ = fmt.Fprintf(out, "Orphaned temp files in %s: %d, %s total\n\n", dir, total, formatTempSize(bytes))
 
 	for _, o := range res.Removed {
-		fmt.Fprintf(out, "  deleted  %s  %s  age %s\n", filepath.Base(o.Path), formatTempSize(o.Size), formatTempAge(o.Age(now)))
+		_, _ = fmt.Fprintf(out, "  deleted  %s  %s  age %s\n", filepath.Base(o.Path), formatTempSize(o.Size), formatTempAge(o.Age(now)))
 	}
 	for _, o := range res.Retained {
-		fmt.Fprintf(out, "  kept     %s  %s  age %s  (%s)\n",
+		_, _ = fmt.Fprintf(out, "  kept     %s  %s  age %s  (%s)\n",
 			filepath.Base(o.Path), formatTempSize(o.Size), formatTempAge(o.Age(now)), tempRetainReason(o, now, minAge, confirm))
 	}
 
-	fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out)
 	switch {
 	case confirm:
-		fmt.Fprintf(out, "Deleted %d of %d.\n", len(res.Removed), total)
+		_, _ = fmt.Fprintf(out, "Deleted %d of %d.\n", len(res.Removed), total)
 	case len(res.Eligible) > 0:
-		fmt.Fprintf(out, "Nothing was deleted. %d of %d can be reclaimed; re-run with --delete to remove them.\n", len(res.Eligible), total)
+		_, _ = fmt.Fprintf(out, "Nothing was deleted. %d of %d can be reclaimed; re-run with --delete to remove them.\n", len(res.Eligible), total)
 	default:
-		fmt.Fprintln(out, "Nothing was deleted, and nothing here can be reclaimed safely.")
+		_, _ = fmt.Fprintln(out, "Nothing was deleted, and nothing here can be reclaimed safely.")
 	}
 }
 

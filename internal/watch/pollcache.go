@@ -43,14 +43,6 @@ func newRoundCache(inner PriceChecker) *roundCache {
 	return &roundCache{inner: inner, entries: make(map[string]*roundEntry)}
 }
 
-// calls reports how many distinct provider calls this round has issued. Used
-// by tests to assert the observation count directly rather than inferring it.
-func (c *roundCache) calls() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return len(c.entries)
-}
-
 func (c *roundCache) CheckPrice(ctx context.Context, w Watch) (float64, string, string, error) {
 	key := w.pollKey()
 
