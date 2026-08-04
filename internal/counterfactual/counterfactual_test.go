@@ -1,6 +1,7 @@
 package counterfactual
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -192,5 +193,47 @@ func TestVsHistoryHonesty(t *testing.T) {
 	}
 	if VsHistory(nil, "EUR", asOf) != nil {
 		t.Fatalf("nil position must yield nil")
+	}
+}
+
+// TRVL.549.VSHISTORY.1 -- the third emission site must refuse a blank currency
+// like the other two.
+//
+// This is reachable on the live path: pricefeed.Flight passes cheapestFlight's
+// raw f.Currency, which is empty whenever the cheapest provider omits the field.
+// The old code emitted Amount=50 with Currency="", rendering "is 50  below this
+// route's typical" -- a money figure with no unit, and a double space where the
+// currency belongs.
+//
+// It is also the weaker claim of the two: the median comes from
+// RoutePrices(key, ""), which since trvl#564 exact-matches blank, so the series
+// pools every currencyless observation on the route and those can be different
+// real currencies. Refusing costs a claim that could not have been rendered
+// honestly anyway.
+func TestVsHistoryRefusesBlankCurrency(t *testing.T) {
+	pos := &pricesignal.Position{Confident: true, Median: 200, Current: 150, Observations: 12}
+
+	for _, blank := range []string{"", "   "} {
+		if s := VsHistory(pos, blank, asOf); s != nil {
+			t.Errorf("VsHistory(%q) = %+v, want nil -- an unlabeled amount is not money, and the "+
+				"median behind it pools possibly-different currencies", blank, s)
+		}
+	}
+}
+
+// TRVL.549.VSHISTORY.2 -- and it must normalize casing, as the other two sites
+// do. This site emitted the caller's raw string, so a provider reporting "eur"
+// produced a lowercase Currency while an identical fare via ShiftDay produced
+// "EUR" (the round-25 inconsistency, never applied here).
+func TestVsHistoryNormalizesCurrencyCasing(t *testing.T) {
+	s := VsHistory(&pricesignal.Position{Confident: true, Median: 200, Current: 150, Observations: 12}, " eur ", asOf)
+	if s == nil {
+		t.Fatal("a padded, lowercase but perfectly valid currency must still yield a saving")
+	}
+	if s.Currency != "EUR" {
+		t.Errorf("Currency = %q, want EUR -- the other two sites always emit uppercase", s.Currency)
+	}
+	if !strings.Contains(s.Description, "50 EUR") {
+		t.Errorf("description carries the unnormalized currency: %q", s.Description)
 	}
 }

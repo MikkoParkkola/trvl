@@ -184,15 +184,39 @@ func VsHistory(pos *pricesignal.Position, currency string, asOf time.Time) *Savi
 	if pos == nil || !pos.Confident || pos.Median <= 0 {
 		return nil
 	}
+	// Round 26 (trvl#549), third emission site. ShiftDay and SameDayAlternative
+	// were fixed to refuse a blank currency; this one was missed, and it is
+	// reachable on the live path: pricefeed.Flight passes cheapestFlight's raw
+	// f.Currency (pricefeed.go:55,71), which is empty whenever the cheapest
+	// provider omits the field.
+	//
+	// Two independent reasons to refuse, not one:
+	//
+	//  1. The emitted Amount has no unit. The description rendered "is 120
+	//     below this route's typical" with a double space where the currency
+	//     belongs -- the same fabricated-money defect as the other two sites.
+	//  2. The median it is derived from is itself untrustworthy. The caller
+	//     builds the series with RoutePrices(key, "") which, since trvl#564,
+	//     exact-matches blank -- so the series pools every currencyless
+	//     observation on the route, and those can be different real currencies.
+	//     The percentile is computed across incomparable numbers.
+	//
+	// Normalizing here also closes the round-25 casing inconsistency: this site
+	// emitted the caller's raw string, so "eur" was returned lowercase while the
+	// other two sites always emit uppercase.
+	cur := strings.ToUpper(strings.TrimSpace(currency))
+	if cur == "" {
+		return nil
+	}
 	delta := pos.Median - pos.Current
 	if delta <= 0 {
 		return nil
 	}
 	return &Saving{
 		Kind:        KindVsHistory,
-		Description: fmt.Sprintf("Current price is %.0f %s below this route's typical (median %.0f over %d obs)", delta, currency, pos.Median, pos.Observations),
+		Description: fmt.Sprintf("Current price is %.0f %s below this route's typical (median %.0f over %d obs)", delta, cur, pos.Median, pos.Observations),
 		Amount:      delta,
-		Currency:    currency,
+		Currency:    cur,
 		AsOf:        asOf,
 		CallFree:    true,
 	}
