@@ -262,7 +262,10 @@ func (s *Store) RouteHistory(routeKey string) []PricePoint {
 
 // RoutePrices returns the price values for a route key, filtered to a currency
 // so callers never mix currencies into a single price-position computation.
-// An empty currency returns every recorded price for the key.
+// The match is exact after normalization, including for an empty currency: an
+// empty argument selects only the points that themselves carry no currency, and
+// never every price for the key. It used to mean "every currency", which is the
+// mixing bug #564 closed -- see the comment on the comparison below.
 func (s *Store) RoutePrices(routeKey, currency string) []float64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
