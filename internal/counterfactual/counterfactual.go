@@ -71,29 +71,27 @@ func ShiftDay(grid []models.DatePriceResult, currentDate string, minDelta float6
 			continue
 		}
 		cur := strings.ToUpper(strings.TrimSpace(d.Currency))
-		// Round 24's guard here only rejected a KNOWN mismatch (both sides
-		// labeled and different), so an empty-currency row still slipped
-		// through unchecked and got compared by raw magnitude against the
-		// reference's labeled currency -- the exact fabricated-saving bug
-		// class round 24 meant to close, just reachable via the
-		// empty-string escape hatch. Round 25 requires exact equality
-		// after normalization instead: one blank and one labeled is
-		// rejected, and any known mismatch is still rejected. Found
-		// independently by both GPT and Grok second-opinion review,
-		// 2026-07-31 (round 25).
+		// Round 24 rejected only a KNOWN mismatch (both sides labeled and
+		// different), so an empty-currency row slipped through and got compared
+		// by raw magnitude against the reference's labeled currency -- the exact
+		// fabricated-saving bug class round 24 meant to close, reachable via the
+		// empty-string escape hatch. Round 25 required exact equality after
+		// normalization; round 26 (trvl#549) also rejects BOTH blank, which
+		// round 25 had treated as compatible.
 		//
-		// Round 26 (trvl#549) also rejects BOTH blank, which round 25 had
-		// treated as compatible on the pre-existing unknown-unknown display
-		// convention. Two rows can be currencyless for unrelated reasons --
-		// one provider omitting the currency on a EUR quote, another on a JPY
-		// one -- so "both blank" is not evidence they share a unit; it is the
-		// absence of evidence either way.
+		// Two rows can be currencyless for unrelated reasons -- one provider
+		// omitting the currency on a EUR quote, another on a JPY one -- so "both
+		// blank" is not evidence they share a unit; it is the absence of evidence
+		// either way.
 		//
 		// Saving.Amount is documented as money saved IN Currency. With no
 		// currency the number has no defined unit and cannot honestly be shown:
 		// the description rendered "save 123 " with a trailing space. Refusing
 		// costs the rare genuinely-comparable pair a signal that could not have
 		// been displayed anyway.
+		//
+		// The round-24 hatch was found independently by both GPT and Grok
+		// second-opinion review (2026-07-31, round 25).
 		if cur == "" || cur != currency {
 			continue
 		}
@@ -137,19 +135,20 @@ func SameDayAlternative(flights []models.FlightResult, minDelta float64, asOf ti
 		if f.Price <= 0 || f.Price >= cheapest.Price {
 			continue
 		}
-		// Round 25: the round-24 guard below had the same empty-currency
-		// escape hatch as ShiftDay's -- an unlabeled candidate fare could
-		// still win against a labeled headline by raw magnitude. Require
-		// exact equality after normalization (both blank is compatible,
-		// one blank one labeled is rejected, known mismatch is rejected).
-		// Found independently by both GPT and Grok second-opinion review,
-		// 2026-07-31 (round 25).
+		// Round 25 closed an empty-currency escape hatch here: an unlabeled
+		// candidate fare could win against a labeled headline on raw magnitude.
+		// It required exact equality after normalization, but still treated two
+		// blanks as compatible.
+		//
+		// Round 26 (trvl#549) rejects that case too: an unknown currency is not
+		// a match for another unknown one. Same reasoning as ShiftDay above, and
+		// it bites harder here -- this input is a flight result list, which can
+		// span several providers, so two blank rows are more likely to be
+		// genuinely different currencies than in a single date grid.
+		//
+		// The escape hatch was found independently by both GPT and Grok
+		// second-opinion review (2026-07-31, round 25).
 		fCur := strings.ToUpper(strings.TrimSpace(f.Currency))
-		// Round 26 (trvl#549): an unknown currency is not a match for another
-		// unknown one. Same reasoning as ShiftDay above, and it bites harder
-		// here -- this input is a flight result list, which can span several
-		// providers, so two blank rows are more likely to be genuinely
-		// different currencies than in a single date grid.
 		if fCur == "" || fCur != headlineCur {
 			continue
 		}

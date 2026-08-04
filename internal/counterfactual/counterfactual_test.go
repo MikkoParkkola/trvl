@@ -70,7 +70,15 @@ func TestSameDayAlternative(t *testing.T) {
 	if SameDayAlternative(flights[:1], 10, asOf) != nil {
 		t.Fatalf("single flight must yield nil")
 	}
-	if SameDayAlternative([]models.FlightResult{{Price: 155}, {Price: 150}}, 10, asOf) != nil {
+	// Currencies are labeled deliberately. Round 26 made a blank currency its own
+	// reason to return nil, so an unlabeled fixture here would pass whether or not
+	// minDelta worked at all -- the assertion would read as evidence while testing
+	// nothing. Labeling them keeps the 5-below-10 delta the only thing that can
+	// produce the nil.
+	if SameDayAlternative([]models.FlightResult{
+		{Price: 155, Currency: "EUR"},
+		{Price: 150, Currency: "EUR"},
+	}, 10, asOf) != nil {
 		t.Fatalf("delta below minDelta must yield nil")
 	}
 }
@@ -158,16 +166,14 @@ func TestSameDayAlternativeCrossCurrencyMismatch(t *testing.T) {
 		t.Fatalf("cross-currency mismatch must yield no saving, got %+v", s)
 	}
 
-	// Both unlabeled -> saving still allowed (same documented unknown-unknown
-	// convention as ShiftDay's bothBlank case above). Grok round-25 optional
-	// finding #4: ShiftDay had an explicit positive both-blank test but
-	// SameDayAlternative did not, even though the production logic (line
-	// `fCur != headlineCur`, "" == "" is true) already takes this path --
-	// parity-only, no behavior change. Fixed as trvl#548.
 	// Both unlabeled -> NO saving (trvl#549), same reasoning as ShiftDay. It
 	// bites harder here: this input is a flight result list, which can span
 	// several providers, so two blank rows are more likely to be genuinely
 	// different currencies than in a single date grid.
+	//
+	// trvl#548 asked for this case as a PARITY test asserting the old
+	// "saving still allowed" behaviour. That expectation is now the bug, so the
+	// case survives with its assertion inverted rather than as written.
 	bothBlank := []models.FlightResult{
 		{Price: 220}, // headline, no currency
 		{Price: 150}, // cheaper, no currency
