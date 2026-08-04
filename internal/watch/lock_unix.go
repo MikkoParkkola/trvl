@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build darwin || linux || freebsd || netbsd || openbsd || dragonfly
 
 package watch
 

@@ -85,3 +85,38 @@ func TestCrossProcessStoreRecordPriceDoesNotLoseUpdates(t *testing.T) {
 		t.Fatalf("cross-process RecordPrice calls dropped: %d points recorded, want %d", got, n)
 	}
 }
+
+// TestCrossProcessStoreRecordObservationDoesNotLoseUpdates is the #553 review
+// round 2 regression test: RecordObservation was the one production write
+// path (every flight/hotel search, via pricefeed) still taking only s.mu and
+// calling saveLocked directly, bypassing withTxnLocked entirely -- the exact
+// #553 failure mode this whole file exists to close, just on a different
+// method. n independent stores each record one observation for the same
+// route key; none may be lost. Prices are spaced >=1% apart (observationEpsilonPct
+// is 0.5%) so the near-duplicate throttle never legitimately suppresses one.
+func TestCrossProcessStoreRecordObservationDoesNotLoseUpdates(t *testing.T) {
+	dir := t.TempDir()
+	const routeKey = "HEL-BCN"
+
+	const n = 40
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			s := NewStore(dir)
+			if err := s.RecordObservation(routeKey, float64(1000+10*i), "EUR"); err != nil {
+				t.Errorf("RecordObservation from independent store %d: %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	final := NewStore(dir)
+	if err := final.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := len(final.RouteHistory(routeKey)); got != n {
+		t.Fatalf("cross-process RecordObservation calls dropped: %d points recorded, want %d", got, n)
+	}
+}

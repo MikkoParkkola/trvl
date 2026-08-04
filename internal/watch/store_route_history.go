@@ -18,30 +18,42 @@ import (
 //     searches of the same route do not each rewrite the history file.
 //   - Cap: at most maxObservationsPerRoute points are retained per route key;
 //     the oldest are pruned, bounding file growth to cap x number-of-routes.
+//
+// #553 review round 2: this used to take only s.mu and call saveLocked
+// directly -- no acquireFileLock, no reload -- so it was the one production
+// write path (every flight/hotel search, via pricefeed) still exhibiting the
+// exact #553 cross-process clobber the rest of this file's withTxnLocked
+// wiring was meant to close. Now runs inside withTxnLocked like every other
+// mutator; the throttle check reads the freshly reloaded history so a
+// near-duplicate decided elsewhere in the meantime is still caught, and
+// skips the write via errTxnNoop instead of persisting a no-op.
 func (s *Store) RecordObservation(routeKey string, price float64, currency string) error {
 	if routeKey == "" || price <= 0 {
 		return nil
 	}
+	cur := strings.ToUpper(strings.TrimSpace(currency))
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	cur := strings.ToUpper(strings.TrimSpace(currency))
-	if last, ok := s.lastObservationLocked(routeKey, cur); ok && last.Price > 0 {
-		if time.Since(last.Timestamp) < observationThrottle &&
-			math.Abs(price-last.Price)/last.Price <= observationEpsilonPct {
-			return nil // redundant near-duplicate; skip the write entirely
+	return s.withTxnLocked(func() error {
+		if last, ok := s.lastObservationLocked(routeKey, cur); ok && last.Price > 0 {
+			if time.Since(last.Timestamp) < observationThrottle &&
+				math.Abs(price-last.Price)/last.Price <= observationEpsilonPct {
+				return errTxnNoop // redundant near-duplicate; skip the write entirely
+			}
 		}
-	}
 
-	s.history = append(s.history, PricePoint{
-		RouteKey:  routeKey,
-		Price:     price,
-		Currency:  cur,
-		Timestamp: time.Now(),
+		s.history = append(s.history, PricePoint{
+			RouteKey:  routeKey,
+			Price:     price,
+			Currency:  cur,
+			Timestamp: time.Now(),
+		})
+		s.pruneRouteLocked(routeKey)
+		s.pruneGlobalRouteLocked()
+		return nil
 	})
-	s.pruneRouteLocked(routeKey)
-	s.pruneGlobalRouteLocked()
-	return s.saveLocked()
 }
 
 // pruneGlobalRouteLocked evicts the oldest ad-hoc route-keyed observations once
