@@ -7,7 +7,7 @@ GOSEC_VERSION ?= v2.28.0
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION) -X github.com/MikkoParkkola/trvl/mcp.serverVersion=$(VERSION)"
 
-.PHONY: build test test-proof test-coverage test-live-integrations test-live-probes lint repo-hygiene security-gosec distribution-metrics clean cross install safe-clean force-clean
+.PHONY: build test test-proof test-coverage test-live-integrations test-live-probes lint repo-hygiene security-gosec dod distribution-metrics clean cross install safe-clean force-clean
 
 build:
 	@mkdir -p bin
@@ -66,6 +66,24 @@ security-gosec:
 	@GOTOOLCHAIN=$(GOTOOLCHAIN) gosec -quiet -fmt json -out bin/gosec-report.json ./... || true
 	@test -s bin/gosec-report.json
 	.github/scripts/gosec-gate.sh bin/gosec-report.json
+
+# Everything CI gates on, in one command, to be run BEFORE committing.
+#
+# The individual targets already existed; what did not was a single name for
+# "would CI accept this". Splitting the question across four commands meant
+# running three of them and pushing, which is how a merge shipped with two files
+# over the 800-line ceiling and 26 unchecked error returns -- each caught by CI
+# minutes later, after a 23-minute Windows job had already started.
+#
+# Ordered cheapest-first so an obvious failure stops the run early. gosec needs
+# $(GOPATH)/bin on PATH; the target says so rather than failing obscurely.
+#
+# Known gap worth stating: scripts/ci/check-file-size.sh inspects TRACKED files
+# only, so a newly added file reports clean until it is `git add`ed. Stage first,
+# then run this.
+dod: lint security-gosec test
+	@echo
+	@echo "dod: lint, gosec and tests all clean -- safe to commit."
 
 distribution-metrics:
 	$(GO_RUN) run ./cmd/distribution-metrics
