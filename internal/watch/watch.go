@@ -22,6 +22,10 @@ import (
 // Nothing in production ever assigns to it.
 var maxRouteObservations = 20000
 
+// currencyChangeConfirmPolls is how many consecutive polls must agree on a
+// new currency before a watch adopts it. See Watch.PendingCurrency.
+const currencyChangeConfirmPolls = 2
+
 // Watch represents a price tracking rule for a flight or hotel route.
 //
 // Three watch modes:
@@ -83,6 +87,34 @@ type Watch struct {
 	// default; applyIntent clears it the moment the user re-supplies either
 	// threshold limb. Found by adversarial review, 2026-07-30 (round 17).
 	AlertDropAbsClearedByCurrency bool `json:"alert_drop_abs_cleared_by_currency,omitempty"`
+
+	// PendingCurrency and PendingCurrencyPolls hold a currency the provider has
+	// started quoting that this watch has NOT yet adopted.
+	//
+	// A single poll in a different currency is not evidence of a currency
+	// change. Providers intermittently return no price in the requested
+	// currency at all, and treating that one poll as a change wipes LastPrice,
+	// LowestPrice, CheapestDate, BaselinePrice and LastAlertedPrice and clears
+	// BelowPrice/AlertDropAbs. If the provider recovers on the next poll the
+	// same reset fires in reverse, so a flapping provider destroys accumulated
+	// history repeatedly (trvl#546, trvl#550).
+	//
+	// The asymmetry decides the design: losing that history is permanent, while
+	// waiting one extra poll costs almost nothing -- a currency-mismatched poll
+	// already skips the threshold comparison, because measuring "below 20000
+	// JPY" against a EUR price is meaningless. So the wait forfeits alerts the
+	// watch was not going to produce anyway.
+	//
+	// Two consecutive polls, not three: the second poll is where the evidence
+	// is. A third adds no information and doubles the window during which a
+	// genuine switch has not taken effect.
+	//
+	// A watch with NO prior observation adopts its first quote immediately.
+	// There is nothing to protect, and refusing would leave a brand-new watch
+	// unable to establish a currency at all -- the reason an earlier
+	// short-circuit at the provider-selection layer was reverted.
+	PendingCurrency      string `json:"pending_currency,omitempty"`
+	PendingCurrencyPolls int    `json:"pending_currency_polls,omitempty"`
 
 	// Room watch fields (Type == "room").
 	HotelName    string   `json:"hotel_name,omitempty"`    // hotel name for room availability lookups
@@ -223,6 +255,24 @@ func (w Watch) Validate() error {
 		return fmt.Errorf("invalid currency %q: must be a 3-letter code (e.g. USD, EUR)", w.Currency)
 	}
 
+	// Checked BEFORE the type-specific blocks below, because each of them
+	// returns early.
+	//
+	// Sitting after them, this guard was unreachable for exactly the types it
+	// exists to reject: a room or opportunity watch with last_minute set
+	// validated, persisted, and then never ran a last-minute check, because
+	// detection requires Type == "hotel". The user was told the mode was on and
+	// nothing ever happened -- the worst shape for a setting, since there is no
+	// error to notice and no behaviour to miss (trvl#543).
+	if w.LastMinuteMode {
+		if w.Type != "hotel" {
+			return fmt.Errorf("last-minute mode is only supported for hotel watches")
+		}
+		if w.LastMinuteDropPct < 0 {
+			return fmt.Errorf("last-minute drop threshold must be non-negative")
+		}
+	}
+
 	// Room watch validation.
 	if w.IsRoomWatch() {
 		if w.HotelName == "" {
@@ -243,15 +293,6 @@ func (w Watch) Validate() error {
 			return fmt.Errorf("opportunity watch requires favourites or a min_nights value")
 		}
 		return nil
-	}
-
-	if w.LastMinuteMode {
-		if w.Type != "hotel" {
-			return fmt.Errorf("last-minute mode is only supported for hotel watches")
-		}
-		if w.LastMinuteDropPct < 0 {
-			return fmt.Errorf("last-minute drop threshold must be non-negative")
-		}
 	}
 
 	if w.DepartDate != "" && (w.DepartFrom != "" || w.DepartTo != "") {

@@ -22,13 +22,8 @@ func TestCheckOneTreatsNonzeroLowestPriceAsPriorObservation(t *testing.T) {
 	// Simulate a post-merge survivor: LastPrice==0 (this watch object never
 	// itself completed a poll) but LowestPrice>0 (inherited from a merged
 	// duplicate's history during migrate.go's dedup pass).
-	w, ok := store.Get(id)
-	if !ok {
-		t.Fatalf("watch not found after Add")
-	}
-	w.LowestPrice = 450
-	if err := store.UpdateWatch(w); err != nil {
-		t.Fatalf("UpdateWatch: %v", err)
+	if _, err := store.Mutate(id, func(w *Watch) { w.LowestPrice = 450 }); err != nil {
+		t.Fatalf("Mutate: %v", err)
 	}
 
 	checker := &sequencedChecker{steps: []struct {
@@ -42,6 +37,11 @@ func TestCheckOneTreatsNonzeroLowestPriceAsPriorObservation(t *testing.T) {
 	if len(results) != 1 || results[0].Error != nil {
 		t.Fatalf("check: results=%+v", results)
 	}
+
+	// A currency change is believed only after two CONSECUTIVE polls agree
+	// (trvl#546). sequencedChecker repeats its last step, so this is the
+	// confirming poll.
+	CheckAll(context.Background(), store, checker)
 
 	got, ok := store.Get(id)
 	if !ok {
@@ -297,7 +297,21 @@ func TestCheckTreatsUnknownCurrencyWithHistoryAsMismatch(t *testing.T) {
 	w.LowestPrice = 20000
 	w.Currency = ""
 
+	// Two polls: a currency mismatch on a watch that HAS history is believed
+	// only after two consecutive polls agree (trvl#546). The first poll must
+	// ALREADY refuse to compare a EUR quote against currencyless history,
+	// which is what this test is about, so BelowGoal is asserted on both.
 	checker := &stubPriceChecker{price: 180, currency: "EUR"}
+	first := checkOne(context.Background(), store, checker, w)
+	if first.Error != nil {
+		t.Fatalf("first check: %v", first.Error)
+	}
+	if first.BelowGoal {
+		t.Errorf("BelowGoal = true on the FIRST poll; an unconfirmed mismatch must still refuse " +
+			"the cross-currency comparison")
+	}
+
+	w, _ = store.Get(id)
 	r := checkOne(context.Background(), store, checker, w)
 	if r.Error != nil {
 		t.Fatalf("unexpected error: %v", r.Error)

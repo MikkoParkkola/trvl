@@ -299,11 +299,11 @@ func TestUpdateWatch(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	w, _ := store.Get(id)
-	w.LastPrice = 199
-	w.LowestPrice = 199
-	if err := store.UpdateWatch(w); err != nil {
-		t.Fatalf("UpdateWatch: %v", err)
+	if _, err := store.Mutate(id, func(w *Watch) {
+		w.LastPrice = 199
+		w.LowestPrice = 199
+	}); err != nil {
+		t.Fatalf("Mutate: %v", err)
 	}
 
 	got, _ := store.Get(id)
@@ -312,9 +312,8 @@ func TestUpdateWatch(t *testing.T) {
 	}
 
 	// Update nonexistent.
-	err = store.UpdateWatch(Watch{ID: "nonexistent"})
-	if err == nil {
-		t.Error("UpdateWatch nonexistent: expected error")
+	if _, err := store.Mutate("nonexistent", func(*Watch) {}); err == nil {
+		t.Error("Mutate nonexistent: expected error")
 	}
 }
 
@@ -448,10 +447,8 @@ func TestCheckAllPriceDrop(t *testing.T) {
 	}
 
 	// Set a previous price.
-	w, _ := store.Get(id)
-	w.LastPrice = 300
-	if err := store.UpdateWatch(w); err != nil {
-		t.Fatalf("UpdateWatch: %v", err)
+	if _, err := store.Mutate(id, func(w *Watch) { w.LastPrice = 300 }); err != nil {
+		t.Fatalf("Mutate: %v", err)
 	}
 
 	checker := &mockChecker{price: 250, currency: "EUR"}

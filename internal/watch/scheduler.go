@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/atomicjson"
 )
 
 // Scheduler runs periodic price checks in the background.
@@ -137,6 +139,7 @@ func (s *Scheduler) Start() {
 		s.cancel = cancel
 		s.started = true
 		s.mu.Unlock()
+		go s.reportOrphanedTemps()
 		go s.acquireAndRun(ctx)
 	})
 }
@@ -414,4 +417,75 @@ func ActiveWatches(watches []Watch) []Watch {
 // is ever fetched for it again.
 func IsActiveNow(w Watch) bool {
 	return isActive(w, time.Now().Format("2006-01-02"))
+}
+
+// orphanWarnBytes is the total orphaned-temp size that earns a warning. One
+// interrupted write leaves a full copy of the target file, and a real store's
+// price history has reached 39MB, so a single orphan can sit just under this.
+// The threshold names "this is more than one unlucky kill" rather than "any
+// orphan at all", which would warn on the normal case of a single Ctrl-C.
+const orphanWarnBytes = 64 << 20
+
+// orphanMinAge keeps a temp belonging to a write that may still be in flight
+// out of the report entirely.
+const orphanMinAge = 1 * time.Hour
+
+// reportOrphanedTemps warns once at scheduler start when interrupted writes
+// have left a meaningful amount of disk behind.
+//
+// atomicjson writes via temp-file-plus-rename and removes the temp on its error
+// paths, but nothing survives a SIGKILL, so a process killed mid-write leaves a
+// full copy of the target behind. One machine accumulated 7 files and 149MB in
+// ~/.trvl before anyone noticed (trvl#513). `trvl tempfiles --delete` reclaims
+// them, but a user who does not know they exist never runs it -- which is the
+// actual complaint in that issue, and it is a REPORTING gap, not a cleanup one.
+//
+// Reports; never deletes. Clean's own doc explains why automatic deletion is
+// the wrong call: a PID is only meaningful on the machine and boot that wrote
+// it, so a temp written by another host onto a shared store directory, or by a
+// process from a previous boot, can read as dead locally. A cleanup that races
+// a live writer costs more than the disk it frees. Surfacing the number lets
+// the user make that call with the command that already exists.
+//
+// The scheduler is the right place: it is the long-running process most likely
+// to be killed mid-write, so it is the one that creates these files.
+func (s *Scheduler) reportOrphanedTemps() {
+	orphans, err := atomicjson.FindOrphans(s.dir)
+	if err != nil {
+		// A store directory that cannot be read is not this goroutine's problem
+		// to report -- the next real store operation will fail loudly.
+		return
+	}
+
+	// Reports on AGE, not on reclaimability.
+	//
+	// atomicjson.Clean filters by Orphan.Reclaimable, which requires the owning
+	// process to be provably gone. On Windows processAlive always returns true
+	// -- deliberately, because os.FindProcess there fails for reasons other
+	// than "no such process" and an access-denied result on another user's
+	// process would read as gone and delete a live writer's file. So nothing is
+	// ever reclaimable on Windows, and a report built on Clean was a silent
+	// no-op there: the platform still accumulates the files, it just never
+	// heard about them. Caught by TRVL.ORPHAN.1 on windows-latest.
+	//
+	// Reporting and reclaiming are different questions. This answers the first.
+	now := time.Now()
+	var bytes int64
+	var count int
+	for _, o := range orphans {
+		if o.Age(now) < orphanMinAge {
+			continue
+		}
+		bytes += o.Size
+		count++
+	}
+	if bytes < orphanWarnBytes {
+		return
+	}
+	slog.Warn("watch: interrupted writes have left temp files behind",
+		"dir", s.dir,
+		"files", count,
+		"bytes", bytes,
+		"inspect_with", "trvl tempfiles",
+		"reclaim_with", "trvl tempfiles --delete")
 }

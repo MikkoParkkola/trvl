@@ -371,7 +371,7 @@ func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Sto
 			lastMinute    bool
 			lastMinutePct float64
 		)
-		saved, applied, err := store.MutateAndRecordPrice(w.ID, pollKey, price, currency, func(cur *Watch) bool {
+		saved, applied, err := store.MutateAndRecordPrice(w.ID, pollKey, price, currency, func(cur *Watch) (bool, bool) {
 			prevPrice = cur.LastPrice
 
 			// Round 18: cur.LastPrice == 0 is not a reliable "no prior
@@ -389,9 +389,68 @@ func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Sto
 			// history denominated in an unknown currency while reading empty.
 			unknownCurrencyWithHistory := cur.Currency == "" && hasPriorObservation
 			currencyMismatch := currency != "" && ((cur.Currency != "" && cur.Currency != currency) || unknownCurrencyWithHistory)
-			currencyChanged := hasPriorObservation && currencyMismatch
+
+			// A mismatch on a watch that HAS history is not believed until a
+			// second consecutive poll agrees (trvl#546, trvl#550).
+			//
+			// Providers intermittently return no price in the requested currency
+			// at all. Treating one such poll as a currency change wipes the
+			// watch's accumulated history and clears its thresholds, and if the
+			// provider recovers next poll the same reset fires in reverse -- so a
+			// flapping provider destroys that history over and over.
+			//
+			// The asymmetry decides it: the loss is permanent, while waiting one
+			// poll costs almost nothing, because a mismatched poll already skips
+			// the threshold comparison below. The wait forfeits alerts this poll
+			// was never going to produce.
+			//
+			// Two polls, not three: the second is where the evidence is, and a
+			// third only doubles the window before a genuine switch takes effect.
+			//
+			// A watch with no prior observation adopts immediately -- nothing to
+			// protect, and refusing would leave a new watch unable to establish a
+			// currency at all, which is why an earlier short-circuit at the
+			// provider-selection layer was reverted.
+			currencyConfirmed := true
+			if hasPriorObservation && currencyMismatch {
+				if cur.PendingCurrency == currency {
+					cur.PendingCurrencyPolls++
+				} else {
+					cur.PendingCurrency = currency
+					cur.PendingCurrencyPolls = 1
+				}
+				currencyConfirmed = cur.PendingCurrencyPolls >= currencyChangeConfirmPolls
+			} else {
+				// The currency agrees again, or there is no history to protect.
+				// Any half-formed suspicion is dropped: the counter tracks
+				// CONSECUTIVE disagreement, so one matching poll resets it.
+				// Without this a watch could bank one dissent per month and
+				// eventually flip on unrelated blips months apart.
+				cur.PendingCurrency = ""
+				cur.PendingCurrencyPolls = 0
+			}
+
+			if currencyMismatch && !currencyConfirmed {
+				// Unconfirmed. Record that the check happened and the pending
+				// counter above, and write nothing else -- no threshold clear, no
+				// observation reset, no adopted currency, and no price point.
+				//
+				// Bailing here rather than further down is the whole point. The
+				// first cut returned after the threshold-clearing block had
+				// already run, so the gate deferred the reset one field at a time
+				// -- the user's target was still cleared on a single odd poll.
+				// Caught by TRVL.CURRENCY.CONFIRM.1.
+				cur.LastCheck = time.Now()
+				return false, false
+			}
+
+			currencyChanged := hasPriorObservation && currencyMismatch && currencyConfirmed
 			firstQuoteMismatch := !hasPriorObservation && currencyMismatch
-			skipThresholdChecks := currencyChanged || firstQuoteMismatch
+			// An UNCONFIRMED mismatch still skips the threshold checks: the quote
+			// is in the wrong currency whether or not it turns out to be a real
+			// change, so comparing it against the stored threshold would be
+			// exactly the currency-blind comparison trvl#545 exists to stop.
+			skipThresholdChecks := currencyMismatch || firstQuoteMismatch
 
 			// Signals derived from the committed prior price and the committed
 			// threshold. Deriving them from the stale copy let a late poll
@@ -479,7 +538,7 @@ func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Sto
 			// Purge decided here, from committed state: if another process
 			// already migrated this watch, cur.Currency now matches the quote,
 			// currencyChanged is false, and its new-currency history survives.
-			return currencyChanged
+			return currencyChanged, true
 		})
 		if err != nil {
 			result.Error = fmt.Errorf("update watch and record price: %w", err)

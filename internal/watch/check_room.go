@@ -229,7 +229,7 @@ func checkRoomWithWebhookContext(checkCtx, webhookCtx context.Context, store *St
 	)
 	if result.NewPrice > 0 {
 		price, currency := result.NewPrice, result.Currency
-		saved, applied, err = store.MutateAndRecordPrice(w.ID, pollKey, price, currency, func(cur *Watch) bool {
+		saved, applied, err = store.MutateAndRecordPrice(w.ID, pollKey, price, currency, func(cur *Watch) (bool, bool) {
 			prevPrice = cur.LastPrice
 
 			// Round 18: cur.LastPrice == 0 is not a reliable "no prior
@@ -289,7 +289,7 @@ func checkRoomWithWebhookContext(checkCtx, webhookCtx context.Context, store *St
 			// Decided from committed state: if another process already migrated
 			// this watch, currencyChanged is false here and its new-currency
 			// history survives.
-			return currencyChanged
+			return currencyChanged, true
 		})
 	} else {
 		// No usable price: only the checked-at stamp (and the matched room, if
