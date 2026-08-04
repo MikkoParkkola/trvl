@@ -8,13 +8,14 @@
 # TestRunWatchCheckCycleWithRooms_SkipsInactiveWatches failed on windows-latest
 # with count=3 while passing on Linux and macOS throughout (trvl#565).
 #
-# Two rules, because the obvious fix has a silent failure mode of its own:
+# Three rules, because each of the first two has a silent failure mode of its own.
 #
-#   1. Every t.Setenv("HOME", ...) needs a t.Setenv("USERPROFILE", ...) nearby.
+#   1. Every HOME redirection needs a USERPROFILE redirection to the same
+#      variable, nearby and IN THE SAME FUNCTION.
 #   2. HOME must be bound to a VARIABLE, never an inline t.TempDir().
+#   3. Both t.Setenv and os.Setenv count.
 #
-# Rule 2 is the subtle one. t.TempDir() returns a NEW directory on every call,
-# so the natural-looking
+# Rule 2 is the subtle one. t.TempDir() returns a NEW directory on every call, so
 #
 #     t.Setenv("HOME", t.TempDir())
 #     t.Setenv("USERPROFILE", t.TempDir())
@@ -23,6 +24,15 @@
 # a directory nothing populated -- strictly worse than the bug it was meant to
 # fix, and it satisfies rule 1 while doing it. Three such pairs were already in
 # the tree when this check was written.
+#
+# Rule 3 exists because the first draft matched only t.Setenv, which left two
+# real os.Setenv("HOME") overrides in mcp/coverage_boost4_split2_test.go
+# unisolated on Windows while this check reported the class closed. A guard that
+# gives false assurance is worse than no guard (adversarial review, 2026-08-04).
+#
+# The same-function bound on rule 1 matters for the same reason: a plain
+# line-window can be satisfied by the NEXT function's USERPROFILE, passing a
+# broken site because an unrelated one below it is correct.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -37,7 +47,7 @@ while IFS= read -r file; do
     line="$(sed -n "${lineno}p" "$file")"
 
     # Rule 2: HOME must name a variable, so USERPROFILE can reuse the same one.
-    if printf '%s' "$line" | grep -q 't\.Setenv("HOME", t\.TempDir())'; then
+    if printf '%s' "$line" | grep -qE '(t|os)\.Setenv\("HOME", t\.TempDir\(\)\)'; then
       printf 'error: %s:%s binds HOME to an inline t.TempDir()\n' "$file" "$lineno" >&2
       printf '       t.TempDir() returns a NEW directory per call, so USERPROFILE cannot reuse it.\n' >&2
       printf '       Capture it first:  dir := t.TempDir(); t.Setenv("HOME", dir); t.Setenv("USERPROFILE", dir)\n' >&2
@@ -45,7 +55,7 @@ while IFS= read -r file; do
       continue
     fi
 
-    var="$(printf '%s' "$line" | sed -nE 's/.*t\.Setenv\("HOME", ([A-Za-z_][A-Za-z0-9_]*)\).*/\1/p')"
+    var="$(printf '%s' "$line" | sed -nE 's/.*(t|os)\.Setenv\("HOME", ([A-Za-z_][A-Za-z0-9_]*)\).*/\2/p')"
     if [ -z "$var" ]; then
       printf 'error: %s:%s sets HOME to something this check cannot verify: %s\n' \
         "$file" "$lineno" "$(printf '%s' "$line" | sed -E 's/^[[:space:]]+//')" >&2
@@ -54,17 +64,38 @@ while IFS= read -r file; do
       continue
     fi
 
-    # Rule 1: the same variable must reach USERPROFILE within a short window.
-    # A window rather than the next line, because existing call sites legitimately
-    # separate them with a comment or a `if runtime.GOOS == "windows"` guard.
-    window="$(sed -n "${lineno},$((lineno + 6))p" "$file")"
-    if ! printf '%s' "$window" | grep -q "t\.Setenv(\"USERPROFILE\", ${var})"; then
-      printf 'error: %s:%s sets HOME=%s with no matching t.Setenv("USERPROFILE", %s) nearby\n' \
+    # A restore line -- os.Setenv("HOME", orig) inside a defer -- is the tail of
+    # a manual save/restore, not a redirection. The redirection itself is checked
+    # on its own line; requiring USERPROFILE here too would demand it twice.
+    if printf '%s' "$line" | grep -q 'defer'; then
+      continue
+    fi
+
+    # Rule 1: same variable must reach USERPROFILE within a short window, and
+    # the window stops at the end of the enclosing function so a later
+    # function's correct pairing cannot vouch for a broken site above it.
+    window=""
+    end=$((lineno + 6))
+    cur=$((lineno + 1))
+    while [ "$cur" -le "$end" ]; do
+      wline="$(sed -n "${cur}p" "$file")"
+      # Column-0 '}' closes the function; 'func ' opens the next one.
+      case "$wline" in
+        '}'*) break ;;
+        'func '*) break ;;
+      esac
+      window="${window}
+${wline}"
+      cur=$((cur + 1))
+    done
+
+    if ! printf '%s' "$window" | grep -qE "(t|os)\.Setenv\(\"USERPROFILE\", ${var}\)"; then
+      printf 'error: %s:%s sets HOME=%s with no matching Setenv("USERPROFILE", %s) in the same function\n' \
         "$file" "$lineno" "$var" "$var" >&2
       printf '       os.UserHomeDir reads USERPROFILE on Windows, so this test does not isolate there.\n' >&2
       fail=1
     fi
-  done < <(grep -n 't\.Setenv("HOME"' "$file" 2>/dev/null || true)
+  done < <(grep -nE '(t|os)\.Setenv\("HOME"' "$file" 2>/dev/null || true)
 done < <(git ls-files '*_test.go' ':!:vendor/**' ':!:third_party/**')
 
 if [ "$fail" -eq 0 ]; then

@@ -158,10 +158,18 @@ func TestReadTripsUpcoming_Empty(t *testing.T) {
 // ============================================================
 
 func TestReadTripsList_Empty(t *testing.T) {
+	// t.Setenv rather than os.Setenv with a manual defer: it restores on its
+	// own, and it panics if this test is ever made parallel, which is the
+	// failure the manual version hid. Both names, one directory -- see
+	// scripts/ci/check-home-isolation.sh (trvl#565).
+	//
+	// This test asserts behaviour against an EMPTY home. On Windows the old
+	// HOME-only override did nothing, so it ran against the package-wide home
+	// from TestMain, which siblings may have written to -- the assertion held
+	// for a different reason than the one it names, or not at all.
 	tmp := t.TempDir()
-	orig := os.Getenv("HOME")
-	_ = os.Setenv("HOME", tmp)
-	defer func() { _ = os.Setenv("HOME", orig) }()
+	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	s := NewServer()
 	result, err := s.readTripsList()
@@ -177,10 +185,11 @@ func TestReadTripsList_Empty(t *testing.T) {
 }
 
 func TestReadTripsAlerts_Empty(t *testing.T) {
+	// Same reasoning as TestReadTripsList_Empty above: an empty-home assertion
+	// that the Windows override never actually applied to.
 	tmp := t.TempDir()
-	orig := os.Getenv("HOME")
-	_ = os.Setenv("HOME", tmp)
-	defer func() { _ = os.Setenv("HOME", orig) }()
+	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	s := NewServer()
 	result, err := s.readTripsAlerts()
