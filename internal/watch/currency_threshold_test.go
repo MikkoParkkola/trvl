@@ -67,3 +67,66 @@ func TestCurrencyMismatchNeverFiresBelowGoal(t *testing.T) {
 		t.Errorf("Currency = %q, want EUR -- the new quote is still adopted", got.Currency)
 	}
 }
+
+// TRVL.LASTMINUTE.1 -- last-minute mode must be rejected on watch types that
+// can never run it, not accepted and silently ignored.
+//
+// Detection requires Type == "hotel". The guard that says so sat AFTER the
+// room and opportunity branches of Validate, both of which return early -- so
+// it was unreachable for exactly the types it exists to reject. The mode
+// validated, persisted, and never ran: the user was told it was on and nothing
+// happened. That is the worst shape for a setting, because there is no error to
+// notice and no behaviour to miss (trvl#543).
+func TestLastMinuteRejectedOnTypesThatCannotRunIt(t *testing.T) {
+	cases := []struct {
+		name  string
+		watch Watch
+	}{
+		{
+			name: "room",
+			watch: Watch{
+				Type: "room", HotelName: "Lutetia", RoomKeywords: []string{"suite"},
+				DepartDate: "2027-03-01", ReturnDate: "2027-03-05",
+				LastMinuteMode: true,
+			},
+		},
+		{
+			name: "opportunity",
+			watch: Watch{
+				Type: "opportunity", Favourites: []string{"BCN"},
+				WindowFrom: "2027-03-01", WindowTo: "2027-03-31",
+				LastMinuteMode: true,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.watch.Validate(); err == nil {
+				t.Errorf("a %s watch accepted last-minute mode; it can never run one, so the user "+
+					"is told the mode is on and nothing ever happens", tc.name)
+			}
+		})
+	}
+}
+
+// TRVL.LASTMINUTE.2 -- and the types that CAN run it are unaffected, so the
+// guard cannot be satisfied by rejecting everything.
+func TestLastMinuteStillAcceptedOnHotelWatches(t *testing.T) {
+	w := Watch{
+		Type: "hotel", Destination: "Lisbon",
+		DepartDate: "2027-03-01", ReturnDate: "2027-03-05",
+		LastMinuteMode: true, LastMinuteDropPct: 30,
+	}
+	if err := w.Validate(); err != nil {
+		t.Errorf("a hotel watch was refused last-minute mode: %v", err)
+	}
+
+	// Room and opportunity watches WITHOUT the mode must still validate.
+	room := Watch{
+		Type: "room", HotelName: "Lutetia", RoomKeywords: []string{"suite"},
+		DepartDate: "2027-03-01", ReturnDate: "2027-03-05",
+	}
+	if err := room.Validate(); err != nil {
+		t.Errorf("hoisting the guard broke ordinary room validation: %v", err)
+	}
+}

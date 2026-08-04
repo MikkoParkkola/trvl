@@ -223,6 +223,24 @@ func (w Watch) Validate() error {
 		return fmt.Errorf("invalid currency %q: must be a 3-letter code (e.g. USD, EUR)", w.Currency)
 	}
 
+	// Checked BEFORE the type-specific blocks below, because each of them
+	// returns early.
+	//
+	// Sitting after them, this guard was unreachable for exactly the types it
+	// exists to reject: a room or opportunity watch with last_minute set
+	// validated, persisted, and then never ran a last-minute check, because
+	// detection requires Type == "hotel". The user was told the mode was on and
+	// nothing ever happened -- the worst shape for a setting, since there is no
+	// error to notice and no behaviour to miss (trvl#543).
+	if w.LastMinuteMode {
+		if w.Type != "hotel" {
+			return fmt.Errorf("last-minute mode is only supported for hotel watches")
+		}
+		if w.LastMinuteDropPct < 0 {
+			return fmt.Errorf("last-minute drop threshold must be non-negative")
+		}
+	}
+
 	// Room watch validation.
 	if w.IsRoomWatch() {
 		if w.HotelName == "" {
@@ -243,15 +261,6 @@ func (w Watch) Validate() error {
 			return fmt.Errorf("opportunity watch requires favourites or a min_nights value")
 		}
 		return nil
-	}
-
-	if w.LastMinuteMode {
-		if w.Type != "hotel" {
-			return fmt.Errorf("last-minute mode is only supported for hotel watches")
-		}
-		if w.LastMinuteDropPct < 0 {
-			return fmt.Errorf("last-minute drop threshold must be non-negative")
-		}
 	}
 
 	if w.DepartDate != "" && (w.DepartFrom != "" || w.DepartTo != "") {
