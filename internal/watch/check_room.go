@@ -320,11 +320,15 @@ func checkRoomWithWebhookContext(checkCtx, webhookCtx context.Context, store *St
 	// review, 2026-07-29 (round 11).
 	//
 	// Same scope caveat as checkOneWithWebhookContext above: "atomically"
-	// covers the in-memory multi-call race on this *Store instance only, not
-	// cross-process coordination or on-disk two-file crash atomicity -- both
-	// pre-existing, store-wide, documented in
-	// docs/design/2026-07-26-watch-store-coordination.md and persistLocked's
-	// comment.
+	// covers the in-memory multi-call race on this *Store instance only.
+	// #553 (fixed): UpdateWatchAndRecordPrice now takes the cross-process
+	// file lock and reloads before applying, so this no longer wholesale-
+	// clobbers other watches/history across independent *Store instances.
+	// #561 (open): a concurrent edit to THIS SAME watch's own fields can
+	// still be silently reverted by the finishing poll -- see
+	// https://github.com/MikkoParkkola/trvl/issues/561. On-disk two-file
+	// crash atomicity remains a separate, pre-existing gap; see
+	// persistLocked's own comment.
 	if result.NewPrice > 0 {
 		if err := store.UpdateWatchAndRecordPrice(w, currencyChanged, result.NewPrice, result.Currency); err != nil {
 			result.Error = fmt.Errorf("update watch and record price: %w", err)

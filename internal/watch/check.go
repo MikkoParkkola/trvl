@@ -538,16 +538,22 @@ func checkOneWithWebhookContext(checkCtx, webhookCtx context.Context, store *Sto
 		// Scope of "atomically" here: this closes the IN-MEMORY multi-call
 		// race on THIS `store` instance -- no other goroutine using the same
 		// *Store can observe or interleave a partial update between the
-		// watch-replace, purge, and append. It does NOT provide cross-process
-		// coordination: the scheduler and the MCP `watch_price` tool each
-		// construct their own independent *Store, so two concurrent checks
-		// against the same on-disk files can still last-writer-wins each
-		// other with no crash required, and persistLocked's two-file save is
-		// not atomic as a unit even within one process. Both are pre-existing,
-		// store-wide properties (not introduced or worsened by currency-change
-		// handling) -- see docs/design/2026-07-26-watch-store-coordination.md
-		// for the cross-process gap and persistLocked's own comment for the
-		// on-disk two-file gap.
+		// watch-replace, purge, and append.
+		//
+		// #553 (fixed): UpdateWatchAndRecordPrice now runs inside
+		// withTxnLocked, which takes the cross-process file lock and reloads
+		// committed state first, so the scheduler and the MCP `watch_price`
+		// tool no longer wholesale-clobber each other's OTHER watches or
+		// history when they construct independent *Store instances against
+		// the same on-disk files.
+		//
+		// #561 (open): the reload still gets replaced wholesale by the
+		// detached Watch this closure captured before I/O, so a concurrent
+		// edit to THIS SAME watch's own fields (threshold, webhook, currency,
+		// renewal) can still be silently reverted by the finishing poll. See
+		// https://github.com/MikkoParkkola/trvl/issues/561 and
+		// persistLocked's own comment for the still-open on-disk two-file
+		// crash-atomicity gap.
 		if err := store.UpdateWatchAndRecordPrice(w, currencyChanged, price, currency); err != nil {
 			result.Error = fmt.Errorf("update watch and record price: %w", err)
 			return result
