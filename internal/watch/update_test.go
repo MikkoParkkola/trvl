@@ -100,3 +100,83 @@ func TestStoreUpdate_ErrorsOnUnknownIDAndEmptyUpdate(t *testing.T) {
 		t.Fatal("expected an error for an empty update")
 	}
 }
+
+// TRVL.ALERTMARK.1 -- an explicit alert clear must hand the watch back to
+// default alerting, not leave it permanently silent.
+//
+// A currency change can force-zero AlertDropAbs when it is the watch's ONLY
+// threshold, and records that as AlertDropAbsClearedByCurrency so the checker
+// suspends alerting rather than letting Threshold.effective() substitute the
+// built-in default for a policy the user never chose (round 17).
+//
+// applyIntent clears that marker the instant a re-watch supplies either limb
+// (store.go). Store.Update did not: it wrote the threshold values and left the
+// marker set. So `trvl watch update --clear-alert-drop` produced
+// AlertDropPct == 0, AlertDropAbs == 0, marker still true -- exactly the state
+// the checker's guard suppresses. The user clears an override expecting default
+// alerting back and gets no alerts at all, with nothing saying so.
+func TestUpdateClearingAlertResumesDefaultAlerting(t *testing.T) {
+	s := NewStore(t.TempDir())
+	id, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "JPY", AlertDropAbs: 2000,
+	})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	// A currency change that force-zeroes the sole absolute threshold.
+	if _, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "EUR",
+	}); err != nil {
+		t.Fatalf("currency change: %v", err)
+	}
+	if w, _ := s.Get(id); !w.AlertDropAbsClearedByCurrency {
+		t.Fatal("fixture failure: the currency change did not set the pending-reconfirmation marker, " +
+			"so this test would pass without exercising anything")
+	}
+
+	// The user explicitly clears the override, asking for default behaviour.
+	zero := 0.0
+	got, err := s.Update(id, WatchUpdate{AlertDropPct: &zero, AlertDropAbs: &zero})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	if got.AlertDropAbsClearedByCurrency {
+		t.Error("an explicit threshold clear left the pending-reconfirmation marker set, " +
+			"so the checker keeps suspending alerts and default alerting never resumes")
+	}
+}
+
+// TRVL.ALERTMARK.4 -- the marker must still suppress alerting when the user has
+// NOT reconfirmed. Without this, TRVL.ALERTMARK.1 could be satisfied by never
+// setting the marker at all, which would restore the round-17 defect it exists
+// to prevent.
+func TestCurrencyChangeStillSuspendsAlertingUntilReconfirmed(t *testing.T) {
+	s := NewStore(t.TempDir())
+	id, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "JPY", AlertDropAbs: 2000,
+	})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if _, _, err := s.Add(Watch{
+		Type: "flight", Origin: "HEL", Destination: "BCN",
+		Currency: "EUR",
+	}); err != nil {
+		t.Fatalf("currency change: %v", err)
+	}
+
+	w, _ := s.Get(id)
+	if !w.AlertDropAbsClearedByCurrency {
+		t.Error("a currency change that zeroed the sole absolute threshold did not mark the watch " +
+			"pending reconfirmation; the checker would substitute the built-in default for a policy " +
+			"the user never chose")
+	}
+	if w.AlertDropAbs != 0 {
+		t.Errorf("AlertDropAbs = %v, want 0 -- an absolute threshold cannot survive a currency change", w.AlertDropAbs)
+	}
+}

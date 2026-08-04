@@ -44,6 +44,24 @@ func (u WatchUpdate) apply(w *Watch) {
 	if u.AlertDropAbs != nil {
 		w.AlertDropAbs = *u.AlertDropAbs
 	}
+	// Naming either alert limb is currency reconfirmation, INCLUDING clearing it.
+	//
+	// A currency change force-zeroes AlertDropAbs when it is the watch's only
+	// threshold and sets AlertDropAbsClearedByCurrency, so the checker suspends
+	// alerting rather than letting Threshold.effective() substitute the built-in
+	// default for a policy the user never chose (round 17). applyIntent clears
+	// that marker as soon as a re-watch supplies a fresh value; this path did
+	// not, so `watch update --clear-alert-drop` left AlertDropPct == 0,
+	// AlertDropAbs == 0 and the marker still set -- precisely the state the
+	// guard suppresses. The user asked for default behaviour back and silently
+	// got no alerts at all (trvl#558).
+	//
+	// Gated on the caller NAMING a limb, not on the resulting value: an update
+	// that touches only the webhook must not count as reconfirming a currency
+	// the user has said nothing about.
+	if u.AlertDropPct != nil || u.AlertDropAbs != nil {
+		w.AlertDropAbsClearedByCurrency = false
+	}
 	if u.LastMinuteMode != nil {
 		w.LastMinuteMode = *u.LastMinuteMode
 	}
