@@ -486,15 +486,26 @@ func (s *Store) UpdateWatch(updated Watch) error {
 // appending an old-currency point before this call's own
 // PurgeHistory+RecordPrice ran.
 //
-// #553: cross-process coordination is now also closed. This runs inside
-// withTxnLocked, which takes the advisory file lock (internal/watch/lock.go
-// primitives) around a reload-apply-save cycle, so the scheduler's *Store and
-// the MCP `watch_price` tool's independent *Store (each pointed at the same
-// directory with their own sync.Mutex) no longer silently clobber each
-// other's committed writes. See docs/design/2026-07-26-watch-store-coordination.md
-// for the failure sequence this closes and why an advisory lock (its "what a
-// real fix looks like" option 1) was the chosen shape over batching or a
-// store-format change.
+// #553: cross-process coordination for the MULTI-watch case is now closed.
+// This runs inside withTxnLocked, which takes the advisory file lock
+// (internal/watch/lock.go primitives) around a reload-apply-save cycle, so
+// the scheduler's *Store and the MCP `watch_price` tool's independent
+// *Store (each pointed at the same directory with their own sync.Mutex) no
+// longer silently drop OTHER watches or history when their writes race. See
+// docs/design/2026-07-26-watch-store-coordination.md for the failure
+// sequence this closes and why an advisory lock (its "what a real fix looks
+// like" option 1) was the chosen shape over batching or a store-format
+// change.
+//
+// NOT closed by this: same-record field merge. `updated` is a whole Watch
+// captured by the caller before provider I/O; the reload above picks up a
+// concurrent edit to OTHER watches, but this method then wholesale-replaces
+// THIS record with the caller's stale copy, silently reverting any
+// concurrent edit to this same watch's fields (e.g. a threshold or webhook
+// change via the MCP tool landing mid-poll). The deleted txn.go's
+// Mutate(id, apply func(*Watch)) primitive existed specifically for this
+// (TRVL.STORE.TXN.2) and was not restored here -- tracked as
+// github.com/MikkoParkkola/trvl/issues/561.
 //
 // Still open, store-wide and not this method's job: on-disk crash atomicity.
 // persistLocked still writes watches.json and price-history.json as two
