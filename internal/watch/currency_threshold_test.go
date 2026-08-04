@@ -40,11 +40,27 @@ func TestCurrencyMismatchNeverFiresBelowGoal(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	w, _ := s.Get(id)
-	res := checkOne(context.Background(), s, &sequencedChecker{steps: []struct {
+	// Two consecutive EUR polls: a currency change is believed only after
+	// the second (trvl#546). The FIRST poll must already refuse the
+	// cross-currency comparison, which is what this test is really about --
+	// so both polls are checked for BelowGoal below, not just the last.
+	checker := &sequencedChecker{steps: []struct {
 		price    float64
 		currency string
-	}{{price: 480, currency: "EUR"}}}, w)
+	}{{price: 480, currency: "EUR"}}}
+
+	w, _ := s.Get(id)
+	first := checkOne(context.Background(), s, checker, w)
+	if first.Error != nil {
+		t.Fatalf("first check: %v", first.Error)
+	}
+	if first.BelowGoal {
+		t.Error("BelowGoal fired on the FIRST 480 EUR poll against a 500 USD target; an " +
+			"unconfirmed currency mismatch must still refuse the comparison")
+	}
+
+	w, _ = s.Get(id)
+	res := checkOne(context.Background(), s, checker, w)
 	if res.Error != nil {
 		t.Fatalf("check: %v", res.Error)
 	}

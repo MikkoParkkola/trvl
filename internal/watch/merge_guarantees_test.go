@@ -89,11 +89,20 @@ func TestCurrencyChangePurgeAndAppendShareOneTransaction(t *testing.T) {
 	}
 	t.Cleanup(func() { txnHook = nil })
 
-	w, _ := s.Get(id)
-	res := checkOne(context.Background(), s, &sequencedChecker{steps: []struct {
+	// Two polls: a currency change is believed only after the second
+	// (trvl#546), and it is the CONFIRMED change whose purge and append must
+	// share one transaction. The first poll writes only a timestamp.
+	checker := &sequencedChecker{steps: []struct {
 		price    float64
 		currency string
-	}{{price: 150, currency: "EUR"}}}, w)
+	}{{price: 150, currency: "EUR"}}}
+
+	w, _ := s.Get(id)
+	if res := checkOne(context.Background(), s, checker, w); res.Error != nil {
+		t.Fatalf("first check: %v", res.Error)
+	}
+	w, _ = s.Get(id)
+	res := checkOne(context.Background(), s, checker, w)
 	if res.Error != nil {
 		t.Fatalf("check: %v", res.Error)
 	}

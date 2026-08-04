@@ -135,6 +135,10 @@ func TestCheckOneResetsScalarsOnCurrencyChange(t *testing.T) {
 		t.Fatalf("after EUR check: Currency=%q LowestPrice=%v, want EUR/50", got.Currency, got.LowestPrice)
 	}
 
+	// A currency change is believed only after two CONSECUTIVE polls
+	// agree (trvl#546). sequencedChecker repeats its last step, so this
+	// poll is the confirming one.
+	confirmCurrencyChange(t, store, checker)
 	results := CheckAll(context.Background(), store, checker)
 	if len(results) != 1 || results[0].Error != nil {
 		t.Fatalf("second check: results=%+v", results)
@@ -198,6 +202,8 @@ func TestCheckOneSkipsBelowGoalOnCurrencyChange(t *testing.T) {
 		t.Fatalf("first check: results=%+v", results)
 	}
 
+	// Two consecutive polls in the new currency before it is believed.
+	confirmCurrencyChange(t, store, checker)
 	results := CheckAll(context.Background(), store, checker)
 	if len(results) != 1 || results[0].Error != nil {
 		t.Fatalf("second check: results=%+v", results)
@@ -321,6 +327,10 @@ func TestCheckOnePurgesHistoryOnCurrencyChange(t *testing.T) {
 		t.Fatalf("after first (EUR) check: history=%+v, want 1 EUR point", hist)
 	}
 
+	// A currency change is believed only after two CONSECUTIVE polls
+	// agree (trvl#546). sequencedChecker repeats its last step, so this
+	// poll is the confirming one.
+	confirmCurrencyChange(t, store, checker)
 	results := CheckAll(context.Background(), store, checker)
 	if len(results) != 1 || results[0].Error != nil {
 		t.Fatalf("second check: results=%+v", results)
@@ -762,3 +772,18 @@ func TestCheckOneNormalizesCurrencyCaseAcrossPolls(t *testing.T) {
 // (currencyChanged) never fired, and the stale OLD-currency LowestPrice
 // survived to be compared, unconverted, against the NEW-currency price at
 // the unconditional "if w.LowestPrice == 0 || price < w.LowestPrice" update.
+
+// confirmCurrencyChange runs the extra poll a currency change now needs.
+//
+// A mismatch is believed only after two CONSECUTIVE polls agree on the new
+// currency (trvl#546, trvl#550): one odd poll is a provider gap, not a change,
+// and treating it as one wipes the watch's accumulated history. Tests written
+// against the old one-poll behaviour call this once after the first mismatched
+// poll to reach the state they were asserting about.
+//
+// It deliberately does NOT assert -- the callers do that. It exists so the
+// extra poll reads as "confirm the change" rather than an unexplained repeat.
+func confirmCurrencyChange(t *testing.T, store *Store, checker PriceChecker) []CheckResult {
+	t.Helper()
+	return CheckAll(context.Background(), store, checker)
+}

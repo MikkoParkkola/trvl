@@ -157,7 +157,7 @@ func (s *Store) Mutate(id string, apply func(*Watch)) (Watch, error) {
 //
 // TRVL.STORE.TXN.4: apply must never perform network I/O; the lock is held for
 // its whole duration.
-func (s *Store) MutateAndRecordPrice(id string, expectPollKey string, price float64, currency string, apply func(cur *Watch) (purgeHistory bool)) (Watch, bool, error) {
+func (s *Store) MutateAndRecordPrice(id string, expectPollKey string, price float64, currency string, apply func(cur *Watch) (purgeHistory, recordPoint bool)) (Watch, bool, error) {
 	var out Watch
 	applied := false
 	err := s.withTxn(func() error {
@@ -194,20 +194,28 @@ func (s *Store) MutateAndRecordPrice(id string, expectPollKey string, price floa
 			return errTxnNoop
 		}
 
-		purgeHistory := apply(&s.watches[idx])
+		purgeHistory, recordPoint := apply(&s.watches[idx])
 		out = s.watches[idx]
 
 		if purgeHistory {
 			s.purgeHistoryLocked(id)
 		}
-		s.history = append(s.history, PricePoint{
-			WatchID:   id,
-			Price:     price,
-			Currency:  currency,
-			Timestamp: time.Now(),
-		})
-		s.pruneWatchLocked(id)
-		s.pruneGlobalWatchLocked()
+		// recordPoint is false when the caller decided this quote does not
+		// belong in the series at all -- currently an unconfirmed currency
+		// mismatch, where appending would mix currencies into a history that
+		// every reader assumes is single-currency. The watch's own fields
+		// (LastCheck, the pending-currency counter) are still written, so the
+		// transaction is not a no-op and must still save.
+		if recordPoint {
+			s.history = append(s.history, PricePoint{
+				WatchID:   id,
+				Price:     price,
+				Currency:  currency,
+				Timestamp: time.Now(),
+			})
+			s.pruneWatchLocked(id)
+			s.pruneGlobalWatchLocked()
+		}
 		applied = true
 		return nil
 	})
