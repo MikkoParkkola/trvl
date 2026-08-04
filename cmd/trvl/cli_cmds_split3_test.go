@@ -617,48 +617,57 @@ func TestOutputShare_FormatSurfaceIsClosed(t *testing.T) {
 	}
 }
 
-// TRVL.SHAREFMT.3 -- the declared set and the dispatch cannot diverge.
+// TRVL.SHAREFMT.3 -- what outputShare ACCEPTS must equal what is declared.
 //
-// This is the assertion the old arrangement could not make. shareFormats used to
-// be a hand-written slice that outputShare never consulted, so the two were free
-// to disagree: appending to the slice changed no behaviour, and adding a switch
-// case added a destination with every test still green.
+// Deliberately behavioural, not structural. The obvious structural version --
+// compare shareFormats against the keys of shareSinks -- is tautological once
+// one is derived from the other: it cannot fail, and it would pass against a
+// revived `switch` sitting beside an intact map. Adversarial review (Grok,
+// 2026-08-04) called that out on the first draft of this test, as "documentation
+// dressed as a force". A test that cannot fail is worse than no test, because it
+// reads as evidence.
 //
-// Both directions are checked here, because "one source of truth" is a claim
-// about both:
+// So this drives the real entry point instead. Every declared format must be
+// accepted, and destination-shaped names that are NOT declared must be refused.
+// A contributor who adds a route without declaring it fails here.
 //
-//	dispatch -> declared: every sink appears in shareFormats, so a new
-//	destination cannot exist without showing up in the set the test above pins.
-//	declared -> dispatch: every declared format actually resolves to a sink, so
-//	the set cannot advertise a format that does not work.
-//
-// Verified by sabotage rather than assumed: adding a throwaway sink to
-// shareSinks fails TestOutputShare_FormatSurfaceIsClosed on its element-for-
-// element comparison, which is exactly the forcing function #527 needed and did
-// not have.
-func TestShareFormatsAndSinksCannotDiverge(t *testing.T) {
-	if len(shareFormats) != len(shareSinks) {
-		t.Fatalf("shareFormats has %d entries, shareSinks has %d — the declared set and the "+
-			"dispatch have diverged, which is the #542 defect returning",
-			len(shareFormats), len(shareSinks))
-	}
+// Verified by sabotage, not assumed: adding a `case "webhook"` branch ahead of
+// the map lookup fails the undeclared-name loop below.
+func TestOutputShareAcceptsExactlyWhatIsDeclared(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	const card = "**AMS -> HEL** | 10Jun-20Jun\n"
 
 	for _, format := range shareFormats {
-		if _, ok := shareSinks[format]; !ok {
-			t.Errorf("shareFormats advertises %q but no sink dispatches it", format)
+		// "clipboard" shells out to pbcopy/xclip, which the emptied PATH
+		// deliberately blocks. It is a local paste buffer, not a publish, and is
+		// exercised elsewhere.
+		if format == "clipboard" {
+			continue
+		}
+		if err := outputShare(card, format); err != nil {
+			t.Errorf("outputShare(%q) = %v, want nil -- %q is declared in shareFormats but does "+
+				"not dispatch, so the declared set advertises a format that does not work",
+				format, err, format)
 		}
 	}
 
-	for format := range shareSinks {
-		if !slices.Contains(shareFormats, format) {
-			t.Errorf("sink %q dispatches but is absent from shareFormats, so adding it would not "+
-				"have failed the surface test — a destination could ship unenumerated", format)
+	// Undeclared names, shaped like destinations someone might plausibly add.
+	// Each must be refused: reaching a sink without appearing in the declared
+	// set is the exact shape of the #527 defect.
+	for _, format := range []string{"webhook", "gist", "upload", "publish", "http", "post", "url", "link", "typo"} {
+		if err := outputShare(card, format); err == nil {
+			t.Errorf("outputShare(%q) = nil -- %q is not in shareFormats yet something delivered "+
+				"it; a destination is reachable without being declared", format, format)
 		}
 	}
+}
 
-	// shareFormats must stay sorted, or the element-for-element assertion above
-	// becomes order-dependent on Go's randomized map iteration and starts
-	// failing intermittently for a reason that has nothing to do with sharing.
+// TRVL.SHAREFMT.3b -- shareFormats must stay sorted, or the element-for-element
+// pin in TestOutputShare_FormatSurfaceIsClosed becomes order-dependent on Go's
+// randomized map iteration and starts failing intermittently for a reason that
+// has nothing to do with sharing.
+func TestShareFormatsIsSorted(t *testing.T) {
 	if !slices.IsSorted(shareFormats) {
 		t.Errorf("shareFormats = %q is not sorted; map iteration order would make the surface "+
 			"test flaky", shareFormats)
