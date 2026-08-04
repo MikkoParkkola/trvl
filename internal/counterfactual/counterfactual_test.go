@@ -107,14 +107,23 @@ func TestShiftDayCrossCurrencyMismatch(t *testing.T) {
 		t.Fatalf("cross-currency mismatch must yield no saving, got %+v", out)
 	}
 
-	// Both unlabeled -> saving still allowed (documented unknown-unknown
-	// convention: two currencyless rows are treated as compatible).
+	// Both unlabeled -> NO saving (trvl#549).
+	//
+	// This previously asserted the opposite, on a documented
+	// unknown-unknown-is-compatible convention. Two rows can be currencyless
+	// for unrelated reasons -- one provider omitting the currency on a EUR
+	// quote, another on a JPY one -- so "both blank" is not evidence they share
+	// a unit, it is the absence of evidence either way.
+	//
+	// Saving.Amount is money saved IN Currency. With no currency the number has
+	// no defined unit and cannot honestly be shown: the description rendered
+	// "save 120 " with a trailing space.
 	bothBlank := []models.DatePriceResult{
 		{Date: "2026-07-14", Price: 80},
 		{Date: "2026-07-15", Price: 200}, // current
 	}
-	if out := ShiftDay(bothBlank, "2026-07-15", 5, asOf); len(out) != 1 || out[0].Amount != 120 {
-		t.Fatalf("both-blank rows should still allow a saving, got %+v", out)
+	if out := ShiftDay(bothBlank, "2026-07-15", 5, asOf); len(out) != 0 {
+		t.Fatalf("two currencyless rows produced a saving with no unit: %+v", out)
 	}
 }
 
@@ -154,12 +163,16 @@ func TestSameDayAlternativeCrossCurrencyMismatch(t *testing.T) {
 	// SameDayAlternative did not, even though the production logic (line
 	// `fCur != headlineCur`, "" == "" is true) already takes this path --
 	// parity-only, no behavior change. Fixed as trvl#548.
+	// Both unlabeled -> NO saving (trvl#549), same reasoning as ShiftDay. It
+	// bites harder here: this input is a flight result list, which can span
+	// several providers, so two blank rows are more likely to be genuinely
+	// different currencies than in a single date grid.
 	bothBlank := []models.FlightResult{
 		{Price: 220}, // headline, no currency
 		{Price: 150}, // cheaper, no currency
 	}
-	if s := SameDayAlternative(bothBlank, 10, asOf); s == nil || s.Amount != 70 {
-		t.Fatalf("both-blank flights should still allow a saving, got %+v", s)
+	if s := SameDayAlternative(bothBlank, 10, asOf); s != nil {
+		t.Fatalf("two currencyless flights produced a saving with no unit: %+v", s)
 	}
 }
 
