@@ -1,4 +1,7 @@
 # Tracked text files allowed to exceed the default 800-line ceiling.
 # Format: path # reason: specific justification (15+ chars).
+#
+# No source file is listed here, deliberately. Every entry is a gate someone
+# decided not to meet, so the list is kept to files where the ceiling does not
+# apply in the first place rather than to code that has not been split yet.
 CHANGELOG.md # reason: append-only public release history stays root-visible for users and release tooling
-internal/watch/check.go # reason: core watch-check state machine hardened over 21 review rounds; splitting risks regressing currency/dedup/webhook logic, tracked as trvl#551
