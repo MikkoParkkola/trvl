@@ -183,6 +183,49 @@ func TestSameDayAlternativeCrossCurrencyMismatch(t *testing.T) {
 	}
 }
 
+// TRVL.549.SAMEDAY.THRESHOLD -- the blank-currency refusal must not depend on
+// the value of minDelta.
+//
+// The guards above skip mismatched candidates, so a blank headline leaves
+// `cheapest` equal to `headline` and a delta of 0. That returned nil only
+// because `0 < minDelta` holds for a positive threshold. At minDelta 0 or below
+// the function fell through and emitted Saving{Amount: 0, Currency: ""} --
+// rendering "The cheapest same-day fare (200 ) saves 0 " -- which is precisely
+// the unlabeled-money defect #549 exists to prevent, reachable through the one
+// parameter nobody thought was load-bearing for currency handling.
+//
+// Not reachable from the shipped path: the only production caller passes
+// MinDelta = 10 (pricefeed.go:29). Pinned anyway, because SameDayAlternative is
+// exported and a guarantee that holds only while a constant in another package
+// keeps its value is not a guarantee.
+//
+// Found by GPT second-opinion review; Grok had rated the same early-exit as
+// optional polish and returned SHIP without it.
+func TestSameDayBlankHeadlineRefusedAtAnyThreshold(t *testing.T) {
+	blankHeadline := []models.FlightResult{
+		{Price: 200}, // headline, no currency
+		{Price: 150}, // cheaper, no currency
+	}
+
+	for _, minDelta := range []float64{10, 1, 0, -1} {
+		if s := SameDayAlternative(blankHeadline, minDelta, asOf); s != nil {
+			t.Errorf("minDelta=%v produced %+v -- an unlabeled headline must be refused on its own "+
+				"terms, not by whether the threshold happens to catch a zero delta", minDelta, s)
+		}
+	}
+
+	// A labeled pair at the same thresholds still works, so the guard above
+	// refuses blankness rather than quietly disabling the whole function.
+	labeled := []models.FlightResult{
+		{Price: 200, Currency: "EUR"},
+		{Price: 150, Currency: "EUR"},
+	}
+	if s := SameDayAlternative(labeled, 0, asOf); s == nil || s.Amount != 50 || s.Currency != "EUR" {
+		t.Errorf("labeled pair at minDelta=0 = %+v, want a 50 EUR saving -- the fix must not "+
+			"suppress comparable fares", s)
+	}
+}
+
 func TestVsHistoryHonesty(t *testing.T) {
 	// Not confident -> no claim.
 	if VsHistory(&pricesignal.Position{Confident: false, Median: 200, Current: 150}, "EUR", asOf) != nil {

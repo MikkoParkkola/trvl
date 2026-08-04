@@ -130,6 +130,29 @@ func SameDayAlternative(flights []models.FlightResult, minDelta float64, asOf ti
 		return nil
 	}
 	headlineCur := strings.ToUpper(strings.TrimSpace(headline.Currency))
+	// An unlabeled headline cannot anchor a comparison, so refuse here rather
+	// than relying on the arithmetic below to fall out the right way.
+	//
+	// It does not always fall out the right way. Every candidate is skipped when
+	// the headline is blank, so `cheapest` stays `headline` and delta is 0 --
+	// which returns nil only because `0 < minDelta` holds for a positive
+	// threshold. With minDelta 0 or negative the function instead returned
+	// Saving{Amount: 0, Currency: ""}, rendering "The cheapest same-day fare
+	// (200 ) saves 0 ..." -- the exact unlabeled-money defect the guards above
+	// exist to prevent.
+	//
+	// The only production caller passes MinDelta = 10 (pricefeed.go:29), so this
+	// was not reachable in the shipped path. It was still wrong to leave: this
+	// function is exported, and a correctness guarantee that rests on the value
+	// of an unrelated constant in another package is one nothing enforces and no
+	// test covered.
+	//
+	// Found by GPT second-opinion review, 2026-08-04, and confirmed by probe
+	// before fixing. Grok had flagged the same early-exit as optional polish;
+	// treating it as correctness is what the second opinion added.
+	if headlineCur == "" {
+		return nil
+	}
 	cheapest := headline
 	for _, f := range flights[1:] {
 		if f.Price <= 0 || f.Price >= cheapest.Price {
