@@ -30,7 +30,9 @@ import (
 // from a plain jar would be site-derived, would legitimately survive the
 // decline, and would prove nothing about this bypass.
 func TestCachedCookiesAreRefusedAfterADecline(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	const target = "https://www.thetrainline.com/search"
 	u, err := url.Parse(target)

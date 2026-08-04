@@ -221,7 +221,9 @@ func TestBookingReadinessReasons_NilRefundability(t *testing.T) {
 
 func TestHotelPriceSignals_StoreErrorDoesNotBreakReadiness(t *testing.T) {
 	// GIVEN a temp HOME so watch.DefaultStore uses an isolated dir
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	// GIVEN a valid result
 	result := &models.HotelPriceResult{
@@ -258,7 +260,9 @@ func TestHotelPriceSignals_NilResult(t *testing.T) {
 
 func TestFlightPriceSignals_StoreErrorReturnsNil(t *testing.T) {
 	// GIVEN a temp HOME so watch.DefaultStore uses an isolated dir
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	// GIVEN a minimal successful flight result
 	result := &models.FlightSearchResult{
@@ -306,7 +310,9 @@ func TestFlightPriceSignals_NilResult(t *testing.T) {
 // TestPricePositionAttachedToHotelPayload proves that hotelPriceSignals wires
 // a price_position into the JSON payload when history is available.
 func TestPricePositionAttachedToHotelPayload(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	result := &models.HotelPriceResult{
 		Success: true,
@@ -334,7 +340,9 @@ func TestPricePositionAttachedToHotelPayload(t *testing.T) {
 // a same_day_alternative saving in the payload.
 func TestSameDayAlternativeSaving(t *testing.T) {
 	// t.Setenv requires no t.Parallel.
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	// GIVEN a flight list where the headline is pricier than an alternative
 	result := &models.FlightSearchResult{
@@ -415,7 +423,9 @@ func TestVsHistorySaving_ConfidenceFloorViaCompute(t *testing.T) {
 
 func TestSavingsAreAlwaysCallFree(t *testing.T) {
 	// t.Setenv requires no t.Parallel.
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	result := &models.FlightSearchResult{
 		Success: true,
@@ -441,7 +451,9 @@ func TestSavingsAreAlwaysCallFree(t *testing.T) {
 // TestHotelPriceSignals_AccumulatesPosition proves that after the first call
 // logs an observation the position carries the correct Current field.
 func TestHotelPriceSignals_AccumulatesPosition(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	result := &models.HotelPriceResult{
 		Success: true,

@@ -18,7 +18,9 @@ import (
 // Fail-before / pass-after: revert the ApplySharedHotelPolicy call in
 // runHotelSearch and this test fails (the adults-only property survives).
 func TestHandleSearchHotels_ExcludesAdultsOnlyForChildren(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // isolate from the operator's real prefs
+	homeDir := t.TempDir() // isolate from the operator's real prefs
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	orig := searchHotelsFunc
 	t.Cleanup(func() { searchHotelsFunc = orig })
 
@@ -62,7 +64,9 @@ func TestHandleSearchHotels_ExcludesAdultsOnlyForChildren(t *testing.T) {
 // counterpart: with no children in the party, adults-only properties are
 // bookable and must NOT be hidden on the MCP surface (matching the CLI).
 func TestHandleSearchHotels_KeepsAdultsOnlyWithoutChildren(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // isolate from the operator's real prefs
+	homeDir := t.TempDir() // isolate from the operator's real prefs
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	orig := searchHotelsFunc
 	t.Cleanup(func() { searchHotelsFunc = orig })
 

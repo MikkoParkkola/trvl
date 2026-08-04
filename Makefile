@@ -35,6 +35,7 @@ repo-hygiene:
 	scripts/ci/check-language-hygiene.sh
 	scripts/ci/check-file-size.sh
 	scripts/ci/check-release-metadata.sh
+	scripts/ci/check-home-isolation.sh
 
 lint: repo-hygiene
 	$(GO_RUN) vet ./...

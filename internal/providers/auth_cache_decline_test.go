@@ -30,7 +30,9 @@ func TestAuthCacheDiscardsBrowserSeededStateAfterADecline(t *testing.T) {
 	// invisible because a decline refused the whole file; now that the decline
 	// only withholds the browser-derived entries, a stray site-derived entry
 	// would seed the jar and fail the assertion below for the wrong reason.
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	const preflight = "https://example.test/preflight"
 
@@ -118,7 +120,9 @@ func TestAuthCacheDiscardsBrowserSeededStateAfterADecline(t *testing.T) {
 // Discarding it would punish a user for a control that says nothing about it,
 // and would turn the opt-out into a general cache-buster.
 func TestAuthCacheKeepsNonBrowserStateAfterADecline(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // same reason as the test above
+	declineHome := t.TempDir() // same reason as the test above
+	t.Setenv("HOME", declineHome)
+	t.Setenv("USERPROFILE", declineHome)
 	const preflight = "https://example.test/preflight"
 
 	// A vault, but one no browser ever touched: cookies arrived the ordinary

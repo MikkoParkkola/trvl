@@ -6,7 +6,9 @@ import (
 )
 
 func TestSearchResultToolsAdvertiseMCPAppResource(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	s := NewServer()
 
 	for _, name := range []string{"search_accommodations", "search_hotels_with_details", "search_hotels", "search_flights"} {
@@ -28,7 +30,9 @@ func TestSearchResultToolsAdvertiseMCPAppResource(t *testing.T) {
 }
 
 func TestSearchResultsAppResourceIsReadable(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	s := NewServer()
 
 	result, err := s.readResource(trvlSearchResultsAppURI)
