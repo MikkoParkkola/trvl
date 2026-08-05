@@ -51,21 +51,28 @@ func TestProcessAliveTreatsUnknownOwnerAsLive(t *testing.T) {
 	}
 }
 
-// TRVL.WINORPHAN.4 -- PID reuse.
+// TRVL.WINORPHAN.4 -- PID reuse is NOT detected, and this test pins that as a
+// deliberate limit rather than leaving it as a silent gap.
 //
-// The strongest assertion here, and the one that needs no fixture: this process
-// is alive and holds its PID, but it started long after 1970. A temp file
-// stamped with that modification time cannot have been written by it, so the
-// real owner is gone even though the PID resolves.
+// The first attempt compared the process creation time against the file's
+// modification time: a process that started after the file was written cannot be
+// its writer. windows-latest rejected it. TestCleanRetainsLiveOwner creates a
+// temp file owned by THIS process, backdates it an hour, and requires it to be
+// retained -- and under that comparison it was deleted instead. A live process's
+// file removed underneath it is the one failure this function must never have.
 //
-// Against the old stub this returns true. Against a fix that checks liveness but
-// not timing it also returns true. Only the creation-time comparison makes it
-// false, so this pins the specific behaviour rather than the general area.
-func TestProcessAliveDetectsPIDReuseAgainstAnOlderFile(t *testing.T) {
+// The two cases are indistinguishable through a modification time: "old file,
+// live owner" and "reused PID" are both a live PID against a file older than the
+// process, and mtime is not evidence of when the file was written.
+//
+// So this asserts the SAFE behaviour, and will fail if someone reintroduces the
+// comparison without also solving the ambiguity.
+func TestProcessAliveKeepsAnOldFileOwnedByALiveProcess(t *testing.T) {
 	ancient := time.Unix(0, 0)
-	if processAlive(os.Getpid(), ancient) {
-		t.Error("a live PID protected a temp file older than the process itself; after a reboot " +
-			"every reused PID would keep its predecessor's orphans forever")
+	if !processAlive(os.Getpid(), ancient) {
+		t.Error("a file older than this process was treated as PID reuse and its owner reported " +
+			"gone; an old file with a live owner must be retained (TRVL.TMP.5), and mtime cannot " +
+			"distinguish that case from a reused PID")
 	}
 }
 

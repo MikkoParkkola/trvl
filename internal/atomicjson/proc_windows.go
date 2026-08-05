@@ -69,25 +69,41 @@ func processAlive(pid int, fileModTime time.Time) bool {
 		return false
 	}
 
-	// TRVL.WINORPHAN.4: PID reuse. A live process holding the owning PID is not
-	// necessarily the process that wrote this file -- Windows reassigns PIDs, and
-	// across a reboot it certainly has. If the process started AFTER the file was
-	// last written, it cannot be the writer, so the real owner is gone.
+	// TRVL.WINORPHAN.4 (PID reuse) is NOT met here, deliberately, and the reason
+	// is worth the space because the obvious fix is wrong.
 	//
-	// Ambiguity still protects the file: an unreadable creation time, or a zero
-	// fileModTime, falls through to live.
-	if !fileModTime.IsZero() {
-		var creation, exit, kernel, user windows.Filetime
-		if err := windows.GetProcessTimes(h, &creation, &exit, &kernel, &user); err == nil {
-			started := time.Unix(0, creation.Nanoseconds())
-			// A second of slack: file timestamps and process creation times come
-			// from different clocks at different granularity, and the failure this
-			// guards against is deleting a live writer's file. Err toward keeping.
-			if started.After(fileModTime.Add(time.Second)) {
-				return false
-			}
-		}
-	}
+	// The attempt was: GetProcessTimes gives the process creation time, so a
+	// process that started after the file was last written cannot be its writer,
+	// and a live PID that post-dates the file means the real owner is gone.
+	//
+	// windows-latest rejected it, and correctly. TestCleanRetainsLiveOwner
+	// creates a temp file owned by THIS process and backdates its modification
+	// time by an hour, asserting that an old file with a live owner is retained
+	// (TRVL.TMP.5). Under the creation-time comparison that file read as
+	// PID-reused and was deleted -- a live process's temp file removed underneath
+	// it, which is the one direction this function must never fail in.
+	//
+	// The flaw is structural rather than a detail. Through a modification time,
+	// "an old file whose owner is still running" and "a reused PID" are
+	// indistinguishable: both are a live PID against a file older than the
+	// process. And mtime is not evidence of when the file was written -- anything
+	// can change it, which is exactly what that test does.
+	//
+	// Boot time does not rescue it either. A file whose mtime predates the last
+	// boot cannot belong to any live PID, but the mtime is still the untrusted
+	// input, and a CI runner that booted recently would misjudge the same
+	// fixture.
+	//
+	// So a live PID means retain, full stop. Detecting PID reuse needs a handle
+	// or identifier that ties the file to the process that made it -- recorded at
+	// write time rather than inferred afterwards -- which is a change to the temp
+	// file format, not to this function. Left to #568 to decide with that
+	// framing.
+	//
+	// fileModTime is accepted and unused on both platforms for now. Kept in the
+	// signature so the parameter and this reasoning stay together; removing it
+	// would delete the record of why the obvious approach does not work.
+	_ = fileModTime
 
 	return true
 }
