@@ -23,6 +23,17 @@ jobs:
         run: scripts/ci/check-file-size.sh
       - name: Check release metadata
         run: scripts/ci/check-release-metadata.sh
+      # These three were written as merge guards and wired only into the local
+      # `make repo-hygiene`, which no workflow invokes -- so they gated nothing
+      # on the merge path while being described as CI guards (trvl#531,
+      # 2026-08-06). Each is sabotage-verified; that verified they WORK, never
+      # that they RUN. A guard that does not run is not a weak guard, it is a
+      # comment. Listed individually rather than via `make` so that adding a
+      # script to the Makefile can never again silently mean "and it runs in CI".
+      - name: Check log URL redaction
+        run: scripts/ci/check-log-url-redaction.sh
+      - name: Check home-directory isolation
+        run: scripts/ci/check-home-isolation.sh
 
   test:
     permissions:
