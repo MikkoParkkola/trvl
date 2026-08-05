@@ -117,6 +117,13 @@ func Collect(ctx context.Context, cfg Config) (Report, error) {
 	if err := os.MkdirAll(cfg.MetricsDir, 0o700); err != nil {
 		return Report{}, err
 	}
+	// 0755/0644 here and at the write below are CORRECT, not an oversight
+	// (trvl#532 medium triage). DashboardPath defaults to
+	// "docs/internal/distribution-metrics.md" -- a file in the repository that
+	// is meant to be committed and read by anyone who has the checkout. This is
+	// a maintainer tool writing project documentation, not user data under
+	// $HOME, so tightening it to 0600 would make a shared artefact unreadable
+	// to the humans it exists for.
 	if err := os.MkdirAll(filepath.Dir(cfg.DashboardPath), 0o755); err != nil {
 		return Report{}, err
 	}

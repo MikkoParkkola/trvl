@@ -346,12 +346,12 @@ func wizzPersistVersion(host, v string) {
 	if !ok {
 		return
 	}
-	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
 	b, err := json.Marshal(wizzVersionCache{Version: v, DiscoveredAt: time.Now().UTC().Format(time.RFC3339)})
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(path, b, 0o644)
+	_ = os.WriteFile(path, b, 0o600)
 }
 
 // wizzMaybeLoadCache loads a previously-healed version once per process, so a
