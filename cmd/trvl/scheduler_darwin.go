@@ -62,6 +62,13 @@ func installScheduler() error {
 		return err
 	}
 	plist := renderLaunchdPlist(resolveBinaryPath())
+	// 0755/0644 kept for the LaunchAgents plist (trvl#532 medium triage). Two
+	// reasons, and the second is why this is not merely risk-aversion: the file
+	// carries a binary path and a schedule, no credentials and no journey data,
+	// so there is nothing here worth hiding from another account. And 0644 is
+	// the platform convention for ~/Library/LaunchAgents; tightening it risks
+	// launchd declining to load the job, which would silently stop the
+	// scheduler rather than fail loudly.
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}

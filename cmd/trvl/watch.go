@@ -596,6 +596,12 @@ earliest creation date of the group so its history is not shortened.`,
 					return err
 				}
 				fmt.Println(preview.Summary())
+				// The retention picture, printed whether or not anything would
+				// change. The three limits shipped with no usage data behind
+				// them, and this is where the data that would justify changing
+				// one becomes visible (trvl#514).
+				fmt.Println()
+				fmt.Print(store.RetentionStats().Summary())
 				if preview.Changed() {
 					fmt.Println("\nRe-run without --dry-run to apply.")
 				}
@@ -607,6 +613,8 @@ earliest creation date of the group so its history is not shortened.`,
 				return err
 			}
 			fmt.Println(report.Summary())
+			fmt.Println()
+			fmt.Print(store.RetentionStats().Summary())
 			return nil
 		},
 	}

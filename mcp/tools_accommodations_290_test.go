@@ -44,7 +44,9 @@ func TestAccommodationCandidateLimitBounds(t *testing.T) {
 // the capped number of room-level lookups. This is the rate-limit-safety
 // guarantee in #290's title.
 func TestHandleSearchAccommodationsCapsRoomLookupCallCount(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	origSearchHotels := searchHotelsFunc
 	origRooms := getRoomAvailabilityWithOptsFunc

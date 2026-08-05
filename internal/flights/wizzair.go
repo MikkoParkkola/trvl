@@ -119,7 +119,16 @@ var ErrWizzRejected = errors.New("wizzair declined the request (validationCodes)
 // success to anything. Whether it survives a datacenter IP is unestablished: it
 // is CloudFront-fronted like the timetable endpoint, and only a CI run settles
 // that.
-const wizzDefaultVersion = "29.8.0"
+// Bumped 29.8.0 -> 29.10.0 on 2026-08-04 (trvl#506). 29.8.0 had rotated away
+// and was returning 404 on the oracle, so every Wizz search on main was failing
+// at the time of the bump -- this is a live-breakage fix, not housekeeping.
+//
+// 29.10.0 rather than the 29.9.0 the sentinel reports: the walk stops at the
+// first live candidate, and probing found BOTH 29.9.0 and 29.10.0 live (405 on
+// GET, 200 on POST to /Api/asset/culture). Taking the newer one buys more time
+// before the next rotation. 29.10.1, 29.11.0 and 29.12.0 were absent, so
+// 29.10.0 is the newest that exists rather than merely the first that answers.
+const wizzDefaultVersion = "29.10.0"
 
 // wizzVersion is the active API version. Overridable in tests; the env var
 // WIZZAIR_API_VERSION takes precedence at request time via wizzResolvedVersion.

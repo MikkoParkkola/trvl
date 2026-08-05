@@ -445,7 +445,7 @@ func TestScheduler_AlwaysChecksRouteWatches(t *testing.T) {
 func TestIsActive_RouteWatch(t *testing.T) {
 	t.Parallel()
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN"}
-	if !isActive(w, "2026-07-01") {
+	if !isActive(w, "2026-07-01", defaultRetention().RouteTTL) {
 		t.Error("route watch should always be active")
 	}
 }
@@ -453,7 +453,7 @@ func TestIsActive_RouteWatch(t *testing.T) {
 func TestIsActive_FutureDepartDate(t *testing.T) {
 	t.Parallel()
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartDate: "2099-01-01"}
-	if !isActive(w, "2026-07-01") {
+	if !isActive(w, "2026-07-01", defaultRetention().RouteTTL) {
 		t.Error("future depart date should be active")
 	}
 }
@@ -461,7 +461,7 @@ func TestIsActive_FutureDepartDate(t *testing.T) {
 func TestIsActive_PastDepartDate(t *testing.T) {
 	t.Parallel()
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartDate: "2000-01-01"}
-	if isActive(w, "2026-07-01") {
+	if isActive(w, "2026-07-01", defaultRetention().RouteTTL) {
 		t.Error("past depart date should not be active")
 	}
 }
@@ -470,7 +470,7 @@ func TestIsActive_TodayDepartDate(t *testing.T) {
 	t.Parallel()
 	today := time.Now().Format("2006-01-02")
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartDate: today}
-	if !isActive(w, today) {
+	if !isActive(w, today, defaultRetention().RouteTTL) {
 		t.Error("today's depart date should be active")
 	}
 }
@@ -478,7 +478,7 @@ func TestIsActive_TodayDepartDate(t *testing.T) {
 func TestIsActive_FutureDateRange(t *testing.T) {
 	t.Parallel()
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartFrom: "2099-01-01", DepartTo: "2099-01-15"}
-	if !isActive(w, "2026-07-01") {
+	if !isActive(w, "2026-07-01", defaultRetention().RouteTTL) {
 		t.Error("future date range should be active")
 	}
 }
@@ -486,7 +486,7 @@ func TestIsActive_FutureDateRange(t *testing.T) {
 func TestIsActive_PastDateRange(t *testing.T) {
 	t.Parallel()
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartFrom: "2000-01-01", DepartTo: "2000-01-15"}
-	if isActive(w, "2026-07-01") {
+	if isActive(w, "2026-07-01", defaultRetention().RouteTTL) {
 		t.Error("past date range should not be active")
 	}
 }
@@ -495,7 +495,7 @@ func TestIsActive_DateRangeEndToday(t *testing.T) {
 	t.Parallel()
 	today := time.Now().Format("2006-01-02")
 	w := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", DepartFrom: "2000-01-01", DepartTo: today}
-	if !isActive(w, today) {
+	if !isActive(w, today, defaultRetention().RouteTTL) {
 		t.Error("date range ending today should be active")
 	}
 }

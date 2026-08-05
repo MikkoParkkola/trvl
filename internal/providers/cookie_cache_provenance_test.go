@@ -40,7 +40,9 @@ func writeCookieCacheFixture(t *testing.T, host, body string) {
 // coincide because Go zeroes the field, and a future encoding change could
 // separate them.
 func TestLegacyCacheEntriesCountAsBrowserDerived(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	t.Setenv(consent.CookiesEnv, "1")
 
 	u, err := url.Parse(provenanceTestTarget)
@@ -70,7 +72,9 @@ func TestLegacyCacheEntriesCountAsBrowserDerived(t *testing.T) {
 // helper, because a helper that classifies correctly while the load path
 // ignores it would pass a helper test.
 func TestDeclineKeepsSiteDerivedCookies(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	t.Setenv(consent.CookiesEnv, "1")
 
 	u, err := url.Parse(provenanceTestTarget)
@@ -126,7 +130,9 @@ func TestSaveRecordsProvenance(t *testing.T) {
 	}
 
 	t.Run("browser seeded vault", func(t *testing.T) {
-		t.Setenv("HOME", t.TempDir())
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+		t.Setenv("USERPROFILE", homeDir)
 		v := newCookieVault()
 		if v == nil {
 			t.Fatal("building the vault")
@@ -144,7 +150,9 @@ func TestSaveRecordsProvenance(t *testing.T) {
 		// The headless tier-2 path saves from a plain jar filled by a fresh
 		// profile: those cookies came from the site, never from the user's own
 		// browser store, and a decline of browser reads must not drop them.
-		t.Setenv("HOME", t.TempDir())
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+		t.Setenv("USERPROFILE", homeDir)
 		jar, err := cookiejar.New(nil)
 		if err != nil {
 			t.Fatalf("building a jar: %v", err)
@@ -161,7 +169,9 @@ func TestSaveRecordsProvenance(t *testing.T) {
 		// cache into a provider client's vault has to leave the vault
 		// unmarked, or the next save would relabel those cookies browser and
 		// the following opt-out would drop them for good.
-		t.Setenv("HOME", t.TempDir())
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+		t.Setenv("USERPROFILE", homeDir)
 		saved := time.Now().Format(time.RFC3339Nano)
 		writeCookieCacheFixture(t, u.Host, fmt.Sprintf(
 			`[{"name":"waf","value":"issued-by-the-site","domain":"","path":"","expires":"0001-01-01T00:00:00Z","secure":false,"http_only":false,"saved_at":%q,"provenance":"site"}]`,

@@ -52,7 +52,9 @@ func TestTier1Client_Get_LiveTLS(t *testing.T) {
 }
 
 func TestTier1Client_SeedCookies_FromCache(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Echo-Cookie", r.Header.Get("Cookie"))
@@ -102,7 +104,9 @@ func TestTier1Client_SeedCookies_FromCache(t *testing.T) {
 }
 
 func TestTier1Client_SeedCookies_NoSourceReturnsZero(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	c, err := NewTier1Client()
 	if err != nil {
 		t.Fatalf("NewTier1Client: %v", err)

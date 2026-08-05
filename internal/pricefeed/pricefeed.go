@@ -10,6 +10,7 @@
 package pricefeed
 
 import (
+	"strings"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/booking"
@@ -57,9 +58,23 @@ func Flight(origin, dest, date string, result *models.FlightSearchResult, now ti
 	// Price-position + observation logging (watch store; independent best-effort).
 	if store, err := watch.DefaultStore(); err == nil && store.Load() == nil {
 		_ = obslog.FlightSearch(store, origin, dest, date, result)
-		if cheapestPrice > 0 {
+		// A blank currency yields no position at all (trvl#570). RoutePrices
+		// exact-matches its argument since #564, so an empty one selects every
+		// currencyless observation on the route -- and those can be different
+		// real currencies, one provider omitting the label on a EUR quote and
+		// another on a JPY one. A median over that pool is computed across
+		// incomparable numbers, and Position carries a buy/wait Verdict, so the
+		// result is an active recommendation derived from prices that may not
+		// share a unit.
+		//
+		// Refusing rather than degrading, for the same reason #549 refuses a
+		// blank-currency saving: a missing signal is recoverable, a confidently
+		// wrong one is not. This one has no visible tell either -- the blank
+		// saving at least rendered a conspicuous double space where the currency
+		// belonged, whereas a position renders normally and reads as trustworthy.
+		if cur := strings.ToUpper(strings.TrimSpace(cheapestCurrency)); cheapestPrice > 0 && cur != "" {
 			key := watch.RouteKey("flight", origin, dest, date)
-			p := pricesignal.Compute(store.RoutePrices(key, cheapestCurrency), cheapestPrice, 0)
+			p := pricesignal.Compute(store.RoutePrices(key, cur), cheapestPrice, 0)
 			out.Position = &p
 		}
 	}
@@ -123,8 +138,17 @@ func HotelPosition(hotelID, checkIn string, result *models.HotelPriceResult) *pr
 	if cheapest.Price <= 0 {
 		return nil
 	}
+	// TRVL.POSBLANK.4: HotelPosition has the same shape as the flight path and
+	// is affected identically, so it is fixed here rather than recorded as
+	// unaffected. A blank provider currency selects the currencyless
+	// observations for this hotel, which can be different real currencies, and
+	// the resulting median would ship as a buy/wait verdict.
+	cur := strings.ToUpper(strings.TrimSpace(cheapest.Currency))
+	if cur == "" {
+		return nil
+	}
 	key := watch.RouteKey("hotel", hotelID, "", checkIn)
-	p := pricesignal.Compute(store.RoutePrices(key, cheapest.Currency), cheapest.Price, 0)
+	p := pricesignal.Compute(store.RoutePrices(key, cur), cheapest.Price, 0)
 	return &p
 }
 
@@ -159,6 +183,29 @@ func HotelPricesReadiness(hotelID string, providers []models.ProviderPrice) book
 		in.Verified = booking.True()
 	case models.PriceConfidenceUnverified:
 		in.Verified = booking.False()
+	}
+	// Refundability is no longer unobtainable on this path (trvl#535). The
+	// seller's cancellation terms were always present upstream and were being
+	// dropped when the per-seller list was built; they are now carried through,
+	// so the ceiling this function used to declare is lifted for any result that
+	// actually carries them.
+	//
+	// The declaration stays for results that do NOT: a hotel-price response
+	// where no seller states its terms still cannot reach "ready", and saying so
+	// is what lets a caller distinguish "this path cannot do better" from a
+	// finding about the property. That distinction is the whole reason the
+	// ceiling was declared rather than left implicit -- an external tester saw
+	// Caution on six properties and could not tell which he was looking at.
+	refundabilityKnown := false
+	for _, p := range providers {
+		if p.FreeCancellation != nil || p.FreeCancellationUntil != "" {
+			refundabilityKnown = true
+			break
+		}
+	}
+	if refundabilityKnown {
+		in.RefundabilityKnown = booking.True()
+		return booking.Evaluate(in)
 	}
 	return booking.EvaluateWith(in, booking.Availability{NoRefundability: true})
 }

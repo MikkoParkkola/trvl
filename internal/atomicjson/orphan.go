@@ -91,7 +91,7 @@ func FindOrphans(dir string) ([]Orphan, error) {
 			Size:      info.Size(),
 			ModTime:   info.ModTime(),
 			PID:       pid,
-			OwnerLive: pid > 0 && processAlive(pid),
+			OwnerLive: pid > 0 && processAlive(pid, info.ModTime()),
 		})
 	}
 	return orphans, nil

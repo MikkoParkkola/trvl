@@ -57,6 +57,12 @@ type Store struct {
 	dir     string
 	watches []Watch
 	history []PricePoint
+
+	// retention holds this store's eviction limits. Zero-valued until Load
+	// reads them, which is deliberate: an invalid override must stop the store
+	// from loading rather than be discovered later during an eviction
+	// (trvl#514, TRVL.RETENTION.4).
+	retention retentionConfig
 }
 
 // NewStore creates a store rooted at the given directory (typically ~/.trvl/).
@@ -91,6 +97,15 @@ func (s *Store) ensureDir() error {
 func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Retention overrides are validated HERE, at the point every consumer
+	// already calls and already checks for an error. A bad value therefore
+	// refuses to load the store instead of being silently ignored or clamped
+	// into something the operator did not ask for (trvl#514).
+	cfg, err := retentionFromEnv()
+	if err != nil {
+		return fmt.Errorf("watch retention config: %w", err)
+	}
+	s.retention = cfg
 	return s.loadLocked()
 }
 
@@ -540,7 +555,7 @@ func (s *Store) RecordPrice(watchID string, price float64, currency string) erro
 func (s *Store) pruneWatchLocked(watchID string) {
 	s.evictOldestLocked(
 		func(p PricePoint) bool { return p.WatchID == watchID },
-		maxObservationsPerWatch,
+		s.retentionOrDefault().MaxPointsPerWatch,
 	)
 }
 
@@ -551,7 +566,7 @@ func (s *Store) pruneWatchLocked(watchID string) {
 func (s *Store) pruneGlobalWatchLocked() {
 	s.evictOldestLocked(
 		func(p PricePoint) bool { return p.WatchID != "" },
-		maxWatchObservations,
+		s.retentionOrDefault().MaxPointsTotal,
 	)
 }
 
