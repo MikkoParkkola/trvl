@@ -170,6 +170,23 @@ type ProviderPrice struct {
 	// pre-tax figure, meaning taxes/fees will be added at checkout and the
 	// quoted price will grow. Set only when both figures are known. See #171.
 	TaxAddedAtCheckout bool `json:"tax_added_at_checkout,omitempty"`
+	// FreeCancellation reports whether this seller's rate is refundable, and is
+	// nil when the seller said nothing. Three states, not two: refundable,
+	// stated as non-refundable, and UNKNOWN (trvl#535, TRVL.TRUST.4).
+	//
+	// Nil rather than false for unknown, because the upstream flag is a positive
+	// badge that is simply absent when there is no free-cancellation offer. A
+	// plain bool would render that absence as "not refundable", which is a claim
+	// the source never made -- and the whole of this ticket's lineage is about
+	// not presenting a guess as a fact.
+	//
+	// So this is only ever set to true from an explicit upstream signal. It is
+	// never inferred from price, brand or rate name.
+	FreeCancellation *bool `json:"free_cancellation,omitempty"`
+	// FreeCancellationUntil is the deadline the seller stated, when it gave one.
+	// Free-form as received; trvl does not parse or re-render it, because a
+	// misparsed cancellation deadline is worse than an unparsed one.
+	FreeCancellationUntil string `json:"free_cancellation_until,omitempty"`
 }
 
 // HotelPriceResult is the top-level response for a hotel price lookup.
