@@ -415,10 +415,10 @@ func TestRouteWatchExpiresAfterTTL(t *testing.T) {
 	stale := Watch{Type: "flight", Origin: "HEL", Destination: "BCN", RenewedAt: time.Now().Add(-routeWatchTTL - time.Hour)}
 	today := time.Now().Format("2006-01-02")
 
-	if !isActive(fresh, today) {
+	if !isActive(fresh, today, defaultRetention().RouteTTL) {
 		t.Error("a recently renewed route watch must stay active")
 	}
-	if isActive(stale, today) {
+	if isActive(stale, today, defaultRetention().RouteTTL) {
 		t.Errorf("a route watch untouched for over %v must expire", routeWatchTTL)
 	}
 }
@@ -432,14 +432,14 @@ func TestRewatchRenewsRouteWatch(t *testing.T) {
 	// Age it past the TTL.
 	s.watches[0].RenewedAt = time.Now().Add(-routeWatchTTL - time.Hour)
 	today := time.Now().Format("2006-01-02")
-	if isActive(s.watches[0], today) {
+	if isActive(s.watches[0], today, defaultRetention().RouteTTL) {
 		t.Fatal("precondition: aged watch should be inactive")
 	}
 
 	if _, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"}); err != nil {
 		t.Fatalf("re-add: %v", err)
 	}
-	if !isActive(s.watches[0], today) {
+	if !isActive(s.watches[0], today, defaultRetention().RouteTTL) {
 		t.Error("re-watching must renew an expired route watch")
 	}
 }
@@ -453,14 +453,14 @@ func TestDatedWatchExpiryIsUnchangedByRouteTTL(t *testing.T) {
 	// Ancient renewal, but the trip is still ahead: must stay active.
 	upcoming := Watch{Type: "flight", Origin: "HEL", Destination: "BCN",
 		DepartDate: future, RenewedAt: time.Now().Add(-routeWatchTTL - time.Hour)}
-	if !isActive(upcoming, today) {
+	if !isActive(upcoming, today, defaultRetention().RouteTTL) {
 		t.Error("an upcoming dated watch must not be expired by the route TTL")
 	}
 
 	// Renewed today, but the trip has been and gone: must be inactive.
 	departed := Watch{Type: "flight", Origin: "HEL", Destination: "BCN",
 		DepartDate: past, RenewedAt: time.Now()}
-	if isActive(departed, today) {
+	if isActive(departed, today, defaultRetention().RouteTTL) {
 		t.Error("a past dated watch must stay expired regardless of renewal")
 	}
 }
@@ -487,7 +487,7 @@ func TestLoadGrantsLegacyWatchesAFreshTTL(t *testing.T) {
 	if _, err := fresh.Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	if !isActive(fresh.List()[0], time.Now().Format("2006-01-02")) {
+	if !isActive(fresh.List()[0], time.Now().Format("2006-01-02"), defaultRetention().RouteTTL) {
 		t.Error("migration mass-expired a legacy route watch instead of granting a fresh TTL")
 	}
 }

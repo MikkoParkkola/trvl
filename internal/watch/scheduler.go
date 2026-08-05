@@ -363,7 +363,7 @@ func activeWatches(watches []Watch) []Watch {
 
 	var active []Watch
 	for _, w := range watches {
-		if isActive(w, today) {
+		if isActive(w, today, effectiveRetention().RouteTTL) {
 			active = append(active, w)
 		}
 	}
@@ -371,7 +371,11 @@ func activeWatches(watches []Watch) []Watch {
 }
 
 // isActive returns true if the watch should still be checked.
-func isActive(w Watch, today string) bool {
+// routeTTL is passed rather than read from a package constant so an operator
+// override reaches this decision too (trvl#514). A configurable retention
+// setting that the eviction path honoured and the activity check ignored would
+// be a setting in name only.
+func isActive(w Watch, today string, routeTTL time.Duration) bool {
 	// Route watches have no travel date to expire against, so they age out on
 	// renewal instead: created or re-watched within routeWatchTTL. Without this
 	// they were active forever and accumulated indefinitely.
@@ -383,7 +387,7 @@ func isActive(w Watch, today string) bool {
 		if renewed.IsZero() {
 			return true // no timestamps at all: do not silently drop it
 		}
-		return time.Since(renewed) < routeWatchTTL
+		return time.Since(renewed) < routeTTL
 	}
 
 	// Date-range watches: active if the range end is today or later.
@@ -416,7 +420,7 @@ func ActiveWatches(watches []Watch) []Watch {
 // an expired watch otherwise renders identically to a healthy one while no price
 // is ever fetched for it again.
 func IsActiveNow(w Watch) bool {
-	return isActive(w, time.Now().Format("2006-01-02"))
+	return isActive(w, time.Now().Format("2006-01-02"), effectiveRetention().RouteTTL)
 }
 
 // orphanWarnBytes is the total orphaned-temp size that earns a warning. One
