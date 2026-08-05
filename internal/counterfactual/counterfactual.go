@@ -71,19 +71,28 @@ func ShiftDay(grid []models.DatePriceResult, currentDate string, minDelta float6
 			continue
 		}
 		cur := strings.ToUpper(strings.TrimSpace(d.Currency))
-		// Round 24's guard here only rejected a KNOWN mismatch (both sides
-		// labeled and different), so an empty-currency row still slipped
-		// through unchecked and got compared by raw magnitude against the
-		// reference's labeled currency -- the exact fabricated-saving bug
-		// class round 24 meant to close, just reachable via the
-		// empty-string escape hatch. Round 25 requires exact equality
-		// after normalization instead: both blank is treated as
-		// compatible (matches the pre-existing unknown-unknown display
-		// convention), one blank and one labeled is now correctly
-		// rejected, and any known mismatch is still rejected. Found
-		// independently by both GPT and Grok second-opinion review,
-		// 2026-07-31 (round 25).
-		if cur != currency {
+		// Round 24 rejected only a KNOWN mismatch (both sides labeled and
+		// different), so an empty-currency row slipped through and got compared
+		// by raw magnitude against the reference's labeled currency -- the exact
+		// fabricated-saving bug class round 24 meant to close, reachable via the
+		// empty-string escape hatch. Round 25 required exact equality after
+		// normalization; round 26 (trvl#549) also rejects BOTH blank, which
+		// round 25 had treated as compatible.
+		//
+		// Two rows can be currencyless for unrelated reasons -- one provider
+		// omitting the currency on a EUR quote, another on a JPY one -- so "both
+		// blank" is not evidence they share a unit; it is the absence of evidence
+		// either way.
+		//
+		// Saving.Amount is documented as money saved IN Currency. With no
+		// currency the number has no defined unit and cannot honestly be shown:
+		// the description rendered "save 123 " with a trailing space. Refusing
+		// costs the rare genuinely-comparable pair a signal that could not have
+		// been displayed anyway.
+		//
+		// The round-24 hatch was found independently by both GPT and Grok
+		// second-opinion review (2026-07-31, round 25).
+		if cur == "" || cur != currency {
 			continue
 		}
 		delta := current - d.Price
@@ -121,20 +130,49 @@ func SameDayAlternative(flights []models.FlightResult, minDelta float64, asOf ti
 		return nil
 	}
 	headlineCur := strings.ToUpper(strings.TrimSpace(headline.Currency))
+	// An unlabeled headline cannot anchor a comparison, so refuse here rather
+	// than relying on the arithmetic below to fall out the right way.
+	//
+	// It does not always fall out the right way. Every candidate is skipped when
+	// the headline is blank, so `cheapest` stays `headline` and delta is 0 --
+	// which returns nil only because `0 < minDelta` holds for a positive
+	// threshold. With minDelta 0 or negative the function instead returned
+	// Saving{Amount: 0, Currency: ""}, rendering "The cheapest same-day fare
+	// (200 ) saves 0 ..." -- the exact unlabeled-money defect the guards above
+	// exist to prevent.
+	//
+	// The only production caller passes MinDelta = 10 (pricefeed.go:29), so this
+	// was not reachable in the shipped path. It was still wrong to leave: this
+	// function is exported, and a correctness guarantee that rests on the value
+	// of an unrelated constant in another package is one nothing enforces and no
+	// test covered.
+	//
+	// Found by GPT second-opinion review, 2026-08-04, and confirmed by probe
+	// before fixing. Grok had flagged the same early-exit as optional polish;
+	// treating it as correctness is what the second opinion added.
+	if headlineCur == "" {
+		return nil
+	}
 	cheapest := headline
 	for _, f := range flights[1:] {
 		if f.Price <= 0 || f.Price >= cheapest.Price {
 			continue
 		}
-		// Round 25: the round-24 guard below had the same empty-currency
-		// escape hatch as ShiftDay's -- an unlabeled candidate fare could
-		// still win against a labeled headline by raw magnitude. Require
-		// exact equality after normalization (both blank is compatible,
-		// one blank one labeled is rejected, known mismatch is rejected).
-		// Found independently by both GPT and Grok second-opinion review,
-		// 2026-07-31 (round 25).
+		// Round 25 closed an empty-currency escape hatch here: an unlabeled
+		// candidate fare could win against a labeled headline on raw magnitude.
+		// It required exact equality after normalization, but still treated two
+		// blanks as compatible.
+		//
+		// Round 26 (trvl#549) rejects that case too: an unknown currency is not
+		// a match for another unknown one. Same reasoning as ShiftDay above, and
+		// it bites harder here -- this input is a flight result list, which can
+		// span several providers, so two blank rows are more likely to be
+		// genuinely different currencies than in a single date grid.
+		//
+		// The escape hatch was found independently by both GPT and Grok
+		// second-opinion review (2026-07-31, round 25).
 		fCur := strings.ToUpper(strings.TrimSpace(f.Currency))
-		if fCur != headlineCur {
+		if fCur == "" || fCur != headlineCur {
 			continue
 		}
 		cheapest = f
@@ -168,15 +206,39 @@ func VsHistory(pos *pricesignal.Position, currency string, asOf time.Time) *Savi
 	if pos == nil || !pos.Confident || pos.Median <= 0 {
 		return nil
 	}
+	// Round 26 (trvl#549), third emission site. ShiftDay and SameDayAlternative
+	// were fixed to refuse a blank currency; this one was missed, and it is
+	// reachable on the live path: pricefeed.Flight passes cheapestFlight's raw
+	// f.Currency (pricefeed.go:55,71), which is empty whenever the cheapest
+	// provider omits the field.
+	//
+	// Two independent reasons to refuse, not one:
+	//
+	//  1. The emitted Amount has no unit. The description rendered "is 120
+	//     below this route's typical" with a double space where the currency
+	//     belongs -- the same fabricated-money defect as the other two sites.
+	//  2. The median it is derived from is itself untrustworthy. The caller
+	//     builds the series with RoutePrices(key, "") which, since trvl#564,
+	//     exact-matches blank -- so the series pools every currencyless
+	//     observation on the route, and those can be different real currencies.
+	//     The percentile is computed across incomparable numbers.
+	//
+	// Normalizing here also closes the round-25 casing inconsistency: this site
+	// emitted the caller's raw string, so "eur" was returned lowercase while the
+	// other two sites always emit uppercase.
+	cur := strings.ToUpper(strings.TrimSpace(currency))
+	if cur == "" {
+		return nil
+	}
 	delta := pos.Median - pos.Current
 	if delta <= 0 {
 		return nil
 	}
 	return &Saving{
 		Kind:        KindVsHistory,
-		Description: fmt.Sprintf("Current price is %.0f %s below this route's typical (median %.0f over %d obs)", delta, currency, pos.Median, pos.Observations),
+		Description: fmt.Sprintf("Current price is %.0f %s below this route's typical (median %.0f over %d obs)", delta, cur, pos.Median, pos.Observations),
 		Amount:      delta,
-		Currency:    currency,
+		Currency:    cur,
 		AsOf:        asOf,
 		CallFree:    true,
 	}

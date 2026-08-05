@@ -561,9 +561,17 @@ func TestUpgradeCmd_DefaultRunV24(t *testing.T) {
 // until someone edits the expectation and states what they added. That is the
 // seam the removed gist upload slipped through — it was reachable through a
 // format string nobody had enumerated (#527).
+//
+// Since #542 that guarantee is real rather than claimed. shareFormats is derived
+// from the keys of shareSinks, which is also what dispatches, so adding a sink
+// necessarily changes this set and necessarily fails this assertion. Before that
+// the slice was hand-written and outputShare never read it: a new destination
+// could be added to the switch with every test still green, which is the defect
+// this comment used to describe as impossible.
 func TestOutputShare_FormatSurfaceIsClosed(t *testing.T) {
-	// Element-for-element. Adding a destination must land here first.
-	want := []string{"", "markdown", "stdout", "clipboard"}
+	// Element-for-element, in the sorted order shareFormats is derived in.
+	// Adding a destination must land here first.
+	want := []string{"", "clipboard", "markdown", "stdout"}
 	if !slices.Equal(shareFormats, want) {
 		t.Fatalf("shareFormats = %q, want %q — a share destination changed; "+
 			"confirm the new one is local and never publishes, then update this expectation",
@@ -606,6 +614,63 @@ func TestOutputShare_FormatSurfaceIsClosed(t *testing.T) {
 	// in a changelog they have no reason to open.
 	if err != nil && !strings.Contains(err.Error(), "gh gist list") {
 		t.Errorf("outputShare(\"link\") = %v, want it to point at gh gist list so an affected user can clean up", err)
+	}
+}
+
+// TRVL.SHAREFMT.3 -- what outputShare ACCEPTS must equal what is declared.
+//
+// Deliberately behavioural, not structural. The obvious structural version --
+// compare shareFormats against the keys of shareSinks -- is tautological once
+// one is derived from the other: it cannot fail, and it would pass against a
+// revived `switch` sitting beside an intact map. Adversarial review (Grok,
+// 2026-08-04) called that out on the first draft of this test, as "documentation
+// dressed as a force". A test that cannot fail is worse than no test, because it
+// reads as evidence.
+//
+// So this drives the real entry point instead. Every declared format must be
+// accepted, and destination-shaped names that are NOT declared must be refused.
+// A contributor who adds a route without declaring it fails here.
+//
+// Verified by sabotage, not assumed: adding a `case "webhook"` branch ahead of
+// the map lookup fails the undeclared-name loop below.
+func TestOutputShareAcceptsExactlyWhatIsDeclared(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	const card = "**AMS -> HEL** | 10Jun-20Jun\n"
+
+	for _, format := range shareFormats {
+		// "clipboard" shells out to pbcopy/xclip, which the emptied PATH
+		// deliberately blocks. It is a local paste buffer, not a publish, and is
+		// exercised elsewhere.
+		if format == "clipboard" {
+			continue
+		}
+		if err := outputShare(card, format); err != nil {
+			t.Errorf("outputShare(%q) = %v, want nil -- %q is declared in shareFormats but does "+
+				"not dispatch, so the declared set advertises a format that does not work",
+				format, err, format)
+		}
+	}
+
+	// Undeclared names, shaped like destinations someone might plausibly add.
+	// Each must be refused: reaching a sink without appearing in the declared
+	// set is the exact shape of the #527 defect.
+	for _, format := range []string{"webhook", "gist", "upload", "publish", "http", "post", "url", "link", "typo"} {
+		if err := outputShare(card, format); err == nil {
+			t.Errorf("outputShare(%q) = nil -- %q is not in shareFormats yet something delivered "+
+				"it; a destination is reachable without being declared", format, format)
+		}
+	}
+}
+
+// TRVL.SHAREFMT.3b -- shareFormats must stay sorted, or the element-for-element
+// pin in TestOutputShare_FormatSurfaceIsClosed becomes order-dependent on Go's
+// randomized map iteration and starts failing intermittently for a reason that
+// has nothing to do with sharing.
+func TestShareFormatsIsSorted(t *testing.T) {
+	if !slices.IsSorted(shareFormats) {
+		t.Errorf("shareFormats = %q is not sorted; map iteration order would make the surface "+
+			"test flaky", shareFormats)
 	}
 }
 
