@@ -74,6 +74,17 @@ type Client struct {
 	// reused thereafter for connection pooling. Access is guarded by stealthOnce.
 	stealthHTTP *http.Client
 	stealthOnce sync.Once
+
+	// reuseTransportForStealth makes stealthClient reuse this client's existing
+	// transport instead of building the real Chrome fingerprint client.
+	//
+	// It exists so the stealth path can be exercised offline and
+	// deterministically. It replaces a type assertion on a test-only transport
+	// type, which forced that type to live in this production file and made the
+	// exported test constructor reachable from production code (trvl#539).
+	// A behaviour flag says what the branch actually decides; the type
+	// assertion said "am I in a test", which production has no business asking.
+	reuseTransportForStealth bool
 }
 
 // NewClient creates a Client that impersonates Chrome's TLS fingerprint.
@@ -103,40 +114,6 @@ func NewClient() *Client {
 		limiter: rate.NewLimiter(rate.Limit(10), 1),
 		cache:   cache.New(),
 	}
-}
-
-// NewTestClient creates a Client that redirects all requests to the given
-// test server URL. It uses a plain http.Client (no TLS fingerprinting)
-// with high rate limits for fast tests. The URL rewriting transport
-// preserves the original path and query string.
-func NewTestClient(baseURL string) *Client {
-	return &Client{
-		http: &http.Client{
-			Transport: &testRedirectTransport{baseURL: baseURL},
-			Timeout:   5 * time.Second,
-		},
-		limiter: rate.NewLimiter(rate.Limit(1000), 1),
-	}
-}
-
-// testRedirectTransport rewrites request URLs to point at a local test server
-// while preserving the original path and query string.
-type testRedirectTransport struct {
-	baseURL string
-}
-
-func (t *testRedirectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Rewrite the URL to point at the test server.
-	newURL := t.baseURL + req.URL.Path
-	if req.URL.RawQuery != "" {
-		newURL += "?" + req.URL.RawQuery
-	}
-	newReq, err := http.NewRequestWithContext(req.Context(), req.Method, newURL, req.Body)
-	if err != nil {
-		return nil, err
-	}
-	newReq.Header = req.Header
-	return http.DefaultTransport.RoundTrip(newReq)
 }
 
 // SetNoCache disables the response cache for this client.
@@ -690,10 +667,10 @@ func (c *Client) transportForStealth(stealthRequested bool, url string) (*http.C
 // allowlist gate has authorized the host, so building it is itself gated.
 func (c *Client) stealthClient() *http.Client {
 	c.stealthOnce.Do(func() {
-		// Test clients route through a redirect transport; reusing it keeps
-		// stealth-engaged tests deterministic and offline. Production clients
-		// build the real Chrome HTTP/2 fingerprint client.
-		if _, ok := c.http.Transport.(*testRedirectTransport); ok {
+		// A client told to reuse its transport keeps it, which is how the
+		// stealth path stays deterministic and offline under test. Production
+		// clients build the real Chrome HTTP/2 fingerprint client.
+		if c.reuseTransportForStealth {
 			c.stealthHTTP = c.http
 			return
 		}

@@ -227,9 +227,53 @@ func applicableMigrations(old, current string) []Migration {
 	return out
 }
 
+// safeVersionStamp reports whether a version string may be used to build a
+// filename.
+//
+// The stamp reaching backupPreferences does NOT come from the compiled-in
+// Version. It comes from ReadStamp, which returns the trimmed contents of a
+// file on disk, so its shape is whatever that file contains -- corrupted,
+// hand-edited, or written by another program. Concatenating that into a path
+// puts ".." and "/" one bad file away from writing outside the preferences
+// directory (trvl#539, TRVL.HARDEN.3).
+//
+// An allowlist rather than a denylist of dangerous characters: a version is a
+// small, well-understood shape, and enumerating what is permitted cannot be
+// outflanked by an encoding nobody thought of. Empty is rejected too, since it
+// would silently produce "preferences.json.bak." and collide across upgrades.
+//
+// Callers refuse rather than sanitise. A sanitised path is still a path nobody
+// intended, and there is nothing useful to back up under a name derived from a
+// stamp we do not trust.
+func safeVersionStamp(v string) bool {
+	if v == "" || len(v) > 64 {
+		return false
+	}
+	if strings.Contains(v, "..") {
+		return false
+	}
+	for _, r := range v {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r == '.' || r == '-' || r == '_' || r == '+':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // backupPreferences copies preferences.json to preferences.json.bak.{version}
 // if it exists.
 func backupPreferences(dir, oldVersion string) {
+	if !safeVersionStamp(oldVersion) {
+		// Refuse rather than sanitise: see safeVersionStamp. Skipping the backup
+		// is the safe direction -- the migration still runs, and the alternative
+		// is writing a file to a path the stamp chose.
+		return
+	}
 	src := prefsPathIn(dir)
 	if _, err := os.Stat(src); err != nil {
 		return // no prefs file, nothing to back up

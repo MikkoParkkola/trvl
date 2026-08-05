@@ -177,6 +177,22 @@ func guardedDialer() *net.Dialer {
 	}
 }
 
+// GuardedTransport returns an http.Transport carrying this package's
+// destination policy on its dialer, for use by other packages that make
+// outbound requests.
+//
+// It exists because internal/destinations built a plain http.Client and so did
+// not route through this policy (trvl#539). That was safe only because the
+// destinations package composes its URLs from a constant base and numeric
+// parameters, so no caller string reached the host -- the guard was the URL
+// construction, not the transport. A property nothing enforces is not a guard,
+// and a future destinations endpoint taking a caller-supplied value would
+// remove it silently.
+//
+// Callers get the policy at DIAL time, which is what makes it hold even when a
+// redirect or a DNS answer moves the connection somewhere the URL did not name.
+func GuardedTransport() *http.Transport { return guardedTransport() }
+
 // guardedTransport returns the standard transport this package uses for
 // provider traffic, with the policy installed.
 func guardedTransport() *http.Transport {
