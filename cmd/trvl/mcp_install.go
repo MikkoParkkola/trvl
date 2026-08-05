@@ -199,17 +199,17 @@ func runInstall(client string, force, dryRun bool) error {
 	}
 
 	// Create parent directory if missing.
-	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o700); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}
 
 	// Backup existing file if present.
 	if len(existingData) > 0 {
 		backup := cfgPath + ".trvl.bak"
-		_ = os.WriteFile(backup, existingData, 0o644)
+		_ = os.WriteFile(backup, existingData, 0o600)
 	}
 
-	if err := os.WriteFile(cfgPath, out, 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, out, 0o600); err != nil {
 		return fmt.Errorf("write config %s: %w", cfgPath, err)
 	}
 
@@ -268,13 +268,13 @@ func runInstallCodexTOML(cfgPath, binary string, force, dryRun bool) error {
 		return nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o700); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}
 
 	// Backup existing.
 	if len(existing) > 0 {
-		_ = os.WriteFile(cfgPath+".trvl.bak", existing, 0o644)
+		_ = os.WriteFile(cfgPath+".trvl.bak", existing, 0o600)
 	}
 
 	f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)

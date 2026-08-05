@@ -151,7 +151,7 @@ func (u *Updater) PerformUpdate(ctx context.Context, latestVer string, exePath s
 	}
 
 	binDir := filepath.Join(tmpDir, "extracted")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o700); err != nil {
 		return "", fmt.Errorf("self-update: mkdir extract dir: %w", err)
 	}
 	binName := "trvl"
@@ -162,6 +162,9 @@ func (u *Updater) PerformUpdate(ctx context.Context, latestVer string, exePath s
 	if err := extractBinaryFromTarGz(tarballPath, binName, extractedBin); err != nil {
 		return "", fmt.Errorf("self-update: extract binary: %w", err)
 	}
+	// 0755 is required: this is the replacement trvl binary and it has to be
+	// executable. gosec flags the mode without knowing what the file is
+	// (trvl#532 medium triage).
 	if err := os.Chmod(extractedBin, 0o755); err != nil {
 		return "", fmt.Errorf("self-update: chmod: %w", err)
 	}
@@ -293,6 +296,12 @@ func verifyMLDSAFile(tarballPath, sigPath string) error {
 // with path traversal segments ("../") + absolute paths + symlinks.
 // This keeps the extraction surface minimal regardless of how trusted
 // the upstream tarball is.
+// maxExtractedBinaryBytes bounds what extractBinaryFromTarGz will write. The
+// trvl binary is tens of megabytes; 512MB is two orders of magnitude of
+// headroom, chosen so this never fires on a real release and only ever stops a
+// tarball claiming to be far larger than any plausible build.
+const maxExtractedBinaryBytes = 512 << 20
+
 func extractBinaryFromTarGz(tarballPath, binName, dest string) error {
 	f, err := os.Open(tarballPath)
 	if err != nil {
@@ -328,9 +337,23 @@ func extractBinaryFromTarGz(tarballPath, binName, dest string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(out, tr); err != nil {
+		// Bounded copy (trvl#532 medium triage, G110). Extraction already runs
+		// AFTER verifySHA256 against the signed checksums file, so reaching here
+		// with a hostile archive means an attacker who can forge that signature
+		// -- and they would ship a malicious binary rather than fill a disk. The
+		// cap is defence in depth, not the primary control: it costs one wrapper
+		// and removes the "what if verification is ever moved or skipped" branch
+		// from the reasoning entirely.
+		//
+		// The limit is deliberately generous. It bounds the absurd rather than
+		// asserting a size, so a legitimately larger release does not fail to
+		// install because this number was tuned to yesterday's binary.
+		if n, err := io.Copy(out, io.LimitReader(tr, maxExtractedBinaryBytes)); err != nil {
 			_ = out.Close()
 			return err
+		} else if n >= maxExtractedBinaryBytes {
+			_ = out.Close()
+			return fmt.Errorf("self-update: extracted binary exceeds %d bytes; refusing", maxExtractedBinaryBytes)
 		}
 		return out.Close()
 	}
