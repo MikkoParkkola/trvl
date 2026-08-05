@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/waf"
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
@@ -164,7 +166,7 @@ func tryWAFSolve(ctx context.Context, pc *providerClient, auth *AuthConfig, stat
 	pageURL := auth.PreflightURL
 	cookie, err := waf.SolveAWSWAF(ctx, pc.client, pageURL, string(pageBody), nil)
 	if err != nil {
-		slog.Debug("waf solver did not produce a token", "provider", pc.config.ID, "error", err.Error())
+		slog.Debug("waf solver did not produce a token", "provider", pc.config.ID, "error", logredact.Err(err))
 		return nil, false
 	}
 
@@ -276,7 +278,7 @@ func applyExtractions(extractions map[string]Extraction, resp *http.Response, bo
 		}
 		re, err := regexp.Compile(extraction.Pattern)
 		if err != nil {
-			slog.Warn("preflight regex compile failed", "name", name, "pattern", extraction.Pattern, "error", err.Error())
+			slog.Warn("preflight regex compile failed", "name", name, "pattern", extraction.Pattern, "error", logredact.Err(err))
 			continue
 		}
 		m := re.FindStringSubmatch(source)

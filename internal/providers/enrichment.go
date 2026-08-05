@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -40,7 +42,7 @@ func enrichRatings(ctx context.Context, client *http.Client, hotels []models.Hot
 
 		rating, reviewCount, err := fetchJSONLDRating(ctx, client, hotels[i].BookingURL)
 		if err != nil {
-			slog.Debug("rating enrichment failed", "url", hotels[i].BookingURL, "error", err.Error())
+			slog.Debug("rating enrichment failed", "url", logredact.URL(hotels[i].BookingURL), "error", err.Error())
 			continue
 		}
 		if rating > 0 {

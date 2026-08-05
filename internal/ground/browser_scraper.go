@@ -13,6 +13,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
 	"github.com/chromedp/cdproto/network"
@@ -357,7 +359,7 @@ func chromedpSNCFResponses(ctx context.Context, bookingURL string, fromStation, 
 			for _, bffPath := range sncfBFFPaths {
 				raw, err := evaluateSNCFFetch(ctx, bffPath.path, bffPath.bodyFn(fromStation.Code, toStation.Code, date), key)
 				if err != nil {
-					slog.Debug("browser scraper sncf fetch failed", "path", bffPath.path, "err", err)
+					slog.Debug("browser scraper sncf fetch failed", "path", bffPath.path, "err", logredact.Err(err))
 					continue
 				}
 				mu.Lock()

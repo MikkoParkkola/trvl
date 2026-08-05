@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"golang.org/x/time/rate"
 )
@@ -331,7 +333,7 @@ func parseKiwiRPCResponse(body []byte) (kiwiRPCResponse, error) {
 		}
 		var rpc kiwiRPCResponse
 		if err := json.Unmarshal([]byte(joined), &rpc); err != nil {
-			slog.Debug("kiwi: skipping unparseable SSE frame", "error", err)
+			slog.Debug("kiwi: skipping unparseable SSE frame", "error", logredact.Err(err))
 			return
 		}
 		if rpc.Result != nil || rpc.Error != nil {

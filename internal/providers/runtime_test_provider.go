@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/waf"
 	"golang.org/x/time/rate"
 )
@@ -491,7 +493,7 @@ func runTestPreflight(ctx context.Context, pc *providerClient, cfg *ProviderConf
 					tier = "waf-solver"
 				}
 			} else if wafErr != nil {
-				slog.Debug("waf solver did not produce a token in test", "error", wafErr.Error())
+				slog.Debug("waf solver did not produce a token in test", "error", logredact.Err(wafErr))
 			}
 		}
 

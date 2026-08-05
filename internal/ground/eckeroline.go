@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -133,7 +135,7 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 	// Step 1: GET homepage to obtain form_key + Magento session cookie.
 	homeReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.eckeroline.fi/", nil)
 	if err != nil {
-		slog.Debug("eckeroline homepage request build failed", "err", err)
+		slog.Debug("eckeroline homepage request build failed", "err", logredact.Err(err))
 		return nil, nil
 	}
 	homeReq.Header.Set("Accept", "text/html")
@@ -141,7 +143,7 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 
 	homeResp, err := eckerolineClient.Do(homeReq)
 	if err != nil {
-		slog.Debug("eckeroline homepage fetch failed", "err", err)
+		slog.Debug("eckeroline homepage fetch failed", "err", logredact.Err(err))
 		return nil, nil
 	}
 	defer func() { _ = homeResp.Body.Close() }()
@@ -153,7 +155,7 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 
 	homeBody, err := io.ReadAll(io.LimitReader(homeResp.Body, 512*1024))
 	if err != nil {
-		slog.Debug("eckeroline homepage body read failed", "err", err)
+		slog.Debug("eckeroline homepage body read failed", "err", logredact.Err(err))
 		return nil, nil
 	}
 
@@ -190,7 +192,7 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 	depReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		"https://www.eckeroline.fi/checkout/bookingBar/getdepartures", strings.NewReader(payload))
 	if err != nil {
-		slog.Debug("eckeroline getdepartures request build failed", "err", err)
+		slog.Debug("eckeroline getdepartures request build failed", "err", logredact.Err(err))
 		return nil, nil
 	}
 	depReq.Header.Set("Content-Type", "application/json")
@@ -201,7 +203,7 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 
 	depResp, err := eckerolineClient.Do(depReq)
 	if err != nil {
-		slog.Debug("eckeroline getdepartures failed", "err", err)
+		slog.Debug("eckeroline getdepartures failed", "err", logredact.Err(err))
 		return nil, nil
 	}
 	defer func() { _ = depResp.Body.Close() }()
@@ -213,7 +215,7 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 
 	body, err := io.ReadAll(io.LimitReader(depResp.Body, 64*1024))
 	if err != nil {
-		slog.Debug("eckeroline getdepartures body read failed", "err", err)
+		slog.Debug("eckeroline getdepartures body read failed", "err", logredact.Err(err))
 		return nil, nil
 	}
 
@@ -222,7 +224,7 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 	if err := json.Unmarshal(body, &departures); err != nil {
 		var wrapped eckerolineDepartureResponse
 		if err2 := json.Unmarshal(body, &wrapped); err2 != nil {
-			slog.Debug("eckeroline getdepartures parse failed", "err", err, "body", string(body[:min(len(body), 200)]))
+			slog.Debug("eckeroline getdepartures parse failed", "err", logredact.Err(err), "body", string(body[:min(len(body), 200)]))
 			return nil, nil
 		}
 		departures = wrapped.Departures

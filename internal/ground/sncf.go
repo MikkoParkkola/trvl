@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/MikkoParkkola/trvl/internal/cookies"
@@ -193,7 +195,7 @@ func captureSNCFKey(ctx context.Context) string {
 		5*time.Second,
 	)
 	if err != nil {
-		slog.Debug("captureSNCFKey: browser unavailable", "err", err)
+		slog.Debug("captureSNCFKey: browser unavailable", "err", logredact.Err(err))
 		return ""
 	}
 	return key
@@ -247,7 +249,7 @@ func sncfViaCurl(ctx context.Context, fromCode, toCode, date, currency string) (
 		cmd := exec.CommandContext(ctx, "curl", args...)
 		output, err := cmd.Output()
 		if err != nil {
-			slog.Debug("sncf curl attempt failed", "path", bffPath.path, "err", err)
+			slog.Debug("sncf curl attempt failed", "path", bffPath.path, "err", logredact.Err(err))
 			continue
 		}
 		if len(output) == 0 {
@@ -596,7 +598,7 @@ func searchSNCFCalendar(ctx context.Context, fromStation, toStation SNCFStation,
 
 			isCaptcha, captchaURL := cookies.IsCaptchaResponse(http.StatusForbidden, firstBody)
 			if isCaptcha {
-				slog.Warn("sncf requires browser verification", "captcha_url", captchaURL)
+				slog.Warn("sncf requires browser verification", "captcha_url", logredact.URL(captchaURL))
 			}
 		}
 

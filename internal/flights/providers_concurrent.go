@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -29,7 +31,7 @@ func runKiwiProvider(ctx context.Context, client *batchexec.Client, origin, dest
 	}
 	flights, err := SearchKiwiFlights(ctx, origin, destination, date, currency, opts)
 	if err != nil {
-		slog.Warn("kiwi flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
+		slog.Warn("kiwi flight search failed", "origin", origin, "destination", destination, "date", date, "error", logredact.Err(err))
 		return providerOutcome{err: err, status: models.ProviderStatus{
 			ID:     "kiwi",
 			Name:   "Kiwi",
@@ -70,7 +72,7 @@ func runSkiplaggedProvider(ctx context.Context, client *batchexec.Client, origin
 	}
 	result, err := SearchSkiplagged(ctx, origin, destination, date, opts)
 	if err != nil {
-		slog.Warn("skiplagged flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
+		slog.Warn("skiplagged flight search failed", "origin", origin, "destination", destination, "date", date, "error", logredact.Err(err))
 		return providerOutcome{err: err, status: models.ProviderStatus{
 			ID:     "skiplagged",
 			Name:   "Skiplagged",
@@ -102,7 +104,7 @@ func runRyanairProvider(ctx context.Context, client *batchexec.Client, origin, d
 	}
 	flights, err := SearchRyanair(ctx, origin, destination, date, currency, opts)
 	if err != nil {
-		slog.Warn("ryanair flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
+		slog.Warn("ryanair flight search failed", "origin", origin, "destination", destination, "date", date, "error", logredact.Err(err))
 		return providerOutcome{err: err, status: models.ProviderStatus{
 			ID:     "ryanair",
 			Name:   "Ryanair",
@@ -130,7 +132,7 @@ func runWizzairProvider(ctx context.Context, client *batchexec.Client, origin, d
 	}
 	flights, err := SearchWizzair(ctx, origin, destination, date, currency, opts)
 	if err != nil {
-		slog.Warn("wizzair flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
+		slog.Warn("wizzair flight search failed", "origin", origin, "destination", destination, "date", date, "error", logredact.Err(err))
 		// wizzairFailureStatus renders a typed, actionable status; a 404
 		// version-rotation gets a WIZZ_VERSION_ROTATED fix hint.
 		return providerOutcome{err: err, status: wizzairFailureStatus(opts.wizzBaseHost(), err)}
@@ -161,7 +163,7 @@ func runTransaviaProvider(ctx context.Context, client *batchexec.Client, origin,
 	}
 	flights, err := SearchTransavia(ctx, origin, destination, date, currency, opts)
 	if err != nil {
-		slog.Warn("transavia flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
+		slog.Warn("transavia flight search failed", "origin", origin, "destination", destination, "date", date, "error", logredact.Err(err))
 		return providerOutcome{err: err, status: models.ProviderStatus{
 			ID:     "transavia",
 			Name:   "Transavia",
@@ -198,7 +200,7 @@ func runEasyjetProvider(ctx context.Context, client *batchexec.Client, origin, d
 	}
 	flights, err := SearchEasyjet(ctx, origin, destination, date, currency, opts)
 	if err != nil {
-		slog.Warn("easyjet flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
+		slog.Warn("easyjet flight search failed", "origin", origin, "destination", destination, "date", date, "error", logredact.Err(err))
 		return providerOutcome{err: err, status: models.ProviderStatus{
 			ID:     "easyjet",
 			Name:   "easyJet",
@@ -235,7 +237,7 @@ func runVuelingProvider(ctx context.Context, client *batchexec.Client, origin, d
 	}
 	flights, err := SearchVueling(ctx, origin, destination, date, currency, opts)
 	if err != nil {
-		slog.Warn("vueling flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
+		slog.Warn("vueling flight search failed", "origin", origin, "destination", destination, "date", date, "error", logredact.Err(err))
 		return providerOutcome{err: err, status: models.ProviderStatus{
 			ID:     "vueling",
 			Name:   "Vueling",
@@ -272,7 +274,7 @@ func runNorwegianProvider(ctx context.Context, client *batchexec.Client, origin,
 	}
 	flights, err := SearchNorwegian(ctx, origin, destination, date, currency, opts)
 	if err != nil {
-		slog.Warn("norwegian flight search failed", "origin", origin, "destination", destination, "date", date, "error", err)
+		slog.Warn("norwegian flight search failed", "origin", origin, "destination", destination, "date", date, "error", logredact.Err(err))
 		return providerOutcome{err: err, status: models.ProviderStatus{
 			ID:     "norwegian",
 			Name:   "Norwegian",

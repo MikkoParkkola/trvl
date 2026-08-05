@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/jsonutil"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -55,7 +57,7 @@ func parseFlights(rawFlights []any) []models.FlightResult {
 
 		fr, err := parseOneFlight(entry)
 		if err != nil {
-			slog.Debug("skipped unparseable flight entry", "error", err)
+			slog.Debug("skipped unparseable flight entry", "error", logredact.Err(err))
 			continue
 		}
 

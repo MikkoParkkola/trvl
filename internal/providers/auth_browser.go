@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/MikkoParkkola/trvl/internal/cookies"
 )
@@ -342,7 +344,7 @@ func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool
 		return false
 	}
 	cookies := browserCookiesForURLWithHint(targetURL, browserHint)
-	slog.Debug("applyBrowserCookies", "url", targetURL, "browser", browserHint, "count", len(cookies))
+	slog.Debug("applyBrowserCookies", "url", logredact.URL(targetURL), "browser", browserHint, "count", len(cookies))
 	if len(cookies) == 0 {
 		return false
 	}
@@ -356,7 +358,7 @@ func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool
 	if !vault.seedFromBrowser(u, cookies) {
 		return false
 	}
-	slog.Debug("applied browser cookies to preflight client", "url", targetURL, "count", len(cookies))
+	slog.Debug("applied browser cookies to preflight client", "url", logredact.URL(targetURL), "count", len(cookies))
 	return true
 }
 
