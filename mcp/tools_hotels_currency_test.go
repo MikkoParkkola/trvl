@@ -25,6 +25,7 @@ func TestSearchHotelsTool_CurrencyProperty(t *testing.T) {
 func TestHandleSearchHotels_DefaultsCurrencyFromPreferences(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	prefs := preferences.Default()
 	prefs.DisplayCurrency = "EUR"
 	if err := preferences.SaveTo(filepath.Join(tmp, ".trvl", "preferences.json"), prefs); err != nil {
@@ -56,6 +57,7 @@ func TestHandleSearchHotels_DefaultsCurrencyFromPreferences(t *testing.T) {
 func TestHandleSearchHotels_ExplicitCurrencyOverridesPreferences(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	prefs := preferences.Default()
 	prefs.DisplayCurrency = "EUR"
 	if err := preferences.SaveTo(filepath.Join(tmp, ".trvl", "preferences.json"), prefs); err != nil {

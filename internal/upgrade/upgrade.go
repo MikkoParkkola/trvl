@@ -73,7 +73,7 @@ func WriteStamp(path, version string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create stamp dir: %w", err)
 	}
-	return os.WriteFile(path, []byte(version+"\n"), 0o644)
+	return os.WriteFile(path, []byte(version+"\n"), 0o600)
 }
 
 // Result holds the outcome of a CheckUpgrade or RunUpgrade call.

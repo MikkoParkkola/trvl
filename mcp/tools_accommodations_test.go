@@ -12,7 +12,9 @@ import (
 )
 
 func TestHandleSearchAccommodationsReturnsOnlyCriteriaMatchedOffers(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	origSearchHotels := searchHotelsFunc
 	origRooms := getRoomAvailabilityWithOptsFunc
@@ -182,7 +184,9 @@ func TestHandleSearchAccommodationsReturnsOnlyCriteriaMatchedOffers(t *testing.T
 }
 
 func TestHandleSearchAccommodationsUsesProviderRoomInventoryWithoutHotelID(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	origSearchHotels := searchHotelsFunc
 	origRooms := getRoomAvailabilityWithOptsFunc
@@ -277,7 +281,9 @@ func TestHandleSearchAccommodationsUsesProviderRoomInventoryWithoutHotelID(t *te
 }
 
 func TestHandleSearchAccommodationsPrioritizesVerifiableCandidateOverLeadInOnly(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	origSearchHotels := searchHotelsFunc
 	origRooms := getRoomAvailabilityWithOptsFunc
@@ -387,7 +393,9 @@ func TestHandleSearchAccommodationsPrioritizesVerifiableCandidateOverLeadInOnly(
 }
 
 func TestHandleSearchAccommodationsPrioritizesRequestedAccommodationType(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	origSearchHotels := searchHotelsFunc
 	origRooms := getRoomAvailabilityWithOptsFunc
@@ -458,7 +466,9 @@ func TestHandleSearchAccommodationsPrioritizesRequestedAccommodationType(t *test
 }
 
 func TestHandleSearchAccommodationsBoundsSlowRoomLookup(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	origSearchHotels := searchHotelsFunc
 	origRooms := getRoomAvailabilityWithOptsFunc

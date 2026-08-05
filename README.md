@@ -144,6 +144,28 @@ export TRVL_NO_TIER2_CDP=1         # never start a headless browser of its own
 
 Both cost you results, and it is worth knowing how: a site that answers with a bot challenge simply returns nothing, which looks like trvl finding no trains rather than like a setting you chose. That is the trade, stated so you can make it deliberately.
 
+### How much price history trvl keeps
+
+Watch price history is capped, or it grows without bound: one real store reached 320,028 points in 41MB, which cost every running trvl process about 686MB of memory. Three limits bound it, and all three can be changed.
+
+```bash
+export TRVL_WATCH_MAX_POINTS_PER_WATCH=1000   # points kept per watch
+export TRVL_WATCH_MAX_POINTS_TOTAL=50000      # points kept across all watches
+export TRVL_WATCH_ROUTE_TTL_DAYS=90           # how long a dateless route watch keeps being checked
+```
+
+Those are the defaults, and the cost of moving each one:
+
+| setting | raising it costs | lowering it costs |
+|---|---|---|
+| points per watch | memory and disk, multiplied by how many watches you have | resolution in long-range trend views. Nothing needs the raw tail — the sparkline reads 10–20 points, and a watch's all-time low is stored on the watch itself, so it survives eviction |
+| points in total | this is the number that actually bounds the file. The per-watch cap cannot, because many watches multiply it | your watches compete for one budget, so a large collection loses history on all of them rather than on the busiest |
+| route watch TTL | routes with no travel date are re-checked against live providers every 30 minutes for as long as this allows. One real store carried 468 permanently-active route watches | a seasonal route expires between uses. Re-watching renews it, but an annual trip expires every year |
+
+An unusable value is **refused, not adjusted**: `trvl` will not start against `TRVL_WATCH_MAX_POINTS_TOTAL=0`, rather than quietly using the default and leaving you to believe your setting took effect.
+
+To see whether any limit is actually binding on your store, run `trvl watch migrate --dry-run`. It reports the size on disk, the spread of points per watch, and how close you are to each cap, without changing anything.
+
 Full mechanism — what is read at which point, the exact difference between those two switches, the headless-browser fallback, and the AF-KLM credential rules: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#browser-sessions-credentials-and-local-state).
 
 One command publishes deliberately, because that is what you ran it for: the calendar helper writes an event to your Google calendar. `trvl share` does not — it prints the trip card, or copies it to your clipboard, and you decide who receives it. It used to upload the card as a public GitHub gist; that was removed in [#527](https://github.com/MikkoParkkola/trvl/issues/527), because a card carries destinations and dates, and those together say when your home is empty.

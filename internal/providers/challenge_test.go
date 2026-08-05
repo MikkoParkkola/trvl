@@ -102,10 +102,16 @@ func TestResolveChallenge_RunnerError(t *testing.T) {
 }
 
 func TestResolveChallenge_ClearedPersistsCookies(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	// os.UserHomeDir reads USERPROFILE on Windows, not HOME — isolate both so
 	// the ~/.trvl cookie cache is per-test on every OS.
-	t.Setenv("USERPROFILE", t.TempDir())
+	//
+	// Both must name the SAME directory. t.TempDir() returns a NEW directory on
+	// every call, so calling it twice pointed HOME and USERPROFILE at unrelated
+	// places: on Windows the test then ran against a directory nothing had
+	// populated, while unix used the other one. Capture once (trvl#565).
+	challengeHome := t.TempDir()
+	t.Setenv("HOME", challengeHome)
+	t.Setenv("USERPROFILE", challengeHome)
 
 	prevExists := fileExists
 	fileExists = func(string) bool { return true }
@@ -143,10 +149,16 @@ func TestResolveChallenge_ClearedPersistsCookies(t *testing.T) {
 }
 
 func TestResolveChallenge_NeedsHumanDoesNotPersist(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
 	// os.UserHomeDir reads USERPROFILE on Windows, not HOME — isolate both so a
 	// prior test's persisted cookies cannot leak into this absence assertion.
-	t.Setenv("USERPROFILE", t.TempDir())
+	//
+	// Both must name the SAME directory; see the note in
+	// TestResolveChallenge_ClearedPersistsCookies. This one matters more than
+	// most: it asserts an ABSENCE, and an assertion that nothing was persisted
+	// passes trivially when it is looking at the wrong directory.
+	needsHumanHome := t.TempDir()
+	t.Setenv("HOME", needsHumanHome)
+	t.Setenv("USERPROFILE", needsHumanHome)
 
 	prevExists := fileExists
 	fileExists = func(string) bool { return true }
