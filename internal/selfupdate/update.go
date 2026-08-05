@@ -300,7 +300,11 @@ func verifyMLDSAFile(tarballPath, sigPath string) error {
 // trvl binary is tens of megabytes; 512MB is two orders of magnitude of
 // headroom, chosen so this never fires on a real release and only ever stops a
 // tarball claiming to be far larger than any plausible build.
-const maxExtractedBinaryBytes = 512 << 20
+// A var rather than a const so a test can shrink it. Generating a 512MB fixture
+// to exercise the limit would be absurd, and the alternative -- trusting the
+// branch by reading it -- is the kind of unverified guard this repo has spent
+// #542, #549 and #565 removing.
+var maxExtractedBinaryBytes int64 = 512 << 20
 
 func extractBinaryFromTarGz(tarballPath, binName, dest string) error {
 	f, err := os.Open(tarballPath)
