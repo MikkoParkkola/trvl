@@ -20,7 +20,9 @@ func TestHandleCheckWatches_LiveProbe(t *testing.T) {
 	if os.Getenv("TRVL_TEST_LIVE_PROBES") != "1" {
 		t.Skip("hits live flight APIs; set TRVL_TEST_LIVE_PROBES=1 to run")
 	}
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	store, err := watch.DefaultStore()
 	if err != nil {

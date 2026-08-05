@@ -11,7 +11,9 @@ import (
 )
 
 func TestHandleSearchHotelsWithDetailsEnrichesTopResults(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	origSearchHotels := searchHotelsFunc
 	origAmenities := fetchHotelAmenitiesFunc
@@ -197,7 +199,9 @@ func TestHandleSearchHotelsWithDetailsEnrichesTopResults(t *testing.T) {
 }
 
 func TestHandleSearchHotelsWithDetailsPartialFailuresUseTypedDetailErrors(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	origSearchHotels := searchHotelsFunc
 	origAmenities := fetchHotelAmenitiesFunc

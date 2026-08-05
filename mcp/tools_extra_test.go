@@ -429,7 +429,9 @@ func TestSearchHotelsTool_RequiredUnchanged(t *testing.T) {
 // --- handleSearchHotels filter args parsing ---
 
 func TestHandleSearchHotels_FilterArgsDefaults(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	origSearchHotels := searchHotelsFunc
 	t.Cleanup(func() { searchHotelsFunc = origSearchHotels })
 	searchHotelsFunc = func(_ context.Context, location string, opts hotels.HotelSearchOptions) (*models.HotelSearchResult, error) {
@@ -453,7 +455,9 @@ func TestHandleSearchHotels_FilterArgsDefaults(t *testing.T) {
 }
 
 func TestHandleSearchHotels_FilterArgsFloat(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	origSearchHotels := searchHotelsFunc
 	t.Cleanup(func() { searchHotelsFunc = origSearchHotels })
 	searchHotelsFunc = func(_ context.Context, location string, opts hotels.HotelSearchOptions) (*models.HotelSearchResult, error) {

@@ -100,7 +100,7 @@ Examples:
 				return nil
 			}
 
-			if err := os.WriteFile(output, []byte(icsContent), 0o644); err != nil {
+			if err := os.WriteFile(output, []byte(icsContent), 0o600); err != nil {
 				return fmt.Errorf("write %s: %w", output, err)
 			}
 			_, _ = fmt.Fprintf(os.Stderr, "Wrote %d events to %s\n", len(trip.Legs), output)

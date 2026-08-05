@@ -400,6 +400,7 @@ func TestUpdatePreferences_ConcurrentUpdatesPreserveDisjointFields(t *testing.T)
 func TestUpdatePreferences_DefaultPathConcurrentUpdatesPreserveDisjointFields(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	initial := &preferences.Preferences{
 		DisplayCurrency: "EUR",

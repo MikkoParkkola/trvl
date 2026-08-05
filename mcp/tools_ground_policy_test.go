@@ -12,6 +12,7 @@ import (
 func TestHandleSearchGround_ProfileDoesNotSeedType(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	// Persist a minimal profile fixture whose dominant ground mode is train.
 	// OLD pre-fix code in handleSearchGround would load via profile.Load +

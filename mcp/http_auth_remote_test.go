@@ -107,7 +107,9 @@ func clearHTTPAuthEnv(t *testing.T) {
 // --- Audit counters surfaced on /health ---
 
 func TestHealth_AuthAuditCounters(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	hs := NewHTTPServerWithOptions(HTTPServerOptions{
 		Port:       0,
 		ReadToken:  "read-token",
@@ -154,7 +156,9 @@ func TestHealth_AuthAuditCounters(t *testing.T) {
 
 // /health must never leak subjects, tokens, scopes, or denial reasons.
 func TestHealth_DoesNotLeakSensitiveAuthDetail(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	hs := NewHTTPServerWithOptions(HTTPServerOptions{
 		Port:       0,
 		ReadToken:  "super-secret-read-token",
@@ -189,7 +193,9 @@ func getHealth(t *testing.T, hs *HTTPServer) map[string]any {
 // --- OAuth introspection path (deterministic via httptest fake IdP) ---
 
 func TestOAuthIntrospection_ScopeEnforcement(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	// Fake external IdP introspection endpoint. Token "rw" → read+write,
 	// "ro" → read only, anything else → inactive.

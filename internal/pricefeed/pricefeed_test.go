@@ -70,9 +70,13 @@ func TestFlightMultiAirportReturnsEmpty(t *testing.T) {
 }
 
 func TestFlightSameDaySaving(t *testing.T) {
-	// HOME isolation so it doesn't touch the real ~/.trvl.
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("USERPROFILE", t.TempDir())
+	// HOME isolation so it doesn't touch the real ~/.trvl. Both names, one
+	// directory: os.UserHomeDir reads USERPROFILE on Windows, and t.TempDir()
+	// returns a NEW directory per call, so calling it twice pointed the two at
+	// unrelated places (trvl#565).
+	feedHome := t.TempDir()
+	t.Setenv("HOME", feedHome)
+	t.Setenv("USERPROFILE", feedHome)
 	res := &models.FlightSearchResult{Success: true, Flights: []models.FlightResult{
 		{Price: 220, Currency: "EUR"}, // headline
 		{Price: 150, Currency: "EUR"}, // cheapest

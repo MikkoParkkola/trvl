@@ -14,6 +14,7 @@ import (
 func TestTripWorkspaceImportReservationMergesIntoTrip(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	_, created, err := handleCreateTrip(context.Background(), map[string]any{"name": "Amsterdam"}, nil, nil, nil)
 	if err != nil {
@@ -69,6 +70,7 @@ func TestTripWorkspaceFareIntelligence(t *testing.T) {
 func TestTravelRoutesWorkspaceActionToTripWorkspace(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	_, created, err := handleCreateTrip(context.Background(), map[string]any{"name": "Candidate"}, nil, nil, nil)
 	if err != nil {
@@ -106,6 +108,7 @@ func TestTravelRoutesWorkspaceActionToTripWorkspace(t *testing.T) {
 func TestTripWorkspaceGetExportImportAndReadiness(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	_, created, err := handleCreateTrip(context.Background(), map[string]any{"name": "Workspace"}, nil, nil, nil)
 	if err != nil {
@@ -207,6 +210,7 @@ func TestTripWorkspaceGetExportImportAndReadiness(t *testing.T) {
 func TestTripWorkspaceReadinessReportsBlockersAndMissingCandidate(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	_, created, err := handleCreateTrip(context.Background(), map[string]any{"name": "Blocked candidate"}, nil, nil, nil)
 	if err != nil {
@@ -252,6 +256,7 @@ func TestTripWorkspaceReadinessReportsBlockersAndMissingCandidate(t *testing.T) 
 func TestTripWorkspaceOptimizeItinerary(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 
 	_, created, err := handleCreateTrip(context.Background(), map[string]any{"name": "Itinerary"}, nil, nil, nil)
 	if err != nil {

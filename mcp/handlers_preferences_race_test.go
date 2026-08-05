@@ -17,6 +17,7 @@ func TestWrappedSearchFlights_ConcurrentPreferencesFiltering_LiveIntegration(t *
 
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	if err := preferences.Save(&preferences.Preferences{
 		DisplayCurrency:    "EUR",
 		Locale:             "en",
@@ -46,6 +47,7 @@ func TestWrappedSearchHotels_ConcurrentPreferencesFiltering_LiveIntegration(t *t
 
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	if err := preferences.Save(&preferences.Preferences{
 		DisplayCurrency:    "EUR",
 		Locale:             "en",
@@ -75,6 +77,7 @@ func TestWrappedSearchGround_ConcurrentLiveIntegration(t *testing.T) {
 
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	if err := preferences.Save(&preferences.Preferences{
 		DisplayCurrency: "EUR",
 		Locale:          "en",
