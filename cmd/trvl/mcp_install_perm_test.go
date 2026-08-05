@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -17,6 +18,19 @@ import (
 // diff shows 0o600 and a reader has no way to know that call site is the one
 // that actually creates the file. Only the artefact on disk settles it.
 func TestMCPInstallWritesPrivateConfigAndBackup(t *testing.T) {
+	// Unix permission bits are not implemented on Windows: Go reports 0666 for
+	// any writable file and 0777 for any directory, whatever mode was passed to
+	// os.WriteFile or os.MkdirAll. Verified on windows-latest, where this
+	// assertion failed with exactly those values against files created 0600.
+	//
+	// So this asserts a Unix property and is skipped rather than weakened. What
+	// protects these files on Windows is the ACL they inherit from the parent
+	// directory, which trvl does not set and this test cannot see -- a real gap,
+	// recorded here because the skip is where someone asking "is this covered on
+	// Windows?" will look.
+	if runtime.GOOS == "windows" {
+		t.Skip("file mode bits are not meaningful on Windows; see comment")
+	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home) // see scripts/ci/check-home-isolation.sh (#565)
@@ -58,6 +72,19 @@ func TestMCPInstallWritesPrivateConfigAndBackup(t *testing.T) {
 // private too: a 0700 file inside a 0755 directory still leaks its name and
 // existence, and the next writer inherits the loose directory.
 func TestMCPInstallCreatesPrivateConfigDirectory(t *testing.T) {
+	// Unix permission bits are not implemented on Windows: Go reports 0666 for
+	// any writable file and 0777 for any directory, whatever mode was passed to
+	// os.WriteFile or os.MkdirAll. Verified on windows-latest, where this
+	// assertion failed with exactly those values against files created 0600.
+	//
+	// So this asserts a Unix property and is skipped rather than weakened. What
+	// protects these files on Windows is the ACL they inherit from the parent
+	// directory, which trvl does not set and this test cannot see -- a real gap,
+	// recorded here because the skip is where someone asking "is this covered on
+	// Windows?" will look.
+	if runtime.GOOS == "windows" {
+		t.Skip("file mode bits are not meaningful on Windows; see comment")
+	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
