@@ -68,7 +68,9 @@ func TestHTTPHandler_POST_RequiresBearerTokenWhenConfigured(t *testing.T) {
 }
 
 func TestHTTPHandler_POST_ReadTokenDeniesMutatingTool(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	hs := NewHTTPServerWithOptions(HTTPServerOptions{
 		Port:       0,
 		ReadToken:  "read-token",
@@ -93,7 +95,9 @@ func TestHTTPHandler_POST_ReadTokenDeniesMutatingTool(t *testing.T) {
 }
 
 func TestHTTPHandler_POST_WriteTokenAllowsMutatingTool(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	hs := NewHTTPServerWithOptions(HTTPServerOptions{
 		Port:       0,
 		ReadToken:  "read-token",
@@ -112,7 +116,9 @@ func TestHTTPHandler_POST_WriteTokenAllowsMutatingTool(t *testing.T) {
 }
 
 func TestHTTPHandler_POST_ReadTokenAllowsReadOnlyTravelRoute(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	hs := NewHTTPServerWithOptions(HTTPServerOptions{
 		Port:      0,
 		ReadToken: "read-token",
@@ -130,7 +136,9 @@ func TestHTTPHandler_POST_ReadTokenAllowsReadOnlyTravelRoute(t *testing.T) {
 }
 
 func TestHTTPHandler_POST_OAuthIntrospectionScopes(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	introspection := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if gotUser, gotPass, ok := r.BasicAuth(); !ok || gotUser != "client-id" || gotPass != "client-secret" {
 			t.Fatalf("BasicAuth = %q/%q/%v, want configured client credentials", gotUser, gotPass, ok)

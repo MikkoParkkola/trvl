@@ -68,7 +68,9 @@ func TestRefreshCookiesViaCDP_NoBrowserFound(t *testing.T) {
 }
 
 func TestRefreshCookiesViaCDP_HarvestsAndCaches(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	// Pretend a browser exists.
 	prevExists := fileExists
@@ -175,7 +177,9 @@ func TestDetectInstalledBrowser(t *testing.T) {
 }
 
 func TestPersistCookiesToCache_NoopOnEmpty(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 	// Should not panic / should be a no-op.
 	persistCookiesToCache("https://example.com/", nil)
 	persistCookiesToCache("://bad", []*http.Cookie{{Name: "a", Value: "b"}})
