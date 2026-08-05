@@ -160,6 +160,29 @@ func HotelPricesReadiness(hotelID string, providers []models.ProviderPrice) book
 	case models.PriceConfidenceUnverified:
 		in.Verified = booking.False()
 	}
+	// Refundability is no longer unobtainable on this path (trvl#535). The
+	// seller's cancellation terms were always present upstream and were being
+	// dropped when the per-seller list was built; they are now carried through,
+	// so the ceiling this function used to declare is lifted for any result that
+	// actually carries them.
+	//
+	// The declaration stays for results that do NOT: a hotel-price response
+	// where no seller states its terms still cannot reach "ready", and saying so
+	// is what lets a caller distinguish "this path cannot do better" from a
+	// finding about the property. That distinction is the whole reason the
+	// ceiling was declared rather than left implicit -- an external tester saw
+	// Caution on six properties and could not tell which he was looking at.
+	refundabilityKnown := false
+	for _, p := range providers {
+		if p.FreeCancellation != nil || p.FreeCancellationUntil != "" {
+			refundabilityKnown = true
+			break
+		}
+	}
+	if refundabilityKnown {
+		in.RefundabilityKnown = booking.True()
+		return booking.Evaluate(in)
+	}
 	return booking.EvaluateWith(in, booking.Availability{NoRefundability: true})
 }
 

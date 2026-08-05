@@ -1,6 +1,24 @@
 # Provider trust tiers: decision document
 
-Status: proposed, awaiting operator sign-off. Tracks issue #535. Nothing here is implemented.
+Status: **APPROVED as written, 2026-08-05.** Design A ships; the mainstream-seller
+tier of Design B is deferred indefinitely. Tracks issue #535.
+
+Implementation state:
+
+- **Refundability — done.** The seller's cancellation terms are carried through to
+  the per-seller price list instead of being discarded, as three states rather
+  than two: refundable, stated otherwise, and UNKNOWN when the seller is silent.
+  Nil rather than false for unknown, because the upstream flag is a positive
+  badge that is simply absent when there is no offer, and rendering that absence
+  as "not refundable" would be a claim the source never made. This also lifts the
+  self-imposed ceiling described below.
+- **Official property site — NOT STARTED, and deliberately so.** This document's
+  own falsification clause requires one captured live response before any code is
+  written, to check whether the hotel address the source reports resolves to the
+  property's own domain rather than to a booking intermediary. That capture has
+  not happened, and writing the matcher first would be building on the assumption
+  the clause exists to test.
+
 
 ## The question
 

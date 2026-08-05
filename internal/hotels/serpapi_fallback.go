@@ -351,16 +351,39 @@ func providerPricesFromSerpAPIHotel(hotel *serpapi.Hotel, currency string) []mod
 		taxAtCheckout := option.TotalRate.Extracted > 0 &&
 			option.TotalRate.BeforeFeesExtracted > 0 &&
 			pricesEqual(option.TotalRate.Extracted, option.TotalRate.BeforeFeesExtracted)
+		// Carry the seller's cancellation terms through instead of discarding
+		// them (trvl#535). They were already being read here and dropped on the
+		// way into the per-seller list, which is why hotel-price results could
+		// never reach a "ready to book" verdict: refundability was declared
+		// permanently unavailable on this path.
+		//
+		// Set only from an explicit true. The upstream flag is a positive badge
+		// that is absent when there is no free-cancellation offer, so a false
+		// means "the seller said nothing", not "not refundable" -- and rendering
+		// that absence as a negative would be exactly the guess-presented-as-fact
+		// this ticket's lineage exists to prevent.
+		var freeCancel *bool
+		if option.FreeCancellation {
+			yes := true
+			freeCancel = &yes
+		}
+		until := strings.TrimSpace(option.FreeCancellationUntilDate)
+		if t := strings.TrimSpace(option.FreeCancellationUntilTime); until != "" && t != "" {
+			until += " " + t
+		}
+
 		providers = append(providers, models.ProviderPrice{
-			Provider:           serpapiProviderName(option.Source),
-			Price:              price,
-			NightlyPrice:       option.RatePerNight.Extracted,
-			TotalPrice:         option.TotalRate.Extracted,
-			Currency:           currency,
-			ProviderURL:        option.Link,
-			PriceBasis:         basis,
-			PriceConfidence:    models.PriceConfidenceVerified,
-			TaxAddedAtCheckout: taxAtCheckout,
+			Provider:              serpapiProviderName(option.Source),
+			Price:                 price,
+			NightlyPrice:          option.RatePerNight.Extracted,
+			TotalPrice:            option.TotalRate.Extracted,
+			Currency:              currency,
+			ProviderURL:           option.Link,
+			PriceBasis:            basis,
+			PriceConfidence:       models.PriceConfidenceVerified,
+			TaxAddedAtCheckout:    taxAtCheckout,
+			FreeCancellation:      freeCancel,
+			FreeCancellationUntil: until,
 		})
 	}
 	return dedupeAndSortProviderPrices(providers)
