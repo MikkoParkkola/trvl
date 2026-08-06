@@ -96,6 +96,29 @@ var riskyIdent = regexp.MustCompile(`(?i)^(u|url|rawurl|requrl|urlstr|endpoint|l
 // bookingURL are covered without having to enumerate every name anyone picks.
 var urlishKey = regexp.MustCompile(`(?i)^[a-z_]*(url|uri|link|href|endpoint)$`)
 
+// selectorTail returns the final component of a dotted expression: "r.err" ->
+// "err", "resp.Body" -> "Body", "err" -> "err".
+//
+// riskyIdent anchors on the WHOLE expression, so an error reached through a
+// field selector matched nothing: `slog.Warn("...", "error", r.err)` passed
+// every rule in this guard while logging a raw *url.Error. That is not a corner
+// case -- aggregating over a slice of per-provider results and logging
+// `r.err` is the ordinary shape, and internal/ground/search.go did exactly that
+// in a package this guard already enforced.
+//
+// Found by adversarial second-opinion review, 2026-08-06, and it is the fifth
+// blind spot in this family of guards. Testing the tail as well as the whole
+// expression closes the class rather than the instance.
+//
+// Nothing is stripped beyond the last dot: "errCount" still does not match
+// riskyIdent, so this widens coverage without widening false positives.
+func selectorTail(src string) string {
+	if i := strings.LastIndex(src, "."); i >= 0 && i+1 < len(src) {
+		return src[i+1:]
+	}
+	return src
+}
+
 // repoRoot walks up from this file to the module root. Using runtime.Caller
 // rather than a relative "../.." keeps the guard correct no matter which
 // directory `go test` is invoked from.
@@ -186,7 +209,8 @@ func inspectFile(fset *token.FileSet, f *ast.File, rel string) []string {
 			if strings.Contains(src, "logredact.") {
 				continue
 			}
-			risky := riskyExpr.MatchString(src) || riskyIdent.MatchString(src)
+			risky := riskyExpr.MatchString(src) || riskyIdent.MatchString(src) ||
+				riskyIdent.MatchString(selectorTail(src))
 
 			// KEY-BASED RULE. After the message, a logging call takes
 			// alternating key, value pairs. If the key SAYS the value is a URL,
