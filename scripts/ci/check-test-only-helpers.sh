@@ -65,7 +65,35 @@ for spec in "${HELPERS[@]}"; do
   [ "$missing" -eq 0 ] || continue
   checked=$((checked + 1))
 
+  # Run the search FIRST and check its status, rather than feeding the loop
+  # straight from a process substitution.
+  #
+  # The old line ended `... 2>/dev/null || true)`, which reported a BROKEN
+  # search as a clean repository. git grep exits 1 for "no matches" -- ordinary
+  # and expected -- and 2 or more for a real failure: bad pathspec, unreadable
+  # object, not a work tree. Swallowing both meant any breakage here produced an
+  # empty loop and the "ok: N helper(s) referenced from tests only" success
+  # line, with N counted from the symbol list rather than from anything actually
+  # searched. A guard that cannot tell "found nothing" from "could not look" is
+  # not a guard, and this one reports on whether a test-only network helper
+  # reached production code.
+  #
+  # The status cannot be checked through `< <(...)`: a process substitution's
+  # exit status is not available to the redirecting command, so the failure
+  # would still be invisible there.
+  set +e
+  matches="$(git grep -l -F -e "$symbol" -- '*.go' ':!:vendor/**' ':!:third_party/**' 2>/dev/null)"
+  grep_status=$?
+  set -e
+  if [ "$grep_status" -gt 1 ]; then
+    printf 'error: git grep failed (exit %d) while searching for %s\n' "$grep_status" "$symbol" >&2
+    printf '       Refusing to report a clean result from a search that did not run.\n' >&2
+    fail=1
+    continue
+  fi
+
   while IFS= read -r file; do
+    [ -n "$file" ] || continue
     case "$file" in
       *_test.go) continue ;;   # tests are the whole point
     esac
@@ -79,7 +107,7 @@ for spec in "${HELPERS[@]}"; do
     printf '       A production caller makes a baselined gosec finding live without changing the\n' >&2
     printf '       baseline count, so the security gate would not notice.\n' >&2
     fail=1
-  done < <(git grep -l -F -e "$symbol" -- '*.go' ':!:vendor/**' ':!:third_party/**' 2>/dev/null || true)
+  done <<< "$matches"
 done
 
 if [ "$fail" -eq 0 ]; then
