@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -219,7 +221,29 @@ func (g guardedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) 
 
 // guardedTransport returns the standard transport this package uses for
 // provider traffic, with the policy installed.
+//
+// DELIBERATELY DIRECT-ONLY: no Proxy field, so HTTP_PROXY and HTTPS_PROXY are
+// ignored. This is a real trade, not an oversight, and it is worth stating
+// because it is a behaviour change for one caller.
+//
+// The policy lives on the dialer and validates the address actually being
+// connected to. Through a proxy, that address is the PROXY -- the real
+// destination travels inside a CONNECT request the dialer never inspects. So
+// enabling ProxyFromEnvironment would not merely be neutral, it would silently
+// convert a destination policy into a proxy-reachability check while still
+// reporting itself as guarded. That is the shape of defect #539 exists to
+// remove.
+//
+// The cost is real and lands on internal/destinations, which previously used
+// http.DefaultTransport and therefore DID honour the proxy variables. Users
+// behind a mandatory proxy lose destination lookups. Rather than break them
+// silently, warnIfProxyConfigured says so once. Proxy-aware guarded routing --
+// validating and pinning both the proxy and the final destination -- is a design
+// job, not a flag, and is tracked separately.
+//
+// Found by adversarial second-opinion review of trvl#539, 2026-08-06.
 func guardedTransport() *http.Transport {
+	warnIfProxyConfigured()
 	d := guardedDialer()
 	return &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -231,4 +255,31 @@ func guardedTransport() *http.Transport {
 		TLSHandshakeTimeout: 10 * time.Second,
 		ForceAttemptHTTP2:   true,
 	}
+}
+
+// proxyWarnOnce keeps the notice below to one line per process rather than one
+// per transport construction.
+var proxyWarnOnce sync.Once
+
+// warnIfProxyConfigured tells the user once that their proxy settings are not
+// being used, and why.
+//
+// Silence here would be the worst option available: a user behind a mandatory
+// proxy would see destination lookups fail with connection errors and have no
+// way to connect that to a security policy they cannot see. Degrading is
+// sometimes necessary; degrading silently is what this whole issue is about.
+func warnIfProxyConfigured() {
+	proxyWarnOnce.Do(func() {
+		for _, name := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"} {
+			if os.Getenv(name) == "" {
+				continue
+			}
+			slog.Warn("provider requests ignore your proxy settings, so they will fail if your network requires one",
+				"variable", name,
+				"why", "the destination policy validates the address actually dialled; through a proxy that is the proxy, "+
+					"not the site, so honouring it would report requests as guarded while checking the wrong host",
+				"effect", "provider and destination lookups connect directly or not at all")
+			return
+		}
+	})
 }
