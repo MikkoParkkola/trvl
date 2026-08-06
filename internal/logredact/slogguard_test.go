@@ -32,9 +32,16 @@ import (
 // call and its fields on ONE line, so a call split across lines is invisible to
 // it. Nine such calls existed, one of them logging both a raw URL and a raw
 // error. THIS guard parses Go syntax, so multi-line calls are handled by
-// construction, and it covers the Context and LogAttrs variants the shell
-// script never looked at. It is also an ordinary Go test, so it already runs in
-// CI with everything else.
+// construction, and it scans the arguments of the Context, Log and LogAttrs
+// variants the shell script never looked at. It is also an ordinary Go test, so
+// it already runs in CI with everything else.
+//
+// Precisely: the expression and identifier rules scan the arguments of ALL the
+// functions in slogFuncs, LogAttrs included. The key rule, which needs to know
+// where key/value pairs begin, covers all of them EXCEPT LogAttrs -- see
+// attrStart. Worth the extra sentence, because "covers the LogAttrs variant"
+// was written here first and was broader than the code, which is the same
+// species of false claim this guard exists to catch.
 //
 // The right fix for #531 was always to add these six lines. Two shell scripts
 // were hand-rolled instead, each of which had to be discovered unable to fail

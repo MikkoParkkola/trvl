@@ -3,6 +3,9 @@ package logredact
 import (
 	"go/parser"
 	"go/token"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -89,9 +92,106 @@ func leaks(ctx context.Context, err error, listingURL, resolvedURL string) {
 	}
 }
 
-// The other half: the guard must NOT fire on already-wrapped calls, or it gets
-// deleted by whoever it annoys. A guard that cries wolf is removed, and a
-// removed guard protects nothing.
+// The boundary, asserted rather than remembered: slog.LogAttrs is listed in
+// slogFuncs but is, in practice, NOT GUARDED AT ALL.
+//
+// Its trailing arguments are slog.Attr values built by constructors, so each
+// argument's source text is `slog.String("url", raw)` or `slog.Any("err", err)`.
+// The key rule skips it because those are not a flat key/value sequence. The
+// expression and identifier rules skip it too, because they match the WHOLE
+// argument -- and the whole argument is a constructor call, not a bare `err` or
+// a `.Error()`.
+//
+// This test exists because the first draft of it asserted the opposite. The
+// commit that added the key rule said the identifier rules "still cover LogAttrs
+// arguments"; that was written from reading the slogFuncs table rather than
+// running anything, and this fixture disproved it within a minute. It is the
+// fourth false coverage claim in this file's history, and the first one caught
+// by a test instead of by a reviewer.
+//
+// Safe today because the codebase has no LogAttrs call. Recorded, rather than
+// left as a comment, so it fails loudly the moment that stops being true is not
+// something this test can do -- see the note below.
+//
+// If LogAttrs starts being used, the fix is to walk Attr constructor calls and
+// apply the key rule to their first argument. A rule with no subject is a rule
+// nobody maintains, which is why it is not written yet.
+func TestLogAttrsIsAKnownUnguardedGap(t *testing.T) {
+	const fixture = `package fixture
+
+import (
+	"context"
+	"log/slog"
+)
+
+func attrs(ctx context.Context, listingURL string, err error) {
+	slog.LogAttrs(ctx, slog.LevelWarn, "a", slog.String("url", listingURL))
+	slog.LogAttrs(ctx, slog.LevelWarn, "b", slog.Any("err", err))
+}
+`
+	fset := token.NewFileSet()
+	f, parseErr := parser.ParseFile(fset, "attrs.go", fixture, 0)
+	if parseErr != nil {
+		t.Fatalf("fixture does not parse: %v", parseErr)
+	}
+	found := inspectFile(fset, f, "attrs.go")
+
+	if len(found) != 0 {
+		t.Errorf("LogAttrs is now guarded. That is an improvement, not a failure -- but this test "+
+			"and the LogAttrs carve-out in attrStart's comment both say it is not, so update them "+
+			"together.\ngot:\n%s", strings.Join(found, "\n"))
+	}
+}
+
+// And the gap must stay theoretical: no production file may call LogAttrs while
+// it is unguarded.
+//
+// This is the half that makes the gap safe. Documenting an unguarded surface
+// protects nothing on its own; what protects it is that nothing uses it, and
+// this fails the moment something does -- pointing at the fix rather than
+// leaving a leak to be found later.
+func TestNothingUsesTheUnguardedLogAttrs(t *testing.T) {
+	root := repoRoot(t)
+	var users []string
+
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "vendor", "node_modules", "testdata":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil || !isEnforced(rel) {
+			return nil
+		}
+		src, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil
+		}
+		if strings.Contains(string(src), "LogAttrs(") {
+			users = append(users, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+
+	for _, u := range users {
+		t.Errorf("%s calls slog.LogAttrs, which this guard does not check: its Attr-wrapped "+
+			"arguments match none of the rules, so a journey URL passed through slog.String(\"url\", raw) "+
+			"reaches the log unreported. Either wrap the value with logredact, or teach inspectFile to "+
+			"walk Attr constructors and delete this test.", u)
+	}
+}
 func TestGuardIsQuietOnWrappedCalls(t *testing.T) {
 	const clean = `package fixture
 
