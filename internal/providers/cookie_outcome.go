@@ -189,6 +189,20 @@ func hostForLog(targetURL string) string {
 // JavaScript bot-detection challenges (HTTP 202/403). The user's actual
 // browser has already solved any JS challenges and has valid session
 // cookies, which we can read directly from their disk-backed cookie jars.
+// readCookies is the seam through which the cookie stores are read.
+//
+// It exists so a test can drive the consent RACE, which is otherwise untestable
+// from outside: permittedAfterRead re-asks for consent after the read, and
+// nothing in the public API can revoke consent while a read is in flight. A test
+// that sets the opt-out before calling exercises the entry check instead, and
+// passes whether or not the post-read gate works at all.
+//
+// That is a production variable serving a test, which is a real cost. It is
+// taken because the alternative is a correctness property with no test that can
+// fail -- and this branch exists to remove exactly that. The default is the real
+// reader, and TestReadCookiesDefaultsToTheRealReader pins it.
+var readCookies = kooky.ReadCookies
+
 func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outcome browserCookieOutcome, readErr error) {
 	// The outcome must agree with what is actually returned.
 	//
@@ -268,7 +282,7 @@ func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outc
 	defer cancel()
 
 	host := u.Hostname()
-	cookies, err := kooky.ReadCookies(ctx, kooky.Valid, kooky.DomainHasSuffix(registrableSuffix(host)))
+	cookies, err := readCookies(ctx, kooky.Valid, kooky.DomainHasSuffix(registrableSuffix(host)))
 	if err != nil && len(cookies) == 0 {
 		// A store was found and could not be read. Distinct from "this machine
 		// has no cookies for the site", and the distinction is the whole point:
