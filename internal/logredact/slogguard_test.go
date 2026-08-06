@@ -128,6 +128,104 @@ func isEnforced(rel string) bool {
 // It is deliberately syntactic. A type-checked analysis would catch more, but
 // this runs in the normal test suite with no extra dependency, and the shape it
 // matches is exactly the shape that produced the defect.
+// attrStart is the argument index at which a logging call's alternating
+// key/value pairs begin.
+//
+// This is the whole reason the key rule needs a table rather than "odd indexes
+// are keys". slog.Debug(msg, k, v) puts the first key at 1; but
+// slog.DebugContext(ctx, msg, k, v) puts it at 2, and slog.Log(ctx, level, msg,
+// k, v) at 3. The first version of the key rule assumed index 1 unconditionally,
+// so every *Context call was silently skipped -- a guard that could not fail for
+// the exact variants its own comment claimed to cover. Caught by adversarial
+// review, 2026-08-06, and it is the same defect this guard exists to prevent.
+//
+// LogAttrs is absent deliberately: its trailing arguments are slog.Attr values
+// (slog.String("url", v)), not a flat key/value sequence, so pair arithmetic
+// does not apply to it at all. Claiming to cover it here would be the same kind
+// of false claim. Its arguments are still scanned by the expression and
+// identifier rules below.
+var attrStart = map[string]int{
+	"Debug": 1, "Info": 1, "Warn": 1, "Error": 1,
+	"DebugContext": 2, "InfoContext": 2, "WarnContext": 2, "ErrorContext": 2,
+	"Log": 3,
+}
+
+// inspectFile returns every guard finding in one parsed file, as
+// "relpath:line: message". Extracted so the fixture test below can run the
+// REAL rules against planted leaks rather than a copy of them that could drift.
+func inspectFile(fset *token.FileSet, f *ast.File, rel string) []string {
+	var found []string
+
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || !slogFuncs[sel.Sel.Name] {
+			return true
+		}
+		if !mentionsSlog(sel.X) {
+			return true
+		}
+
+		start, pairs := attrStart[sel.Sel.Name]
+
+		for i, arg := range call.Args {
+			if i == 0 {
+				continue // the message literal, or the context
+			}
+			src := exprString(fset, arg)
+			if strings.Contains(src, "logredact.") {
+				continue
+			}
+			risky := riskyExpr.MatchString(src) || riskyIdent.MatchString(src)
+
+			// KEY-BASED RULE. After the message, a logging call takes
+			// alternating key, value pairs. If the key SAYS the value is a URL,
+			// the value must be wrapped whatever the variable happens to be
+			// called.
+			//
+			// This exists because the name-based rules below only recognise a
+			// short list of identifiers -- url, rawURL, endpoint -- while real
+			// code calls them resolvedURL, listingURL, targetURL. Nine such
+			// values reached a log unwrapped under a literal "url" key while
+			// every check in the repository reported clean. The key is the
+			// honest signal: whoever wrote "url" was telling us what the value
+			// is.
+			//
+			// Deliberately not the mirror rule for error keys: an "err" key is
+			// attached to file and parse failures that never touch a URL, and a
+			// guard that fires on those gets deleted. Errors stay covered by
+			// riskyExpr/riskyIdent.
+			if !risky && pairs && i >= start && (i-start)%2 == 0 && i+1 < len(call.Args) {
+				if lit, ok := arg.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					key := strings.Trim(lit.Value, `"`)
+					if urlishKey.MatchString(key) {
+						valSrc := exprString(fset, call.Args[i+1])
+						if !strings.Contains(valSrc, "logredact.") {
+							pos := fset.Position(call.Args[i+1].Pos())
+							found = append(found, filepath.ToSlash(rel)+":"+itoa(pos.Line)+
+								": slog value "+valSrc+" is logged under the URL-shaped key "+
+								lit.Value+"; wrap it with logredact.URL")
+						}
+					}
+				}
+			}
+
+			if !risky {
+				continue
+			}
+			pos := fset.Position(arg.Pos())
+			found = append(found, filepath.ToSlash(rel)+":"+itoa(pos.Line)+": slog arg "+src+
+				" may carry a URL or an error string; wrap it with logredact")
+		}
+		return true
+	})
+
+	return found
+}
+
 func TestNoRawURLOrErrorReachesSlog(t *testing.T) {
 	root := repoRoot(t)
 	fset := token.NewFileSet()
@@ -155,79 +253,13 @@ func TestNoRawURLOrErrorReachesSlog(t *testing.T) {
 		if parseErr != nil {
 			return nil // a package mid-edit by another owner must not fail this
 		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
+		for _, msg := range inspectFile(fset, f, rel) {
+			if isEnforced(rel) {
+				failures = append(failures, msg)
+			} else {
+				advisories = append(advisories, msg)
 			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || !slogFuncs[sel.Sel.Name] {
-				return true
-			}
-			if !mentionsSlog(sel.X) {
-				return true
-			}
-			for i, arg := range call.Args {
-				if i == 0 {
-					continue // the message literal
-				}
-				src := exprString(fset, arg)
-				if strings.Contains(src, "logredact.") {
-					continue
-				}
-				risky := riskyExpr.MatchString(src) || riskyIdent.MatchString(src)
-
-				// KEY-BASED RULE. slog takes alternating key, value pairs after
-				// the message, so an odd index is a key and the next argument is
-				// its value. If the key SAYS the value is a URL, the value must
-				// be wrapped whatever the variable happens to be called.
-				//
-				// This exists because the name-based rules above only recognise
-				// a short list of identifiers -- url, rawURL, endpoint and so on
-				// -- and real code calls them resolvedURL, listingURL,
-				// bookingURL. Both of those reached a log unwrapped under a
-				// literal "url" key while every check in the repository reported
-				// clean. The key is the honest signal: whoever wrote "url" was
-				// telling us what the value is.
-				//
-				// Deliberately not the mirror rule for error keys: an "err" key
-				// is attached to file and parse failures that never touch a URL,
-				// and a guard that fires on those gets deleted. Errors stay
-				// covered by riskyExpr/riskyIdent above.
-				if !risky && i%2 == 1 && i+1 < len(call.Args) {
-					if lit, ok := arg.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-						key := strings.Trim(lit.Value, `"`)
-						if urlishKey.MatchString(key) {
-							valSrc := exprString(fset, call.Args[i+1])
-							if !strings.Contains(valSrc, "logredact.") {
-								pos := fset.Position(call.Args[i+1].Pos())
-								msg := filepath.ToSlash(rel) + ":" + itoa(pos.Line) +
-									": slog value " + valSrc + " is logged under the URL-shaped key " +
-									lit.Value + "; wrap it with logredact.URL"
-								if isEnforced(rel) {
-									failures = append(failures, msg)
-								} else {
-									advisories = append(advisories, msg)
-								}
-							}
-						}
-					}
-				}
-
-				if !risky {
-					continue
-				}
-				pos := fset.Position(arg.Pos())
-				msg := filepath.ToSlash(rel) + ":" + itoa(pos.Line) + ": slog arg " + src +
-					" may carry a URL or an error string; wrap it with logredact"
-				if isEnforced(rel) {
-					failures = append(failures, msg)
-				} else {
-					advisories = append(advisories, msg)
-				}
-			}
-			return true
-		})
+		}
 		return nil
 	})
 	if err != nil {
