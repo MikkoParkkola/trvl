@@ -48,9 +48,32 @@ func TestHostForLogKeepsOrdinaryHostnames(t *testing.T) {
 		{"https://[2001:db8::1]:443/x", "2001:db8::1"},
 		{"://bad?from=HEL", "?"},
 		{"/relative/path", "?"},
+		// Host present, hostname empty. Gating on Host instead of Hostname would
+		// print an empty string under a field called "host".
+		{"https://:443/x", "?"},
 	} {
 		if got := hostForLog(c.in); got != c.want {
 			t.Errorf("hostForLog(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// The cut takes the FIRST "%", not the last, and never leaves the field blank.
+//
+// Both properties are one "cleanup" away from being lost: LastIndex looks
+// equivalent until a zone identifier contains its own "%", and a host that is
+// nothing but zone text cuts to the empty string. A blank value under the key
+// "host" reads as a hostname that is somehow empty, which is a worse answer
+// than admitting we have none.
+func TestHostForLogCutsAtTheFirstPercentAndNeverBlanks(t *testing.T) {
+	for _, c := range []struct{ in, want, why string }{
+		{"https://[fe80::1%25eth0%25extra]:443/x", "fe80::1",
+			"a zone identifier containing its own percent: LastIndex would keep \"fe80::1%eth0\""},
+		{"https://[%25evil]:443/x", "?",
+			"a host that is entirely zone text cuts to nothing, and the field must say so"},
+	} {
+		if got := hostForLog(c.in); got != c.want {
+			t.Errorf("hostForLog(%q) = %q, want %q — %s", c.in, got, c.want, c.why)
 		}
 	}
 }

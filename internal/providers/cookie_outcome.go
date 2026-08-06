@@ -200,12 +200,21 @@ func reportOutcome(targetURL string, outcome browserCookieOutcome, readErr error
 // contain one.
 func hostForLog(targetURL string) string {
 	u, err := url.Parse(targetURL)
-	if err != nil || u.Host == "" {
+	// Hostname(), not Host, for the same reason as the reader at the URL guard
+	// below: "https://:443/" has a non-empty Host (":443") and an empty
+	// Hostname. Gating on Host would let it through and print an empty string.
+	if err != nil || u.Hostname() == "" {
 		return "?"
 	}
 	host := u.Hostname()
 	if i := strings.IndexByte(host, '%'); i >= 0 {
 		host = host[:i]
+	}
+	if host == "" {
+		// The whole host was zone text: "%25evil" cuts to nothing. A blank field
+		// under the key "host" reads as a hostname that is somehow empty, which
+		// is a worse answer than admitting we have none.
+		return "?"
 	}
 	return host
 }
