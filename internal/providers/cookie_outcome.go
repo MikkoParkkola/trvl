@@ -1,12 +1,16 @@
 package providers
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 
 	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/logredact"
+	"github.com/browserutils/kooky"
 )
 
 // Browser-cookie read outcomes and their reporting (trvl#529).
@@ -173,4 +177,173 @@ func hostForLog(targetURL string) string {
 		return "?"
 	}
 	return u.Hostname()
+}
+
+// browserCookiesForURL reads cookies from the user's browsers matching the
+// given URL's domain. Iterates all registered browser cookie stores and
+// returns every cookie whose domain matches the URL host (or is a parent
+// domain of it). Returns nil if the URL cannot be parsed, no cookies are
+// found, or cookie access fails (e.g. user denied Keychain access on macOS).
+//
+// This is used as a fallback when standard HTTP preflight gets blocked by
+// JavaScript bot-detection challenges (HTTP 202/403). The user's actual
+// browser has already solved any JS challenges and has valid session
+// cookies, which we can read directly from their disk-backed cookie jars.
+func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outcome browserCookieOutcome, readErr error) {
+	// The outcome must agree with what is actually returned.
+	//
+	// permittedAfterRead re-asks for consent AFTER the seconds-long read, so it
+	// can empty the list at the last moment -- the user revoked access while the
+	// read was in flight. Applying it to `out` alone left the outcome saying
+	// "found" beside no cookies, so a caller acting on the outcome would report
+	// a successful read that returned nothing. That is the same ambiguity #529
+	// exists to remove, reintroduced by the consent gate rather than by the
+	// reader.
+	//
+	// Named outcomeDeclined rather than outcomeNoMatch: the stores may well have
+	// held cookies: the user simply withdrew permission to use them. Reporting
+	// "you are not logged in" would be a wrong answer to a question nobody asked.
+	//
+	// Flagged independently by both second-opinion reviewers, 2026-08-06.
+	defer func() {
+		before := len(out)
+		out = permittedAfterRead(out)
+		if before > 0 && len(out) == 0 {
+			outcome = outcomeDeclined
+			readErr = nil
+		}
+	}()
+
+	// The opt-out sits on the low-level reader, not on the exported wrapper,
+	// because a user setting TRVL_NO_BROWSER_COOKIES means their cookie stores
+	// rather than one entry point into them. In-package recovery code reaches
+	// this function directly (currentCookieSource, the warm-cache path), so a
+	// gate on the wrapper alone would ship a control whose name promises more
+	// than it delivers — the same defect class as #507.
+	//
+	// Whether this reader returns anything on a given machine is a separate
+	// question, and currently a doubtful one: see #529.
+	//
+	// This entry check only saves the work. The GUARANTEE is the deferred
+	// permittedAfterRead above, which re-asks after the seconds-long read has
+	// finished; deleting this one costs time, deleting that one ships the bug.
+	if cookies.Disabled() {
+		return nil, outcomeDeclined, nil
+	}
+
+	// Check warm cache first — returns instantly if pre-warmed.
+	if cached := warmBrowserCookiesResult(targetURL, "", browserCookieLookupTimeout); cached != nil {
+		return cached, outcomeFound, nil
+	}
+
+	// Skip browser cookie lookups during `go test` to avoid macOS Keychain
+	// prompts. Every recompiled test binary gets a new code signature, so
+	// "Always Allow" doesn't persist and the user gets prompted repeatedly.
+	// Live probe tests that genuinely need browser cookies set
+	// TRVL_ALLOW_BROWSER_COOKIES=1 explicitly.
+	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
+		return nil, outcomeSuppressedInTest, nil
+	}
+
+	u, err := url.Parse(targetURL)
+	if err != nil || u.Hostname() == "" {
+		// Hostname(), not Host. "https://:443/" has a NON-empty Host (":443") and
+		// an empty Hostname, so the old check let it through and the read ran
+		// against an empty domain suffix -- matching whatever that happens to
+		// match rather than refusing a URL with no host in it. Raised by
+		// adversarial second-opinion review, 2026-08-06.
+		//
+		// url.Parse returns a nil error for a URL that merely has no host
+		// ("/path", "mailto:x"), so the error is synthesised rather than passed
+		// through. Returning nil here would leave the caller logging an empty
+		// "err" field and asserting nothing -- the shape this whole change is
+		// about.
+		if err == nil {
+			err = fmt.Errorf("no host in target URL")
+		}
+		return nil, outcomeBadURL, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), browserCookieLookupTimeout)
+	defer cancel()
+
+	host := u.Hostname()
+	cookies, err := kooky.ReadCookies(ctx, kooky.Valid, kooky.DomainHasSuffix(registrableSuffix(host)))
+	if err != nil && len(cookies) == 0 {
+		// A store was found and could not be read. Distinct from "this machine
+		// has no cookies for the site", and the distinction is the whole point:
+		// one is fixed by logging in, the other never is.
+		//
+		// A timeout is split out because it is not evidence of either. This
+		// branch used to answer every failure with "grant Keychain access, or
+		// app-bound encryption", so a slow disk produced confident advice about
+		// permissions -- the same species of wrong answer that got #529 filed.
+		// ctx.Err() is consulted rather than the returned error because a
+		// cancelled read may report the cancellation in any wrapping the
+		// library chooses.
+		if ctx.Err() != nil {
+			return nil, outcomeTimedOut, fmt.Errorf("cookie store read did not finish in %s: %w", browserCookieLookupTimeout, err)
+		}
+		return nil, outcomeReadFailed, err
+	}
+
+	result := make([]*http.Cookie, 0, len(cookies))
+	// Track best cookie per dedup key (name+domain+path). When kooky returns
+	// cookies from multiple browsers (Chrome, Brave, etc.), stale sessions in
+	// one browser can shadow fresh sessions in another. Prefer the cookie with
+	// the longest value, since fresh session cookies carry more data than
+	// stale/expired ones (e.g. bkng_sso_ses: 96 bytes fresh vs 3 bytes stale).
+	type entry struct {
+		cookie http.Cookie
+		idx    int // position in result slice, -1 if not yet appended
+	}
+	seen := make(map[string]*entry, len(cookies))
+	for _, c := range cookies {
+		if c == nil {
+			continue
+		}
+		if !cookieDomainMatchesHost(c.Domain, host) {
+			continue
+		}
+		key := c.Name + "\x00" + c.Domain + "\x00" + c.Path
+		if prev, dup := seen[key]; dup {
+			// Replace if this cookie has a longer (fresher) value.
+			if len(c.Value) > len(prev.cookie.Value) {
+				prev.cookie = c.Cookie
+				if prev.idx >= 0 {
+					result[prev.idx] = &prev.cookie
+				}
+			}
+			continue
+		}
+		cp := c.Cookie // copy
+		idx := len(result)
+		result = append(result, &cp)
+		seen[key] = &entry{cookie: cp, idx: idx}
+	}
+	if len(result) == 0 {
+		// A PARTIAL failure must not be reported as "no cookies".
+		//
+		// kooky reads several stores and can return cookies from one while
+		// reporting an error from another, so the error branch above -- which
+		// requires len(cookies)==0 -- does not fire. If domain filtering then
+		// leaves nothing, this used to answer outcomeNoMatch: "you are not
+		// logged in to this site". That is a confident claim about the user's
+		// account made from a read that partly failed, and it is exactly the
+		// misdiagnosis #529 was filed on.
+		//
+		// Raised by adversarial second-opinion review, 2026-08-06.
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, outcomeTimedOut, fmt.Errorf("cookie store read did not finish in %s: %w", browserCookieLookupTimeout, err)
+			}
+			return nil, outcomeReadFailed, err
+		}
+		// The stores were read successfully and hold nothing for this domain.
+		// This is the one outcome that genuinely means "you are not logged in
+		// to this site", which is why it must not share a return value with
+		// "the store could not be read".
+		return nil, outcomeNoMatch, nil
+	}
+	return result, outcomeFound, nil
 }
