@@ -3,6 +3,7 @@ package upgrade
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -39,11 +40,25 @@ func TestBackupPreferencesRefusesUnsafeVersionStamp(t *testing.T) {
 
 			backupPreferences(dir, stamp)
 
-			// Nothing may be written anywhere under the parent of dir except
-			// the preferences file we seeded. Walking the parent catches an
-			// escape that a check confined to dir would miss entirely.
+			// Two properties, and the second was missing until 2026-08-06.
+			//
+			// (a) The stamp must never reach a filename. Walking the PARENT of dir
+			// catches an escape that a check confined to dir would miss entirely.
+			//
+			// (b) The backup must still happen. The original version returned
+			// silently on a bad stamp, so the migration rewrote the user's
+			// preferences with no backup and no message -- safe against a
+			// traversal filename, unsafe against the thing a backup is for. This
+			// test asserted (a) by requiring that NOTHING was written, which also
+			// locked in (b)'s absence.
+			//
+			// Asserted on the backup's SUFFIX rather than by searching filenames
+			// for the stamp text. The first attempt did the latter and failed on
+			// stamp "a/b": filepath.Base gives "b", and "preferences.json.bak."
+			// contains a b. A one-character needle matches everything.
 			parent := filepath.Dir(dir)
 			var strays []string
+			var suffixes []string
 			_ = filepath.Walk(parent, func(path string, info os.FileInfo, err error) error {
 				if err != nil || info == nil || info.IsDir() {
 					return nil //nolint:nilerr // an unreadable sibling is not this test's business
@@ -51,14 +66,40 @@ func TestBackupPreferencesRefusesUnsafeVersionStamp(t *testing.T) {
 				if path == prefsPathIn(dir) {
 					return nil
 				}
-				if filepath.Dir(path) == dir || filepath.Dir(path) == parent {
-					strays = append(strays, path)
+				// Anything created outside dir is an escape, full stop.
+				if filepath.Dir(path) != dir {
+					if filepath.Dir(path) == parent {
+						strays = append(strays, path)
+					}
+					return nil
 				}
+				base := filepath.Base(path)
+				suffix, isBackup := strings.CutPrefix(base, "preferences.json.bak.")
+				if !isBackup {
+					strays = append(strays, path)
+					return nil
+				}
+				suffixes = append(suffixes, suffix)
 				return nil
 			})
 			if len(strays) > 0 {
 				t.Errorf("stamp %q produced %v -- an unvalidated version stamp reached a filename",
 					stamp, strays)
+			}
+			if len(suffixes) != 1 {
+				t.Errorf("stamp %q produced %d backups, want exactly 1: refusing the stamp as a "+
+					"filename must not also cancel the backup, or a user with a corrupted version "+
+					"stamp has their preferences migrated with no copy kept and nothing said",
+					stamp, len(suffixes))
+			}
+			for _, suffix := range suffixes {
+				if !strings.HasPrefix(suffix, "unknown-") {
+					t.Errorf("fallback backup suffix %q must be generated here, never derived from "+
+						"the rejected stamp %q", suffix, stamp)
+				}
+				if strings.ContainsAny(suffix, `/\`) || strings.Contains(suffix, "..") {
+					t.Errorf("fallback backup suffix %q contains path syntax", suffix)
+				}
 			}
 		})
 	}

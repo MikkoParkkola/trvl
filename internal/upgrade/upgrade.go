@@ -8,10 +8,12 @@ package upgrade
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Migration describes a single post-upgrade step.
@@ -267,23 +269,47 @@ func safeVersionStamp(v string) bool {
 
 // backupPreferences copies preferences.json to preferences.json.bak.{version}
 // if it exists.
+//
+// A malformed version stamp does NOT mean no backup. The stamp is refused as a
+// filename component -- see safeVersionStamp -- but the backup itself still
+// happens, under a name this process generates from its own clock.
+//
+// The earlier behaviour returned silently, leaving the migration to rewrite the
+// user's preferences with no backup and no message. The comment called that "the
+// safe direction". It is safe against a path-traversal filename and unsafe
+// against the thing a backup exists for: the user loses their only copy, and
+// learns nothing. Raised by adversarial second-opinion review of trvl#539,
+// 2026-08-06, as "malformed stamps silently skip the only backup while
+// migrations continue" -- correctly.
+//
+// Refusing the stamp and generating our own suffix gives both properties. No
+// caller-supplied string reaches the path, and the safety net survives.
 func backupPreferences(dir, oldVersion string) {
+	suffix := oldVersion
 	if !safeVersionStamp(oldVersion) {
-		// Refuse rather than sanitise: see safeVersionStamp. Skipping the backup
-		// is the safe direction -- the migration still runs, and the alternative
-		// is writing a file to a path the stamp chose.
-		return
+		// Never interpolated into the path -- logged so the operator can see WHY
+		// the backup is not named after their version, and redacted because a
+		// stamp this malformed is attacker-influenced text.
+		suffix = "unknown-" + time.Now().UTC().Format("20060102T150405Z")
+		slog.Warn("upgrade: version stamp is not usable as a filename; backing up under a generated name instead",
+			"backup_suffix", suffix,
+			"reason", "the stamp contained characters that must not reach a path")
 	}
 	src := prefsPathIn(dir)
 	if _, err := os.Stat(src); err != nil {
 		return // no prefs file, nothing to back up
 	}
-	dst := src + ".bak." + oldVersion
+	dst := src + ".bak." + suffix
 	data, err := os.ReadFile(src)
 	if err != nil {
+		slog.Warn("upgrade: could not read preferences to back them up; the migration will proceed without a backup",
+			"err", err)
 		return
 	}
-	_ = os.WriteFile(dst, data, 0o600)
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
+		slog.Warn("upgrade: could not write the preferences backup; the migration will proceed without one",
+			"err", err)
+	}
 }
 
 // whatsNewEntry describes what changed in a specific version.
