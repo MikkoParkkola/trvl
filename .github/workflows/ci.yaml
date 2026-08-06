@@ -23,6 +23,15 @@ jobs:
         run: scripts/ci/check-file-size.sh
       - name: Check release metadata
         run: scripts/ci/check-release-metadata.sh
+      # This was written as a merge guard and wired only into the local
+      # `make repo-hygiene`, which no workflow invokes -- so it gated nothing on
+      # the merge path while the PR described it as enforced (trvl#539,
+      # 2026-08-06). It is sabotage-verified; that verified it WORKS, never that
+      # it RUNS. A guard that does not run is not a weak guard, it is a comment.
+      # Listed individually rather than via `make` so that adding a script to the
+      # Makefile can never again silently mean "and it runs in CI".
+      - name: Check test-only helpers stay out of production
+        run: scripts/ci/check-test-only-helpers.sh
 
   test:
     permissions:

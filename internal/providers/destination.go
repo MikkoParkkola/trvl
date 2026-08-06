@@ -191,7 +191,30 @@ func guardedDialer() *net.Dialer {
 //
 // Callers get the policy at DIAL time, which is what makes it hold even when a
 // redirect or a DNS answer moves the connection somewhere the URL did not name.
-func GuardedTransport() *http.Transport { return guardedTransport() }
+//
+// It returns an http.RoundTripper, not the *http.Transport, and that is the
+// point rather than an accident of style. The policy lives on the dialer. An
+// exported *http.Transport is a mutable struct, so any consumer could write:
+//
+//	t := providers.GuardedTransport()
+//	t.DialTLSContext = somethingElse   // HTTPS now bypasses the policy
+//	t.DialContext = nil                // or remove it outright
+//
+// and still hold a value that looks guarded, passes review, and satisfies any
+// test that inspects its fields. Handing back an opaque round-tripper makes the
+// bypass unavailable instead of merely discouraged -- which is the whole lesson
+// of #539, where a safety property rested on nobody happening to do the wrong
+// thing. Every current consumer assigns this straight into http.Client.Transport
+// and needs no other field, so nothing is lost by sealing it.
+func GuardedTransport() http.RoundTripper { return guardedRoundTripper{t: guardedTransport()} }
+
+// guardedRoundTripper hides the transport so the dialer carrying the policy
+// cannot be reached and replaced.
+type guardedRoundTripper struct{ t *http.Transport }
+
+func (g guardedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	return g.t.RoundTrip(r)
+}
 
 // guardedTransport returns the standard transport this package uses for
 // provider traffic, with the policy installed.

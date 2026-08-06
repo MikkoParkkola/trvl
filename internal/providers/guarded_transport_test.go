@@ -61,3 +61,26 @@ func TestGuardedTransportHonoursTheLocalOptIn(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 }
+
+// trvl#539 TRVL.HARDEN.1 -- the exported value must not expose the transport
+// whose dialer carries the policy.
+//
+// The policy is installed on DialContext. While this returned *http.Transport,
+// a consumer could set DialTLSContext (which takes precedence for HTTPS) or nil
+// out DialContext, and go on holding something that still looked guarded. The
+// two tests above would not notice: they build their own client from a fresh
+// call and never mutate it.
+//
+// Asserted as a type assertion rather than a comment, because "don't mutate
+// this" is exactly the kind of instruction #539 exists to stop relying on. If
+// someone changes the signature back to *http.Transport for convenience, this
+// fails and says why.
+func TestGuardedTransportDoesNotExposeItsTransport(t *testing.T) {
+	rt := GuardedTransport()
+
+	if _, ok := rt.(*http.Transport); ok {
+		t.Fatal("GuardedTransport returned a *http.Transport: a consumer can then set DialTLSContext " +
+			"or clear DialContext and keep a value that looks guarded but dials anywhere. The policy " +
+			"lives on the dialer, so the dialer must not be reachable.")
+	}
+}

@@ -24,9 +24,25 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-# symbol:declaring-file
+# symbol:declaring-file[,also-allowed-file...]
+#
+# A symbol may legitimately appear in more than one production file -- a struct
+# field is declared and read where the behaviour lives, and set where the test
+# helper is built. Listing every allowed home explicitly keeps the rule "these
+# exact files and tests, nothing else" rather than widening it to a directory.
 HELPERS=(
   "NewTestClient:internal/batchexec/testclient.go"
+  # The transport NewTestClient installs. Guarded for the same reason as the
+  # constructor: reaching it directly is the same bypass with one less step.
+  "testRedirectTransport:internal/batchexec/testclient.go"
+  # The flag that decides whether stealthClient reuses the plain transport.
+  # Declared and read in client.go, set only by the test-client constructor. A
+  # production file setting it true would silently disable the real Chrome
+  # fingerprint for whichever client it touched -- the flag defaults safe
+  # (asserted in stealth_flag_test.go), and this keeps it from being set unsafe
+  # somewhere else in the package. Unexported, so the compiler bounds the blast
+  # radius to this package; this bounds it to these two files.
+  "reuseTransportForStealth:internal/batchexec/client.go,internal/batchexec/testclient.go"
 )
 
 fail=0
@@ -34,21 +50,30 @@ checked=0
 
 for spec in "${HELPERS[@]}"; do
   symbol="${spec%%:*}"
-  home="${spec#*:}"
+  homes="${spec#*:}"
 
-  if [ ! -f "$home" ]; then
-    printf 'error: %s is declared to live in %s, which does not exist\n' "$symbol" "$home" >&2
-    printf '       Update scripts/ci/check-test-only-helpers.sh if the helper moved.\n' >&2
-    fail=1
-    continue
-  fi
+  missing=0
+  IFS=',' read -r -a home_list <<< "$homes"
+  for home in "${home_list[@]}"; do
+    if [ ! -f "$home" ]; then
+      printf 'error: %s is declared to live in %s, which does not exist\n' "$symbol" "$home" >&2
+      printf '       Update scripts/ci/check-test-only-helpers.sh if the helper moved.\n' >&2
+      fail=1
+      missing=1
+    fi
+  done
+  [ "$missing" -eq 0 ] || continue
   checked=$((checked + 1))
 
   while IFS= read -r file; do
     case "$file" in
       *_test.go) continue ;;   # tests are the whole point
-      "$home") continue ;;     # its own declaration
     esac
+    allowed=0
+    for home in "${home_list[@]}"; do
+      [ "$file" = "$home" ] && allowed=1
+    done
+    [ "$allowed" -eq 1 ] && continue
     printf 'error: %s references the test-only helper %s\n' "$file" "$symbol" >&2
     printf '       That helper redirects requests to a local test server and exists for tests only.\n' >&2
     printf '       A production caller makes a baselined gosec finding live without changing the\n' >&2
