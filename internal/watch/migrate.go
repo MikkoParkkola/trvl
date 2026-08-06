@@ -505,9 +505,24 @@ func (s *Store) MigrateDryRun() (MigrationReport, error) {
 	s.mu.Lock()
 	watches := append([]Watch(nil), s.watches...)
 	history := append([]PricePoint(nil), s.history...)
+	retention := s.retention
 	s.mu.Unlock()
 
-	shadow := &Store{dir: s.dir, watches: watches, history: history}
+	// The shadow carries the retention config, not just the data.
+	//
+	// Without it, retentionOrDefault falls back to the COMPILED defaults, so a
+	// dry run previewed a 1000-point cap while the real migration applied the
+	// operator's configured one. With the cap lowered to 20, the preview
+	// reported nothing to compact and the migration then deleted history the
+	// preview had promised to keep -- the exact failure a dry run exists to
+	// prevent, in the command whose whole purpose is "show me before you touch
+	// it".
+	//
+	// Same root as the gate/prune mismatch fixed above: a configured value read
+	// on one path and not the other. Found by adversarial second-opinion review
+	// (2026-08-06) which named both halves; only the first was fixed on the
+	// first pass.
+	shadow := &Store{dir: s.dir, watches: watches, history: history, retention: retention}
 	shadow.mu.Lock()
 	defer shadow.mu.Unlock()
 
