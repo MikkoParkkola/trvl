@@ -129,7 +129,7 @@ func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthCo
 
 	slog.Info("opening URL in browser to refresh WAF cookies, waiting up to 30s...",
 		"provider", pc.config.ID,
-		"url", targetURL,
+		"url", logredact.URL(targetURL),
 		"browser", browserPref,
 	)
 
@@ -140,7 +140,7 @@ func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthCo
 	prev := browserCookiesForURL(targetURL)
 	if err := openURLInBrowser(targetURL, browserPref); err != nil {
 		slog.Warn("browser escape hatch: open failed",
-			"provider", pc.config.ID, "error", err.Error())
+			"provider", pc.config.ID, "error", logredact.Err(err))
 		return nil, false
 	}
 
@@ -333,7 +333,7 @@ func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool
 	// site would be a tautology and the site is pinned to the endpoint instead.
 	if !cookieTargetPermitted(pc.config, targetURL) {
 		slog.Debug("refusing browser cookies: target is not https on the consented provider site",
-			"url", targetURL, "site", providerCookieSite(pc.config))
+			"url", logredact.URL(targetURL), "site", providerCookieSite(pc.config))
 		return false
 	}
 	// Fail closed: browser cookies only enter a jar that can revoke them. A

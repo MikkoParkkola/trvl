@@ -476,7 +476,7 @@ func SearchSNCF(ctx context.Context, from, to, date, currency string, allowBrows
 		return apiRoutes, nil
 	}
 	if apiErr != nil {
-		slog.Debug("sncf calendar api failed", "err", apiErr)
+		slog.Debug("sncf calendar api failed", "err", logredact.Err(apiErr))
 	}
 	if !allowBrowserFallbacks {
 		return nil, apiErr
@@ -497,7 +497,7 @@ func SearchSNCF(ctx context.Context, from, to, date, currency string, allowBrows
 		}
 		return cRoutes, nil
 	} else {
-		slog.Debug("sncf curl fallback failed", "err", cErr)
+		slog.Debug("sncf curl fallback failed", "err", logredact.Err(cErr))
 	}
 
 	// Headless-first challenge escalation (MIK-6218): try to clear SNCF's
@@ -506,14 +506,14 @@ func SearchSNCF(ctx context.Context, from, to, date, currency string, allowBrows
 	// Only an interactive captcha that a headless browser cannot solve falls
 	// through to a VISIBLE window for the user.
 	if res, rErr := sncfResolveChallenge(ctx, sncfHomeURL); rErr != nil {
-		slog.Debug("sncf headless challenge resolve failed", "err", rErr)
+		slog.Debug("sncf headless challenge resolve failed", "err", logredact.Err(rErr))
 	} else if res != nil && res.Status == providers.ChallengeCleared {
 		if ch := cookieSliceToHeader(res.Cookies); ch != "" {
 			slog.Debug("sncf challenge cleared headlessly — retrying calendar with harvested cookies")
 			if hRoutes, hErr := sncfCalendarWithCookies(ctx, fromStation, toStation, date, currency, ch); hErr == nil && len(hRoutes) > 0 {
 				return hRoutes, nil
 			} else if hErr != nil {
-				slog.Debug("sncf headless-cleared retry failed", "err", hErr)
+				slog.Debug("sncf headless-cleared retry failed", "err", logredact.Err(hErr))
 			}
 		}
 	} else if res != nil && res.Status == providers.ChallengeNeedsHuman {
@@ -529,7 +529,7 @@ func SearchSNCF(ctx context.Context, from, to, date, currency string, allowBrows
 	if bRoutes, bErr := BrowserScrapeRoutes(ctx, "sncf", from, to, date, currency); bErr == nil && len(bRoutes) > 0 {
 		return bRoutes, nil
 	} else if bErr != nil {
-		slog.Debug("sncf browser scraper failed", "err", bErr)
+		slog.Debug("sncf browser scraper failed", "err", logredact.Err(bErr))
 	}
 
 	if apiErr != nil {
@@ -593,7 +593,7 @@ func searchSNCFCalendar(ctx context.Context, fromStation, toStation SNCFStation,
 			if nRoutes, nErr := sncfFetchViaNab(ctx, apiURL, fromStation, toStation, date, currency); nErr == nil && len(nRoutes) > 0 {
 				return nRoutes, nil
 			} else if nErr != nil && !errors.Is(nErr, trvlnab.ErrNotAvailable) {
-				slog.Debug("sncf nab fallback failed", "err", nErr)
+				slog.Debug("sncf nab fallback failed", "err", logredact.Err(nErr))
 			}
 
 			isCaptcha, captchaURL := cookies.IsCaptchaResponse(http.StatusForbidden, firstBody)

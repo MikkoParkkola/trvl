@@ -21,12 +21,33 @@ import (
 // Everything else in the repository is reported with t.Log only: other packages
 // are being edited concurrently by other owners, and a shared tree must not go
 // red because of a file this package does not own.
+//
+// 2026-08-06: the list said "every package owned by the log-leak sweep" and
+// omitted every package the #531 sweep actually edited — providers, ground,
+// flights, cookies, watch, mcp. So the sweep's own packages were the only ones
+// NOT enforced, and the guard's comment described a coverage it did not have.
+//
+// This matters more than a missing entry, because the shell script written for
+// #531 (scripts/ci/check-log-url-redaction.sh) is line-based: it matches a slog
+// call and its fields on ONE line, so a call split across lines is invisible to
+// it. Nine such calls existed, one of them logging both a raw URL and a raw
+// error. THIS guard parses Go syntax, so multi-line calls are handled by
+// construction, and it covers the Context and LogAttrs variants the shell
+// script never looked at. It is also an ordinary Go test, so it already runs in
+// CI with everything else.
+//
+// The right fix for #531 was always to add these six lines. Two shell scripts
+// were hand-rolled instead, each of which had to be discovered unable to fail
+// before it was believed.
 var enforcedDirs = []string{
 	"cmd/trvl",
 	"internal/atomicjson",
 	"internal/batchexec",
 	"internal/cars",
+	"internal/cookies",
 	"internal/deals",
+	"internal/flights",
+	"internal/ground",
 	"internal/hotels",
 	"internal/logredact",
 	"internal/mobility",
@@ -34,6 +55,7 @@ var enforcedDirs = []string{
 	"internal/multimodal",
 	"internal/nab",
 	"internal/optimizer",
+	"internal/providers",
 	"internal/route",
 	"internal/safeexec",
 	"internal/serpapi",
@@ -41,6 +63,8 @@ var enforcedDirs = []string{
 	"internal/trip",
 	"internal/tripcoalesce",
 	"internal/waf",
+	"internal/watch",
+	"mcp",
 }
 
 var slogFuncs = map[string]bool{
@@ -59,6 +83,11 @@ var riskyExpr = regexp.MustCompile(`\.URL\b|\.Error\(\)|\.Path\b|\.RawQuery\b|\.
 // deliberately narrow: a looser pattern also matches ordinary words such as
 // "event" or "elapsed", and a guard that fails on those gets deleted.
 var riskyIdent = regexp.MustCompile(`(?i)^(u|url|rawurl|requrl|urlstr|endpoint|link|href|uri)$|^[a-z]*[eE]rr[0-9]*$`)
+
+// urlishKey matches a slog KEY whose name says its value is a URL. Matched on
+// the key rather than the value's variable name, so resolvedURL, listingURL and
+// bookingURL are covered without having to enumerate every name anyone picks.
+var urlishKey = regexp.MustCompile(`(?i)^[a-z_]*(url|uri|link|href|endpoint)$`)
 
 // repoRoot walks up from this file to the module root. Using runtime.Caller
 // rather than a relative "../.." keeps the guard correct no matter which
@@ -146,7 +175,46 @@ func TestNoRawURLOrErrorReachesSlog(t *testing.T) {
 				if strings.Contains(src, "logredact.") {
 					continue
 				}
-				if !riskyExpr.MatchString(src) && !riskyIdent.MatchString(src) {
+				risky := riskyExpr.MatchString(src) || riskyIdent.MatchString(src)
+
+				// KEY-BASED RULE. slog takes alternating key, value pairs after
+				// the message, so an odd index is a key and the next argument is
+				// its value. If the key SAYS the value is a URL, the value must
+				// be wrapped whatever the variable happens to be called.
+				//
+				// This exists because the name-based rules above only recognise
+				// a short list of identifiers -- url, rawURL, endpoint and so on
+				// -- and real code calls them resolvedURL, listingURL,
+				// bookingURL. Both of those reached a log unwrapped under a
+				// literal "url" key while every check in the repository reported
+				// clean. The key is the honest signal: whoever wrote "url" was
+				// telling us what the value is.
+				//
+				// Deliberately not the mirror rule for error keys: an "err" key
+				// is attached to file and parse failures that never touch a URL,
+				// and a guard that fires on those gets deleted. Errors stay
+				// covered by riskyExpr/riskyIdent above.
+				if !risky && i%2 == 1 && i+1 < len(call.Args) {
+					if lit, ok := arg.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+						key := strings.Trim(lit.Value, `"`)
+						if urlishKey.MatchString(key) {
+							valSrc := exprString(fset, call.Args[i+1])
+							if !strings.Contains(valSrc, "logredact.") {
+								pos := fset.Position(call.Args[i+1].Pos())
+								msg := filepath.ToSlash(rel) + ":" + itoa(pos.Line) +
+									": slog value " + valSrc + " is logged under the URL-shaped key " +
+									lit.Value + "; wrap it with logredact.URL"
+								if isEnforced(rel) {
+									failures = append(failures, msg)
+								} else {
+									advisories = append(advisories, msg)
+								}
+							}
+						}
+					}
+				}
+
+				if !risky {
 					continue
 				}
 				pos := fset.Position(arg.Pos())

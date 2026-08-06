@@ -160,7 +160,7 @@ func enrichAirbnbDescriptions(ctx context.Context, client *http.Client, hotels [
 			desc, err := fetchAirbnbDescription(ctx, client, listingURL)
 			if err != nil {
 				slog.Debug("airbnb description enrichment failed",
-					"url", listingURL, "error", err.Error())
+					"url", logredact.URL(listingURL), "error", logredact.Err(err))
 				return
 			}
 			if desc != "" {

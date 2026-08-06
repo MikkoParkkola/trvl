@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 )
 
 const cityResolverTimeout = 5 * time.Second
@@ -136,7 +138,7 @@ func resolveCityIDDynamic(ctx context.Context, cfg *ProviderConfig, client *http
 	if registry != nil {
 		if err := registry.Save(cfg); err != nil {
 			slog.Warn("city_resolver: failed to persist cache",
-				"provider", cfg.ID, "error", err.Error())
+				"provider", cfg.ID, "error", logredact.Err(err))
 		}
 	}
 

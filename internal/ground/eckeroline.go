@@ -265,7 +265,7 @@ func SearchEckeroLine(ctx context.Context, from, to, date, currency string) ([]m
 	// Try live departures from Magento AJAX API.
 	liveDeps, liveErr := tryEckeroLineLive(ctx, fromCode, toCode, date)
 	if liveErr != nil {
-		slog.Debug("eckeroline live API error", "err", liveErr)
+		slog.Debug("eckeroline live API error", "err", logredact.Err(liveErr))
 	}
 	if len(liveDeps) > 0 {
 		var routes []models.GroundRoute

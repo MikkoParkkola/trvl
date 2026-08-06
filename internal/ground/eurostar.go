@@ -393,7 +393,7 @@ func SearchEurostar(ctx context.Context, from, to, startDate, endDate, currency 
 		if nRoutes, nErr := eurostarFetchViaNab(ctx, body, fromStation, toStation, startDate, currency, snapOnly); nErr == nil && len(nRoutes) > 0 {
 			return nRoutes, nil
 		} else if nErr != nil && !errors.Is(nErr, trvlnab.ErrNotAvailable) {
-			slog.Debug("eurostar nab fallback failed", "err", nErr)
+			slog.Debug("eurostar nab fallback failed", "err", logredact.Err(nErr))
 		}
 
 		isCaptcha, captchaURL := cookies.IsCaptchaResponse(http.StatusForbidden, firstBody)
