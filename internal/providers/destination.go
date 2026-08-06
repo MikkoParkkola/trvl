@@ -177,9 +177,10 @@ func guardedDialer() *net.Dialer {
 	}
 }
 
-// GuardedTransport returns an http.Transport carrying this package's
+// GuardedTransport returns an http.RoundTripper carrying this package's
 // destination policy on its dialer, for use by other packages that make
-// outbound requests.
+// outbound requests. It is deliberately NOT an *http.Transport -- see the note
+// on the return type below.
 //
 // It exists because internal/destinations built a plain http.Client and so did
 // not route through this policy (trvl#539). That was safe only because the
