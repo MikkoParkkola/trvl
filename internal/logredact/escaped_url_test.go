@@ -70,3 +70,43 @@ func TestTextRedactsTheWholeCookieHeader(t *testing.T) {
 		}
 	}
 }
+
+// TRVL.LOGLEAK.12 -- the cookie rule must stop at the end of the cookie.
+//
+// The first version of that rule consumed to end-of-line, so everything after a
+// cookie mention was destroyed:
+//
+//	request failed cookie=abc status=500 elapsed=12ms
+//	  ->  request failed cookie=<redacted>
+//
+//	{"Cookie":"sid=x","status":500,"error":"denied"}
+//	  ->  {"Cookie=<redacted>
+//
+// The status, the timing and the failure reason all vanished, and the JSON was
+// left unbalanced. That is a debuggability regression traded for a privacy fix,
+// introduced hours earlier by the commit that closed the leak, and a redactor
+// nobody can debug around is one that gets removed.
+//
+// Both halves are asserted together deliberately: the secret must go AND the
+// neighbours must stay. Testing only the first is what shipped the over-reach.
+func TestCookieRedactionDoesNotEatNeighbouringFields(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		keep []string
+	}{
+		{`request failed cookie=abc status=500 elapsed=12ms`, []string{"status=500", "elapsed=12ms"}},
+		{`{"Cookie":"sid=SECRETVALUE","status":500,"error":"denied"}`, []string{`"status":500`, `"error":"denied"`}},
+		{`cookie=a; b=c retry_after=30 provider=trainline`, []string{"retry_after=30", "provider=trainline"}},
+	} {
+		got := Text(tc.in)
+		if strings.Contains(got, "SECRETVALUE") {
+			t.Errorf("secret survived:\n  in:  %s\n  out: %s", tc.in, got)
+		}
+		for _, keep := range tc.keep {
+			if !strings.Contains(got, keep) {
+				t.Errorf("redaction ate %q, which is not part of the cookie and is what someone "+
+					"debugging this line actually needs:\n  in:  %s\n  out: %s", keep, tc.in, got)
+			}
+		}
+	}
+}

@@ -68,16 +68,34 @@ var urlRe = regexp.MustCompile(`\b[a-zA-Z][a-zA-Z0-9+.\-]*:(?:\\?/){2}[^\s"'<>]+
 var secretKVRe = regexp.MustCompile(
 	`(?i)\b(api[_-]?key|apikey|access[_-]?token|auth[_-]?token|id[_-]?token|refresh[_-]?token|token|secret|client[_-]?secret|password|passwd|pwd|passphrase|authorization|session[_-]?id|sessionid|session|signature|sig)["']?\s*[=:]\s*("[^"]*"|'[^']*'|(?:bearer|basic|token)\s+[^\s,;&)"']+|[^\s,;&)"']+)`)
 
-// cookieHeaderRe matches a Cookie or Set-Cookie header and consumes its ENTIRE
-// value, not just the first pair.
+// cookieHeaderRe matches a Cookie or Set-Cookie header and consumes its whole
+// value -- every semicolon-separated pair -- but nothing beyond it.
 //
 // A cookie header carries arbitrary attacker- and site-chosen names, so a
 // key-name allowlist cannot decide which pairs are sensitive: whatever is not on
-// the list survives. `Cookie: theme=dark; booking_session=<token>` proved it.
-// The whole value goes, because for a cookie header the safe default is that
-// every pair is a credential until shown otherwise, and nothing downstream needs
-// the values to debug a request.
-var cookieHeaderRe = regexp.MustCompile(`(?i)\b(set-cookie|cookie)["']?\s*[=:]\s*[^\n\r]+`)
+// the list survives. `Cookie: theme=dark; booking_session=<token>` proved it,
+// redacting the first pair and leaving the token.
+//
+// The bounds matter as much as the reach. A first version consumed to
+// end-of-line and destroyed everything after the cookie:
+//
+//	request failed cookie=abc status=500 elapsed=12ms
+//	  ->  request failed cookie=<redacted>
+//
+//	{"Cookie":"sid=x","status":500,"error":"denied"}
+//	  ->  {"Cookie=<redacted>
+//
+// The status, the timing and the error all vanished, and the JSON was left
+// unbalanced. That is a debuggability regression traded for a privacy fix, and a
+// redactor nobody can debug around gets removed. Found by adversarial
+// second-opinion review, 2026-08-06, hours after the over-reach was introduced.
+//
+// Three value shapes, in order: a quoted string (JSON, stops at the closing
+// quote), a single-quoted string, or a bare value plus any semicolon-separated
+// continuations. The bare form excludes whitespace and commas, so a following
+// `status=500` or a JSON list element is never swallowed.
+var cookieHeaderRe = regexp.MustCompile(
+	`(?i)\b(set-cookie|cookie)["']?\s*[=:]\s*("[^"]*"|'[^']*'|[^\s;,]+(?:\s*;\s*[^\s;,]+)*)`)
 
 // authRe catches a bare credential presentation with no key name in front.
 var authRe = regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=\-]{8,}`)
