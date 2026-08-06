@@ -360,8 +360,15 @@ func TestRecordPriceIsBoundedPerWatch(t *testing.T) {
 		t.Fatalf("add: %v", err)
 	}
 
+	// i%3 rather than i%50: with only capacity+10 iterations, i%50 never wraps and
+	// every price would be distinct. The original loop ran 1500 times over a cycle
+	// of 50, so each price recurred ~30 times, and shrinking the loop silently
+	// dropped repeated values from the input. Keeping the cycle SHORTER than the
+	// loop preserves that property at the new size. Raised by adversarial review,
+	// which asked the right question: does shrinking the cap weaken what the test
+	// proves? For the cap boundary, no. For input diversity, it did.
 	for i := 0; i < capacity+10; i++ {
-		if err := s.RecordPrice(id, float64(100+i%50), "EUR"); err != nil {
+		if err := s.RecordPrice(id, float64(100+i%3), "EUR"); err != nil {
 			t.Fatalf("record %d: %v", i, err)
 		}
 	}
