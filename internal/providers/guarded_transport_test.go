@@ -71,10 +71,17 @@ func TestGuardedTransportHonoursTheLocalOptIn(t *testing.T) {
 // two tests above would not notice: they build their own client from a fresh
 // call and never mutate it.
 //
-// Asserted as a type assertion rather than a comment, because "don't mutate
-// this" is exactly the kind of instruction #539 exists to stop relying on. If
-// someone changes the signature back to *http.Transport for convenience, this
-// fails and says why.
+// HOW THIS ONE FIRES, stated precisely because being vague about that is the
+// defect class this whole branch is about: it is enforced by the COMPILER, not
+// at run time. Widening the signature back to *http.Transport does not make
+// this test fail -- it makes the package stop building, because a type
+// assertion on a concrete type is illegal Go:
+//
+//	invalid operation: rt (variable of type *http.Transport) is not an interface
+//
+// Verified by doing exactly that and reading the error. A compile-time guard is
+// strictly stronger than a failing assertion, and it cannot be skipped, muted,
+// or left un-run. The assertion below is what makes the compiler care.
 func TestGuardedTransportDoesNotExposeItsTransport(t *testing.T) {
 	rt := GuardedTransport()
 
