@@ -381,7 +381,7 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 			if t1Routes, t1Err := trainlineViaTier1(ctx, body, cks, from, to, date, currency); t1Err == nil && len(t1Routes) > 0 {
 				return t1Routes, nil
 			} else if t1Err != nil {
-				slog.Debug("trainline tier1 fallback failed", "err", t1Err)
+				slog.Debug("trainline tier1 fallback failed", "err", logredact.Err(t1Err))
 			}
 		}
 

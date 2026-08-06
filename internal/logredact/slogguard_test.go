@@ -83,13 +83,27 @@ var slogFuncs = map[string]bool{
 // riskyExpr matches argument source text that can carry a URL, a path, or an
 // error string into a log record. Errors count because net/http embeds the full
 // request URL in *url.Error.
-var riskyExpr = regexp.MustCompile(`\.URL\b|\.Error\(\)|\.Path\b|\.RawQuery\b|\.String\(\)`)
+//
+// `\.Error\b` rather than `\.Error\(\)`: requiring the parentheses meant the
+// METHOD CALL was covered and the FIELD was not, so `slog.Warn(..., "err",
+// r.Error)` -- an ordinary result struct carrying a provider error -- passed
+// every rule while logging a raw *url.Error at Warn level. Found in
+// internal/watch/scheduler.go by adversarial second-opinion review.
+var riskyExpr = regexp.MustCompile(`\.URL\b|\.Error\b|\.Path\b|\.RawQuery\b|\.String\(\)`)
 
 // riskyIdent matches bare identifiers whose name says the value is a URL or an
-// error, e.g. url, rawURL, err, derr, err2, brErr. The error branch is
-// deliberately narrow: a looser pattern also matches ordinary words such as
-// "event" or "elapsed", and a guard that fails on those gets deleted.
-var riskyIdent = regexp.MustCompile(`(?i)^(u|url|rawurl|requrl|urlstr|endpoint|link|href|uri)$|^[a-z]*[eE]rr[0-9]*$`)
+// error, e.g. url, rawURL, err, derr, err2, brErr, t1Err, Error. The error
+// branch stays anchored on a name that ENDS in err/error so ordinary words such
+// as "event" or "elapsed" still do not match -- a guard that fails on those gets
+// deleted.
+//
+// Digits are allowed INSIDE the prefix, not only at the end. The old
+// `^[a-z]*[eE]rr[0-9]*$` could not match `t1Err`, because the digit sits between
+// the prefix and the "Err" -- so internal/ground/trainline.go logged a raw HTTP
+// error under a name the guard was structurally unable to see. Naming is not a
+// safety boundary, and a rule that depends on where someone put a "1" is not a
+// rule.
+var riskyIdent = regexp.MustCompile(`(?i)^(u|url|rawurl|requrl|urlstr|endpoint|link|href|uri)$|^[a-z0-9_]*err(or)?(msg|message)?[0-9]*$`)
 
 // urlishKey matches a slog KEY whose name says its value is a URL. Matched on
 // the key rather than the value's variable name, so resolvedURL, listingURL and

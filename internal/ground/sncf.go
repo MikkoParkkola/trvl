@@ -270,7 +270,7 @@ func sncfViaCurl(ctx context.Context, fromCode, toCode, date, currency string) (
 
 		// Check for API-level error responses (401, 403, etc. wrapped in JSON).
 		if errMsg, ok := data["error"].(string); ok && errMsg != "" {
-			slog.Debug("sncf curl API error", "path", bffPath.path, "error", errMsg)
+			slog.Debug("sncf curl API error", "path", bffPath.path, "error", logredact.Text(errMsg))
 			continue
 		}
 		if status, ok := data["status"].(float64); ok && status >= 400 {

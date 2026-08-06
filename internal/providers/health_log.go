@@ -157,6 +157,24 @@ func sanitizeHealthEntry(entry HealthEntry) HealthEntry {
 }
 
 func redactHealthText(s string) string {
+	// logredact.Text FIRST, because it is the rule that removes the URL. The
+	// patterns below only strip credential-SHAPED parameters -- api_key, token,
+	// session -- and leave the host, path, and every ordinary query parameter
+	// standing. For a provider error that is the user's journey: from, to, date,
+	// passengers, in the clear.
+	//
+	// This one matters more than a log line. Health entries are marshalled to
+	// ~/.trvl/health.jsonl and kept, so an unredacted error here is user journey
+	// data at rest on disk, surviving the session that produced it -- which is
+	// the half of #531 a log-level rule cannot reach.
+	//
+	// The credential patterns still run afterwards: Text replaces whole URLs
+	// with a fingerprint, and a bare "Authorization: Bearer ..." in an upstream
+	// message is not inside a URL. Neither rule subsumes the other.
+	//
+	// Raised by adversarial second-opinion review; verified at the source by
+	// reading what sanitizeHealthEntry actually removed, which was not this.
+	s = logredact.Text(s)
 	for _, pattern := range healthSecretPatterns {
 		s = pattern.ReplaceAllString(s, "${1}<redacted>")
 	}

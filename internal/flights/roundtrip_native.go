@@ -337,7 +337,7 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 	}
 	if res == nil || !res.Success || len(res.Flights) == 0 {
 		if res != nil && res.Error != "" {
-			slog.Debug("afklm: soft error from provider", "afklm_error", res.Error)
+			slog.Debug("afklm: soft error from provider", "afklm_error", logredact.Text(res.Error))
 		}
 		return nil, nil
 	}

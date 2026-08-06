@@ -50,6 +50,14 @@ func leaks(ctx context.Context, err error, listingURL, resolvedURL string) {
 
 	// 5. a raw error under an ordinary key
 	slog.Warn("e", "err", err)
+
+	// 6. a digit INSIDE the name -- internal/ground/trainline.go
+	t1Err := err
+	slog.Debug("f", "err", t1Err)
+
+	// 7. an error FIELD, not the Error() method -- internal/watch/scheduler.go
+	var r struct{ Error error }
+	slog.Warn("g", "err", r.Error)
 }
 `
 	fset := token.NewFileSet()
@@ -74,6 +82,15 @@ func leaks(ctx context.Context, err error, listingURL, resolvedURL string) {
 			"a raw error beside a redacted URL, on a multi-line call"},
 		{`slog arg err `,
 			"a bare error identifier"},
+		{`slog arg t1Err`,
+			"a digit INSIDE the name. The rule was ^[a-z]*[eE]rr[0-9]*$, which allows digits only at " +
+				"the END, so t1Err matched nothing and internal/ground/trainline.go logged a raw HTTP " +
+				"error the guard was structurally unable to see. Where someone puts a '1' is not a " +
+				"safety boundary"},
+		{`slog arg r.Error`,
+			"an error FIELD rather than the Error() METHOD. riskyExpr required the parentheses, so a " +
+				"result struct carrying a provider error passed every rule while internal/watch/" +
+				"scheduler.go logged the full search URL at Warn level"},
 	} {
 		if !strings.Contains(joined, want.needle) {
 			t.Errorf("guard did not flag: %s\n  missing: %s\n  got:\n%s", want.why, want.needle, joined)
