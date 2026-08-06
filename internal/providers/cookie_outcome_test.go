@@ -28,7 +28,7 @@ func TestBrowserCookiesReportsTestBinarySuppression(t *testing.T) {
 	// what the guard says when it fires.
 	t.Setenv("TRVL_ALLOW_BROWSER_COOKIES", "")
 
-	out, outcome := browserCookiesForURLWithOutcome("https://example.com/")
+	out, outcome, _ := browserCookiesForURLWithOutcome("https://example.com/")
 	if out != nil {
 		t.Errorf("expected no cookies under the test guard, got %d", len(out))
 	}
@@ -44,7 +44,7 @@ func TestBrowserCookiesReportsBadURL(t *testing.T) {
 	t.Setenv("TRVL_ALLOW_BROWSER_COOKIES", "1")
 
 	for _, bad := range []string{"", "://nonsense", "not a url", "/relative/only"} {
-		out, outcome := browserCookiesForURLWithOutcome(bad)
+		out, outcome, _ := browserCookiesForURLWithOutcome(bad)
 		if out != nil {
 			t.Errorf("%q returned %d cookies, want none", bad, len(out))
 		}
@@ -61,7 +61,7 @@ func TestBrowserCookiesReportsDeclined(t *testing.T) {
 	t.Setenv("TRVL_ALLOW_BROWSER_COOKIES", "1")
 	t.Setenv("TRVL_NO_BROWSER_COOKIES", "1")
 
-	out, outcome := browserCookiesForURLWithOutcome("https://example.com/")
+	out, outcome, _ := browserCookiesForURLWithOutcome("https://example.com/")
 	if out != nil {
 		t.Errorf("expected no cookies when declined, got %d", len(out))
 	}

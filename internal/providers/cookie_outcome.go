@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/MikkoParkkola/trvl/internal/cookies"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 )
 
 // Browser-cookie read outcomes and their reporting (trvl#529).
@@ -28,8 +29,18 @@ import (
 type browserCookieOutcome int
 
 const (
+	// outcomeUnknown is the zero value, and it exists ONLY so that the zero
+	// value is not a claim.
+	//
+	// This enum previously began at outcomeFound, which meant a bare `return
+	// nil` from any future branch reported "cookies were found" while returning
+	// none. That is the identical shape as the bug this type was introduced to
+	// kill (#529: one silent nil standing in for five distinct outcomes), just
+	// relocated into the fix. An unset outcome must read as "nobody said", never
+	// as the happy path.
+	outcomeUnknown browserCookieOutcome = iota
 	// outcomeFound: cookies matched and are being returned.
-	outcomeFound browserCookieOutcome = iota
+	outcomeFound
 	// outcomeNoMatch: the stores were read and hold nothing for this domain.
 	// The ordinary, uninteresting case -- and the ONLY one that means "you are
 	// not logged in to this site".
@@ -43,6 +54,12 @@ const (
 	// outcomeBadURL: the target URL could not be parsed or had no host. A
 	// programming error at the call site, not a property of the machine.
 	outcomeBadURL
+	// outcomeTimedOut: the read did not finish inside browserCookieLookupTimeout.
+	// Split out of outcomeReadFailed because the two have opposite advice: a
+	// timeout says nothing about whether the store is readable, and telling a
+	// user to grant Keychain access because their disk was slow is a confident
+	// wrong answer -- which is how #529 came to be filed in the first place.
+	outcomeTimedOut
 	// outcomeReadFailed: a cookie store existed but could not be read --
 	// Keychain access denied, or a value this build cannot decrypt. This is the
 	// one that must reach a user: the fallback is not merely empty, it is
@@ -63,6 +80,8 @@ func (o browserCookieOutcome) String() string {
 		return "suppressed_in_test"
 	case outcomeBadURL:
 		return "bad_url"
+	case outcomeTimedOut:
+		return "timed_out"
 	case outcomeReadFailed:
 		return "read_failed"
 	default:
@@ -85,17 +104,49 @@ func (o browserCookieOutcome) String() string {
 // browser has already solved any JS challenges and has valid session
 // cookies, which we can read directly from their disk-backed cookie jars.
 func browserCookiesForURL(targetURL string) []*http.Cookie {
-	out, outcome := browserCookiesForURLWithOutcome(targetURL)
+	out, outcome, readErr := browserCookiesForURLWithOutcome(targetURL)
+	reportOutcome(targetURL, outcome, readErr)
+	return out
+}
 
+// reportOutcome says, at a level matching how much the user can do about it,
+// why a browser-cookie read produced what it did.
+//
+// Separated from the read so a test can drive every branch directly. The
+// alternative -- provoking a real permissions denial or a real timeout on a CI
+// runner -- is the "generate the condition and hope" testing that leaves
+// branches unverified, which is how this package shipped a warning nobody had
+// ever seen fire.
+func reportOutcome(targetURL string, outcome browserCookieOutcome, readErr error) {
 	switch outcome {
 	case outcomeReadFailed:
 		// The only outcome a user can act on, and the only one where staying
 		// silent is a lie: the site fallback is unavailable, not empty.
+		//
+		// The underlying error is logged rather than summarised. The hint names
+		// the causes we know of, but this branch fires on ANY read error, and a
+		// message that asserts a cause it has not established is how #529 was
+		// filed on a misdiagnosis. The hint suggests; the error says.
 		slog.Warn("browser cookie fallback unavailable: a cookie store was found but could not be read",
 			"host", hostForLog(targetURL),
-			"hint", "grant Keychain access, or the browser may use app-bound encryption this build cannot read")
+			"err", logredact.Err(readErr),
+			"hint", "often a permissions prompt that was denied, or a browser storing values this build cannot decrypt; the error above is authoritative")
+	case outcomeTimedOut:
+		// Deliberately does NOT mention permissions or decryption. A timeout
+		// says nothing about whether the store is readable, and advice about
+		// permissions would send the user to fix something that is not broken.
+		slog.Warn("browser cookie lookup timed out",
+			"host", hostForLog(targetURL),
+			"timeout", browserCookieLookupTimeout,
+			"err", logredact.Err(readErr),
+			"hint", "the cookie stores may be large or the disk busy; this does not indicate a permissions problem")
 	case outcomeBadURL:
-		slog.Warn("browser cookie lookup skipped: unusable target URL", "url", targetURL)
+		// The URL is reduced to a fingerprint like every other logged URL: a
+		// target URL carries the user's journey (origin, destination, dates,
+		// passengers) in its query string, and being unparseable does not make
+		// it less sensitive. The parse error is what actually diagnoses this.
+		slog.Warn("browser cookie lookup skipped: unusable target URL",
+			"url", logredact.URL(targetURL), "err", logredact.Err(readErr))
 	case outcomeSuppressedInTest:
 		slog.Debug("browser cookie lookup skipped: test binary",
 			"host", hostForLog(targetURL), "override", "TRVL_ALLOW_BROWSER_COOKIES=1")
@@ -105,8 +156,12 @@ func browserCookiesForURL(targetURL string) []*http.Cookie {
 	case outcomeNoMatch:
 		slog.Debug("no browser cookies for host", "host", hostForLog(targetURL))
 	case outcomeFound:
+	case outcomeUnknown:
+		// Unreachable today: every return path names an outcome. Logged rather
+		// than ignored because the zero value reaching here means a new branch
+		// forgot to say what happened, which is the defect #529 was filed on.
+		slog.Debug("browser cookie lookup returned no outcome", "host", hostForLog(targetURL))
 	}
-	return out
 }
 
 // hostForLog returns just the host of a URL for logging. Full URLs can carry
@@ -119,5 +174,3 @@ func hostForLog(targetURL string) string {
 	}
 	return u.Hostname()
 }
-
-// browserCookiesForURLWithOutcome is browserCookiesForURL plus the reason.

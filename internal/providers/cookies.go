@@ -454,7 +454,7 @@ func BrowserCookiesForURL(targetURL string) []*http.Cookie {
 // JavaScript bot-detection challenges (HTTP 202/403). The user's actual
 // browser has already solved any JS challenges and has valid session
 // cookies, which we can read directly from their disk-backed cookie jars.
-func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outcome browserCookieOutcome) {
+func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outcome browserCookieOutcome, readErr error) {
 	defer func() { out = permittedAfterRead(out) }()
 
 	// The opt-out sits on the low-level reader, not on the exported wrapper,
@@ -471,12 +471,12 @@ func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outc
 	// permittedAfterRead above, which re-asks after the seconds-long read has
 	// finished; deleting this one costs time, deleting that one ships the bug.
 	if cookies.Disabled() {
-		return nil, outcomeDeclined
+		return nil, outcomeDeclined, nil
 	}
 
 	// Check warm cache first — returns instantly if pre-warmed.
 	if cached := warmBrowserCookiesResult(targetURL, "", browserCookieLookupTimeout); cached != nil {
-		return cached, outcomeFound
+		return cached, outcomeFound, nil
 	}
 
 	// Skip browser cookie lookups during `go test` to avoid macOS Keychain
@@ -485,12 +485,20 @@ func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outc
 	// Live probe tests that genuinely need browser cookies set
 	// TRVL_ALLOW_BROWSER_COOKIES=1 explicitly.
 	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
-		return nil, outcomeSuppressedInTest
+		return nil, outcomeSuppressedInTest, nil
 	}
 
 	u, err := url.Parse(targetURL)
 	if err != nil || u.Host == "" {
-		return nil, outcomeBadURL
+		// url.Parse returns a nil error for a URL that merely has no host
+		// ("/path", "mailto:x"), so the error is synthesised rather than passed
+		// through. Returning nil here would leave the caller logging an empty
+		// "err" field and asserting nothing -- the shape this whole change is
+		// about.
+		if err == nil {
+			err = fmt.Errorf("no host in target URL")
+		}
+		return nil, outcomeBadURL, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), browserCookieLookupTimeout)
@@ -502,7 +510,18 @@ func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outc
 		// A store was found and could not be read. Distinct from "this machine
 		// has no cookies for the site", and the distinction is the whole point:
 		// one is fixed by logging in, the other never is.
-		return nil, outcomeReadFailed
+		//
+		// A timeout is split out because it is not evidence of either. This
+		// branch used to answer every failure with "grant Keychain access, or
+		// app-bound encryption", so a slow disk produced confident advice about
+		// permissions -- the same species of wrong answer that got #529 filed.
+		// ctx.Err() is consulted rather than the returned error because a
+		// cancelled read may report the cancellation in any wrapping the
+		// library chooses.
+		if ctx.Err() != nil {
+			return nil, outcomeTimedOut, fmt.Errorf("cookie store read did not finish in %s: %w", browserCookieLookupTimeout, err)
+		}
+		return nil, outcomeReadFailed, err
 	}
 
 	result := make([]*http.Cookie, 0, len(cookies))
@@ -544,9 +563,9 @@ func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outc
 		// This is the one outcome that genuinely means "you are not logged in
 		// to this site", which is why it must not share a return value with
 		// "the store could not be read".
-		return nil, outcomeNoMatch
+		return nil, outcomeNoMatch, nil
 	}
-	return result, outcomeFound
+	return result, outcomeFound, nil
 }
 
 // browserCookiesForURLWithHint reads cookies from a specific browser's cookie
