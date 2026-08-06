@@ -35,10 +35,6 @@ func unlockFile(f *os.File) error {
 	return windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, &overlapped)
 }
 
-// lockSupported reports whether cross-process locking is enforced on this
-// platform.
-const lockSupported = true
-
 // acquireFileLock takes an exclusive byte-range lock on path, blocking until
 // it is available. Used to serialise the whole read-modify-write cycle of a
 // store transaction across processes (see withTxn in store.go), as distinct

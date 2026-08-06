@@ -24,8 +24,6 @@ import "os"
 // Verify with `GOOS=<target> go build ./internal/watch/...` for windows,
 // solaris, and at least one non-unix/non-windows GOOS (e.g. js) after
 // touching any of the three files.
-const lockSupported = false
-
 func acquireFileLock(string) (*os.File, error) { return nil, nil }
 
 func releaseFileLock(*os.File) {}

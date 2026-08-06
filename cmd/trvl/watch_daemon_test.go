@@ -183,6 +183,7 @@ func TestRunWatchCheckCycleWithRooms_WebhookUsesDaemonContext(t *testing.T) {
 
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp) // os.UserHomeDir reads USERPROFILE on Windows, not HOME
 
 	store, err := watch.DefaultStore()
 	if err != nil {
@@ -270,6 +271,7 @@ func (c *recordingDaemonPriceChecker) calledFor() []string {
 func TestRunWatchCheckCycleWithRooms_SkipsInactiveWatches(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp) // os.UserHomeDir reads USERPROFILE on Windows, not HOME
 
 	store, err := watch.DefaultStore()
 	if err != nil {

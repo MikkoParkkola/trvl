@@ -27,11 +27,6 @@ func unlockFile(f *os.File) error {
 	return syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 }
 
-// lockSupported reports whether cross-process locking is enforced on this
-// platform. See lock_other.go for the degraded fallback on platforms without
-// an implementation here.
-const lockSupported = true
-
 // acquireFileLock takes an exclusive advisory lock on path, blocking until it
 // is available. Used to serialise the whole read-modify-write cycle of a store
 // transaction across processes (see withTxn in store.go), as distinct from

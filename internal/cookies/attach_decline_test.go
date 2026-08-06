@@ -99,6 +99,10 @@ func TestProvidersDoNotSendBrowserCookiesDirectly(t *testing.T) {
 		if relErr != nil {
 			return relErr
 		}
+		// allowed's keys are forward-slash; filepath.Rel returns backslash-joined
+		// paths on Windows, which would miss the allowlist and false-positive
+		// every allowed file on that platform.
+		rel = filepath.ToSlash(rel)
 		if info.IsDir() {
 			if skipDirs[rel] {
 				return filepath.SkipDir

@@ -125,9 +125,9 @@ var errTxnNoop = errors.New("watch: transaction is a no-op")
 // observed alive at once) silently clobbered each other's committed writes,
 // no error, no torn file, no warning.
 //
-// On platforms without a lock implementation (lockSupported == false),
-// acquireFileLock is a no-op returning (nil, nil) and this degrades to
-// in-process serialisation only (s.mu), same as before -- see lock_other.go.
+// On platforms without a lock implementation, acquireFileLock is a no-op
+// returning (nil, nil) and this degrades to in-process serialisation only
+// (s.mu), same as before -- see lock_other.go.
 func (s *Store) withTxnLocked(apply func() error) error {
 	if err := s.ensureDir(); err != nil {
 		return fmt.Errorf("create storage dir: %w", err)
