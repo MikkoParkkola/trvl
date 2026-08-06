@@ -247,6 +247,24 @@ func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outc
 
 	// Check warm cache first — returns instantly if pre-warmed.
 	if cached := warmBrowserCookiesResult(targetURL, "", browserCookieLookupTimeout); cached != nil {
+		// len, not nil. readBrowserCookiesDirect builds its result with
+		// make([]*http.Cookie, 0, n), so a CLEAN read that matched no cookies for
+		// this domain returns a slice that is empty but not nil -- and the warm
+		// cache stores it verbatim. Labelling that "found" reintroduces exactly
+		// the "found beside zero cookies" ambiguity this whole change exists to
+		// remove, on the pre-warmed path, for a user who is simply not logged in.
+		//
+		// A read that FAILED returns bare nil, so it never reaches this branch:
+		// it falls through to a real read and gets classified there. That is what
+		// makes no_match the honest answer here rather than a guess -- reaching
+		// this line means a read completed and found nothing, which is the one
+		// case where "you are not logged in to this site" is a true statement.
+		//
+		// Found by both second-opinion reviewers independently, on two different
+		// revisions of this branch.
+		if len(cached) == 0 {
+			return nil, outcomeNoMatch, nil
+		}
 		return cached, outcomeFound, nil
 	}
 
