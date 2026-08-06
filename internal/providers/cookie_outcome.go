@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/logredact"
@@ -171,12 +172,42 @@ func reportOutcome(targetURL string, outcome browserCookieOutcome, readErr error
 // hostForLog returns just the host of a URL for logging. Full URLs can carry
 // query parameters, and a cookie-related log line is the wrong place to risk
 // echoing one.
+//
+// KEEPING A HOSTNAME AT ALL IS A DECISION, and #531 set the bar for it.
+// TRVL.LOGLEAK.4 records that #530's logHost helper was DELETED, because rounds
+// 5-7 of that review established that no character-level reduction of a URL is
+// provably non-sensitive, and it warns against resurrecting that helper
+// unexamined. This is that helper by another name, so here is the examination
+// TRVL.LOGLEAK.6 asks for.
+//
+// WHY A HOSTNAME IS ACCEPTABLE AT THESE SITES. Every caller is a cookie-lookup
+// outcome for a provider the user configured. The host names the travel site;
+// it does not name the trip. Origin, destination, dates and party size live in
+// the query string, which is exactly what this function drops. "The cookie
+// lookup for thetrainline.com found nothing" tells an operator which
+// integration to look at and tells a reader nothing about where anyone is
+// going. Without it the line says only that some lookup failed, and the first
+// question anyone asks is which one.
+//
+// AND WHY THE ZONE IDENTIFIER GOES. url.Hostname() strips the port and the
+// brackets and KEEPS the IPv6 zone: "[fe80::1%25eth0]:443" yields
+// "fe80::1%eth0". A zone identifier is free-form text carried inside an
+// address, so on a provider URL -- which a user-defined provider supplies, and
+// #538 tracks how far that trust extends -- it is an attacker-influenceable
+// string riding into a log line under a field named "host". Round 6 of #530
+// found this on url.URL.Host and it is no less true here. Cutting at the first
+// "%" leaves the address and drops the free text; a hostname cannot legally
+// contain one.
 func hostForLog(targetURL string) string {
 	u, err := url.Parse(targetURL)
 	if err != nil || u.Host == "" {
 		return "?"
 	}
-	return u.Hostname()
+	host := u.Hostname()
+	if i := strings.IndexByte(host, '%'); i >= 0 {
+		host = host[:i]
+	}
+	return host
 }
 
 // browserCookiesForURL reads cookies from the user's browsers matching the
