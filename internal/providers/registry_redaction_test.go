@@ -11,11 +11,9 @@ import (
 
 // TRVL.LOGLEAK.11 -- the provider registry file is the OTHER copy at rest.
 //
-// health.jsonl was the leak found first. This one is its sibling and it is
-// worse in one respect: MarkError writes cfg.LastError to
-// ~/.trvl/providers/<id>.json, where it stays until the next failure overwrites
-// it, and the same string is rendered into the MCP dashboard's HTML. Neither
-// surface scrolls away.
+// health.jsonl was the leak found first. This one is its sibling: MarkError
+// writes cfg.LastError to ~/.trvl/providers/<id>.json, where it stays until the
+// next failure overwrites it. That file does not scroll away.
 //
 // The call site in runtime_search.go wrapped this exact error with
 // logredact.Err for its log line and then passed it RAW to MarkError on the
@@ -68,18 +66,18 @@ func TestMarkErrorDoesNotPersistTheSearchURL(t *testing.T) {
 	} {
 		if strings.Contains(onDisk.LastError, leaked.needle) {
 			t.Errorf("%s (%q) is stored in ~/.trvl/providers/leaky.json and kept until the next "+
-				"failure overwrites it, and the same string is rendered into the MCP dashboard. "+
-				"This is the user's itinerary at rest.\n  got: %s",
+				"failure overwrites it. This is the user's itinerary at rest on disk.\n  got: %s",
 				leaked.what, leaked.needle, onDisk.LastError)
 		}
 	}
 
-	// The control. LastError drives circuit-breaker status text and the
-	// dashboard's error column; blanking it would "fix" the leak by destroying
-	// the diagnosis, and an empty column gets the feature removed.
+	// The control. LastError is read back by BreakerSnapshot and shown in
+	// circuit-breaker status text; blanking it would "fix" the leak by
+	// destroying the diagnosis, and a status line that says nothing gets
+	// switched off.
 	if onDisk.LastError == "" {
-		t.Fatal("LastError was emptied rather than redacted; the dashboard and the circuit-breaker " +
-			"status now have nothing to show")
+		t.Fatal("LastError was emptied rather than redacted; the circuit-breaker status text now " +
+			"has nothing to show")
 	}
 	if !strings.Contains(onDisk.LastError, "url#") {
 		t.Errorf("the URL was removed without leaving its fingerprint, so repeated failures against "+
