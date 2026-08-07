@@ -250,6 +250,12 @@ func validateBoltSchema(meta *bolt.Bucket) error {
 	return nil
 }
 
+// schemaAbsent reports whether the database carries no schema version at all,
+// which is the only state a completed publish cannot produce.
+func schemaAbsent(meta *bolt.Bucket) bool {
+	return meta == nil || len(meta.Get(keySchemaVersion)) == 0
+}
+
 type sequencedPricePoint struct {
 	sequence uint64
 	point    PricePoint
@@ -307,10 +313,28 @@ func loadBoltState(db *bolt.DB) ([]Watch, []PricePoint, error) {
 	var history []PricePoint
 	err := db.View(func(tx *bolt.Tx) error {
 		if err := validateBoltSchema(tx.Bucket(bucketMeta)); err != nil {
-			// Wrapped so loadLocked can tell "this file never completed a
-			// conversion" from "this file will not decode". Only the former
-			// makes the legacy JSON beside it authoritative.
-			return fmt.Errorf("%w: %v", errNeverPublished, err)
+			// Wrapped as errNeverPublished ONLY when the schema is ABSENT.
+			//
+			// A schema that is present but unsupported is the opposite
+			// situation: the publishing transaction committed, so the database
+			// holds real data and the legacy files beside it are a frozen
+			// pre-migration snapshot. That happens on a downgrade -- a newer
+			// trvl writes a later schema, an older binary then cannot read it.
+			// Treating it as "never published" would quarantine a live store
+			// and republish months-old JSON as current, which is data loss
+			// caused by running an older build for an afternoon.
+			//
+			// Absent means absent: no metadata bucket, or no version key. Those
+			// cannot be produced by a completed publish, because the version is
+			// written inside the same transaction as the data.
+			//
+			// Raised by the confirmation review of #588: the first fix attached
+			// the sentinel to EVERY schema failure, which was wider than the
+			// proof it claimed.
+			if schemaAbsent(tx.Bucket(bucketMeta)) {
+				return fmt.Errorf("%w: %v", errNeverPublished, err)
+			}
+			return err
 		}
 		var err error
 		watches, history, err = loadBoltStateTx(tx)

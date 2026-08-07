@@ -123,3 +123,63 @@ func TestSchemaValidDatabaseIsNotQuarantinedOnDecodeFailure(t *testing.T) {
 			"the other is a silent rollback rather than a recovery.", err)
 	}
 }
+
+// TRVL.BOLTM1.4 -- a database with a PRESENT but unsupported schema holds real
+// data and must never be rolled back to the legacy files.
+//
+// This is the downgrade case: a newer trvl writes a later schema, then an older
+// binary runs and cannot read it. The publishing transaction plainly committed
+// -- the version key is there -- so the store is live and the legacy JSON
+// beside it is a frozen pre-migration snapshot. Quarantining here would swap
+// months of history for that snapshot and republish it as current, losing data
+// because someone ran an older build for an afternoon.
+//
+// The first version of this fix attached the "never published" sentinel to
+// EVERY schema validation failure, which was wider than the proof it claimed.
+// Raised by the confirmation review of #588.
+func TestUnsupportedSchemaIsNotTreatedAsNeverPublished(t *testing.T) {
+	dir := t.TempDir()
+	seedLegacyStore(t, dir)
+
+	s := &Store{dir: dir}
+	if err := s.Load(); err != nil {
+		t.Fatalf("initial load: %v", err)
+	}
+	if err := s.Save(); err != nil {
+		t.Fatalf("initial save: %v", err)
+	}
+
+	if err := setSchemaVersion(filepath.Join(dir, "watch.db"), "99"); err != nil {
+		t.Fatalf("stamping a future schema: %v", err)
+	}
+
+	fresh := &Store{dir: dir}
+	if err := fresh.Load(); err == nil {
+		t.Fatal("Load accepted a schema this binary does not support")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "watch.db")); err != nil {
+		t.Errorf("a database with a PRESENT schema was moved aside: %v. The version key proves the "+
+			"publishing transaction committed, so this store is live and the legacy files are a "+
+			"frozen snapshot -- swapping them loses every point recorded since the migration.", err)
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "watch.db.unreadable") {
+			t.Errorf("a quarantine copy (%s) was created for a downgrade, which is a recoverable "+
+				"state: running the newer build again reads the store fine", e.Name())
+		}
+	}
+}
+
+// setSchemaVersion rewrites the stored schema version, leaving everything else
+// intact -- what a newer binary's store looks like to an older one.
+func setSchemaVersion(path, version string) error {
+	db, err := bolt.Open(path, 0o600, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	return db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(bucketMeta).Put(keySchemaVersion, []byte(version))
+	})
+}
