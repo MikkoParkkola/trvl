@@ -219,12 +219,68 @@ func TestSchemalessDatabaseWithDataIsNotTreatedAsNeverPublished(t *testing.T) {
 	}
 
 	fresh := &Store{dir: dir}
-	if err := fresh.Load(); err == nil {
+	err := fresh.Load()
+	if err == nil {
 		t.Fatal("Load succeeded against a database with no schema version")
+	}
+	// Parity with the unsupported-schema test: assert the classification, not
+	// only its side effect, so a future change that quarantines under some
+	// other signal still fails this contract.
+	if errors.Is(err, errNeverPublished) {
+		t.Errorf("a populated store was classified as never-published because its version key was "+
+			"missing: err = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "watch.db")); err != nil {
 		t.Errorf("a populated database was moved aside because its version key was missing: %v. "+
 			"It still holds every point recorded since the migration; the legacy files beside it "+
 			"do not.", err)
 	}
+}
+
+// An unfinished conversion that left EMPTY buckets behind must still recover.
+//
+// This pins the measure of "empty", which is easy to get wrong: bbolt's
+// BucketStats.BucketN counts the bucket ITSELF, so KeyN+BucketN > 0 is true for
+// any bucket that exists, empty or not. A guard written that way can never
+// report a store as empty once the buckets are created, and a genuinely
+// unfinished conversion is refused the recovery it needs.
+//
+// Raised by review of the emptiness guard, and written before the fix so the
+// defect was demonstrated rather than assumed.
+func TestUnfinishedConversionWithEmptyBucketsStillRecovers(t *testing.T) {
+	dir := t.TempDir()
+	seedLegacyStore(t, dir)
+
+	if err := writeSchemalessDatabaseWithBuckets(filepath.Join(dir, "watch.db")); err != nil {
+		t.Fatalf("planting an unconverted database: %v", err)
+	}
+
+	s := &Store{dir: dir}
+	if err := s.Load(); err != nil {
+		t.Fatalf("Load refused to recover from an unfinished conversion whose buckets exist but "+
+			"hold nothing. An empty bucket is not data, and the legacy files beside it are still "+
+			"the whole history: %v", err)
+	}
+	if len(s.history) != 2 {
+		t.Errorf("recovered %d history points, want 2 from the legacy store", len(s.history))
+	}
+}
+
+// writeSchemalessDatabaseWithBuckets creates the buckets and commits, without
+// ever writing a schema version or any data -- an interrupted conversion that
+// got one transaction further than the bare-file case.
+func writeSchemalessDatabaseWithBuckets(path string) error {
+	db, err := bolt.Open(path, 0o600, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	return db.Update(func(tx *bolt.Tx) error {
+		for _, name := range [][]byte{bucketMeta, bucketWatchHistory, bucketRouteHistory, bucketWatchAll, bucketRouteAll} {
+			if _, err := tx.CreateBucketIfNotExists(name); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

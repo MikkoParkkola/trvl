@@ -273,7 +273,17 @@ func neverPublished(tx *bolt.Tx) bool {
 		return false
 	}
 	for _, name := range [][]byte{bucketWatchHistory, bucketRouteHistory} {
-		if b := tx.Bucket(name); b != nil && b.Stats().KeyN+b.Stats().BucketN > 0 {
+		b := tx.Bucket(name)
+		if b == nil {
+			continue
+		}
+		// A cursor, not Stats(). BucketStats.BucketN counts the bucket ITSELF,
+		// so `KeyN+BucketN > 0` is true for every bucket that exists, empty or
+		// not -- a test that can never answer "empty" once the buckets are
+		// created, which refuses recovery to exactly the unfinished conversion
+		// it is meant to allow. First() asks the only question that matters: is
+		// there anything in here, key or nested bucket.
+		if k, _ := b.Cursor().First(); k != nil {
 			return false
 		}
 	}
