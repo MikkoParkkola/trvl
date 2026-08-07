@@ -2,6 +2,20 @@
 
 > Moved out of the README. Travel-hack detectors, the full flight/ground provider rosters, and how trvl talks to each source.
 
+## Optional config-defined providers
+
+Provider definitions are reviewed JSON under `internal/providers/definitions` and
+embedded in the binary. `trvl providers list` shows what the installed binary ships;
+`trvl providers enable <id>` records consent and enables one. Runtime files can store
+enabled state and health, but cannot replace endpoints, headers, authentication,
+request templates, or response mappings. Older `~/.trvl/providers/*.json` files are
+preserved for rollback or manual migration and are not executed. Additions therefore
+arrive through a pull request, or through a user-maintained fork.
+
+The first shipped definition is `openstreetmap-hotels`, a keyless Overpass/OpenStreetMap
+accommodation-discovery source. It returns map candidates, not bookable room prices, and
+is disabled until the user explicitly enables it.
+
 ## Travel Hack Detectors
 
 `detect_travel_hacks` and `trvl hacks` run 36 detectors in parallel. Each one is independent and has a 20-second timeout:
@@ -139,4 +153,3 @@ Google's travel frontend uses an internal gRPC-over-HTTP protocol called **batch
 18. **Rate limiting** — per-provider token buckets (10 req/s FlixBus/RegioJet; 1 req/2s DB; 1 req/6s SNCF/Transitous; 1 req/20s Eurostar) with exponential backoff on 429/5xx
 
 Most providers use pure HTTP/JSON APIs. Optional browser/curl-assisted fallbacks exist only for protected providers that sometimes require live cookies or verification (currently SNCF and Trainline); the default path stays API-first.
-

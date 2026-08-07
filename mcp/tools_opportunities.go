@@ -148,7 +148,7 @@ func listOpportunityWatchesTool() ToolDef {
 	return ToolDef{
 		Name:        "list_opportunity_watches",
 		Title:       "List Opportunity Watches",
-		Description: "List all opportunity watches stored in ~/.trvl/watches.json.",
+		Description: "List all opportunity watches stored in ~/.trvl/watch.db.",
 		InputSchema: InputSchema{
 			Type:       "object",
 			Properties: map[string]Property{},

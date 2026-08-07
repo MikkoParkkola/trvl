@@ -52,6 +52,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING — custom provider definitions under `~/.trvl/providers` are no longer
+  loaded or executed.** Provider definitions are now reviewed source shipped inside the
+  binary; `trvl providers enable <id>` turns one on, and the runtime state file records
+  consent, enabled state and health only — it cannot supply endpoints, headers,
+  authentication, request templates or response mappings. The `configure_provider` MCP
+  tool now returns an error explaining this rather than writing a file.
+
+  **What breaks:** any provider you added before 1.21.0 stops being used. Your files are
+  not deleted — they are left in place so you can roll back or migrate them by hand —
+  but trvl ignores them and warns once, on first start, that it found them.
+
+  **What to do instead:** if the provider you need is in the shipped catalogue, run
+  `trvl providers enable <id>`. If it is not, the route is a reviewed source change: a
+  definition under `internal/providers/definitions`, contributed by pull request, or
+  carried in your own fork.
+
+  **Why:** a JSON file on disk was executable request-building instruction. Anything able
+  to write that directory could direct trvl's HTTP client at a URL of its choosing and
+  read the response back — the trust boundary discussed in
+  [#538](https://github.com/MikkoParkkola/trvl/issues/538). Narrowing it to reviewed
+  source is the difference between "a file decides where we connect" and "a reviewed
+  change decides."
+
+- **The price-watch store moved from two JSON files to a single transactional database,
+  and price history above your configured limit is deleted on first migration.** The old
+  store published watches and history separately, so a crash between the two writes
+  could leave them disagreeing
+  ([#555](https://github.com/MikkoParkkola/trvl/issues/555)), and every save rewrote the
+  whole history — 736 ms at the 95th percentile with 320,000 points, on the scheduler's
+  own path ([#575](https://github.com/MikkoParkkola/trvl/issues/575)).
+
+  **What to expect on first run:** trvl backs up both legacy files before touching
+  anything, then converts. If you had lowered `TRVL_WATCH_MAX_POINTS_PER_WATCH`, the
+  migration now honours it — previously it silently used the compiled-in default of
+  1000, so a lowered limit was ignored on migration while applying everywhere else.
+  Points above your limit are removed. Run `trvl watch migrate --dry-run` first to see
+  the real number; the preview used to under-report it, which is what made this worth
+  calling out. ([#585](https://github.com/MikkoParkkola/trvl/issues/585))
+
+  The legacy JSON files are kept. If the conversion is interrupted and leaves a database
+  that never finished being written, trvl sets it aside and uses those files instead —
+  they were never superseded, so they are still the whole history. That fallback is
+  deliberately limited to the unfinished-conversion case: once the conversion completes,
+  the legacy files stop being updated and become a frozen pre-migration snapshot, so
+  quietly loading them after a later failure would be a rollback rather than a recovery.
+  Any other database failure is reported rather than worked around.
+
+- **`TRVL_ALLOW_PRIVATE_PROXY` — reach an HTTP proxy on a private address without
+  allowing private destinations.** trvl now honours `HTTP_PROXY`/`HTTPS_PROXY`, checking
+  and pinning both the destination and the proxy. A corporate proxy is almost always on
+  a private address, and until this variable existed the only way to reach one was
+  `TRVL_ALLOW_LOCAL_PROVIDERS=1`, which also unlocks private and link-local
+  *destinations* — including the cloud metadata address. Obeying your employer's egress
+  policy should not require switching off the guard against server-side request forgery.
+  ([#586](https://github.com/MikkoParkkola/trvl/issues/586))
+
 - **The headless cookie harvest now runs by default; `TRVL_NO_TIER2_CDP` turns it
   off.** It was opt-in behind `TRVL_TIER2_CDP`, which meant that for anyone who had
   not read the README, a site answering with a bot challenge produced an empty result

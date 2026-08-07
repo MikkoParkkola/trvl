@@ -32,6 +32,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -227,7 +229,7 @@ func ferryhopperParseSSE(r io.Reader) (*ferryhopperRPCResult, error) {
 
 		var rpcResult ferryhopperRPCResult
 		if err := json.Unmarshal([]byte(data), &rpcResult); err != nil {
-			slog.Debug("ferryhopper: skip unparseable SSE data", "err", err)
+			slog.Debug("ferryhopper: skip unparseable SSE data", "err", logredact.Err(err))
 			continue
 		}
 

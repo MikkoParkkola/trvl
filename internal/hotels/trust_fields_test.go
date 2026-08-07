@@ -59,6 +59,32 @@ func TestTaxAddedAtCheckoutFlag(t *testing.T) {
 	}
 }
 
+// trvl#535, TRVL.TRUST.1-3: the official-property-site signal comes from the
+// upstream seller row, survives mapping, and does not alter price ordering.
+// Missing evidence remains unlabelled rather than becoming "not official".
+func TestProviderPricesCarryOfficialSignalWithoutReranking(t *testing.T) {
+	hotel := &serpapi.Hotel{
+		Prices: []serpapi.PriceOption{
+			{Source: "Cheaper OTA", TotalRate: serpapi.Rate{Extracted: 100}},
+			{Source: "Property site", Official: true, TotalRate: serpapi.Rate{Extracted: 120}},
+		},
+	}
+
+	providers := providerPricesFromSerpAPIHotel(hotel, "EUR")
+	if len(providers) != 2 {
+		t.Fatalf("providers = %d, want 2", len(providers))
+	}
+	if providers[0].Provider != "Cheaper OTA" {
+		t.Fatalf("first provider = %q, want cheaper seller; trust signal must not re-rank", providers[0].Provider)
+	}
+	if providers[0].Official {
+		t.Fatal("seller with no upstream official flag was labelled official")
+	}
+	if !providers[1].Official {
+		t.Fatal("upstream official seller flag was dropped from provider price")
+	}
+}
+
 func containsRune(s string, r rune) bool {
 	for _, c := range s {
 		if c == r {

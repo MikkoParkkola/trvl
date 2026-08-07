@@ -32,6 +32,19 @@ func TestHotelPricesSchema_DocumentsTheCeiling(t *testing.T) {
 	}
 }
 
+func TestHotelPricesSchemaExposesFactualTrustSignals(t *testing.T) {
+	raw, err := json.Marshal(hotelPricesOutputSchema())
+	if err != nil {
+		t.Fatalf("marshal schema: %v", err)
+	}
+	schema := string(raw)
+	for _, field := range []string{"official", "free_cancellation", "free_cancellation_until"} {
+		if !strings.Contains(schema, field) {
+			t.Errorf("hotel-prices MCP schema omits %q", field)
+		}
+	}
+}
+
 // TestHotelPricesReadiness_CeilingIsSerialisable proves the value the response
 // carries is actually populated for this endpoint, rather than the field existing
 // and always being empty.

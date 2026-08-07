@@ -21,12 +21,40 @@ import (
 // Everything else in the repository is reported with t.Log only: other packages
 // are being edited concurrently by other owners, and a shared tree must not go
 // red because of a file this package does not own.
+//
+// 2026-08-06: the list said "every package owned by the log-leak sweep" and
+// omitted every package the #531 sweep actually edited — providers, ground,
+// flights, cookies, watch, mcp. So the sweep's own packages were the only ones
+// NOT enforced, and the guard's comment described a coverage it did not have.
+//
+// This matters more than a missing entry, because the shell script written for
+// #531 (scripts/ci/check-log-url-redaction.sh) is line-based: it matches a slog
+// call and its fields on ONE line, so a call split across lines is invisible to
+// it. Nine such calls existed, one of them logging both a raw URL and a raw
+// error. THIS guard parses Go syntax, so multi-line calls are handled by
+// construction, and it scans the arguments of the Context, Log and LogAttrs
+// variants the shell script never looked at. It is also an ordinary Go test, so
+// it already runs in CI with everything else.
+//
+// Precisely: the expression and identifier rules scan the arguments of ALL the
+// functions in slogFuncs, LogAttrs included. The key rule, which needs to know
+// where key/value pairs begin, covers all of them EXCEPT LogAttrs -- see
+// attrStart. Worth the extra sentence, because "covers the LogAttrs variant"
+// was written here first and was broader than the code, which is the same
+// species of false claim this guard exists to catch.
+//
+// The right fix for #531 was always to add these six lines. Two shell scripts
+// were hand-rolled instead, each of which had to be discovered unable to fail
+// before it was believed.
 var enforcedDirs = []string{
 	"cmd/trvl",
 	"internal/atomicjson",
 	"internal/batchexec",
 	"internal/cars",
+	"internal/cookies",
 	"internal/deals",
+	"internal/flights",
+	"internal/ground",
 	"internal/hotels",
 	"internal/logredact",
 	"internal/mobility",
@@ -34,6 +62,7 @@ var enforcedDirs = []string{
 	"internal/multimodal",
 	"internal/nab",
 	"internal/optimizer",
+	"internal/providers",
 	"internal/route",
 	"internal/safeexec",
 	"internal/serpapi",
@@ -41,6 +70,8 @@ var enforcedDirs = []string{
 	"internal/trip",
 	"internal/tripcoalesce",
 	"internal/waf",
+	"internal/watch",
+	"mcp",
 }
 
 var slogFuncs = map[string]bool{
@@ -52,13 +83,55 @@ var slogFuncs = map[string]bool{
 // riskyExpr matches argument source text that can carry a URL, a path, or an
 // error string into a log record. Errors count because net/http embeds the full
 // request URL in *url.Error.
-var riskyExpr = regexp.MustCompile(`\.URL\b|\.Error\(\)|\.Path\b|\.RawQuery\b|\.String\(\)`)
+//
+// `\.Error\b` rather than `\.Error\(\)`: requiring the parentheses meant the
+// METHOD CALL was covered and the FIELD was not, so `slog.Warn(..., "err",
+// r.Error)` -- an ordinary result struct carrying a provider error -- passed
+// every rule while logging a raw *url.Error at Warn level. Found in
+// internal/watch/scheduler.go by adversarial second-opinion review.
+var riskyExpr = regexp.MustCompile(`\.URL\b|\.Error\b|\.Path\b|\.RawQuery\b|\.String\(\)`)
 
 // riskyIdent matches bare identifiers whose name says the value is a URL or an
-// error, e.g. url, rawURL, err, derr, err2, brErr. The error branch is
-// deliberately narrow: a looser pattern also matches ordinary words such as
-// "event" or "elapsed", and a guard that fails on those gets deleted.
-var riskyIdent = regexp.MustCompile(`(?i)^(u|url|rawurl|requrl|urlstr|endpoint|link|href|uri)$|^[a-z]*[eE]rr[0-9]*$`)
+// error, e.g. url, rawURL, err, derr, err2, brErr, t1Err, Error. The error
+// branch stays anchored on a name that ENDS in err/error so ordinary words such
+// as "event" or "elapsed" still do not match -- a guard that fails on those gets
+// deleted.
+//
+// Digits are allowed INSIDE the prefix, not only at the end. The old
+// `^[a-z]*[eE]rr[0-9]*$` could not match `t1Err`, because the digit sits between
+// the prefix and the "Err" -- so internal/ground/trainline.go logged a raw HTTP
+// error under a name the guard was structurally unable to see. Naming is not a
+// safety boundary, and a rule that depends on where someone put a "1" is not a
+// rule.
+var riskyIdent = regexp.MustCompile(`(?i)^(u|url|rawurl|requrl|urlstr|endpoint|link|href|uri)$|^[a-z0-9_]*err(or)?(msg|message)?[0-9]*$`)
+
+// urlishKey matches a slog KEY whose name says its value is a URL. Matched on
+// the key rather than the value's variable name, so resolvedURL, listingURL and
+// bookingURL are covered without having to enumerate every name anyone picks.
+var urlishKey = regexp.MustCompile(`(?i)^[a-z_]*(url|uri|link|href|endpoint)$`)
+
+// selectorTail returns the final component of a dotted expression: "r.err" ->
+// "err", "resp.Body" -> "Body", "err" -> "err".
+//
+// riskyIdent anchors on the WHOLE expression, so an error reached through a
+// field selector matched nothing: `slog.Warn("...", "error", r.err)` passed
+// every rule in this guard while logging a raw *url.Error. That is not a corner
+// case -- aggregating over a slice of per-provider results and logging
+// `r.err` is the ordinary shape, and internal/ground/search.go did exactly that
+// in a package this guard already enforced.
+//
+// Found by adversarial second-opinion review, 2026-08-06, and it is the fifth
+// blind spot in this family of guards. Testing the tail as well as the whole
+// expression closes the class rather than the instance.
+//
+// Nothing is stripped beyond the last dot: "errCount" still does not match
+// riskyIdent, so this widens coverage without widening false positives.
+func selectorTail(src string) string {
+	if i := strings.LastIndex(src, "."); i >= 0 && i+1 < len(src) {
+		return src[i+1:]
+	}
+	return src
+}
 
 // repoRoot walks up from this file to the module root. Using runtime.Caller
 // rather than a relative "../.." keeps the guard correct no matter which
@@ -99,6 +172,105 @@ func isEnforced(rel string) bool {
 // It is deliberately syntactic. A type-checked analysis would catch more, but
 // this runs in the normal test suite with no extra dependency, and the shape it
 // matches is exactly the shape that produced the defect.
+// attrStart is the argument index at which a logging call's alternating
+// key/value pairs begin.
+//
+// This is the whole reason the key rule needs a table rather than "odd indexes
+// are keys". slog.Debug(msg, k, v) puts the first key at 1; but
+// slog.DebugContext(ctx, msg, k, v) puts it at 2, and slog.Log(ctx, level, msg,
+// k, v) at 3. The first version of the key rule assumed index 1 unconditionally,
+// so every *Context call was silently skipped -- a guard that could not fail for
+// the exact variants its own comment claimed to cover. Caught by adversarial
+// review, 2026-08-06, and it is the same defect this guard exists to prevent.
+//
+// LogAttrs is absent deliberately: its trailing arguments are slog.Attr values
+// (slog.String("url", v)), not a flat key/value sequence, so pair arithmetic
+// does not apply to it at all. Claiming to cover it here would be the same kind
+// of false claim. Its arguments are still scanned by the expression and
+// identifier rules below.
+var attrStart = map[string]int{
+	"Debug": 1, "Info": 1, "Warn": 1, "Error": 1,
+	"DebugContext": 2, "InfoContext": 2, "WarnContext": 2, "ErrorContext": 2,
+	"Log": 3,
+}
+
+// inspectFile returns every guard finding in one parsed file, as
+// "relpath:line: message". Extracted so the fixture test below can run the
+// REAL rules against planted leaks rather than a copy of them that could drift.
+func inspectFile(fset *token.FileSet, f *ast.File, rel string) []string {
+	var found []string
+
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || !slogFuncs[sel.Sel.Name] {
+			return true
+		}
+		if !mentionsSlog(sel.X) {
+			return true
+		}
+
+		start, pairs := attrStart[sel.Sel.Name]
+
+		for i, arg := range call.Args {
+			if i == 0 {
+				continue // the message literal, or the context
+			}
+			src := exprString(fset, arg)
+			if strings.Contains(src, "logredact.") {
+				continue
+			}
+			risky := riskyExpr.MatchString(src) || riskyIdent.MatchString(src) ||
+				riskyIdent.MatchString(selectorTail(src))
+
+			// KEY-BASED RULE. After the message, a logging call takes
+			// alternating key, value pairs. If the key SAYS the value is a URL,
+			// the value must be wrapped whatever the variable happens to be
+			// called.
+			//
+			// This exists because the name-based rules below only recognise a
+			// short list of identifiers -- url, rawURL, endpoint -- while real
+			// code calls them resolvedURL, listingURL, targetURL. Nine such
+			// values reached a log unwrapped under a literal "url" key while
+			// every check in the repository reported clean. The key is the
+			// honest signal: whoever wrote "url" was telling us what the value
+			// is.
+			//
+			// Deliberately not the mirror rule for error keys: an "err" key is
+			// attached to file and parse failures that never touch a URL, and a
+			// guard that fires on those gets deleted. Errors stay covered by
+			// riskyExpr/riskyIdent.
+			if !risky && pairs && i >= start && (i-start)%2 == 0 && i+1 < len(call.Args) {
+				if lit, ok := arg.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					key := strings.Trim(lit.Value, `"`)
+					if urlishKey.MatchString(key) {
+						valSrc := exprString(fset, call.Args[i+1])
+						if !strings.Contains(valSrc, "logredact.") {
+							pos := fset.Position(call.Args[i+1].Pos())
+							found = append(found, filepath.ToSlash(rel)+":"+itoa(pos.Line)+
+								": slog value "+valSrc+" is logged under the URL-shaped key "+
+								lit.Value+"; wrap it with logredact.URL")
+						}
+					}
+				}
+			}
+
+			if !risky {
+				continue
+			}
+			pos := fset.Position(arg.Pos())
+			found = append(found, filepath.ToSlash(rel)+":"+itoa(pos.Line)+": slog arg "+src+
+				" may carry a URL or an error string; wrap it with logredact")
+		}
+		return true
+	})
+
+	return found
+}
+
 func TestNoRawURLOrErrorReachesSlog(t *testing.T) {
 	root := repoRoot(t)
 	fset := token.NewFileSet()
@@ -126,40 +298,13 @@ func TestNoRawURLOrErrorReachesSlog(t *testing.T) {
 		if parseErr != nil {
 			return nil // a package mid-edit by another owner must not fail this
 		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
+		for _, msg := range inspectFile(fset, f, rel) {
+			if isEnforced(rel) {
+				failures = append(failures, msg)
+			} else {
+				advisories = append(advisories, msg)
 			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || !slogFuncs[sel.Sel.Name] {
-				return true
-			}
-			if !mentionsSlog(sel.X) {
-				return true
-			}
-			for i, arg := range call.Args {
-				if i == 0 {
-					continue // the message literal
-				}
-				src := exprString(fset, arg)
-				if strings.Contains(src, "logredact.") {
-					continue
-				}
-				if !riskyExpr.MatchString(src) && !riskyIdent.MatchString(src) {
-					continue
-				}
-				pos := fset.Position(arg.Pos())
-				msg := filepath.ToSlash(rel) + ":" + itoa(pos.Line) + ": slog arg " + src +
-					" may carry a URL or an error string; wrap it with logredact"
-				if isEnforced(rel) {
-					failures = append(failures, msg)
-				} else {
-					advisories = append(advisories, msg)
-				}
-			}
-			return true
-		})
+		}
 		return nil
 	})
 	if err != nil {

@@ -160,6 +160,11 @@ type ProviderPrice struct {
 	ProviderURL     string  `json:"provider_url,omitempty"`
 	PriceBasis      string  `json:"price_basis,omitempty"`
 	PriceConfidence string  `json:"price_confidence,omitempty"`
+	// Official is a positive-only upstream fact: the source explicitly marked
+	// this seller as the property's official site. False means only that no such
+	// signal was supplied; trvl never renders it as "not official" and never
+	// infers it from a hostname or provider-name list (trvl#535).
+	Official bool `json:"official,omitempty"`
 	// LinkDurability classifies ProviderURL so an agent knows whether the link
 	// is safe to hand to a user or likely to expire: "stable" (direct OTA),
 	// "expiring" (a google.com/aclk ad-click redirect, good for a day or two),

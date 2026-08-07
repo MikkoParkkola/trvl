@@ -55,7 +55,7 @@ func TestCDPHarvestSeparatesTheTwoConsentQuestions(t *testing.T) {
 		t.Setenv("TRVL_ALLOW_BROWSER_COOKIES", "1")
 
 		got, err := RefreshCookiesViaCDP(context.Background(), target,
-			WithTier2ExecPath("/nonexistent/browser"), WithTier2ChallengeWait(time.Millisecond))
+			WithTier2ExecPath("/nonexistent/browser"), WithTier2ChallengeWait(time.Millisecond), withTier2Lookup(publicTestLookup))
 		if err != nil {
 			t.Fatalf("the fixture refused with no opt-out in force, so the cases below would prove nothing: %v", err)
 		}
@@ -78,7 +78,7 @@ func TestCDPHarvestSeparatesTheTwoConsentQuestions(t *testing.T) {
 		}
 
 		got, err := RefreshCookiesViaCDP(context.Background(), target,
-			WithTier2ExecPath("/nonexistent/browser"), WithTier2ChallengeWait(time.Millisecond))
+			WithTier2ExecPath("/nonexistent/browser"), WithTier2ChallengeWait(time.Millisecond), withTier2Lookup(publicTestLookup))
 		if err != nil {
 			t.Fatalf("%s blocked the profile-less harvest, which reads none of the user's cookies: %v",
 				consent.CookiesEnv, err)

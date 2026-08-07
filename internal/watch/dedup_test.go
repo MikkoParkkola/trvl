@@ -300,37 +300,44 @@ func TestStoreAddDoesNotAccumulateAcrossSessions(t *testing.T) {
 // 41MB (319,966 watch-keyed, 36 route-keyed), which is what made each
 // `trvl mcp` process cost ~686MB resident.
 func TestRecordPriceIsBoundedPerWatch(t *testing.T) {
-	s := NewStore(t.TempDir())
+	s, capacity := newCappedStore(t)
 	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
 
-	for i := 0; i < maxObservationsPerWatch+500; i++ {
-		if err := s.RecordPrice(id, float64(100+i%50), "EUR"); err != nil {
+	// i%3 rather than i%50: with only capacity+10 iterations, i%50 never wraps and
+	// every price would be distinct. The original loop ran 1500 times over a cycle
+	// of 50, so each price recurred ~30 times, and shrinking the loop silently
+	// dropped repeated values from the input. Keeping the cycle SHORTER than the
+	// loop preserves that property at the new size. Raised by adversarial review,
+	// which asked the right question: does shrinking the cap weaken what the test
+	// proves? For the cap boundary, no. For input diversity, it did.
+	for i := 0; i < capacity+10; i++ {
+		if err := s.RecordPrice(id, float64(100+i%3), "EUR"); err != nil {
 			t.Fatalf("record %d: %v", i, err)
 		}
 	}
 
 	got := len(s.History(id))
-	if got > maxObservationsPerWatch {
-		t.Errorf("watch history grew to %d points, cap is %d", got, maxObservationsPerWatch)
+	if got > capacity {
+		t.Errorf("watch history grew to %d points, cap is %d", got, capacity)
 	}
-	if got != maxObservationsPerWatch {
-		t.Errorf("expected the cap to be filled exactly: got %d, want %d", got, maxObservationsPerWatch)
+	if got != capacity {
+		t.Errorf("expected the cap to be filled exactly: got %d, want %d", got, capacity)
 	}
 }
 
 // Eviction must drop the OLDEST points: recent prices are what sparklines and
 // drop detection read.
 func TestRecordPriceEvictsOldestFirst(t *testing.T) {
-	s := NewStore(t.TempDir())
+	s, capacity := newCappedStore(t)
 	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
 
-	total := maxObservationsPerWatch + 100
+	total := capacity + 5
 	for i := 0; i < total; i++ {
 		if err := s.RecordPrice(id, float64(i), "EUR"); err != nil {
 			t.Fatalf("record %d: %v", i, err)
@@ -345,16 +352,16 @@ func TestRecordPriceEvictsOldestFirst(t *testing.T) {
 	if h[len(h)-1].Price != float64(total-1) {
 		t.Errorf("newest point missing: got %v, want %v", h[len(h)-1].Price, total-1)
 	}
-	if h[0].Price != float64(total-maxObservationsPerWatch) {
+	if h[0].Price != float64(total-capacity) {
 		t.Errorf("wrong eviction boundary: oldest retained is %v, want %v",
-			h[0].Price, total-maxObservationsPerWatch)
+			h[0].Price, total-capacity)
 	}
 }
 
 // A watch's all-time low lives on the Watch record, so bounding history cannot
 // lose it. This is what makes eviction safe.
 func TestWatchLowestPriceSurvivesHistoryEviction(t *testing.T) {
-	s := NewStore(t.TempDir())
+	s, capacity := newCappedStore(t)
 	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
 	if err != nil {
 		t.Fatalf("add: %v", err)
@@ -372,7 +379,7 @@ func TestWatchLowestPriceSurvivesHistoryEviction(t *testing.T) {
 		t.Fatalf("save: %v", err)
 	}
 
-	for i := 0; i < maxObservationsPerWatch+50; i++ {
+	for i := 0; i < capacity+5; i++ {
 		if err := s.RecordPrice(id, 300, "EUR"); err != nil {
 			t.Fatalf("record %d: %v", i, err)
 		}
@@ -387,7 +394,7 @@ func TestWatchLowestPriceSurvivesHistoryEviction(t *testing.T) {
 
 // Bounding watch history must not disturb the separately-capped route corpus.
 func TestWatchEvictionLeavesRouteObservationsAlone(t *testing.T) {
-	s := NewStore(t.TempDir())
+	s, capacity := newCappedStore(t)
 	id, _, err := s.Add(Watch{Type: "flight", Origin: "HEL", Destination: "BCN", BelowPrice: 200, Currency: "EUR"})
 	if err != nil {
 		t.Fatalf("add: %v", err)
@@ -396,7 +403,7 @@ func TestWatchEvictionLeavesRouteObservationsAlone(t *testing.T) {
 		t.Fatalf("observation: %v", err)
 	}
 
-	for i := 0; i < maxObservationsPerWatch+200; i++ {
+	for i := 0; i < capacity+5; i++ {
 		if err := s.RecordPrice(id, float64(100+i), "EUR"); err != nil {
 			t.Fatalf("record %d: %v", i, err)
 		}

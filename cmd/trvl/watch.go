@@ -16,9 +16,23 @@ import (
 func watchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "watch",
-		Short: "Track flight and hotel prices, and room availability",
+		Short: "Track flight and hotel prices, and room availability (experimental)",
 		Long: `Monitor flight and hotel prices over time and get alerts when prices drop.
 Also supports room-level availability monitoring with keyword matching.
+
+EXPERIMENTAL. This feature works, and it stores data: your watches and their
+whole price history live under ~/.trvl. Treat that history as something you
+could lose. Two specifics worth knowing rather than discovering:
+
+  - The first run after upgrading to 1.21.0 converts the store to a
+    transactional database and, if you have lowered
+    TRVL_WATCH_MAX_POINTS_PER_WATCH, deletes the points above that limit.
+    Earlier versions ignored the limit during migration. Run
+    "trvl watch migrate --dry-run" first: it now reports the real number.
+  - The legacy JSON files are backed up before the conversion and kept
+    afterwards. If the conversion is interrupted, trvl uses them instead and
+    says so. Once it completes they stop being updated, so treat them as a
+    pre-migration snapshot rather than a live second copy.
 
 Examples:
   trvl watch add HEL BCN --depart 2026-07-01 --return 2026-07-08 --below 200
@@ -27,6 +41,7 @@ Examples:
   trvl watch update <id> --clear-webhook
   trvl watch check
   trvl watch history <id>
+  trvl watch migrate --dry-run
   trvl watch remove <id>`,
 	}
 

@@ -100,7 +100,11 @@ Whether TLS fingerprinting constitutes circumvention of a Technological Protecti
 
 trvl does not collect, store, or process personal data about individuals. Search queries (origin, destination, date) are not personal data. Results (prices, schedules) are publicly available commercial information.
 
-Provider configurations stored at `~/.trvl/providers/` contain endpoint URLs, request templates, and consent records (timestamp and domain). Session cookies obtained during preflight requests are used for the current session only and are not persisted to disk. Consent records contain a timestamp and domain name — users should be aware this constitutes metadata about their provider usage.
+Provider state stored under `~/.trvl` records which providers are enabled, the consent given (timestamp and domain), and health counters. Endpoint URLs and request templates live in the binary as reviewed source, not on disk. Session cookies obtained during preflight requests are used for the current session only and are not persisted to disk. Consent records contain a timestamp and domain name — users should be aware this constitutes metadata about their provider usage.
+
+Legacy `~/.trvl/providers/*.json` files written by versions before 1.21.0 may still be present. They are no longer loaded or executed; they are retained so a user can roll back or migrate them by hand, and can be deleted at any time.
+
+Diagnostic files under `~/.trvl` — the health journal and the per-provider state — record which provider failed and why. Since 1.21.0 the URLs inside those errors are replaced with a salted fingerprint before being written, so a failure can still be correlated across entries without the file holding the search itself (origin, destination, dates, party size). See issue #531.
 
 ## User responsibility
 
@@ -146,23 +150,24 @@ These providers are part of trvl's source code and are active by default. trvl's
 
 ### Optional providers (user-configured, AI-assisted)
 
-trvl includes a generic provider runtime that users can configure to add additional data sources. **These providers are not active by default.** They must be explicitly set up by the user with their AI assistant, and each requires individual consent.
+trvl includes a generic provider runtime, and the definitions it can run are **reviewed source files shipped inside the binary**. **They are not active by default.** Each must be explicitly enabled by the user, and each requires individual consent.
 
-**Why this system exists:** Some popular travel services (Airbnb, Booking.com's frontend, Hostelworld, VRBO, etc.) do not offer free public APIs. Their websites use internal APIs that could technically be accessed programmatically, but their Terms of Service may restrict automated access. Rather than including service-specific scraping code in trvl (which would make trvl's maintainers responsible for potential ToS violations), trvl provides a generic HTTP client and lets users decide which services to configure.
+**Why this system exists:** Some popular travel services (Airbnb, Booking.com's frontend, Hostelworld, VRBO, etc.) do not offer free public APIs. Their websites use internal APIs that could technically be accessed programmatically, but their Terms of Service may restrict automated access. Rather than including service-specific scraping code in trvl's core (which would make trvl's maintainers responsible for potential ToS violations), trvl keeps these as separate, individually-consented definitions that a user opts into one at a time.
 
 **How it works:**
 
-1. The user asks their AI assistant to add a provider (e.g., "add Airbnb")
-2. The AI generates a provider configuration using its knowledge of the service's API (from publicly available open-source projects and documentation)
-3. trvl asks the user **directly** (bypassing the AI) to confirm they accept responsibility for compliance with the target service's Terms of Service
-4. The configuration is saved locally to `~/.trvl/providers/`
-5. Future searches include results from configured providers
+1. The user enables a shipped definition with `trvl providers enable <id>`
+2. trvl asks the user **directly** (bypassing any AI assistant) to confirm they accept responsibility for compliance with the target service's Terms of Service
+3. The consent and enabled state are recorded locally under `~/.trvl`
+4. Future searches include results from enabled providers
 
-**Reliability:** Because provider configurations are AI-generated, they may not work perfectly on the first attempt. API endpoints, authentication tokens, and response formats change when services update their websites. If a configuration stops working, the AI assistant can regenerate it. Typical first-attempt success rate depends on the AI model and how recently the target service changed its API.
+**This changed in 1.21.0.** Previously an AI assistant generated a provider configuration and trvl wrote it to `~/.trvl/providers/<id>.json`, from where it was loaded and executed. That made a JSON file on disk into executable request-building instructions, so anything able to write that directory could direct trvl's HTTP client — see the trust-boundary discussion in issue #538. Provider definitions are now source code: they arrive by reviewed change or in a user-maintained fork, and files under `~/.trvl/providers` are left in place for rollback but are **never loaded**. trvl warns once when it finds them.
 
-**What to do if setup fails:**
+**Reliability:** Shipped definitions are reviewed before release, but they depend on services trvl does not control. API endpoints, authentication tokens, and response formats change when those services update their websites, and a definition can stop working between releases.
 
-1. Ask the AI to try a different approach or regenerate the configuration
+**What to do if a provider stops working:**
+
+1. Check `trvl providers status` for the recorded failure reason
 2. Check the reference open-source project (listed in the provider catalog) for updated API details
 3. Use `trvl providers status` to see error details
 4. Some services may actively block automated access — in that case, the provider may not be configurable

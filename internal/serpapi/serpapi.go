@@ -101,6 +101,7 @@ type PriceOption struct {
 	Source                    string       `json:"source"`
 	Link                      string       `json:"link,omitempty"`
 	Logo                      string       `json:"logo,omitempty"`
+	Official                  bool         `json:"official,omitempty"`
 	RatePerNight              Rate         `json:"rate_per_night"`
 	TotalRate                 Rate         `json:"total_rate"`
 	Benefits                  string       `json:"benefits,omitempty"`

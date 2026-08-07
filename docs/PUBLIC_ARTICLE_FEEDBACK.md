@@ -62,10 +62,11 @@ Follow-up product work:
 - Preserve `retrieved_at` / `checked_at` and freshness for every hotel price
   source; never leave a zero timestamp on public recommendation paths.
 - Keep a durable fallback URL for provider links that may expire.
-- Track provider trust tiers separately from price. A lower Google Hotels matrix
-  price from a lesser-known OTA can be real, but users may still prefer a
-  mainstream OTA, the official hotel site, or a refundable rate.
-  Not shipped. Tracked in issue #535; design options and recommendation in
+- Track provider trust signals separately from price. **Done:** refundability
+  reaches the per-seller price list as true or unknown, and the upstream
+  `official` seller flag surfaces as a positive-only official-property-site
+  signal. Neither changes price ordering. The editorial "mainstream OTA" tier
+  is deferred indefinitely. Tracked in issue #535; rationale is in
   `docs/superpowers/specs/2026-07-29-provider-trust-tiers-decision.md`.
 
 ## Retest log

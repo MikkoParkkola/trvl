@@ -16,11 +16,10 @@ func testProviderTool() ToolDef {
 	return ToolDef{
 		Name:  "test_provider",
 		Title: "Test Provider Configuration",
-		Description: "Test a configured provider by making a single search request. " +
+		Description: "Test an enabled reviewed provider by making a single search request. " +
 			"Returns detailed diagnostics including which step succeeded or failed " +
 			"(preflight, auth extraction, search request, response parsing, field mapping). " +
-			"Use this after configure_provider to verify the config works, and iterate on " +
-			"failures without requiring re-consent.",
+			"Use this after `trvl providers enable <id>` to verify the embedded definition.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
@@ -180,13 +179,11 @@ func suggestProvidersTool() ToolDef {
 	return ToolDef{
 		Name:  "suggest_providers",
 		Title: "Suggest Available Providers",
-		Description: "Returns a catalog of external data providers that the user can enable " +
+		Description: "Returns reviewed external data providers shipped with this binary that the user can enable " +
 			"for additional hotel, transport, restaurant, and review sources. " +
 			"Call this proactively after hotel searches to suggest additional sources, " +
 			"or when the user asks about expanding their search coverage. " +
-			"Each provider includes an auth pattern description and a reference to an " +
-			"open-source project where the API integration details can be found. " +
-			"Use configure_provider to enable a suggested provider (requires user consent).",
+			"Definitions are source-controlled and immutable at runtime. Use the CLI to enable one; contribute new definitions by pull request or use a fork.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
@@ -231,9 +228,18 @@ func handleSuggestProviders(_ context.Context, args map[string]any, _ ElicitFunc
 	for _, c := range reg.List() {
 		configured[c.ID] = true
 	}
+	shipped := make(map[string]bool)
+	if reg.IsSourceOnly() {
+		for _, c := range reg.ListShipped() {
+			shipped[c.ID] = true
+		}
+	}
 
 	suggestions := make([]providerSuggestion, 0, len(availableProviders))
 	for _, p := range availableProviders {
+		if reg.IsSourceOnly() && !shipped[p.ID] {
+			continue
+		}
 		if category != "" && p.Category != category {
 			continue
 		}
@@ -255,12 +261,7 @@ func handleSuggestProviders(_ context.Context, args map[string]any, _ ElicitFunc
 		lines = append(lines, fmt.Sprintf("- %s (%s) [%s] — %s", s.Name, s.Category, status, s.Description))
 	}
 
-	summary := fmt.Sprintf("%d provider(s) available:\n%s\n\nTo enable a provider: "+
-		"(1) read the reference project source listed in auth_hint to find the real endpoint, auth, and response schema, "+
-		"(2) generate a config using verified info, "+
-		"(3) call configure_provider (requires user consent), "+
-		"(4) call test_provider and iterate on failures up to 3 times. "+
-		"Do NOT guess endpoints — fetch the reference project first.",
+	summary := fmt.Sprintf("%d reviewed provider(s) shipped with this binary:\n%s\n\nTo enable one, run `trvl providers enable <id>`. New definitions must be verified and contributed under internal/providers/definitions, or used from a fork.",
 		len(suggestions), strings.Join(lines, "\n"))
 
 	content, err := buildAnnotatedContentBlocks(summary, suggestions)
@@ -367,7 +368,10 @@ func handleProviderHealth(_ context.Context, _ map[string]any, _ ElicitFunc, _ S
 		FixHint            string  `json:"fix_hint,omitempty"`
 	}
 
-	providerIDs := make(map[string]bool, len(summary)+len(configs))
+	// max rather than the sum, for the same reason as status_report.go: the
+	// capacity is a hint, the two maps overlap, and CodeQL cannot prove
+	// len(a)+len(b) stays in range.
+	providerIDs := make(map[string]bool, max(len(summary), len(configs)))
 	for id := range summary {
 		providerIDs[id] = true
 	}

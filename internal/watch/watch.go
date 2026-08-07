@@ -1,6 +1,6 @@
-// Package watch provides price tracking for flights and hotels.
-// It stores watch definitions and price history as JSON files
-// under ~/.trvl/ and supports threshold-based alerting.
+// Package watch provides price tracking for flights and hotels. It stores watch
+// definitions and price history transactionally in ~/.trvl/watch.db and can
+// migrate the legacy JSON pair without discarding its rollback artifacts.
 package watch
 
 import (

@@ -146,7 +146,7 @@ func TestStorePersistenceUsesPrivateAtomicFiles(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"watches.json", "price-history.json"} {
+	for _, name := range []string{"watch.db"} {
 		info, err := os.Stat(filepath.Join(dir, name))
 		if err != nil {
 			t.Fatalf("stat %s: %v", name, err)
@@ -369,18 +369,14 @@ func TestJSONFileFormat(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	// Read raw file and verify it's valid JSON.
-	data, err := os.ReadFile(filepath.Join(dir, "watches.json"))
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+	// Re-open through the authoritative database and verify one complete record
+	// is visible.
+	fresh := NewStore(dir)
+	if err := fresh.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
 	}
-
-	var raw []json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatalf("file is not valid JSON array: %v", err)
-	}
-	if len(raw) != 1 {
-		t.Errorf("expected 1 entry in file, got %d", len(raw))
+	if got := fresh.List(); len(got) != 1 {
+		t.Errorf("expected 1 entry in database, got %d", len(got))
 	}
 }
 

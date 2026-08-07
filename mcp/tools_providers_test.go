@@ -229,7 +229,7 @@ func TestHandleListProviders_Empty(t *testing.T) {
 	if len(content) == 0 {
 		t.Fatal("expected content blocks")
 	}
-	if !containsString(content[0].Text, "No external providers configured") {
+	if !containsString(content[0].Text, "No reviewed external providers are enabled") {
 		t.Errorf("expected empty message, got: %s", content[0].Text)
 	}
 }
@@ -333,7 +333,7 @@ func TestHandleRemoveProvider_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !containsString(content[0].Text, "removed") {
+	if !containsString(content[0].Text, "disabled") {
 		t.Errorf("expected removal confirmation, got: %s", content[0].Text)
 	}
 	if reg.Get("to-remove") != nil {

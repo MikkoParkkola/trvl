@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 )
 
 const (
@@ -133,7 +135,7 @@ func (a *HTTPAuth) authenticateOAuth(ctx context.Context, token string) (Request
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.oauthIntrospectionURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		slog.Warn("mcp oauth introspection request build failed", "error", err)
+		slog.Warn("mcp oauth introspection request build failed", "error", logredact.Err(err))
 		return RequestAccess{}, false
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -143,7 +145,7 @@ func (a *HTTPAuth) authenticateOAuth(ctx context.Context, token string) (Request
 
 	resp, err := a.client.Do(req)
 	if err != nil {
-		slog.Warn("mcp oauth introspection failed", "error", err)
+		slog.Warn("mcp oauth introspection failed", "error", logredact.Err(err))
 		return RequestAccess{}, false
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -154,7 +156,7 @@ func (a *HTTPAuth) authenticateOAuth(ctx context.Context, token string) (Request
 
 	var claims map[string]any
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&claims); err != nil {
-		slog.Warn("mcp oauth introspection decode failed", "error", err)
+		slog.Warn("mcp oauth introspection decode failed", "error", logredact.Err(err))
 		return RequestAccess{}, false
 	}
 	if active, _ := claims["active"].(bool); !active {

@@ -43,3 +43,28 @@ func TestFormatPricesTable_SurfacesLinkDurability(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatPricesTable_SurfacesOfficialPropertySitePositiveOnly(t *testing.T) {
+	result := &models.HotelPriceResult{
+		HotelID:  "hotel-1",
+		CheckIn:  "2026-09-01",
+		CheckOut: "2026-09-02",
+		Providers: []models.ProviderPrice{
+			{Provider: "Cheaper OTA", Price: 100, Currency: "EUR"},
+			{Provider: "Property site", Price: 120, Currency: "EUR", Official: true},
+		},
+	}
+
+	out := captureStdout(t, func() {
+		if err := formatPricesTable(result); err != nil {
+			t.Fatalf("formatPricesTable: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "official property site") {
+		t.Fatalf("prices table omitted upstream official-site signal:\n%s", out)
+	}
+	if !strings.Contains(out, "not established") {
+		t.Fatalf("prices table did not distinguish missing evidence from a negative claim:\n%s", out)
+	}
+}

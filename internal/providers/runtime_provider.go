@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/waf"
 )
@@ -171,7 +172,7 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	} else if cfg.CityResolver != nil {
 		if id, err := resolveCityIDDynamic(ctx, cfg, pc.client, location, rt.registry); err != nil {
 			slog.Warn("city_resolver failed, continuing without city_id",
-				"provider", cfg.ID, "location", location, "error", err.Error())
+				"provider", cfg.ID, "location", location, "error", logredact.Err(err))
 		} else {
 			vars["${city_id}"] = id
 			if !strings.Contains(cfg.Endpoint, "${city_id}") {

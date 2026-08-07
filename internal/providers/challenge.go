@@ -129,7 +129,7 @@ var cdpChallengeRunner = runCDPChallenge
 // offline; TRVL_ALLOW_BROWSER_COOKIES lifts that. It reuses the Tier2Option set
 // so callers configure it the same way as the lower-level CDP refresh.
 func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option) (*ChallengeResult, error) {
-	cfg := tier2Config{challengeWait: defaultChallengeWait}
+	cfg := tier2Config{challengeWait: defaultChallengeWait, lookup: lookupHostIPs}
 	for _, o := range opts {
 		o(&cfg)
 	}
@@ -143,7 +143,11 @@ func ResolveChallenge(ctx context.Context, targetURL string, opts ...Tier2Option
 	// RefreshCookiesViaCDP. runCDPChallenge starts the browser with no user
 	// profile, so the challenge is cleared by a session this process created,
 	// not by one taken from the user.
-	if _, err := url.Parse(targetURL); err != nil {
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return nil, err
+	}
+	if _, _, err := pinHTTPURL(ctx, parsed, cfg.lookup); err != nil {
 		return nil, err
 	}
 
@@ -194,6 +198,18 @@ func runCDPChallenge(ctx context.Context, execPath, targetURL string, challengeW
 	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
 		return nil, "", ErrTier2Disabled
 	}
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return nil, "", err
+	}
+	if _, _, err := pinHTTPURL(ctx, parsed, lookupHostIPs); err != nil {
+		return nil, "", err
+	}
+	policyProxy, err := startBrowserPolicyProxy(nil, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = policyProxy.Close() }()
 
 	allocOpts := append([]chromedp.ExecAllocatorOption{},
 		chromedp.DefaultExecAllocatorOptions[:]...)
@@ -204,6 +220,8 @@ func runCDPChallenge(ctx context.Context, execPath, targetURL string, challengeW
 		chromedp.NoDefaultBrowserCheck,
 		chromedp.Flag("disable-background-networking", true),
 		chromedp.Flag("disable-extensions", true),
+		chromedp.Flag("proxy-server", "http://"+policyProxy.Address()),
+		chromedp.Flag("proxy-bypass-list", "<-loopback>"),
 	)
 
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(ctx, allocOpts...)
@@ -214,7 +232,7 @@ func runCDPChallenge(ctx context.Context, execPath, targetURL string, challengeW
 
 	var cookies []*network.Cookie
 	var html string
-	err := chromedp.Run(taskCtx,
+	err = chromedp.Run(taskCtx,
 		network.Enable(),
 		chromedp.Navigate(targetURL),
 		chromedp.Sleep(challengeWait),
@@ -234,7 +252,13 @@ func runCDPChallenge(ctx context.Context, execPath, targetURL string, challengeW
 		}),
 	)
 	if err != nil {
+		if refusal := policyProxy.Refusal(); refusal != nil {
+			return nil, "", refusal
+		}
 		return nil, "", err
+	}
+	if refusal := policyProxy.Refusal(); refusal != nil {
+		return nil, "", refusal
 	}
 	return cookies, html, nil
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -494,7 +495,7 @@ func SearchTallink(ctx context.Context, from, to, date, currency string) ([]mode
 		firstSail := sails[0]
 		classes, cabinErr := fetchTallinkCabinClasses(ctx, result.Session.Cookies, result.Session.SessionGUID, firstSail.SailID)
 		if cabinErr != nil {
-			slog.Debug("tallink cabin classes unavailable (expected)", "error", cabinErr)
+			slog.Debug("tallink cabin classes unavailable (expected)", "error", logredact.Err(cabinErr))
 		} else {
 			cabinClasses = classes
 		}

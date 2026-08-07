@@ -16,6 +16,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/MikkoParkkola/trvl/internal/cookies"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	trvlnab "github.com/MikkoParkkola/trvl/internal/nab"
 	"github.com/MikkoParkkola/trvl/internal/providers"
@@ -372,11 +373,15 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 		// wall (#213). Only attempted when live cookies are available; without the
 		// clearance cookie the JA3 alone won't pass, so we skip to cheaper tiers.
 		if cks := trainlineTier1Cookies(trainlineHomeURL); len(cks) > 0 {
+			// Site 12 of trvl#531, confirmed not a leak and struck from that
+			// list. This logs len(cks) -- a COUNT -- and no cookie name, value,
+			// domain or URL. It was listed for completeness so that whoever
+			// swept the file would confirm it rather than assume it.
 			slog.Debug("retrying trainline via Tier1 (JA3 + live datadome cookie)", "cookies", len(cks))
 			if t1Routes, t1Err := trainlineViaTier1(ctx, body, cks, from, to, date, currency); t1Err == nil && len(t1Routes) > 0 {
 				return t1Routes, nil
 			} else if t1Err != nil {
-				slog.Debug("trainline tier1 fallback failed", "err", t1Err)
+				slog.Debug("trainline tier1 fallback failed", "err", logredact.Err(t1Err))
 			}
 		}
 
@@ -423,14 +428,14 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 		if nRoutes, nErr := trainlineFetchViaNab(ctx, body, from, to, date, currency); nErr == nil && len(nRoutes) > 0 {
 			return nRoutes, nil
 		} else if nErr != nil && !errors.Is(nErr, trvlnab.ErrNotAvailable) {
-			slog.Debug("trainline nab fallback failed", "err", nErr)
+			slog.Debug("trainline nab fallback failed", "err", logredact.Err(nErr))
 		}
 
 		if cRoutes, cErr := trainlineViaCurlFn(ctx, fromID, toID, date, currency); cErr == nil && len(cRoutes) > 0 {
 			populateTrainlineCities(cRoutes, from, to)
 			return cRoutes, nil
 		} else if cErr != nil {
-			slog.Debug("trainline curl fallback failed", "err", cErr)
+			slog.Debug("trainline curl fallback failed", "err", logredact.Err(cErr))
 		}
 
 		// Headless-first challenge escalation (MIK-6218): drive the user's
@@ -439,7 +444,7 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 		// harvested cookies — NO window. Only an interactive captcha that a
 		// headless browser cannot solve falls through to a VISIBLE window.
 		if res, rErr := trainlineResolveChallenge(ctx, trainlineHomeURL); rErr != nil {
-			slog.Debug("trainline headless challenge resolve failed", "err", rErr)
+			slog.Debug("trainline headless challenge resolve failed", "err", logredact.Err(rErr))
 		} else if res != nil && res.Status == providers.ChallengeCleared {
 			if ch := cookieSliceToHeader(res.Cookies); ch != "" {
 				slog.Debug("trainline challenge cleared headlessly — retrying with harvested cookies")
@@ -468,7 +473,7 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 		if bRoutes, bErr := BrowserScrapeRoutes(ctx, "trainline", from, to, date, currency); bErr == nil && len(bRoutes) > 0 {
 			return bRoutes, nil
 		} else if bErr != nil {
-			slog.Debug("trainline browser scraper failed", "err", bErr)
+			slog.Debug("trainline browser scraper failed", "err", logredact.Err(bErr))
 		}
 
 		return nil, fmt.Errorf("trainline: HTTP 403: %s", firstBody)

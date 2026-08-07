@@ -129,11 +129,13 @@ An AI agent acts on trvl's output without a human checking every result, so the 
 
 Two things happen without you asking for them. Neither is obvious, so both are stated here rather than left to a linked page.
 
-**It reads your browser's cookies, automatically.** Hotel and rail sites put bot protection in front of their search APIs, and trvl gets past it by reusing the browser session you already have — that is why searches work with no API key. The reads start when trvl launches, before any search. No flag turns them on. On macOS, browser cookie stores are encrypted, so reading them means Keychain access and you should expect a Keychain prompt. What is read is your own session cookies for the site being searched, and they go into the request to that same site. What guarantees that differs by provider: the rail providers send to addresses written into trvl's own source, so there is nowhere else for the cookies to go; the two places that accept a web address from the caller — the room lookup, and a custom provider's preflight URL — check the destination before attaching anything, against Booking.com in the first case and against the endpoint domain the consent prompt displayed in the second, and a test fails if either stops being true. If a site redirects trvl to a different host, the cookies do not follow: Go's HTTP client refuses to carry them across a change of host. That check compares hosts and not schemes, so a site redirecting its own `https://` address to plain `http://` would keep them — a site downgrading its own traffic to cleartext is the one case that would put a session on the wire unencrypted. trvl reports your cookies to no endpoint of its own.
+**It reads your browser's cookies, automatically.** Hotel and rail sites put bot protection in front of their search APIs, and trvl gets past it by reusing the browser session you already have — that is why searches work with no API key. The reads start when trvl launches, before any search. No flag turns them on. On macOS, browser cookie stores are encrypted, so reading them means Keychain access and you should expect a Keychain prompt. What is read is your own session cookies for the site being searched, and they go into the request to that same site. Every provider definition capable of receiving cookies is reviewed in source and embedded in the binary; runtime provider JSON is not executable. The room lookup's caller-supplied URL is checked against Booking.com before cookies are attached, and a test fails if that stops being true. If a site redirects trvl to a different host, the cookies do not follow: Go's HTTP client refuses to carry them across a change of host. That check compares hosts and not schemes, so a site redirecting its own `https://` address to plain `http://` would keep them — a site downgrading its own traffic to cleartext is the one case that would put a session on the wire unencrypted. trvl reports your cookies to no endpoint of its own.
+
+**Optional provider definitions are source-only.** `trvl providers enable <id>` can enable only a reviewed definition shipped in the current binary. The runtime state file records consent, enabled state, and health; it cannot replace endpoints, headers, authentication, request templates, or response mappings. Older files under `~/.trvl/providers` are left in place for rollback or manual migration, but trvl does not load them. New definitions must arrive through a reviewed source change (or a user-maintained fork).
 
 **It keeps working state under `~/.trvl`:** saved trips, preferences and traveller profile, price watches, search history, cached cookies and provider tokens, a provider health log, upgrade and provider self-heal bookkeeping, and a random install id. That state is local, and trvl uploads none of it — with two exceptions it would be dishonest to bury. The install id is the one field the telemetry heartbeat sends, described below, and `TRVL_NO_TELEMETRY=1` stops it. A price watch you give a webhook URL to POSTs that watch's route and price data to the address you supplied, which is the point of a webhook.
 
-Every one of those files is written to a temp file and then renamed over the target, so a crash cannot leave a half-written file behind. What it can leave behind is the temp file itself: a process killed between the write and the rename leaves **orphaned temp files from interrupted writes**, each a full copy of the file it was about to replace. trvl does not delete them on its own, because the orphan is occasionally the only surviving copy of the target. `trvl tempfiles` reports what is there with sizes and ages; `trvl tempfiles --delete` removes only the ones whose writing process is provably gone.
+JSON state files are written to a temp file and then renamed over the target, so a crash cannot leave a half-written JSON document behind. Price watches and their history use transactional `watch.db` storage; the first migration backs up the legacy JSON before committing the database. Temp-file replacement can still leave **orphaned temp files from interrupted writes**, each a full copy of the JSON file it was about to replace. trvl does not delete them on its own, because the orphan is occasionally the only surviving copy of the target. `trvl tempfiles` reports what is there with sizes and ages; `trvl tempfiles --delete` removes only the ones whose writing process is provably gone.
 
 You can decline either behaviour:
 
@@ -144,7 +146,25 @@ export TRVL_NO_TIER2_CDP=1         # never start a headless browser of its own
 
 Both cost you results, and it is worth knowing how: a site that answers with a bot challenge simply returns nothing, which looks like trvl finding no trains rather than like a setting you chose. That is the trade, stated so you can make it deliberately.
 
+### If you are behind a proxy
+
+trvl honours `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`. It checks and pins both hops — the proxy and the destination — so a redirect or a changed DNS answer cannot move the connection somewhere the URL never named.
+
+By default trvl refuses to connect to private, loopback and link-local addresses, which is what keeps a hostile redirect away from your internal network and from cloud metadata endpoints. A corporate proxy is almost always on a private address, so reaching one needs an explicit opt-in:
+
+```bash
+export TRVL_ALLOW_PRIVATE_PROXY=1   # the PROXY may be on a private address
+```
+
+That relaxes the proxy hop only. Destinations are still refused on private addresses. The broader `TRVL_ALLOW_LOCAL_PROVIDERS=1` allows both, and exists for pointing trvl at a mock provider on your own machine — do not reach for it just to use a proxy, because it also switches off the destination guard.
+
+Authenticated proxies (`http://user:pass@host`) are not supported.
+
 ### How much price history trvl keeps
+
+**Price watching is experimental.** It works, and it keeps data — your watches and their whole price history live under `~/.trvl`. Treat that history as something you could lose. The store is backed up before any migration and the legacy files are kept afterwards, so a bad outcome is recoverable; but the feature is younger than the rest of trvl and is being changed more often.
+
+**Upgrading to 1.21.0 can delete price history.** The first run converts the store to a transactional database, and if you have lowered `TRVL_WATCH_MAX_POINTS_PER_WATCH` it now honours that limit during the conversion — earlier versions ignored it there while applying it everywhere else, so a lowered limit was quietly not in force. Points above your limit are removed. Run `trvl watch migrate --dry-run` first to see the real number: the preview used to under-report it, which is the reason this warning exists.
 
 Watch price history is capped, or it grows without bound: one real store reached 320,028 points in 41MB, which cost every running trvl process about 686MB of memory. Three limits bound it, and all three can be changed.
 

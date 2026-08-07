@@ -150,10 +150,14 @@ func formatPricesTable(result *models.HotelPriceResult) error {
 		fmt.Printf("Notice: %s\n\n", result.Notice)
 	}
 
-	headers := []string{"Provider", "Price", "Currency", "Link"}
+	headers := []string{"Provider", "Price", "Currency", "Provider relationship", "Link"}
 	rows := make([][]string, 0, len(result.Providers))
 	anyExpiring := false
 	for _, p := range result.Providers {
+		relationship := "not established"
+		if p.Official {
+			relationship = "official property site"
+		}
 		link := "-"
 		switch p.LinkDurability {
 		case "expiring":
@@ -166,6 +170,7 @@ func formatPricesTable(result *models.HotelPriceResult) error {
 			p.Provider,
 			fmt.Sprintf("%.2f", p.Price),
 			p.Currency,
+			relationship,
 			link,
 		})
 	}

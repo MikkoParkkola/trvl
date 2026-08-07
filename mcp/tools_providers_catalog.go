@@ -1,7 +1,7 @@
 package mcp
 
-// providerSuggestion describes an available provider that the user can configure.
-// Returned by suggest_providers to help any LLM suggest and configure providers.
+// providerSuggestion describes an available reviewed provider definition.
+// Returned by suggest_providers to help an LLM explain what can be enabled.
 type providerSuggestion struct {
 	ID             string         `json:"id"`
 	Name           string         `json:"name"`
@@ -17,10 +17,25 @@ type providerSuggestion struct {
 	ConfigSkeleton map[string]any `json:"config_skeleton,omitempty"`
 }
 
-// availableProviders is the built-in catalog of providers that users can configure.
-// Each entry contains enough metadata for any LLM to understand the provider and
-// generate a working configure_provider call by consulting the reference project.
+// availableProviders is the descriptive catalog for reviewed definitions. In a
+// source-only registry, suggest_providers filters this list to IDs actually
+// embedded in the current binary.
 var availableProviders = []providerSuggestion{
+	{
+		ID:             "openstreetmap-hotels",
+		Name:           "OpenStreetMap accommodation discovery",
+		Category:       "hotels",
+		Description:    "Keyless accommodation discovery via the public Overpass API; returns map candidates rather than bookable prices.",
+		AuthPattern:    "none",
+		AuthHint:       "Reviewed definition embedded in the trvl binary.",
+		Reference:      "https://wiki.openstreetmap.org/wiki/Overpass_API",
+		TosURL:         "https://wiki.openstreetmap.org/wiki/Overpass_API",
+		TLS:            "standard",
+		RateLimit:      "0.2 req/s",
+		ConfigSkeleton: map[string]any{
+			"response_mapping": skeletonResponseMapping(),
+		},
+	},
 	{
 		ID:          "booking",
 		Name:        "Booking.com",

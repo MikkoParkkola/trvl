@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -335,7 +337,7 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 
 		resp, err := dbClient.Do(req)
 		if err != nil {
-			slog.Debug("db tagesbestpreis request failed", "err", err)
+			slog.Debug("db tagesbestpreis request failed", "err", logredact.Err(err))
 			continue
 		}
 		defer func() { _ = resp.Body.Close() }()
@@ -353,7 +355,7 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 
 		var bpResp dbBestPriceResponse
 		if err := json.Unmarshal(respBody, &bpResp); err != nil {
-			slog.Debug("db tagesbestpreis decode failed", "err", err)
+			slog.Debug("db tagesbestpreis decode failed", "err", logredact.Err(err))
 			continue
 		}
 

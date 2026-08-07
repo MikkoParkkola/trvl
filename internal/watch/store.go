@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,8 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/atomicjson"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+	bolt "go.etcd.io/bbolt"
 )
 
 // Scaling guards for ad-hoc route observations (MIK-6229 improve pass).
@@ -57,6 +61,11 @@ type Store struct {
 	dir     string
 	watches []Watch
 	history []PricePoint
+
+	// Direct history appends update bbolt without decoding the retained corpus.
+	// The next history reader refreshes this cache on demand. This keeps the
+	// scheduler hot path independent of total history size (#575).
+	historyStale bool
 
 	// retention holds this store's eviction limits. Zero-valued until Load
 	// reads them, which is deliberate: an invalid override must stop the store
@@ -116,6 +125,50 @@ func (s *Store) Load() error {
 func (s *Store) loadLocked() error {
 	s.watches = nil
 	s.history = nil
+	s.historyStale = false
+
+	if _, err := os.Stat(s.databasePath()); err == nil {
+		loadErr := s.loadBoltLocked()
+		if loadErr == nil {
+			return s.normalizeCurrenciesLocked()
+		}
+		// FALL BACK ONLY WHEN THE CONVERSION PROVABLY NEVER COMPLETED.
+		//
+		// errNeverPublished means the file opened cleanly and carries no
+		// schema. publishFirstGenerationLocked commits the schema inside the
+		// transaction and only then renames the file into place, so such a
+		// database never completed a publish -- and if none ever completed, the
+		// legacy pair beside it was never superseded and is still the whole
+		// truth. Nothing is lost by setting it aside, because nothing in it can
+		// be read.
+		//
+		// EVERY OTHER FAILURE IS LEFT ALONE, and that distinction is the fix
+		// for a data-loss path this recovery code introduced. Load does not
+		// take the cross-process lock, and it opens the database read-only with
+		// a five-second flock timeout -- so a long write in another process
+		// (the scheduler rewriting a large history) makes a concurrent `trvl
+		// watch list` see "cannot open". Quarantining on that renamed the LIVE
+		// database aside, loaded the frozen pre-migration JSON, and the next
+		// save republished that snapshot as the new database. Months of history
+		// gone, from a lock wait. Found by adversarial review of #588.
+		if !errors.Is(loadErr, errNeverPublished) {
+			return fmt.Errorf("load watch database: %w", loadErr)
+		}
+		recovered, quarantine, qErr := s.quarantineUnreadableDatabaseLocked()
+		if qErr != nil {
+			return fmt.Errorf("load watch database: %w (and it could not be moved aside: %v)", loadErr, qErr)
+		}
+		if !recovered {
+			return fmt.Errorf("load watch database: %w", loadErr)
+		}
+		slog.Warn("watch: the price database never finished converting; using the legacy files beside it",
+			"moved_to", quarantine,
+			"err", logredact.Err(loadErr),
+			"hint", "the legacy JSON store was never superseded by a completed conversion, so it is still the full history; the incomplete database was kept for inspection")
+		// Fall through to the JSON loader below.
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect watch database: %w", err)
+	}
 
 	if err := loadJSON(s.watchesPath(), &s.watches); err != nil {
 		return fmt.Errorf("load watches: %w", err)
@@ -146,6 +199,10 @@ func (s *Store) loadLocked() error {
 	// out on the next already-scheduled Save, same as any other in-memory
 	// mutation between Load and Save. Found by GPT second-opinion review,
 	// 2026-07-30 (round 18).
+	return s.normalizeCurrenciesLocked()
+}
+
+func (s *Store) normalizeCurrenciesLocked() error {
 	for i := range s.watches {
 		s.watches[i].Currency = strings.ToUpper(strings.TrimSpace(s.watches[i].Currency))
 	}
@@ -159,6 +216,17 @@ func (s *Store) loadLocked() error {
 func (s *Store) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.ensureDir(); err != nil {
+		return fmt.Errorf("create storage dir: %w", err)
+	}
+	lock, err := acquireFileLock(s.lockPath())
+	if err != nil {
+		return err
+	}
+	defer releaseFileLock(lock)
+	if err := s.refreshHistoryLocked(); err != nil {
+		return fmt.Errorf("refresh history before save: %w", err)
+	}
 	return s.saveLocked()
 }
 
@@ -166,7 +234,9 @@ func (s *Store) saveLocked() error {
 	return s.persistLocked()
 }
 
-// persistLocked writes both files. Caller holds s.mu.
+// persistLocked atomically publishes watches and history to watch.db. Caller
+// holds s.mu. Legacy JSON files are read only for the first migration and are
+// retained, with timestamped backups, as rollback evidence.
 //
 // NOTE: this rewrites the store WHOLE. It is deliberately not batched across a
 // scheduler round: deferring the flush would hold a stale in-memory snapshot for
@@ -177,16 +247,7 @@ func (s *Store) saveLocked() error {
 // together ~99.8%% — so batching bought ~25MB per round in exchange for a
 // multi-minute data-loss window. See docs/design for the store-coordination gap.
 func (s *Store) persistLocked() error {
-	if err := s.ensureDir(); err != nil {
-		return fmt.Errorf("create storage dir: %w", err)
-	}
-	if err := saveJSON(s.watchesPath(), s.watches); err != nil {
-		return fmt.Errorf("save watches: %w", err)
-	}
-	if err := saveJSON(s.historyPath(), s.history); err != nil {
-		return fmt.Errorf("save history: %w", err)
-	}
-	return nil
+	return s.persistBoltLocked()
 }
 
 // Add inserts a watch, or returns the existing watch for the same user intent,
@@ -396,6 +457,22 @@ func (s *Store) Remove(id string) (bool, error) {
 		for i, w := range s.watches {
 			if w.ID == id {
 				s.watches = append(s.watches[:i], s.watches[i+1:]...)
+				// Drop this watch's history with it. Removing only the row left
+				// the points behind, and the global cap counts EVERY
+				// watch-keyed point, orphan or not -- so a deleted watch went on
+				// consuming the budget and live watches were trimmed to make
+				// room for a series nobody could see or ask about. Worse under
+				// the bolt store, which rewrites the whole history on the next
+				// transaction and so actively re-published the orphans.
+				//
+				// compactHistoryLocked does drop orphans, but it runs on
+				// migration, not on remove, so the state persisted until the
+				// next upgrade.
+				//
+				// Raised as M4 by adversarial review of #587. purgeHistoryLocked
+				// already existed for the currency-change path; remove simply
+				// never called it.
+				s.purgeHistoryLocked(id)
 				found = true
 				return nil
 			}
@@ -479,23 +556,23 @@ func (s *Store) purgeHistoryLocked(watchID string) {
 // first observation, mirroring the poll path's own first-quote handling.
 // Found by GPT second-opinion review, 2026-07-30 (round 20).
 func (s *Store) RecordPrice(watchID string, price float64, currency string) error {
-	return s.withTxn(func() error {
+	return s.withBoltMutation(func(tx *bolt.Tx, watches *[]Watch) (bool, error) {
 		rawCurrency := currency
 		cur := strings.ToUpper(strings.TrimSpace(currency))
 		if price > 0 && cur != "" && !IsValidCurrencyFormat(cur) {
-			return fmt.Errorf("record price: malformed currency %q", rawCurrency)
+			return false, fmt.Errorf("record price: malformed currency %q", rawCurrency)
 		}
 		if price > 0 && cur == "" && rawCurrency != "" {
-			return fmt.Errorf("record price: unusable currency %q", rawCurrency)
+			return false, fmt.Errorf("record price: unusable currency %q", rawCurrency)
 		}
 
 		if price > 0 {
-			for i := range s.watches {
-				if s.watches[i].ID != watchID {
+			for i := range *watches {
+				if (*watches)[i].ID != watchID {
 					continue
 				}
-				hasPriorObservation := s.watches[i].LastPrice > 0 || s.watches[i].LowestPrice > 0
-				watchCurrency := s.watches[i].Currency
+				hasPriorObservation := (*watches)[i].LastPrice > 0 || (*watches)[i].LowestPrice > 0
+				watchCurrency := (*watches)[i].Currency
 				unknownCurrencyWithHistory := watchCurrency == "" && hasPriorObservation
 				// Round 21 found two remaining gaps in this gate. First, reject
 				// was previously conditioned on `mismatch && hasPriorObservation`:
@@ -514,10 +591,10 @@ func (s *Store) RecordPrice(watchID string, price float64, currency string) erro
 				// series the rest of the package assumes is single-currency.
 				// Found by GPT second-opinion review, 2026-07-30 (round 21).
 				if watchCurrency != "" && cur != "" && watchCurrency != cur {
-					return fmt.Errorf("record price: currency %q does not match watch currency %q", cur, watchCurrency)
+					return false, fmt.Errorf("record price: currency %q does not match watch currency %q", cur, watchCurrency)
 				}
 				if watchCurrency != "" && cur == "" {
-					return fmt.Errorf("record price: missing currency for watch established in %q", watchCurrency)
+					return false, fmt.Errorf("record price: missing currency for watch established in %q", watchCurrency)
 				}
 				if unknownCurrencyWithHistory && cur != "" {
 					// Round 20: a currencyless watch that already has real
@@ -525,28 +602,34 @@ func (s *Store) RecordPrice(watchID string, price float64, currency string) erro
 					// observation through this raw recorder -- that requires
 					// the full reset check.go's poll path performs, which
 					// RecordPrice does not.
-					return fmt.Errorf("record price: currency %q does not match watch currency %q", cur, watchCurrency)
+					return false, fmt.Errorf("record price: currency %q does not match watch currency %q", cur, watchCurrency)
 				}
 				if watchCurrency == "" && cur != "" {
-					s.watches[i].Currency = cur
+					(*watches)[i].Currency = cur
 				}
-				s.watches[i].LastPrice = price
-				if s.watches[i].LowestPrice == 0 || price < s.watches[i].LowestPrice {
-					s.watches[i].LowestPrice = price
+				(*watches)[i].LastPrice = price
+				if (*watches)[i].LowestPrice == 0 || price < (*watches)[i].LowestPrice {
+					(*watches)[i].LowestPrice = price
 				}
 				break
 			}
 		}
 
-		s.history = append(s.history, PricePoint{
+		if _, err := appendHistoryPointTx(tx, PricePoint{
 			WatchID:   watchID,
 			Price:     price,
 			Currency:  cur,
 			Timestamp: time.Now(),
-		})
-		s.pruneWatchLocked(watchID)
-		s.pruneGlobalWatchLocked()
-		return nil
+		}); err != nil {
+			return false, err
+		}
+		if err := pruneSeriesTx(tx.Bucket(bucketWatchHistory), tx.Bucket(bucketWatchAll), []byte(watchID), s.retentionOrDefault().MaxPointsPerWatch); err != nil {
+			return false, err
+		}
+		if err := pruneGlobalWatchTx(tx, s.retentionOrDefault().MaxPointsTotal); err != nil {
+			return false, err
+		}
+		return true, nil
 	})
 }
 
@@ -599,6 +682,7 @@ func (s *Store) evictOldestLocked(match func(PricePoint) bool, limit int) {
 func (s *Store) History(watchID string) []PricePoint {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_ = s.refreshHistoryLocked()
 
 	var out []PricePoint
 	for _, p := range s.history {
@@ -607,6 +691,24 @@ func (s *Store) History(watchID string) []PricePoint {
 		}
 	}
 	return out
+}
+
+func (s *Store) refreshHistoryLocked() error {
+	if !s.historyStale {
+		return nil
+	}
+	db, err := s.openBolt(true)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	_, history, err := loadBoltState(db)
+	if err != nil {
+		return err
+	}
+	s.history = history
+	s.historyStale = false
+	return nil
 }
 
 // shortID generates a 4-byte hex string (8 characters).

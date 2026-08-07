@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/waf"
 	"golang.org/x/time/rate"
 )
@@ -122,7 +124,7 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 	} else if cfg.CityResolver != nil {
 		if id, err := resolveCityIDDynamic(ctx, cfg, pc.client, location, nil); err != nil {
 			slog.Warn("city_resolver failed in test_provider",
-				"provider", cfg.ID, "location", location, "error", err.Error())
+				"provider", cfg.ID, "location", location, "error", logredact.Err(err))
 		} else {
 			vars["${city_id}"] = id
 			if !strings.Contains(cfg.Endpoint, "${city_id}") {
@@ -491,7 +493,7 @@ func runTestPreflight(ctx context.Context, pc *providerClient, cfg *ProviderConf
 					tier = "waf-solver"
 				}
 			} else if wafErr != nil {
-				slog.Debug("waf solver did not produce a token in test", "error", wafErr.Error())
+				slog.Debug("waf solver did not produce a token in test", "error", logredact.Err(wafErr))
 			}
 		}
 

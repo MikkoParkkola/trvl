@@ -1,12 +1,15 @@
 package watch
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -417,8 +420,31 @@ func (s *Store) compactHistoryLocked() {
 			perWatch[p.WatchID]++
 		}
 	}
+	// Gate on the CONFIGURED per-watch limit, not the compiled default.
+	//
+	// This loop decides whether to compact, and pruneWatchLocked then compacts
+	// down to s.retentionOrDefault().MaxPointsPerWatch. Comparing against the
+	// compiled constant meant an operator who lowered the cap got the gate of the
+	// DEFAULT and the pruning of their SETTING: with
+	// TRVL_WATCH_MAX_POINTS_PER_WATCH=20, a watch holding 500 points asked
+	// "500 > 1000?", answered no, and kept all 500. The setting was accepted,
+	// validated, reported by `retention stats` -- and silently not applied on the
+	// one path that exists to bring an old store into line with policy.
+	//
+	// Raising a cap was unaffected, which is why this survived: the failure only
+	// appears when a limit is LOWERED, and only on migration.
+	//
+	// The route loop below is deliberately left on its constant: the per-route cap
+	// is not configurable (retentionConfig has no route field), so there gate and
+	// prune already agree. Only the per-watch cap had the asymmetry.
+	//
+	// Found by adversarial second-opinion review of trvl#585, 2026-08-06. It
+	// predates that change; it is fixed here because #585 makes the tests depend
+	// on this exact configuration path, and a config path that ignores config is
+	// not a safe thing to build a test on.
+	limits := s.retentionOrDefault()
 	for id, n := range perWatch {
-		if n > maxObservationsPerWatch {
+		if n > limits.MaxPointsPerWatch {
 			s.pruneWatchLocked(id)
 		}
 	}
@@ -442,9 +468,20 @@ func (s *Store) compactHistoryLocked() {
 // Missing files are not an error: a fresh store has nothing to back up.
 // Caller holds s.mu.
 func (s *Store) backupLocked() (string, error) {
+	return s.backupPathsLocked([]string{s.databasePath(), s.watchesPath(), s.historyPath()})
+}
+
+// backupLegacyLocked is used only for the first JSON-to-bbolt conversion. The
+// source files are preserved in place as well; these timestamped copies make
+// the exact pre-migration generation explicit and immune to later tooling.
+func (s *Store) backupLegacyLocked() (string, error) {
+	return s.backupPathsLocked([]string{s.watchesPath(), s.historyPath()})
+}
+
+func (s *Store) backupPathsLocked(paths []string) (string, error) {
 	stamp := time.Now().Format("20060102-150405")
 	var made []string
-	for _, path := range []string{s.watchesPath(), s.historyPath()} {
+	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -480,11 +517,30 @@ func (s *Store) backupLocked() (string, error) {
 // Records that a destructive command must be previewable before it runs.
 func (s *Store) MigrateDryRun() (MigrationReport, error) {
 	s.mu.Lock()
+	if err := s.refreshHistoryLocked(); err != nil {
+		s.mu.Unlock()
+		return MigrationReport{}, fmt.Errorf("refresh history for dry run: %w", err)
+	}
 	watches := append([]Watch(nil), s.watches...)
 	history := append([]PricePoint(nil), s.history...)
+	retention := s.retention
 	s.mu.Unlock()
 
-	shadow := &Store{dir: s.dir, watches: watches, history: history}
+	// The shadow carries the retention config, not just the data.
+	//
+	// Without it, retentionOrDefault falls back to the COMPILED defaults, so a
+	// dry run previewed a 1000-point cap while the real migration applied the
+	// operator's configured one. With the cap lowered to 20, the preview
+	// reported nothing to compact and the migration then deleted history the
+	// preview had promised to keep -- the exact failure a dry run exists to
+	// prevent, in the command whose whole purpose is "show me before you touch
+	// it".
+	//
+	// Same root as the gate/prune mismatch fixed above: a configured value read
+	// on one path and not the other. Found by adversarial second-opinion review
+	// (2026-08-06) which named both halves; only the first was fixed on the
+	// first pass.
+	shadow := &Store{dir: s.dir, watches: watches, history: history, retention: retention}
 	shadow.mu.Lock()
 	defer shadow.mu.Unlock()
 
@@ -515,6 +571,28 @@ func (s *Store) MigrateDryRun() (MigrationReport, error) {
 //
 // Bounded rather than looping forever: 64 collisions in one second means
 // something is wrong that another suffix will not fix.
+// writeNewBackup writes data to a fresh backup name beside path.
+//
+// IT SYNCS AND THEN READS THE FILE BACK, which is the half that decides whether
+// this function is worth calling at all. A backup exists to be used exactly once
+// -- after something has already gone wrong -- so the failure that matters is
+// the one discovered then, when the original is gone and there is nothing left
+// to compare against. Writing bytes and closing the handle proves the write call
+// returned, not that anything durable and readable landed: without a sync the
+// contents can still be in flight, and a short or corrupted write is reported by
+// nobody.
+//
+// The verification is deliberately the same shape as the eventual use: the bytes
+// are read back off disk and, for a JSON store, parsed. A byte-count check would
+// pass on a file of the right length full of zeros.
+//
+// Callers treat a failure here as fatal to the migration, and should: proceeding
+// past an unverifiable backup is proceeding with no backup while believing
+// otherwise, which is worse than refusing, because it spends the user's one
+// chance to say no.
+//
+// Raised as M2 by adversarial review of #587: order was already correct (backup
+// before any destructive step); "verified readable" was not implemented.
 func writeNewBackup(path, stamp string, data []byte) (string, error) {
 	base := fmt.Sprintf("%s.bak-%s", path, stamp)
 	for i := 0; i < 64; i++ {
@@ -533,10 +611,49 @@ func writeNewBackup(path, stamp string, data []byte) (string, error) {
 			_ = f.Close()
 			return "", err
 		}
+		if err := f.Sync(); err != nil {
+			_ = f.Close()
+			return "", fmt.Errorf("flush backup %s: %w", dst, err)
+		}
 		if err := f.Close(); err != nil {
+			return "", err
+		}
+		if err := verifyBackup(dst, data); err != nil {
 			return "", err
 		}
 		return dst, nil
 	}
 	return "", fmt.Errorf("backup %s: 64 names already taken in the same second", base)
+}
+
+// verifyBackup re-reads a just-written backup and checks it is what was meant.
+//
+// Byte-identity first, because that is the strongest available statement and it
+// catches short writes, truncation and silent corruption in one comparison. The
+// JSON parse afterwards is not redundant: it catches the case where the SOURCE
+// was already unusable, so the backup is a faithful copy of something that
+// cannot be restored. A backup of corruption is not a backup.
+func verifyBackup(dst string, want []byte) error {
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		return fmt.Errorf("verify backup %s: %w", dst, err)
+	}
+	if !bytes.Equal(got, want) {
+		return fmt.Errorf("verify backup %s: read back %d bytes, wrote %d -- the backup on disk is "+
+			"not what was written, so it cannot be relied on to restore anything", dst, len(got), len(want))
+	}
+	if strings.HasSuffix(dst, ".db") || strings.Contains(dst, ".db.bak-") {
+		// A bolt database is opaque here; byte-identity is the whole check.
+		return nil
+	}
+	if len(bytes.TrimSpace(got)) == 0 {
+		return nil // an empty legacy file is a legitimate state
+	}
+	var probe any
+	if err := json.Unmarshal(got, &probe); err != nil {
+		return fmt.Errorf("verify backup %s: the copy is byte-identical but is not valid JSON (%w), "+
+			"which means the source was already unusable; migrating past this would spend the only "+
+			"chance to notice", dst, err)
+	}
+	return nil
 }

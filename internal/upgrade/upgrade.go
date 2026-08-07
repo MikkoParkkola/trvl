@@ -8,10 +8,12 @@ package upgrade
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Migration describes a single post-upgrade step.
@@ -227,19 +229,87 @@ func applicableMigrations(old, current string) []Migration {
 	return out
 }
 
+// safeVersionStamp reports whether a version string may be used to build a
+// filename.
+//
+// The stamp reaching backupPreferences does NOT come from the compiled-in
+// Version. It comes from ReadStamp, which returns the trimmed contents of a
+// file on disk, so its shape is whatever that file contains -- corrupted,
+// hand-edited, or written by another program. Concatenating that into a path
+// puts ".." and "/" one bad file away from writing outside the preferences
+// directory (trvl#539, TRVL.HARDEN.3).
+//
+// An allowlist rather than a denylist of dangerous characters: a version is a
+// small, well-understood shape, and enumerating what is permitted cannot be
+// outflanked by an encoding nobody thought of. Empty is rejected too, since it
+// would silently produce "preferences.json.bak." and collide across upgrades.
+//
+// Callers refuse rather than sanitise. A sanitised path is still a path nobody
+// intended, and there is nothing useful to back up under a name derived from a
+// stamp we do not trust.
+func safeVersionStamp(v string) bool {
+	if v == "" || len(v) > 64 {
+		return false
+	}
+	if strings.Contains(v, "..") {
+		return false
+	}
+	for _, r := range v {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r == '.' || r == '-' || r == '_' || r == '+':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // backupPreferences copies preferences.json to preferences.json.bak.{version}
 // if it exists.
+//
+// A malformed version stamp does NOT mean no backup. The stamp is refused as a
+// filename component -- see safeVersionStamp -- but the backup itself still
+// happens, under a name this process generates from its own clock.
+//
+// The earlier behaviour returned silently, leaving the migration to rewrite the
+// user's preferences with no backup and no message. The comment called that "the
+// safe direction". It is safe against a path-traversal filename and unsafe
+// against the thing a backup exists for: the user loses their only copy, and
+// learns nothing. Raised by adversarial second-opinion review of trvl#539,
+// 2026-08-06, as "malformed stamps silently skip the only backup while
+// migrations continue" -- correctly.
+//
+// Refusing the stamp and generating our own suffix gives both properties. No
+// caller-supplied string reaches the path, and the safety net survives.
 func backupPreferences(dir, oldVersion string) {
+	suffix := oldVersion
+	if !safeVersionStamp(oldVersion) {
+		// Never interpolated into the path -- logged so the operator can see WHY
+		// the backup is not named after their version, and redacted because a
+		// stamp this malformed is attacker-influenced text.
+		suffix = "unknown-" + time.Now().UTC().Format("20060102T150405Z")
+		slog.Warn("upgrade: version stamp is not usable as a filename; backing up under a generated name instead",
+			"backup_suffix", suffix,
+			"reason", "the stamp contained characters that must not reach a path")
+	}
 	src := prefsPathIn(dir)
 	if _, err := os.Stat(src); err != nil {
 		return // no prefs file, nothing to back up
 	}
-	dst := src + ".bak." + oldVersion
+	dst := src + ".bak." + suffix
 	data, err := os.ReadFile(src)
 	if err != nil {
+		slog.Warn("upgrade: could not read preferences to back them up; the migration will proceed without a backup",
+			"err", err)
 		return
 	}
-	_ = os.WriteFile(dst, data, 0o600)
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
+		slog.Warn("upgrade: could not write the preferences backup; the migration will proceed without one",
+			"err", err)
+	}
 }
 
 // whatsNewEntry describes what changed in a specific version.

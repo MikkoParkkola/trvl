@@ -47,7 +47,7 @@ func TestResolveChallengeSeparatesTheTwoConsentQuestions(t *testing.T) {
 		t.Setenv("TRVL_ALLOW_BROWSER_COOKIES", "1")
 
 		res, err := ResolveChallenge(context.Background(), target,
-			WithTier2ExecPath("/nonexistent/browser"), WithTier2ChallengeWait(time.Millisecond))
+			WithTier2ExecPath("/nonexistent/browser"), WithTier2ChallengeWait(time.Millisecond), withTier2Lookup(publicTestLookup))
 		if err != nil {
 			t.Fatalf("the fixture refused with no opt-out in force: %v", err)
 		}
@@ -66,7 +66,7 @@ func TestResolveChallengeSeparatesTheTwoConsentQuestions(t *testing.T) {
 		}
 
 		res, err := ResolveChallenge(context.Background(), target,
-			WithTier2ExecPath("/nonexistent/browser"), WithTier2ChallengeWait(time.Millisecond))
+			WithTier2ExecPath("/nonexistent/browser"), WithTier2ChallengeWait(time.Millisecond), withTier2Lookup(publicTestLookup))
 		if err != nil {
 			t.Fatalf("%s blocked a profile-less challenge resolve, which reads none of the user's cookies: %v",
 				consent.CookiesEnv, err)

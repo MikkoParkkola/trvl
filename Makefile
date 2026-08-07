@@ -1,6 +1,8 @@
 GOTOOLCHAIN ?= go1.26.5
 GO ?= go
 GO_RUN = GOTOOLCHAIN=$(GOTOOLCHAIN) $(GO)
+GO_TOOLS_BIN ?= $(shell $(GO_RUN) env GOPATH)/bin
+TEST_TIMEOUT ?= 10m
 GOLANGCI_LINT_VERSION ?= v2.12.2
 GOSEC_VERSION ?= v2.28.0
 
@@ -9,33 +11,40 @@ LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION) -X github.com/MikkoParkkol
 
 .PHONY: build test test-proof test-coverage test-live-integrations test-live-probes lint repo-hygiene security-gosec dod distribution-metrics clean cross install safe-clean force-clean
 
+lint security-gosec: export PATH := $(GO_TOOLS_BIN):$(PATH)
+
 build:
 	@mkdir -p bin
 	$(GO_RUN) build $(LDFLAGS) -o bin/trvl ./cmd/trvl
 
 test:
-	$(GO_RUN) test ./...
+	$(GO_RUN) test -timeout=$(TEST_TIMEOUT) ./...
 
 test-proof:
-	$(GO_RUN) test -v -count=1 -race ./...
+	$(GO_RUN) test -v -count=1 -race -timeout=$(TEST_TIMEOUT) ./...
 
 test-coverage:
-	$(GO_RUN) test -p=1 -race -coverprofile coverage.out ./...
+	$(GO_RUN) test -p=1 -race -timeout=$(TEST_TIMEOUT) -coverprofile coverage.out ./...
 	@coverage_report="$$( $(GO_RUN) tool cover -func=coverage.out )" && \
 		printf '%s\n' "$$coverage_report" | tail -1
 
 test-live-integrations:
-	TRVL_TEST_LIVE_INTEGRATIONS=1 $(GO_RUN) test -v -count=1 ./...
+	TRVL_TEST_LIVE_INTEGRATIONS=1 $(GO_RUN) test -v -count=1 -timeout=$(TEST_TIMEOUT) ./...
 
 test-live-probes:
-	TRVL_TEST_LIVE_PROBES=1 $(GO_RUN) test -v -count=1 ./... -run Probe
+	TRVL_TEST_LIVE_PROBES=1 $(GO_RUN) test -v -count=1 -timeout=$(TEST_TIMEOUT) ./... -run Probe
 
+# Log-URL redaction is NOT in repo-hygiene: seeing multi-line slog calls needs a
+# Go parser, which a line-based shell script does not have. It lives in
+# internal/logredact's slogguard test and runs with `make test`.
 repo-hygiene:
 	scripts/ci/check-workflow-hygiene.sh
 	scripts/ci/check-language-hygiene.sh
 	scripts/ci/check-file-size.sh
 	scripts/ci/check-release-metadata.sh
 	scripts/ci/check-home-isolation.sh
+	scripts/ci/check-log-url-redaction.sh
+	scripts/ci/check-test-only-helpers.sh
 
 lint: repo-hygiene
 	$(GO_RUN) vet ./...

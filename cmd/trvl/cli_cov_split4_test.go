@@ -253,7 +253,7 @@ func TestShareLastSearch_NoData(t *testing.T) {
 // runProvidersList — with temp HOME
 // ---------------------------------------------------------------------------
 
-func TestRunProvidersList_EmptyWithTempHome(t *testing.T) {
+func TestRunProvidersList_ShowsShippedDefinitionsWithTempHome(t *testing.T) {
 	withTempHome(t)
 
 	old := os.Stdout
@@ -270,8 +270,8 @@ func TestRunProvidersList_EmptyWithTempHome(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	_, _ = buf.ReadFrom(r)
-	if !strings.Contains(buf.String(), "No providers") {
-		t.Errorf("expected 'No providers' message, got: %s", buf.String())
+	if !strings.Contains(buf.String(), "openstreetmap-hotels") || !strings.Contains(buf.String(), "disabled") {
+		t.Errorf("expected shipped disabled provider, got: %s", buf.String())
 	}
 }
 

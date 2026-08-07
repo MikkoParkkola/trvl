@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/atomicjson"
 )
 
@@ -174,7 +176,7 @@ func (s *Scheduler) acquireAndRun(ctx context.Context) {
 	for {
 		lock, held, err := TryLockScheduler(s.dir)
 		if err != nil {
-			slog.Warn("scheduler: acquire singleton lock", "err", err)
+			slog.Warn("scheduler: acquire singleton lock", "err", logredact.Err(err))
 		} else if held {
 			s.mu.Lock()
 			s.lock = lock
@@ -248,7 +250,7 @@ func (s *Scheduler) run(ctx context.Context) {
 func (s *Scheduler) runOnce(ctx context.Context) {
 	store := NewStore(s.dir)
 	if err := store.Load(); err != nil {
-		slog.Warn("scheduler: load watches", "err", err)
+		slog.Warn("scheduler: load watches", "err", logredact.Err(err))
 		return
 	}
 
@@ -278,7 +280,7 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 			slog.Warn("scheduler: check error",
 				"watch_id", r.Watch.ID,
 				"route", r.Watch.Origin+"→"+r.Watch.Destination,
-				"err", r.Error,
+				"err", logredact.Err(r.Error),
 			)
 			continue
 		}

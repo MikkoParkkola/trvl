@@ -72,6 +72,7 @@ const defaultChallengeWait = 8 * time.Second
 type tier2Config struct {
 	challengeWait time.Duration
 	execPath      string
+	lookup        lookupIPsFunc
 }
 
 // Tier2Option configures RefreshCookiesViaCDP.
@@ -90,6 +91,10 @@ func WithTier2ChallengeWait(d time.Duration) Tier2Option {
 // WithTier2ExecPath forces a specific browser executable instead of auto-detect.
 func WithTier2ExecPath(path string) Tier2Option {
 	return func(c *tier2Config) { c.execPath = path }
+}
+
+func withTier2Lookup(lookup lookupIPsFunc) Tier2Option {
+	return func(c *tier2Config) { c.lookup = lookup }
 }
 
 // Tier2Declined reports whether the user has EXPLICITLY asked for no headless
@@ -188,7 +193,7 @@ var cdpRunner = runCDPCollect
 // user declined (TRVL_NO_TIER2_CDP, or TRVL_TIER2_CDP=0), and also inside a
 // `go test` binary unless TRVL_ALLOW_BROWSER_COOKIES is set.
 func RefreshCookiesViaCDP(ctx context.Context, targetURL string, opts ...Tier2Option) ([]*http.Cookie, error) {
-	cfg := tier2Config{challengeWait: defaultChallengeWait}
+	cfg := tier2Config{challengeWait: defaultChallengeWait, lookup: lookupHostIPs}
 	for _, o := range opts {
 		o(&cfg)
 	}
@@ -205,7 +210,11 @@ func RefreshCookiesViaCDP(ctx context.Context, targetURL string, opts ...Tier2Op
 	// TRVL_NO_BROWSER_COOKIES governs the user's own browsers; this variable
 	// governs whether trvl may run a browser at all. Two questions, two
 	// controls — see the package doc.
-	if _, err := url.Parse(targetURL); err != nil {
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return nil, err
+	}
+	if _, _, err := pinHTTPURL(ctx, parsed, cfg.lookup); err != nil {
 		return nil, err
 	}
 
@@ -247,6 +256,18 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
 		return nil, ErrTier2Disabled
 	}
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return nil, err
+	}
+	if _, _, err := pinHTTPURL(ctx, parsed, lookupHostIPs); err != nil {
+		return nil, err
+	}
+	policyProxy, err := startBrowserPolicyProxy(nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = policyProxy.Close() }()
 
 	allocOpts := append([]chromedp.ExecAllocatorOption{},
 		chromedp.DefaultExecAllocatorOptions[:]...)
@@ -257,6 +278,8 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 		chromedp.NoDefaultBrowserCheck,
 		chromedp.Flag("disable-background-networking", true),
 		chromedp.Flag("disable-extensions", true),
+		chromedp.Flag("proxy-server", "http://"+policyProxy.Address()),
+		chromedp.Flag("proxy-bypass-list", "<-loopback>"),
 	)
 
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(ctx, allocOpts...)
@@ -266,7 +289,7 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 	defer cancelTask()
 
 	var cookies []*network.Cookie
-	err := chromedp.Run(taskCtx,
+	err = chromedp.Run(taskCtx,
 		network.Enable(),
 		chromedp.Navigate(targetURL),
 		chromedp.Sleep(challengeWait),
@@ -280,7 +303,13 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 		}),
 	)
 	if err != nil {
+		if refusal := policyProxy.Refusal(); refusal != nil {
+			return nil, refusal
+		}
 		return nil, err
+	}
+	if refusal := policyProxy.Refusal(); refusal != nil {
+		return nil, refusal
 	}
 	return cookies, nil
 }

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -484,7 +486,7 @@ func SearchOebb(ctx context.Context, from, to, date, currency string) ([]models.
 	// Step 2: Initialise user data (activates the session).
 	if err := oebbShopInitUserData(ctx, token); err != nil {
 		// Non-fatal: log and continue — some sessions work without this.
-		slog.Debug("oebb shop initUserData failed", "err", err)
+		slog.Debug("oebb shop initUserData failed", "err", logredact.Err(err))
 	}
 
 	// Step 3: Search timetable.
@@ -512,7 +514,7 @@ func SearchOebb(ctx context.Context, from, to, date, currency string) ([]models.
 		offers, err := oebbShopGetPrices(ctx, token, ids)
 		if err != nil {
 			// Non-fatal: return schedule without prices.
-			slog.Debug("oebb shop prices failed", "err", err)
+			slog.Debug("oebb shop prices failed", "err", logredact.Err(err))
 		} else {
 			for _, o := range offers {
 				// Keep the cheapest (2nd-class) offer per connection.

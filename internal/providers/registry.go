@@ -10,26 +10,30 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/atomicjson"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 )
 
 // Registry stores and manages provider configurations on disk.
 type Registry struct {
-	dir      string
-	configs  map[string]*ProviderConfig
-	loadedAt map[string]time.Time // file mtime seen on last load; used by ReloadIfChanged
-	mu       sync.RWMutex
+	dir         string
+	configs     map[string]*ProviderConfig
+	definitions map[string]ProviderConfig
+	loadedAt    map[string]time.Time // file mtime seen on last load; used by ReloadIfChanged
+	sourceOnly  bool
+	enabled     map[string]bool
+	statePath   string
+	mu          sync.RWMutex
 }
 
-// NewRegistry creates a Registry backed by ~/.trvl/providers/.
-// The directory is created if it does not exist, and all *.json files
-// in that directory are loaded into memory.
+// NewRegistry loads reviewed provider definitions embedded in the binary.
+// Runtime files hold state only; user-supplied definitions under
+// ~/.trvl/providers are never executable (#538).
 func NewRegistry() (*Registry, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("providers: user home dir: %w", err)
 	}
-	dir := filepath.Join(home, ".trvl", "providers")
-	return NewRegistryAt(dir)
+	return newSourceRegistry(filepath.Join(home, ".trvl"))
 }
 
 // NewRegistryAt creates a Registry backed by the given directory.
@@ -90,7 +94,16 @@ func (r *Registry) List() []*ProviderConfig {
 	defer r.mu.RUnlock()
 
 	out := make([]*ProviderConfig, 0, len(r.configs))
-	for _, cfg := range r.configs {
+	for id, cfg := range r.configs {
+		if r.sourceOnly && !r.enabled[id] {
+			continue
+		}
+		if r.sourceOnly {
+			if copy := cloneSourceConfigForRead(cfg); copy != nil {
+				out = append(out, copy)
+			}
+			continue
+		}
 		out = append(out, cfg)
 	}
 	return out
@@ -105,8 +118,17 @@ func (r *Registry) ListPublic() []*ProviderConfig {
 	defer r.mu.RUnlock()
 
 	out := make([]*ProviderConfig, 0, len(r.configs))
-	for _, cfg := range r.configs {
+	for id, cfg := range r.configs {
+		if r.sourceOnly && !r.enabled[id] {
+			continue
+		}
 		if !cfg.Personal {
+			if r.sourceOnly {
+				if copy := cloneSourceConfigForRead(cfg); copy != nil {
+					out = append(out, copy)
+				}
+				continue
+			}
 			out = append(out, cfg)
 		}
 	}
@@ -117,7 +139,11 @@ func (r *Registry) ListPublic() []*ProviderConfig {
 func (r *Registry) Get(id string) *ProviderConfig {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.configs[id]
+	cfg := r.configs[id]
+	if cfg == nil || !r.sourceOnly {
+		return cfg
+	}
+	return cloneSourceConfigForRead(cfg)
 }
 
 // Save writes a provider configuration to disk and updates the in-memory map.
@@ -130,6 +156,9 @@ func (r *Registry) Save(config *ProviderConfig) error {
 func (r *Registry) saveLocked(config *ProviderConfig) error {
 	if config == nil {
 		return fmt.Errorf("providers: nil config")
+	}
+	if r.sourceOnly {
+		return r.saveSourceStateLocked(config, true)
 	}
 	// MIK-3075: stamp the schema version on every save so freshly written
 	// configs always carry the version this binary supports. Older
@@ -167,6 +196,18 @@ func (r *Registry) Delete(id string) error {
 	if _, ok := r.configs[id]; !ok {
 		return fmt.Errorf("providers: %s not found", id)
 	}
+	if r.sourceOnly {
+		previousEnabled := r.enabled[id]
+		previousConsent := r.configs[id].Consent
+		r.enabled[id] = false
+		r.configs[id].Consent = nil
+		if err := r.persistSourceStateLocked(); err != nil {
+			r.enabled[id] = previousEnabled
+			r.configs[id].Consent = previousConsent
+			return err
+		}
+		return nil
+	}
 
 	path, err := r.configPath(id)
 	if err != nil {
@@ -186,8 +227,14 @@ func (r *Registry) ListByCategory(category string) []*ProviderConfig {
 	defer r.mu.RUnlock()
 
 	var out []*ProviderConfig
-	for _, cfg := range r.configs {
-		if cfg.Category == category {
+	for id, cfg := range r.configs {
+		if (!r.sourceOnly || r.enabled[id]) && cfg.Category == category {
+			if r.sourceOnly {
+				if copy := cloneSourceConfigForRead(cfg); copy != nil {
+					out = append(out, copy)
+				}
+				continue
+			}
 			out = append(out, cfg)
 		}
 	}
@@ -203,6 +250,13 @@ func (r *Registry) ListByCategory(category string) []*ProviderConfig {
 func (r *Registry) Reload(id string) (*ProviderConfig, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.sourceOnly {
+		cfg := r.configs[id]
+		if cfg == nil {
+			return nil, fmt.Errorf("providers: %s not found", id)
+		}
+		return cloneSourceConfigForRead(cfg), nil
+	}
 
 	path, err := r.configPath(id)
 	if err != nil {
@@ -234,6 +288,11 @@ func (r *Registry) Reload(id string) (*ProviderConfig, error) {
 // in-memory config. Safe to call on every request — the common path is a
 // single os.Stat and no JSON parse or write-lock acquisition.
 func (r *Registry) ReloadIfChanged(id string) *ProviderConfig {
+	if r.sourceOnly {
+		r.mu.RLock()
+		defer r.mu.RUnlock()
+		return cloneSourceConfigForRead(r.configs[id])
+	}
 	path, err := r.configPath(id)
 	if err != nil {
 		return nil
@@ -349,7 +408,16 @@ func (r *Registry) ListSafe() []*ProviderConfig {
 	defer r.mu.RUnlock()
 
 	out := make([]*ProviderConfig, 0, len(r.configs))
-	for _, cfg := range r.configs {
+	for id, cfg := range r.configs {
+		if r.sourceOnly && !r.enabled[id] {
+			continue
+		}
+		if r.sourceOnly {
+			if copy := cloneSourceConfigForRead(cfg); copy != nil {
+				out = append(out, copy)
+			}
+			continue
+		}
 		c := *cfg // value copy snapshots breaker fields under the lock
 		out = append(out, &c)
 	}
@@ -367,6 +435,9 @@ func (r *Registry) GetSafe(id string) *ProviderConfig {
 	if !ok {
 		return nil
 	}
+	if r.sourceOnly {
+		return cloneSourceConfigForRead(cfg)
+	}
 	c := *cfg // value copy snapshots breaker fields under the lock
 	return &c
 }
@@ -382,11 +453,37 @@ func (r *Registry) MarkSuccess(id string) {
 	}
 	cfg.LastSuccess = time.Now()
 	cfg.ErrorCount = 0
+	if r.sourceOnly {
+		_ = r.persistSourceStateLocked()
+		return
+	}
 	_ = r.saveLocked(cfg)
 }
 
 // MarkError records a failed request for the given provider.
+//
+// The message is redacted HERE rather than at the call site, so that no caller
+// can leak by forgetting. What lands in cfg.LastError is written to
+// ~/.trvl/providers/<id>.json and kept until the next failure overwrites it --
+// a surface well outside the log stream, and one that does not scroll away.
+//
+// It is read back by BreakerSnapshot, for the circuit breaker. NOT by the MCP
+// dashboard: that renders StatusRow.LastError, which status_report.go fills
+// from the health journal, a separate store redacted on write. An earlier
+// version of this comment claimed the dashboard as a second surface and was
+// wrong. Corrected rather than quietly dropped, because a comment that
+// overstates what it protects is the same defect as one that understates it,
+// and this file has spent the evening fixing the second kind.
+//
+// The value arrives as err.Error(), and every net/http transport failure is a
+// *url.Error carrying the full request URL: origin, destination, dates, and
+// whatever else the query held. The caller in runtime_search.go already wrapped
+// that same error for its slog line and then passed it raw to this function --
+// the redaction and the leak one line apart. Putting the rule inside the
+// function is what makes that impossible rather than merely fixed once.
 func (r *Registry) MarkError(id string, errMsg string) {
+	errMsg = logredact.Text(errMsg)
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -397,6 +494,10 @@ func (r *Registry) MarkError(id string, errMsg string) {
 	cfg.ErrorCount++
 	cfg.LastError = errMsg
 	cfg.LastErrorAt = time.Now()
+	if r.sourceOnly {
+		_ = r.persistSourceStateLocked()
+		return
+	}
 	_ = r.saveLocked(cfg)
 }
 
@@ -413,5 +514,8 @@ func (r *Registry) ResetBreaker(id string) error {
 	cfg.ErrorCount = 0
 	cfg.LastError = ""
 	cfg.LastErrorAt = time.Time{}
+	if r.sourceOnly {
+		return r.persistSourceStateLocked()
+	}
 	return r.saveLocked(cfg)
 }

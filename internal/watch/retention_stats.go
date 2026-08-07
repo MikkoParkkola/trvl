@@ -42,6 +42,7 @@ type RetentionStats struct {
 func (s *Store) RetentionStats() RetentionStats {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_ = s.refreshHistoryLocked()
 
 	limits := s.retentionOrDefault()
 	st := RetentionStats{
@@ -78,12 +79,17 @@ func (s *Store) RetentionStats() RetentionStats {
 		}
 	}
 
-	if fi, err := os.Stat(s.watchesPath()); err == nil {
-		st.StoreBytes += fi.Size()
-	}
-	if fi, err := os.Stat(s.historyPath()); err == nil {
+	if fi, err := os.Stat(s.databasePath()); err == nil {
 		st.HistoryBytes = fi.Size()
-		st.StoreBytes += fi.Size()
+		st.StoreBytes = fi.Size()
+	} else {
+		if fi, err := os.Stat(s.watchesPath()); err == nil {
+			st.StoreBytes += fi.Size()
+		}
+		if fi, err := os.Stat(s.historyPath()); err == nil {
+			st.HistoryBytes = fi.Size()
+			st.StoreBytes += fi.Size()
+		}
 	}
 	return st
 }

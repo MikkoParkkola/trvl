@@ -41,15 +41,61 @@ var salt = func() []byte {
 // urlRe matches an absolute URL in free text. The terminator set excludes
 // quotes and angle brackets so a URL embedded in a Go error string
 // (`Get "https://…": dial tcp …`) ends at the closing quote.
-var urlRe = regexp.MustCompile(`\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s"'<>\\]+`)
+//
+// The separators tolerate a backslash escape, and the tail permits backslashes,
+// so a JSON-escaped URL is matched too. Before that, an upstream JSON body
+// echoed into an error -- `{"link":"https:\/\/host\/search?from=HEL&to=NRT"}` --
+// passed through completely unredacted: there is no literal "://" in it, so
+// nothing matched, and the whole journey reached the log. Measured, not
+// theorised. Found by adversarial second-opinion review, 2026-08-06.
+//
+// Permitting backslash in the tail is safe here precisely because the tail still
+// stops at whitespace, quote and angle bracket: inside a JSON string the URL
+// ends at the closing quote either way.
+var urlRe = regexp.MustCompile(`\b[a-zA-Z][a-zA-Z0-9+.\-]*:(?:\\?/){2}[^\s"'<>]+`)
 
 // secretKVRe matches `key=value` / `key: value` shapes whose key names a
 // credential. Applied after URL replacement, so it only sees free text.
 // The separator tolerates a closing quote so JSON (`"access_token":"v"`) is
 // covered as well as headers and query fragments. The value alternation keeps
 // an auth scheme ("Bearer x") from being mistaken for the whole value.
+//
+// `session` is matched bare, not only as session_id/sessionid. A real header
+// read `Cookie: theme=dark; booking_session=<token>`: the first pair redacted on
+// the `cookie` key and the second survived, because `booking_session` matched
+// nothing in the list. The session token was the one thing on that line worth
+// protecting.
 var secretKVRe = regexp.MustCompile(
-	`(?i)\b(api[_-]?key|apikey|access[_-]?token|auth[_-]?token|id[_-]?token|refresh[_-]?token|token|secret|client[_-]?secret|password|passwd|pwd|passphrase|authorization|session[_-]?id|sessionid|cookie|set-cookie|signature|sig)["']?\s*[=:]\s*("[^"]*"|'[^']*'|(?:bearer|basic|token)\s+[^\s,;&)"']+|[^\s,;&)"']+)`)
+	`(?i)\b(api[_-]?key|apikey|access[_-]?token|auth[_-]?token|id[_-]?token|refresh[_-]?token|token|secret|client[_-]?secret|password|passwd|pwd|passphrase|authorization|session[_-]?id|sessionid|session|signature|sig)["']?\s*[=:]\s*("[^"]*"|'[^']*'|(?:bearer|basic|token)\s+[^\s,;&)"']+|[^\s,;&)"']+)`)
+
+// cookieHeaderRe matches a Cookie or Set-Cookie header and consumes its whole
+// value -- every semicolon-separated pair -- but nothing beyond it.
+//
+// A cookie header carries arbitrary attacker- and site-chosen names, so a
+// key-name allowlist cannot decide which pairs are sensitive: whatever is not on
+// the list survives. `Cookie: theme=dark; booking_session=<token>` proved it,
+// redacting the first pair and leaving the token.
+//
+// The bounds matter as much as the reach. A first version consumed to
+// end-of-line and destroyed everything after the cookie:
+//
+//	request failed cookie=abc status=500 elapsed=12ms
+//	  ->  request failed cookie=<redacted>
+//
+//	{"Cookie":"sid=x","status":500,"error":"denied"}
+//	  ->  {"Cookie=<redacted>
+//
+// The status, the timing and the error all vanished, and the JSON was left
+// unbalanced. That is a debuggability regression traded for a privacy fix, and a
+// redactor nobody can debug around gets removed. Found by adversarial
+// second-opinion review, 2026-08-06, hours after the over-reach was introduced.
+//
+// Three value shapes, in order: a quoted string (JSON, stops at the closing
+// quote), a single-quoted string, or a bare value plus any semicolon-separated
+// continuations. The bare form excludes whitespace and commas, so a following
+// `status=500` or a JSON list element is never swallowed.
+var cookieHeaderRe = regexp.MustCompile(
+	`(?i)\b(set-cookie|cookie)["']?\s*[=:]\s*("[^"]*"|'[^']*'|[^\s;,]+(?:\s*;\s*[^\s;,]+)*)`)
 
 // authRe catches a bare credential presentation with no key name in front.
 var authRe = regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=\-]{8,}`)
@@ -71,6 +117,9 @@ func Text(s string) string {
 		return ""
 	}
 	s = urlRe.ReplaceAllStringFunc(s, URL)
+	// Cookie headers first: their whole value goes, so the key-name rule below
+	// never gets the chance to redact one pair and leave the rest.
+	s = cookieHeaderRe.ReplaceAllString(s, "${1}="+Redacted)
 	s = secretKVRe.ReplaceAllString(s, "${1}="+Redacted)
 	return authRe.ReplaceAllString(s, "${1} "+Redacted)
 }

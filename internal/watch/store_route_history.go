@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 // RecordObservation appends an ad-hoc (route-keyed) price observation and
@@ -16,35 +18,45 @@ import (
 // bounded and the per-search write cheap:
 //   - Throttle: a near-identical observation for the same route+currency within
 //     observationThrottle is skipped entirely (no write), so rapid repeat
-//     searches of the same route do not each rewrite the history file.
+//     searches of the same route do not grow the database.
 //   - Cap: at most maxObservationsPerRoute points are retained per route key;
-//     the oldest are pruned, bounding file growth to cap x number-of-routes.
+//     the oldest are pruned, bounding retained rows to cap x number-of-routes.
 func (s *Store) RecordObservation(routeKey string, price float64, currency string) error {
 	if routeKey == "" || price <= 0 {
 		return nil
 	}
-	return s.withTxn(func() error {
+	return s.withBoltMutation(func(tx *bolt.Tx, _ *[]Watch) (bool, error) {
 		cur := strings.ToUpper(strings.TrimSpace(currency))
-		if last, ok := s.lastObservationLocked(routeKey, cur); ok && last.Price > 0 {
+		last, ok, err := lastRouteObservationTx(tx, routeKey, cur)
+		if err != nil {
+			return false, err
+		}
+		if ok && last.Price > 0 {
 			if time.Since(last.Timestamp) < observationThrottle &&
 				math.Abs(price-last.Price)/last.Price <= observationEpsilonPct {
 				// Redundant near-duplicate. errTxnNoop unwinds without writing:
 				// saving here would republish this process's whole snapshot
 				// over a concurrent writer's for an observation we decided not
 				// to keep.
-				return errTxnNoop
+				return false, errTxnNoop
 			}
 		}
 
-		s.history = append(s.history, PricePoint{
+		if _, err := appendHistoryPointTx(tx, PricePoint{
 			RouteKey:  routeKey,
 			Price:     price,
 			Currency:  cur,
 			Timestamp: time.Now(),
-		})
-		s.pruneRouteLocked(routeKey)
-		s.pruneGlobalRouteLocked()
-		return nil
+		}); err != nil {
+			return false, err
+		}
+		if err := pruneSeriesTx(tx.Bucket(bucketRouteHistory), tx.Bucket(bucketRouteAll), []byte(routeKey), maxObservationsPerRoute); err != nil {
+			return false, err
+		}
+		if err := pruneGlobalRouteTx(tx); err != nil {
+			return false, err
+		}
+		return true, nil
 	})
 }
 
@@ -177,33 +189,6 @@ func routeQuota(byRoute map[string][]int, limit int) int {
 	return best
 }
 
-// lastObservationLocked returns the most recent price point for a route key,
-// optionally filtered to a currency (empty currency matches any). Caller holds s.mu.
-func (s *Store) lastObservationLocked(routeKey, currency string) (PricePoint, bool) {
-	for i := len(s.history) - 1; i >= 0; i-- {
-		p := s.history[i]
-		if p.RouteKey != routeKey {
-			continue
-		}
-		// Exact match, including when both sides are empty.
-		//
-		// An empty argument used to mean "any currency", so a currencyless
-		// observation matched a labelled one and vice versa. The caller is
-		// RecordObservation's throttle, which then compares magnitudes --
-		// |price-last|/last -- across two different currencies, e.g. a 20000
-		// JPY quote against a 180 EUR one. That comparison is meaningless and
-		// decides whether an observation is recorded at all (trvl#564).
-		//
-		// Currencyless points are still stored and still comparable to each
-		// other; they simply no longer stand in for every currency.
-		if strings.ToUpper(p.Currency) != currency {
-			continue
-		}
-		return p, true
-	}
-	return PricePoint{}, false
-}
-
 // pruneRouteLocked drops the oldest observations for routeKey beyond the cap,
 // preserving order. Caller holds s.mu.
 func (s *Store) pruneRouteLocked(routeKey string) {
@@ -239,6 +224,7 @@ func (s *Store) pruneRouteLocked(routeKey string) {
 func (s *Store) AllHistory() []PricePoint {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_ = s.refreshHistoryLocked()
 
 	out := make([]PricePoint, len(s.history))
 	copy(out, s.history)
@@ -250,6 +236,7 @@ func (s *Store) AllHistory() []PricePoint {
 func (s *Store) RouteHistory(routeKey string) []PricePoint {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_ = s.refreshHistoryLocked()
 
 	var out []PricePoint
 	for _, p := range s.history {
@@ -269,6 +256,7 @@ func (s *Store) RouteHistory(routeKey string) []PricePoint {
 func (s *Store) RoutePrices(routeKey, currency string) []float64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_ = s.refreshHistoryLocked()
 
 	cur := strings.ToUpper(strings.TrimSpace(currency))
 	var out []float64

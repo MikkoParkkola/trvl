@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"sort"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights/afklm"
@@ -307,7 +309,7 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 		return nil, nil // silent, zero latency, zero user signal
 	}
 	if err != nil {
-		slog.Debug("afklm: NewProvider error (non-ErrNoCredential); skipping default merge inclusion", "err", err)
+		slog.Debug("afklm: NewProvider error (non-ErrNoCredential); skipping default merge inclusion", "err", logredact.Err(err))
 		return nil, nil
 	}
 
@@ -325,7 +327,7 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 		return nil, nil
 	}
 	if err != nil {
-		slog.Debug("afklm: search error in default merge (best-effort; does not fail search)", "err", err)
+		slog.Debug("afklm: search error in default merge (best-effort; does not fail search)", "err", logredact.Err(err))
 		return nil, []models.ProviderStatus{{
 			ID:     "native_roundtrip:afklm",
 			Name:   "AFKLM (native round-trip)",
@@ -335,7 +337,7 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 	}
 	if res == nil || !res.Success || len(res.Flights) == 0 {
 		if res != nil && res.Error != "" {
-			slog.Debug("afklm: soft error from provider", "afklm_error", res.Error)
+			slog.Debug("afklm: soft error from provider", "afklm_error", logredact.Text(res.Error))
 		}
 		return nil, nil
 	}

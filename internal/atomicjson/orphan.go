@@ -20,6 +20,17 @@ func tempName(base string, pid int, nonce string) string {
 	return base + tempMarker + strconv.Itoa(pid) + "-" + nonce
 }
 
+// tempNameWithBoot records which boot created a new temp file. PID reuse after
+// reboot is then provable without trusting mutable file timestamps. An empty
+// fingerprint falls back to the legacy format and therefore to conservative
+// liveness handling.
+func tempNameWithBoot(base string, pid int, boot, nonce string) string {
+	if boot == "" {
+		return tempName(base, pid, nonce)
+	}
+	return base + tempMarker + strconv.Itoa(pid) + "-b" + boot + "-" + nonce
+}
+
 // An Orphan is a temp file left behind in a store directory by a write that
 // never reached its rename — almost always a process killed mid-write. It is
 // a full copy of the data that was being written, so it may be the only
@@ -75,7 +86,7 @@ func FindOrphans(dir string) ([]Orphan, error) {
 		if e.IsDir() {
 			continue
 		}
-		target, pid, ok := parseTempName(e.Name())
+		target, pid, ownerBoot, ok := parseTempMetadata(e.Name())
 		if !ok {
 			continue
 		}
@@ -91,31 +102,39 @@ func FindOrphans(dir string) ([]Orphan, error) {
 			Size:      info.Size(),
 			ModTime:   info.ModTime(),
 			PID:       pid,
-			OwnerLive: pid > 0 && processAlive(pid, info.ModTime()),
+			OwnerLive: pid > 0 && bootMayMatch(ownerBoot, currentBootFingerprint()) && processAlive(pid, info.ModTime()),
 		})
 	}
 	return orphans, nil
 }
 
-// parseTempName splits a temp file name into the target base name and the
-// creating PID. Names written before PID stamping parse with pid 0, which
-// makes them reportable but never reclaimable.
-func parseTempName(name string) (target string, pid int, ok bool) {
+func parseTempMetadata(name string) (target string, pid int, boot string, ok bool) {
 	i := strings.LastIndex(name, tempMarker)
 	if i <= 0 {
-		return "", 0, false
+		return "", 0, "", false
 	}
 	target, suffix := name[:i], name[i+len(tempMarker):]
 	if suffix == "" {
-		return "", 0, false
+		return "", 0, "", false
 	}
 	// Current scheme: "<pid>-<nonce>". Legacy scheme: "<nonce>" only.
 	if dash := strings.Index(suffix, "-"); dash > 0 {
 		if p, err := strconv.Atoi(suffix[:dash]); err == nil && p > 0 {
-			return target, p, true
+			rest := suffix[dash+1:]
+			if bootEnd := strings.Index(rest, "-"); bootEnd > 1 && strings.HasPrefix(rest, "b") {
+				return target, p, rest[1:bootEnd], true
+			}
+			return target, p, "", true
 		}
 	}
-	return target, 0, true
+	return target, 0, "", true
+}
+
+// bootMayMatch is deliberately asymmetric. A recorded fingerprint that differs
+// from the current boot proves the PID was reused and returns false. Missing or
+// unavailable data is ambiguous and returns true, preserving the file.
+func bootMayMatch(recorded, current string) bool {
+	return recorded == "" || current == "" || recorded == current
 }
 
 // CleanOptions controls Clean. The zero value is a dry run: it reports what

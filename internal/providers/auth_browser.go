@@ -12,6 +12,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/MikkoParkkola/trvl/internal/cookies"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 )
 
 // Browser-cookie fallback and the interactive escape hatch.
@@ -127,7 +128,7 @@ func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthCo
 
 	slog.Info("opening URL in browser to refresh WAF cookies, waiting up to 30s...",
 		"provider", pc.config.ID,
-		"url", targetURL,
+		"url", logredact.URL(targetURL),
 		"browser", browserPref,
 	)
 
@@ -138,7 +139,7 @@ func tryBrowserEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthCo
 	prev := browserCookiesForURL(targetURL)
 	if err := openURLInBrowser(targetURL, browserPref); err != nil {
 		slog.Warn("browser escape hatch: open failed",
-			"provider", pc.config.ID, "error", err.Error())
+			"provider", pc.config.ID, "error", logredact.Err(err))
 		return nil, false
 	}
 
@@ -331,7 +332,7 @@ func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool
 	// site would be a tautology and the site is pinned to the endpoint instead.
 	if !cookieTargetPermitted(pc.config, targetURL) {
 		slog.Debug("refusing browser cookies: target is not https on the consented provider site",
-			"url", targetURL, "site", providerCookieSite(pc.config))
+			"url", logredact.URL(targetURL), "site", providerCookieSite(pc.config))
 		return false
 	}
 	// Fail closed: browser cookies only enter a jar that can revoke them. A
@@ -342,7 +343,7 @@ func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool
 		return false
 	}
 	cookies := browserCookiesForURLWithHint(targetURL, browserHint)
-	slog.Debug("applyBrowserCookies", "url", targetURL, "browser", browserHint, "count", len(cookies))
+	slog.Debug("applyBrowserCookies", "url", logredact.URL(targetURL), "browser", browserHint, "count", len(cookies))
 	if len(cookies) == 0 {
 		return false
 	}
@@ -356,7 +357,7 @@ func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool
 	if !vault.seedFromBrowser(u, cookies) {
 		return false
 	}
-	slog.Debug("applied browser cookies to preflight client", "url", targetURL, "count", len(cookies))
+	slog.Debug("applied browser cookies to preflight client", "url", logredact.URL(targetURL), "count", len(cookies))
 	return true
 }
 

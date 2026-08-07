@@ -159,10 +159,10 @@ func TestPrefs_SetBool(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Providers CLI — list with temp HOME (no providers configured)
+// Providers CLI — list reviewed definitions with temp HOME
 // ---------------------------------------------------------------------------
 
-func TestProviders_ListEmpty(t *testing.T) {
+func TestProviders_ListShowsShippedDefinitions(t *testing.T) {
 	withTempHome(t)
 
 	old := os.Stdout
@@ -178,8 +178,8 @@ func TestProviders_ListEmpty(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	_, _ = buf.ReadFrom(r)
-	if !strings.Contains(buf.String(), "No providers") {
-		t.Errorf("expected 'No providers' message, got: %s", buf.String())
+	if !strings.Contains(buf.String(), "openstreetmap-hotels") || !strings.Contains(buf.String(), "disabled") {
+		t.Errorf("expected shipped disabled provider, got: %s", buf.String())
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -103,9 +104,19 @@ func trainlineViaCurl(ctx context.Context, fromID, toID, date, currency string) 
 
 	seedCmd := exec.CommandContext(ctx, "curl", seedArgs...)
 	if seedErr := seedCmd.Run(); seedErr != nil {
-		slog.Debug("trainlineViaCurl: seed request failed", "err", seedErr)
+		slog.Debug("trainlineViaCurl: seed request failed", "err", logredact.Err(seedErr))
 		// Continue anyway — the API call may still work.
 	} else {
+		// Site 11 of trvl#531, kept deliberately. cookieJarFile is a local temp
+		// path this function just built as
+		// "/tmp/trainline-cookies-<nanotime>.txt" -- it carries no origin,
+		// destination, date or passenger detail, and no credential. Its whole
+		// debugging value IS the path: this line exists so someone can open the
+		// jar and see what the seed produced, which a fingerprint would destroy.
+		//
+		// It does disclose that Trainline was used, at debug level, on a machine
+		// whose /tmp the reader can already see. That is a weaker disclosure
+		// than the log file's own existence.
 		slog.Debug("trainlineViaCurl: homepage seed complete", "jar", cookieJarFile)
 	}
 

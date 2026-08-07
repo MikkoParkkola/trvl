@@ -157,7 +157,7 @@ func TestExtractAggregateRating(t *testing.T) {
 // --- registry.go ---
 
 func TestNewRegistry_DefaultPath(t *testing.T) {
-	// NewRegistry reads ~/.trvl/providers/ -- should succeed on any system.
+	// NewRegistry loads embedded definitions and state under ~/.trvl.
 	reg, err := NewRegistry()
 	if err != nil {
 		t.Fatalf("NewRegistry() error: %v", err)
@@ -165,7 +165,7 @@ func TestNewRegistry_DefaultPath(t *testing.T) {
 	if reg == nil {
 		t.Fatal("registry should not be nil")
 	}
-	// May or may not have providers, but should not panic.
+	// Enabled state may be empty, but listing must not panic.
 	_ = reg.List()
 }
 

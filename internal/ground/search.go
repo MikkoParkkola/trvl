@@ -17,6 +17,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/breaker"
 	"github.com/MikkoParkkola/trvl/internal/cache"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/searchctx"
 	"golang.org/x/sync/singleflight"
@@ -666,7 +667,7 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 				continue
 			}
 			if isProviderNotApplicable(r.err) {
-				slog.Debug("ground provider not applicable", "provider", r.name, "reason", r.err)
+				slog.Debug("ground provider not applicable", "provider", r.name, "reason", logredact.Err(r.err))
 				// Attempted but no applicable route for this origin/destination —
 				// not a failure, so it must not drag Completeness toward "partial".
 				statuses = append(statuses, models.ProviderStatus{
@@ -675,7 +676,7 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 					Status: models.StatusSkipped,
 				})
 			} else {
-				slog.Warn("ground provider error", "provider", r.name, "error", r.err)
+				slog.Warn("ground provider error", "provider", r.name, "error", logredact.Err(r.err))
 				errors = append(errors, fmt.Sprintf("%s: %v", r.name, r.err))
 				statuses = append(statuses, models.ProviderStatus{
 					ID:     r.name,

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/safeexec"
 	"golang.org/x/sync/singleflight"
 )
@@ -46,10 +48,9 @@ const defaultKeychainService = "afklm-api-key"
 // `security` are third-party binaries that may wait on a daemon, a network
 // round-trip, or a user gesture; without a bound they wait forever (#507).
 //
-// A var rather than a const solely so tests can widen it. Two seconds is
-// generous for a real helper but tight for a shell fixture on a machine running
-// the whole suite in parallel, and a test that fails because the host was busy
-// teaches nobody anything.
+// A var rather than a const solely so tests can control it. Two seconds is
+// generous for a real helper, while tests use a larger budget for fast shell
+// fixtures and a smaller one for intentional timeout cases.
 var externalLookupTimeout = 2 * time.Second
 
 // negativeCacheTTL suppresses repeated external lookups after a failure. trvl
@@ -281,7 +282,7 @@ func resolveExternal(ctx context.Context) (string, error) {
 			// wedged helper from an absent one. The classified error is safe to
 			// log; the helper's own output is not, since it echoes the secret
 			// reference and sometimes more of the item.
-			slog.Debug("afklm: external credential lookup failed", "err", err, "ref_configured", cfg.opRef != "")
+			slog.Debug("afklm: external credential lookup failed", "err", logredact.Err(err), "ref_configured", cfg.opRef != "")
 
 			// Published inside the flight, before the result becomes visible, so
 			// a caller arriving after this call leaves the group cannot pass the

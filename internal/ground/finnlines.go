@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -452,13 +454,13 @@ func SearchFinnlines(ctx context.Context, from, to, date, currency string) ([]mo
 
 			// Rate limit before cabin product query.
 			if err := finnlinesLimiter.Wait(ctx); err != nil {
-				slog.Warn("finnlines: cabin rate limit", "err", err)
+				slog.Warn("finnlines: cabin rate limit", "err", logredact.Err(err))
 				break
 			}
 
 			products, err := fetchFinnlinesProducts(ctx, fromPort.Code, toPort.Code, e.DepartureDate, e.DepartureTime)
 			if err != nil {
-				slog.Warn("finnlines: cabin products query failed", "sailing", e.SailingCode, "err", err)
+				slog.Warn("finnlines: cabin products query failed", "sailing", e.SailingCode, "err", logredact.Err(err))
 				continue
 			}
 
@@ -475,14 +477,14 @@ func SearchFinnlines(ctx context.Context, from, to, date, currency string) ([]mo
 
 			// Retry timetable with cabin to get total price.
 			if err := finnlinesLimiter.Wait(ctx); err != nil {
-				slog.Warn("finnlines: cabin retry rate limit", "err", err)
+				slog.Warn("finnlines: cabin retry rate limit", "err", logredact.Err(err))
 				cabinByIdx[i] = info
 				continue
 			}
 
 			retried, err := fetchFinnlinesTimetablesWithCabin(ctx, fromPort.Code, toPort.Code, date, cabin.Code)
 			if err != nil {
-				slog.Warn("finnlines: cabin retry failed", "sailing", e.SailingCode, "err", err)
+				slog.Warn("finnlines: cabin retry failed", "sailing", e.SailingCode, "err", logredact.Err(err))
 				cabinByIdx[i] = info
 				continue
 			}

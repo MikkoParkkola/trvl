@@ -93,3 +93,21 @@ func TestHotelPricesReadinessAcceptsADeadlineAlone(t *testing.T) {
 			"told us its terms even without the boolean flag")
 	}
 }
+
+// Explicitly non-refundable is still known refundability. It must differ from
+// silence even though it does not become a positive free-cancellation claim.
+func TestHotelPricesReadinessTreatsExplicitNonRefundableAsKnown(t *testing.T) {
+	no := false
+	providers := []models.ProviderPrice{{
+		Provider:         "someseller",
+		Price:            180,
+		Currency:         "EUR",
+		PriceConfidence:  models.PriceConfidenceVerified,
+		LinkDurability:   "stable",
+		FreeCancellation: &no,
+	}}
+
+	if got := HotelPricesReadiness("hotel-abc", providers); got.Capped() {
+		t.Errorf("explicit non-refundable terms were treated as missing evidence: %q", got.Ceiling)
+	}
+}

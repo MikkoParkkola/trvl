@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/preflightttl"
 )
@@ -204,7 +205,7 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 	var firstErr error
 	for r := range results {
 		if r.err != nil {
-			slog.Warn("provider error", "provider", r.id, "error", r.err.Error())
+			slog.Warn("provider error", "provider", r.id, "error", logredact.Err(r.err))
 			rt.registry.MarkError(r.id, r.err.Error())
 			rt.mu.RLock()
 			if pc := rt.clients[r.id]; pc != nil {
