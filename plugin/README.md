@@ -115,9 +115,13 @@ Watches and opportunities:
 `list_opportunity_watches`.
 
 Providers:
-`list_providers`, `provider_health`, `suggest_providers`,
-`configure_provider`, `test_provider`, `remove_provider`, plus provider status
-blocks returned by search tools.
+`list_providers`, `provider_health`, `suggest_providers`, `test_provider`,
+`remove_provider`, plus provider status blocks returned by search tools.
+
+Provider definitions are reviewed source shipped in the binary; `trvl providers
+enable <id>` turns one on. `configure_provider` still exists but refuses with an
+error — runtime JSON definitions were removed in 1.21.0 (#538), and new
+providers arrive by pull request or in a fork.
 
 Awards and points:
 `calculate_points_value`, `search_awards`, and miles earning annotations on

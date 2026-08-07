@@ -75,9 +75,12 @@ providers go through it.
 
 ### 3.1 ProviderConfig — the data model
 
-A provider is fully described by a JSON file at `~/.trvl/providers/<id>.json`. The config
-is the schema contract between the LLM (which generates configs via `configure_provider`)
-and the runtime (which executes them). Key fields:
+A provider is fully described by a `ProviderConfig`. Since 1.21.0 these are **reviewed
+source files embedded in the binary** (`internal/providers/definitions`), not files on
+disk: the config is the schema contract between the definition and the runtime that
+executes it. Runtime state under `~/.trvl` records consent, enabled state and health, and
+cannot replace endpoints, headers, authentication, request templates or response
+mappings. Key fields:
 
 ```
 ProviderConfig {
@@ -517,15 +520,21 @@ After normalization, rating comparisons and `MinRating` filters operate on a sin
 
 ## 8. Provider Lifecycle
 
-**Adding a provider:** The `configure_provider` MCP tool accepts a `ProviderConfig` JSON
-(typically LLM-generated) and writes it to `~/.trvl/providers/<id>.json`. The runtime
-loads it on first use.
+**Adding a provider:** a reviewed definition is added to
+`internal/providers/definitions` by source change — a pull request, or a
+user-maintained fork — and a user turns it on with `trvl providers enable <id>`.
 
-**Hot reload:** `Runtime.searchProvider` calls `registry.ReloadIfChanged(id)` at the
-start of each search. If the file's mtime has advanced since last load, the config is
-re-parsed, the `providerClient` is rebuilt with the new HTTP/TLS config, and the old
-cookie jar is transplanted into the new client. WAF tokens and session cookies survive
-config edits without requiring a search restart.
+Before 1.21.0 the `configure_provider` MCP tool wrote LLM-generated JSON to
+`~/.trvl/providers/<id>.json` and the runtime loaded it. That made a file on disk into
+executable request-building instructions, so anything able to write that directory could
+direct trvl's HTTP client (#538). The tool now refuses with an error explaining the
+source-only path; legacy files are retained for rollback and never loaded, with a
+one-time warning when they are found.
+
+**Hot reload:** no longer applies to definitions, which are fixed at build time. Runtime
+STATE (enabled, consent, health) is re-read from disk so a change takes effect without
+restarting the MCP server. WAF tokens and session cookies live in the client and survive
+state changes.
 
 **Testing:** The `test_provider` MCP tool calls `searchProvider` directly and returns
 the raw response body snippet, resolved URL, and any extraction values alongside the

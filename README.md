@@ -146,7 +146,25 @@ export TRVL_NO_TIER2_CDP=1         # never start a headless browser of its own
 
 Both cost you results, and it is worth knowing how: a site that answers with a bot challenge simply returns nothing, which looks like trvl finding no trains rather than like a setting you chose. That is the trade, stated so you can make it deliberately.
 
+### If you are behind a proxy
+
+trvl honours `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`. It checks and pins both hops — the proxy and the destination — so a redirect or a changed DNS answer cannot move the connection somewhere the URL never named.
+
+By default trvl refuses to connect to private, loopback and link-local addresses, which is what keeps a hostile redirect away from your internal network and from cloud metadata endpoints. A corporate proxy is almost always on a private address, so reaching one needs an explicit opt-in:
+
+```bash
+export TRVL_ALLOW_PRIVATE_PROXY=1   # the PROXY may be on a private address
+```
+
+That relaxes the proxy hop only. Destinations are still refused on private addresses. The broader `TRVL_ALLOW_LOCAL_PROVIDERS=1` allows both, and exists for pointing trvl at a mock provider on your own machine — do not reach for it just to use a proxy, because it also switches off the destination guard.
+
+Authenticated proxies (`http://user:pass@host`) are not supported.
+
 ### How much price history trvl keeps
+
+**Price watching is experimental.** It works, and it keeps data — your watches and their whole price history live under `~/.trvl`. Treat that history as something you could lose. The store is backed up before any migration and the legacy files are kept afterwards, so a bad outcome is recoverable; but the feature is younger than the rest of trvl and is being changed more often.
+
+**Upgrading to 1.21.0 can delete price history.** The first run converts the store to a transactional database, and if you have lowered `TRVL_WATCH_MAX_POINTS_PER_WATCH` it now honours that limit during the conversion — earlier versions ignored it there while applying it everywhere else, so a lowered limit was quietly not in force. Points above your limit are removed. Run `trvl watch migrate --dry-run` first to see the real number: the preview used to under-report it, which is the reason this warning exists.
 
 Watch price history is capped, or it grows without bound: one real store reached 320,028 points in 41MB, which cost every running trvl process about 686MB of memory. Three limits bound it, and all three can be changed.
 
