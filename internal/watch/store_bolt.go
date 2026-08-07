@@ -48,11 +48,69 @@ func boltOptions(readOnly bool) *bolt.Options {
 }
 
 func (s *Store) openBolt(readOnly bool) (*bolt.DB, error) {
-	db, err := bolt.Open(s.databasePath(), 0o600, boltOptions(readOnly))
+	return s.openBoltAt(s.databasePath(), readOnly)
+}
+
+// openBoltAt opens a bbolt database at an explicit path.
+//
+// The first publish needs this: it writes to a temporary path and renames on
+// success, so an interrupted conversion cannot leave a file at the real path.
+// See publishFirstGenerationLocked for why that matters.
+func (s *Store) openBoltAt(path string, readOnly bool) (*bolt.DB, error) {
+	db, err := bolt.Open(path, 0o600, boltOptions(readOnly))
 	if err != nil {
 		return nil, fmt.Errorf("open watch database: %w", err)
 	}
 	return db, nil
+}
+
+// creatingPath is where the first generation is assembled before it is
+// published. Kept beside the real file so the rename is same-filesystem and
+// therefore atomic.
+func (s *Store) creatingPath() string { return s.databasePath() + ".creating" }
+
+// quarantinePath is where an unreadable database is moved aside so the legacy
+// JSON can be used instead.
+func (s *Store) quarantinePath() string { return s.databasePath() + ".unreadable" }
+
+// quarantineUnreadableDatabaseLocked moves an unusable watch.db aside so the
+// legacy JSON beside it can be loaded instead.
+//
+// Returns false, with nothing moved, when there is no legacy store to fall back
+// to. In that case the unreadable database is the only copy of anything and
+// renaming it would turn a diagnosable failure into an empty one.
+func (s *Store) quarantineUnreadableDatabaseLocked() (bool, string, error) {
+	legacyPresent := false
+	for _, path := range []string{s.watchesPath(), s.historyPath()} {
+		if _, err := os.Stat(path); err == nil {
+			legacyPresent = true
+		}
+	}
+	if !legacyPresent {
+		return false, "", nil
+	}
+
+	// A stable suffix would collide with an earlier quarantine and either fail
+	// or overwrite the older evidence. The sequence is bounded so a repeatedly
+	// failing store cannot fill the directory.
+	var target string
+	for i := 0; i < 100; i++ {
+		candidate := s.quarantinePath()
+		if i > 0 {
+			candidate = fmt.Sprintf("%s.%d", s.quarantinePath(), i)
+		}
+		if _, err := os.Stat(candidate); errors.Is(err, os.ErrNotExist) {
+			target = candidate
+			break
+		}
+	}
+	if target == "" {
+		return false, "", fmt.Errorf("100 quarantined databases already exist beside %s", s.databasePath())
+	}
+	if err := os.Rename(s.databasePath(), target); err != nil {
+		return false, "", err
+	}
+	return true, target, nil
 }
 
 // prepareBoltLocked performs the one-time, backup-first conversion from the
@@ -288,7 +346,9 @@ func (s *Store) persistBoltLocked() error {
 		return err
 	}
 	legacyPresent := false
+	firstPublish := false
 	if _, err := os.Stat(s.databasePath()); errors.Is(err, os.ErrNotExist) {
+		firstPublish = true
 		for _, path := range []string{s.watchesPath(), s.historyPath()} {
 			if _, statErr := os.Stat(path); statErr == nil {
 				legacyPresent = true
@@ -310,38 +370,111 @@ func (s *Store) persistBoltLocked() error {
 		s.compactHistoryLocked()
 	}
 
+	if firstPublish {
+		// Assemble somewhere else and rename. Once watch.db exists at its real
+		// path the legacy JSON is never read again, so a half-written one is
+		// indistinguishable from a finished one to every later load.
+		return s.publishFirstGenerationLocked()
+	}
+
 	db, err := s.openBolt(false)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = db.Close() }()
 	err = db.Update(func(tx *bolt.Tx) error {
-		if err := ensureBoltBuckets(tx); err != nil {
-			return err
-		}
-		meta := tx.Bucket(bucketMeta)
-		if err := meta.Put(keySchemaVersion, []byte(boltSchemaVersion)); err != nil {
-			return err
-		}
-		if err := putJSON(meta, keyWatches, s.watches); err != nil {
-			return fmt.Errorf("encode watches: %w", err)
-		}
-		for _, name := range [][]byte{bucketWatchHistory, bucketRouteHistory, bucketWatchAll, bucketRouteAll} {
-			if _, err := resetBucket(tx, name); err != nil {
-				return fmt.Errorf("reset bucket %q: %w", name, err)
-			}
-		}
-		for _, point := range s.history {
-			if _, err := appendHistoryPointTx(tx, point); err != nil {
-				return err
-			}
-		}
-		return nil
+		return s.writeGenerationTx(tx)
 	})
 	if err == nil {
 		s.historyStale = false
 	}
 	return err
+}
+
+// writeGenerationTx writes the whole in-memory generation into an open
+// transaction. Shared by the steady-state rewrite and the first publish so the
+// two cannot drift.
+func (s *Store) writeGenerationTx(tx *bolt.Tx) error {
+	if err := ensureBoltBuckets(tx); err != nil {
+		return err
+	}
+	meta := tx.Bucket(bucketMeta)
+	if err := meta.Put(keySchemaVersion, []byte(boltSchemaVersion)); err != nil {
+		return err
+	}
+	if err := putJSON(meta, keyWatches, s.watches); err != nil {
+		return fmt.Errorf("encode watches: %w", err)
+	}
+	for _, name := range [][]byte{bucketWatchHistory, bucketRouteHistory, bucketWatchAll, bucketRouteAll} {
+		if _, err := resetBucket(tx, name); err != nil {
+			return fmt.Errorf("reset bucket %q: %w", name, err)
+		}
+	}
+	for _, point := range s.history {
+		if _, err := appendHistoryPointTx(tx, point); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// publishFirstGenerationLocked converts the legacy JSON pair into watch.db.
+//
+// IT WRITES SOMEWHERE ELSE AND RENAMES, and that is the whole point. bbolt
+// creates its file on Open, before any schema is committed, while the
+// conversion itself can rewrite hundreds of thousands of history points (the
+// production tail this code cites is 320k for a single watch). The mere
+// EXISTENCE of watch.db is what stops the legacy JSON being read ever again --
+// both loadLocked and prepareBoltLocked gate on Stat alone.
+//
+// So an interrupted first conversion used to leave a present-but-schemaless
+// file, after which every load failed schema validation and the intact JSON
+// beside it was never consulted. Not a wipe: the data was still on disk, and
+// unreachable, which for a user is the same morning. The window was widest for
+// exactly the stores that had the most to lose.
+//
+// A temp file plus rename closes it. Either the rename happened and the
+// database is complete, or it did not and the legacy JSON is still the source
+// of truth. There is no third state to recover from.
+//
+// Found by adversarial review of #587 (M1), which called it a hard blocker for
+// a release that migrates user price history. It was right.
+func (s *Store) publishFirstGenerationLocked() error {
+	creating := s.creatingPath()
+	// A leftover from a previous interrupted attempt is not evidence of
+	// anything and must not be reused: it may hold a partial generation.
+	if err := os.Remove(creating); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("clear the incomplete watch database: %w", err)
+	}
+
+	db, err := s.openBoltAt(creating, false)
+	if err != nil {
+		return err
+	}
+	if err := db.Update(func(tx *bolt.Tx) error {
+		return s.writeGenerationTx(tx)
+	}); err != nil {
+		_ = db.Close()
+		_ = os.Remove(creating)
+		return err
+	}
+	// Sync before publishing: a rename that beats its own contents to disk
+	// would recreate the state this function exists to prevent.
+	if err := db.Sync(); err != nil {
+		_ = db.Close()
+		_ = os.Remove(creating)
+		return fmt.Errorf("flush the new watch database: %w", err)
+	}
+	if err := db.Close(); err != nil {
+		_ = os.Remove(creating)
+		return fmt.Errorf("close the new watch database: %w", err)
+	}
+	if err := os.Rename(creating, s.databasePath()); err != nil {
+		_ = os.Remove(creating)
+		return fmt.Errorf("publish the new watch database: %w", err)
+	}
+	s.historyStale = false
+	return nil
 }
 
 func appendHistoryPointTx(tx *bolt.Tx, point PricePoint) ([]byte, error) {

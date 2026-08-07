@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/atomicjson"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -125,10 +127,30 @@ func (s *Store) loadLocked() error {
 	s.historyStale = false
 
 	if _, err := os.Stat(s.databasePath()); err == nil {
-		if err := s.loadBoltLocked(); err != nil {
-			return fmt.Errorf("load watch database: %w", err)
+		loadErr := s.loadBoltLocked()
+		if loadErr == nil {
+			return s.normalizeCurrenciesLocked()
 		}
-		return s.normalizeCurrenciesLocked()
+		// The database is present and unusable. If the legacy JSON is still
+		// here, it is a complete copy and this is recoverable without anyone
+		// touching files by hand -- which is the difference between a bad
+		// morning and a lost history.
+		//
+		// Moving the unreadable file aside rather than deleting it: it is the
+		// only artefact of whatever went wrong, and the legacy JSON it is being
+		// replaced by is intact. Losing evidence is a poor trade for a filename.
+		recovered, quarantine, qErr := s.quarantineUnreadableDatabaseLocked()
+		if qErr != nil {
+			return fmt.Errorf("load watch database: %w (and it could not be moved aside: %v)", loadErr, qErr)
+		}
+		if !recovered {
+			return fmt.Errorf("load watch database: %w", loadErr)
+		}
+		slog.Warn("watch: the price database could not be read; falling back to the legacy files beside it",
+			"moved_to", quarantine,
+			"err", logredact.Err(loadErr),
+			"hint", "the legacy JSON store is intact and is being used; the unreadable database was kept for inspection")
+		// Fall through to the JSON loader below.
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect watch database: %w", err)
 	}
