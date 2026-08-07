@@ -442,6 +442,22 @@ func (s *Store) Remove(id string) (bool, error) {
 		for i, w := range s.watches {
 			if w.ID == id {
 				s.watches = append(s.watches[:i], s.watches[i+1:]...)
+				// Drop this watch's history with it. Removing only the row left
+				// the points behind, and the global cap counts EVERY
+				// watch-keyed point, orphan or not -- so a deleted watch went on
+				// consuming the budget and live watches were trimmed to make
+				// room for a series nobody could see or ask about. Worse under
+				// the bolt store, which rewrites the whole history on the next
+				// transaction and so actively re-published the orphans.
+				//
+				// compactHistoryLocked does drop orphans, but it runs on
+				// migration, not on remove, so the state persisted until the
+				// next upgrade.
+				//
+				// Raised as M4 by adversarial review of #587. purgeHistoryLocked
+				// already existed for the currency-change path; remove simply
+				// never called it.
+				s.purgeHistoryLocked(id)
 				found = true
 				return nil
 			}
