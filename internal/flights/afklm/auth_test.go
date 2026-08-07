@@ -191,48 +191,68 @@ func TestResolveCredential_ExternalIsBounded(t *testing.T) {
 // report the timeout correctly once and then call it "not configured" for the
 // rest of the TTL, which is the misdiagnosis the distinct error exists to stop.
 func TestResolveCredential_TimeoutIsCached(t *testing.T) {
-	opMarker, _ := stubExternalHelpers(t, "sleep 30", "exit 1")
-	useFastExternalTimeout(t)
+	opMarker, secMarker := stubExternalHelpers(t, "sleep 30", "exit 1")
+
+	// A deadline with real headroom, not the 250ms the other timeout tests use.
+	//
+	// This test is about CACHING and needs a helper to actually run first. On
+	// darwin resolveExternalUncached tries the Keychain before 1Password and
+	// returns early if THAT times out, so a 250ms budget made the outcome
+	// depend on which fork won a race with the deadline: under full-suite load
+	// the run recorded zero invocations and the assertion blamed the cache.
+	// Three seconds is still far below the production budget and is not
+	// plausibly exceeded by starting /bin/sh, so the timeout under test is the
+	// deliberate `sleep 30` rather than the machine.
+	prevTimeout := externalLookupTimeout
+	externalLookupTimeout = 3 * time.Second
+	t.Cleanup(func() { externalLookupTimeout = prevTimeout })
 	t.Setenv(EnvKey, "")
 	t.Setenv(EnvOpRef, testRef(t))
 
-	// FIRST resolve: wait until the helper has actually recorded itself before
-	// judging anything.
+	// COUNT BOTH HELPERS, not just op.
 	//
-	// The stub appends to its marker and then sleeps, and the deadline under
-	// test is 250ms. On a saturated host the shell can fail to reach the append
-	// within that budget, so the marker shows ZERO invocations and the
-	// assertion below reports "not cached" for a run in which the helper was
-	// never invoked at all -- a false accusation, and the reason this test
-	// failed only inside the full suite (dod run 2026-08-07) while passing 5/5
-	// on its own.
+	// The property is "a timed-out helper is negative-cached, so a second
+	// resolve re-invokes nothing". WHICH backend timed out is incidental to
+	// that claim, and on macOS it is not even predictable: resolveExternalUncached
+	// tries the Keychain first, and a Keychain timeout returns early without
+	// ever reaching 1Password. Under a loaded machine the `security` fork alone
+	// can exceed the 250ms test budget, so the run that this test used to fail
+	// on had op invoked ZERO times -- and the assertion blamed the caching
+	// logic for a backend it never got to.
 	//
-	// Waiting for the observable event turns a race into a synchronisation. The
-	// bound is generous because it is not the thing being measured: a slow
-	// fork is not a bug, and this test is about CACHING, not latency.
+	// Asserting on the total removes that dependence entirely: whichever helper
+	// the first resolve reached, the second must reach none. Both stubs now
+	// hang, so either path produces the timeout under test rather than only one
+	// of them.
+	total := func() int { return invocations(t, opMarker) + invocations(t, secMarker) }
+
 	_, err := ResolveCredential(context.Background(), PolicyExternal)
 	if !errors.Is(err, ErrHelperTimedOut) {
 		t.Fatalf("call 0: expected ErrHelperTimedOut, got %v", err)
 	}
+
+	// Wait for the observable event rather than assuming the fork won a race
+	// with the deadline. The bound is generous because fork latency is not what
+	// this test measures.
 	deadline := time.Now().Add(30 * time.Second)
-	for invocations(t, opMarker) == 0 && time.Now().Before(deadline) {
+	for total() == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if got := invocations(t, opMarker); got != 1 {
-		t.Fatalf("after the first resolve the helper was invoked %d times, want 1. Without one "+
-			"real invocation there is nothing for the second resolve to be cached against, so the "+
-			"rest of this test would assert nothing.", got)
+	first := total()
+	if first == 0 {
+		t.Fatal("no external helper was invoked at all by the first resolve. Without one real " +
+			"invocation there is nothing for the second resolve to be cached against, so the rest " +
+			"of this test would assert nothing.")
 	}
 
-	// SECOND resolve: the cached timeout must answer it without invoking the
-	// helper again. This is the actual property.
 	_, err = ResolveCredential(context.Background(), PolicyExternal)
 	if !errors.Is(err, ErrHelperTimedOut) {
 		t.Fatalf("call 1: expected ErrHelperTimedOut, got %v", err)
 	}
-	if got := invocations(t, opMarker); got != 1 {
-		t.Fatalf("op invoked %d times across 2 resolves; a timeout must be cached like any other "+
-			"lookup failure, or every search re-pays a lookup that never returns (#507)", got)
+	if got := total(); got != first {
+		t.Fatalf("external helpers were invoked %d times across 2 resolves, %d after the first; a "+
+			"timeout must be cached like any other lookup failure, or every search re-pays a "+
+			"lookup that never returns (#507)", got, first)
 	}
 }
 
