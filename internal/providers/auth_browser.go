@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikkoParkkola/trvl/internal/logredact"
-
 	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/logredact"
