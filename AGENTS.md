@@ -53,7 +53,7 @@ The skills at `.claude/skills/trvl.md` and `.claude/skills/providers.md` teach y
 - Show the "Naive -> Optimized -> Saved" comparison after every plan
 - Use all-in pricing with FF benefits (bag fees included, status benefits subtracted)
 - Apply 36 travel hack detectors to find savings opportunities
-- Configure optional hotel/restaurant/ground providers only after verified source-code research and user consent
+- Enable optional provider definitions shipped in the binary only after verified source-code research and user consent; runtime custom definitions are not executable
 
 ### Step 4: Verify
 
@@ -65,7 +65,7 @@ trvl flights HEL LHR 2026-07-01 --format json | head -5
 # Expected: JSON with flight results
 ```
 
-Tell the user: "trvl is installed with 1 smart MCP tool, 66 legacy-compatible capabilities, and 2 bundled Claude skills. It includes 36 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_accommodations`, `search_hotels`, and `watch_price` continue to work as legacy-compatible capabilities. I can search flights, accommodations, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and configure additional data providers (Airbnb, Booking.com, Hostelworld). Just ask me anything about travel."
+Tell the user: "trvl is installed with 1 smart MCP tool, 66 legacy-compatible capabilities, and 2 bundled Claude skills. It includes 36 travel hack detectors (including error fare and flash sale detection) that auto-fire on searches, a unified optimizer (optimize_booking) with 9 expansion strategies (alternative origins/destinations, rail+fly, date flex, hidden city, departure tax avoidance, rail competition alternatives, ferry cabin as hotel) that searches all combinations in parallel, all-in pricing with FF status (bag fees included, FF benefits subtracted), pre-priced candidate pipeline for ground alternatives, miles tracking and earning estimates, cross-program award sweet-spot scanning, and cross-provider hotel price comparison with cross-currency savings display. Use the primary `travel` tool for natural or structured requests; existing tool names such as `search_flights`, `search_accommodations`, `search_hotels`, and `watch_price` continue to work as legacy-compatible capabilities. I can search flights, accommodations, hotels, destinations, plan trips, find weekend getaways, find optimal travel windows, optimize multi-city routes, find nearby restaurants, check local events, search ground transport (buses, trains, ferries, night trains), detect travel hacks, check weather forecasts, look up airline baggage rules, find airport lounges, check visa requirements, calculate points-vs-cash redemptions, and enable reviewed optional providers shipped in the binary. Just ask me anything about travel."
 
 ### Hotel price trust protocol
 
@@ -545,11 +545,13 @@ Searches 22+ providers in parallel including FlixBus, RegioJet, Eurostar, DB, NS
 ```
 5-phase interview (0=LLM context confirmation, 1=basics, 2=style, 3=deep, 4=specifics, 5=reasoning). Builds a traveller personality model that drives search defaults.
 
-### watch_price — Create a price alert
+### watch_price — Create a price alert (experimental)
 ```json
 {"type": "flight", "origin": "HEL", "destination": "BCN", "date": "2026-07-01", "target_price": 89, "currency": "EUR"}
 ```
-Stores watch in `~/.trvl/watches.json`. Use `check_watches` to re-check prices, `list_watches` to see all active watches. Hotel watches can set `last_minute: true` and `last_minute_drop_pct` (default 25) to alert when sub-48h availability drops materially below the last seen price.
+Stores the watch transactionally in `~/.trvl/watch.db`. Use `check_watches` to re-check prices, `list_watches` to see all active watches. Hotel watches can set `last_minute: true` and `last_minute_drop_pct` (default 25) to alert when sub-48h availability drops materially below the last seen price.
+
+**Experimental.** It works and it keeps data, but it is younger than the rest of trvl and changes more often. Tell the user before they rely on a long history: upgrading to 1.21.0 converts the store and, if `TRVL_WATCH_MAX_POINTS_PER_WATCH` has been lowered, deletes points above that limit — earlier versions ignored the limit during migration. `trvl watch migrate --dry-run` reports the real number first, and the legacy files are backed up and kept.
 
 ### nudges — Grounded proactive travel nudges (CLI)
 
