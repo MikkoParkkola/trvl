@@ -43,6 +43,18 @@ HELPERS=(
   # somewhere else in the package. Unexported, so the compiler bounds the blast
   # radius to this package; this bounds it to these two files.
   "reuseTransportForStealth:internal/batchexec/client.go,internal/batchexec/testclient.go"
+  # The registry constructor that still LOADS AND RUNS provider definitions from
+  # ~/.trvl/providers/*.json. #538 removed runtime custom providers by having
+  # production use NewRegistry, which is source-only; the executable loader was
+  # left in the binary for tests that need a registry backed by a temp
+  # directory. So the trust boundary is currently "production happens to call
+  # the other constructor" -- a convention, not a compiler rule, and exactly the
+  # shape TRVL.HARDEN.2 above exists to catch.
+  #
+  # Raised by adversarial review of #587: the dangerous loader remains
+  # reachable, and only entrypoint discipline keeps it unused. This makes that
+  # discipline enforced instead of assumed.
+  "NewRegistryAt:internal/providers/registry.go"
 )
 
 fail=0

@@ -102,7 +102,20 @@ func handleConfigureProvider(ctx context.Context, args map[string]any, elicit El
 		if id != "" {
 			message = fmt.Sprintf("Provider %q was not configured. %s", id, message)
 		}
-		return textContent(message), nil, nil
+		// AN ERROR, not a successful result carrying an apology. The call did
+		// not do what it was asked to do, and the caller is usually an agent
+		// that branches on the error and never reads the text -- so returning
+		// nil here reports "configured" for a provider that will never run.
+		// Combined with documentation that still teaches this tool as the way
+		// to add a provider, that is a silent no-op presented as success.
+		//
+		// The explanatory text stays IN the error, because the reason is the
+		// actionable part: there is a way to add a provider, it is just not
+		// this one.
+		//
+		// Raised by adversarial review of #587: the trust boundary is closed
+		// correctly, but the operator-visible half was wrong.
+		return nil, nil, fmt.Errorf("configure_provider: %s", message)
 	}
 	config, err := parseProviderConfig(args)
 	if err != nil {
