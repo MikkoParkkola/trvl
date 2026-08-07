@@ -34,9 +34,11 @@ test-live-integrations:
 test-live-probes:
 	TRVL_TEST_LIVE_PROBES=1 $(GO_RUN) test -v -count=1 -timeout=$(TEST_TIMEOUT) ./... -run Probe
 
-# Log-URL redaction is NOT in repo-hygiene: seeing multi-line slog calls needs a
-# Go parser, which a line-based shell script does not have. It lives in
-# internal/logredact's slogguard test and runs with `make test`.
+# Log-URL redaction runs here as an AST checker over Go syntax. It began as a
+# line-based shell script that could not see multi-line slog calls and reported
+# clean against a live leak; internal/logredact's slogguard test is the CI owner
+# of that job, and this local copy exists so `make lint` catches the same thing
+# before a push.
 repo-hygiene:
 	scripts/ci/check-workflow-hygiene.sh
 	scripts/ci/check-language-hygiene.sh
