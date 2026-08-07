@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,8 +155,16 @@ func TestUnsupportedSchemaIsNotTreatedAsNeverPublished(t *testing.T) {
 	}
 
 	fresh := &Store{dir: dir}
-	if err := fresh.Load(); err == nil {
+	err := fresh.Load()
+	if err == nil {
 		t.Fatal("Load accepted a schema this binary does not support")
+	}
+	// Assert the CONTRACT, not only its side effect. Checking that the file was
+	// not renamed catches today's implementation; checking the sentinel catches
+	// a future one that decides to quarantine under some other signal.
+	if errors.Is(err, errNeverPublished) {
+		t.Errorf("a present-but-unsupported schema was classified as never-published. The version "+
+			"key proves the publishing transaction committed, so this store is live: err = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "watch.db")); err != nil {
 		t.Errorf("a database with a PRESENT schema was moved aside: %v. The version key proves the "+
@@ -182,4 +191,40 @@ func setSchemaVersion(path, version string) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		return tx.Bucket(bucketMeta).Put(keySchemaVersion, []byte(version))
 	})
+}
+
+
+// A schemaless database that still HOLDS DATA is not an unfinished conversion.
+//
+// The schema version is written in the same transaction as the data, so its
+// absence normally proves no publish committed. Normally: corruption that wiped
+// only the version key from a populated store would satisfy that test while the
+// store held months of history, and falling back would trade it for a frozen
+// pre-migration snapshot. Requiring the data buckets to be empty as well means
+// the fallback cannot fire on anything with something to lose.
+func TestSchemalessDatabaseWithDataIsNotTreatedAsNeverPublished(t *testing.T) {
+	dir := t.TempDir()
+	seedLegacyStore(t, dir)
+
+	s := &Store{dir: dir}
+	if err := s.Load(); err != nil {
+		t.Fatalf("initial load: %v", err)
+	}
+	if err := s.Save(); err != nil {
+		t.Fatalf("initial save: %v", err)
+	}
+	// A real store, then the version key wiped and nothing else.
+	if err := setSchemaVersion(filepath.Join(dir, "watch.db"), ""); err != nil {
+		t.Fatalf("wiping the schema version: %v", err)
+	}
+
+	fresh := &Store{dir: dir}
+	if err := fresh.Load(); err == nil {
+		t.Fatal("Load succeeded against a database with no schema version")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "watch.db")); err != nil {
+		t.Errorf("a populated database was moved aside because its version key was missing: %v. "+
+			"It still holds every point recorded since the migration; the legacy files beside it "+
+			"do not.", err)
+	}
 }

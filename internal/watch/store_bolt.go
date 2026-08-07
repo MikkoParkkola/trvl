@@ -250,10 +250,34 @@ func validateBoltSchema(meta *bolt.Bucket) error {
 	return nil
 }
 
-// schemaAbsent reports whether the database carries no schema version at all,
-// which is the only state a completed publish cannot produce.
-func schemaAbsent(meta *bolt.Bucket) bool {
-	return meta == nil || len(meta.Get(keySchemaVersion)) == 0
+// neverPublished reports whether this database provably never completed a
+// conversion, which is the only state that makes the legacy JSON beside it
+// authoritative again.
+//
+// Two conditions, and the second is defence in depth. The schema version is
+// written inside the same transaction as the data, so its ABSENCE means no
+// publish committed -- that is the invariant. But an invariant is a statement
+// about the code that writes the file, not about every way a file on disk can
+// be damaged: corruption that wiped just the version key from a fully populated
+// store would satisfy it while the store held months of history. Requiring the
+// data buckets to be empty as well means the fallback cannot fire on anything
+// that has data to lose.
+//
+// This is the third time in this branch that the same shape has come up -- a
+// rule stated more broadly than the evidence supports -- and the previous two
+// were both data-loss paths. Narrowing it once more costs a bucket scan on a
+// path that only runs when a load has already failed.
+func neverPublished(tx *bolt.Tx) bool {
+	meta := tx.Bucket(bucketMeta)
+	if meta != nil && len(meta.Get(keySchemaVersion)) > 0 {
+		return false
+	}
+	for _, name := range [][]byte{bucketWatchHistory, bucketRouteHistory} {
+		if b := tx.Bucket(name); b != nil && b.Stats().KeyN+b.Stats().BucketN > 0 {
+			return false
+		}
+	}
+	return meta == nil || len(meta.Get(keyWatches)) == 0
 }
 
 type sequencedPricePoint struct {
@@ -331,7 +355,7 @@ func loadBoltState(db *bolt.DB) ([]Watch, []PricePoint, error) {
 			// Raised by the confirmation review of #588: the first fix attached
 			// the sentinel to EVERY schema failure, which was wider than the
 			// proof it claimed.
-			if schemaAbsent(tx.Bucket(bucketMeta)) {
+			if neverPublished(tx) {
 				return fmt.Errorf("%w: %v", errNeverPublished, err)
 			}
 			return err
