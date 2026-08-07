@@ -417,8 +417,31 @@ func (s *Store) compactHistoryLocked() {
 			perWatch[p.WatchID]++
 		}
 	}
+	// Gate on the CONFIGURED per-watch limit, not the compiled default.
+	//
+	// This loop decides whether to compact, and pruneWatchLocked then compacts
+	// down to s.retentionOrDefault().MaxPointsPerWatch. Comparing against the
+	// compiled constant meant an operator who lowered the cap got the gate of the
+	// DEFAULT and the pruning of their SETTING: with
+	// TRVL_WATCH_MAX_POINTS_PER_WATCH=20, a watch holding 500 points asked
+	// "500 > 1000?", answered no, and kept all 500. The setting was accepted,
+	// validated, reported by `retention stats` -- and silently not applied on the
+	// one path that exists to bring an old store into line with policy.
+	//
+	// Raising a cap was unaffected, which is why this survived: the failure only
+	// appears when a limit is LOWERED, and only on migration.
+	//
+	// The route loop below is deliberately left on its constant: the per-route cap
+	// is not configurable (retentionConfig has no route field), so there gate and
+	// prune already agree. Only the per-watch cap had the asymmetry.
+	//
+	// Found by adversarial second-opinion review of trvl#585, 2026-08-06. It
+	// predates that change; it is fixed here because #585 makes the tests depend
+	// on this exact configuration path, and a config path that ignores config is
+	// not a safe thing to build a test on.
+	limits := s.retentionOrDefault()
 	for id, n := range perWatch {
-		if n > maxObservationsPerWatch {
+		if n > limits.MaxPointsPerWatch {
 			s.pruneWatchLocked(id)
 		}
 	}
@@ -497,9 +520,24 @@ func (s *Store) MigrateDryRun() (MigrationReport, error) {
 	}
 	watches := append([]Watch(nil), s.watches...)
 	history := append([]PricePoint(nil), s.history...)
+	retention := s.retention
 	s.mu.Unlock()
 
-	shadow := &Store{dir: s.dir, watches: watches, history: history}
+	// The shadow carries the retention config, not just the data.
+	//
+	// Without it, retentionOrDefault falls back to the COMPILED defaults, so a
+	// dry run previewed a 1000-point cap while the real migration applied the
+	// operator's configured one. With the cap lowered to 20, the preview
+	// reported nothing to compact and the migration then deleted history the
+	// preview had promised to keep -- the exact failure a dry run exists to
+	// prevent, in the command whose whole purpose is "show me before you touch
+	// it".
+	//
+	// Same root as the gate/prune mismatch fixed above: a configured value read
+	// on one path and not the other. Found by adversarial second-opinion review
+	// (2026-08-06) which named both halves; only the first was fixed on the
+	// first pass.
+	shadow := &Store{dir: s.dir, watches: watches, history: history, retention: retention}
 	shadow.mu.Lock()
 	defer shadow.mu.Unlock()
 
