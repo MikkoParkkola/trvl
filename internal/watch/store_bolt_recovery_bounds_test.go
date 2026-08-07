@@ -282,3 +282,69 @@ func writeSchemalessDatabaseWithBuckets(path string) error {
 		return nil
 	})
 }
+
+// TRVL.BOLTM1.5 -- a writer that publishes while a reader is deciding must win.
+//
+// The reader observes "no schema" WITHOUT the cross-process lock, then renames.
+// Between those two steps a writer can take the lock, see the file exists, and
+// commit a full generation into it. Renaming after that quarantines a LIVE
+// database and republishes the frozen legacy JSON over it.
+//
+// Not hypothetical: the schemaless file is exactly what this recovery exists to
+// handle, so a writer finding one and filling it in is the expected repair,
+// racing the reader's decision to discard it.
+//
+// The window is driven directly rather than by two goroutines. Reproducing a
+// real interleaving would need the reader parked mid-decision, and a test that
+// cannot reliably enter the window proves nothing about it. Publishing before
+// calling the quarantine puts us at the exact moment after the observation and
+// before the rename, which is the state under test.
+//
+// Found by a third-vendor review after two others passed this code.
+func TestQuarantineRefusesAfterAWriterPublishes(t *testing.T) {
+	dir := t.TempDir()
+	seedLegacyStore(t, dir)
+	dbPath := filepath.Join(dir, "watch.db")
+
+	// The reader's observation: a schemaless database, quarantine-eligible.
+	if err := writeSchemalessDatabaseWithBuckets(dbPath); err != nil {
+		t.Fatalf("planting an unconverted database: %v", err)
+	}
+	s := &Store{dir: dir}
+	eligible, err := s.databaseIsUnpublished()
+	if err != nil || !eligible {
+		t.Fatalf("fixture is not quarantine-eligible: eligible=%v err=%v", eligible, err)
+	}
+
+	// The writer wins the race: a full generation lands in that same file.
+	writer := &Store{dir: dir}
+	writer.watches = []Watch{{ID: "live", Origin: "HEL", Destination: "JFK", Currency: "EUR"}}
+	writer.history = []PricePoint{{WatchID: "live", Price: 500, Currency: "EUR"}}
+	if err := writer.persistBoltLocked(); err != nil {
+		t.Fatalf("writer publish: %v", err)
+	}
+
+	// The reader now acts on its stale observation.
+	recovered, quarantine, qErr := s.quarantineUnreadableDatabaseLocked()
+	if qErr != nil {
+		t.Fatalf("quarantine returned an error: %v", qErr)
+	}
+	if recovered {
+		t.Errorf("the reader quarantined a database that a writer had just published (moved to %q). "+
+			"The observation was made without the cross-process lock, so it was stale by the time "+
+			"the rename happened, and the live generation is now under a .unreadable name with the "+
+			"frozen legacy JSON about to be republished over it.", quarantine)
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Errorf("the published database is no longer at watch.db: %v", err)
+	}
+
+	// And it must still be readable, holding the writer's generation.
+	fresh := &Store{dir: dir}
+	if err := fresh.Load(); err != nil {
+		t.Fatalf("the published database no longer loads: %v", err)
+	}
+	if len(fresh.watches) != 1 || fresh.watches[0].ID != "live" {
+		t.Errorf("watches = %+v, want the writer's generation, not the legacy snapshot", fresh.watches)
+	}
+}

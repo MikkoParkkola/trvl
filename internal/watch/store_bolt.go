@@ -80,6 +80,40 @@ func (s *Store) quarantinePath() string { return s.databasePath() + ".unreadable
 // to. In that case the unreadable database is the only copy of anything and
 // renaming it would turn a diagnosable failure into an empty one.
 func (s *Store) quarantineUnreadableDatabaseLocked() (bool, string, error) {
+	// THE CROSS-PROCESS LOCK, AND A RE-CHECK INSIDE IT.
+	//
+	// Load holds only s.mu, which bounds this process. The observation that led
+	// here was made without the .lock that writers take, so between "this file
+	// has no schema" and "rename it aside" another process can take the lock,
+	// see the file exists, and commit a full generation into it -- schema and
+	// data. The rename would then quarantine a LIVE database and the frozen
+	// legacy JSON would be republished over it.
+	//
+	// That window is not hypothetical: the schemaless state is exactly what
+	// this recovery exists to handle, so a writer finding one and filling it in
+	// is the expected repair, racing the reader's decision to discard it.
+	//
+	// A check and the mutation it guards must be under one lock. The re-check
+	// is not belt-and-braces; it IS the fix, because the state can change
+	// between the read-only observation and acquiring the lock.
+	//
+	// Found by a third-vendor review after two others passed this code.
+	lock, lockErr := acquireFileLock(s.lockPath())
+	if lockErr != nil {
+		return false, "", lockErr
+	}
+	defer releaseFileLock(lock)
+
+	stillUnpublished, checkErr := s.databaseIsUnpublished()
+	if checkErr != nil {
+		return false, "", checkErr
+	}
+	if !stillUnpublished {
+		// A writer published while we were deciding. Its generation is the
+		// truth; ours was a stale read.
+		return false, "", nil
+	}
+
 	legacyPresent := false
 	for _, path := range []string{s.watchesPath(), s.historyPath()} {
 		if _, err := os.Stat(path); err == nil {
@@ -111,6 +145,27 @@ func (s *Store) quarantineUnreadableDatabaseLocked() (bool, string, error) {
 		return false, "", err
 	}
 	return true, target, nil
+}
+
+// databaseIsUnpublished re-answers neverPublished against what is on disk right
+// now. Callers hold the cross-process lock, so the answer stays true until they
+// release it.
+func (s *Store) databaseIsUnpublished() (bool, error) {
+	db, err := s.openBolt(true)
+	if err != nil {
+		// Cannot see the file, so cannot claim it is unpublished. Refusing here
+		// leaves the database in place, which is the safe direction.
+		return false, err
+	}
+	defer func() { _ = db.Close() }()
+	unpublished := false
+	if viewErr := db.View(func(tx *bolt.Tx) error {
+		unpublished = neverPublished(tx)
+		return nil
+	}); viewErr != nil {
+		return false, viewErr
+	}
+	return unpublished, nil
 }
 
 // prepareBoltLocked performs the one-time, backup-first conversion from the
