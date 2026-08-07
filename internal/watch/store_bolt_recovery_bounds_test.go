@@ -41,33 +41,31 @@ func corruptWatchesPayload(path string) error {
 // of price history, lost to a five-second wait. That is a worse failure than
 // the one the recovery exists to prevent, and it fires far more often.
 //
-// Simulated with an unreadable-by-permissions file rather than a real lock
-// contention: the property under test is "an open failure must not trigger
-// recovery", and any open failure exercises it. A two-process flock race is not
-// reproducible in a unit test, which is exactly why the code must not depend on
-// distinguishing one.
+// Simulated by putting a DIRECTORY where the database belongs, rather than by
+// real lock contention: the property under test is "an open failure must not
+// trigger recovery", and any open failure exercises it. A two-process flock
+// race is not reproducible in a unit test, which is exactly why the code must
+// not depend on distinguishing one.
+//
+// A directory rather than chmod 000, and that is not a style preference. The
+// first version made the file unreadable by permission bits, which does not
+// deny reads on Windows -- Go maps chmod onto the read-only attribute there, so
+// the open SUCCEEDED, Load returned no error, and the test failed on
+// windows-latest while passing everywhere else. The property is
+// platform-independent; the mechanism has to be too. bolt.Open on a directory
+// fails on every platform trvl builds for.
 //
 // Raised by adversarial review of #588 as finding 1.
 func TestOpenFailureDoesNotQuarantineTheDatabase(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("running as root: permission bits do not deny access")
-	}
 	dir := t.TempDir()
 	seedLegacyStore(t, dir)
-
-	// Build a real, valid database first, then make it unopenable.
-	s := &Store{dir: dir}
-	if err := s.Load(); err != nil {
-		t.Fatalf("initial load: %v", err)
-	}
-	if err := s.Save(); err != nil {
-		t.Fatalf("initial save: %v", err)
-	}
 	dbPath := filepath.Join(dir, "watch.db")
-	if err := os.Chmod(dbPath, 0o000); err != nil {
-		t.Fatalf("chmod: %v", err)
+
+	// Stat must succeed so the load takes the database branch at all, and the
+	// open must then fail. A directory does both.
+	if err := os.Mkdir(dbPath, 0o700); err != nil {
+		t.Fatalf("planting an unopenable database: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dbPath, 0o600) })
 
 	fresh := &Store{dir: dir}
 	err := fresh.Load()
