@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -47,17 +45,10 @@ func TestRunRejectsRelativeSummaryPath(t *testing.T) {
 		`{"Action":"pass","Package":"example/watch","Test":"TestSafe","Elapsed":0.01}`,
 		`{"Action":"pass","Package":"example/watch","Elapsed":0.02}`,
 	}, "\n")
-	workingDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	summaryPath, err := filepath.Rel(workingDir, filepath.Join(t.TempDir(), "summary.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	summaryPath := "summary.md"
 
 	var output bytes.Buffer
-	err = run(strings.NewReader(input), &output, summaryPath)
+	err := run(strings.NewReader(input), &output, summaryPath)
 	if err == nil || !strings.Contains(err.Error(), "absolute") {
 		t.Fatalf("run accepted relative summary path %q: %v", summaryPath, err)
 	}
