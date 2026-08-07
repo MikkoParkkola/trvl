@@ -196,15 +196,43 @@ func TestResolveCredential_TimeoutIsCached(t *testing.T) {
 	t.Setenv(EnvKey, "")
 	t.Setenv(EnvOpRef, testRef(t))
 
-	for i := range 2 {
-		_, err := ResolveCredential(context.Background(), PolicyExternal)
-		if !errors.Is(err, ErrHelperTimedOut) {
-			t.Fatalf("call %d: expected ErrHelperTimedOut, got %v", i, err)
-		}
+	// FIRST resolve: wait until the helper has actually recorded itself before
+	// judging anything.
+	//
+	// The stub appends to its marker and then sleeps, and the deadline under
+	// test is 250ms. On a saturated host the shell can fail to reach the append
+	// within that budget, so the marker shows ZERO invocations and the
+	// assertion below reports "not cached" for a run in which the helper was
+	// never invoked at all -- a false accusation, and the reason this test
+	// failed only inside the full suite (dod run 2026-08-07) while passing 5/5
+	// on its own.
+	//
+	// Waiting for the observable event turns a race into a synchronisation. The
+	// bound is generous because it is not the thing being measured: a slow
+	// fork is not a bug, and this test is about CACHING, not latency.
+	_, err := ResolveCredential(context.Background(), PolicyExternal)
+	if !errors.Is(err, ErrHelperTimedOut) {
+		t.Fatalf("call 0: expected ErrHelperTimedOut, got %v", err)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for invocations(t, opMarker) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := invocations(t, opMarker); got != 1 {
+		t.Fatalf("after the first resolve the helper was invoked %d times, want 1. Without one "+
+			"real invocation there is nothing for the second resolve to be cached against, so the "+
+			"rest of this test would assert nothing.", got)
 	}
 
+	// SECOND resolve: the cached timeout must answer it without invoking the
+	// helper again. This is the actual property.
+	_, err = ResolveCredential(context.Background(), PolicyExternal)
+	if !errors.Is(err, ErrHelperTimedOut) {
+		t.Fatalf("call 1: expected ErrHelperTimedOut, got %v", err)
+	}
 	if got := invocations(t, opMarker); got != 1 {
-		t.Fatalf("op invoked %d times across 2 resolves; a timeout must be cached like any other lookup failure", got)
+		t.Fatalf("op invoked %d times across 2 resolves; a timeout must be cached like any other "+
+			"lookup failure, or every search re-pays a lookup that never returns (#507)", got)
 	}
 }
 
