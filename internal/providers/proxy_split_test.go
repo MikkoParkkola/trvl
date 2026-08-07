@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -94,5 +95,46 @@ func TestLocalDestinationOptInImpliesPrivateProxy(t *testing.T) {
 	if !privateProxyAllowed() {
 		t.Errorf("%s=1 did not imply the proxy opt-in; a user who has allowed private "+
 			"destinations gains nothing from a refused private proxy", AllowLocalEnv)
+	}
+}
+
+// TRVL.PROXYSPLIT.2 -- a refused private PROXY must name the proxy opt-in, not
+// the destination one.
+//
+// An error message is guidance and will be followed. Telling someone whose
+// corporate proxy was refused to "set TRVL_ALLOW_LOCAL_PROVIDERS=1" sends them
+// to the switch that also unlocks private and link-local DESTINATIONS -- the
+// exact outcome splitting the two apart was meant to prevent. The split is
+// worth nothing if the error text walks the operator back across it.
+//
+// Raised by adversarial review of #588.
+func TestPrivateProxyRefusalNamesTheProxyOptIn(t *testing.T) {
+	t.Setenv(AllowLocalEnv, "")
+	t.Setenv(AllowPrivateProxyEnv, "")
+
+	proxy := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	transport := NewGuardedTransport(GuardedTransportProxyAware)
+	transport.proxy = func(*http.Request) (*url.URL, error) { return proxyURL, nil }
+	client := &http.Client{Transport: transport}
+
+	_, err = client.Get("http://93.184.216.34/public")
+	if err == nil {
+		t.Fatal("a private proxy was reachable with no opt-in set")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, AllowPrivateProxyEnv) {
+		t.Errorf("the proxy refusal does not name %s, so an operator has nothing to act on that "+
+			"is scoped to the proxy: %s", AllowPrivateProxyEnv, msg)
+	}
+	if strings.Contains(msg, AllowLocalEnv) {
+		t.Errorf("the proxy refusal names %s, which also unlocks private and link-local "+
+			"DESTINATIONS. Following that advice re-opens the server-side request forgery path "+
+			"the proxy split exists to keep closed: %s", AllowLocalEnv, msg)
 	}
 }

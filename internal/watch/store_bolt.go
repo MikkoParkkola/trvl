@@ -307,7 +307,10 @@ func loadBoltState(db *bolt.DB) ([]Watch, []PricePoint, error) {
 	var history []PricePoint
 	err := db.View(func(tx *bolt.Tx) error {
 		if err := validateBoltSchema(tx.Bucket(bucketMeta)); err != nil {
-			return err
+			// Wrapped so loadLocked can tell "this file never completed a
+			// conversion" from "this file will not decode". Only the former
+			// makes the legacy JSON beside it authoritative.
+			return fmt.Errorf("%w: %v", errNeverPublished, err)
 		}
 		var err error
 		watches, history, err = loadBoltStateTx(tx)
@@ -315,6 +318,24 @@ func loadBoltState(db *bolt.DB) ([]Watch, []PricePoint, error) {
 	})
 	return watches, history, err
 }
+
+// errNeverPublished marks a database that opened cleanly but carries no usable
+// schema, which is the ONLY state in which falling back to the legacy JSON is
+// safe.
+//
+// publishFirstGenerationLocked commits the schema key inside the transaction
+// and only then renames the file into place, so a database at watch.db without
+// a schema never completed a publish -- and if no publish ever completed, the
+// legacy pair beside it was never superseded and is still authoritative.
+//
+// Every other failure is deliberately NOT this. An open that fails may be a
+// five-second flock timeout behind a long write in another process, and a
+// database that opens with a valid schema but will not decode may hold months
+// of history. Treating either as "unreadable, use the legacy files" replaces
+// live data with a frozen pre-migration snapshot and then republishes that
+// snapshot as the new truth. That is a worse outcome than the one this recovery
+// path was added to prevent (adversarial review of #588, finding 1).
+var errNeverPublished = errors.New("watch database carries no schema; the conversion never completed")
 
 func (s *Store) loadBoltLocked() error {
 	db, err := s.openBolt(true)

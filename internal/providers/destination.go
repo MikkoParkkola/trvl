@@ -120,13 +120,21 @@ func refusedIP(ip net.IP) string {
 // and a name that resolves public now can resolve private at request time.
 // Both halves are needed; neither is sufficient.
 func CheckDestinationURL(raw string) error {
-	return checkURLAllowingLocal(raw, localDestinationsAllowed())
+	return checkURLAllowingLocal(raw, localDestinationsAllowed(), AllowLocalEnv)
 }
 
 // checkURLAllowingLocal is CheckDestinationURL with the local-address decision
 // handed in, so the proxy hop can be judged by the proxy policy rather than the
 // destination one. See AllowPrivateProxyEnv.
-func checkURLAllowingLocal(raw string, allowLocal bool) error {
+//
+// optInEnv is the variable the refusal message should name. It is a parameter
+// rather than a constant because naming the WRONG one is worse than naming
+// none: a refused private PROXY that says "set TRVL_ALLOW_LOCAL_PROVIDERS=1"
+// steers the operator to the switch that also unlocks private and link-local
+// DESTINATIONS -- the exact outcome splitting these two apart was meant to
+// prevent. An error message is guidance, and guidance pointing at the wider
+// switch will be followed. Raised by adversarial review of #588.
+func checkURLAllowingLocal(raw string, allowLocal bool, optInEnv string) error {
 	if strings.TrimSpace(raw) == "" {
 		return nil // nothing to reach; other validation owns emptiness
 	}
@@ -157,7 +165,7 @@ func checkURLAllowingLocal(raw string, allowLocal bool) error {
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		if reason := refusedIP(ip); reason != "" {
-			return fmt.Errorf("%w: %s is a %s (set %s=1 to allow local providers)", ErrDestinationRefused, host, reason, AllowLocalEnv)
+			return fmt.Errorf("%w: %s is a %s (set %s=1 to allow it)", ErrDestinationRefused, host, reason, optInEnv)
 		}
 	}
 	return nil
@@ -331,7 +339,7 @@ func (t *GuardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 	// a corporate one is almost always on a private address -- see
 	// AllowPrivateProxyEnv for why sharing the destination switch was the wrong
 	// control plane.
-	pinnedProxy, _, err := pinHTTPURLAllowingLocal(req.Context(), proxyURL, t.lookup, privateProxyAllowed())
+	pinnedProxy, _, err := pinHTTPURLAllowingLocal(req.Context(), proxyURL, t.lookup, privateProxyAllowed(), AllowPrivateProxyEnv)
 	if err != nil {
 		return nil, fmt.Errorf("proxy: %w", err)
 	}
@@ -387,7 +395,7 @@ func lookupHostIPs(ctx context.Context, host string) ([]net.IP, error) {
 // URL to a selected IP. Validating all answers prevents a mixed public/private
 // DNS response from making safety depend on resolver ordering.
 func pinHTTPURL(ctx context.Context, source *url.URL, lookup lookupIPsFunc) (*url.URL, string, error) {
-	return pinHTTPURLAllowingLocal(ctx, source, lookup, localDestinationsAllowed())
+	return pinHTTPURLAllowingLocal(ctx, source, lookup, localDestinationsAllowed(), AllowLocalEnv)
 }
 
 // pinHTTPURLAllowingLocal is pinHTTPURL with the local-address decision handed
@@ -405,11 +413,11 @@ func pinHTTPURL(ctx context.Context, source *url.URL, lookup lookupIPsFunc) (*ur
 // its own. Raised by adversarial review of #587, which noted the ordering was
 // already right -- destination checked before proxy -- and that the control
 // plane was not.
-func pinHTTPURLAllowingLocal(ctx context.Context, source *url.URL, lookup lookupIPsFunc, allowLocal bool) (*url.URL, string, error) {
+func pinHTTPURLAllowingLocal(ctx context.Context, source *url.URL, lookup lookupIPsFunc, allowLocal bool, optInEnv string) (*url.URL, string, error) {
 	if source == nil {
 		return nil, "", fmt.Errorf("%w: missing URL", ErrDestinationRefused)
 	}
-	if err := checkURLAllowingLocal(source.String(), allowLocal); err != nil {
+	if err := checkURLAllowingLocal(source.String(), allowLocal, optInEnv); err != nil {
 		return nil, "", err
 	}
 
@@ -443,7 +451,7 @@ func pinHTTPURLAllowingLocal(ctx context.Context, source *url.URL, lookup lookup
 		}
 		if !allowLocal {
 			if reason := refusedIP(address); reason != "" {
-				return nil, "", fmt.Errorf("%w: %s resolved to %s, a %s", ErrDestinationRefused, host, address, reason)
+				return nil, "", fmt.Errorf("%w: %s resolved to %s, a %s (set %s=1 to allow it)", ErrDestinationRefused, host, address, reason, optInEnv)
 			}
 		}
 		if selected == nil {

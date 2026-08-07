@@ -91,8 +91,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the real number; the preview used to under-report it, which is what made this worth
   calling out. ([#585](https://github.com/MikkoParkkola/trvl/issues/585))
 
-  The legacy JSON files are kept. If the new database is ever unreadable, trvl moves it
-  aside and falls back to them rather than presenting an empty store.
+  The legacy JSON files are kept. If the conversion is interrupted and leaves a database
+  that never finished being written, trvl sets it aside and uses those files instead —
+  they were never superseded, so they are still the whole history. That fallback is
+  deliberately limited to the unfinished-conversion case: once the conversion completes,
+  the legacy files stop being updated and become a frozen pre-migration snapshot, so
+  quietly loading them after a later failure would be a rollback rather than a recovery.
+  Any other database failure is reported rather than worked around.
 
 - **`TRVL_ALLOW_PRIVATE_PROXY` — reach an HTTP proxy on a private address without
   allowing private destinations.** trvl now honours `HTTP_PROXY`/`HTTPS_PROXY`, checking

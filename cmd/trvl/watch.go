@@ -30,7 +30,9 @@ could lose. Two specifics worth knowing rather than discovering:
     Earlier versions ignored the limit during migration. Run
     "trvl watch migrate --dry-run" first: it now reports the real number.
   - The legacy JSON files are backed up before the conversion and kept
-    afterwards, so a bad outcome is recoverable.
+    afterwards. If the conversion is interrupted, trvl uses them instead and
+    says so. Once it completes they stop being updated, so treat them as a
+    pre-migration snapshot rather than a live second copy.
 
 Examples:
   trvl watch add HEL BCN --depart 2026-07-01 --return 2026-07-08 --below 200

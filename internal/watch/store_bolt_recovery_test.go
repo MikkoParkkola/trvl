@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 // TRVL.BOLTM1.1 -- an interrupted first conversion must not hide intact legacy
@@ -19,21 +21,39 @@ import (
 // Just permanently unreachable, which for the person who owns the data is the
 // same morning.
 //
-// Simulated by planting exactly what an interrupted conversion leaves: a file at
-// watch.db that is not a usable database, with the legacy pair still present.
-// Crashing a real migration mid-transaction is not reproducible in a unit test,
-// and the state it leaves is the thing under test.
+// Simulated by planting exactly what an interrupted conversion leaves: a bolt
+// file that opens cleanly and carries no schema, with the legacy pair still
+// present. Crashing a real migration mid-transaction is not reproducible in a
+// unit test, and the state it leaves is the thing under test.
 //
-// Raised as M1, a hard blocker, by adversarial review of #587.
+// That schemaless state is also the ONLY one in which falling back is safe.
+// The schema key is committed inside the publishing transaction, so a database
+// without it never completed a publish -- which means the legacy files beside
+// it were never superseded and are still the whole history. After a completed
+// conversion they are a frozen snapshot, and swapping one for the other would
+// be a silent rollback rather than a recovery.
+//
+// Raised as M1, a hard blocker, by adversarial review of #587. The narrowing to
+// "schemaless only" came from review of #588, which found that acting on ANY
+// load failure was itself a data-loss path.
 func TestUnreadableDatabaseFallsBackToTheLegacyStore(t *testing.T) {
 	dir := t.TempDir()
 	s := &Store{dir: dir}
 
 	seedLegacyStore(t, dir)
 
-	// What an interrupted first publish leaves behind.
-	if err := os.WriteFile(filepath.Join(dir, "watch.db"), []byte("not a database"), 0o600); err != nil {
-		t.Fatal(err)
+	// What an interrupted first publish leaves: a bolt file that OPENS cleanly
+	// and carries no schema, because publishFirstGenerationLocked commits the
+	// schema key inside the transaction and only renames the file into place
+	// afterwards.
+	//
+	// Deliberately not a file of garbage bytes. Garbage fails to OPEN, and an
+	// open failure is usually a lock held by another process rather than a
+	// broken file -- acting on it is the data-loss path that
+	// TestOpenFailureDoesNotQuarantineTheDatabase now guards. The fixture has
+	// to be the state actually under test.
+	if err := writeSchemalessDatabase(filepath.Join(dir, "watch.db")); err != nil {
+		t.Fatalf("planting an unconverted database: %v", err)
 	}
 
 	if err := s.Load(); err != nil {
@@ -80,12 +100,12 @@ func TestUnreadableDatabaseWithNoLegacyStoreIsStillAnError(t *testing.T) {
 	dir := t.TempDir()
 	s := &Store{dir: dir}
 
-	if err := os.WriteFile(filepath.Join(dir, "watch.db"), []byte("not a database"), 0o600); err != nil {
-		t.Fatal(err)
+	if err := writeSchemalessDatabase(filepath.Join(dir, "watch.db")); err != nil {
+		t.Fatalf("planting an unconverted database: %v", err)
 	}
 
 	if err := s.Load(); err == nil {
-		t.Fatal("Load succeeded on an unreadable database with nothing to fall back to. It must " +
+		t.Fatal("Load succeeded on an unconverted database with nothing to fall back to. It must " +
 			"report the failure rather than present an empty store as if it were the truth.")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "watch.db")); err != nil {
@@ -120,6 +140,17 @@ func TestFirstPublishLeavesNoStagingFile(t *testing.T) {
 			"harmless only while nothing reads it; leaving one is how the next change starts " +
 			"trusting it.")
 	}
+}
+
+// writeSchemalessDatabase creates a valid, openable bolt file with no schema
+// key -- the state an interrupted first conversion leaves behind, and the ONLY
+// state in which the legacy JSON beside it is still authoritative.
+func writeSchemalessDatabase(path string) error {
+	db, err := bolt.Open(path, 0o600, nil)
+	if err != nil {
+		return err
+	}
+	return db.Close()
 }
 
 // seedLegacyStore writes a legacy JSON pair: one watch and two history points.

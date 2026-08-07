@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -131,14 +132,28 @@ func (s *Store) loadLocked() error {
 		if loadErr == nil {
 			return s.normalizeCurrenciesLocked()
 		}
-		// The database is present and unusable. If the legacy JSON is still
-		// here, it is a complete copy and this is recoverable without anyone
-		// touching files by hand -- which is the difference between a bad
-		// morning and a lost history.
+		// FALL BACK ONLY WHEN THE CONVERSION PROVABLY NEVER COMPLETED.
 		//
-		// Moving the unreadable file aside rather than deleting it: it is the
-		// only artefact of whatever went wrong, and the legacy JSON it is being
-		// replaced by is intact. Losing evidence is a poor trade for a filename.
+		// errNeverPublished means the file opened cleanly and carries no
+		// schema. publishFirstGenerationLocked commits the schema inside the
+		// transaction and only then renames the file into place, so such a
+		// database never completed a publish -- and if none ever completed, the
+		// legacy pair beside it was never superseded and is still the whole
+		// truth. Nothing is lost by setting it aside, because nothing in it can
+		// be read.
+		//
+		// EVERY OTHER FAILURE IS LEFT ALONE, and that distinction is the fix
+		// for a data-loss path this recovery code introduced. Load does not
+		// take the cross-process lock, and it opens the database read-only with
+		// a five-second flock timeout -- so a long write in another process
+		// (the scheduler rewriting a large history) makes a concurrent `trvl
+		// watch list` see "cannot open". Quarantining on that renamed the LIVE
+		// database aside, loaded the frozen pre-migration JSON, and the next
+		// save republished that snapshot as the new database. Months of history
+		// gone, from a lock wait. Found by adversarial review of #588.
+		if !errors.Is(loadErr, errNeverPublished) {
+			return fmt.Errorf("load watch database: %w", loadErr)
+		}
 		recovered, quarantine, qErr := s.quarantineUnreadableDatabaseLocked()
 		if qErr != nil {
 			return fmt.Errorf("load watch database: %w (and it could not be moved aside: %v)", loadErr, qErr)
@@ -146,10 +161,10 @@ func (s *Store) loadLocked() error {
 		if !recovered {
 			return fmt.Errorf("load watch database: %w", loadErr)
 		}
-		slog.Warn("watch: the price database could not be read; falling back to the legacy files beside it",
+		slog.Warn("watch: the price database never finished converting; using the legacy files beside it",
 			"moved_to", quarantine,
 			"err", logredact.Err(loadErr),
-			"hint", "the legacy JSON store is intact and is being used; the unreadable database was kept for inspection")
+			"hint", "the legacy JSON store was never superseded by a completed conversion, so it is still the full history; the incomplete database was kept for inspection")
 		// Fall through to the JSON loader below.
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect watch database: %w", err)
