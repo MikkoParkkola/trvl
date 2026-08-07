@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/MikkoParkkola/trvl/internal/consent"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	trvlnab "github.com/MikkoParkkola/trvl/internal/nab"
 	"github.com/MikkoParkkola/trvl/internal/safeexec"
 	"golang.org/x/sync/singleflight"
@@ -280,12 +281,12 @@ func reportCookieReadFailure(domain string, err error) {
 		// an interesting reason.
 		if warnOnce("nab-unavailable") {
 			slog.Warn("browser cookie fallback unavailable: nab is not installed, so searches that need your logged-in session will fall back to blocked or empty results",
-				"domain", domain, "err", err)
+				"domain", domain, "err", logredact.Err(err))
 		}
 	default:
 		if warnOnce("nab-failed") {
 			slog.Warn("browser cookie fallback failed: nab could not read your browser cookie store, so searches that need your logged-in session may return blocked or empty results",
-				"domain", domain, "err", err)
+				"domain", domain, "err", logredact.Err(err))
 		}
 	}
 }

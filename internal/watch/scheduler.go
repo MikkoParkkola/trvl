@@ -280,7 +280,7 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 			slog.Warn("scheduler: check error",
 				"watch_id", r.Watch.ID,
 				"route", r.Watch.Origin+"→"+r.Watch.Destination,
-				"err", r.Error,
+				"err", logredact.Err(r.Error),
 			)
 			continue
 		}

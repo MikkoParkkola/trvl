@@ -277,7 +277,7 @@ func applyExtractions(extractions map[string]Extraction, resp *http.Response, bo
 		}
 		re, err := regexp.Compile(extraction.Pattern)
 		if err != nil {
-			slog.Warn("preflight regex compile failed", "name", name, "pattern", extraction.Pattern, "error", err.Error())
+			slog.Warn("preflight regex compile failed", "name", name, "pattern", extraction.Pattern, "error", logredact.Err(err))
 			continue
 		}
 		m := re.FindStringSubmatch(source)
@@ -354,7 +354,7 @@ func applyURLExtractions(ctx context.Context, client *http.Client, extractions m
 		re, err := regexp.Compile(extraction.Pattern)
 		if err != nil {
 			slog.Warn("stage-2 extraction: regex compile failed",
-				"name", name, "pattern", extraction.Pattern, "error", err.Error())
+				"name", name, "pattern", extraction.Pattern, "error", logredact.Err(err))
 			continue
 		}
 		m := re.FindStringSubmatch(string(body))
@@ -444,7 +444,7 @@ func decompressBody(resp *http.Response, limit int64) ([]byte, error) {
 		if err != nil {
 			// Not valid gzip — return the raw bytes as-is.
 			slog.Debug("Content-Encoding says gzip but body is not gzip, using raw",
-				"error", err.Error(), "body_len", len(raw))
+				"error", logredact.Err(err), "body_len", len(raw))
 			return raw, nil
 		}
 		defer func() { _ = gr.Close() }()
@@ -452,7 +452,7 @@ func decompressBody(resp *http.Response, limit int64) ([]byte, error) {
 		if err != nil {
 			// Gzip header valid but decompression failed mid-stream.
 			slog.Debug("gzip decompression failed mid-stream, using raw",
-				"error", err.Error(), "body_len", len(raw))
+				"error", logredact.Err(err), "body_len", len(raw))
 			return raw, nil
 		}
 		return decoded, nil

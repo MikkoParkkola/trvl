@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/consent"
 	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/logredact"
@@ -332,7 +334,7 @@ func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool
 	// site would be a tautology and the site is pinned to the endpoint instead.
 	if !cookieTargetPermitted(pc.config, targetURL) {
 		slog.Debug("refusing browser cookies: target is not https on the consented provider site",
-			"url", logredact.URL(targetURL))
+			"url", logredact.URL(targetURL), "site", providerCookieSite(pc.config))
 		return false
 	}
 	// Fail closed: browser cookies only enter a jar that can revoke them. A

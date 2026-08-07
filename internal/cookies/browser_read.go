@@ -94,7 +94,7 @@ func BrowserReadPage(ctx context.Context, url string, waitSeconds int) (text str
 	for _, browser := range []string{"Google Chrome", "Safari"} {
 		page, readErr := browserReadPageWith(ctx, browser, url, waitSeconds)
 		if readErr != nil {
-			slog.Debug("browser read failed", "browser", browser, "err", readErr)
+			slog.Debug("browser read failed", "browser", browser, "err", logredact.Err(readErr))
 			continue
 		}
 		if len(page) > 100 {

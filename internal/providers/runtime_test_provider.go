@@ -124,7 +124,7 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 	} else if cfg.CityResolver != nil {
 		if id, err := resolveCityIDDynamic(ctx, cfg, pc.client, location, nil); err != nil {
 			slog.Warn("city_resolver failed in test_provider",
-				"provider", cfg.ID, "location", location, "error", err.Error())
+				"provider", cfg.ID, "location", location, "error", logredact.Err(err))
 		} else {
 			vars["${city_id}"] = id
 			if !strings.Contains(cfg.Endpoint, "${city_id}") {

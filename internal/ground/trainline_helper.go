@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -103,7 +104,7 @@ func trainlineViaCurl(ctx context.Context, fromID, toID, date, currency string) 
 
 	seedCmd := exec.CommandContext(ctx, "curl", seedArgs...)
 	if seedErr := seedCmd.Run(); seedErr != nil {
-		slog.Debug("trainlineViaCurl: seed request failed", "err", seedErr)
+		slog.Debug("trainlineViaCurl: seed request failed", "err", logredact.Err(seedErr))
 		// Continue anyway — the API call may still work.
 	} else {
 		// Site 11 of trvl#531, kept deliberately. cookieJarFile is a local temp

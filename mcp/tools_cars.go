@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/cars"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
@@ -109,7 +110,7 @@ func carEndpointSchema() map[string]interface{} {
 func handleSearchCars(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
 	prefs, prefsErr := preferences.Load()
 	if prefsErr != nil {
-		slog.Warn("search_cars: preferences load failed, continuing without prefs", "err", prefsErr)
+		slog.Warn("search_cars: preferences load failed, continuing without prefs", "err", logredact.Err(prefsErr))
 	}
 	currency := strings.ToUpper(argString(args, "currency"))
 	if currency == "" && prefs != nil {

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/safeexec"
 	"golang.org/x/sync/singleflight"
 )
@@ -280,7 +282,7 @@ func resolveExternal(ctx context.Context) (string, error) {
 			// wedged helper from an absent one. The classified error is safe to
 			// log; the helper's own output is not, since it echoes the secret
 			// reference and sometimes more of the item.
-			slog.Debug("afklm: external credential lookup failed", "err", err, "ref_configured", cfg.opRef != "")
+			slog.Debug("afklm: external credential lookup failed", "err", logredact.Err(err), "ref_configured", cfg.opRef != "")
 
 			// Published inside the flight, before the result becomes visible, so
 			// a caller arriving after this call leaves the group cannot pass the

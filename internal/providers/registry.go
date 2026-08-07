@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/atomicjson"
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 )
 
 // Registry stores and manages provider configurations on disk.
@@ -460,7 +461,29 @@ func (r *Registry) MarkSuccess(id string) {
 }
 
 // MarkError records a failed request for the given provider.
+//
+// The message is redacted HERE rather than at the call site, so that no caller
+// can leak by forgetting. What lands in cfg.LastError is written to
+// ~/.trvl/providers/<id>.json and kept until the next failure overwrites it --
+// a surface well outside the log stream, and one that does not scroll away.
+//
+// It is read back by BreakerSnapshot, for the circuit breaker. NOT by the MCP
+// dashboard: that renders StatusRow.LastError, which status_report.go fills
+// from the health journal, a separate store redacted on write. An earlier
+// version of this comment claimed the dashboard as a second surface and was
+// wrong. Corrected rather than quietly dropped, because a comment that
+// overstates what it protects is the same defect as one that understates it,
+// and this file has spent the evening fixing the second kind.
+//
+// The value arrives as err.Error(), and every net/http transport failure is a
+// *url.Error carrying the full request URL: origin, destination, dates, and
+// whatever else the query held. The caller in runtime_search.go already wrapped
+// that same error for its slog line and then passed it raw to this function --
+// the redaction and the leak one line apart. Putting the rule inside the
+// function is what makes that impossible rather than merely fixed once.
 func (r *Registry) MarkError(id string, errMsg string) {
+	errMsg = logredact.Text(errMsg)
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
