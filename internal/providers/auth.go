@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/waf"
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
@@ -164,7 +165,7 @@ func tryWAFSolve(ctx context.Context, pc *providerClient, auth *AuthConfig, stat
 	pageURL := auth.PreflightURL
 	cookie, err := waf.SolveAWSWAF(ctx, pc.client, pageURL, string(pageBody), nil)
 	if err != nil {
-		slog.Debug("waf solver did not produce a token", "provider", pc.config.ID, "error", err.Error())
+		slog.Debug("waf solver did not produce a token", "provider", pc.config.ID, "error", logredact.Err(err))
 		return nil, false
 	}
 
@@ -328,25 +329,25 @@ func applyURLExtractions(ctx context.Context, client *http.Client, extractions m
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, resolvedURL, nil)
 		if err != nil {
 			slog.Warn("stage-2 extraction: build request failed",
-				"name", name, "url", resolvedURL, "error", err.Error())
+				"name", name, "url", logredact.URL(resolvedURL), "error", logredact.Err(err))
 			continue
 		}
 		resp, err := client.Do(req)
 		if err != nil {
 			slog.Warn("stage-2 extraction: fetch failed",
-				"name", name, "url", resolvedURL, "error", err.Error())
+				"name", name, "url", logredact.URL(resolvedURL), "error", logredact.Err(err))
 			continue
 		}
 		body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 		_ = resp.Body.Close()
 		if err != nil {
 			slog.Warn("stage-2 extraction: read failed",
-				"name", name, "url", resolvedURL, "error", err.Error())
+				"name", name, "url", logredact.URL(resolvedURL), "error", logredact.Err(err))
 			continue
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			slog.Warn("stage-2 extraction: non-2xx",
-				"name", name, "url", resolvedURL, "status", resp.StatusCode)
+				"name", name, "url", logredact.URL(resolvedURL), "status", resp.StatusCode)
 			continue
 		}
 
@@ -372,10 +373,10 @@ func applyURLExtractions(ctx context.Context, client *http.Client, extractions m
 			vars["${"+varName+"}"] = extraction.Default
 			matched++
 			slog.Warn("stage-2 extraction: no match; using default",
-				"name", name, "url", resolvedURL, "pattern", extraction.Pattern)
+				"name", name, "url", logredact.URL(resolvedURL), "pattern", extraction.Pattern)
 		} else {
 			slog.Warn("stage-2 extraction: no match",
-				"name", name, "url", resolvedURL, "pattern", extraction.Pattern)
+				"name", name, "url", logredact.URL(resolvedURL), "pattern", extraction.Pattern)
 		}
 	}
 	return matched

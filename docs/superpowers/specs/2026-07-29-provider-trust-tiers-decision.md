@@ -12,12 +12,10 @@ Implementation state:
   badge that is simply absent when there is no offer, and rendering that absence
   as "not refundable" would be a claim the source never made. This also lifts the
   self-imposed ceiling described below.
-- **Official property site — NOT STARTED, and deliberately so.** This document's
-  own falsification clause requires one captured live response before any code is
-  written, to check whether the hotel address the source reports resolves to the
-  property's own domain rather than to a booking intermediary. That capture has
-  not happened, and writing the matcher first would be building on the assumption
-  the clause exists to test.
+- **Official property site — done.** SerpAPI's current property-details schema
+  supplies `official: true` on the seller row itself. trvl preserves that
+  positive-only upstream fact through CLI and MCP output; absence stays unknown.
+  No hostname matcher or maintained brand list is involved.
 
 
 ## The question
@@ -41,11 +39,9 @@ list somebody maintains by hand.
 
 Two signals, both derived, neither editorial.
 
-*Official property site.* When a seller's web address matches the hotel's own
-address as the source reported it, and that address is durable rather than a
-short-lived redirect, mark the row as the property's own site. This is
-positive-only. A row with no match is "not established as official", never "not
-official". Most rows will carry no label at all, and that is the honest outcome.
+*Official property site.* Preserve the source's `official: true` seller flag.
+This is positive-only. A row without the flag is "not established as official",
+never "not official". No provider name or hostname is interpreted locally.
 
 *Refundability.* Carry the cancellation terms the source already returns through
 to the per-seller list instead of discarding them, and mark them unknown when the
@@ -92,11 +88,10 @@ and should stay separate.
 
 ## What would make this wrong
 
-*The official-site match does not survive contact with real data.* If the hotel
-address the source reports usually resolves to a booking intermediary rather than
-the hotel's own domain, particularly for chains, the signal is noise and Design A
-collapses to refundability alone. One captured live response settles this, and it
-should be captured before any code is written.
+*The upstream official flag disappears or changes meaning.* SerpAPI's current
+property-details schema and sample explicitly mark the direct Hilton seller row
+`official: true`. If that field disappears, trvl falls back to unknown rather
+than guessing from domains or names.
 
 *A neutral outside authority appears.* If the data source starts returning a
 seller-type flag of its own, or an accreditation identifier becomes reliably
@@ -114,5 +109,6 @@ Ticket #535 and its research comment. `internal/pricefeed/pricefeed.go:163`
 paths). `internal/hotels/serpapi_fallback.go:336,354-364` (terms dropped) against
 `:375` (terms read). `internal/hotels/rooms_parse.go:228-233` (existing hardcoded
 brand list). `internal/serpapi/serpapi.go:63` (hotel's own address).
-`internal/hotels/link_durability.go` (durability check).
+SerpAPI's official Google Hotels Property Details API schema (`official: true`
+on a seller row): https://serpapi.com/google-hotels-property-details.
 `docs/PUBLIC_ARTICLE_FEEDBACK.md:65-67` (original request).

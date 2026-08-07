@@ -372,6 +372,10 @@ func SearchTrainline(ctx context.Context, from, to, date, currency string, allow
 		// wall (#213). Only attempted when live cookies are available; without the
 		// clearance cookie the JA3 alone won't pass, so we skip to cheaper tiers.
 		if cks := trainlineTier1Cookies(trainlineHomeURL); len(cks) > 0 {
+			// Site 12 of trvl#531, confirmed not a leak and struck from that
+			// list. This logs len(cks) -- a COUNT -- and no cookie name, value,
+			// domain or URL. It was listed for completeness so that whoever
+			// swept the file would confirm it rather than assume it.
 			slog.Debug("retrying trainline via Tier1 (JA3 + live datadome cookie)", "cookies", len(cks))
 			if t1Routes, t1Err := trainlineViaTier1(ctx, body, cks, from, to, date, currency); t1Err == nil && len(t1Routes) > 0 {
 				return t1Routes, nil

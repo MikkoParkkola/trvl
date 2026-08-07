@@ -390,10 +390,9 @@ func TestCabinResult_StructV22(t *testing.T) {
 func TestRunProvidersDisable_SucceedsV22(t *testing.T) {
 	tmp := t.TempDir()
 	setTestHome(t, tmp)
-	writeTestProviderV19(t, tmp, "deletable-provider")
 
 	cmd := providersDisableCmd()
-	cmd.SetArgs([]string{"deletable-provider"})
+	cmd.SetArgs([]string{"openstreetmap-hotels"})
 	if err := cmd.Execute(); err != nil {
 		t.Errorf("providers disable: %v", err)
 	}
@@ -402,20 +401,23 @@ func TestRunProvidersDisable_SucceedsV22(t *testing.T) {
 func TestRunProvidersReset_ClearsBreakerV22(t *testing.T) {
 	tmp := t.TempDir()
 	setTestHome(t, tmp)
-	writeTestProviderV19(t, tmp, "resettable-provider")
 
 	reg, err := providers.NewRegistry()
 	if err != nil {
 		t.Fatalf("NewRegistry: %v", err)
 	}
-	reg.MarkError("resettable-provider", "browser cookies missing")
+	reg.MarkError("openstreetmap-hotels", "temporary upstream failure")
 
 	cmd := providersResetCmd()
-	cmd.SetArgs([]string{"resettable-provider"})
+	cmd.SetArgs([]string{"openstreetmap-hotels"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("providers reset: %v", err)
 	}
-	got := reg.ReloadIfChanged("resettable-provider")
+	reloaded, err := providers.NewRegistry()
+	if err != nil {
+		t.Fatalf("reload registry: %v", err)
+	}
+	got := reloaded.ReloadIfChanged("openstreetmap-hotels")
 	if got == nil {
 		t.Fatal("expected resettable provider")
 	}
@@ -454,9 +456,8 @@ func TestDealsCmd_NonNilV22(t *testing.T) {
 func TestRunProvidersDisable_ConfirmsNonTerminalV23(t *testing.T) {
 	tmp := t.TempDir()
 	setTestHome(t, tmp)
-	writeTestProviderV19(t, tmp, "confirm-delete-provider")
 
-	err := runProvidersDisable("confirm-delete-provider")
+	err := runProvidersDisable("openstreetmap-hotels")
 	if err != nil {
 		t.Errorf("runProvidersDisable: %v", err)
 	}

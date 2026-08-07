@@ -1,0 +1,34 @@
+{
+  "schema_version": "v1.0",
+  "id": "openstreetmap-hotels",
+  "name": "OpenStreetMap accommodation discovery",
+  "category": "hotels",
+  "endpoint": "https://overpass-api.de/api/interpreter",
+  "method": "GET",
+  "headers": {
+    "User-Agent": "trvl (+https://github.com/MikkoParkkola/trvl)"
+  },
+  "query_params": {
+    "data": "[out:json][timeout:20];area[\"name\"=\"${location}\"]->.searchArea;(nwr[\"tourism\"=\"hotel\"](area.searchArea);nwr[\"tourism\"=\"hostel\"](area.searchArea);nwr[\"tourism\"=\"guest_house\"](area.searchArea););out center 20;"
+  },
+  "response_mapping": {
+    "results_path": "elements",
+    "fields": {
+      "name": "tags.name",
+      "hotel_id": "id",
+      "lat": "lat",
+      "lon": "lon"
+    }
+  },
+  "rate_limit": {
+    "requests_per_second": 0.2,
+    "burst": 1
+  },
+  "tls": {
+    "fingerprint": "standard"
+  },
+  "cookies": {
+    "source": "none"
+  },
+  "version": 1
+}

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -177,7 +179,7 @@ func SearchFlixBus(ctx context.Context, fromCity, toCity, date string, opts Sear
 	}
 
 	u := flixbusBaseURL + flixbusSearch + "?" + params.Encode()
-	slog.Debug("flixbus search", "url", u)
+	slog.Debug("flixbus search", "url", logredact.URL(u))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {

@@ -73,15 +73,15 @@ func TestSaveLocked_HistorySaveError(t *testing.T) {
 	store := NewStore(dir)
 	store.watches = []Watch{{ID: "test1", Type: "flight"}}
 
-	// Write watches.json fine but block history path.
-	historyPath := store.historyPath()
-	if err := os.MkdirAll(historyPath, 0o700); err != nil {
+	// Block creation of the authoritative database with a directory at the
+	// exact target path.
+	if err := os.MkdirAll(store.databasePath(), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
 	err := store.Save()
 	if err == nil {
-		t.Fatal("expected error when history save fails")
+		t.Fatal("expected error when database save fails")
 	}
 }
 
@@ -101,10 +101,11 @@ func TestRemove_SaveError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Block the watches file so save fails on Remove.
-	watchesPath := store.watchesPath()
-	_ = os.Remove(watchesPath)
-	if err := os.MkdirAll(watchesPath, 0o700); err != nil {
+	// Replace the authoritative database with a directory so Remove cannot
+	// reopen it for its transaction.
+	databasePath := store.databasePath()
+	_ = os.Remove(databasePath)
+	if err := os.MkdirAll(databasePath, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -131,10 +132,10 @@ func TestAdd_SaveError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Block the watches file.
-	watchesPath := store.watchesPath()
-	_ = os.Remove(watchesPath)
-	if err := os.MkdirAll(watchesPath, 0o700); err != nil {
+	// Block the authoritative database.
+	databasePath := store.databasePath()
+	_ = os.Remove(databasePath)
+	if err := os.MkdirAll(databasePath, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -248,10 +249,10 @@ func TestCheckRoom_RecordPriceError(t *testing.T) {
 		},
 	}
 
-	// Block the history file so RecordPrice fails.
-	historyPath := store.historyPath()
-	_ = os.Remove(historyPath)
-	if err := os.MkdirAll(historyPath, 0o700); err != nil {
+	// Block the authoritative database so RecordPrice fails.
+	databasePath := store.databasePath()
+	_ = os.Remove(databasePath)
+	if err := os.MkdirAll(databasePath, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -296,10 +297,10 @@ func TestCheckOne_RecordPriceError(t *testing.T) {
 	}
 	w.ID = id
 
-	// Block the history file.
-	historyPath := store.historyPath()
-	_ = os.Remove(historyPath)
-	if err := os.MkdirAll(historyPath, 0o700); err != nil {
+	// Block the authoritative database.
+	databasePath := store.databasePath()
+	_ = os.Remove(databasePath)
+	if err := os.MkdirAll(databasePath, 0o700); err != nil {
 		t.Fatal(err)
 	}
 

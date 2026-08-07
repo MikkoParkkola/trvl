@@ -572,12 +572,13 @@ func TestRunProvidersStatus_WithStaleProviderV19(t *testing.T) {
 func TestRunProvidersDisable_WithProviderV19(t *testing.T) {
 	tmp := t.TempDir()
 	setTestHome(t, tmp)
-	writeTestProviderV19(t, tmp, "to-delete-provider")
 
 	cmd := providersCmd()
-	cmd.SetArgs([]string{"disable", "to-delete-provider"})
+	cmd.SetArgs([]string{"disable", "openstreetmap-hotels"})
 
-	_ = cmd.Execute()
+	if err := cmd.Execute(); err != nil {
+		t.Errorf("disable shipped provider: %v", err)
+	}
 }
 
 func TestAirportTransferCmd_MissingArgsV19(t *testing.T) {

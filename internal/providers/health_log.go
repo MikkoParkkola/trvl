@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"sync"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 )
 
 const (
@@ -96,7 +98,7 @@ func startHealthWriter() {
 func runHealthWriter(ch <-chan HealthEntry) {
 	for entry := range ch {
 		if err := appendHealthEntry(entry); err != nil {
-			slog.Warn("health_log: write failed", "error", err)
+			slog.Warn("health_log: write failed", "error", logredact.Err(err))
 		}
 	}
 }

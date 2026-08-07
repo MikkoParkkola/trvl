@@ -199,9 +199,9 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 	// recorded in provider_statuses, so a route priced above the user's
 	// historical average silently collapsed the merged result down to whichever
 	// provider fit under the ceiling — with no signal in the response. Only
-	// CabinClass is seeded here: it narrows the provider QUERY itself rather
-	// than post-filtering an already-merged result, so it cannot truncate a
-	// merge.
+	// CabinClass is also explicit-only. Applying a premium profile here changes
+	// the provider query and can exclude economy-only LCC providers, so identical
+	// CLI and MCP parameters would not search the same provider set (MIK-6878).
 	prof, _ := profile.Load()
 	hints := profile.FlightHints(prof, primaryOrigin, primaryDest)
 	opts = applyFlightProfileHints(opts, args, hints)
@@ -530,13 +530,14 @@ func buildBookingContext(date, origin string, originSource travelctx.Source) *bo
 //     instead of the full 106-flight multi-provider set for identical
 //     params).
 //
-// Only CabinClass is auto-applied: it narrows the provider query itself
-// (rather than post-filtering an already-fetched merge), so a caller sees a
-// consistent, non-silently-truncated result set either way.
+// CabinClass is intentionally not auto-applied either. Although it narrows the
+// provider query rather than post-filtering results, that query shaping can
+// skip economy-only providers and violates CLI/MCP parity for identical
+// parameters (MIK-6878). The hint remains available to recommendation layers;
+// search_flights only applies an explicit cabin_class argument.
 func applyFlightProfileHints(opts flights.SearchOptions, args map[string]any, hints profile.FlightSearchHints) flights.SearchOptions {
-	if _, explicit := args["cabin_class"]; !explicit && hints.CabinClass > 0 && opts.CabinClass == 0 {
-		opts.CabinClass = models.CabinClass(hints.CabinClass)
-	}
+	_ = args
+	_ = hints
 	return opts
 }
 

@@ -1,24 +1,17 @@
 package watch
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"testing"
 	"time"
 )
 
-// Design spike for trvl#555. Measures what a COMBINED publish costs against the
-// current split publish, on a store the size of the observed worst case
-// (320,028 history points / ~39MB), so the fail-fast in that ticket can be
-// answered with a number instead of an intuition:
-//
-//	"If a design spike shows a combined snapshot costs more than ~10ms at p95 on
-//	a realistic store, stop and reconsider -- the current split write is at least
-//	fast, and a slow store write on the scheduler path would be a worse
-//	regression than the gap it closes."
+// Design spike for trvl#555/#575. Measures the steady-state transactional
+// point append at the configured retention boundary. The operation updates one
+// watch row, appends one history row and evicts one row; it must not encode or
+// rewrite the complete retained corpus.
 //
 // Not a regression test. It reports and never fails on timing, because a timing
 // assertion here would be exactly the load-dependent flake this repo spent #533
@@ -30,14 +23,13 @@ func TestSpike555PublishCost(t *testing.T) {
 		t.Skip("spike, not a gate")
 	}
 
-	const points = 320028
+	const points = maxWatchObservations
 	dir := t.TempDir()
 	s := NewStore(dir)
 
-	// One watch per route so history keys are realistic, and a history slice at
-	// the observed worst case.
-	s.watches = make([]Watch, 0, 40)
-	for i := 0; i < 40; i++ {
+	// One thousand points per watch reaches both the per-series and global caps.
+	s.watches = make([]Watch, 0, points/maxObservationsPerWatch)
+	for i := 0; i < points/maxObservationsPerWatch; i++ {
 		s.watches = append(s.watches, Watch{
 			ID:          fmt.Sprintf("w%03d", i),
 			Type:        "flight",
@@ -51,7 +43,7 @@ func TestSpike555PublishCost(t *testing.T) {
 	s.history = make([]PricePoint, 0, points)
 	for i := 0; i < points; i++ {
 		s.history = append(s.history, PricePoint{
-			RouteKey:  fmt.Sprintf("flight:HEL:D%02d:", i%40),
+			WatchID:   fmt.Sprintf("w%03d", i/(maxObservationsPerWatch)),
 			Price:     float64(80 + i%400),
 			Currency:  "EUR",
 			Timestamp: base.Add(time.Duration(i) * time.Minute),
@@ -59,47 +51,25 @@ func TestSpike555PublishCost(t *testing.T) {
 	}
 
 	const runs = 12
-	split := make([]time.Duration, 0, runs)
-	combined := make([]time.Duration, 0, runs)
+	if err := s.Save(); err != nil {
+		t.Fatalf("seed database: %v", err)
+	}
+	appendCost := make([]time.Duration, 0, runs)
 
 	for i := 0; i < runs; i++ {
 		start := time.Now()
-		if err := s.persistLocked(); err != nil {
-			t.Fatalf("split publish: %v", err)
+		if err := s.RecordPrice("w000", 90+float64(i), "EUR"); err != nil {
+			t.Fatalf("transactional append: %v", err)
 		}
-		split = append(split, time.Since(start))
-
-		// The combined shape under evaluation: ONE document, ONE atomic publish.
-		// Same encoder and same atomic write the split path uses, so the delta is
-		// the shape rather than the machinery.
-		combo := struct {
-			Watches []Watch      `json:"watches"`
-			History []PricePoint `json:"history"`
-		}{Watches: s.watches, History: s.history}
-
-		start = time.Now()
-		if err := saveJSON(filepath.Join(dir, "store.json"), combo); err != nil {
-			t.Fatalf("combined publish: %v", err)
-		}
-		combined = append(combined, time.Since(start))
+		appendCost = append(appendCost, time.Since(start))
 	}
 
-	wi, _ := os.Stat(filepath.Join(dir, "watches.json"))
-	hi, _ := os.Stat(filepath.Join(dir, "price-history.json"))
-	ci, _ := os.Stat(filepath.Join(dir, "store.json"))
-
-	blob, _ := json.Marshal(struct {
-		W []Watch      `json:"watches"`
-		H []PricePoint `json:"history"`
-	}{s.watches, s.history})
+	dbInfo, _ := os.Stat(s.databasePath())
 
 	t.Logf("history points   : %d", points)
-	t.Logf("watches.json      : %.1f MB", mb(wi))
-	t.Logf("price-history.json: %.1f MB", mb(hi))
-	t.Logf("combined store.json: %.1f MB (marshalled %.1f MB)", mb(ci), float64(len(blob))/(1<<20))
-	t.Logf("split    p50=%v p95=%v", pct(split, 50), pct(split, 95))
-	t.Logf("combined p50=%v p95=%v", pct(combined, 50), pct(combined, 95))
-	t.Logf("VERDICT: fail-fast budget is 10ms p95 for the combined publish")
+	t.Logf("watch.db          : %.1f MB", mb(dbInfo))
+	t.Logf("append   p50=%v p95=%v", pct(appendCost, 50), pct(appendCost, 95))
+	t.Logf("VERDICT: fail-fast budget is 10ms p95 for the transactional append")
 }
 
 func mb(fi os.FileInfo) float64 {

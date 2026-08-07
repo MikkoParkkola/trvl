@@ -147,6 +147,15 @@ func openURLInBrowser(targetURL, browserPreference string) error {
 	if strings.TrimSpace(targetURL) == "" {
 		return fmt.Errorf("openURLInBrowser: empty URL")
 	}
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, _, err := pinHTTPURL(ctx, parsed, lookupHostIPs); err != nil {
+		return err
+	}
 	goos := runtime.GOOS
 	if goos == "darwin" && strings.TrimSpace(browserPreference) == "" {
 		browserPreference = "Google Chrome"
@@ -444,17 +453,14 @@ func BrowserCookiesForURL(targetURL string) []*http.Cookie {
 	return browserCookiesForURL(targetURL)
 }
 
-// browserCookiesForURL reads cookies from the user's browsers matching the
-// given URL's domain. Iterates all registered browser cookie stores and
-// returns every cookie whose domain matches the URL host (or is a parent
-// domain of it). Returns nil if the URL cannot be parsed, no cookies are
-// found, or cookie access fails (e.g. user denied Keychain access on macOS).
+// browserCookiesForURLWithOutcome reads cookies from the user's browsers and
+// returns both matching cookies and the reason for an empty result.
 //
 // This is used as a fallback when standard HTTP preflight gets blocked by
 // JavaScript bot-detection challenges (HTTP 202/403). The user's actual
 // browser has already solved any JS challenges and has valid session
 // cookies, which we can read directly from their disk-backed cookie jars.
-func browserCookiesForURL(targetURL string) (out []*http.Cookie) {
+func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outcome browserCookieOutcome) {
 	defer func() { out = permittedAfterRead(out) }()
 
 	// The opt-out sits on the low-level reader, not on the exported wrapper,
@@ -471,12 +477,15 @@ func browserCookiesForURL(targetURL string) (out []*http.Cookie) {
 	// permittedAfterRead above, which re-asks after the seconds-long read has
 	// finished; deleting this one costs time, deleting that one ships the bug.
 	if cookies.Disabled() {
-		return nil
+		return nil, outcomeDeclined
 	}
 
 	// Check warm cache first — returns instantly if pre-warmed.
 	if cached := warmBrowserCookiesResult(targetURL, "", browserCookieLookupTimeout); cached != nil {
-		return cached
+		if len(cached) == 0 {
+			return nil, outcomeNoMatch
+		}
+		return cached, outcomeFound
 	}
 
 	// Skip browser cookie lookups during `go test` to avoid macOS Keychain
@@ -485,12 +494,12 @@ func browserCookiesForURL(targetURL string) (out []*http.Cookie) {
 	// Live probe tests that genuinely need browser cookies set
 	// TRVL_ALLOW_BROWSER_COOKIES=1 explicitly.
 	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
-		return nil
+		return nil, outcomeSuppressedInTest
 	}
 
 	u, err := url.Parse(targetURL)
 	if err != nil || u.Host == "" {
-		return nil
+		return nil, outcomeBadURL
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), browserCookieLookupTimeout)
@@ -499,7 +508,7 @@ func browserCookiesForURL(targetURL string) (out []*http.Cookie) {
 	host := u.Hostname()
 	cookies, err := kooky.ReadCookies(ctx, kooky.Valid, kooky.DomainHasSuffix(registrableSuffix(host)))
 	if err != nil && len(cookies) == 0 {
-		return nil
+		return nil, outcomeReadFailed
 	}
 
 	result := make([]*http.Cookie, 0, len(cookies))
@@ -536,7 +545,10 @@ func browserCookiesForURL(targetURL string) (out []*http.Cookie) {
 		result = append(result, &cp)
 		seen[key] = &entry{cookie: cp, idx: idx}
 	}
-	return result
+	if len(result) == 0 {
+		return nil, outcomeNoMatch
+	}
+	return result, outcomeFound
 }
 
 // browserCookiesForURLWithHint reads cookies from a specific browser's cookie
@@ -546,7 +558,7 @@ func browserCookiesForURL(targetURL string) (out []*http.Cookie) {
 // contamination where stale Chrome sessions overwrite fresh Brave sessions (or
 // vice versa) during auto-discovery deduplication.
 //
-// Falls back to browserCookiesForURL (all-browser auto-discovery) when the
+// Falls back to the all-browser auto-discovery reader when the
 // hint is empty or the specified browser's cookie store cannot be found.
 func browserCookiesForURLWithHint(targetURL, browserHint string) (out []*http.Cookie) {
 	defer func() { out = permittedAfterRead(out) }()

@@ -38,10 +38,9 @@ func (s *Server) wrapProviderHandler(handler providerHandler) ToolHandler {
 // configureProviderTool returns the MCP tool definition for configure_provider.
 func configureProviderTool() ToolDef {
 	return ToolDef{
-		Name:  "configure_provider",
-		Title: "Configure External Provider",
-		Description: "Configure an external data provider for accommodation, transport, or restaurant search. " +
-			"The user will be asked directly to confirm before the provider is enabled.",
+		Name:        "configure_provider",
+		Title:       "Configure External Provider",
+		Description: "Provider definitions ship as reviewed JSON in the trvl binary. Runtime custom definitions are refused; contribute a definition by pull request or use a fork.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
@@ -97,6 +96,14 @@ func configureProviderTool() ToolDef {
 
 // handleConfigureProvider processes a configure_provider tool call.
 func handleConfigureProvider(ctx context.Context, args map[string]any, elicit ElicitFunc, _ SamplingFunc, _ ProgressFunc, reg *providers.Registry, _ *providers.Runtime) ([]ContentBlock, interface{}, error) {
+	if reg != nil && reg.IsSourceOnly() {
+		id := argString(args, "id")
+		message := "Runtime custom provider definitions are disabled. Provider JSON is source code: add a reviewed file under internal/providers/definitions and contribute it by pull request, or use a fork."
+		if id != "" {
+			message = fmt.Sprintf("Provider %q was not configured. %s", id, message)
+		}
+		return textContent(message), nil, nil
+	}
 	config, err := parseProviderConfig(args)
 	if err != nil {
 		return nil, nil, fmt.Errorf("configure_provider: %w", err)
@@ -573,7 +580,7 @@ func handleListProviders(_ context.Context, _ map[string]any, _ ElicitFunc, _ Sa
 	configs := reg.ListSafe()
 
 	if len(configs) == 0 {
-		return textContent("No external providers configured. Use configure_provider to add one."), nil, nil
+		return textContent("No reviewed external providers are enabled. Use `trvl providers enable <id>` for a provider shipped with this binary."), nil, nil
 	}
 
 	type providerSummary struct {
@@ -638,7 +645,7 @@ func removeProviderTool() ToolDef {
 	return ToolDef{
 		Name:        "remove_provider",
 		Title:       "Remove External Provider",
-		Description: "Remove a configured external data provider by ID. No confirmation needed.",
+		Description: "Disable a reviewed external provider by ID. Its embedded definition remains immutable in the binary.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
@@ -672,7 +679,7 @@ func handleRemoveProvider(_ context.Context, args map[string]any, _ ElicitFunc, 
 		return nil, nil, fmt.Errorf("remove_provider: %w", err)
 	}
 
-	return textContent(fmt.Sprintf("Provider %q removed.", id)), nil, nil
+	return textContent(fmt.Sprintf("Provider %q disabled.", id)), nil, nil
 }
 
 // --- test_provider ---

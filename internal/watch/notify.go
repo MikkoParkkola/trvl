@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/safeexec"
 )
 
@@ -286,12 +288,12 @@ func desktopNotifyDispatch(goos, title, message string) {
 	case "darwin":
 		script := fmt.Sprintf(`display notification %q with title %q`, message, title)
 		if err := runNotifier(ctx, "osascript", "-e", script); err != nil {
-			slog.Debug("desktop notification unavailable", "goos", goos, "channel", "osascript", "err", err)
+			slog.Debug("desktop notification unavailable", "goos", goos, "channel", "osascript", "err", logredact.Err(err))
 		}
 	case "linux":
 		// notify-send is the standard libnotify CLI on Linux desktops.
 		if err := runNotifier(ctx, "notify-send", title, message); err != nil {
-			slog.Debug("desktop notification unavailable", "goos", goos, "channel", "notify-send", "err", err)
+			slog.Debug("desktop notification unavailable", "goos", goos, "channel", "notify-send", "err", logredact.Err(err))
 		}
 	case "windows":
 		// Best-effort balloon via PowerShell, no third-party module required.
@@ -303,7 +305,7 @@ func desktopNotifyDispatch(goos, title, message string) {
 				`$n.Visible = $true; $n.ShowBalloonTip(5000)`,
 			title, message)
 		if err := runNotifier(ctx, "powershell", "-NoProfile", "-Command", ps); err != nil {
-			slog.Debug("desktop notification unavailable", "goos", goos, "channel", "powershell", "err", err)
+			slog.Debug("desktop notification unavailable", "goos", goos, "channel", "powershell", "err", logredact.Err(err))
 		}
 	default:
 		slog.Debug("desktop notification unavailable", "goos", goos, "channel", "none")

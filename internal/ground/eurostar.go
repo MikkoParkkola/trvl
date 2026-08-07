@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -231,7 +233,7 @@ func searchEurostarTimetable(ctx context.Context, fromStation, toStation Eurosta
 
 	var ttResp eurostarTimetableResponse
 	if err := json.Unmarshal(rawBody, &ttResp); err != nil {
-		slog.Debug("eurostar timetable decode error", "err", err)
+		slog.Debug("eurostar timetable decode error", "err", logredact.Err(err))
 		return nil, nil // non-fatal
 	}
 	if len(ttResp.Errors) > 0 {
@@ -396,7 +398,7 @@ func SearchEurostar(ctx context.Context, from, to, startDate, endDate, currency 
 
 		isCaptcha, captchaURL := cookies.IsCaptchaResponse(http.StatusForbidden, firstBody)
 		if isCaptcha {
-			slog.Warn("eurostar requires browser verification", "captcha_url", captchaURL)
+			slog.Warn("eurostar requires browser verification", "captcha_url", logredact.URL(captchaURL))
 		}
 		return nil, fmt.Errorf("eurostar search: HTTP 403: %s", firstBody)
 	}

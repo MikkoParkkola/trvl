@@ -22,14 +22,14 @@ func providersCmd() *cobra.Command {
 		Long: `View, enable, disable, and monitor external data providers.
 
 Providers are optional integrations that extend trvl with additional data
-sources (e.g. Kiwi.com flights, Booking.com hotels). Each provider config
-is stored in ~/.trvl/providers/<id>.json.
+sources. Definitions are reviewed in source and embedded in the binary; runtime
+state can enable or disable them but cannot replace their network behavior.
 
 Examples:
   trvl providers list
-  trvl providers enable kiwi --accept-tos
-  trvl providers disable kiwi
-  trvl providers reset booking
+  trvl providers enable openstreetmap-hotels --accept-tos
+  trvl providers disable openstreetmap-hotels
+  trvl providers reset openstreetmap-hotels
   trvl providers status`,
 	}
 
@@ -51,9 +51,9 @@ func init() {
 func providersListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List all configured providers",
-		Long: `List all configured providers from ~/.trvl/providers/*.json.
-Shows ID, name, category, domain, status, and last success time.
+		Short: "List reviewed providers shipped in this binary",
+		Long: `List reviewed provider definitions embedded in the trvl binary.
+Shows ID, name, category, domain, enabled state, health, and last success time.
 
 Examples:
   trvl providers list
@@ -68,15 +68,26 @@ func runProvidersList(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list providers: %w", err)
 	}
 	configs := reg.List()
+	if reg.IsSourceOnly() {
+		configs = reg.ListShipped()
+	}
 
 	f, _ := cmd.Flags().GetString("format")
 	if f == "json" {
-		return models.FormatJSON(os.Stdout, configs)
+		views := providers.CredentialFreeViews(configs)
+		type listView struct {
+			providers.View
+			Enabled bool `json:"enabled"`
+		}
+		output := make([]listView, 0, len(views))
+		for _, view := range views {
+			output = append(output, listView{View: view, Enabled: reg.IsEnabled(view.ID)})
+		}
+		return models.FormatJSON(os.Stdout, output)
 	}
 
 	if len(configs) == 0 {
-		fmt.Println("No providers configured.")
-		fmt.Println("Run 'trvl providers enable <id>' to add one.")
+		fmt.Println("This binary contains no reviewed optional provider definitions.")
 		return nil
 	}
 
@@ -84,13 +95,17 @@ func runProvidersList(cmd *cobra.Command, _ []string) error {
 	rows := make([][]string, 0, len(configs))
 	for _, cfg := range configs {
 		status := cfg.Status()
-		switch status {
-		case "ok":
-			status = models.Green(status)
-		case "error":
-			status = models.Red(status)
-		default:
-			status = models.Dim(status)
+		if !reg.IsEnabled(cfg.ID) {
+			status = models.Dim("disabled")
+		} else {
+			switch status {
+			case "ok":
+				status = models.Green(status)
+			case "error":
+				status = models.Red(status)
+			default:
+				status = models.Dim(status)
+			}
 		}
 
 		lastSuccess := ""
@@ -119,16 +134,16 @@ func providersEnableCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "enable <id>",
-		Short: "Enable an external data provider",
-		Long: `Enable an external data provider by reading its configuration from stdin (JSON)
-or interactively confirming terms of service.
+		Short: "Enable a reviewed external provider",
+		Long: `Enable an external data provider whose reviewed JSON definition ships in the trvl binary.
+Runtime custom definitions are not accepted; contribute one by pull request or use a fork.
 
 The --accept-tos flag bypasses the interactive confirmation prompt, which is
 useful for scripted/non-interactive environments.
 
 Examples:
-  echo '{"id":"kiwi","name":"Kiwi.com","endpoint":"https://api.tequila.kiwi.com"}' | trvl providers enable kiwi --accept-tos
-  trvl providers enable kiwi`,
+  trvl providers enable openstreetmap-hotels
+  trvl providers enable openstreetmap-hotels --accept-tos`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runProvidersEnable(args[0], acceptTOS)
@@ -144,6 +159,9 @@ func runProvidersEnable(id string, acceptTOS bool) error {
 	reg, err := providers.NewRegistry()
 	if err != nil {
 		return fmt.Errorf("enable provider: %w", err)
+	}
+	if reg.IsSourceOnly() {
+		return enableShippedProvider(reg, id, acceptTOS)
 	}
 
 	// Try to read provider config from stdin if piped.
@@ -227,17 +245,50 @@ func runProvidersEnable(id string, acceptTOS bool) error {
 	return nil
 }
 
+func enableShippedProvider(reg *providers.Registry, id string, acceptTOS bool) error {
+	shipped := reg.Get(id)
+	if shipped == nil {
+		return fmt.Errorf("provider %q is not shipped with this binary; contribute a reviewed JSON definition or use a fork", id)
+	}
+	if !acceptTOS {
+		if !term.IsTerminal(int(os.Stdin.Fd())) {
+			return fmt.Errorf("enabling a shipped provider non-interactively requires --accept-tos")
+		}
+		_, _ = fmt.Fprintf(os.Stderr, "Enable reviewed provider %q at %s? [y/N]: ", shipped.Name, shipped.EndpointDomain())
+		scanner := bufio.NewScanner(os.Stdin)
+		if !scanner.Scan() {
+			return fmt.Errorf("enable cancelled")
+		}
+		answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
+		if answer != "y" && answer != "yes" {
+			fmt.Println("Cancelled.")
+			return nil
+		}
+	}
+	copy := *shipped
+	copy.Consent = &providers.ConsentRecord{
+		Granted:   true,
+		Timestamp: time.Now(),
+		Domain:    copy.EndpointDomain(),
+	}
+	if err := reg.Save(&copy); err != nil {
+		return fmt.Errorf("enable shipped provider: %w", err)
+	}
+	fmt.Printf("Provider %q enabled from its reviewed embedded definition.\n", copy.Name)
+	return nil
+}
+
 // --- disable ---
 
 func providersDisableCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "disable <id>",
-		Short: "Disable and remove a provider",
-		Long: `Disable a provider by removing its configuration file.
+		Short: "Disable a reviewed provider",
+		Long: `Disable a provider preference. Its reviewed embedded definition is not removed.
 Prompts for confirmation unless stdin is not a terminal.
 
 Examples:
-  trvl providers disable kiwi`,
+  trvl providers disable openstreetmap-hotels`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runProvidersDisable(args[0])
@@ -256,9 +307,9 @@ func runProvidersDisable(id string) error {
 		return fmt.Errorf("provider %q not found", id)
 	}
 
-	// Confirm removal interactively.
+	// Confirm disabling interactively.
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		_, _ = fmt.Fprintf(os.Stderr, "Remove provider %q? [y/N]: ", cfg.Name)
+		_, _ = fmt.Fprintf(os.Stderr, "Disable provider %q? [y/N]: ", cfg.Name)
 		scanner := bufio.NewScanner(os.Stdin)
 		if !scanner.Scan() {
 			return fmt.Errorf("disable cancelled")
@@ -271,7 +322,7 @@ func runProvidersDisable(id string) error {
 	}
 
 	if err := reg.Delete(id); err != nil {
-		return fmt.Errorf("remove provider: %w", err)
+		return fmt.Errorf("disable provider: %w", err)
 	}
 
 	fmt.Printf("Provider %q disabled.\n", cfg.Name)
@@ -286,11 +337,11 @@ func providersResetCmd() *cobra.Command {
 		Short: "Clear a provider circuit breaker",
 		Long: `Clear the error counter and last-error fields for a configured provider.
 
-Use this after fixing upstream login, browser session, endpoint details, or a
-temporary provider block.
+Use this after fixing upstream login, browser session, or a temporary provider
+block. Provider endpoint details are fixed by the reviewed embedded definition.
 
 Examples:
-  trvl providers reset booking`,
+  trvl providers reset openstreetmap-hotels`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runProvidersReset(args[0])
@@ -351,12 +402,12 @@ func runProvidersStatus(cmd *cobra.Command, _ []string, probe bool) error {
 
 	f, _ := cmd.Flags().GetString("format")
 	if f == "json" {
-		return models.FormatJSON(os.Stdout, configs)
+		return models.FormatJSON(os.Stdout, providers.CredentialFreeViews(configs))
 	}
 
 	if len(configs) == 0 {
-		fmt.Println("No providers configured.")
-		fmt.Println("Run 'trvl providers enable <id>' to add one.")
+		fmt.Println("No reviewed optional providers are enabled.")
+		fmt.Println("Run 'trvl providers enable openstreetmap-hotels' to enable a shipped definition.")
 		return nil
 	}
 

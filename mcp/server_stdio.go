@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 )
 
 // --- logging/setLevel handler ---
@@ -245,7 +247,7 @@ func (s *Server) writeMessage(out io.Writer, v any) {
 	s.notifyMu.Lock()
 	defer s.notifyMu.Unlock()
 	if err := writeJSON(out, v); err != nil {
-		slog.Warn("mcp_stdio_write_failed", "error", err)
+		slog.Warn("mcp_stdio_write_failed", "error", logredact.Err(err))
 	}
 }
 

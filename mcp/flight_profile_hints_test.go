@@ -68,19 +68,16 @@ func TestApplyFlightProfileHints_ExplicitMaxPriceUnaffected(t *testing.T) {
 	}
 }
 
-// TestApplyFlightProfileHints_CabinClassStillApplied proves the fix did not
-// overcorrect: CabinClass is a legitimate profile default (it narrows the
-// provider query itself rather than silently post-filtering an already-merged
-// result set) and must still apply when the caller has not set cabin_class
-// explicitly.
-func TestApplyFlightProfileHints_CabinClassStillApplied(t *testing.T) {
+// MIK.TRVLCABIN.2: a premium profile must not shape a no-argument MCP provider
+// query differently from the CLI. Cabin class is explicit-only on both paths.
+func TestApplyFlightProfileHints_DoesNotAutoApplyCabinClass(t *testing.T) {
 	hints := profile.FlightSearchHints{CabinClass: int(models.Business)}
 	args := map[string]any{}
 
 	got := applyFlightProfileHints(flights.SearchOptions{}, args, hints)
 
-	if got.CabinClass != models.Business {
-		t.Fatalf("CabinClass = %v, want %v (legitimate cabin-class hint must still apply)", got.CabinClass, models.Business)
+	if got.CabinClass != 0 {
+		t.Fatalf("CabinClass = %v, want zero (profile hint must not change no-arg MCP provider selection)", got.CabinClass)
 	}
 }
 

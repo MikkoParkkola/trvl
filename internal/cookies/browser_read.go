@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/consent"
 )
 
@@ -201,7 +203,7 @@ func BrowserReadPageCached(ctx context.Context, url string, waitSeconds int, ttl
 	entry, ok := browserPageCache.entries[url]
 	browserPageCache.RUnlock()
 	if ok && time.Now().Before(entry.expires) {
-		slog.Debug("browser page cache hit", "url", url)
+		slog.Debug("browser page cache hit", "url", logredact.URL(url))
 		return entry.text, nil
 	}
 

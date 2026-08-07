@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"syscall"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 )
 
 // Webhook notification delivery.
@@ -227,7 +229,7 @@ func fireWebhook(ctx context.Context, r CheckResult) {
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		slog.Warn("webhook: marshal payload", "watch_id", r.Watch.ID, "err", err)
+		slog.Warn("webhook: marshal payload", "watch_id", r.Watch.ID, "err", logredact.Err(err))
 		return
 	}
 

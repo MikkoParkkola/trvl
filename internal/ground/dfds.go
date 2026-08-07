@@ -36,6 +36,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -296,7 +298,7 @@ func fetchDFDSAvailability(ctx context.Context, routeInfo dfdsRouteInfo, date st
 	resp, err := dfdsClient.Do(req)
 	if err != nil {
 		// Network failure: return schedule without availability check.
-		slog.Debug("dfds availability: network error", "route", routeInfo.RouteCode, "err", err)
+		slog.Debug("dfds availability: network error", "route", routeInfo.RouteCode, "err", logredact.Err(err))
 		return true, false, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -314,7 +316,7 @@ func fetchDFDSAvailability(ctx context.Context, routeInfo dfdsRouteInfo, date st
 
 	var avail dfdsAvailabilityResponse
 	if err := json.Unmarshal(body, &avail); err != nil {
-		slog.Debug("dfds availability: decode error", "err", err)
+		slog.Debug("dfds availability: decode error", "err", logredact.Err(err))
 		return true, false, nil // non-fatal
 	}
 
@@ -388,7 +390,7 @@ func SearchDFDS(ctx context.Context, from, to, date, currency string) ([]models.
 	// Check availability via API.
 	available, isOffer, err := fetchDFDSAvailability(ctx, routeInfo, date)
 	if err != nil {
-		slog.Debug("dfds availability error", "err", err)
+		slog.Debug("dfds availability error", "err", logredact.Err(err))
 	}
 	if !available {
 		slog.Debug("dfds: date unavailable", "route", routeInfo.RouteCode, "date", date)

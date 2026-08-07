@@ -442,9 +442,20 @@ func (s *Store) compactHistoryLocked() {
 // Missing files are not an error: a fresh store has nothing to back up.
 // Caller holds s.mu.
 func (s *Store) backupLocked() (string, error) {
+	return s.backupPathsLocked([]string{s.databasePath(), s.watchesPath(), s.historyPath()})
+}
+
+// backupLegacyLocked is used only for the first JSON-to-bbolt conversion. The
+// source files are preserved in place as well; these timestamped copies make
+// the exact pre-migration generation explicit and immune to later tooling.
+func (s *Store) backupLegacyLocked() (string, error) {
+	return s.backupPathsLocked([]string{s.watchesPath(), s.historyPath()})
+}
+
+func (s *Store) backupPathsLocked(paths []string) (string, error) {
 	stamp := time.Now().Format("20060102-150405")
 	var made []string
-	for _, path := range []string{s.watchesPath(), s.historyPath()} {
+	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -480,6 +491,10 @@ func (s *Store) backupLocked() (string, error) {
 // Records that a destructive command must be previewable before it runs.
 func (s *Store) MigrateDryRun() (MigrationReport, error) {
 	s.mu.Lock()
+	if err := s.refreshHistoryLocked(); err != nil {
+		s.mu.Unlock()
+		return MigrationReport{}, fmt.Errorf("refresh history for dry run: %w", err)
+	}
 	watches := append([]Watch(nil), s.watches...)
 	history := append([]PricePoint(nil), s.history...)
 	s.mu.Unlock()

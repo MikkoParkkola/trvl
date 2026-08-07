@@ -56,7 +56,7 @@ func WriteBytes(path string, b []byte) error {
 	// Without it "orphaned" and "in flight" are indistinguishable and no
 	// cleanup can ever be safe. The crypto-random suffix is retained: it, not
 	// the PID, is what makes the name unpredictable for O_EXCL.
-	tmpPath := filepath.Join(dir, tempName(filepath.Base(path), os.Getpid(), hex.EncodeToString(rnd)))
+	tmpPath := filepath.Join(dir, tempNameWithBoot(filepath.Base(path), os.Getpid(), currentBootFingerprint(), hex.EncodeToString(rnd)))
 	//nolint:gosec // mode 0600 is intentional — store files must be owner-only
 	tmp, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {

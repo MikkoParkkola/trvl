@@ -18,9 +18,10 @@ const cityResolverTimeout = 5 * time.Second
 // resolveCityIDDynamic attempts to resolve a city name to a provider-specific
 // ID using the provider's city_resolver autocomplete API. On success it returns
 // the city ID, any extra fields configured in ExtraFields (e.g. dest_type), and
-// caches the ID result in cfg.CityLookup. The optional registry parameter, when
-// non-nil, persists the updated config to disk so subsequent searches find the
-// city without a network call.
+// caches the ID result in cfg.CityLookup. A mutable test/development registry
+// may persist that updated definition. Production's source-only registry does
+// not: CityLookup is part of the reviewed definition boundary, so a resolver
+// result remains scoped to this search rather than becoming executable config.
 //
 // The client parameter should be the provider's own HTTP client (with cookies,
 // TLS fingerprint, etc.) so the autocomplete request matches the provider's
@@ -131,9 +132,10 @@ func resolveCityIDDynamic(ctx context.Context, cfg *ProviderConfig, client *http
 		}
 	}
 
-	// Persist the updated config to disk so subsequent searches find the
-	// city without a network call. Non-fatal if this fails.
-	if registry != nil {
+	// Mutable registries exist for tests and forks. Production definitions are
+	// embedded and immutable, including lookup maps, so do not pretend a cache
+	// write succeeded there only for Save to restore the reviewed value.
+	if registry != nil && !registry.IsSourceOnly() {
 		if err := registry.Save(cfg); err != nil {
 			slog.Warn("city_resolver: failed to persist cache",
 				"provider", cfg.ID, "error", err.Error())

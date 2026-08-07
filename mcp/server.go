@@ -25,6 +25,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/livecheck"
 	"github.com/MikkoParkkola/trvl/internal/providers"
@@ -188,7 +190,7 @@ func NewServer() *Server {
 	if endpoint := os.Getenv("TRVL_OTEL_ENDPOINT"); endpoint != "" {
 		shutdown, err := telemetry.Init(context.Background(), endpoint)
 		if err != nil {
-			slog.Warn("OTel init failed, tracing disabled", "endpoint", endpoint, "err", err)
+			slog.Warn("OTel init failed, tracing disabled", "endpoint", endpoint, "err", logredact.Err(err))
 		} else {
 			s.otelShutdown = shutdown
 			slog.Info("OTel tracing enabled", "endpoint", endpoint)

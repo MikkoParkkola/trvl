@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/net/http/httpproxy"
 )
 
 // AllowLocalEnv opts a process back in to provider destinations that the
@@ -177,9 +180,201 @@ func guardedDialer() *net.Dialer {
 	}
 }
 
-// guardedTransport returns the standard transport this package uses for
-// provider traffic, with the policy installed.
-func guardedTransport() *http.Transport {
+// GuardedTransportMode states whether a guarded transport is direct-only or
+// honours the process proxy environment. The distinction is part of the API:
+// callers must never have to infer which security boundary they received.
+type GuardedTransportMode string
+
+const (
+	GuardedTransportDirect     GuardedTransportMode = "direct_only"
+	GuardedTransportProxyAware GuardedTransportMode = "environment_proxy"
+)
+
+type lookupIPsFunc func(context.Context, string) ([]net.IP, error)
+type requestProxyFunc func(*http.Request) (*url.URL, error)
+
+// GuardedRoundTripper enforces the destination policy for direct and proxied
+// traffic. In proxy-aware mode both hops are resolved, validated, and pinned
+// independently before the request is sent.
+type GuardedRoundTripper struct {
+	mode   GuardedTransportMode
+	lookup lookupIPsFunc
+	proxy  requestProxyFunc
+	direct *http.Transport
+}
+
+// NewGuardedTransport returns a policy-carrying transport in the requested
+// mode. Unknown modes fail closed by behaving as direct-only.
+func NewGuardedTransport(mode GuardedTransportMode) *GuardedRoundTripper {
+	if mode != GuardedTransportProxyAware {
+		mode = GuardedTransportDirect
+	}
+	return &GuardedRoundTripper{
+		mode:   mode,
+		lookup: lookupHostIPs,
+		proxy:  proxyFromCurrentEnvironment,
+		direct: directGuardedTransport(),
+	}
+}
+
+// Mode reports the transport's proxy contract.
+func (t *GuardedRoundTripper) Mode() GuardedTransportMode {
+	if t == nil {
+		return GuardedTransportDirect
+	}
+	return t.mode
+}
+
+// GuardedTransport returns the proxy-aware guarded transport used by provider
+// and destination traffic. NewGuardedTransport(GuardedTransportDirect) is the
+// explicit direct-only alternative.
+func GuardedTransport() *GuardedRoundTripper {
+	return NewGuardedTransport(GuardedTransportProxyAware)
+}
+
+// RoundTrip applies the policy to the final destination before considering the
+// proxy. That ordering is intentional: removing the destination check must not
+// be masked by a later refusal of a bad proxy.
+func (t *GuardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t == nil || t.direct == nil {
+		return nil, errors.New("guarded transport is not initialized")
+	}
+	if req == nil || req.URL == nil {
+		return nil, fmt.Errorf("%w: request has no destination URL", ErrDestinationRefused)
+	}
+	if t.mode != GuardedTransportProxyAware {
+		return t.direct.RoundTrip(req)
+	}
+
+	proxyURL, err := t.proxy(req)
+	if err != nil {
+		return nil, fmt.Errorf("resolve proxy configuration: %w", err)
+	}
+	if proxyURL == nil {
+		return t.direct.RoundTrip(req)
+	}
+	if proxyURL.User != nil {
+		return nil, errors.New("authenticated proxies are not supported by the guarded transport")
+	}
+	if !strings.EqualFold(proxyURL.Scheme, "http") {
+		return nil, fmt.Errorf("proxy scheme %q is not supported by the guarded transport", proxyURL.Scheme)
+	}
+
+	pinnedDestination, serverName, err := pinHTTPURL(req.Context(), req.URL, t.lookup)
+	if err != nil {
+		return nil, err
+	}
+	pinnedProxy, _, err := pinHTTPURL(req.Context(), proxyURL, t.lookup)
+	if err != nil {
+		return nil, fmt.Errorf("proxy: %w", err)
+	}
+
+	clone := req.Clone(req.Context())
+	clone.URL = pinnedDestination
+	if req.Host != "" {
+		clone.Host = req.Host
+	} else {
+		clone.Host = req.URL.Host
+	}
+
+	transport := directGuardedTransport()
+	transport.Proxy = func(*http.Request) (*url.URL, error) { return pinnedProxy, nil }
+	if strings.EqualFold(req.URL.Scheme, "https") {
+		transport.TLSClientConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			ServerName: serverName,
+		}
+	}
+	return transport.RoundTrip(clone)
+}
+
+func proxyFromCurrentEnvironment(req *http.Request) (*url.URL, error) {
+	if req == nil || req.URL == nil {
+		return nil, nil
+	}
+	return httpproxy.FromEnvironment().ProxyFunc()(req.URL)
+}
+
+func lookupHostIPs(ctx context.Context, host string) ([]net.IP, error) {
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]net.IP, 0, len(addresses))
+	for _, address := range addresses {
+		result = append(result, address.IP)
+	}
+	return result, nil
+}
+
+// pinHTTPURL resolves a URL once, refuses every unsafe answer, and rewrites the
+// URL to a selected IP. Validating all answers prevents a mixed public/private
+// DNS response from making safety depend on resolver ordering.
+func pinHTTPURL(ctx context.Context, source *url.URL, lookup lookupIPsFunc) (*url.URL, string, error) {
+	if source == nil {
+		return nil, "", fmt.Errorf("%w: missing URL", ErrDestinationRefused)
+	}
+	if err := CheckDestinationURL(source.String()); err != nil {
+		return nil, "", err
+	}
+
+	host := source.Hostname()
+	port := source.Port()
+	if port == "" {
+		switch strings.ToLower(source.Scheme) {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		}
+	}
+
+	addresses := []net.IP{net.ParseIP(host)}
+	if addresses[0] == nil {
+		var err error
+		addresses, err = lookup(ctx, host)
+		if err != nil {
+			return nil, "", fmt.Errorf("%w: resolve %s: %v", ErrDestinationRefused, host, err)
+		}
+	}
+	if len(addresses) == 0 {
+		return nil, "", fmt.Errorf("%w: %s resolved to no addresses", ErrDestinationRefused, host)
+	}
+
+	var selected net.IP
+	for _, address := range addresses {
+		if address == nil {
+			return nil, "", fmt.Errorf("%w: %s returned an unclassifiable address", ErrDestinationRefused, host)
+		}
+		if !localDestinationsAllowed() {
+			if reason := refusedIP(address); reason != "" {
+				return nil, "", fmt.Errorf("%w: %s resolved to %s, a %s", ErrDestinationRefused, host, address, reason)
+			}
+		}
+		if selected == nil {
+			selected = address
+		}
+	}
+
+	pinned := *source
+	pinned.Host = net.JoinHostPort(selected.String(), port)
+	return &pinned, host, nil
+}
+
+// directGuardedTransport returns an http.Transport carrying this package's
+// destination policy on its dialer.
+//
+// It exists because internal/destinations built a plain http.Client and so did
+// not route through this policy (trvl#539). That was safe only because the
+// destinations package composes its URLs from a constant base and numeric
+// parameters, so no caller string reached the host -- the guard was the URL
+// construction, not the transport. A property nothing enforces is not a guard,
+// and a future destinations endpoint taking a caller-supplied value would
+// remove it silently.
+//
+// Callers get the policy at DIAL time, which is what makes it hold even when a
+// redirect or a DNS answer moves the connection somewhere the URL did not name.
+func directGuardedTransport() *http.Transport {
 	d := guardedDialer()
 	return &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -192,3 +387,7 @@ func guardedTransport() *http.Transport {
 		ForceAttemptHTTP2:   true,
 	}
 }
+
+// guardedTransport is the standard proxy-aware transport used by provider
+// traffic inside this package.
+func guardedTransport() http.RoundTripper { return GuardedTransport() }

@@ -15,20 +15,12 @@ import (
 // still counts as live. Any answer other than "definitely gone" is reported as
 // live so an ambiguous result protects the temp file.
 //
-// fileModTime is accepted and deliberately UNUSED here. The Windows
-// implementation uses it to detect PID reuse: a process that started after the
-// file was written cannot be its writer, so the real owner is gone (trvl#568,
-// TRVL.WINORPHAN.4).
-//
-// Unix has the same hazard and does not close it. A PID reused after a reboot
-// makes a stale temp file look owned by a live process forever, which keeps a
-// leaked file rather than deleting a live one -- the safe direction, and the
-// reason this is a documented gap rather than a bug being shipped. Closing it
-// needs a per-process start time, and that is platform-specific work per Unix
-// (`/proc/<pid>/stat` field 22 on Linux, `sysctl KERN_PROC_PID` on macOS) with
-// no portable route. Filed separately rather than half-done here, so this
-// signature carries the parameter and the reason it is ignored, instead of the
-// next reader wondering whether the omission was considered.
+// PID reuse across reboots is handled before this function: new temp names
+// carry a boot fingerprint, and FindOrphans treats a different boot as proof
+// that the current PID cannot be the writer (#574, TRVL.UNIXORPHAN.1). Missing
+// boot data stays ambiguous and therefore live (TRVL.UNIXORPHAN.2). The mutable
+// file modification time remains intentionally unused; backdating a live
+// writer's file must never make it reclaimable.
 func processAlive(pid int, _ time.Time) bool {
 	p, err := os.FindProcess(pid)
 	if err != nil {

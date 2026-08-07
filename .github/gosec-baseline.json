@@ -144,22 +144,8 @@
       "rule": "G703",
       "file": "internal/upgrade/upgrade.go",
       "count": 1,
-      "status": "accepted",
-      "reason": "ACCEPTED RISK (V). Not the download write: internal/upgrade/upgrade.go:242 writes the preferences BACKUP, dst = prefsPathIn(dir)+\".bak.\"+oldVersion (:237, :54-56). dir is ~/.trvl (:40-46; the sole external caller cmd/trvl/upgrade.go passes \"\"), and oldVersion is the trimmed content of ~/.trvl/version.stamp (ReadStamp :59-68), which is only ever written from the compiled-in Version (WriteStamp :71-77). Traversal therefore requires an attacker who can already write inside the user's own ~/.trvl, and the payload is the user's own prefs file at 0600. Hardening candidate, not a live vulnerability: validate the stamp against a semver pattern before using it in a filename."
-    },
-    {
-      "rule": "G703",
-      "file": "internal/watch/migrate.go",
-      "count": 1,
-      "status": "accepted",
-      "reason": "NOT REACHABLE (V). The sink is internal/watch/migrate.go:397, os.WriteFile(dst, ...) where dst = fmt.Sprintf(\"%s.bak-%s\", path, stamp) in backupLocked. Both components are traced: `path` is s.watchesPath() or s.historyPath(), each filepath.Join(s.dir, <literal>) (store.go:77-83); `stamp` is time.Now().Format (:386), not caller data. s.dir has exactly two production origins -- DefaultStore() at store.go:74, filepath.Join(home, \".trvl\"), and NewScheduler's dir, which its sole non-test caller mcp/server.go:159 also builds as filepath.Join(home, \".trvl\") (:154-155). Migrate itself has one non-test caller, cmd/trvl/watch.go:593, on a DefaultStore(). No CLI flag or env var sets the watch store directory: cmd/trvl/tempfiles.go:68's --dir belongs to the orphan-scan command and never reaches watch.Store. So no caller-supplied string reaches the write, and the backup can only land beside the user's own ~/.trvl data files at 0600. New in the release/1.21.0 merge because backupLocked itself is new there -- it did not exist on main when this baseline was generated."
-    },
-    {
-      "rule": "G704",
-      "file": "internal/batchexec/client.go",
-      "count": 1,
-      "status": "accepted",
-      "reason": "NOT REACHABLE (V) as shipped. The sink is inside testRedirectTransport.RoundTrip (internal/batchexec/client.go:128-140), which rewrites every request to a baseURL that can only be set by NewTestClient (:112-120). At 4bf48ee the only callers of NewTestClient are *_test.go files under internal/flights (roundtrip, flights_max, vueling, stealth_wiring, easyjet, eligibility_boost, singleflight_regression, norwegian); a repo-wide search excluding _test.go finds the declaration and its doc comment and nothing else. Caveat, recorded because the (rule, file, count) key cannot see it: this is an exported helper in a non-test file, so a future production caller would make it reachable without changing the count. Hardening candidate: move it behind a _test-only build tag or an export_test.go shim."
+      "status": "mitigated",
+      "reason": "MITIGATED (V, trvl#539 TRVL.HARDEN.3). The sink is the preferences BACKUP write, dst = prefsPathIn(dir)+\".bak.\"+oldVersion. dir is ~/.trvl. The oldVersion component was previously unvalidated: it comes from ReadStamp, i.e. the trimmed contents of a file on disk, NOT from the compiled-in Version, so a corrupted or externally-written stamp chose part of the path. backupPreferences now refuses any stamp failing safeVersionStamp (allowlist of [0-9A-Za-z._+-], no \"..\", non-empty, <=64 chars) and skips the backup rather than sanitising, because a sanitised path is still a path nobody intended. Pinned by TestBackupPreferencesRefusesUnsafeVersionStamp with a control that a valid stamp still produces its backup; sabotage-verified by removing the guard."
     },
     {
       "rule": "G704",
@@ -174,6 +160,13 @@
       "count": 2,
       "status": "accepted",
       "reason": "NOT REACHABLE (V), both findings. doSearchRequest (internal/providers/auth.go:382-407) replays orig.URL of a request that was already built and already sent; the URL originates from substituteVars(cfg.Endpoint, vars) in internal/providers/runtime_provider.go:208. What holds unconditionally is the dial-time guard: guardedDialer/guardedTransport installs dialControl on every provider client (internal/providers/destination.go:137-181, wired in runtime_core.go), and dialControl refuses the connection on the RESOLVED IP - loopback, private, link-local, unspecified and multicast (refusedIP :57-79) - so a redirected or substituted host cannot reach an internal address regardless of how the string was built. The parse-time providers.CheckDestinationURL on Endpoint and Auth.PreflightURL (mcp/tools_providers.go, destination.go:90-125) is a secondary check only: substituteVars is a raw strings.ReplaceAll with no escaping (internal/providers/mapping.go:12-18) and runs after it. Scheme and host are literal in the shipped templates (I, checked by search, not enforced by code). Sole opt-out is the operator-set env var TRVL_ALLOW_LOCAL_PROVIDERS (destination.go:27, :41-48)."
+    },
+    {
+      "rule": "G704",
+      "file": "internal/batchexec/testclient.go",
+      "count": 1,
+      "status": "accepted",
+      "reason": "NOT REACHABLE, AND NOW ENFORCED (V, trvl#539 TRVL.HARDEN.2). The sink is testRedirectTransport.RoundTrip, which rewrites every request to a baseURL settable only by NewTestClient. This entry previously lived on internal/batchexec/client.go and rested on an observation -- 'the only callers are *_test.go files' -- which was true when written and which nothing checked. A future production caller would have made this finding live WITHOUT changing the baseline count, so the gate would have stayed green. The helper now lives in its own file with no production code in it, and scripts/ci/check-test-only-helpers.sh fails if any non-test file references it (sabotage-verified, exits 1). Moving it into a _test.go file would have been stronger still -- a production caller would fail to compile -- but _test.go is built only when testing its own package, and 12 files across internal/flights, internal/hotels and internal/explore need this helper. The issue named the lint rule as the fallback for exactly that case."
     }
   ]
 }

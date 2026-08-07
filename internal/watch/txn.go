@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 // errTxnNoop is returned by a withTxn callback that decided, after seeing
@@ -14,10 +16,10 @@ var errTxnNoop = errors.New("watch: transaction is a no-op")
 
 // lockPath is the dedicated advisory-lock file for this store directory.
 //
-// It is deliberately NOT one of the data files. atomicjson.Write persists by
-// writing a temporary file and renaming it over the target, which swaps the
-// inode; a lock held on watches.json would be silently dropped by the very save
-// it was meant to guard. The lock file is created once and never replaced.
+// It is deliberately NOT the database file. Store operations span legacy
+// discovery/migration, opening bbolt, applying a mutation, and closing it; the
+// stable sidecar lock covers that whole sequence across processes. The lock
+// file is created once and never replaced.
 func (s *Store) lockPath() string {
 	return filepath.Join(s.dir, ".lock")
 }
@@ -62,7 +64,7 @@ func (s *Store) fireTxnHook(stage txnStage) {
 // TRVL.STORE.TXN.4: apply must never perform network I/O — the lock is held for
 // its whole duration. Every caller in this package computes provider results
 // first and only then opens a transaction to persist them, so the lock is held
-// for a file reload and two writes, never for a provider round trip. The
+// for storage I/O, never for a provider round trip. The
 // callback is unexported precisely so no out-of-package caller can widen it.
 func (s *Store) withTxn(apply func() error) error {
 	s.mu.Lock()
@@ -160,18 +162,18 @@ func (s *Store) Mutate(id string, apply func(*Watch)) (Watch, error) {
 func (s *Store) MutateAndRecordPrice(id string, expectPollKey string, price float64, currency string, apply func(cur *Watch) (purgeHistory, recordPoint bool)) (Watch, bool, error) {
 	var out Watch
 	applied := false
-	err := s.withTxn(func() error {
+	err := s.withBoltMutation(func(tx *bolt.Tx, watches *[]Watch) (bool, error) {
 		idx := -1
-		for i := range s.watches {
-			if s.watches[i].ID == id {
+		for i := range *watches {
+			if (*watches)[i].ID == id {
 				idx = i
 				break
 			}
 		}
 		if idx < 0 {
-			return fmt.Errorf("watch %s not found", id)
+			return false, fmt.Errorf("watch %s not found", id)
 		}
-		out = s.watches[idx]
+		out = (*watches)[idx]
 
 		// Staleness gate. expectPollKey is the poll identity the caller's
 		// provider call was made FOR, captured before that call. If the
@@ -190,15 +192,17 @@ func (s *Store) MutateAndRecordPrice(id string, expectPollKey string, price floa
 		// Deciding inside the transaction is not enough on its own: the decision
 		// is correct about state, but the INPUT is stale. Only comparing the
 		// poll identity catches that.
-		if expectPollKey != "" && s.watches[idx].pollKey() != expectPollKey {
-			return errTxnNoop
+		if expectPollKey != "" && (*watches)[idx].pollKey() != expectPollKey {
+			return false, errTxnNoop
 		}
 
-		purgeHistory, recordPoint := apply(&s.watches[idx])
-		out = s.watches[idx]
+		purgeHistory, recordPoint := apply(&(*watches)[idx])
+		out = (*watches)[idx]
 
 		if purgeHistory {
-			s.purgeHistoryLocked(id)
+			if err := purgeWatchHistoryTx(tx, id); err != nil {
+				return false, err
+			}
 		}
 		// recordPoint is false when the caller decided this quote does not
 		// belong in the series at all -- currently an unconfirmed currency
@@ -207,17 +211,23 @@ func (s *Store) MutateAndRecordPrice(id string, expectPollKey string, price floa
 		// (LastCheck, the pending-currency counter) are still written, so the
 		// transaction is not a no-op and must still save.
 		if recordPoint {
-			s.history = append(s.history, PricePoint{
+			if _, err := appendHistoryPointTx(tx, PricePoint{
 				WatchID:   id,
 				Price:     price,
 				Currency:  currency,
 				Timestamp: time.Now(),
-			})
-			s.pruneWatchLocked(id)
-			s.pruneGlobalWatchLocked()
+			}); err != nil {
+				return false, err
+			}
+			if err := pruneSeriesTx(tx.Bucket(bucketWatchHistory), tx.Bucket(bucketWatchAll), []byte(id), s.retentionOrDefault().MaxPointsPerWatch); err != nil {
+				return false, err
+			}
+			if err := pruneGlobalWatchTx(tx, s.retentionOrDefault().MaxPointsTotal); err != nil {
+				return false, err
+			}
 		}
 		applied = true
-		return nil
+		return purgeHistory || recordPoint, nil
 	})
 	return out, applied, err
 }

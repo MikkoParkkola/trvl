@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/consent"
 )
 
@@ -262,7 +264,7 @@ func saveCachedCookies(client *http.Client, targetURL string) {
 	}
 
 	if err := os.WriteFile(path, data, 0o600); err != nil {
-		slog.Debug("cookie cache: write failed", "path", path, "error", err)
+		slog.Debug("cookie cache: write failed", "path", path, "error", logredact.Err(err))
 	} else {
 		slog.Debug("cookie cache: saved", "domain", u.Host, "count", len(cached))
 	}

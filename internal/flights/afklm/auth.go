@@ -46,10 +46,9 @@ const defaultKeychainService = "afklm-api-key"
 // `security` are third-party binaries that may wait on a daemon, a network
 // round-trip, or a user gesture; without a bound they wait forever (#507).
 //
-// A var rather than a const solely so tests can widen it. Two seconds is
-// generous for a real helper but tight for a shell fixture on a machine running
-// the whole suite in parallel, and a test that fails because the host was busy
-// teaches nobody anything.
+// A var rather than a const solely so tests can control it. Two seconds is
+// generous for a real helper, while tests use a larger budget for fast shell
+// fixtures and a smaller one for intentional timeout cases.
 var externalLookupTimeout = 2 * time.Second
 
 // negativeCacheTTL suppresses repeated external lookups after a failure. trvl

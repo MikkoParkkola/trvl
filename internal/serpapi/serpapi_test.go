@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+// SerpAPI's property-details schema carries an upstream official flag on a
+// seller row. Preserve that fact instead of inferring trust from a hostname or
+// maintaining an editorial provider list (trvl#535).
+func TestPriceOptionParsesOfficialSellerFlag(t *testing.T) {
+	var option PriceOption
+	if err := json.Unmarshal([]byte(`{"source":"Hilton Bali Resort","official":true}`), &option); err != nil {
+		t.Fatal(err)
+	}
+	if !option.Official {
+		t.Fatal("official seller flag was dropped during JSON decoding")
+	}
+}
+
 func TestSearchHotels_HTTP200(t *testing.T) {
 	t.Setenv("SERPAPI_KEY", "test_key")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

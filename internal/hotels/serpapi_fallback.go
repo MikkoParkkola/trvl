@@ -381,6 +381,7 @@ func providerPricesFromSerpAPIHotel(hotel *serpapi.Hotel, currency string) []mod
 			ProviderURL:           option.Link,
 			PriceBasis:            basis,
 			PriceConfidence:       models.PriceConfidenceVerified,
+			Official:              option.Official,
 			TaxAddedAtCheckout:    taxAtCheckout,
 			FreeCancellation:      freeCancel,
 			FreeCancellationUntil: until,

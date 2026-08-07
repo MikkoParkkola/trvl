@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
+
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -222,7 +224,7 @@ func SearchRegioJet(ctx context.Context, fromCityID, toCityID int, date string, 
 	}
 
 	u := regiojetBaseURL + regiojetSearch + "?" + params.Encode()
-	slog.Debug("regiojet search", "url", u)
+	slog.Debug("regiojet search", "url", logredact.URL(u))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {

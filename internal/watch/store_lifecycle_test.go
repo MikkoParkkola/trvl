@@ -2,7 +2,6 @@ package watch
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -11,7 +10,7 @@ import (
 // per session and some leak them: 15 orphaned processes were observed alive at
 // once, each running a full round against the same watches — ~7,000 provider
 // queries per 30-minute round instead of 468, plus concurrent writes to the same
-// JSON files.
+// watch store.
 func TestSchedulerLockIsExclusivePerDir(t *testing.T) {
 	dir := t.TempDir()
 
@@ -168,7 +167,7 @@ func TestLoadNeverWrites(t *testing.T) {
 		t.Fatalf("save: %v", err)
 	}
 
-	path := filepath.Join(dir, "watches.json")
+	path := s.databasePath()
 	before, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat: %v", err)
