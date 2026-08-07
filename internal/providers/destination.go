@@ -197,6 +197,21 @@ type requestProxyFunc func(*http.Request) (*url.URL, error)
 // traffic. In proxy-aware mode both hops are resolved, validated, and pinned
 // independently before the request is sent.
 type GuardedRoundTripper struct {
+	// EVERY FIELD HERE IS UNEXPORTED ON PURPOSE, and that is a security
+	// property rather than a style choice. The policy lives on the dialer, so
+	// if this struct exposed its transport a consumer could write:
+	//
+	//	t := providers.GuardedTransport()
+	//	t.DialTLSContext = somethingElse   // HTTPS now bypasses the policy
+	//	t.DialContext = nil                // or remove it outright
+	//
+	// and still hold a value that looks guarded, passes review, and satisfies
+	// any test that inspects its fields. Keeping them unexported makes that
+	// bypass unavailable instead of merely discouraged.
+	//
+	// So: do not export a field here, and do not add an accessor that returns
+	// *http.Transport. If a caller needs different behaviour, add a mode to
+	// GuardedTransportMode -- which is checked in one place and fails closed.
 	mode   GuardedTransportMode
 	lookup lookupIPsFunc
 	proxy  requestProxyFunc

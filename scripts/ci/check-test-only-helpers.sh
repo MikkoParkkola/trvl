@@ -24,9 +24,25 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-# symbol:declaring-file
+# symbol:declaring-file[,also-allowed-file...]
+#
+# A symbol may legitimately appear in more than one production file -- a struct
+# field is declared and read where the behaviour lives, and set where the test
+# helper is built. Listing every allowed home explicitly keeps the rule "these
+# exact files and tests, nothing else" rather than widening it to a directory.
 HELPERS=(
   "NewTestClient:internal/batchexec/testclient.go"
+  # The transport NewTestClient installs. Guarded for the same reason as the
+  # constructor: reaching it directly is the same bypass with one less step.
+  "testRedirectTransport:internal/batchexec/testclient.go"
+  # The flag that decides whether stealthClient reuses the plain transport.
+  # Declared and read in client.go, set only by the test-client constructor. A
+  # production file setting it true would silently disable the real Chrome
+  # fingerprint for whichever client it touched -- the flag defaults safe
+  # (asserted in stealth_flag_test.go), and this keeps it from being set unsafe
+  # somewhere else in the package. Unexported, so the compiler bounds the blast
+  # radius to this package; this bounds it to these two files.
+  "reuseTransportForStealth:internal/batchexec/client.go,internal/batchexec/testclient.go"
 )
 
 fail=0
@@ -34,29 +50,64 @@ checked=0
 
 for spec in "${HELPERS[@]}"; do
   symbol="${spec%%:*}"
-  home="${spec#*:}"
+  homes="${spec#*:}"
 
-  if [ ! -f "$home" ]; then
-    printf 'error: %s is declared to live in %s, which does not exist\n' "$symbol" "$home" >&2
-    printf '       Update scripts/ci/check-test-only-helpers.sh if the helper moved.\n' >&2
+  missing=0
+  IFS=',' read -r -a home_list <<< "$homes"
+  for home in "${home_list[@]}"; do
+    if [ ! -f "$home" ]; then
+      printf 'error: %s is declared to live in %s, which does not exist\n' "$symbol" "$home" >&2
+      printf '       Update scripts/ci/check-test-only-helpers.sh if the helper moved.\n' >&2
+      fail=1
+      missing=1
+    fi
+  done
+  [ "$missing" -eq 0 ] || continue
+  checked=$((checked + 1))
+
+  # Run the search FIRST and check its status, rather than feeding the loop
+  # straight from a process substitution.
+  #
+  # The old line ended `... 2>/dev/null || true)`, which reported a BROKEN
+  # search as a clean repository. git grep exits 1 for "no matches" -- ordinary
+  # and expected -- and 2 or more for a real failure: bad pathspec, unreadable
+  # object, not a work tree. Swallowing both meant any breakage here produced an
+  # empty loop and the "ok: N helper(s) referenced from tests only" success
+  # line, with N counted from the symbol list rather than from anything actually
+  # searched. A guard that cannot tell "found nothing" from "could not look" is
+  # not a guard, and this one reports on whether a test-only network helper
+  # reached production code.
+  #
+  # The status cannot be checked through `< <(...)`: a process substitution's
+  # exit status is not available to the redirecting command, so the failure
+  # would still be invisible there.
+  set +e
+  matches="$(git grep -l -F -e "$symbol" -- '*.go' ':!:vendor/**' ':!:third_party/**' 2>/dev/null)"
+  grep_status=$?
+  set -e
+  if [ "$grep_status" -gt 1 ]; then
+    printf 'error: git grep failed (exit %d) while searching for %s\n' "$grep_status" "$symbol" >&2
+    printf '       Refusing to report a clean result from a search that did not run.\n' >&2
     fail=1
     continue
   fi
-  checked=$((checked + 1))
 
   while IFS= read -r file; do
+    [ -n "$file" ] || continue
     case "$file" in
       *_test.go) continue ;;   # tests are the whole point
-      "$home") continue ;;     # its own declaration
     esac
+    allowed=0
+    for home in "${home_list[@]}"; do
+      [ "$file" = "$home" ] && allowed=1
+    done
+    [ "$allowed" -eq 1 ] && continue
     printf 'error: %s references the test-only helper %s\n' "$file" "$symbol" >&2
     printf '       That helper redirects requests to a local test server and exists for tests only.\n' >&2
     printf '       A production caller makes a baselined gosec finding live without changing the\n' >&2
     printf '       baseline count, so the security gate would not notice.\n' >&2
     fail=1
-  done < <(git grep -l -F -e "$symbol" -- '*.go' \
-    ':(exclude,glob)vendor/**' \
-    ':(exclude,glob)third_party/**' 2>/dev/null || true)
+  done <<< "$matches"
 done
 
 if [ "$fail" -eq 0 ]; then

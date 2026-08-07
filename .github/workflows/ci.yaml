@@ -23,22 +23,25 @@ jobs:
         run: scripts/ci/check-file-size.sh
       - name: Check release metadata
         run: scripts/ci/check-release-metadata.sh
-      # check-home-isolation.sh was written as a merge guard and wired only into
-      # the local `make repo-hygiene`, which no workflow invokes -- so it gated
-      # nothing on the merge path while being described as a CI guard (trvl#531,
-      # 2026-08-06). It is sabotage-verified; that verified it WORKS, never that
-      # it RUNS. A guard that does not run is not a weak guard, it is a comment.
+      # These were written as merge guards and wired only into the local
+      # `make repo-hygiene`, which no workflow invokes -- so they gated nothing
+      # on the merge path while both PRs described them as CI-enforced
+      # (trvl#531 and trvl#539, 2026-08-06). Both are sabotage-verified; that
+      # verified they WORK, never that they RUN. A guard that does not run is
+      # not a weak guard, it is a comment.
       # Listed individually rather than via `make` so that adding a script to the
       # Makefile can never again silently mean "and it runs in CI".
       #
-      # Log-URL redaction is deliberately NOT here. It was a shell script that
-      # matched a slog call and its fields on one line, so multi-line calls were
-      # invisible to it and it reported clean against a live leak. That job now
-      # belongs to internal/logredact's slogguard test, which parses Go syntax
-      # and therefore cannot have that blind spot -- and which, being a Go test,
-      # already runs in CI without needing a step here at all.
+      # Log-URL redaction is deliberately NOT a step here. It began as a shell
+      # script that matched a slog call and its fields on one line, so multi-line
+      # calls were invisible to it and it reported clean against a live leak.
+      # That job belongs to internal/logredact's slogguard test, which parses Go
+      # syntax and therefore cannot have that blind spot -- and which, being a Go
+      # test, already runs in CI without needing a step here at all.
       - name: Check home-directory isolation
         run: scripts/ci/check-home-isolation.sh
+      - name: Check test-only helpers stay out of production
+        run: scripts/ci/check-test-only-helpers.sh
 
   test:
     permissions:

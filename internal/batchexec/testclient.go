@@ -69,6 +69,6 @@ func (t *testRedirectTransport) RoundTrip(req *http.Request) (*http.Response, er
 	if err != nil {
 		return nil, err
 	}
-	newReq.Header = req.Header.Clone()
+	newReq.Header = req.Header
 	return http.DefaultTransport.RoundTrip(newReq)
 }

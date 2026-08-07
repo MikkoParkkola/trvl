@@ -10,9 +10,10 @@ import (
 // Shared HTTP clients for the destinations package.
 // Reusing clients enables TCP connection pooling and avoids per-request TLS handshakes.
 //
-// Both route through providers.GuardedTransport, so the destination policy
-// applies to direct traffic and independently validates and pins both hops when
-// HTTP_PROXY or HTTPS_PROXY is configured (trvl#539, trvl#586).
+// Both route through providers.GuardedTransport, so the destination policy that
+// refuses loopback, private, link-local, unspecified and multicast addresses
+// applies here too, and it independently validates and pins BOTH hops when
+// HTTP_PROXY or HTTPS_PROXY is configured (trvl#539 TRVL.HARDEN.1, trvl#586).
 //
 // Before that, these were plain http.Clients. Nothing was exploitable: this
 // package composes its URLs from a constant base and numeric parameters
