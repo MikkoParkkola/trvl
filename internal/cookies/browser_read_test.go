@@ -1,8 +1,11 @@
 package cookies
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -21,8 +24,12 @@ func TestSkipBrowserRead(t *testing.T) {
 func TestBrowserReadPageCachedHit(t *testing.T) {
 	// Populate the cache manually then verify we get the cached value back
 	// without BrowserReadPage being called (which would fail in CI).
-	const testURL = "https://example.com/cached-test"
+	const testURL = "https://example.com/cached-test?origin=HEL&token=journey-secret"
 	const testText = "cached page content"
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(previousLogger)
 
 	browserPageCache.Lock()
 	browserPageCache.entries[testURL] = browserCacheEntry{
@@ -48,6 +55,14 @@ func TestBrowserReadPageCachedHit(t *testing.T) {
 	}
 	if got != testText {
 		t.Errorf("got %q, want %q", got, testText)
+	}
+	logged := logs.String()
+	if strings.Contains(logged, testURL) || strings.Contains(logged, "origin=HEL") ||
+		strings.Contains(logged, "journey-secret") {
+		t.Fatalf("cache-hit log disclosed the request URL: %q", logged)
+	}
+	if !strings.Contains(logged, "url#") {
+		t.Fatalf("cache-hit log omitted the redacted URL correlation id: %q", logged)
 	}
 }
 

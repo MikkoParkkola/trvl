@@ -498,6 +498,26 @@ func TestHotelPriceResult_JSON(t *testing.T) {
 	}
 }
 
+func TestProviderPriceOfficialJSONIsPositiveOnly(t *testing.T) {
+	withoutEvidence, err := json.Marshal(ProviderPrice{Provider: "OTA", Price: 100, Currency: "EUR"})
+	if err != nil {
+		t.Fatalf("marshal unknown relationship: %v", err)
+	}
+	if strings.Contains(string(withoutEvidence), "official") {
+		t.Fatalf("missing evidence was serialized as an official-site claim: %s", withoutEvidence)
+	}
+
+	withEvidence, err := json.Marshal(ProviderPrice{
+		Provider: "Property site", Price: 120, Currency: "EUR", Official: true,
+	})
+	if err != nil {
+		t.Fatalf("marshal official relationship: %v", err)
+	}
+	if !strings.Contains(string(withEvidence), `"official":true`) {
+		t.Fatalf("upstream official-site fact was omitted: %s", withEvidence)
+	}
+}
+
 // --- FormatJSON additional tests ---
 
 func TestFormatJSON_AllModelTypes(t *testing.T) {
