@@ -191,7 +191,6 @@ func setSchemaVersion(path, version string) error {
 	})
 }
 
-
 // A schemaless database that still HOLDS DATA is not an unfinished conversion.
 //
 // The schema version is written in the same transaction as the data, so its
