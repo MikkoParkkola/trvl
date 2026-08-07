@@ -80,7 +80,15 @@ func BuildStatusReport(reg *Registry, dir string, now time.Time) []StatusRow {
 		}
 	}
 
-	ids := make(map[string]bool, len(summary)+len(configs))
+	// max rather than the sum. The capacity here is only a hint, and the two
+	// maps overlap heavily in practice (a provider usually appears in both), so
+	// the sum over-allocates anyway. CodeQL flags len(a)+len(b) as a possible
+	// allocation-size overflow: it cannot prove the addition stays in range,
+	// and while two in-memory map lengths cannot realistically sum past int64,
+	// "realistically" is not something a scanner can check. Taking the larger
+	// is exact for the overlapping case, never smaller than either input, and
+	// has no addition to overflow.
+	ids := make(map[string]bool, max(len(summary), len(configs)))
 	for id := range summary {
 		ids[id] = true
 	}

@@ -368,7 +368,10 @@ func handleProviderHealth(_ context.Context, _ map[string]any, _ ElicitFunc, _ S
 		FixHint            string  `json:"fix_hint,omitempty"`
 	}
 
-	providerIDs := make(map[string]bool, len(summary)+len(configs))
+	// max rather than the sum, for the same reason as status_report.go: the
+	// capacity is a hint, the two maps overlap, and CodeQL cannot prove
+	// len(a)+len(b) stays in range.
+	providerIDs := make(map[string]bool, max(len(summary), len(configs)))
 	for id := range summary {
 		providerIDs[id] = true
 	}
