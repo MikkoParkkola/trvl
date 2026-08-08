@@ -75,13 +75,18 @@ security-gosec:
 		exit 1; \
 	fi
 	@mkdir -p bin
-	@printf '%s\n' '{"Issues":[],"Golang errors":{"scan-incomplete":[{"error":"gosec produced no report"}]},"Stats":{"found":0}}' > bin/gosec-report.next.json
-	@if GOTOOLCHAIN=$(GOTOOLCHAIN) gosec -quiet -fmt json -out bin/gosec-report.next.json ./...; then \
-		printf '%s\n' '{"Issues":[],"Golang errors":{},"Stats":{"found":0}}' > bin/gosec-report.next.json; \
-	fi
-	@test -s bin/gosec-report.next.json
-	@mv bin/gosec-report.next.json bin/gosec-report.json
-	.github/scripts/gosec-gate.sh bin/gosec-report.json
+	@for target_os in darwin linux windows; do \
+		next="bin/gosec-report.$$target_os.next.json"; \
+		report="bin/gosec-report.$$target_os.json"; \
+		printf '%s\n' '{"Issues":[],"Golang errors":{"scan-incomplete":[{"error":"gosec produced no report"}]},"Stats":{"found":0}}' > "$$next"; \
+		if GOOS="$$target_os" GOTOOLCHAIN=$(GOTOOLCHAIN) gosec -quiet -fmt json -out "$$next" ./...; then \
+			printf '%s\n' '{"Issues":[],"Golang errors":{},"Stats":{"found":0}}' > "$$next"; \
+		fi; \
+		test -s "$$next"; \
+		mv "$$next" "$$report"; \
+		printf 'gosec platform: %s\n' "$$target_os"; \
+		.github/scripts/gosec-gate.sh "$$report" || exit 1; \
+	done
 
 # Everything CI gates on, in one command, to be run BEFORE committing.
 #

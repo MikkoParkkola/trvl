@@ -20,7 +20,7 @@
     "not authorize active suppressions or change the zero-finding gate."
   ],
   "gosec_version": "v2.28.0",
-  "scan_command": "gosec -quiet -fmt json ./...",
+  "scan_command": "GOOS={darwin,linux,windows} gosec -quiet -fmt json ./...",
   "generated": "2026-08-08",
   "gated_severity": "HIGH_AND_MEDIUM",
   "entries": [],

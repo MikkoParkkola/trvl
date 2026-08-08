@@ -43,7 +43,13 @@ func processAlive(pid int, fileModTime time.Time) bool {
 	if pid <= 0 {
 		return true
 	}
+	if uint64(pid) > uint64(^uint32(0)) {
+		// Windows process IDs are DWORDs. An out-of-range persisted owner cannot
+		// name a process, but retain the file because this function fails safe.
+		return true
+	}
 
+	// #nosec G115 -- pid is positive and bounded to a Windows DWORD above.
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
 		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {

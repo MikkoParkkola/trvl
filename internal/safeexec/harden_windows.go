@@ -56,6 +56,8 @@ func newContainment() *containment {
 	if _, err := windows.SetInformationJobObject(
 		job,
 		windows.JobObjectExtendedLimitInformation,
+		// #nosec G103 -- the Windows API requires a pointer to this live, typed
+		// structure for the duration of the synchronous syscall.
 		uintptr(unsafe.Pointer(&info)),
 		uint32(unsafe.Sizeof(info)),
 	); err != nil {
@@ -80,6 +82,11 @@ func (c *containment) hold(p *os.Process) {
 		slog.Debug("safeexec: no job object; helper descendants will not be contained", "pid", p.Pid)
 		return
 	}
+	if p.Pid <= 0 || uint64(p.Pid) > uint64(^uint32(0)) {
+		slog.Debug("safeexec: invalid helper process ID for containment", "pid", p.Pid)
+		return
+	}
+	// #nosec G115 -- p.Pid is positive and bounded to a Windows DWORD above.
 	ph, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(p.Pid))
 	if err != nil {
 		// These two errors are redacted like any other. They are Windows-only,
