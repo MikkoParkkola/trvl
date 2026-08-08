@@ -20,8 +20,11 @@ class UpdateHomebrewFormulaTest < Minitest::Test
       assert_includes content, 'version "1.21.0"'
       PLATFORMS.each_with_index do |platform, index|
         filename = "trvl_1.21.0_#{platform}.tar.gz"
-        assert_includes content, "/v1.21.0/#{filename}"
-        assert_includes content, %(sha256 "#{(index + 1).to_s * 64}")
+        expected_pair = %r{
+          url\ "https://github\.com/MikkoParkkola/trvl/releases/download/v1\.21\.0/#{Regexp.escape(filename)}"
+          \n\s+sha256\ "#{(index + 1).to_s * 64}"
+        }x
+        assert_match expected_pair, content
       end
     end
   end

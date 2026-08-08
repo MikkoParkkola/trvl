@@ -50,7 +50,7 @@ repo-hygiene:
 
 release-config:
 	@if ! command -v goreleaser >/dev/null 2>&1; then \
-		echo "goreleaser not installed. Install with: brew install goreleaser" >&2; \
+		echo "goreleaser not installed. Install it from: https://goreleaser.com/install/" >&2; \
 		exit 1; \
 	fi
 	goreleaser check
