@@ -132,13 +132,39 @@ func (s *Store) pruneGlobalRouteLocked() {
 		}
 	} else {
 		quota := routeQuota(byRoute, maxRouteObservations)
-		for _, idxs := range byRoute {
+		for _, key := range order {
+			idxs := byRoute[key]
 			tail := idxs
 			if len(tail) > quota {
 				tail = tail[len(tail)-quota:] // newest quota points
 			}
 			for _, i := range tail {
 				keep[i] = true
+			}
+		}
+
+		// A single water-fill quota can leave unused capacity when route sizes
+		// are uneven. Fill those slots one point at a time from the next-newest
+		// point of routes above quota. This preserves the fairness floor and
+		// newest-tail invariant while ensuring an N+1 overflow evicts exactly
+		// one point rather than an arbitrary chunk of the corpus.
+		remaining := maxRouteObservations - len(keep)
+		for depth := quota + 1; remaining > 0; depth++ {
+			added := false
+			for _, key := range order {
+				idxs := byRoute[key]
+				if len(idxs) < depth {
+					continue
+				}
+				keep[idxs[len(idxs)-depth]] = true
+				remaining--
+				added = true
+				if remaining == 0 {
+					break
+				}
+			}
+			if !added {
+				break
 			}
 		}
 	}

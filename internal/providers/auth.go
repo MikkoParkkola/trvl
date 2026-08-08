@@ -216,7 +216,7 @@ func doSearchRequest(ctx context.Context, client *http.Client, orig *http.Reques
 	// time, including redirects and DNS rebinding.
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("search retry: http: %w", err)
+		return nil, nil, fmt.Errorf("search retry: http: %w", redactError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -253,7 +253,7 @@ func doPreflightRequest(ctx context.Context, client *http.Client, auth *AuthConf
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("preflight http: %w", err)
+		return nil, nil, fmt.Errorf("preflight http: %w", redactError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 

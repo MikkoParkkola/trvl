@@ -25,20 +25,26 @@ import (
 func TestFixHintsDoNotPrescribeConfigureProvider(t *testing.T) {
 	// Messages chosen to hit each branch of classifyProviderError that used to
 	// name the tool, plus the preflight branch next to them.
-	for _, probe := range []string{
-		"waf: 403 forbidden",
-		"access denied by akamai",
-		"cookie rejected: 401 unauthorized",
-		"csrf token mismatch",
-		"results_path produced no match",
-		"response shape changed: unexpected end of json",
-		"preflight failed",
+	for _, tc := range []struct {
+		probe string
+		code  FixHintCode
+	}{
+		{"waf: 403 forbidden", FixHintAkamaiBlock},
+		{"access denied by akamai", FixHintAkamaiBlock},
+		{"cookie rejected: 401 unauthorized", FixHintCookieExpired},
+		{"csrf token mismatch", FixHintCookieExpired},
+		{"results_path produced no match", FixHintResponseShapeChanged},
+		{"response shape changed: unexpected end of json", FixHintResponseShapeChanged},
+		{"preflight failed", FixHintPreflightFailed},
 	} {
-		_, hint := classifyProviderError(errString(probe))
+		code, hint := classifyProviderError(errString(tc.probe))
+		if code != tc.code {
+			t.Errorf("classifyProviderError(%q) code = %q, want %q", tc.probe, code, tc.code)
+		}
 		if strings.Contains(hint, "configure_provider") {
 			t.Errorf("the fix hint for %q tells the caller to use configure_provider, which "+
 				"returns an error unconditionally since #538. An agent following it loops on a "+
-				"refusal it cannot fix.\n  hint: %s", probe, hint)
+				"refusal it cannot fix.\n  hint: %s", tc.probe, hint)
 		}
 	}
 }

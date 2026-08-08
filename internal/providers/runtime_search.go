@@ -206,8 +206,9 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 	var firstErr error
 	for r := range results {
 		if r.err != nil {
+			errMsg := logredact.Err(r.err)
 			slog.Warn("provider error", "provider", r.id, "error", logredact.Err(r.err))
-			rt.registry.MarkError(r.id, r.err.Error())
+			rt.registry.MarkError(r.id, errMsg)
 			rt.mu.RLock()
 			if pc := rt.clients[r.id]; pc != nil {
 				pc.authMu.Lock()
@@ -215,7 +216,6 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 				pc.authMu.Unlock()
 			}
 			rt.mu.RUnlock()
-			errMsg := r.err.Error()
 			status := "error"
 			if isTimeoutError(r.err) {
 				status = "timeout"
@@ -279,7 +279,7 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 	statuses = append(statuses, trippedStatuses...)
 
 	if len(combined) == 0 && firstErr != nil {
-		return nil, statuses, firstErr
+		return nil, statuses, redactError(firstErr)
 	}
 	return combined, statuses, nil
 }

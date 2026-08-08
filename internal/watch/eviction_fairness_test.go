@@ -161,6 +161,42 @@ func TestGlobalEvictionWithMoreRoutesThanBudget(t *testing.T) {
 	}
 }
 
+// TRVL.RETENTION.1 -- correcting a one-point overflow must spend the whole
+// retention budget. Uneven route sizes are deliberate: a single water-fill
+// quota used to retain only 8 of these 11 points against a cap of 10.
+func TestGlobalEvictionOnePointOverflowEvictsOne(t *testing.T) {
+	const limit = 10
+	restore := maxRouteObservations
+	maxRouteObservations = limit
+	t.Cleanup(func() { maxRouteObservations = restore })
+
+	s := NewStore(t.TempDir())
+	base := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 7; i++ {
+		s.history = append(s.history, PricePoint{
+			RouteKey: "flight|AMS|BUSY|2026-09-01", Price: float64(i), Currency: "EUR", Timestamp: base.Add(time.Duration(i) * time.Minute),
+		})
+	}
+	for i := 0; i < 4; i++ {
+		s.history = append(s.history, PricePoint{
+			RouteKey: "flight|AMS|QUIET|2026-09-01", Price: float64(100 + i), Currency: "EUR", Timestamp: base.Add(time.Duration(10+i) * time.Minute),
+		})
+	}
+
+	s.pruneGlobalRouteLocked()
+	if got := len(s.history); got != limit {
+		t.Fatalf("one-point overflow retained %d points, want exactly cap %d", got, limit)
+	}
+	busy := s.RouteHistory("flight|AMS|BUSY|2026-09-01")
+	quiet := s.RouteHistory("flight|AMS|QUIET|2026-09-01")
+	if len(busy) != 6 || len(quiet) != 4 {
+		t.Fatalf("retained busy=%d quiet=%d, want 6 and 4", len(busy), len(quiet))
+	}
+	if busy[0].Price != 1 || busy[len(busy)-1].Price != 6 {
+		t.Fatalf("busy route kept the wrong tail: prices %v..%v", busy[0].Price, busy[len(busy)-1].Price)
+	}
+}
+
 // Watch-keyed history is never touched by route-corpus eviction, even when the
 // route corpus is saturated. This is the invariant that keeps #511's fix from
 // becoming #511's cause.
