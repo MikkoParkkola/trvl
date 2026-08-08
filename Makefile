@@ -9,7 +9,7 @@ GOSEC_VERSION ?= v2.28.0
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION) -X github.com/MikkoParkkola/trvl/mcp.serverVersion=$(VERSION)"
 
-.PHONY: build test test-proof test-coverage test-live-integrations test-live-probes lint repo-hygiene security-gosec dod distribution-metrics clean cross install safe-clean force-clean
+.PHONY: build test test-proof test-coverage test-live-integrations test-live-probes lint repo-hygiene release-config security-gosec dod distribution-metrics clean cross install safe-clean force-clean
 
 lint security-gosec: export PATH := $(GO_TOOLS_BIN):$(PATH)
 
@@ -47,6 +47,14 @@ repo-hygiene:
 	scripts/ci/check-home-isolation.sh
 	scripts/ci/check-log-url-redaction.sh
 	scripts/ci/check-test-only-helpers.sh
+
+release-config:
+	@if ! command -v goreleaser >/dev/null 2>&1; then \
+		echo "goreleaser not installed. Install with: brew install goreleaser" >&2; \
+		exit 1; \
+	fi
+	goreleaser check
+	ruby scripts/release/update-homebrew-formula_test.rb
 
 lint: repo-hygiene
 	$(GO_RUN) vet ./...
@@ -102,7 +110,7 @@ security-gosec:
 # Known gap worth stating: scripts/ci/check-file-size.sh inspects TRACKED files
 # only, so a newly added file reports clean until it is `git add`ed. Stage first,
 # then run this.
-dod: lint security-gosec test
+dod: release-config lint security-gosec test
 	@echo
 	@echo "dod: lint, gosec and tests all clean -- safe to commit."
 

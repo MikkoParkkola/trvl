@@ -54,13 +54,16 @@ The 2026-05-12 baseline captured 337 GitHub release asset downloads and 0 npm `t
 
 Decision: Formula-only until Developer ID notarization is proven in release CI.
 
-trvl intentionally publishes a Homebrew Formula through GoReleaser's `brews`
-configuration, not a Cask. The Formula install path relocates the CLI binary in
-a way that avoids the `com.apple.quarantine` launch failure that affected the
-prior Cask-style distribution attempt. A Cask must not be introduced unless the
-release workflow first signs and notarizes Darwin artifacts with a Developer ID
-certificate, staples the notarization ticket when applicable, and verifies a
-quarantined install can run `trvl version` on macOS before publishing.
+trvl intentionally publishes a Homebrew Formula, not a Cask. The release
+workflow updates `MikkoParkkola/homebrew-tap` directly from the checksums emitted
+by GoReleaser because GoReleaser's legacy Formula publisher is deprecated and
+its supported replacement publishes Casks. The Formula install path relocates
+the CLI binary in a way that avoids the `com.apple.quarantine` launch failure
+that affected the prior Cask-style distribution attempt. A Cask must not be
+introduced unless the release workflow first signs and notarizes Darwin
+artifacts with a Developer ID certificate, staples the notarization ticket when
+applicable, and verifies a quarantined install can run `trvl version` on macOS
+before publishing.
 
 The existing Formula path stays the supported Homebrew channel until that full
 notarized-Cask path is implemented and proven. `scripts/ci/check-workflow-hygiene.sh`

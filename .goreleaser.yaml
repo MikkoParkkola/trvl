@@ -84,8 +84,10 @@ checksum:
 # against the embedded trust anchor. ALL THREE must pass before binary
 # replacement. See internal/selfupdate/verify_mldsa.go for the verifier.
 #
-# Local snapshot builds (`goreleaser release --snapshot`) skip signs by
-# default — only `goreleaser release` (tag-driven, in CI) runs them.
+# Local snapshot releases must pass `--skip=sign`; GoReleaser 2.17 snapshots
+# skip publication but still run signers by default. The release workflow's
+# smoke test uses `goreleaser build`, while the tag-driven release has both
+# signing credentials available and intentionally runs the signers.
 signs:
   - id: cosign-keyless
     cmd: cosign
@@ -145,39 +147,12 @@ release:
     go install github.com/MikkoParkkola/trvl/cmd/trvl@v{{ .Version }}
     ```
 
-# Publish a Homebrew *Formula* (not a Cask). A CLI binary belongs in a Formula:
-# `brew install` of a formula relocates the binary and strips the
-# com.apple.quarantine xattr, so the adhoc-signed binary launches cleanly on
-# Apple Silicon. A Cask, by contrast, keeps quarantine on the downloaded
-# artifact, and Gatekeeper then SIGKILLs the adhoc-signed binary (the trvl#203
-# "non-functional release" + the Gatekeeper "Not Opened" popup). Formula-only
-# is the zero-cost, zero-popup distribution path until/unless Developer ID
-# notarization is wired in (tracked separately).
-#
-# NOTE: goreleaser v2 marks `brews` deprecated and steers pre-built binaries to
-# `homebrew_casks`. That is INTENTIONALLY rejected here: a cask keeps the
-# com.apple.quarantine xattr, which Gatekeeper uses to SIGKILL our adhoc-signed
-# binary. Do NOT "modernize" this back to homebrew_casks without first wiring
-# Developer ID notarization, or you reintroduce the trvl#203 popup. The action is
-# pinned to `~> v2`, where `brews` remains functional; release/build never run
-# `goreleaser check`, so the deprecation warning does not fail the pipeline.
-brews:
-  - name: trvl
-    ids:
-      - trvl
-    repository:
-      owner: MikkoParkkola
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
-    homepage: https://github.com/MikkoParkkola/trvl
-    description: "AI travel agent: flights, hotels and transport via MCP, no API keys"
-    license: "PolyForm-Noncommercial-1.0.0"
-    test: |
-      system "#{bin}/trvl", "version"
-    caveats: |
-      Run `trvl mcp install` to connect trvl to Claude Desktop, Cursor,
-      Windsurf, Codex, VS Code Copilot, Zed, or another MCP client.
+# Homebrew remains Formula-only until the Darwin artifacts are Developer-ID
+# signed and notarized. GoReleaser's legacy `brews` publisher is deprecated,
+# while its replacement publishes Casks, so the release workflow updates the
+# existing Formula/trvl.rb directly from the generated checksums instead. This
+# preserves macOS and Linuxbrew support without accepting a release-time
+# deprecation warning or reintroducing the quarantined-Cask failure from #203.
 
 # Docker images are published by .github/workflows/release.yml so release CI can
 # build multi-arch images with Dockerfile.release, scan them with Trivy, and push
