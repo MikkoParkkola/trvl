@@ -7,8 +7,8 @@
 #
 # Optional secrets:
 #   HOMEBREW_TAP_TOKEN — PAT with `contents: write` on
-#     MikkoParkkola/homebrew-tap, enabling goreleaser's `brews` block to
-#     auto-bump the formula. Casks stay disabled until notarization is proven.
+#     MikkoParkkola/homebrew-tap, enabling the post-release Formula update.
+#     Casks stay disabled until notarization is proven.
 name: Release
 
 on:
@@ -73,6 +73,9 @@ jobs:
           distribution: goreleaser
           version: "~> v2"
           install-only: true
+
+      - name: Validate GoReleaser configuration
+        run: goreleaser check
 
       # Install cosign for hybrid release signing — see signs: block in
       # .goreleaser.yaml. Keyless mode uses the workflow's OIDC token
@@ -158,25 +161,42 @@ jobs:
           echo "git status after reset:"
           git status --porcelain
 
-      - name: Run GoReleaser with Homebrew tap
-        if: env.HAS_HOMEBREW_TAP_TOKEN == 'true'
-        # Docker is published by the Linux docker job below. Homebrew is
-        # published here when HOMEBREW_TAP_TOKEN can push to the tap repo.
-        run: goreleaser release --clean --skip=docker
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          # Hybrid PQC signing: ML-DSA-65 private key. Pubkey is embedded
-          # in trvl at build time from internal/selfupdate/keys/. Fingerprint
-          # of the active trust anchor is shown by `trvl version --verify`.
-          TRVL_MLDSA_PRIVKEY_V1: ${{ secrets.TRVL_MLDSA_PRIVKEY_V1 }}
-
-      - name: Run GoReleaser without Homebrew tap
-        if: env.HAS_HOMEBREW_TAP_TOKEN != 'true'
+      - name: Run GoReleaser
+        # Docker and Homebrew are published by dedicated, gated steps below.
         run: goreleaser release --clean --skip=docker --skip=homebrew
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TRVL_MLDSA_PRIVKEY_V1: ${{ secrets.TRVL_MLDSA_PRIVKEY_V1 }}
+
+      - name: Checkout Homebrew tap
+        if: env.HAS_HOMEBREW_TAP_TOKEN == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: MikkoParkkola/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Publish Homebrew Formula
+        if: env.HAS_HOMEBREW_TAP_TOKEN == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          ruby scripts/release/update-homebrew-formula.rb \
+            homebrew-tap/Formula/trvl.rb \
+            "${VERSION}" \
+            dist/checksums.txt
+          ruby -c homebrew-tap/Formula/trvl.rb
+          grep -F "version \"${VERSION}\"" homebrew-tap/Formula/trvl.rb
+          git -C homebrew-tap diff --check
+          if git -C homebrew-tap diff --quiet -- Formula/trvl.rb; then
+            echo "Formula/trvl.rb already matches ${VERSION}."
+            exit 0
+          fi
+          git -C homebrew-tap config user.name github-actions[bot]
+          git -C homebrew-tap config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git -C homebrew-tap add Formula/trvl.rb
+          git -C homebrew-tap commit -m "Update trvl formula to v${VERSION}"
+          git -C homebrew-tap push origin HEAD:main
 
   docker:
     runs-on: ubuntu-latest

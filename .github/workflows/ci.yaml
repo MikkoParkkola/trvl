@@ -23,6 +23,16 @@ jobs:
         run: scripts/ci/check-file-size.sh
       - name: Check release metadata
         run: scripts/ci/check-release-metadata.sh
+      - name: Install GoReleaser for configuration validation
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          install-only: true
+      - name: Validate GoReleaser configuration
+        run: goreleaser check
+      - name: Test Homebrew Formula updater
+        run: ruby scripts/release/update-homebrew-formula_test.rb
       # These were written as merge guards and wired only into the local
       # `make repo-hygiene`, which no workflow invokes -- so they gated nothing
       # on the merge path while both PRs described them as CI-enforced
@@ -231,7 +241,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     # Disabled: the canonical release pipeline lives in release.yml (macOS
-    # codesign + cosign + Homebrew + docker + npm + mcp-registry). Running
+    # codesign + cosign + Formula sync + docker + npm + mcp-registry). Running
     # goreleaser here too raced release.yml to create the same GitHub release.
     if: ${{ github.repository == 'MikkoParkkola/trvl-disabled' }}
     permissions:
@@ -264,12 +274,6 @@ jobs:
           # may still ship 1.26.3, so pin the toolchain so go fetches 1.26.5
           # for the hooks and the release build.
           GOTOOLCHAIN: "go1.26.5"
-          # HOMEBREW_TAP_TOKEN: a GitHub personal access token (classic) with
-          # `repo` scope, stored as a repository secret. Goreleaser uses it to
-          # push the auto-generated Homebrew formula to
-          # MikkoParkkola/homebrew-tap. Until the secret is created the brews
-          # step is skipped gracefully (goreleaser treats empty token as skip).
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   npm-publish:
     needs: release
