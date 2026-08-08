@@ -367,16 +367,24 @@ func parseBagAllowance(offer any, fr *models.FlightResult) {
 
 // appendPadded2 writes a zero-padded 2-digit int into buf at offset i.
 func appendPadded2(buf []byte, i, n int) {
-	buf[i] = byte('0' + n/10)
-	buf[i+1] = byte('0' + n%10)
+	const digits = "0123456789"
+	if n < 0 || n > 99 {
+		return
+	}
+	buf[i] = digits[n/10]
+	buf[i+1] = digits[n%10]
 }
 
 // appendPadded4 writes a zero-padded 4-digit int into buf at offset i.
 func appendPadded4(buf []byte, i, n int) {
-	buf[i] = byte('0' + n/1000)
-	buf[i+1] = byte('0' + (n/100)%10)
-	buf[i+2] = byte('0' + (n/10)%10)
-	buf[i+3] = byte('0' + n%10)
+	const digits = "0123456789"
+	if n < 0 || n > 9999 {
+		return
+	}
+	buf[i] = digits[n/1000]
+	buf[i+1] = digits[(n/100)%10]
+	buf[i+2] = digits[(n/10)%10]
+	buf[i+3] = digits[n%10]
 }
 
 // fmtDate formats year/month/day as "YYYY-MM-DD" with no allocations.

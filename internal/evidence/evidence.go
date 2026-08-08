@@ -3,7 +3,7 @@
 package evidence
 
 import (
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- persisted non-security IDs require algorithm compatibility
 	"encoding/hex"
 	"regexp"
 	"strings"
@@ -94,6 +94,8 @@ func RedactSensitive(s string) string {
 }
 
 func refID(ref Ref) string {
+	// #nosec G401 -- stable evidence reference, not integrity/authentication;
+	// algorithm compatibility preserves links stored by earlier releases.
 	h := sha1.New()
 	for _, part := range []string{ref.Source, ref.Provider, ref.URL, ref.CheckedAt.Format(time.RFC3339)} {
 		_, _ = h.Write([]byte(strings.ToLower(strings.TrimSpace(part))))

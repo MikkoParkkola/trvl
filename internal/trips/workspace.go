@@ -1,7 +1,7 @@
 package trips
 
 import (
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- persisted non-security IDs require algorithm compatibility
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -195,6 +195,8 @@ func normalizeWorkspaceIDs(w *Workspace) {
 }
 
 func StableID(prefix string, parts ...string) string {
+	// #nosec G401 -- deterministic persisted identifier, not a cryptographic
+	// integrity primitive; changing it would orphan existing workspace records.
 	h := sha1.New()
 	for _, part := range parts {
 		p := strings.ToLower(strings.Join(strings.Fields(part), " "))

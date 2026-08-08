@@ -1,8 +1,11 @@
 package providers
 
 import (
+	"net/http"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TRVL.FIXHINT.1 -- a fix hint must not prescribe a tool that always fails.
@@ -37,6 +40,70 @@ func TestFixHintsDoNotPrescribeConfigureProvider(t *testing.T) {
 				"returns an error unconditionally since #538. An agent following it loops on a "+
 				"refusal it cannot fix.\n  hint: %s", probe, hint)
 		}
+	}
+}
+
+// The hint says the next search re-reads browser cookies. Prove the behavior,
+// not just the prose: a completed warm entry supplies a stale cookie, an auth
+// failure invalidates both that entry and the seeded jar, and the next lookup
+// reaches the direct reader and receives the fresh cookie.
+func TestCookieExpiredHintForcesNextBrowserCookieRead(t *testing.T) {
+	target := "https://www.example.com/search"
+	browser := "chrome"
+	InvalidateWarmCacheForSite(target, browser)
+	t.Cleanup(func() { InvalidateWarmCacheForSite(target, browser) })
+
+	originalReader := browserCookieReader
+	reads := 0
+	browserCookieReader = func(string, string) []*http.Cookie {
+		reads++
+		value := "stale"
+		if reads > 1 {
+			value = "fresh"
+		}
+		return []*http.Cookie{{Name: "session", Value: value, Domain: ".example.com", Path: "/"}}
+	}
+	t.Cleanup(func() { browserCookieReader = originalReader })
+
+	WarmBrowserCookies(target, browser)
+	stale := warmBrowserCookiesResult(target, browser, time.Second)
+	if len(stale) != 1 || stale[0].Value != "stale" || reads != 1 {
+		t.Fatalf("warm fixture = %#v, reads=%d", stale, reads)
+	}
+
+	cfg := &ProviderConfig{ID: "example", Endpoint: target}
+	cfg.Cookies.Source = "browser"
+	cfg.Cookies.Browser = browser
+	vault := newCookieVault()
+	u, err := url.Parse(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vault.seedFromBrowser(u, stale) {
+		t.Fatal("failed to seed stale browser session")
+	}
+	pc := &providerClient{
+		config:     cfg,
+		client:     &http.Client{Jar: vault},
+		authValues: map[string]string{"csrf": "stale"},
+		authExpiry: time.Now().Add(time.Hour),
+	}
+	rt := &Runtime{clients: map[string]*providerClient{cfg.ID: pc}}
+
+	rt.invalidateBrowserSessionAfterAuthFailure(cfg, FixHintCookieExpired)
+	if pc.isBrowserSeeded() {
+		t.Fatal("failed browser session remained in the provider jar")
+	}
+	if len(pc.authValues) != 0 || !pc.authExpiry.IsZero() {
+		t.Fatalf("failed auth cache survived: values=%v expiry=%v", pc.authValues, pc.authExpiry)
+	}
+
+	fresh := browserCookiesForURLWithHint(target, browser)
+	if len(fresh) != 1 || fresh[0].Value != "fresh" {
+		t.Fatalf("next lookup reused stale warm cookies: %#v", fresh)
+	}
+	if reads != 2 {
+		t.Fatalf("direct browser reads = %d, want 2 (warm read plus forced refresh)", reads)
 	}
 }
 

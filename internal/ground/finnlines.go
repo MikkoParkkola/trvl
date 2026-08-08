@@ -20,7 +20,7 @@ import (
 const finnlinesGraphQL = "https://dm3xyy44wbeivgqmeymvmw22be.appsync-api.eu-central-1.amazonaws.com/graphql"
 
 // finnlinesAPIKey is the public API key embedded in the booking SPA JS bundle.
-const finnlinesAPIKey = "da2-zvuktusyubbstlw7khps4vyeie"
+const finnlinesAPIKey = "da2-zvuktusyubbstlw7khps4vyeie" // #nosec G101 -- public SPA client identifier, not a secret
 
 // finnlinesLimiter: 10 req/min to be respectful.
 var finnlinesLimiter = newProviderLimiter(6 * time.Second)

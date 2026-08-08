@@ -48,6 +48,9 @@ const waitDelay = time.Second
 func Command(ctx context.Context, timeout time.Duration, name string, args ...string) (*exec.Cmd, context.Context, context.CancelFunc) {
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 
+	// #nosec G204 -- this package deliberately accepts an argv vector, never a
+	// shell command; callers select bounded helper executables and arguments are
+	// passed without shell interpretation.
 	cmd := exec.CommandContext(tctx, name, args...)
 	cmd.Stdin = nil // explicit: the child reads from os.DevNull, never ours
 	cmd.WaitDelay = waitDelay

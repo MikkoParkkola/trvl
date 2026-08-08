@@ -72,6 +72,12 @@ type Store struct {
 	// from loading rather than be discovered later during an eviction
 	// (trvl#514, TRVL.RETENTION.4).
 	retention retentionConfig
+
+	// beforeRecoveryLock is a deterministic test seam for the only interval in
+	// which a plain Load can race a writer: after observing a never-published
+	// database and before acquiring the cross-process lock to re-check it. It is
+	// deliberately per-store so tests do not mutate package globals.
+	beforeRecoveryLock func()
 }
 
 // NewStore creates a store rooted at the given directory (typically ~/.trvl/).
@@ -123,6 +129,14 @@ func (s *Store) Load() error {
 // to what is on disk rather than to whatever snapshot this process was holding
 // (#512). Caller holds s.mu.
 func (s *Store) loadLocked() error {
+	return s.loadLockedWithFileLock(false)
+}
+
+// loadLockedWithFileLock is loadLocked with explicit cross-process lock
+// ownership. Mutations call it after taking .lock; plain Load does not. Keeping
+// ownership explicit prevents recovery from recursively taking the same
+// non-reentrant file lock and deadlocking a mutation.
+func (s *Store) loadLockedWithFileLock(fileLockHeld bool) error {
 	s.watches = nil
 	s.history = nil
 	s.historyStale = false
@@ -154,9 +168,29 @@ func (s *Store) loadLocked() error {
 		if !errors.Is(loadErr, errNeverPublished) {
 			return fmt.Errorf("load watch database: %w", loadErr)
 		}
-		recovered, quarantine, qErr := s.quarantineUnreadableDatabaseLocked()
+		if !fileLockHeld {
+			if s.beforeRecoveryLock != nil {
+				s.beforeRecoveryLock()
+			}
+			lock, lockErr := acquireFileLock(s.lockPath())
+			if lockErr != nil {
+				return fmt.Errorf("load watch database: %w (and recovery could not acquire the store lock: %v)", loadErr, lockErr)
+			}
+			defer releaseFileLock(lock)
+		}
+
+		recovered, published, quarantine, qErr := s.quarantineUnreadableDatabaseFileLocked()
 		if qErr != nil {
 			return fmt.Errorf("load watch database: %w (and it could not be moved aside: %v)", loadErr, qErr)
+		}
+		if published {
+			// The first observation was stale: a writer completed a generation
+			// before this reader acquired .lock. Reload in this same call so Load
+			// returns the writer's truth instead of the obsolete schema error.
+			if retryErr := s.loadBoltLocked(); retryErr != nil {
+				return fmt.Errorf("reload watch database after concurrent publish: %w", retryErr)
+			}
+			return s.normalizeCurrenciesLocked()
 		}
 		if !recovered {
 			return fmt.Errorf("load watch database: %w", loadErr)
@@ -723,6 +757,8 @@ func shortID() string {
 
 // loadJSON reads a JSON file into dst. Returns nil if file does not exist.
 func loadJSON(path string, dst interface{}) error {
+	// #nosec G304 -- path is one of Store's fixed files under its configured
+	// owner-only state directory; callers do not pass request input.
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil

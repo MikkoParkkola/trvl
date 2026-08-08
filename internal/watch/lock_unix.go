@@ -53,6 +53,8 @@ func unlockFile(f *os.File) error {
 // lock file itself is never renamed or replaced (unlike the data files, which
 // atomicjson swaps by rename), so the inode every holder locks stays identical.
 func acquireFileLock(path string) (*os.File, error) {
+	// #nosec G304 -- callers pass Store.lockPath(), a fixed filename within the
+	// owner-only Store directory.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open lock file: %w", err)

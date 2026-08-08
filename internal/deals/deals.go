@@ -47,6 +47,7 @@ type DealFilter struct {
 var AllSources = []string{"google", "secretflying", "fly4free", "holidaypirates", "thepointsguy"}
 
 // SourceFeeds maps source keys to their RSS feed URLs.
+// #nosec G101 -- "secretflying" is a publication name; values are public feeds.
 var SourceFeeds = map[string]string{
 	"secretflying":   "https://www.secretflying.com/feed/",
 	"fly4free":       "https://www.fly4free.com/feed/",

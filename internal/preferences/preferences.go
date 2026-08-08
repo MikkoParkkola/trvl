@@ -259,6 +259,8 @@ func Load() (*Preferences, error) {
 // LoadFrom reads preferences from an explicit file path.
 // If the file does not exist, Default() is returned with no error.
 func LoadFrom(path string) (*Preferences, error) {
+	// #nosec G304 -- an explicit local preferences path is intentional; it is
+	// selected by the CLI user, not by a remote request.
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return Default(), nil
@@ -330,7 +332,8 @@ func SaveTo(path string, p *Preferences) error {
 		return fmt.Errorf("generate temp name: %w", err)
 	}
 	tmpPath := filepath.Join(dir, filepath.Base(path)+".tmp-"+hex.EncodeToString(rndBytes))
-	//nolint:gosec // mode 0600 is intentional — preferences file must be owner-only
+	// #nosec G304 -- tmpPath is filepath.Base(path) plus crypto-random bytes in
+	// the resolved preferences directory; O_EXCL and 0600 prevent clobbering.
 	tmp, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)

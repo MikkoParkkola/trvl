@@ -121,6 +121,8 @@ func run(args []string, stderr io.Writer, getenv getenvFunc) error {
 }
 
 func sha256File(path string) ([]byte, error) {
+	// #nosec G304 -- signing intentionally reads the local artifact path selected
+	// by the invoking release operator.
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -135,6 +137,8 @@ func sha256File(path string) ([]byte, error) {
 
 func writeFileExcl(path string, data []byte, mode os.FileMode) error {
 	// O_EXCL: never silently overwrite an existing signature.
+	// #nosec G304 -- output path is explicitly selected by the release operator;
+	// O_EXCL prevents silent overwrite.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
 		return err

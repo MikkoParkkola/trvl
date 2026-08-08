@@ -180,6 +180,8 @@ func Load() (*TravelProfile, error) {
 
 // LoadFrom reads the profile from an explicit path.
 func LoadFrom(path string) (*TravelProfile, error) {
+	// #nosec G304 -- an explicit local profile path is an intentional API/CLI
+	// contract, not a remotely supplied filename.
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return &TravelProfile{}, nil
@@ -225,6 +227,8 @@ func SaveTo(path string, p *TravelProfile) error {
 		return fmt.Errorf("generate temp name: %w", err)
 	}
 	tmpPath := filepath.Join(dir, filepath.Base(path)+".tmp-"+hex.EncodeToString(rndBytes))
+	// #nosec G304 -- tmpPath uses filepath.Base(path) plus crypto-random bytes in
+	// the resolved profile directory and is opened O_EXCL.
 	tmp, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)

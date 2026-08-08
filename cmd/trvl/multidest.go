@@ -41,6 +41,8 @@ func runMultidest(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString("format")
 	var r *os.File
 	if filePath != "" {
+		// #nosec G304 -- --file intentionally reads a local route list selected by
+		// the invoking CLI user; it is not remotely controlled.
 		f, err := os.Open(filePath)
 		if err != nil {
 			return fmt.Errorf("multidest: cannot open file: %w", err)

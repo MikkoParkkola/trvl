@@ -177,16 +177,13 @@ jobs:
 
   # Static application security testing. gosec runs unfiltered over ./... — no
   # -severity and no -exclude, so nothing is hidden from the report. The gate
-  # then fails the build on any HIGH finding that is not recorded in
-  # .github/gosec-baseline.json with a written reason. That baseline exists so
-  # the 99 pre-existing MEDIUMs and 24 pre-existing HIGHs do not red-fail every
-  # PR on day one (a scanner that fails everything gets switched off within a
-  # week, and then protects nothing). MEDIUM and LOW are counted and printed,
-  # not gated; issue #532 TRVL.GOSEC.4 owns their triage. Version is pinned for
-  # the same supply-chain reason as staticcheck/golangci-lint above, and because
-  # an unpinned gosec silently changes the finding set the baseline is keyed to.
+  # then fails the build on every HIGH or MEDIUM finding. Narrow inline #nosec
+  # annotations require a rule and written reason beside the exact operation;
+  # the committed baseline is empty. LOW findings remain visible in the report.
+  # Version is pinned for the same supply-chain reason as staticcheck and so a
+  # scanner upgrade and its finding-set changes are reviewed explicitly.
   gosec:
-    name: gosec (fail on new HIGH)
+    name: gosec (zero HIGH/MEDIUM)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -204,9 +201,13 @@ jobs:
         # report was actually produced.
         run: |
           mkdir -p bin
-          gosec -quiet -fmt json -out bin/gosec-report.json ./... || true
-          test -s bin/gosec-report.json
-      - name: Gate on new HIGH findings
+          printf '%s\n' '{"Issues":[],"Golang errors":{"scan-incomplete":[{"error":"gosec produced no report"}]},"Stats":{"found":0}}' > bin/gosec-report.next.json
+          if gosec -quiet -fmt json -out bin/gosec-report.next.json ./...; then
+            printf '%s\n' '{"Issues":[],"Golang errors":{},"Stats":{"found":0}}' > bin/gosec-report.next.json
+          fi
+          test -s bin/gosec-report.next.json
+          mv bin/gosec-report.next.json bin/gosec-report.json
+      - name: Gate on HIGH and MEDIUM findings
         run: .github/scripts/gosec-gate.sh bin/gosec-report.json
       - name: Upload gosec report
         if: always()

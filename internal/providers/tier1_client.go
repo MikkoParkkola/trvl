@@ -400,6 +400,8 @@ func fromFHTTPCookies(in []*fhttp.Cookie) []*http.Cookie {
 		if c == nil {
 			continue
 		}
+		// #nosec G124 -- preserve every security attribute supplied by fhttp;
+		// this conversion does not create or serve a cookie.
 		out = append(out, &http.Cookie{
 			Name:     c.Name,
 			Value:    c.Value,

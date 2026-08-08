@@ -62,6 +62,8 @@ func runOpportunityScore(cmd *cobra.Command, args []string) error {
 }
 
 func loadCandidatesFromFile(path string) ([]opportunity.Candidate, error) {
+	// #nosec G304 -- this CLI flag intentionally reads a local file selected by
+	// the invoking user; no remote request chooses the path.
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open file: %w", err)

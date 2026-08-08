@@ -401,6 +401,8 @@ func generateID() string {
 
 // loadJSON reads a JSON file into dst.  Returns nil if the file does not exist.
 func loadJSON(path string, dst interface{}) error {
+	// #nosec G304 -- path is a fixed workspace filename under trvl's configured
+	// owner-only state directory.
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil

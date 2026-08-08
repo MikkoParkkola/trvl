@@ -513,6 +513,8 @@ func readCachedGoogleHotelsResponse(req *http.Request) ([]byte, bool) {
 		_ = os.Remove(path)
 		return nil, false
 	}
+	// #nosec G304 -- path is the fixed SerpAPI cache file under trvl's local
+	// state directory, not a search-request filename.
 	data, err := os.ReadFile(path)
 	if err != nil || len(data) == 0 {
 		_ = os.Remove(path)

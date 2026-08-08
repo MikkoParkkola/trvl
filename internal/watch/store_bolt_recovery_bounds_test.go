@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -300,7 +301,7 @@ func writeSchemalessDatabaseWithBuckets(path string) error {
 // before the rename, which is the state under test.
 //
 // Found by a third-vendor review after two others passed this code.
-func TestQuarantineRefusesAfterAWriterPublishes(t *testing.T) {
+func TestLoadReloadsGenerationPublishedDuringRecoveryDecision(t *testing.T) {
 	dir := t.TempDir()
 	seedLegacyStore(t, dir)
 	dbPath := filepath.Join(dir, "watch.db")
@@ -315,35 +316,71 @@ func TestQuarantineRefusesAfterAWriterPublishes(t *testing.T) {
 		t.Fatalf("fixture is not quarantine-eligible: eligible=%v err=%v", eligible, err)
 	}
 
-	// The writer wins the race: a full generation lands in that same file.
-	writer := &Store{dir: dir}
-	writer.watches = []Watch{{ID: "live", Origin: "HEL", Destination: "JFK", Currency: "EUR"}}
-	writer.history = []PricePoint{{WatchID: "live", Price: 500, Currency: "EUR"}}
-	if err := writer.persistBoltLocked(); err != nil {
-		t.Fatalf("writer publish: %v", err)
+	// Park the reader in the exact interval after its first observation and
+	// before it acquires .lock. The writer wins that race and publishes a full
+	// generation under the same lock production writers use.
+	var hookErr error
+	s.beforeRecoveryLock = func() {
+		writerLock, lockErr := acquireFileLock(s.lockPath())
+		if lockErr != nil {
+			hookErr = lockErr
+			return
+		}
+		defer releaseFileLock(writerLock)
+		writer := &Store{dir: dir}
+		writer.watches = []Watch{{ID: "live", Origin: "HEL", Destination: "JFK", Currency: "EUR"}}
+		writer.history = []PricePoint{{WatchID: "live", Price: 500, Currency: "EUR"}}
+		hookErr = writer.persistBoltLocked()
 	}
 
-	// The reader now acts on its stale observation.
-	recovered, quarantine, qErr := s.quarantineUnreadableDatabaseLocked()
-	if qErr != nil {
-		t.Fatalf("quarantine returned an error: %v", qErr)
+	// This same Load call must re-check, notice the writer's generation, and
+	// return it. Requiring a second Load would leak the stale errNeverPublished
+	// observation to the user even though valid data is already on disk.
+	if err := s.Load(); err != nil {
+		t.Fatalf("Load returned the stale pre-publish error instead of reloading the writer's generation: %v", err)
 	}
-	if recovered {
-		t.Errorf("the reader quarantined a database that a writer had just published (moved to %q). "+
-			"The observation was made without the cross-process lock, so it was stale by the time "+
-			"the rename happened, and the live generation is now under a .unreadable name with the "+
-			"frozen legacy JSON about to be republished over it.", quarantine)
+	if hookErr != nil {
+		t.Fatalf("writer publish: %v", hookErr)
 	}
 	if _, err := os.Stat(dbPath); err != nil {
 		t.Errorf("the published database is no longer at watch.db: %v", err)
 	}
+	if len(s.watches) != 1 || s.watches[0].ID != "live" {
+		t.Errorf("watches = %+v, want the writer's generation from this Load call, not the legacy snapshot", s.watches)
+	}
+}
 
-	// And it must still be readable, holding the writer's generation.
+// A mutation already owns .lock before it reloads. Recovery must use that
+// ownership instead of trying to acquire the non-reentrant lock a second time.
+// The old implementation blocked forever here on both Unix and Windows.
+func TestMutationRecoversSchemalessDatabaseWithoutRelocking(t *testing.T) {
+	dir := t.TempDir()
+	seedLegacyStore(t, dir)
+	if err := writeSchemalessDatabaseWithBuckets(filepath.Join(dir, "watch.db")); err != nil {
+		t.Fatalf("planting an unconverted database: %v", err)
+	}
+
+	s := &Store{dir: dir}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := s.Add(Watch{Type: "flight", Origin: "AMS", Destination: "VLC", Currency: "EUR"})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("mutation recovery failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("mutation deadlocked while recovering a schemaless database; recovery tried to acquire .lock while withTxn already held it")
+	}
+
 	fresh := &Store{dir: dir}
 	if err := fresh.Load(); err != nil {
-		t.Fatalf("the published database no longer loads: %v", err)
+		t.Fatalf("load after recovered mutation: %v", err)
 	}
-	if len(fresh.watches) != 1 || fresh.watches[0].ID != "live" {
-		t.Errorf("watches = %+v, want the writer's generation, not the legacy snapshot", fresh.watches)
+	if len(fresh.watches) != 2 {
+		t.Fatalf("watches = %+v, want recovered legacy watch plus the new mutation", fresh.watches)
 	}
 }

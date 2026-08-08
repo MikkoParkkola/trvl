@@ -17,7 +17,7 @@ import (
 const nsTripsEndpoint = "https://gateway.apiportal.ns.nl/reisinformatie-api/api/v3/trips"
 
 // nsAPIKey is the public API key embedded in the NS website JS for all visitors.
-const nsAPIKey = "3833ed4cbc5d43bd9241420caf04365c"
+const nsAPIKey = "3833ed4cbc5d43bd9241420caf04365c" // #nosec G101 -- public website client identifier, not a secret
 
 // nsLimiter enforces a conservative rate limit: 5 req/min.
 var nsLimiter = newProviderLimiter(12 * time.Second)

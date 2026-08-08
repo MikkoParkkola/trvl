@@ -102,6 +102,8 @@ func trainlineViaCurl(ctx context.Context, fromID, toID, date, currency string) 
 		"-o", "/dev/null",
 	}, commonHeaders...)
 
+	// #nosec G204 -- fixed curl executable; generated request values are passed
+	// as argv and never through a shell.
 	seedCmd := exec.CommandContext(ctx, "curl", seedArgs...)
 	if seedErr := seedCmd.Run(); seedErr != nil {
 		slog.Debug("trainlineViaCurl: seed request failed", "err", logredact.Err(seedErr))
@@ -139,6 +141,7 @@ func trainlineViaCurl(ctx context.Context, fromID, toID, date, currency string) 
 		"-d", string(bodyBytes),
 	}, commonHeaders...)
 
+	// #nosec G204 -- fixed curl executable; generated request values are argv.
 	apiCmd := exec.CommandContext(ctx, "curl", apiArgs...)
 	curlOut, err := apiCmd.Output()
 	if err != nil {

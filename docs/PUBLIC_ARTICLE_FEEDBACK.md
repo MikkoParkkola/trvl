@@ -71,6 +71,26 @@ Follow-up product work:
 
 ## Retest log
 
+### Roberto Reale, v1.19.0 — booking-readiness ceiling
+
+Roberto tested six indexed Ischia properties and found that every
+`trvl prices` result stopped at `caution`. He asked whether `ready` was
+structurally unreachable with the current sources, which would make the
+three-tier verdict a two-tier scale in practice.
+
+Outcome for v1.21.0:
+
+- `trvl prices` now declares its structural `caution` ceiling and names the
+  missing source capability: seller cancellation terms are unavailable there.
+- The ceiling is separate from offer-specific downgrade reasons in CLI, JSON,
+  and MCP output, so a source limitation is not presented as a finding about a
+  property.
+- `ready` remains reachable through `trvl rooms`. Booking.com room offers and
+  SerpAPI room details can carry exact room identity, a durable seller URL, and
+  explicit refundability; parser-to-verdict regression coverage proves this is
+  a production data path rather than a synthetic four-boolean example.
+- `docs/CLI.md` states which endpoint is capped and which can reach `ready`.
+
 ### Roberto Reale, v1.15.0 — `trvl serpapi` on Ischia (island / unindexed)
 
 Roberto retested `trvl serpapi` against Ischia (2026-07-30 to 2026-08-04, 2

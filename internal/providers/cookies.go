@@ -105,21 +105,28 @@ func defaultOpenURL(goos, browserPreference, targetURL string) error {
 	switch goos {
 	case "darwin":
 		if browserPreference != "" {
+			// #nosec G204 -- fixed executable; preference and URL are separate argv
+			// values and never interpreted by a shell.
 			if err := startAndReapWithin(exec.Command("open", "-a", browserPreference, targetURL), launcherFailureWindow); err == nil {
 				return nil
 			}
 		}
+		// #nosec G204 -- fixed executable and shell-free URL argument.
 		if err := startAndReap(exec.Command("open", targetURL)); err != nil {
 			return fmt.Errorf("open: %w", err)
 		}
 		return nil
 	case "linux":
+		// #nosec G204 -- fixed executable and shell-free URL argument.
 		if err := startAndReap(exec.Command("xdg-open", targetURL)); err != nil {
 			return fmt.Errorf("xdg-open: %w", err)
 		}
 		return nil
 	case "windows":
-		if err := startAndReap(exec.Command("cmd", "/c", "start", "", targetURL)); err != nil {
+		// Avoid cmd.exe: a URL containing shell metacharacters would be parsed as
+		// command syntax. rundll32 receives the URL as an ordinary argv value.
+		// #nosec G204 -- fixed executable and shell-free URL argument.
+		if err := startAndReap(exec.Command("rundll32", "url.dll,FileProtocolHandler", targetURL)); err != nil {
 			return fmt.Errorf("start: %w", err)
 		}
 		return nil
@@ -270,6 +277,11 @@ var warmCache = struct {
 	entries map[string]*warmCacheEntry
 }{entries: make(map[string]*warmCacheEntry)}
 
+// browserCookieReader is the single direct-read seam behind both warm-up and
+// a cache miss. Tests replace it with an in-memory sequence to prove an auth
+// failure cannot serve the same completed warm-cache entry again.
+var browserCookieReader = readBrowserCookiesDirect
+
 // warmCacheKey builds a lookup key from URL + browser hint.
 func warmCacheKey(targetURL, browserHint string) string {
 	return browserHint + "\x00" + targetURL
@@ -293,7 +305,7 @@ func WarmBrowserCookies(targetURL, browserHint string) {
 
 	go func() {
 		defer close(entry.done)
-		entry.cookies = readBrowserCookiesDirect(targetURL, browserHint)
+		entry.cookies = browserCookieReader(targetURL, browserHint)
 	}()
 }
 
@@ -422,6 +434,30 @@ func InvalidateWarmCache(targetURL, browserHint string) {
 	warmCache.mu.Unlock()
 }
 
+// InvalidateWarmCacheForSite removes every warm entry for the target site's
+// registrable domain and browser. Provider URLs often contain per-search query
+// variables, so invalidating one exact URL can leave another completed entry
+// for the same session available to the next search.
+func InvalidateWarmCacheForSite(targetURL, browserHint string) {
+	u, err := url.Parse(targetURL)
+	if err != nil || u.Hostname() == "" {
+		return
+	}
+	site := registrableSuffix(u.Hostname())
+	warmCache.mu.Lock()
+	defer warmCache.mu.Unlock()
+	for key := range warmCache.entries {
+		parts := strings.SplitN(key, "\x00", 2)
+		if len(parts) != 2 || parts[0] != browserHint {
+			continue
+		}
+		cachedURL, parseErr := url.Parse(parts[1])
+		if parseErr == nil && registrableSuffix(cachedURL.Hostname()) == site {
+			delete(warmCache.entries, key)
+		}
+	}
+}
+
 // permittedAfterRead is the post-read consent gate for every function in this
 // package that returns cookies taken from the user's browser.
 //
@@ -483,59 +519,10 @@ func browserCookiesForURLWithHint(targetURL, browserHint string) (out []*http.Co
 		return cached
 	}
 
-	// Same test-binary guard as browserCookiesForURL.
-	if os.Getenv("TRVL_ALLOW_BROWSER_COOKIES") == "" && isTestBinary() {
-		return nil
-	}
-
-	u, err := url.Parse(targetURL)
-	if err != nil || u.Host == "" {
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), browserCookieLookupTimeout)
-	defer cancel()
-
-	host := u.Hostname()
-	domainSuffix := registrableSuffix(host)
-
-	var kookyCookies []*kooky.Cookie
-
-	switch strings.ToLower(browserHint) {
-	case "brave":
-		if path := findBraveCookiePath(); path != "" {
-			kookyCookies, _ = brave.ReadCookies(ctx, path, kooky.Valid, kooky.DomainHasSuffix(domainSuffix))
-		}
-	case "chrome":
-		if path := findChromeCookiePath(); path != "" {
-			kookyCookies, _ = chrome.ReadCookies(ctx, path, kooky.Valid, kooky.DomainHasSuffix(domainSuffix))
-		}
-	}
-
-	if len(kookyCookies) == 0 {
-		// Fallback to all-browser auto-discovery.
-		return browserCookiesForURL(targetURL)
-	}
-
-	// Filter and deduplicate.
-	result := make([]*http.Cookie, 0, len(kookyCookies))
-	seen := make(map[string]struct{}, len(kookyCookies))
-	for _, c := range kookyCookies {
-		if c == nil {
-			continue
-		}
-		if !cookieDomainMatchesHost(c.Domain, host) {
-			continue
-		}
-		key := c.Name + "\x00" + c.Domain + "\x00" + c.Path
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
-		cp := c.Cookie
-		result = append(result, &cp)
-	}
-	return result
+	// A miss must be a real read, not another cache layer. Keeping warm-up and
+	// miss on the same reader also prevents the two implementations from
+	// drifting on domain filtering or browser fallback behavior.
+	return browserCookieReader(targetURL, browserHint)
 }
 
 // findBraveCookiePath returns the path to Brave's default profile cookie DB.

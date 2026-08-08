@@ -28,6 +28,7 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 	type result struct {
 		hotels    []models.HotelResult
 		err       error
+		config    *ProviderConfig
 		id        string
 		name      string
 		latencyMs int64
@@ -190,7 +191,7 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 				hotels, err := rt.searchProvider(provCtx, cfg, location, lat, lon, checkin, checkout, currency, guests, filters)
 				provCancel()
 				rt.inflight.Add(-1)
-				results <- result{hotels: hotels, err: err, id: cfg.ID, name: cfg.Name, latencyMs: time.Since(t0).Milliseconds()}
+				results <- result{hotels: hotels, err: err, config: cfg, id: cfg.ID, name: cfg.Name, latencyMs: time.Since(t0).Milliseconds()}
 			}
 		}()
 	}
@@ -220,6 +221,7 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 				status = "timeout"
 			}
 			hintCode, hint := classifyProviderError(r.err)
+			rt.invalidateBrowserSessionAfterAuthFailure(r.config, hintCode)
 			LogHealth(HealthEntry{
 				Provider:  r.id,
 				Operation: "search",
@@ -280,6 +282,37 @@ func (rt *Runtime) SearchHotels(ctx context.Context, location string, lat, lon f
 		return nil, statuses, firstErr
 	}
 	return combined, statuses, nil
+}
+
+// invalidateBrowserSessionAfterAuthFailure makes the remediation promised by
+// COOKIE_EXPIRED / WAF hints true: the next search must read the browser again,
+// rather than reusing the completed warm result and jar that just failed.
+func (rt *Runtime) invalidateBrowserSessionAfterAuthFailure(cfg *ProviderConfig, code FixHintCode) {
+	if cfg == nil || cfg.Cookies.Source != "browser" {
+		return
+	}
+	switch code {
+	case FixHintAkamaiBlock, FixHintCookieExpired, FixHintBrowserCookiesMissing, FixHintPreflightFailed:
+	default:
+		return
+	}
+
+	InvalidateWarmCacheForSite(cfg.Endpoint, cfg.Cookies.Browser)
+	if cfg.Auth != nil {
+		InvalidateWarmCacheForSite(cfg.Auth.PreflightURL, cfg.Cookies.Browser)
+	}
+
+	rt.mu.RLock()
+	pc := rt.clients[cfg.ID]
+	rt.mu.RUnlock()
+	if pc == nil || !vaultOf(pc.client).discardBrowserSeeded() {
+		return
+	}
+	pc.authMu.Lock()
+	pc.authValues = nil
+	pc.authExpiry = time.Time{}
+	pc.lastPreflightURL = ""
+	pc.authMu.Unlock()
 }
 
 // isTimeoutError returns true when err is a context deadline or timeout.

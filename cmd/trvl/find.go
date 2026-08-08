@@ -232,6 +232,8 @@ func insertBundleCalendar(f models.FlightResult) error {
 	if err != nil {
 		return err
 	}
+	// #nosec G204 -- fixed gws executable; event values are separate argv and
+	// never interpreted by a shell.
 	cmd := exec.Command("gws", "calendar", "insert",
 		"--summary", title,
 		"--start", start,

@@ -29,7 +29,7 @@ var (
 const (
 	defaultUA      = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
 	defaultBudget  = 20 * time.Second
-	cookieTokenKey = "aws-waf-token"
+	cookieTokenKey = "aws-waf-token" // #nosec G101 -- public cookie name, not a credential value
 )
 
 // Options lets callers tweak behaviour without ballooning the positional
@@ -272,12 +272,15 @@ func extractTokenFromJar(entries []cookieEntry) string {
 // registrable domain of pageURL, with a 5-minute TTL (AWS rotates tokens
 // frequently enough that caching longer is pointless).
 func buildCookie(pageURL, token string) *http.Cookie {
+	// #nosec G124 -- AWS WAF tokens intentionally use SameSite=None for its
+	// challenge flow; Secure and HttpOnly are explicitly set below.
 	c := &http.Cookie{
 		Name:     cookieTokenKey,
 		Value:    token,
 		Path:     "/",
 		Expires:  time.Now().Add(5 * time.Minute),
 		Secure:   true,
+		HttpOnly: true,
 		SameSite: http.SameSiteNoneMode,
 	}
 	if u, err := url.Parse(pageURL); err == nil && u.Host != "" {

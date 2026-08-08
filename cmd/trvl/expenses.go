@@ -63,6 +63,8 @@ func runExpenses(cmd *cobra.Command, args []string) error {
 }
 
 func loadBookingsFromFile(path string) ([]expenses.Booking, error) {
+	// #nosec G304 -- this CLI argument intentionally names a local bookings file
+	// selected by the invoking user.
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open file: %w", err)

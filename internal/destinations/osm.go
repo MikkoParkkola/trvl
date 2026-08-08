@@ -15,7 +15,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-const overpassURL = "https://overpass-api.de/api/interpreter"
+const overpassURL = "https://overpass-api.de/api/interpreter" // #nosec G101 -- public API endpoint
 
 var overpassAPIURL = overpassURL
 

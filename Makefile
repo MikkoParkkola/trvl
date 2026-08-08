@@ -67,7 +67,7 @@ lint: repo-hygiene
 	GOTOOLCHAIN=$(GOTOOLCHAIN) govulncheck ./...
 
 # Local mirror of the CI `gosec` job. Same scan scope, same pinned version and
-# same baseline, so a clean run here means a clean run there.
+# same zero-HIGH/zero-MEDIUM gate, so a clean run here means a clean run there.
 security-gosec:
 	.github/scripts/gosec-gate_test.sh
 	@if ! command -v gosec >/dev/null 2>&1; then \
@@ -75,8 +75,12 @@ security-gosec:
 		exit 1; \
 	fi
 	@mkdir -p bin
-	@GOTOOLCHAIN=$(GOTOOLCHAIN) gosec -quiet -fmt json -out bin/gosec-report.json ./... || true
-	@test -s bin/gosec-report.json
+	@printf '%s\n' '{"Issues":[],"Golang errors":{"scan-incomplete":[{"error":"gosec produced no report"}]},"Stats":{"found":0}}' > bin/gosec-report.next.json
+	@if GOTOOLCHAIN=$(GOTOOLCHAIN) gosec -quiet -fmt json -out bin/gosec-report.next.json ./...; then \
+		printf '%s\n' '{"Issues":[],"Golang errors":{},"Stats":{"found":0}}' > bin/gosec-report.next.json; \
+	fi
+	@test -s bin/gosec-report.next.json
+	@mv bin/gosec-report.next.json bin/gosec-report.json
 	.github/scripts/gosec-gate.sh bin/gosec-report.json
 
 # Everything CI gates on, in one command, to be run BEFORE committing.

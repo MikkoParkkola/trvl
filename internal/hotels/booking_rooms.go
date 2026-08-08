@@ -86,35 +86,39 @@ func defaultFetchBookingRooms(ctx context.Context, bookingURL, checkIn, checkOut
 
 	rooms := make([]RoomType, 0, len(offers))
 	for _, offer := range offers {
-		room := RoomType{
-			Name:               offer.Name,
-			Price:              offer.Price,
-			NightlyPrice:       offer.NightlyPrice,
-			TotalPrice:         offer.TotalPrice,
-			TaxesAndFees:       offer.TaxesAndFees,
-			TaxesFeesIncluded:  offer.TaxesFeesIncluded,
-			Currency:           offer.Currency,
-			Provider:           "Booking.com",
-			ProviderURL:        firstNonEmptyBookingString(offer.URL, pageURL),
-			MatchConfidence:    models.RoomInventoryMatchExact,
-			MaxGuests:          offer.MaxGuests,
-			Description:        offer.Description,
-			Amenities:          offer.Amenities,
-			BedType:            offer.BedType,
-			SizeM2:             offer.SizeM2,
-			CancellationPolicy: offer.CancellationPolicy,
-			Refundable:         offer.Refundable,
-			FreeCancellation:   offer.FreeCancellation,
-			Board:              offer.Board,
-			BreakfastIncluded:  offer.BreakfastIncluded,
-		}
-		if room.Currency == "" && currency != "" {
-			room.Currency = currency
-		}
-		rooms = append(rooms, room)
+		rooms = append(rooms, roomTypeFromBookingOffer(offer, pageURL, currency))
 	}
 
 	return rooms, nil
+}
+
+func roomTypeFromBookingOffer(offer bookingRoomOffer, pageURL, fallbackCurrency string) RoomType {
+	room := RoomType{
+		Name:               offer.Name,
+		Price:              offer.Price,
+		NightlyPrice:       offer.NightlyPrice,
+		TotalPrice:         offer.TotalPrice,
+		TaxesAndFees:       offer.TaxesAndFees,
+		TaxesFeesIncluded:  offer.TaxesFeesIncluded,
+		Currency:           offer.Currency,
+		Provider:           "Booking.com",
+		ProviderURL:        firstNonEmptyBookingString(offer.URL, pageURL),
+		MatchConfidence:    models.RoomInventoryMatchExact,
+		MaxGuests:          offer.MaxGuests,
+		Description:        offer.Description,
+		Amenities:          offer.Amenities,
+		BedType:            offer.BedType,
+		SizeM2:             offer.SizeM2,
+		CancellationPolicy: offer.CancellationPolicy,
+		Refundable:         offer.Refundable,
+		FreeCancellation:   offer.FreeCancellation,
+		Board:              offer.Board,
+		BreakfastIncluded:  offer.BreakfastIncluded,
+	}
+	if room.Currency == "" {
+		room.Currency = fallbackCurrency
+	}
+	return room
 }
 
 // buildBookingDetailURL appends check-in/check-out and currency query

@@ -336,6 +336,8 @@ func loadExistingKeys() APIKeys {
 	if err != nil {
 		return APIKeys{}
 	}
+	// #nosec G304 -- path is the setup command's resolved local keys file, not
+	// remote/request-controlled input.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return APIKeys{}
@@ -375,7 +377,8 @@ func saveKeysTo(path string, keys APIKeys) error {
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
-	//nolint:gosec // mode 0600 is intentional — keys file must be owner-only
+	// #nosec G304 -- tmpPath is created beside the resolved keys file using a
+	// crypto-random suffix and O_EXCL at owner-only mode.
 	tmp, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)

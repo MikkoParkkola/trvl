@@ -51,14 +51,16 @@ func (s *Store) creatingPath() string { return s.databasePath() + ".creating" }
 // JSON can be used instead.
 func (s *Store) quarantinePath() string { return s.databasePath() + ".unreadable" }
 
-// quarantineUnreadableDatabaseLocked moves an unusable watch.db aside so the
-// legacy JSON beside it can be loaded instead.
+// quarantineUnreadableDatabaseFileLocked moves an unusable watch.db aside so
+// the legacy JSON beside it can be loaded instead. The caller MUST hold the
+// cross-process .lock. It returns published=true when the original observation
+// was stale and a complete generation is now available for the caller to load.
 //
 // Returns false, with nothing moved, when there is no legacy store to fall back
 // to. In that case the unreadable database is the only copy of anything and
 // renaming it would turn a diagnosable failure into an empty one.
-func (s *Store) quarantineUnreadableDatabaseLocked() (bool, string, error) {
-	// THE CROSS-PROCESS LOCK, AND A RE-CHECK INSIDE IT.
+func (s *Store) quarantineUnreadableDatabaseFileLocked() (recovered, published bool, quarantine string, err error) {
+	// A RE-CHECK INSIDE THE CROSS-PROCESS LOCK.
 	//
 	// Load holds only s.mu, which bounds this process. The observation that led
 	// here was made without the .lock that writers take, so between "this file
@@ -76,20 +78,14 @@ func (s *Store) quarantineUnreadableDatabaseLocked() (bool, string, error) {
 	// between the read-only observation and acquiring the lock.
 	//
 	// Found by a third-vendor review after two others passed this code.
-	lock, lockErr := acquireFileLock(s.lockPath())
-	if lockErr != nil {
-		return false, "", lockErr
-	}
-	defer releaseFileLock(lock)
-
 	stillUnpublished, checkErr := s.databaseIsUnpublished()
 	if checkErr != nil {
-		return false, "", checkErr
+		return false, false, "", checkErr
 	}
 	if !stillUnpublished {
 		// A writer published while we were deciding. Its generation is the
 		// truth; ours was a stale read.
-		return false, "", nil
+		return false, true, "", nil
 	}
 
 	legacyPresent := false
@@ -99,7 +95,7 @@ func (s *Store) quarantineUnreadableDatabaseLocked() (bool, string, error) {
 		}
 	}
 	if !legacyPresent {
-		return false, "", nil
+		return false, false, "", nil
 	}
 
 	// A stable suffix would collide with an earlier quarantine and either fail
@@ -117,12 +113,12 @@ func (s *Store) quarantineUnreadableDatabaseLocked() (bool, string, error) {
 		}
 	}
 	if target == "" {
-		return false, "", fmt.Errorf("100 quarantined databases already exist beside %s", s.databasePath())
+		return false, false, "", fmt.Errorf("100 quarantined databases already exist beside %s", s.databasePath())
 	}
 	if err := os.Rename(s.databasePath(), target); err != nil {
-		return false, "", err
+		return false, false, "", err
 	}
-	return true, target, nil
+	return true, false, target, nil
 }
 
 // databaseIsUnpublished re-answers neverPublished against what is on disk right

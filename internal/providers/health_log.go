@@ -118,6 +118,8 @@ func appendHealthEntry(entry HealthEntry) error {
 		_ = os.Rename(path, rotated)
 	}
 
+	// #nosec G304 -- path is fixed health.jsonl in trvl's owner-only provider
+	// state directory.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
@@ -186,6 +188,8 @@ func redactHealthText(s string) string {
 // If last <= 0 all entries are returned.
 func ReadHealthLog(dir string, last int) ([]HealthEntry, error) {
 	path := filepath.Join(dir, "health.jsonl")
+	// #nosec G304 -- filename is fixed; dir is trvl's state directory or an
+	// explicit local test override.
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {

@@ -65,6 +65,8 @@ func (t *testRedirectTransport) RoundTrip(req *http.Request) (*http.Response, er
 	if req.URL.RawQuery != "" {
 		newURL += "?" + req.URL.RawQuery
 	}
+	// #nosec G704 -- test-only transport redirects to the caller's httptest
+	// fixture; it is never constructed by production code.
 	newReq, err := http.NewRequestWithContext(req.Context(), req.Method, newURL, req.Body)
 	if err != nil {
 		return nil, err

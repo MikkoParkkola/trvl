@@ -321,6 +321,8 @@ func convertNetworkCookies(in []*network.Cookie) []*http.Cookie {
 		if c == nil {
 			continue
 		}
+		// #nosec G124 -- this is a lossless conversion of an upstream browser
+		// cookie; inventing stricter attributes would change its send semantics.
 		hc := &http.Cookie{
 			Name:     c.Name,
 			Value:    c.Value,

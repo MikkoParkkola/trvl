@@ -1,12 +1,9 @@
 {
   "_readme": [
-    "Committed baseline of pre-existing gosec HIGH findings (issue #532).",
-    "The gate in .github/scripts/gosec-gate.sh fails CI on any HIGH finding that is",
-    "NOT covered here. It never lowers gosec's own severity threshold: gosec runs",
-    "unfiltered over ./... and every finding is reported; this file only records the",
-    "HIGH findings that were present when the gate was introduced, each with a",
-    "reason. MEDIUM and LOW are counted and printed, not gated (issue #532",
-    "TRVL.GOSEC.4 tracks their triage separately).",
+    "The active baseline is empty: every gosec HIGH or MEDIUM finding fails CI.",
+    "retired_entries preserves the former issue #532 decisions as audit history only;",
+    "the gate reads entries, which must remain empty. Narrow false-positive exceptions",
+    "now live beside the exact operation as #nosec RULE with a written reason.",
     "",
     "Match key is (rule, file, count). Line numbers and code snippets are",
     "deliberately NOT part of the key: gosec's snippet spans neighbouring lines, so",
@@ -15,19 +12,19 @@
     "the count key: swapping one finding of a rule for a different finding of the",
     "same rule in the same file stays suppressed. Accepted deliberately.",
     "",
-    "To accept a new HIGH: add an entry with a real reason, or prefer an inline",
-    "#nosec in the source, which is narrower. To retire one: drop the entry (the",
-    "gate warns, it does not fail, when actual < allowed).",
+    "Do not add active entries: every new HIGH or MEDIUM finding must be fixed or",
+    "documented with a narrow inline #nosec RULE and a written reason. Keep retired",
+    "entries only as audit history; the gate never subtracts them from findings.",
     "",
-    "status: 'accepted' = read, verdict written below. 'deferred' = NOT yet read;",
-    "the gate holds the line at today's count while triage happens. Do not relabel",
-    "a deferred entry to accepted without writing the verdict."
+    "Status values below describe the retired historical verdicts only. They do",
+    "not authorize active suppressions or change the zero-finding gate."
   ],
   "gosec_version": "v2.28.0",
   "scan_command": "gosec -quiet -fmt json ./...",
-  "generated": "2026-07-29",
-  "gated_severity": "HIGH",
-  "entries": [
+  "generated": "2026-08-08",
+  "gated_severity": "HIGH_AND_MEDIUM",
+  "entries": [],
+  "retired_entries": [
     {
       "rule": "G101",
       "file": "internal/cars/search.go",

@@ -122,6 +122,8 @@ func run(args []string, stderr io.Writer, random io.Reader) error {
 func writeFileExclusive(path string, data []byte, mode os.FileMode) error {
 	// O_EXCL refuses to overwrite an existing file — we never want to
 	// silently clobber a previous keypair.
+	// #nosec G304 -- key output path is explicitly selected by the local release
+	// operator; O_EXCL prevents clobbering an existing key.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|os.O_EXCL, mode)
 	if err != nil {
 		return err

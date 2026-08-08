@@ -20,7 +20,7 @@ import (
 const (
 	ProviderSkyscanner = "skyscanner"
 
-	skyscannerAPIKeyEnv      = "SKYSCANNER_API_KEY"
+	skyscannerAPIKeyEnv      = "SKYSCANNER_API_KEY" // #nosec G101 -- environment variable name, not a credential
 	defaultSkyscannerBaseURL = "https://partners.api.skyscanner.net/apiservices/v1/carhire"
 )
 

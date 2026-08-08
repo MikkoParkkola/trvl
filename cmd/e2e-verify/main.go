@@ -106,6 +106,8 @@ func run(cfg verifyConfig, stdout, stderr io.Writer, verify verifyFunc) error {
 }
 
 func sha256OfFile(path string) (string, error) {
+	// #nosec G304 -- verifier intentionally reads a local artifact selected by
+	// the release operator.
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
