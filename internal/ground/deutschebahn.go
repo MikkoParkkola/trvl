@@ -343,7 +343,9 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
-			io.ReadAll(io.LimitReader(resp.Body, 256)) //nolint:errcheck
+			if _, drainErr := io.Copy(io.Discard, io.LimitReader(resp.Body, 256)); drainErr != nil {
+				slog.Debug("db tagesbestpreis response drain failed", "error", logredact.Err(drainErr))
+			}
 			slog.Debug("db tagesbestpreis non-200", "status", resp.StatusCode)
 			continue
 		}

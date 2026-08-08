@@ -18,7 +18,7 @@ import (
 const digitransitEndpoint = "https://api.digitransit.fi/routing/v2/finland/gtfs/v1"
 
 // digitransitAPIKey is the public subscription key embedded in matka.fi for all visitors.
-const digitransitAPIKey = "195ac14f2a2b40e6b06ede06b2b33bb9"
+const digitransitAPIKey = "195ac14f2a2b40e6b06ede06b2b33bb9" // #nosec G101 -- public matka.fi client identifier
 
 // digitransitLimiter enforces 5 req/min (conservative; actual limit is higher).
 var digitransitLimiter = newProviderLimiter(12 * time.Second)

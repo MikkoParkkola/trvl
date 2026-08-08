@@ -4,7 +4,7 @@
 package imports
 
 import (
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- persisted non-security IDs require algorithm compatibility
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -130,6 +130,8 @@ func checkoutDate(checkin string, nights int) string {
 }
 
 func rawHash(parts ...string) string {
+	// #nosec G401 -- stable deduplication ID, not security; changing the digest
+	// would duplicate previously imported reservations.
 	h := sha1.New()
 	for _, part := range parts {
 		_, _ = h.Write([]byte(part))

@@ -165,6 +165,8 @@ func (u *Updater) PerformUpdate(ctx context.Context, latestVer string, exePath s
 	// 0755 is required: this is the replacement trvl binary and it has to be
 	// executable. gosec flags the mode without knowing what the file is
 	// (trvl#532 medium triage).
+	// #nosec G302 -- an installed executable requires execute bits; its archive
+	// signature and checksum are verified before this point.
 	if err := os.Chmod(extractedBin, 0o755); err != nil {
 		return "", fmt.Errorf("self-update: chmod: %w", err)
 	}
@@ -191,6 +193,8 @@ func (u *Updater) downloadTo(ctx context.Context, url, path string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("status %d for %s", resp.StatusCode, url)
 	}
+	// #nosec G304 -- path is allocated by the updater inside its private temp
+	// directory before network bytes are written.
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -227,6 +231,8 @@ func verifySHA256(tarballPath, checksumsPath, tarballName string) error {
 // recorded in the checksums.txt at path. Returns an error if the file
 // does not list filename.
 func readExpectedChecksum(path, filename string) (string, error) {
+	// #nosec G304 -- path is the updater-managed checksum artifact; filename is
+	// matched in its contents and is not used for file access.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
@@ -259,6 +265,7 @@ func readExpectedChecksum(path, filename string) (string, error) {
 
 // sha256File returns the hex-encoded SHA-256 of the file at path.
 func sha256File(path string) (string, error) {
+	// #nosec G304 -- path is an updater-managed artifact in a private temp dir.
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -275,10 +282,13 @@ func sha256File(path string) (string, error) {
 // VerifyMLDSA65 against tarballPath. Wraps the file I/O so callers can
 // treat it as a single step.
 func verifyMLDSAFile(tarballPath, sigPath string) error {
+	// #nosec G304 -- sigPath is generated beside the updater-managed tarball in
+	// a private temp directory.
 	sig, err := os.ReadFile(sigPath)
 	if err != nil {
 		return fmt.Errorf("read signature: %w", err)
 	}
+	// #nosec G304 -- tarballPath is the updater-managed download path.
 	f, err := os.Open(tarballPath)
 	if err != nil {
 		return fmt.Errorf("open tarball: %w", err)
@@ -307,6 +317,8 @@ func verifyMLDSAFile(tarballPath, sigPath string) error {
 var maxExtractedBinaryBytes int64 = 512 << 20
 
 func extractBinaryFromTarGz(tarballPath, binName, dest string) error {
+	// #nosec G304 -- tarballPath is an updater-managed artifact in a private
+	// temp directory and has already passed signature/checksum validation.
 	f, err := os.Open(tarballPath)
 	if err != nil {
 		return err
@@ -337,6 +349,8 @@ func extractBinaryFromTarGz(tarballPath, binName, dest string) error {
 		if filepath.Base(hdr.Name) != binName {
 			continue
 		}
+		// #nosec G304 -- dest is the updater's private extraction target; archive
+		// entry names are matched to the expected binary before this call.
 		out, err := os.Create(dest)
 		if err != nil {
 			return err
@@ -407,11 +421,15 @@ func atomicReplace(src, dst string) error {
 // copyFile copies src to dst, preserving 0755 mode. dst is overwritten.
 // Used as the cross-filesystem fallback inside atomicReplace.
 func copyFile(src, dst string) error {
+	// #nosec G304 -- src and dst are updater-created paths in a private temp
+	// directory after archive signature/checksum validation.
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = in.Close() }()
+	// #nosec G302,G304 -- this copies a verified executable and must preserve execute
+	// permission; destination path is scoped to the updater temp directory.
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
 	if err != nil {
 		return err

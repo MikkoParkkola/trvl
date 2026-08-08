@@ -127,8 +127,8 @@ func tagGoogleNativeRoundTrip(flights []models.FlightResult, origin, destination
 }
 
 const (
-	googleNativeRoundTripWarning = "native Google round-trip fare: the price is the full round-trip total; the matching return flight is selected at booking"
-	kiwiNativeRoundTripWarning   = "native Kiwi round-trip fare: the price is the full round-trip total; the matching return flight is selected at booking (open the booking link)"
+	googleNativeRoundTripWarning = "native Google round-trip fare: the price is the full round-trip total; the matching return flight is selected at booking"                       // #nosec G101 -- user-facing warning text
+	kiwiNativeRoundTripWarning   = "native Kiwi round-trip fare: the price is the full round-trip total; the matching return flight is selected at booking (open the booking link)" // #nosec G101 -- user-facing warning text
 )
 
 // tagNativeRoundTrip converts raw itineraries from a provider's native

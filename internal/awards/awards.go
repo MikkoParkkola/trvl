@@ -14,6 +14,7 @@ package awards
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -332,26 +333,7 @@ func formatFloat(f float64) string {
 }
 
 func formatFloatN(f float64, n int) string {
-	// minimal decimal formatter — avoid pulling in fmt for what is
-	// effectively a tiny label.
-	whole := int(f)
-	frac := f - float64(whole)
-	mul := 1
-	for i := 0; i < n; i++ {
-		mul *= 10
-	}
-	d := int(frac*float64(mul) + 0.5)
-	if d == mul {
-		whole++
-		d = 0
-	}
-	out := intToString(whole) + "."
-	for i, mulPow := 0, mul/10; i < n; i, mulPow = i+1, mulPow/10 {
-		dg := d / mulPow
-		out += string(rune('0' + dg))
-		d -= dg * mulPow
-	}
-	return out
+	return strconv.FormatFloat(f, 'f', n, 64)
 }
 
 func trimTrailingZeros(s string) string {

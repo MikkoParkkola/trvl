@@ -13,18 +13,10 @@ trap 'rm -rf "$tmp"' EXIT
 failures=0
 LAST_OUTPUT=""
 
-# Records one HIGH G704 in internal/providers/auth.go plus one ungated MEDIUM.
+# The release baseline is empty: every HIGH or MEDIUM must fail.
 cat >"$tmp/baseline.json" <<'JSON'
 {
-  "entries": [
-    {
-      "rule": "G704",
-      "file": "internal/providers/auth.go",
-      "count": 1,
-      "status": "deferred",
-      "reason": "SSRF via taint analysis; verdict owed under issue #532 TRVL.GOSEC.2."
-    }
-  ]
+  "entries": []
 }
 JSON
 
@@ -56,13 +48,13 @@ expect() {
   LAST_OUTPUT="$out"
 }
 
-# 1. Exactly the baselined HIGH and nothing else: pass.
-report "$tmp/match.json" "[$(issue G704 HIGH /repo/internal/providers/auth.go)]"
-expect "baselined HIGH alone passes" 0 "$tmp/match.json"
+# 1. No HIGH or MEDIUM: pass.
+report "$tmp/match.json" "[$(issue G104 LOW /repo/internal/example.go)]"
+expect "LOW alone passes" 0 "$tmp/match.json"
 
 # 2. A HIGH in a (rule, file) pair the baseline has never seen: fail.
 #    This is the assertion the whole gate exists for.
-report "$tmp/newpair.json" "[$(issue G704 HIGH /repo/internal/providers/auth.go),$(issue G404 HIGH /repo/internal/newthing/rng.go)]"
+report "$tmp/newpair.json" "[$(issue G404 HIGH /repo/internal/newthing/rng.go)]"
 expect "unbaselined HIGH fails the build" 1 "$tmp/newpair.json"
 case "$LAST_OUTPUT" in
   *"G404 internal/newthing/rng.go"*) ;;
@@ -70,26 +62,39 @@ case "$LAST_OUTPUT" in
      failures=$((failures + 1)) ;;
 esac
 
-# 3. A second HIGH of an already-baselined rule in the same file: fail.
+# 3. Multiple HIGH findings in the same rule/file pair still fail.
 report "$tmp/extra.json" "[$(issue G704 HIGH /repo/internal/providers/auth.go),$(issue G704 HIGH /repo/internal/providers/auth.go)]"
-expect "extra HIGH in a baselined file fails the build" 1 "$tmp/extra.json"
+expect "multiple HIGH findings fail the build" 1 "$tmp/extra.json"
 
-# 4. New MEDIUM findings do not gate. Gating MEDIUM on day one would block
-#    every PR against 99 pre-existing findings; issue #532 TRVL.GOSEC.4 owns them.
-report "$tmp/medium.json" "[$(issue G704 HIGH /repo/internal/providers/auth.go),$(issue G304 MEDIUM /repo/internal/newthing/read.go),$(issue G306 LOW /repo/internal/newthing/write.go)]"
-expect "new MEDIUM and LOW do not fail the build" 0 "$tmp/medium.json"
+# 4. Any MEDIUM now gates; LOW remains informational.
+report "$tmp/medium.json" "[$(issue G304 MEDIUM /repo/internal/newthing/read.go),$(issue G306 LOW /repo/internal/newthing/write.go)]"
+expect "MEDIUM fails the build" 1 "$tmp/medium.json"
 
-# 5. Someone fixed the baselined finding: warn, never fail. A source fix landing
-#    while the baseline still lists it must not red-fail CI.
+# 5. A clean report passes with the empty baseline.
 report "$tmp/fixed.json" "[]"
-expect "fixed finding warns instead of failing" 0 "$tmp/fixed.json"
+expect "clean report passes" 0 "$tmp/fixed.json"
 case "$LAST_OUTPUT" in
-  *"baseline is now looser than reality"*) ;;
-  *) echo "FAIL: stale baseline entry produced no notice" >&2
+  *"zero HIGH and zero MEDIUM"*) ;;
+  *) echo "FAIL: clean result did not state the zero-finding contract" >&2
      failures=$((failures + 1)) ;;
 esac
 
-# 6. A suppression with no written reason is itself a failure.
+# 6. The active baseline may not suppress a finding, even with a real reason.
+cat >"$tmp/reasoned.json" <<'JSON'
+{
+  "entries": [
+    {"rule": "G704", "file": "internal/providers/auth.go", "count": 1, "status": "accepted", "reason": "This reason is deliberately long enough to pass the reason-quality check."}
+  ]
+}
+JSON
+expect "active baseline entry fails the build" 1 "$tmp/match.json" "$tmp/reasoned.json"
+case "$LAST_OUTPUT" in
+  *"active gosec baseline must remain empty"*) ;;
+  *) echo "FAIL: active-baseline failure did not state the zero-baseline contract" >&2
+     failures=$((failures + 1)) ;;
+esac
+
+# 7. A suppression with no written reason is independently a failure.
 cat >"$tmp/noreason.json" <<'JSON'
 {
   "entries": [
@@ -99,14 +104,14 @@ cat >"$tmp/noreason.json" <<'JSON'
 JSON
 expect "suppression without a reason fails the build" 1 "$tmp/match.json" "$tmp/noreason.json"
 
-# 7. A missing report is an operator error, not a silent pass.
+# 8. A missing report is an operator error, not a silent pass.
 expect "missing report file exits 2" 2 "$tmp/does-not-exist.json"
 
-# 8. gosec could not compile a package, so it reported no findings for it. The
+# 9. gosec could not compile a package, so it reported no findings for it. The
 #    finding set is smaller than reality and the gate must not read that as
 #    clean. Observed for real on this repo: an unused import in
-#    internal/flights made two baselined G115 findings disappear.
-report "$tmp/broken.json" "[$(issue G704 HIGH /repo/internal/providers/auth.go)]" \
+#    internal/flights made two G115 findings disappear.
+report "$tmp/broken.json" "[]" \
   '{"/repo/internal/flights/x.go": [{"line": 30, "column": 2, "error": "imported and not used"}]}'
 expect "incomplete scan fails the build" 1 "$tmp/broken.json"
 case "$LAST_OUTPUT" in
@@ -115,9 +120,8 @@ case "$LAST_OUTPUT" in
      failures=$((failures + 1)) ;;
 esac
 
-# 9. The report was produced under a different root, so relpath cannot strip the
-#    prefix and every path stays absolute. Left unchecked that reads as 24 brand
-#    new HIGH findings and looks like a broken gate; it must name the real cause.
+# 10. The report was produced under a different root, so relpath cannot strip
+#     the prefix and every path stays absolute. It must name the real cause.
 report "$tmp/otherroot.json" "[$(issue G704 HIGH /elsewhere/internal/providers/auth.go)]"
 expect "unresolved paths report the root mismatch" 2 "$tmp/otherroot.json"
 case "$LAST_OUTPUT" in

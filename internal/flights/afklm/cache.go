@@ -94,6 +94,8 @@ func CacheKey(endpoint string, body []byte) string {
 // Returns (nil, false, nil) for a miss.
 func (c *Cache) Get(key string) (*Entry, bool, error) {
 	path := c.entryPath(key)
+	// #nosec G304 -- entryPath hashes the cache key and joins it beneath the
+	// configured AF-KLM cache directory.
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, false, nil
@@ -162,6 +164,7 @@ func (c *Cache) Put(key string, body []byte, ttl time.Duration) error {
 func (c *Cache) QuotaUsed(day time.Time) (int, error) {
 	dayKey := day.UTC().Format("2006-01-02")
 	path := c.quotaFile()
+	// #nosec G304 -- quotaFile is a fixed filename beneath the AF-KLM cache dir.
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return 0, nil
@@ -186,6 +189,7 @@ func (c *Cache) IncQuota(day time.Time) error {
 	dayKey := day.UTC().Format("2006-01-02")
 	path := c.quotaFile()
 	count := 0
+	// #nosec G304 -- quotaFile is a fixed filename beneath the AF-KLM cache dir.
 	if data, err := os.ReadFile(path); err == nil {
 		var q dailyQuota
 		if json.Unmarshal(data, &q) == nil && q.Date == dayKey {

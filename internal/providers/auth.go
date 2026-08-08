@@ -204,15 +204,19 @@ func doSearchRequest(ctx context.Context, client *http.Client, orig *http.Reques
 		}
 		bodyReader = b
 	}
+	// #nosec G704 -- orig already passed the provider destination policy; the
+	// guarded client enforces public-address policy again at dial time.
 	req, err := http.NewRequestWithContext(ctx, orig.Method, orig.URL.String(), bodyReader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("search retry: create request: %w", err)
 	}
 	req.Header = orig.Header.Clone()
 
+	// #nosec G704 -- client transport performs the destination check at dial
+	// time, including redirects and DNS rebinding.
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("search retry: http: %w", err)
+		return nil, nil, fmt.Errorf("search retry: http: %w", redactError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -249,7 +253,7 @@ func doPreflightRequest(ctx context.Context, client *http.Client, auth *AuthConf
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("preflight http: %w", err)
+		return nil, nil, fmt.Errorf("preflight http: %w", redactError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 

@@ -36,6 +36,8 @@ func newSourceRegistry(root string) (*Registry, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("providers: create state dir: %w", err)
 	}
+	// #nosec G302 -- root is a directory; 0700 is owner-only and stricter than
+	// the directory-specific G301 threshold.
 	if err := os.Chmod(root, 0o700); err != nil {
 		return nil, fmt.Errorf("providers: secure state dir: %w", err)
 	}

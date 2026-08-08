@@ -202,9 +202,11 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 	// CabinClass is also explicit-only. Applying a premium profile here changes
 	// the provider query and can exclude economy-only LCC providers, so identical
 	// CLI and MCP parameters would not search the same provider set (MIK-6878).
-	prof, _ := profile.Load()
-	hints := profile.FlightHints(prof, primaryOrigin, primaryDest)
-	opts = applyFlightProfileHints(opts, args, hints)
+	// Persisted profile hints are intentionally not loaded here. The helper
+	// below is retained as the explicit policy seam and regression-test target,
+	// but it is a no-op: identical CLI and MCP parameters must search the same
+	// provider set, and loading a profile only to discard every hint adds I/O to
+	// every request without changing the result.
 	// MaxPrice is intentionally NOT auto-applied as a hard filter — see the
 	// note above about PreferredAlliance. AvgFlightPrice*1.5 is a coarse,
 	// route-agnostic-ish ceiling; on a route priced above the user's

@@ -70,14 +70,19 @@ func installSystemd(binary string) error {
 	if err != nil {
 		return err
 	}
+	// #nosec G301 -- user-level systemd convention requires a traversable 0755
+	// unit directory; it contains public launch metadata, not credentials.
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	svc := filepath.Join(dir, systemdUnitName+".service")
 	tmr := filepath.Join(dir, systemdUnitName+".timer")
+	// #nosec G306 -- systemd unit files are conventionally 0644 and contain only
+	// the local binary path and schedule, never credentials or journey data.
 	if err := os.WriteFile(svc, []byte(renderSystemdService(binary)), 0o644); err != nil {
 		return err
 	}
+	// #nosec G306 -- same public systemd metadata rationale as the service file.
 	if err := os.WriteFile(tmr, []byte(renderSystemdTimer()), 0o644); err != nil {
 		return err
 	}

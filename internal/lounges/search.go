@@ -58,7 +58,7 @@ var loungesClient = &http.Client{Timeout: 10 * time.Second}
 
 // priorityPassBaseURL is the Priority Pass search API endpoint.
 // Override in tests.
-var priorityPassBaseURL = "https://www.prioritypass.com/api/inventoryloungesearchNpd"
+var priorityPassBaseURL = "https://www.prioritypass.com/api/inventoryloungesearchNpd" // #nosec G101 -- public API endpoint
 
 // SearchLounges searches for airport lounges at the given airport (IATA code).
 //

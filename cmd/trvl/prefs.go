@@ -221,6 +221,9 @@ func runPrefsEdit(_ *cobra.Command, _ []string) error {
 		editor = "vi"
 	}
 
+	// #nosec G702,G204 -- EDITOR/VISUAL intentionally selects a local executable for
+	// this interactive command; exec.Command does not invoke a shell and path is
+	// the fixed owner-only preferences file.
 	cmd := exec.Command(editor, path)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

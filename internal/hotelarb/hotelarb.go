@@ -487,6 +487,8 @@ func saveHoldJSON(path string, value any) error {
 }
 
 func loadHoldJSON(path string, dst any) error {
+	// #nosec G304 -- path is one of hotelarb's fixed hold files under trvl's
+	// owner-only state directory.
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil

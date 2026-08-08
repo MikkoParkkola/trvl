@@ -37,6 +37,8 @@ type Execer func(ctx context.Context, name string, args ...string) ([]byte, erro
 
 // defaultExecer runs the command through os/exec.
 var defaultExecer Execer = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	// #nosec G204 -- Query supplies only the fixed gws and icalBuddy names;
+	// Execer is variable solely so tests can replace process execution.
 	return exec.CommandContext(ctx, name, args...).Output()
 }
 

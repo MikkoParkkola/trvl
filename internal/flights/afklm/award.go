@@ -366,6 +366,8 @@ func MonthDateRange(yearMonth string) []string {
 func loadAwardFixture(origin, destination, date string) ([]AwardOffer, error) {
 	filename := fmt.Sprintf("testdata/award_%s_%s.json", strings.ToLower(origin), strings.ToLower(destination))
 
+	// #nosec G304 -- test-only fixture mode uses validated IATA origin and
+	// destination codes and a fixed testdata directory.
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("afklm award fixture: %w (set TRVL_TEST_AWARD_FIXTURE=0 to skip)", err)

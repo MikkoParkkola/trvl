@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -191,7 +192,6 @@ func setSchemaVersion(path, version string) error {
 	})
 }
 
-
 // A schemaless database that still HOLDS DATA is not an unfinished conversion.
 //
 // The schema version is written in the same transaction as the data, so its
@@ -281,4 +281,106 @@ func writeSchemalessDatabaseWithBuckets(path string) error {
 		}
 		return nil
 	})
+}
+
+// TRVL.BOLTM1.5 -- a writer that publishes while a reader is deciding must win.
+//
+// The reader observes "no schema" WITHOUT the cross-process lock, then renames.
+// Between those two steps a writer can take the lock, see the file exists, and
+// commit a full generation into it. Renaming after that quarantines a LIVE
+// database and republishes the frozen legacy JSON over it.
+//
+// Not hypothetical: the schemaless file is exactly what this recovery exists to
+// handle, so a writer finding one and filling it in is the expected repair,
+// racing the reader's decision to discard it.
+//
+// The window is driven directly rather than by two goroutines. Reproducing a
+// real interleaving would need the reader parked mid-decision, and a test that
+// cannot reliably enter the window proves nothing about it. Publishing before
+// calling the quarantine puts us at the exact moment after the observation and
+// before the rename, which is the state under test.
+//
+// Found by a third-vendor review after two others passed this code.
+func TestLoadReloadsGenerationPublishedDuringRecoveryDecision(t *testing.T) {
+	dir := t.TempDir()
+	seedLegacyStore(t, dir)
+	dbPath := filepath.Join(dir, "watch.db")
+
+	// The reader's observation: a schemaless database, quarantine-eligible.
+	if err := writeSchemalessDatabaseWithBuckets(dbPath); err != nil {
+		t.Fatalf("planting an unconverted database: %v", err)
+	}
+	s := &Store{dir: dir}
+	eligible, err := s.databaseIsUnpublished()
+	if err != nil || !eligible {
+		t.Fatalf("fixture is not quarantine-eligible: eligible=%v err=%v", eligible, err)
+	}
+
+	// Park the reader in the exact interval after its first observation and
+	// before it acquires .lock. The writer wins that race and publishes a full
+	// generation under the same lock production writers use.
+	var hookErr error
+	s.beforeRecoveryLock = func() {
+		writerLock, lockErr := acquireFileLock(s.lockPath())
+		if lockErr != nil {
+			hookErr = lockErr
+			return
+		}
+		defer releaseFileLock(writerLock)
+		writer := &Store{dir: dir}
+		writer.watches = []Watch{{ID: "live", Origin: "HEL", Destination: "JFK", Currency: "EUR"}}
+		writer.history = []PricePoint{{WatchID: "live", Price: 500, Currency: "EUR"}}
+		hookErr = writer.persistBoltLocked()
+	}
+
+	// This same Load call must re-check, notice the writer's generation, and
+	// return it. Requiring a second Load would leak the stale errNeverPublished
+	// observation to the user even though valid data is already on disk.
+	if err := s.Load(); err != nil {
+		t.Fatalf("Load returned the stale pre-publish error instead of reloading the writer's generation: %v", err)
+	}
+	if hookErr != nil {
+		t.Fatalf("writer publish: %v", hookErr)
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Errorf("the published database is no longer at watch.db: %v", err)
+	}
+	if len(s.watches) != 1 || s.watches[0].ID != "live" {
+		t.Errorf("watches = %+v, want the writer's generation from this Load call, not the legacy snapshot", s.watches)
+	}
+}
+
+// A mutation already owns .lock before it reloads. Recovery must use that
+// ownership instead of trying to acquire the non-reentrant lock a second time.
+// The old implementation blocked forever here on both Unix and Windows.
+func TestMutationRecoversSchemalessDatabaseWithoutRelocking(t *testing.T) {
+	dir := t.TempDir()
+	seedLegacyStore(t, dir)
+	if err := writeSchemalessDatabaseWithBuckets(filepath.Join(dir, "watch.db")); err != nil {
+		t.Fatalf("planting an unconverted database: %v", err)
+	}
+
+	s := &Store{dir: dir}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := s.Add(Watch{Type: "flight", Origin: "AMS", Destination: "VLC", Currency: "EUR"})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("mutation recovery failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("mutation deadlocked while recovering a schemaless database; recovery tried to acquire .lock while withTxn already held it")
+	}
+
+	fresh := &Store{dir: dir}
+	if err := fresh.Load(); err != nil {
+		t.Fatalf("load after recovered mutation: %v", err)
+	}
+	if len(fresh.watches) != 2 {
+		t.Fatalf("watches = %+v, want recovered legacy watch plus the new mutation", fresh.watches)
+	}
 }

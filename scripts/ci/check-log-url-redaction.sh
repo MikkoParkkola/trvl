@@ -33,4 +33,5 @@ set -euo pipefail
 
 # The AST checker sees complete calls rather than physical lines, so multiline
 # slog calls and slog.String("..._url", value) cannot bypass the guard.
+export GOTOOLCHAIN="${GOTOOLCHAIN:-go1.26.5}"
 exec go run ./scripts/ci/check-log-url-redaction

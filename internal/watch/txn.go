@@ -83,7 +83,7 @@ func (s *Store) withTxnLocked(apply func() error) error {
 	}
 	defer releaseFileLock(lock)
 
-	if err := s.loadLocked(); err != nil {
+	if err := s.loadLockedWithFileLock(true); err != nil {
 		return err
 	}
 	s.fireTxnHook(stageAfterReload)

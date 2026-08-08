@@ -133,6 +133,8 @@ end tell`, browser, safeURL)
 end tell`, safeURL)
 	}
 
+	// #nosec G204 -- fixed osascript executable; browser is from the two-value
+	// allowlist above and sanitizeURL removes AppleScript string delimiters.
 	cmd := exec.CommandContext(ctx, "osascript", "-e", openScript)
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("open %s: %w", browser, err)
@@ -154,6 +156,7 @@ end tell`, browser)
 end tell`
 	}
 
+	// #nosec G204 -- fixed osascript executable and allowlisted browser script.
 	readCmd := exec.CommandContext(ctx, "osascript", "-e", readScript)
 	out, err := readCmd.Output()
 	if err != nil {

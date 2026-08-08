@@ -233,6 +233,8 @@ func (c *Checker) fresh(info UpdateInfo) bool {
 // read or parse error — callers treat this as "no cache".
 func (c *Checker) readCache() (UpdateInfo, bool) {
 	path := filepath.Join(c.cacheDir, cacheFilename)
+	// #nosec G304 -- cacheFilename is constant and cacheDir belongs to the local
+	// self-update checker, not request input.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return UpdateInfo{}, false

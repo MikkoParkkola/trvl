@@ -111,6 +111,8 @@ func loadCachedCookies(client *http.Client, targetURL string) bool {
 		return false
 	}
 
+	// #nosec G304 -- cookieCachePath derives a sanitized host filename under
+	// ~/.trvl/cookies; the URL cannot escape that directory.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false // no cache file
@@ -154,6 +156,8 @@ func loadCachedCookies(client *http.Client, targetURL string) bool {
 		if c.isBrowserDerived() {
 			anyBrowser = true
 		}
+		// #nosec G124 -- restore the original upstream cookie attributes exactly;
+		// adding flags here can prevent a valid request cookie from being sent.
 		cookies[i] = &http.Cookie{
 			Name:     c.Name,
 			Value:    c.Value,

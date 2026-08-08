@@ -38,6 +38,8 @@ const nabCookieBudget = 6 * time.Second
 var (
 	browserAuthNow   = time.Now
 	browserAuthStart = func(name string, args ...string) error {
+		// #nosec G204 -- production callers select fixed browser launcher names;
+		// the variable signature exists solely as a test seam and never uses a shell.
 		return exec.Command(name, args...).Start()
 	}
 )

@@ -246,6 +246,8 @@ func sncfViaCurl(ctx context.Context, fromCode, toCode, date, currency string) (
 		body := bffPath.bodyFn(fromCode, toCode, date)
 		args := append(append([]string{}, commonArgs...), "-X", "POST", "-d", body, bffPath.path)
 
+		// #nosec G204 -- fixed curl executable; request fields remain separate
+		// argv entries and receive no shell interpretation.
 		cmd := exec.CommandContext(ctx, "curl", args...)
 		output, err := cmd.Output()
 		if err != nil {

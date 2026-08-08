@@ -51,6 +51,8 @@ const lockSupported = true
 // atomicjson swaps by rename -- so every holder locks the same file rather than
 // each locking whatever happened to sit at the path when it opened.
 func acquireFileLock(path string) (*os.File, error) {
+	// #nosec G304 -- path is Store.lockPath(), a fixed file under the
+	// configured owner-only state directory; request input cannot select it.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open lock file: %w", err)

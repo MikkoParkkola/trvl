@@ -168,6 +168,8 @@ func sendWithClient(ctx context.Context, url string, client *http.Client, p hear
 // dueForSend reports whether 24h have elapsed since the last recorded send (or
 // there is no record yet). Read errors are treated as "due" — best-effort.
 func dueForSend(dir string, now time.Time) bool {
+	// #nosec G304 -- heartbeatFile is constant and dir is trvl's local telemetry
+	// state directory.
 	data, err := os.ReadFile(filepath.Join(dir, heartbeatFile))
 	if err != nil {
 		return true
@@ -196,6 +198,8 @@ func markSent(dir string, now time.Time) error {
 // one on first use. Best-effort: any failure returns "" (the field is omitted).
 func installID(dir string) string {
 	path := filepath.Join(dir, installIDFile)
+	// #nosec G304 -- installIDFile is constant and dir is trvl's local telemetry
+	// state directory.
 	if data, err := os.ReadFile(path); err == nil {
 		if id := string(bytes.TrimSpace(data)); id != "" {
 			return id

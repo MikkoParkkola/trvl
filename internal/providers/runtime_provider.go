@@ -389,7 +389,7 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	// Send request.
 	resp, err := pc.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
+		return nil, fmt.Errorf("http request: %w", redactError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 

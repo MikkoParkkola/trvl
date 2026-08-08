@@ -70,7 +70,7 @@ func classifyProviderError(err error) (FixHintCode, string) {
 		strings.Contains(msg, "403 forbidden") ||
 		strings.Contains(msg, "access denied"):
 		return FixHintAkamaiBlock,
-			"WAF/Akamai block detected — call test_provider; if it fails, refresh browser cookies via configure_provider."
+			"WAF/Akamai block detected — call test_provider; if it fails, log in to the site in an installed browser and trvl will pick the fresh cookies up."
 
 	// Cookie auth failure (expired session / CSRF token mismatch).
 	case strings.Contains(msg, "cookie") ||
@@ -78,7 +78,7 @@ func classifyProviderError(err error) (FixHintCode, string) {
 		strings.Contains(msg, "401") ||
 		strings.Contains(msg, "unauthorized"):
 		return FixHintCookieExpired,
-			"Session cookie expired — call configure_provider to re-import fresh browser cookies."
+			"Session cookie expired — log in to the site in an installed browser; trvl re-reads cookies from it on the next search."
 
 	// Preflight step failed (URL construction or WAF during auth phase).
 	case strings.Contains(msg, "preflight"):
@@ -91,7 +91,7 @@ func classifyProviderError(err error) (FixHintCode, string) {
 		strings.Contains(msg, "unmarshal") ||
 		strings.Contains(msg, "unexpected end of json"):
 		return FixHintResponseShapeChanged,
-			"API response structure changed — call test_provider to inspect the current response, then update results_path via configure_provider."
+			"API response structure changed — call test_provider to inspect the current response. Fixing it needs a definition change under internal/providers/definitions (pull request or fork); results_path cannot be edited at runtime."
 
 	// TLS handshake / connection timeout / network-layer failure.
 	// DNS is checked here first (subset of network errors).

@@ -69,16 +69,22 @@ func installScheduler() error {
 	// the platform convention for ~/Library/LaunchAgents; tightening it risks
 	// launchd declining to load the job, which would silently stop the
 	// scheduler rather than fail loudly.
+	// #nosec G301 -- 0755 is the macOS LaunchAgents directory convention; the
+	// directory contains no credentials or journey data.
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
+	// #nosec G306 -- launchd plists are conventionally 0644 and contain only a
+	// binary path and schedule, never credentials.
 	if err := os.WriteFile(dst, []byte(plist), 0o644); err != nil {
 		return err
 	}
 	// Load via launchctl bootstrap (modern) into the user's GUI domain.
 	uid := fmt.Sprintf("gui/%d", os.Getuid())
+	// #nosec G204 -- fixed launchctl executable and locally generated argv.
 	if out, err := exec.Command("launchctl", "bootstrap", uid, dst).CombinedOutput(); err != nil {
 		// bootstrap fails if already loaded; fall back to legacy load.
+		// #nosec G204 -- fixed launchctl executable and resolved plist path argv.
 		if out2, err2 := exec.Command("launchctl", "load", dst).CombinedOutput(); err2 != nil {
 			return fmt.Errorf("launchctl bootstrap/load failed: %s / %s", out, out2)
 		}
@@ -94,7 +100,9 @@ func uninstallScheduler() error {
 	}
 	uid := fmt.Sprintf("gui/%d", os.Getuid())
 	// bootout is the modern unload; ignore errors if not loaded.
+	// #nosec G204 -- fixed launchctl executable and locally generated argv.
 	_ = exec.Command("launchctl", "bootout", uid, dst).Run()
+	// #nosec G204 -- fixed launchctl executable and resolved plist path argv.
 	_ = exec.Command("launchctl", "unload", dst).Run()
 	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
 		return err

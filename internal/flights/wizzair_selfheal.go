@@ -369,6 +369,8 @@ func wizzMaybeLoadCache(host string) {
 		if !ok {
 			return
 		}
+		// #nosec G304 -- wizzCachePath returns a fixed filename under trvl's local
+		// state directory; host/version data never becomes a path component.
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return

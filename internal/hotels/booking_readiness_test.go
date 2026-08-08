@@ -83,3 +83,36 @@ func TestRoomReadiness_KnownNonRefundable_Ready(t *testing.T) {
 		t.Fatalf("known non-refundable: want %q, got %q", ReadinessReady, got)
 	}
 }
+
+// Roberto Reale's "ready ceiling" question is about production reachability,
+// not whether a hand-built RoomType can satisfy four booleans. Drive a real
+// Booking.com JSON-LD offer through the parser and production mapping, then
+// prove the resulting room reaches Ready.
+func TestBookingJSONLDOfferCanReachReady(t *testing.T) {
+	page := `<script type="application/ld+json">
+{
+  "@type": "Hotel",
+  "name": "Reachable Hotel",
+  "makesOffer": [{
+    "@type": "Offer",
+    "name": "Flexible Double Room",
+    "description": "Free cancellation until August 20. Taxes and fees included.",
+    "priceSpecification": {"price": "180", "priceCurrency": "EUR"}
+  }]
+}
+</script>`
+	offers, err := parseBookingJSONLD(page)
+	if err != nil {
+		t.Fatalf("parse Booking.com offer: %v", err)
+	}
+	if len(offers) != 1 {
+		t.Fatalf("offers = %d, want 1", len(offers))
+	}
+	room := roomTypeFromBookingOffer(offers[0], "https://www.booking.com/hotel/it/reachable.html", "EUR")
+	if room.Refundable == nil {
+		t.Fatal("production parser lost the cancellation-status signal")
+	}
+	if got := roomReadiness(room); got != ReadinessReady {
+		t.Fatalf("parsed real-source room readiness = %q, want %q; room=%+v", got, ReadinessReady, room)
+	}
+}

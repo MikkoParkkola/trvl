@@ -545,9 +545,12 @@ in `ProviderStatus.FixHint`:
 
 ```
 preflight error    → WAF/auth needs refresh, call test_provider
-results_path miss  → API response changed, update results_path via configure_provider
-http 403 / 202     → WAF block, may need browser cookie refresh
-rate limit         → back off, reduce requests_per_second in config
+results_path miss  → API response changed; needs a definition change under
+                     internal/providers/definitions (PR or fork). results_path
+                     cannot be edited at runtime since 1.21.0 (#538).
+http 403 / 202     → WAF block; log in to the site in an installed browser and
+                     trvl re-reads the cookies
+rate limit         → back off, reduce requests_per_second in the definition
 ```
 
 These hints flow back to the calling LLM for autonomous diagnosis and remediation.

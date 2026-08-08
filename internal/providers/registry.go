@@ -42,6 +42,7 @@ func NewRegistryAt(dir string) (*Registry, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("providers: create dir: %w", err)
 	}
+	// #nosec G302 -- dir is a directory; 0700 is owner-only.
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("providers: secure dir: %w", err)
 	}
@@ -62,6 +63,8 @@ func NewRegistryAt(dir string) (*Registry, error) {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
+		// #nosec G304 -- entry comes from ReadDir(dir), so Join remains inside
+		// the already-selected provider registry directory.
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("providers: read %s: %w", entry.Name(), err)
@@ -262,6 +265,8 @@ func (r *Registry) Reload(id string) (*ProviderConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	// #nosec G304 -- configPath validates the provider ID and resolves it under
+	// the owner-only registry directory.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("providers: reload %s: %w", id, err)
@@ -320,6 +325,8 @@ func (r *Registry) ReloadIfChanged(id string) *ProviderConfig {
 	if last2, ok := r.loadedAt[id]; ok && !info.ModTime().After(last2) {
 		return r.configs[id]
 	}
+	// #nosec G304 -- path was resolved by configPath beneath the owner-only
+	// provider registry directory.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return r.configs[id]

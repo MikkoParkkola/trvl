@@ -248,7 +248,7 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 
 	resp, err := pc.client.Do(req)
 	if err != nil {
-		result.Error = fmt.Sprintf("request: http: %v", err)
+		result.Error = fmt.Sprintf("request: http: %s", logredact.Err(err))
 		return result
 	}
 	defer func() { _ = resp.Body.Close() }()

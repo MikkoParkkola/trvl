@@ -161,8 +161,9 @@ func (c *Client) do(ctx context.Context, path string, body interface{}, daysUnti
 	if entry != nil && stale {
 		c.cache.WriteLastRequest(key, "stale")
 		// Fire async refresh but return stale data immediately.
+		refreshBase := context.WithoutCancel(ctx)
 		go func() {
-			bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			bgCtx, cancel := context.WithTimeout(refreshBase, 30*time.Second)
 			defer cancel()
 			_, _, _ = c.fetch(bgCtx, path, rawBody, key, daysUntilDep)
 		}()

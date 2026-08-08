@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"strconv"
@@ -263,10 +264,9 @@ func agodaUUID() string {
 	if _, err := io.ReadFull(rand.Reader, b[:]); err != nil {
 		// Fall back to a time-seeded value; correctness does not depend on the
 		// UUID being cryptographically strong, only well-formed and unique-ish.
-		n := time.Now().UnixNano()
-		for i := range b {
-			b[i] = byte(n >> (uint(i%8) * 8))
-		}
+		n := uint64(time.Now().UnixNano())
+		binary.LittleEndian.PutUint64(b[0:8], n)
+		binary.LittleEndian.PutUint64(b[8:16], n^0x9e3779b97f4a7c15)
 	}
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80

@@ -34,9 +34,11 @@ test-live-integrations:
 test-live-probes:
 	TRVL_TEST_LIVE_PROBES=1 $(GO_RUN) test -v -count=1 -timeout=$(TEST_TIMEOUT) ./... -run Probe
 
-# Log-URL redaction is NOT in repo-hygiene: seeing multi-line slog calls needs a
-# Go parser, which a line-based shell script does not have. It lives in
-# internal/logredact's slogguard test and runs with `make test`.
+# Log-URL redaction runs here as an AST checker over Go syntax. It began as a
+# line-based shell script that could not see multi-line slog calls and reported
+# clean against a live leak; internal/logredact's slogguard test is the CI owner
+# of that job, and this local copy exists so `make lint` catches the same thing
+# before a push.
 repo-hygiene:
 	scripts/ci/check-workflow-hygiene.sh
 	scripts/ci/check-language-hygiene.sh
@@ -65,7 +67,7 @@ lint: repo-hygiene
 	GOTOOLCHAIN=$(GOTOOLCHAIN) govulncheck ./...
 
 # Local mirror of the CI `gosec` job. Same scan scope, same pinned version and
-# same baseline, so a clean run here means a clean run there.
+# same zero-HIGH/zero-MEDIUM gate, so a clean run here means a clean run there.
 security-gosec:
 	.github/scripts/gosec-gate_test.sh
 	@if ! command -v gosec >/dev/null 2>&1; then \
@@ -73,9 +75,18 @@ security-gosec:
 		exit 1; \
 	fi
 	@mkdir -p bin
-	@GOTOOLCHAIN=$(GOTOOLCHAIN) gosec -quiet -fmt json -out bin/gosec-report.json ./... || true
-	@test -s bin/gosec-report.json
-	.github/scripts/gosec-gate.sh bin/gosec-report.json
+	@for target_os in darwin linux windows; do \
+		next="bin/gosec-report.$$target_os.next.json"; \
+		report="bin/gosec-report.$$target_os.json"; \
+		printf '%s\n' '{"Issues":[],"Golang errors":{"scan-incomplete":[{"error":"gosec produced no report"}]},"Stats":{"found":0}}' > "$$next"; \
+		if GOOS="$$target_os" GOTOOLCHAIN=$(GOTOOLCHAIN) gosec -quiet -fmt json -out "$$next" ./...; then \
+			printf '%s\n' '{"Issues":[],"Golang errors":{},"Stats":{"found":0}}' > "$$next"; \
+		fi; \
+		test -s "$$next"; \
+		mv "$$next" "$$report"; \
+		printf 'gosec platform: %s\n' "$$target_os"; \
+		.github/scripts/gosec-gate.sh "$$report" || exit 1; \
+	done
 
 # Everything CI gates on, in one command, to be run BEFORE committing.
 #

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -34,6 +35,9 @@ func TestResolveChallengeRefusesBeforeBrowserRunner(t *testing.T) {
 	_, err := ResolveChallenge(context.Background(), "http://127.0.0.1:8080/private", WithTier2ExecPath("test-browser"))
 	if !errors.Is(err, ErrDestinationRefused) {
 		t.Fatalf("ResolveChallenge failed with %v, want ErrDestinationRefused", err)
+	}
+	if !strings.Contains(err.Error(), AllowLocalEnv) {
+		t.Fatalf("ResolveChallenge refusal = %q, want %s opt-in guidance", err, AllowLocalEnv)
 	}
 	if calls.Load() != 0 {
 		t.Fatalf("browser runner called %d times for a refused destination", calls.Load())

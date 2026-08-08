@@ -79,6 +79,15 @@ trvl rooms "Hotel Lutetia Paris" --checkin 2026-06-15 --checkout 2026-06-18
 
 **Booking readiness:** `trvl prices` and `trvl rooms` show a readiness verdict (ready / caution / unverified) composed from verified price, stable link, confirmed property identity, and known refundability. Any unknown signal downgrades the verdict conservatively. In `--format json` the fields are `booking_readiness` and `booking_readiness_reasons`.
 
+`ready` is reachable from `trvl rooms` when a seller exposes a real room rate,
+a durable provider link, an exact room match, and an explicit cancellation
+status (refundable or non-refundable). It is not reachable from `trvl prices`:
+that property-price source carries no cancellation terms, so its honest ceiling
+is `caution`. The CLI prints that ceiling; JSON and MCP responses expose
+`booking_readiness_ceiling` and `booking_readiness_ceiling_reasons`. A capped
+`caution` describes the source's evidence limit, while ordinary
+`booking_readiness_reasons` still describe problems with the specific offer.
+
 ### Islands and unindexed destinations
 
 Small islands and out-of-the-way towns often have properties that Google Hotels never assigns a stable hotel ID. The usual `trvl rooms <name>` path needs that ID to resolve room-level data, so it can come up empty for exactly the places where a verified price matters most. Roberto Reale tested this on Ischia and reported the gap; the sequence below is what works there.
@@ -364,4 +373,3 @@ The AI uses these to give you actionable handoff links. For accommodation decisi
 | **Platforms** | Linux, macOS (amd64, arm64). Windows CI in progress. |
 | **Code** | Go codebase with CI race/coverage gates and a documented local test matrix in [docs/TESTING.md](docs/TESTING.md) |
 | **License** | PolyForm Noncommercial 1.0 |
-

@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 )
 
 // Migration describes a single post-upgrade step.
@@ -59,6 +61,8 @@ func prefsPathIn(dir string) string {
 
 // ReadStamp reads the version stamp file. Returns "" if the file does not exist.
 func ReadStamp(path string) (string, error) {
+	// #nosec G304 -- callers pass the upgrade subsystem's local install-stamp
+	// path, never a network/request-controlled filename.
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return "", nil
@@ -300,15 +304,19 @@ func backupPreferences(dir, oldVersion string) {
 		return // no prefs file, nothing to back up
 	}
 	dst := src + ".bak." + suffix
+	// #nosec G304 -- src is preferences.json in the configured state directory;
+	// suffix is validated or generated above.
 	data, err := os.ReadFile(src)
 	if err != nil {
 		slog.Warn("upgrade: could not read preferences to back them up; the migration will proceed without a backup",
-			"err", err)
+			"err", logredact.Err(err))
 		return
 	}
+	// #nosec G703 -- dst is preferences.json plus safeVersionStamp or a
+	// process-generated UTC suffix; no unchecked path component reaches it.
 	if err := os.WriteFile(dst, data, 0o600); err != nil {
 		slog.Warn("upgrade: could not write the preferences backup; the migration will proceed without one",
-			"err", err)
+			"err", logredact.Err(err))
 	}
 }
 

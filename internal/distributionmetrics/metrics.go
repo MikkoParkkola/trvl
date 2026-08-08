@@ -124,6 +124,8 @@ func Collect(ctx context.Context, cfg Config) (Report, error) {
 	// a maintainer tool writing project documentation, not user data under
 	// $HOME, so tightening it to 0600 would make a shared artefact unreadable
 	// to the humans it exists for.
+	// #nosec G301 -- this is a publishable aggregate dashboard directory, not
+	// private traveller state; traversal of it is intentional.
 	if err := os.MkdirAll(filepath.Dir(cfg.DashboardPath), 0o755); err != nil {
 		return Report{}, err
 	}
@@ -155,6 +157,8 @@ func Collect(ctx context.Context, cfg Config) (Report, error) {
 		return Report{}, err
 	}
 	dashboard := RenderDashboard(cfg, githubSnapshots, npmSnapshots)
+	// #nosec G306 -- the aggregate dashboard is intentionally readable for
+	// publication and contains no credentials or personal journey data.
 	if err := os.WriteFile(cfg.DashboardPath, []byte(dashboard), 0o644); err != nil {
 		return Report{}, err
 	}
@@ -423,6 +427,8 @@ func loadGitHubSnapshots(dir string, current GitHubSnapshot) ([]GitHubSnapshot, 
 	snapshots := make([]GitHubSnapshot, 0, len(matches)+1)
 	seen := map[string]bool{}
 	for _, path := range matches {
+		// #nosec G304 -- path is returned by Glob for the fixed downloads-*.json
+		// pattern beneath the configured metrics directory.
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
@@ -448,6 +454,8 @@ func loadNPMSnapshots(dir string, current NPMSnapshot) ([]NPMSnapshot, error) {
 	snapshots := make([]NPMSnapshot, 0, len(matches)+1)
 	seen := map[string]bool{}
 	for _, path := range matches {
+		// #nosec G304 -- path is returned by Glob for the fixed npm-*.json pattern
+		// beneath the configured metrics directory.
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err

@@ -8,12 +8,13 @@ package batchexec
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"crypto/tls"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"math/rand/v2"
 	"net"
 	"net/http"
 	neturl "net/url"
@@ -389,8 +390,14 @@ func isRetryable(statusCode int) bool {
 // Jitter adds +-25% randomness to prevent thundering herd.
 func backoffSleep(ctx context.Context, attempt int) error {
 	base := defaultBaseBackoff << attempt // 1s, 2s, 4s
-	// Add jitter: +-25%
-	jitter := time.Duration(float64(base) * (0.75 + rand.Float64()*0.5))
+	// Add cryptographically sourced jitter: +-25%. When the OS random source is
+	// unavailable, use the midpoint rather than falling back to a weak PRNG.
+	var random [8]byte
+	unit := 0.5
+	if _, err := cryptorand.Read(random[:]); err == nil {
+		unit = float64(binary.LittleEndian.Uint64(random[:])>>11) / (1 << 53)
+	}
+	jitter := time.Duration(float64(base) * (0.75 + unit*0.5))
 
 	timer := time.NewTimer(jitter)
 	defer timer.Stop()

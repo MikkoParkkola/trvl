@@ -223,6 +223,8 @@ func runInstall(client string, force, dryRun bool) error {
 }
 
 func loadJSONConfig(cfgPath string, force bool) (map[string]any, []byte, error) {
+	// #nosec G304 -- cfgPath is resolved from the selected supported MCP client
+	// to that client's local config location.
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -251,6 +253,7 @@ func runInstallCodexTOML(cfgPath, binary string, force, dryRun bool) error {
 	// args = ["mcp"]
 	entry := fmt.Sprintf("\n[mcp_servers.trvl]\ncommand = %q\nargs = [\"mcp\"]\n", binary)
 
+	// #nosec G304 -- cfgPath is the resolved local Codex config path.
 	existing, _ := os.ReadFile(cfgPath)
 	content := string(existing)
 
@@ -274,10 +277,14 @@ func runInstallCodexTOML(cfgPath, binary string, force, dryRun bool) error {
 
 	// Backup existing.
 	if len(existing) > 0 {
+		// #nosec G703 -- cfgPath is one of the installer's resolved client config
+		// paths; the fixed suffix cannot escape its directory.
 		_ = os.WriteFile(cfgPath+".trvl.bak", existing, 0o600)
 	}
 
-	f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	// #nosec G304 -- cfgPath is the resolved local Codex config path; 0600 keeps
+	// any adjacent client settings owner-only.
+	f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("open config %s: %w", cfgPath, err)
 	}

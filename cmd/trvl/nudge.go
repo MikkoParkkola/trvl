@@ -48,6 +48,8 @@ func nudgePath() (string, error) {
 
 // loadNudgeState reads the nudge state from disk. Returns zero state if missing.
 func loadNudgeState(path string) nudgeState {
+	// #nosec G304 -- path is the command's fixed local nudge-state file under
+	// trvl's state directory.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nudgeState{}
