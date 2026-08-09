@@ -1,8 +1,8 @@
 {
   "name": "trvl-mcp",
   "mcpName": "io.github.MikkoParkkola/trvl",
-  "version": "1.21.0",
-  "description": "Travel MCP server + CLI for flights, hotels, trains, cars, ferries, and door-to-door multimodal trips \u2014 no API keys required, single Go binary, works with any MCP client (Claude, Cursor, Windsurf, Codex). 1 smart travel MCP tool, natural language; legacy per-domain tool names still work as legacy-compatible capabilities.",
+  "version": "1.21.1",
+  "description": "Travel MCP server + CLI for flights, hotels, trains, cars, ferries, and door-to-door multimodal trips — no API keys required, single Go binary, works with any MCP client (Claude, Cursor, Windsurf, Codex). 1 smart travel MCP tool, natural language; legacy per-domain tool names still work as legacy-compatible capabilities.",
   "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.1] - 2026-08-10
+
 ### Fixed
 
 - Hotel room fallbacks now require a strong property-name match before merging
