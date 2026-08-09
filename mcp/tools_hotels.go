@@ -54,7 +54,7 @@ func hotelPricesTool() ToolDef {
 	return ToolDef{
 		Name:        "hotel_prices",
 		Title:       "Hotel Prices Comparison",
-		Description: "Get exposed booking-provider prices for a specific Google Hotels property. Use as a provider comparison, not a rate guarantee; for booking decisions prefer room-level totals from hotel_rooms or search_hotels_with_details when available. EXTRA SIGNALS (use them when present): `price_position` shows where this price sits in the property's own history (only trust the verdict when `confident` is true); `booking_readiness` is a composite verdict (ready, caution, unverified) — anything below `ready` means verify before booking, and `booking_readiness_reasons` explains why. Note: from this endpoint readiness usually stays at caution because refundability is not known here; call hotel_rooms for a property where 'ready' can be reached.",
+		Description: "Get exposed booking-provider prices for a specific Google Hotels property. Use as a provider comparison, not a rate guarantee; for booking decisions prefer room-level totals from hotel_rooms or search_hotels_with_details when available. EXTRA SIGNALS (use them when present): `price_position` shows where this price sits in the property's own history (only trust the verdict when `confident` is true); `booking_readiness` is a composite verdict (ready, caution, unverified) for the selected lowest-price seller — anything below `ready` means verify before booking, and `booking_readiness_reasons` explains why. This endpoint can reach `ready` when that seller supplies cancellation terms; otherwise it reports a conditional caution ceiling. Signals are never borrowed from another seller.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
@@ -296,10 +296,9 @@ func handleHotelPrices(ctx context.Context, args map[string]any, elicit ElicitFu
 		PricePosition           *pricesignal.Position `json:"price_position,omitempty"`
 		BookingReadiness        string                `json:"booking_readiness,omitempty"`
 		BookingReadinessReasons []string              `json:"booking_readiness_reasons,omitempty"`
-		// The ceiling is what stops an agent reading a structurally capped
-		// verdict as a finding about the hotel. This endpoint carries no
-		// cancellation terms, so it can never report ready; without saying so, a
-		// caution here is indistinguishable from a caution earned by thin data.
+		// The ceiling stops an agent reading missing seller evidence as a finding
+		// about the hotel. It is conditional: providers can carry cancellation
+		// terms, but the selected seller may omit them.
 		BookingReadinessCeiling        string   `json:"booking_readiness_ceiling,omitempty"`
 		BookingReadinessCeilingReasons []string `json:"booking_readiness_ceiling_reasons,omitempty"`
 	}

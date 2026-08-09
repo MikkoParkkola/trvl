@@ -376,47 +376,45 @@ func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelR
 	if idx := strings.LastIndex(query, ","); idx >= 0 {
 		namePart = strings.TrimSpace(query[:idx])
 	}
-	queryLower := strings.ToLower(namePart)
-	queryWords := strings.Fields(queryLower)
+	queryWords := meaningfulHotelNameWords(namePart)
 	if len(queryWords) == 0 {
 		return nil
 	}
-
-	// Filter out short words that commonly indicate location rather than the
-	// actual hotel name being searched for (e.g. "hotel", "apartments").
-	filtered := queryWords[:0]
-	for _, w := range queryWords {
-		if len(w) >= 3 {
-			filtered = append(filtered, w)
-		}
-	}
-	queryWords = filtered
-	if len(queryWords) == 0 {
-		return nil
-	}
+	queryNormalized := strings.Join(hotelNameWords(namePart), " ")
 
 	bestIdx := -1
 	bestScore := 0
 	bestIDRank := -1
 
 	for i := range hotels {
-		nameLower := strings.ToLower(hotels[i].Name)
+		candidateWords := hotelNameWords(hotels[i].Name)
+		candidateSet := make(map[string]struct{}, len(candidateWords))
+		for _, word := range candidateWords {
+			candidateSet[word] = struct{}{}
+		}
 
 		score := 0
-		// Exact contains match scores highest.
-		if strings.Contains(nameLower, queryLower) {
+		candidateNormalized := strings.Join(candidateWords, " ")
+		// A token-bounded phrase match scores highest. Padding prevents a short
+		// property name such as "Mare" from matching "Rivamare".
+		if strings.Contains(" "+candidateNormalized+" ", " "+queryNormalized+" ") {
 			score = 100
 		} else {
+			// Every meaningful query word must be present as a complete token.
+			// A single shared generic or brand fragment is not property identity.
+			allPresent := true
 			for _, w := range queryWords {
-				if strings.Contains(nameLower, w) {
-					score += 10
+				if _, ok := candidateSet[w]; !ok {
+					allPresent = false
+					break
 				}
+			}
+			if allPresent {
+				score = len(queryWords) * 10
 			}
 		}
 
-		// Require at least a meaningful match (≥10 points from actual hotel name
-		// words, not just "hotel" or other generic terms).
-		if score < 10 {
+		if score == 0 {
 			continue
 		}
 
@@ -442,6 +440,44 @@ func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelR
 		return nil
 	}
 	return &hotels[bestIdx]
+}
+
+var genericHotelNameWords = map[string]struct{}{
+	"and":        {},
+	"apartment":  {},
+	"apartments": {},
+	"hostel":     {},
+	"hotel":      {},
+	"hotels":     {},
+	"inn":        {},
+	"resort":     {},
+	"resorts":    {},
+	"the":        {},
+}
+
+// hotelNameWords lowercases a property name and splits punctuation-delimited
+// names such as "Ritz-Carlton" into exact comparable tokens.
+func hotelNameWords(name string) []string {
+	return strings.FieldsFunc(strings.ToLower(name), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+}
+
+// meaningfulHotelNameWords removes category words that cannot establish
+// property identity on their own.
+func meaningfulHotelNameWords(name string) []string {
+	words := hotelNameWords(name)
+	filtered := words[:0]
+	for _, word := range words {
+		if len([]rune(word)) < 3 {
+			continue
+		}
+		if _, generic := genericHotelNameWords[word]; generic {
+			continue
+		}
+		filtered = append(filtered, word)
+	}
+	return filtered
 }
 
 // nameMatchBetter reports whether candidate (cScore, cIDRank, c) is a strictly

@@ -30,8 +30,8 @@ func TestHandleSearchCars_NoProviderGivesSensibleStatus(t *testing.T) {
 
 	content, structured, err := handleSearchCars(context.Background(), map[string]any{
 		"pickup_location": "Helsinki Airport",
-		"pickup_date":     "2026-07-01",
-		"dropoff_date":    "2026-07-04",
+		"pickup_date":     futureDateAfter(30),
+		"dropoff_date":    futureDateAfter(33),
 	}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("handleSearchCars returned error: %v", err)

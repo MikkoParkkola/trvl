@@ -74,10 +74,10 @@ func TestHotelBookingReadiness_AllSignalsTrue(t *testing.T) {
 	}
 	// WHEN readiness is evaluated
 	v := hotelBookingReadiness("hotel-abc", providers)
-	// THEN only RefundabilityKnown remains unknown, so verdict is Caution (not Ready)
-	// Ready requires ALL four signals explicitly true; refundability is always nil here.
+	// THEN only RefundabilityKnown remains unknown, so verdict is Caution (not Ready).
+	// Ready requires ALL four signals explicitly true for this selected seller.
 	if v.Readiness == booking.Ready {
-		t.Error("hotel_prices endpoint can never reach Ready (refundability always nil)")
+		t.Error("a selected seller with no refundability terms cannot reach Ready")
 	}
 	if v.Readiness != booking.Caution {
 		t.Errorf("want Caution, got %s", v.Readiness)
@@ -201,14 +201,14 @@ func TestBookingReadinessReasons_NilRefundability(t *testing.T) {
 	}
 	v := hotelBookingReadiness("hotel-ref", providers)
 	hasRefundabilityReason := false
-	// Same correction: always unobtainable here, so it is a ceiling reason.
+	// Missing from the selected seller, so it is a conditional ceiling reason.
 	for _, r := range v.CeilingReasons {
 		if strings.Contains(r, "refundability") {
 			hasRefundabilityReason = true
 		}
 	}
 	if !hasRefundabilityReason {
-		t.Errorf("expected refundability in the ceiling reasons (never obtainable on the prices endpoint), got: %v", v.CeilingReasons)
+		t.Errorf("expected refundability in the ceiling reasons for this selected seller, got: %v", v.CeilingReasons)
 	}
 	for _, r := range v.Reasons {
 		if strings.Contains(r, "refundability") {

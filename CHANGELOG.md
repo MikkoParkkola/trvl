@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Hotel room fallbacks now require a strong property-name match before merging
+  OTA inventory, so a nearby hotel that merely shares words such as “hotel” or
+  “mare” cannot be attached to the requested property. Booking-readiness signals
+  are also scoped to one room or seller instead of being combined into an offer
+  that no provider returned. ([#593](https://github.com/MikkoParkkola/trvl/issues/593))
+- Hotel, car, and date-window searches now reject date ranges that start in the
+  past, consistently with single-date searches. CLI examples use future dates.
+  ([#593](https://github.com/MikkoParkkola/trvl/issues/593))
+
 ## [1.21.0] - 2026-08-08
 
 ### Added

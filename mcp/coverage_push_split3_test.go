@@ -10,7 +10,11 @@ import (
 // rejects past dates) never masks the assertion under test. Computed at call
 // time to stay rot-proof rather than a hardcoded literal.
 func futureDate() string {
-	return time.Now().AddDate(0, 1, 0).Format("2006-01-02")
+	return futureDateAfter(30)
+}
+
+func futureDateAfter(days int) string {
+	return time.Now().AddDate(0, 0, days).Format("2006-01-02")
 }
 
 func TestRecordSearchFromArgs_DestinationOnly(t *testing.T) {

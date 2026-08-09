@@ -145,7 +145,7 @@ func TestHandleWatchRoomAvailability_MissingKeywords(t *testing.T) {
 func TestHandleWatchRoomAvailability_InvalidDates(t *testing.T) {
 	_, _, err := handleWatchRoomAvailability(context.Background(),
 		map[string]any{
-			"hotel_name": "Hilton", "check_in": "2026-06-18", "check_out": "2026-06-15",
+			"hotel_name": "Hilton", "check_in": futureDateAfter(37), "check_out": futureDateAfter(30),
 			"keywords": "balcony",
 		},
 		nil, nil, nil)
@@ -157,7 +157,7 @@ func TestHandleWatchRoomAvailability_InvalidDates(t *testing.T) {
 func TestHandleWatchRoomAvailability_EmptyKeywords(t *testing.T) {
 	_, _, err := handleWatchRoomAvailability(context.Background(),
 		map[string]any{
-			"hotel_name": "Hilton", "check_in": "2026-06-15", "check_out": "2026-06-18",
+			"hotel_name": "Hilton", "check_in": futureDateAfter(30), "check_out": futureDateAfter(37),
 			"keywords": ", ,",
 		},
 		nil, nil, nil)
@@ -169,7 +169,7 @@ func TestHandleWatchRoomAvailability_EmptyKeywords(t *testing.T) {
 func TestHandleWatchRoomAvailability_ValidKeywords(t *testing.T) {
 	_, _, err := handleWatchRoomAvailability(context.Background(),
 		map[string]any{
-			"hotel_name": "Hilton", "check_in": "2026-06-15", "check_out": "2026-06-18",
+			"hotel_name": "Hilton", "check_in": futureDateAfter(30), "check_out": futureDateAfter(37),
 			"keywords": "balcony,sea view", "below": float64(200), "currency": "EUR",
 		},
 		nil, nil, nil)

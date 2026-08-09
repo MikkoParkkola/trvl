@@ -388,6 +388,12 @@ Response extras:
 - `booking_readiness`: a verdict string — `"ready"`, `"caution"`, or `"unverified"` — composed from verified price, stable link, confirmed property identity, and known refundability. Any unknown signal downgrades the verdict conservatively.
 - `booking_readiness_reasons`: list of strings explaining what contributed to the verdict.
 
+For `hotel_prices`, all readiness signals describe the selected lowest-price
+seller; terms from another seller are never combined with it. A conditional
+`caution` ceiling is returned when that seller does not state cancellation
+terms. For `hotel_rooms`, the top-level verdict comes from one concrete room
+offer and never combines signals across rooms.
+
 `hotel_rooms` returns the same `booking_readiness` and `booking_readiness_reasons` fields.
 
 CLI re-book flow for existing refundable reservations:

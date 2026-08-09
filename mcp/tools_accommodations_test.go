@@ -115,8 +115,8 @@ func TestHandleSearchAccommodationsReturnsOnlyCriteriaMatchedOffers(t *testing.T
 
 	content, structured, err := handleSearchAccommodations(context.Background(), map[string]any{
 		"location":            "Paris",
-		"check_in":            "2026-07-10",
-		"check_out":           "2026-07-12",
+		"check_in":            futureDateAfter(30),
+		"check_out":           futureDateAfter(32),
 		"adults":              2,
 		"children_ages":       []any{float64(7)},
 		"currency":            "eur",
@@ -247,8 +247,8 @@ func TestHandleSearchAccommodationsUsesProviderRoomInventoryWithoutHotelID(t *te
 
 	_, structured, err := handleSearchAccommodations(context.Background(), map[string]any{
 		"location":                   "Paris",
-		"check_in":                   "2026-07-10",
-		"check_out":                  "2026-07-12",
+		"check_in":                   futureDateAfter(30),
+		"check_out":                  futureDateAfter(32),
 		"adults":                     2,
 		"currency":                   "eur",
 		"accommodation_type":         "entire_apartment",
@@ -365,8 +365,8 @@ func TestHandleSearchAccommodationsPrioritizesVerifiableCandidateOverLeadInOnly(
 
 	_, structured, err := handleSearchAccommodations(context.Background(), map[string]any{
 		"location":                   "Paris",
-		"check_in":                   "2026-07-10",
-		"check_out":                  "2026-07-12",
+		"check_in":                   futureDateAfter(30),
+		"check_out":                  futureDateAfter(32),
 		"adults":                     2,
 		"children_ages":              []any{float64(7)},
 		"currency":                   "eur",
@@ -443,8 +443,8 @@ func TestHandleSearchAccommodationsPrioritizesRequestedAccommodationType(t *test
 
 	_, structured, err := handleSearchAccommodations(context.Background(), map[string]any{
 		"location":                   "Paris",
-		"check_in":                   "2026-07-10",
-		"check_out":                  "2026-07-12",
+		"check_in":                   futureDateAfter(30),
+		"check_out":                  futureDateAfter(32),
 		"adults":                     2,
 		"currency":                   "eur",
 		"accommodation_type":         "entire_apartment",
@@ -502,8 +502,8 @@ func TestHandleSearchAccommodationsBoundsSlowRoomLookup(t *testing.T) {
 	start := time.Now()
 	_, structured, err := handleSearchAccommodations(context.Background(), map[string]any{
 		"location":           "Paris",
-		"check_in":           "2026-07-10",
-		"check_out":          "2026-07-12",
+		"check_in":           futureDateAfter(30),
+		"check_out":          futureDateAfter(32),
 		"currency":           "eur",
 		"max_candidates":     1,
 		"include_candidates": true,
