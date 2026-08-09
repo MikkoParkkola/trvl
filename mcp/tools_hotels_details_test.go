@@ -116,8 +116,8 @@ func TestHandleSearchHotelsWithDetailsEnrichesTopResults(t *testing.T) {
 
 	content, structured, err := handleSearchHotelsWithDetails(context.Background(), map[string]any{
 		"location":            "Paris",
-		"check_in":            "2026-07-10",
-		"check_out":           "2026-07-12",
+		"check_in":            futureDateAfter(30),
+		"check_out":           futureDateAfter(32),
 		"guests":              3,
 		"children_ages":       []any{float64(7)},
 		"rooms":               1,
@@ -241,8 +241,8 @@ func TestHandleSearchHotelsWithDetailsPartialFailuresUseTypedDetailErrors(t *tes
 
 	content, structured, err := handleSearchHotelsWithDetails(context.Background(), map[string]any{
 		"location":          "Paris",
-		"check_in":          "2026-07-10",
-		"check_out":         "2026-07-12",
+		"check_in":          futureDateAfter(30),
+		"check_out":         futureDateAfter(32),
 		"currency":          "EUR",
 		"max_hotels":        2,
 		"include_rooms":     true,

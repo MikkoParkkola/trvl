@@ -11,9 +11,9 @@ import (
 // nothing in the output distinguished "these six are uncertain" from "this
 // command never says better than Caution".
 //
-// The hotel-prices endpoint carries no cancellation terms, so refundability is
-// unobtainable and Ready is unreachable here regardless of the property. The
-// verdict has to say that, or a reader infers a finding that was never made.
+// A hotel-prices response whose selected seller carries no cancellation terms
+// cannot reach Ready. The verdict has to say that, or a reader infers a finding
+// that was never made.
 func TestHotelPricesReadiness_DeclaresItsCeiling(t *testing.T) {
 	// A property with everything this endpoint *can* establish, all positive.
 	providers := []models.ProviderPrice{{
@@ -30,7 +30,7 @@ func TestHotelPricesReadiness_DeclaresItsCeiling(t *testing.T) {
 		t.Fatal("hotel-prices must declare its ceiling; without it a caution verdict reads as a judgement about the hotel")
 	}
 	if v.Readiness == "ready" {
-		t.Fatal("this endpoint cannot establish refundability, so ready must be unreachable")
+		t.Fatal("this selected seller cannot establish refundability, so ready must be unreachable")
 	}
 	found := false
 	for _, r := range v.CeilingReasons {

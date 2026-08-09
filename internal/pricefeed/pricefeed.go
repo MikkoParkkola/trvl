@@ -181,22 +181,12 @@ func HotelPricesReadiness(hotelID string, providers []models.ProviderPrice) book
 	// Refundability is no longer unobtainable on this path (trvl#535). The
 	// seller's cancellation terms were always present upstream and were being
 	// dropped when the per-seller list was built; they are now carried through,
-	// so the ceiling this function used to declare is lifted for any result that
-	// actually carries them.
+	// so the ceiling is lifted when the selected seller actually carries them.
 	//
-	// The declaration stays for results that do NOT: a hotel-price response
-	// where no seller states its terms still cannot reach "ready", and saying so
-	// is what lets a caller distinguish "this path cannot do better" from a
-	// finding about the property. That distinction is the whole reason the
-	// ceiling was declared rather than left implicit -- an external tester saw
-	// Caution on six properties and could not tell which he was looking at.
-	refundabilityKnown := false
-	for _, p := range providers {
-		if p.FreeCancellation != nil || p.FreeCancellationUntil != "" {
-			refundabilityKnown = true
-			break
-		}
-	}
+	// All four signals must describe the same concrete offer. Price, link, and
+	// verification above come from cheapest, so borrowing cancellation terms
+	// from another seller would manufacture an offer that nobody actually made.
+	refundabilityKnown := cheapest.FreeCancellation != nil || cheapest.FreeCancellationUntil != ""
 	if refundabilityKnown {
 		in.RefundabilityKnown = booking.True()
 		return booking.Evaluate(in)
@@ -205,63 +195,79 @@ func HotelPricesReadiness(hotelID string, providers []models.ProviderPrice) book
 }
 
 // RoomsReadiness maps the richer room-level signals into a booking verdict.
-// Rooms carry refundability and a classifiable link, so "ready" is reachable.
+// The per-room readiness field is the source of truth because it evaluates one
+// concrete room offer. Aggregating the strongest signal from different rows can
+// otherwise produce a synthetic "ready" offer that no provider returned.
 func RoomsReadiness(result *hotels.RoomAvailability) booking.Verdict {
-	var in booking.Input
-	if result == nil {
-		return booking.Evaluate(in)
+	if result == nil || len(result.Rooms) == 0 {
+		return booking.Evaluate(booking.Input{})
 	}
-	if result.HotelID != "" {
+
+	sawCaution := false
+	for _, room := range result.Rooms {
+		switch room.Readiness {
+		case hotels.ReadinessReady:
+			return booking.Verdict{Readiness: booking.Ready}
+		case hotels.ReadinessCaution:
+			sawCaution = true
+		case "":
+			// Backward-compatible path for callers that construct RoomAvailability
+			// directly rather than receiving it from the hotel pipeline. Evaluate
+			// only this row; never borrow a signal from a sibling room.
+			verdict := roomOfferReadiness(result.HotelID, room)
+			if verdict.Readiness == booking.Ready {
+				return verdict
+			}
+			if verdict.Readiness == booking.Caution {
+				sawCaution = true
+			}
+		}
+	}
+	if sawCaution {
+		return booking.Verdict{
+			Readiness: booking.Caution,
+			Reasons:   []string{"no individual room offer satisfies all readiness signals"},
+		}
+	}
+	return booking.Verdict{
+		Readiness: booking.Unverified,
+		Reasons:   []string{"no room offer carries a usable readiness assessment"},
+	}
+}
+
+func roomOfferReadiness(hotelID string, room hotels.RoomType) booking.Verdict {
+	var in booking.Input
+	if hotelID != "" {
 		in.IdentityConfirmed = booking.True()
 	}
-	for _, r := range result.Rooms {
-		if r.Refundable != nil || r.FreeCancellation != nil || r.CancellationPolicy != "" {
-			in.RefundabilityKnown = booking.True()
-			break
+	if room.Refundable != nil || room.FreeCancellation != nil || room.CancellationPolicy != "" {
+		in.RefundabilityKnown = booking.True()
+	}
+	for _, option := range room.InventoryOptions {
+		switch option.PriceConfidence {
+		case models.PriceConfidenceVerified, models.PriceConfidenceRoomLevel:
+			in.Verified = booking.True()
 		}
 	}
-	in.Verified = roomsVerified(result.Rooms)
-	in.LinkStable = roomsLinkStable(result.Rooms)
-	return booking.Evaluate(in)
-}
 
-func roomsVerified(rooms []hotels.RoomType) booking.Signal {
-	for _, r := range rooms {
-		for _, opt := range r.InventoryOptions {
-			switch opt.PriceConfidence {
-			case models.PriceConfidenceVerified, models.PriceConfidenceRoomLevel:
-				return booking.True()
-			}
-		}
-	}
-	return nil
-}
-
-func roomsLinkStable(rooms []hotels.RoomType) booking.Signal {
 	sawExpiring := false
-	for _, r := range rooms {
-		urls := append([]string{r.ProviderURL}, optionURLs(r)...)
-		for _, u := range urls {
-			switch hotels.ClassifyLinkDurability(u) {
-			case "stable":
-				return booking.True()
-			case "expiring":
-				sawExpiring = true
-			}
+	urls := make([]string, 0, len(room.InventoryOptions)+1)
+	urls = append(urls, room.ProviderURL)
+	for _, option := range room.InventoryOptions {
+		urls = append(urls, option.ProviderURL)
+	}
+	for _, url := range urls {
+		switch hotels.ClassifyLinkDurability(url) {
+		case "stable":
+			in.LinkStable = booking.True()
+		case "expiring":
+			sawExpiring = true
 		}
 	}
-	if sawExpiring {
-		return booking.False()
+	if in.LinkStable == nil && sawExpiring {
+		in.LinkStable = booking.False()
 	}
-	return nil
-}
-
-func optionURLs(r hotels.RoomType) []string {
-	out := make([]string, 0, len(r.InventoryOptions))
-	for _, opt := range r.InventoryOptions {
-		out = append(out, opt.ProviderURL)
-	}
-	return out
+	return booking.Evaluate(in)
 }
 
 // CheapestProvider returns the lowest positive-priced provider within a single

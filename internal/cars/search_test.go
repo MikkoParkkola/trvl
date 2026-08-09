@@ -10,7 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func futureCarDate(days int) string {
+	return time.Now().AddDate(0, 0, days).Format("2006-01-02")
+}
 
 // TestMain points the home directory this package's tests resolve at a
 // throwaway location, so no test can mutate the developer's real ~/.trvl.
@@ -45,7 +50,7 @@ func TestSearch_RequiresPickupAndDates(t *testing.T) {
 
 	_, err := Search(context.Background(), SearchOptions{
 		PickupLocation: "HEL",
-		PickupDate:     "2026-07-01",
+		PickupDate:     futureCarDate(30),
 	})
 	if err == nil {
 		t.Fatal("expected missing dropoff_date error")
@@ -57,8 +62,8 @@ func TestSearch_NoConfiguredProviderReturnsTypedStatus(t *testing.T) {
 
 	result, err := Search(context.Background(), SearchOptions{
 		PickupLocation: "HEL",
-		PickupDate:     "2026-07-01",
-		DropoffDate:    "2026-07-04",
+		PickupDate:     futureCarDate(30),
+		DropoffDate:    futureCarDate(33),
 		Currency:       "EUR",
 	})
 	if err != nil {
@@ -135,8 +140,8 @@ func TestSearch_SkyscannerFixtureNormalizesOffers(t *testing.T) {
 	result, err := Search(context.Background(), SearchOptions{
 		PickupLocation:  "Helsinki Airport",
 		DropoffLocation: "Helsinki Airport",
-		PickupDate:      "2026-07-01",
-		DropoffDate:     "2026-07-04",
+		PickupDate:      futureCarDate(30),
+		DropoffDate:     futureCarDate(33),
 		PickupTime:      "09:00",
 		DropoffTime:     "18:00",
 		Currency:        "EUR",

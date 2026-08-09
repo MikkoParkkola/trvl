@@ -36,16 +36,17 @@ func ValidateDate(date string) error {
 	return nil
 }
 
-// ValidateDateRange checks that from and to are valid dates and from <= to.
+// ValidateDateRange checks that from and to are valid, non-past dates and
+// from <= to.
 func ValidateDateRange(from, to string) error {
-	fromT, err := time.Parse("2006-01-02", from)
-	if err != nil {
-		return fmt.Errorf("invalid start date %q: expected YYYY-MM-DD format", from)
+	if err := ValidateDate(from); err != nil {
+		return fmt.Errorf("invalid start date: %w", err)
 	}
-	toT, err := time.Parse("2006-01-02", to)
-	if err != nil {
-		return fmt.Errorf("invalid end date %q: expected YYYY-MM-DD format", to)
+	if err := ValidateDate(to); err != nil {
+		return fmt.Errorf("invalid end date: %w", err)
 	}
+	fromT, _ := time.Parse("2006-01-02", from)
+	toT, _ := time.Parse("2006-01-02", to)
 	if toT.Before(fromT) {
 		return fmt.Errorf("end date %s is before start date %s", to, from)
 	}

@@ -152,21 +152,22 @@ func TestValidateDate_ErrorMessageFormat(t *testing.T) {
 // --- ValidateDateRange ---
 
 func TestValidateDateRange_Valid(t *testing.T) {
-	err := ValidateDateRange("2026-06-15", "2026-06-22")
+	err := ValidateDateRange(dateFromNow(30), dateFromNow(37))
 	if err != nil {
 		t.Errorf("ValidateDateRange returned error: %v", err)
 	}
 }
 
 func TestValidateDateRange_SameDay(t *testing.T) {
-	err := ValidateDateRange("2026-06-15", "2026-06-15")
+	date := dateFromNow(30)
+	err := ValidateDateRange(date, date)
 	if err != nil {
 		t.Errorf("ValidateDateRange same day returned error: %v", err)
 	}
 }
 
 func TestValidateDateRange_FromAfterTo(t *testing.T) {
-	err := ValidateDateRange("2026-06-22", "2026-06-15")
+	err := ValidateDateRange(dateFromNow(37), dateFromNow(30))
 	if err == nil {
 		t.Error("expected error when from > to")
 	}
@@ -176,7 +177,7 @@ func TestValidateDateRange_FromAfterTo(t *testing.T) {
 }
 
 func TestValidateDateRange_InvalidFromDate(t *testing.T) {
-	err := ValidateDateRange("bad-date", "2026-06-22")
+	err := ValidateDateRange("bad-date", dateFromNow(37))
 	if err == nil {
 		t.Error("expected error for invalid from date")
 	}
@@ -186,7 +187,7 @@ func TestValidateDateRange_InvalidFromDate(t *testing.T) {
 }
 
 func TestValidateDateRange_InvalidToDate(t *testing.T) {
-	err := ValidateDateRange("2026-06-15", "bad-date")
+	err := ValidateDateRange(dateFromNow(30), "bad-date")
 	if err == nil {
 		t.Error("expected error for invalid to date")
 	}
@@ -208,8 +209,12 @@ func TestValidateDateRange_BothInvalid(t *testing.T) {
 
 func TestValidateDateRange_WideRange(t *testing.T) {
 	// Year-spanning range should be fine.
-	err := ValidateDateRange("2026-01-01", "2027-12-31")
+	err := ValidateDateRange(dateFromNow(30), dateFromNow(400))
 	if err != nil {
 		t.Errorf("ValidateDateRange year-spanning returned error: %v", err)
 	}
+}
+
+func dateFromNow(days int) string {
+	return time.Now().AddDate(0, 0, days).Format("2006-01-02")
 }

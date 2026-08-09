@@ -80,8 +80,8 @@ func TestHandleSearchAccommodationsCapsRoomLookupCallCount(t *testing.T) {
 		}
 		args := map[string]any{
 			"location":  "Paris",
-			"check_in":  "2026-07-10",
-			"check_out": "2026-07-12",
+			"check_in":  futureDateAfter(30),
+			"check_out": futureDateAfter(32),
 			"adults":    2,
 			"currency":  "eur",
 		}

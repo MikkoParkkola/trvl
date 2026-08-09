@@ -43,8 +43,8 @@ func TestHandleSearchHotels_DefaultsCurrencyFromPreferences(t *testing.T) {
 
 	_, _, err := handleSearchHotels(context.Background(), map[string]any{
 		"location":  "Helsinki",
-		"check_in":  "2026-06-15",
-		"check_out": "2026-06-18",
+		"check_in":  futureDateAfter(30),
+		"check_out": futureDateAfter(33),
 	}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("handleSearchHotels: %v", err)
@@ -75,8 +75,8 @@ func TestHandleSearchHotels_ExplicitCurrencyOverridesPreferences(t *testing.T) {
 
 	_, _, err := handleSearchHotels(context.Background(), map[string]any{
 		"location":  "Helsinki",
-		"check_in":  "2026-06-15",
-		"check_out": "2026-06-18",
+		"check_in":  futureDateAfter(30),
+		"check_out": futureDateAfter(33),
 		"currency":  "gbp",
 	}, nil, nil, nil)
 	if err != nil {

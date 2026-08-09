@@ -2,7 +2,7 @@
 
 > Moved out of the README. The standalone CLI (56 commands), output formats, booking-link shape, and the full capability table.
 
-Most fixed dates below are illustrative captured examples. Replace them with future dates for live searches. The Ischia sequence keeps Roberto Reale's original 2026 retest dates because it documents a specific regression report.
+The examples below use future dates so they can be copied into a live search.
 
 ## CLI Usage
 
@@ -24,23 +24,23 @@ When running as an HTTP server (`trvl mcp --http`), the same view is served as a
 ### Flights
 
 ```bash
-$ trvl flights HEL NRT 2026-06-15
+$ trvl flights HEL NRT 2027-06-15
 
 Found 86 flights (one_way)
 
 | Price    | Duration | Stops   | Route                    | Airline               | Departs          |
 +----------+----------+---------+--------------------------+-----------------------+------------------+
-| EUR 603  | 24h 20m  | 2 stops | HEL -> CPH -> AUH -> NRT | Scandinavian Airlines | 2026-06-15T06:10 |
-| EUR 656  | 24h 10m  | 2 stops | HEL -> CPH -> AUH -> NRT | Finnair               | 2026-06-15T06:20 |
-| EUR 875  | 31h 20m  | 1 stop  | HEL -> IST -> NRT        | Turkish Airlines      | 2026-06-15T19:35 |
+| EUR 603  | 24h 20m  | 2 stops | HEL -> CPH -> AUH -> NRT | Scandinavian Airlines | 2027-06-15T06:10 |
+| EUR 656  | 24h 10m  | 2 stops | HEL -> CPH -> AUH -> NRT | Finnair               | 2027-06-15T06:20 |
+| EUR 875  | 31h 20m  | 1 stop  | HEL -> IST -> NRT        | Turkish Airlines      | 2027-06-15T19:35 |
 ```
 
 ```bash
-trvl flights JFK LHR 2026-07-01 --cabin business --stops nonstop
-trvl flights AMS,EIN,ANR HEL,TKU,TLL 2026-06-15     # Multi-airport search
-trvl flights HEL BCN 2026-07-01 --return 2026-07-08
-trvl flights HEL NRT 2026-06-15 --format json       # JSON output
-trvl flights HEL BCN 2026-07-01 --deep              # Budget-gated counterfactual fan-out
+trvl flights JFK LHR 2027-07-01 --cabin business --stops nonstop
+trvl flights AMS,EIN,ANR HEL,TKU,TLL 2027-06-15     # Multi-airport search
+trvl flights HEL BCN 2027-07-01 --return 2027-07-08
+trvl flights HEL NRT 2027-06-15 --format json       # JSON output
+trvl flights HEL BCN 2027-07-01 --deep              # Budget-gated counterfactual fan-out
 ```
 
 **`--deep` flag:** runs a budget-gated counterfactual fan-out after the primary search. It probes nearby departure airports, split-ticket options, and hidden-city routes via extra provider calls. The budget is best-effort and caps the total call count; if the budget runs out before all probes complete, the primary result is returned with a note. The flag never delays the primary search output.
@@ -52,14 +52,14 @@ trvl flights HEL BCN 2026-07-01 --deep              # Budget-gated counterfactua
 ### Cheapest Dates
 
 ```bash
-trvl dates HEL NRT --from 2026-06-01 --to 2026-06-30
-trvl dates HEL BCN --from 2026-07-01 --to 2026-08-31 --duration 7 --round-trip
+trvl dates HEL NRT --from 2027-06-01 --to 2027-06-30
+trvl dates HEL BCN --from 2027-07-01 --to 2027-08-31 --duration 7 --round-trip
 ```
 
 ### Hotels
 
 ```bash
-$ trvl hotels "Tokyo" --checkin 2026-06-15 --checkout 2026-06-18
+$ trvl hotels "Tokyo" --checkin 2027-06-15 --checkout 2027-06-18
 
 Found 20 hotels:
 
@@ -70,34 +70,37 @@ Found 20 hotels:
 ```
 
 ```bash
-trvl hotels "Paris" --checkin 2026-07-01 --checkout 2026-07-05 --stars 4 --sort rating
-trvl prices "<hotel_id>" --checkin 2026-06-15 --checkout 2026-06-18
-trvl prices hold "<hotel_id>" --name "Hotel Lutetia Paris" --checkin 2026-06-15 --checkout 2026-06-18 --price 420 --currency EUR --refundable
+trvl hotels "Paris" --checkin 2027-07-01 --checkout 2027-07-05 --stars 4 --sort rating
+trvl prices "<hotel_id>" --checkin 2027-06-15 --checkout 2027-06-18
+trvl prices hold "<hotel_id>" --name "Hotel Lutetia Paris" --checkin 2027-06-15 --checkout 2027-06-18 --price 420 --currency EUR --refundable
 trvl prices rebook <hold_id> --min-savings 25
-trvl rooms "Hotel Lutetia Paris" --checkin 2026-06-15 --checkout 2026-06-18
+trvl rooms "Hotel Lutetia Paris" --checkin 2027-06-15 --checkout 2027-06-18
 ```
 
 **Price position:** `trvl prices` shows where the current rate sits in that property's observed price history (low / typical / high). Available in `--format json` as `price_position`.
 
 **Booking readiness:** `trvl prices` and `trvl rooms` show a readiness verdict (ready / caution / unverified) composed from verified price, stable link, confirmed property identity, and known refundability. Any unknown signal downgrades the verdict conservatively. In `--format json` the fields are `booking_readiness` and `booking_readiness_reasons`.
 
-`ready` is reachable from `trvl rooms` when a seller exposes a real room rate,
-a durable provider link, an exact room match, and an explicit cancellation
-status (refundable or non-refundable). It is not reachable from `trvl prices`:
-that property-price source carries no cancellation terms, so its honest ceiling
-is `caution`. The CLI prints that ceiling; JSON and MCP responses expose
-`booking_readiness_ceiling` and `booking_readiness_ceiling_reasons`. A capped
-`caution` describes the source's evidence limit, while ordinary
-`booking_readiness_reasons` still describe problems with the specific offer.
+`ready` is reachable from `trvl rooms` when one concrete room offer has a real
+rate, a durable provider link, an exact room match, and an explicit cancellation
+status (refundable or non-refundable). The top-level verdict never combines
+signals from different rooms. `trvl prices` can also reach `ready` when the
+selected lowest-price seller supplies all four signals. Cancellation terms from
+another seller are never borrowed. When the selected seller does not state its
+terms, the honest ceiling is `caution`. The CLI prints that conditional ceiling;
+JSON and MCP responses expose `booking_readiness_ceiling` and
+`booking_readiness_ceiling_reasons`. A capped `caution` describes the source's
+evidence limit, while ordinary `booking_readiness_reasons` still describe
+problems with the selected offer.
 
 ### Islands and unindexed destinations
 
-Small islands and out-of-the-way towns often have properties that Google Hotels never assigns a stable hotel ID. The usual `trvl rooms <name>` path needs that ID to resolve room-level data, so it can come up empty for exactly the places where a verified price matters most. Roberto Reale tested this on Ischia and reported the gap; the sequence below is what works there.
+Small islands and out-of-the-way towns often have properties that Google Hotels never assigns a stable hotel ID. The usual `trvl rooms <name>` path needs that ID to resolve room-level data, so it can come up empty for exactly the places where a verified price matters most. The sequence below is the reliable fallback for those destinations.
 
 1. Discover what exists in the area:
 
    ```bash
-   trvl hotels "Ischia, Italy" --checkin 2026-07-30 --checkout 2026-08-04 --format json
+   trvl hotels "Ischia, Italy" --checkin 2027-07-30 --checkout 2027-08-04 --format json
    ```
 
    This lists properties and, where Google exposes one, a place ID you can feed to `trvl prices`.
@@ -105,7 +108,7 @@ Small islands and out-of-the-way towns often have properties that Google Hotels 
 2. Try room-level data for a named property:
 
    ```bash
-   trvl rooms "Hotel Continental Mare" --checkin 2026-07-30 --checkout 2026-08-04
+   trvl rooms "Hotel Continental Mare" --checkin 2027-07-30 --checkout 2027-08-04
    ```
 
    If the property has no Google Hotel ID, this no longer fails silently. It tells you so and points you at the paths that do resolve island stays, including the `trvl serpapi` command below.
@@ -113,7 +116,7 @@ Small islands and out-of-the-way towns often have properties that Google Hotels 
 3. Use `trvl serpapi` as the first tool for islands, not a last resort:
 
    ```bash
-   trvl serpapi "Ischia, Italy" --checkin 2026-07-30 --checkout 2026-08-04 --currency EUR --adults 2
+   trvl serpapi "Ischia, Italy" --checkin 2027-07-30 --checkout 2027-08-04 --currency EUR --adults 2
    ```
 
    For unindexed areas this is the most reliable verified-price path. It searches Google Hotels through SerpAPI, then fetches each top property's detail endpoint by `property_token` so the total is a per-provider quote rather than the list-level lead-in price. Each property carries a `price_verification` status, so verified and unverified results stay distinguishable. It needs a free `SERPAPI_KEY`; without one, trvl behaves exactly as before and this path stays off.
@@ -123,33 +126,31 @@ Small islands and out-of-the-way towns often have properties that Google Hotels 
 4. Compare providers for a property that does have a Google place ID:
 
    ```bash
-   trvl prices "PLACE_ID" --checkin 2026-07-30 --checkout 2026-08-04 --currency EUR
+   trvl prices "PLACE_ID" --checkin 2027-07-30 --checkout 2027-08-04 --currency EUR
    ```
 
    When `SERPAPI_KEY` is set, this fetches the selected property's detail matrix and returns each OTA/provider row with a durable link, so the comparison survives the teaser price expiring at checkout.
-
-Sequence tested and contributed by Roberto Reale. See `docs/PUBLIC_ARTICLE_FEEDBACK.md` for the underlying feedback and retest history.
 
 ### Explore Destinations
 
 ```bash
 trvl explore HEL                                        # Cheapest destinations from Helsinki
-trvl explore JFK --from 2026-07-01 --to 2026-07-14      # With dates
+trvl explore JFK --from 2027-07-01 --to 2027-07-14      # With dates
 trvl explore AMS --currency EUR                         # Display prices in EUR
 ```
 
 ### Price Grid
 
 ```bash
-trvl grid HEL NRT --depart-from 2026-07-01 --depart-to 2026-07-07 \
-                   --return-from 2026-07-08 --return-to 2026-07-14
+trvl grid HEL NRT --depart-from 2027-07-01 --depart-to 2027-07-07 \
+                   --return-from 2027-07-08 --return-to 2027-07-14
 ```
 
 ### Destination Info
 
 ```bash
 trvl destination "Tokyo"                           # Weather, safety, holidays, currency
-trvl destination "Barcelona" --dates 2026-07-01,2026-07-08
+trvl destination "Barcelona" --dates 2027-07-01,2027-07-08
 ```
 
 ### Plan a Trip
@@ -157,33 +158,33 @@ trvl destination "Barcelona" --dates 2026-07-01,2026-07-08
 Search flights and hotels in one command. Runs both searches in parallel and shows a cost summary.
 
 ```bash
-trvl trip AMS PRG --depart 2026-06-15 --return 2026-06-18 --currency EUR
-trvl trip JFK LHR --depart 2026-08-01 --return 2026-08-10 --guests 2
+trvl trip AMS PRG --depart 2027-06-15 --return 2027-06-18 --currency EUR
+trvl trip JFK LHR --depart 2027-08-01 --return 2027-08-10 --guests 2
 ```
 
 ### Trip Cost
 
 ```bash
-trvl trip-cost HEL BCN --depart 2026-07-01 --return 2026-07-08 --guests 2
+trvl trip-cost HEL BCN --depart 2027-07-01 --return 2027-07-08 --guests 2
 ```
 
 ### Weekend Getaway
 
 ```bash
-trvl weekend HEL --month july-2026                 # Top 10 cheapest weekends
-trvl weekend HEL --month july-2026 --budget 500    # Under EUR 500 total
+trvl weekend HEL --month july-2027                 # Top 10 cheapest weekends
+trvl weekend HEL --month july-2027 --budget 500    # Under EUR 500 total
 ```
 
 ### Smart Date Suggestions
 
 ```bash
-trvl suggest HEL BCN --around 2026-07-15 --flex 7  # Best dates +/- 7 days
+trvl suggest HEL BCN --around 2027-07-15 --flex 7  # Best dates +/- 7 days
 ```
 
 ### Multi-City Optimizer
 
 ```bash
-trvl multi-city HEL --visit BCN,ROM,PAR --dates 2026-07-01,2026-07-21
+trvl multi-city HEL --visit BCN,ROM,PAR --dates 2027-07-01,2027-07-21
 ```
 
 ### Buses, Trains & Ferries
@@ -193,22 +194,22 @@ Searches 22 providers in parallel: FlixBus (buses, pan-European), RegioJet (buse
 API routes are the default path. If you want trvl to try browser/curl/cookie-assisted fallbacks for protected providers such as SNCF or Trainline, pass `--allow-browser-fallbacks` (or set `TRVL_ALLOW_BROWSER_FALLBACKS=true`).
 
 ```bash
-trvl ground Prague Vienna 2026-07-01                  # All 22 providers
-trvl ground London Paris 2026-07-01                   # Eurostar + FlixBus + DB
-trvl bus Prague Krakow 2026-07-01                     # Same command, bus alias
-trvl train Prague Vienna 2026-07-01 --type train      # Trains only
-trvl ground Prague Vienna 2026-07-01 --provider regiojet  # RegioJet only
-trvl ground Vienna Salzburg 2026-07-01 --provider oebb    # ÖBB Railjet (EUR 38+)
-trvl ground Helsinki Tampere 2026-07-01 --provider vr     # VR Finnish Railways (EUR 14+)
-trvl ground Amsterdam Utrecht 2026-07-01 --provider ns    # NS Dutch Railways (EUR 5+)
-trvl ground Paris Lyon 2026-07-01 --provider sncf         # SNCF TGV only
-trvl ground Berlin Munich 2026-07-01 --provider db        # DB ICE (e.g. EUR 47.99)
-trvl ground London Paris 2026-07-01 --provider trainline --allow-browser-fallbacks  # Trainline aggregated rail + optional protected fallback
-trvl ground Madrid Barcelona 2026-07-01 --provider renfe   # Renfe AVE high-speed (EUR 36+)
-trvl ground Prague Vienna 2026-07-01 --max-price 20       # Under EUR 20
-trvl airport-transfer CDG "Hotel Lutetia Paris" 2026-07-01
-trvl airport-transfer LHR "Paddington Station" 2026-07-01 --arrival-after 14:30
-trvl airport-transfer CDG "Hotel Lutetia Paris" 2026-07-01 --provider taxi
+trvl ground Prague Vienna 2027-07-01                  # All 22 providers
+trvl ground London Paris 2027-07-01                   # Eurostar + FlixBus + DB
+trvl bus Prague Krakow 2027-07-01                     # Same command, bus alias
+trvl train Prague Vienna 2027-07-01 --type train      # Trains only
+trvl ground Prague Vienna 2027-07-01 --provider regiojet  # RegioJet only
+trvl ground Vienna Salzburg 2027-07-01 --provider oebb    # ÖBB Railjet (EUR 38+)
+trvl ground Helsinki Tampere 2027-07-01 --provider vr     # VR Finnish Railways (EUR 14+)
+trvl ground Amsterdam Utrecht 2027-07-01 --provider ns    # NS Dutch Railways (EUR 5+)
+trvl ground Paris Lyon 2027-07-01 --provider sncf         # SNCF TGV only
+trvl ground Berlin Munich 2027-07-01 --provider db        # DB ICE (e.g. EUR 47.99)
+trvl ground London Paris 2027-07-01 --provider trainline --allow-browser-fallbacks  # Trainline aggregated rail + optional protected fallback
+trvl ground Madrid Barcelona 2027-07-01 --provider renfe   # Renfe AVE high-speed (EUR 36+)
+trvl ground Prague Vienna 2027-07-01 --max-price 20       # Under EUR 20
+trvl airport-transfer CDG "Hotel Lutetia Paris" 2027-07-01
+trvl airport-transfer LHR "Paddington Station" 2027-07-01 --arrival-after 14:30
+trvl airport-transfer CDG "Hotel Lutetia Paris" 2027-07-01 --provider taxi
 ```
 
 ### Multi-Modal Routing
@@ -216,9 +217,9 @@ trvl airport-transfer CDG "Hotel Lutetia Paris" 2026-07-01 --provider taxi
 Combines flights, trains, buses and ferries into optimal itineraries across all 22 providers. `--avoid` filters only the avoided mode, and `--depart-after` / `--arrive-by` are applied against the assembled itinerary times.
 
 ```bash
-trvl route Helsinki Dubrovnik --arrive-by 2026-04-10     # Pareto-optimal itineraries
-trvl route HEL TLL --arrive-by 2026-04-06               # Ferry + bus options
-trvl route London Barcelona --arrive-by 2026-07-15       # Eurostar + TGV vs flight
+trvl route Helsinki Dubrovnik --arrive-by 2027-04-10     # Pareto-optimal itineraries
+trvl route HEL TLL --arrive-by 2027-04-06               # Ferry + bus options
+trvl route London Barcelona --arrive-by 2027-07-15       # Eurostar + TGV vs flight
 ```
 
 ### Price Watch
@@ -226,8 +227,8 @@ trvl route London Barcelona --arrive-by 2026-07-15       # Eurostar + TGV vs fli
 Track flight and hotel prices over time. Get alerts when prices drop below a threshold.
 
 ```bash
-trvl watch add HEL BCN --depart 2026-07-01 --return 2026-07-08 --below 200
-trvl watch add Prague --type hotel --depart 2026-07-01 --return 2026-07-02 --last-minute
+trvl watch add HEL BCN --depart 2027-07-01 --return 2027-07-08 --below 200
+trvl watch add Prague --type hotel --depart 2027-07-01 --return 2027-07-02 --last-minute
 trvl watch list                                       # Show all active watches
 trvl watch check                                      # Check current prices
 trvl watch daemon --every 6h                          # Keep checking on a schedule
@@ -266,9 +267,9 @@ trvl nudges --format json     # Machine-readable output
 Runs 36 detectors in parallel and ranks savings opportunities. Pass `--return` for round-trip hacks. Add `--carry-on` to restrict hidden-city results to carry-on only.
 
 ```bash
-trvl hacks HEL AMS 2026-04-13                         # One-way hacks
-trvl hacks HEL AMS 2026-04-13 --return 2026-04-15 --carry-on  # Round-trip, carry-on
-trvl hacks-accom Prague --checkin 2026-06-15 --checkout 2026-06-22  # Hotel split hacks
+trvl hacks HEL AMS 2027-04-13                         # One-way hacks
+trvl hacks HEL AMS 2027-04-13 --return 2027-04-15 --carry-on  # Round-trip, carry-on
+trvl hacks-accom Prague --checkin 2027-06-15 --checkout 2027-06-22  # Hotel split hacks
 ```
 
 ### Trip Persistence
@@ -279,7 +280,7 @@ Save and manage trips across sessions. Trips are stored in `~/.trvl/trips.json`.
 trvl trips list                                       # List all saved trips
 trvl trips show <id>                                  # Show trip details
 trvl trips create "Helsinki → Prague → Amsterdam"     # Create a new trip
-trvl trips add-leg <id> flight --from HEL --to PRG --date 2026-06-15
+trvl trips add-leg <id> flight --from HEL --to PRG --date 2027-06-15
 trvl trips book <id>                                  # Mark trip as booked
 trvl trips delete <id>                                # Remove a trip
 ```
@@ -353,7 +354,7 @@ Flight results and most hotel results include a `booking_url` — a direct link 
   "currency": "EUR",
   "airline": "Norwegian",
   "flight_number": "D8 2900",
-  "booking_url": "https://www.google.com/travel/flights?q=Flights+to+BCN+from+HEL+on+2026-07-01"
+  "booking_url": "https://www.google.com/travel/flights?q=Flights+to+BCN+from+HEL+on+2027-07-01"
 }
 ```
 
