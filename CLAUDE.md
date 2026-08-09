@@ -1,6 +1,6 @@
 # trvl
 
-Travel MCP server + CLI. 1 smart MCP tool plus 66 legacy-compatible capabilities, 56 CLI commands. Go 1.26, no frameworks.
+Travel MCP server + CLI. 1 smart MCP tool plus 66 legacy-compatible capabilities, 56 CLI commands. Go 1.26.5, no frameworks.
 
 ## Product Vision
 
@@ -10,19 +10,18 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 
 - Go 1.26.5 · MCP 2025-11-25 · single binary · 24 transport providers (+ flight & hotel sources below)
 - Hotel providers working: Google Hotels, Booking.com (browser cookies), Airbnb (SSR/Niobe), Hostelworld (autocomplete), Trivago (Streamable HTTP MCP), HomeToGo (public SSR+JSON, vacation rentals)
-- Flight providers: Google Flights (hand-rolled protobuf), Kiwi, Skiplagged (hidden-city, opt-in), Ryanair (public API), Wizz Air (public unauthenticated), Air France–KLM Offers API v3 (opt-in), Transavia (official API, opt-in), easyJet (opt-in, `EASYJET_API_BASE` — public availability API is Akamai bot-defended/403, so no default-on path; honest typed `AKAMAI_BLOCK` status when unconfigured). Travelpayouts/Aviasales price signals are an opt-in source surfaced via `trvl pricetrends` (not in the bookable merge).
+- Flight providers: the default path merges Google Flights, Kiwi, and Skiplagged. Solo or opt-in integrations cover Ryanair, Wizz Air, Air France–KLM, Transavia, easyJet, Vueling, and Norwegian; protected or credentialed paths return typed setup/block statuses when unavailable. Travelpayouts/Aviasales price signals are opt-in through `trvl pricetrends` and are not part of the bookable merge.
 - Enrichment (free, unauthenticated): weather (Open-Meteo), air quality (`trvl air`), sun times (`trvl sun`, sunrise-sunset.org), bike-share (`trvl bikes`, CityBikes)
-- CI: build, vet, staticcheck, govulncheck, race tests, coverage >=80% on ubuntu + windows
-- Latest release train: tag-triggered workflow + adhoc codesign identifier (PR #50)
-- npm wrapper, ICS calendar export, and the smart-router consolidation (per-domain tools consolidated → 1 advertised `travel` tool, ~98.9% `tools/list` context reduction) landed in last ~90d (MIK-3081/3082/3083/3084 + 6-package wiring batch in PR #57)
+- CI: build, vet, and race tests on Ubuntu and Windows; staticcheck, golangci-lint, govulncheck, and the >=80% coverage gate run on Ubuntu
+- Current release: v1.21.0, published 2026-08-08 from `main` to GitHub Releases, Homebrew, npm, GHCR, the Go module proxy, and the official MCP Registry.
+- v1.21.0 carries source-backed hotel cancellation/refundability evidence, browser privacy opt-outs, source-only optional provider definitions, bounded transactional watch storage, private-proxy support, and warning-free release automation.
 
 ## Plan Forward (near-term, technical)
 
-- **Windows CI hardening** — ongoing: `-short` gating, skip/gate platform-specific asserts, content-block assertion resilience under network variability
-- **Provider breadth** — AFKLM opt-in done; similar opt-in pattern for other carriers via `--provider` flag
-- **Hunt orchestrator** — shared CLI/MCP orchestrator landed (PR #48); continue parity expansion
-- **Directory submissions** — open GH issue #19: mcp.so, Glama
-- **First-contributor momentum** — external PRs now landing (#43/#49); keep onboarding friction low
+- No GitHub issues are open as of 2026-08-09. Do not invent release scope from this file; use the live issue tracker.
+- Keep provider-version self-healing and typed failure states healthy as upstream endpoints change.
+- Keep public counts, release metadata, the README, and the wiki aligned whenever a provider, command, or MCP capability changes.
+- New work needs a scoped issue with acceptance criteria before implementation.
 
 ## Decisions Locked (do not re-litigate)
 
@@ -65,13 +64,14 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 | Run fastest test loop | `go test -short ./...` |
 | Check CI parity | `make lint && make test` (matches GitHub Actions) |
 
-## Hotel Providers (5 working)
+## Hotel Providers (6 working)
 
 - **Google Hotels** — direct scraping, no auth
 - **Booking.com** — direct GraphQL (dml/graphql); requires browser cookies (auto-detected from any installed browser via kooky)
 - **Airbnb** — SSR via Niobe cache unwrapper + deferred-state-0; dynamic city resolver
 - **Hostelworld** — dynamic city resolver via autocomplete API; rich descriptions + district names
 - **Trivago** — Streamable HTTP MCP protocol
+- **HomeToGo** — public SSR + JSON vacation-rental inventory
 
 ## Architecture
 
@@ -94,7 +94,7 @@ internal/          Domain packages (one per data source)
   weather/         Open-Meteo forecasts
   models/          Shared types (FlightResult, HotelResult, etc.)
   preferences/     User prefs (~/.trvl/preferences.json)
-  providers/       External provider runtime (generic HTTP→JSON→HotelResult)
+  providers/       Reviewed provider runtime and embedded definitions (generic HTTP→JSON→HotelResult)
   cache/           HTTP response caching
   ...
 mcp/               MCP server (tools, resources, prompts)
@@ -128,7 +128,7 @@ Make targets pin `GOTOOLCHAIN=go1.26.5` so local build/test entrypoints match CI
 
 ## Key Details
 
-- **No API keys required** for core functionality (Google Flights/Hotels scraped directly)
+- **No personal API keys required** for default flight, hotel, and ground search; optional integrations document their own credentials
 - **Optional API keys**: Ticketmaster, Foursquare, Geoapify, OpenTripMap (env vars)
 - **User prefs**: `~/.trvl/preferences.json` (home airports, budgets, loyalty status)
 - **License**: PolyForm Noncommercial 1.0.0

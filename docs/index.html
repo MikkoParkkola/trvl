@@ -4,18 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>trvl — the travel MCP server for AI assistants</title>
-<meta name="description" content="Travel MCP server and CLI for AI assistants: flights, hotels, trains, cars, ferries, and price alerts with no API keys. One smart MCP tool, a single Go binary, works with Claude, Cursor, Windsurf, and Codex.">
+<meta name="description" content="Travel MCP server and CLI for AI assistants: flights, hotels, trains, cars, ferries, and price alerts with no personal API keys for default search. One smart MCP tool, a single Go binary, works with Claude, Cursor, Windsurf, and Codex.">
 <link rel="canonical" href="https://mikkoparkkola.github.io/trvl/">
 
 <!-- Open Graph / link unfurls -->
 <meta property="og:type" content="website">
 <meta property="og:title" content="trvl — the travel MCP server for AI assistants">
-<meta property="og:description" content="Flights, hotels, trains, cars, ferries, and price alerts for your AI assistant. No API keys. One Go binary. Works with Claude, Cursor, Windsurf, Codex.">
+<meta property="og:description" content="Flights, hotels, trains, cars, ferries, and price alerts for your AI assistant. No personal API keys for default search. One Go binary.">
 <meta property="og:url" content="https://mikkoparkkola.github.io/trvl/">
 <meta property="og:image" content="https://raw.githubusercontent.com/MikkoParkkola/trvl/main/docs/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="trvl — the travel MCP server for AI assistants">
-<meta name="twitter:description" content="Flights, hotels, trains, cars, ferries, and price alerts for your AI assistant. No API keys. One Go binary.">
+<meta name="twitter:description" content="Flights, hotels, trains, cars, ferries, and price alerts for your AI assistant. No personal API keys for default search. One Go binary.">
 <meta name="twitter:image" content="https://raw.githubusercontent.com/MikkoParkkola/trvl/main/docs/social-preview.png">
 
 <!-- JSON-LD: helps search engines and AI crawlers classify the project -->
@@ -26,7 +26,7 @@
   "name": "trvl",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "macOS, Linux, Windows",
-  "description": "Travel MCP server and CLI for AI assistants: flights, hotels, trains, cars, ferries, and price alerts with no API keys. One smart MCP tool plus 66 legacy-compatible capabilities, a single Go binary, works with any MCP client.",
+  "description": "Travel MCP server and CLI for AI assistants: flights, hotels, trains, cars, ferries, and price alerts with no personal API keys for default search. One smart MCP tool plus 66 legacy-compatible capabilities, a single Go binary, works with MCP clients.",
   "url": "https://mikkoparkkola.github.io/trvl/",
   "downloadUrl": "https://github.com/MikkoParkkola/trvl/releases",
   "codeRepository": "https://github.com/MikkoParkkola/trvl",
@@ -134,12 +134,12 @@
 <header class="wrap">
   <div class="logo"><b>trvl</b></div>
   <h1>The travel MCP server for AI assistants</h1>
-  <p class="tagline">Flights, hotels, trains, cars, ferries, and price alerts for Claude, Cursor, Windsurf, and Codex. No API keys. One Go binary.</p>
+  <p class="tagline">Flights, hotels, trains, cars, ferries, and price alerts for Claude, Cursor, Windsurf, and Codex. No personal API keys for default search. One Go binary.</p>
 
   <div class="badges">
-    <span class="badge">no API keys</span>
+    <span class="badge">no personal keys for default search</span>
     <span class="badge"><b>1</b> smart tool + 66 legacy-compatible capabilities</span>
-    <span class="badge"><b>23</b> providers</span>
+    <span class="badge"><b>24</b> transport providers</span>
     <span class="badge">single Go binary</span>
     <span class="badge">MCP 2025-11-25</span>
   </div>
@@ -157,12 +157,12 @@
 
 <div class="wrap demo">
   <img src="https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif" alt="trvl searching flights and hotels from the terminal" loading="lazy">
-  <p class="caption">Try it live in your browser (no install) at <a href="https://socialistic.ai/en/skill/trvl-travel-mcp-4f7aa7">socialistic.ai</a> · Independent review: Roberto Reale's <a href="https://blog-roberto-reale.vercel.app">Budget Travel Pipeline</a> series</p>
+  <p class="caption">Try it live in your browser (no install) at <a href="https://socialistic.ai/en/skill/trvl-travel-mcp-4f7aa7">socialistic.ai</a>. Feedback from <a href="https://blog-roberto-reale.vercel.app">Roberto Reale</a> has helped shape fixes across several releases.</p>
 </div>
 
 <section class="wrap" id="what">
   <h2>Ask your assistant. It just works.</h2>
-  <p class="lead">No signup, no key, no per-call billing. One command and your AI can search real travel data.</p>
+  <p class="lead">The default search needs no provider signup, personal key, or per-call subscription. One command gives your AI structured travel data.</p>
   <pre class="result"><strong>You:</strong> I have &euro;300 and a free weekend. Surprise me.
 
 <strong>Claude (with trvl):</strong>

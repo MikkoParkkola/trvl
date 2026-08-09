@@ -2,7 +2,7 @@
 
 > Moved out of the README. Travel-hack detectors, the full flight/ground provider rosters, and how trvl talks to each source.
 
-## Optional config-defined providers
+## Reviewed optional provider definitions
 
 Provider definitions are reviewed JSON under `internal/providers/definitions` and
 embedded in the binary. `trvl providers list` shows what the installed binary ships;
@@ -76,25 +76,25 @@ trvl ships with **Google Flights** (hand-rolled protobuf) on the default code pa
 | **Vueling** | Availability API | Spanish/European low-cost | `--provider vueling`, opt-in (`VUELING_API_BASE`) | None (public path is Akamai bot-defended) |
 | **Norwegian** | Availability API | Scandinavian low-cost | `--provider norwegian`, opt-in (`NORWEGIAN_API_BASE`) | None (public path is Cloudflare bot-defended) |
 
-The default flight search merges results from Google Flights, Kiwi, and Skiplagged into a single sorted list, so plain `trvl flights HEL BCN 2026-07-01` already includes hidden-city / virtual-interlining options. Use `--provider skiplagged` to query Skiplagged on its own when you want to cross-validate or see only the hidden-city candidates.
+The default flight search merges results from Google Flights, Kiwi, and Skiplagged into a single sorted list, so plain `trvl flights HEL BCN 2027-07-01` already includes hidden-city / virtual-interlining options. Use `--provider skiplagged` to query Skiplagged on its own when you want to cross-validate or see only the hidden-city candidates.
 
 ```bash
 # Default (Google Flights + Kiwi + Skiplagged merge):
-trvl flights HEL BCN 2026-07-01
+trvl flights HEL BCN 2027-07-01
 
 # Skiplagged hidden-city / virtual-interlining only:
-trvl flights HEL BCN 2026-07-01 --provider skiplagged
+trvl flights HEL BCN 2027-07-01 --provider skiplagged
 
 # AFKLM Flying Blue award availability:
-trvl flights AMS NRT 2026-09-15 --award
+trvl flights AMS NRT 2027-09-15 --award
 
 # AFKLM cash fares only, with native round-trip tickets (both legs, one fare):
-trvl flights AMS BCN 2026-07-01 --return 2026-07-08 --provider afklm
+trvl flights AMS BCN 2027-07-01 --return 2027-07-08 --provider afklm
 
 # A single low-cost carrier only (Ryanair, Wizz Air, Transavia, easyJet, Vueling, or Norwegian).
 # Low-cost carriers have no discounted return fare, so a --return request is
 # composed honestly as two one-way tickets (both legs, booked separately):
-trvl flights STN DUB 2026-07-01 --return 2026-07-08 --provider ryanair
+trvl flights STN DUB 2027-07-01 --return 2027-07-08 --provider ryanair
 ```
 
 ## Ground Transport Providers

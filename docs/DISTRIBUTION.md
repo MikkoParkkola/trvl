@@ -1,7 +1,20 @@
 # Distribution Status
 
-Distribution / registry submissions.
-Related GitHub issue: [#19](https://github.com/MikkoParkkola/trvl/issues/19)
+Release channels and third-party directory listings. Last verified 2026-08-09.
+The original registry-submission work was tracked in closed issue [#19](https://github.com/MikkoParkkola/trvl/issues/19).
+
+## Release Channels
+
+These channels carry v1.21.0 and are part of the release workflow:
+
+| Channel | Current artifact |
+| --- | --- |
+| [GitHub Releases](https://github.com/MikkoParkkola/trvl/releases/tag/v1.21.0) | Signed archives and checksums for macOS, Linux, and Windows |
+| [Homebrew](https://github.com/MikkoParkkola/homebrew-tap/blob/main/Formula/trvl.rb) | `brew install MikkoParkkola/tap/trvl` |
+| [npm](https://www.npmjs.com/package/trvl-mcp) | `trvl-mcp@1.21.0` wrapper |
+| [GHCR](https://github.com/MikkoParkkola/trvl/pkgs/container/trvl) | `ghcr.io/mikkoparkkola/trvl:1.21.0` and `:latest`, multi-architecture |
+| [Official MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.MikkoParkkola%2Ftrvl) | `io.github.MikkoParkkola/trvl@1.21.0` |
+| Go module proxy | `github.com/MikkoParkkola/trvl@v1.21.0` |
 
 ## GitHub Referrer Baseline
 
@@ -39,16 +52,19 @@ The generated dashboard is tracked at [docs/internal/distribution-metrics.md](in
 
 The 2026-05-12 baseline captured 337 GitHub release asset downloads and 0 npm `trvl` downloads because the npm downloads API returned `npm package or range not found`.
 
-## Registry Matrix
+## Third-party directories
 
-| Channel | Status | Evidence / Next Action |
-| --- | --- | --- |
-| Smithery | Not live | `https://smithery.ai/servers/@MikkoParkkola/trvl` returned 404 on 2026-05-12. `smithery mcp publish . -n @MikkoParkkola/trvl` failed because the current CLI attempted to bundle the repo path as an shttp server. Smithery now expects a public Streamable HTTP endpoint or an MCPB bundle. |
-| awesome-mcp-servers | PR open, blocked | [punkpeye/awesome-mcp-servers#5137](https://github.com/punkpeye/awesome-mcp-servers/pull/5137) is open and clean, but maintainer automation requires a live Glama listing and score badge. |
-| Official MCP Registry | Live | `server.json` and `npm/package.json` track the latest documented release in `CHANGELOG.md`; CI rejects drift. Release workflow stamps `server.json` from the pushed tag and publishes the matching OCI package (`ghcr.io/mikkoparkkola/trvl:<version>`) through `mcp-publisher`. |
-| PulseMCP | Not verified live | Simple unauthenticated curl to PulseMCP returned 403 on 2026-05-12. Re-check periodically now that the official MCP Registry entry is live. |
-| mcp.so | Submitted, not live | [chatmcp/mcpso#2288](https://github.com/chatmcp/mcpso/issues/2288) tracks the submission. `https://mcp.so/server/trvl` returned "Project not found" on 2026-05-12. |
-| Glama | Not live; repo metadata fixed | `https://glama.ai/api/mcp/v1/servers/MikkoParkkola/trvl` returned 404 on 2026-05-12. `glama.json` is now tracked so the repo exposes the maintainer manifest. Manual "Add Server" flow may still be required. |
+Directory pages are discovery mirrors, not release channels. Their descriptions and tool counts may lag the repository even when the listing itself is live. The README, changelog, and official MCP Registry are authoritative.
+
+- [Glama](https://glama.ai/mcp/servers/MikkoParkkola/trvl)
+- [LobeHub](https://lobehub.com/mcp/mikkoparkkola-trvl)
+- [Smithery](https://smithery.ai/server/@MikkoParkkola/trvl)
+- [MCPHub](https://www.mcphub.com/mcp-servers/MikkoParkkola/trvl)
+- [Cursor Directory](https://cursor.directory/mcp/trvl)
+- [PulseMCP](https://www.pulsemcp.com/servers/mikkoparkkola-trvl)
+- [MCP Market](https://mcpmarket.com/server/trvl)
+
+For example, MCP Market was reachable during the 2026-08-09 audit but still showed an old 9-tool/14-command snapshot. That is directory-cache drift, not the current trvl surface.
 
 ## Homebrew macOS Policy
 

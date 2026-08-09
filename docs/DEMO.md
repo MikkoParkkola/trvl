@@ -1,6 +1,6 @@
 # trvl Demo
 
-Last updated: 2026-05-13
+Last updated: 2026-08-09
 
 The public demo is a fixture-backed one-prompt transcript. It is intentionally stable so the README GIF and cast do not fail when live travel providers throttle or change prices.
 
