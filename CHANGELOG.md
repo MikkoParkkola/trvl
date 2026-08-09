@@ -1173,7 +1173,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.0...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.1...HEAD
+[1.21.1]: https://github.com/MikkoParkkola/trvl/compare/v1.21.0...v1.21.1
 [1.21.0]: https://github.com/MikkoParkkola/trvl/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/MikkoParkkola/trvl/compare/v1.19.1...v1.20.0
 [1.19.1]: https://github.com/MikkoParkkola/trvl/compare/v1.19.0...v1.19.1
