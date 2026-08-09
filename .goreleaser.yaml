@@ -132,7 +132,7 @@ release:
   header: |
     ## trvl {{ .Version }}
 
-    AI travel agent — 55 MCP tools for flights, hotels, ground transport, price alerts. Free, no API keys.
+    AI travel agent for flights, hotels, ground transport, price alerts, and more. Current interface: 1 smart MCP tool, 66 legacy-compatible capabilities, and 56 CLI commands. No personal API keys required for default search.
 
     ### Install
 

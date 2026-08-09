@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.21.0] - 2026-07-28
+## [1.21.0] - 2026-08-08
 
 ### Added
 
@@ -276,8 +276,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the MCP schema, and printed below the price table. A signal the source
   cannot supply appears only in the ceiling reasons, never among the ordinary
   downgrade reasons, because listing it there reads as a finding about the offer.
-  Reported by @RobertoReale, who tested six Ischia properties and got six
-  identical cautions with nothing to explain them.
+  Based in part on feedback from @RobertoReale.
 - **A capped verdict no longer claims every signal was confirmed.** With the
   unobtainable signal moved out of the ordinary reasons, that list is empty on a
   best-case capped source, and the summary fell through to its default: `Booking

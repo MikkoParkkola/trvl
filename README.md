@@ -15,11 +15,11 @@
 
 ![trvl demo](https://raw.githubusercontent.com/MikkoParkkola/trvl/main/demo.gif?v=1.10.0)
 
-**Ask your AI assistant to plan a real trip, and it actually can.** trvl gives Claude, Cursor, Windsurf, Codex, or any MCP-compatible client one smart tool — the `travel` router — with live access to flights, hotels, rental cars, trains, buses, ferries, price alerts, award sweet spots, weather, and destination intel. Free, no API keys, no signup. One binary.
+**Ask your AI assistant to plan a real trip, and it actually can.** trvl gives Claude, Cursor, Windsurf, Codex, or any MCP-compatible client one smart tool — the `travel` router — with live access to flights, hotels, rental cars, trains, buses, ferries, price alerts, award sweet spots, weather, and destination intel. Free for noncommercial use, no personal API keys for default search, no signup. One binary.
 
 > **You:** I have €300 and a free weekend. Surprise me.
 >
-> **Claude (with trvl):** **Dubrovnik, Croatia** 🇭🇷 — ✈️ Ryanair HEL→DBV €167 RT · 🏨 Old Town Studios 4.6★ €84 · 🌡️ 26°C, sunny.
+> **Illustrative response shape (prices are examples):** **Dubrovnik, Croatia** 🇭🇷 — ✈️ Ryanair HEL→DBV €167 RT · 🏨 Old Town Studios 4.6★ €84 · 🌡️ 26°C, sunny.
 > 📊 Naive €350 → optimized €251 → **saved €99 (28%)** by flying Friday and splitting airlines.
 
 **▶ Try it live, no install:** [socialistic.ai/trvl-travel-mcp](https://socialistic.ai/en/skill/trvl-travel-mcp-4f7aa7) (community-hosted).
@@ -28,12 +28,12 @@
 
 ## How it works, in one paragraph
 
-trvl is a single binary that runs on your machine. Your AI client talks to it over MCP; it talks to two dozen travel sources in parallel — flight metasearch, hotel metasearch, rail and bus operators, weather and places APIs — then merges, de-duplicates and optimizes the results before handing back one answer. Most sources are free public endpoints, so there is nothing to sign up for. The ones behind bot protection work by reusing the browser session you already have, which is the one thing worth reading about before you install: see [What trvl reads, and what it keeps](#what-trvl-reads-and-what-it-keeps).
+trvl is a single binary that runs on your machine. Your AI client talks to it over MCP; it queries flight, hotel, transport, weather, and places sources, then merges, de-duplicates and optimizes the results before handing back one answer. Most sources are free public endpoints, so there is nothing to sign up for. The ones behind bot protection may reuse the browser session you already have, which is the one thing worth reading about before you install: see [What trvl reads, and what it keeps](#what-trvl-reads-and-what-it-keeps).
 
 ## Why trvl, not the alternatives
 
 - **Whole journey, door to door.** It plans the entire trip across modes — home to airport, flight, arrival transfer, hotel, onward train — and prices each leg in its real mode. Most tools stop at one flight, one hotel.
-- **No API keys, no signup, no bill.** Every core source works the moment you install it — no Amadeus key to apply for, no subscription, no per-call cost. A handful of optional providers switch on if you supply a key of your own; none is required.
+- **No personal API key for default search.** There is no Amadeus key to apply for, subscription, or per-call bill on the default paths. Optional providers switch on when you supply their credentials; none is required for the default flight, hotel, or ground searches.
 - **Your assistant, your machine.** One local binary, any MCP client, not locked to a vendor. Searching sends the query to the providers being searched, the same as any travel site would: route, dates and traveller count go to Google, Kiwi, Booking and the rest. What trvl keeps for itself stays on your machine, apart from a daily anonymous heartbeat you can switch off and any webhook you configure yourself — both spelled out below.
 - **It optimizes, not just lists.** Shift-day pricing, split-airline routing, hidden-city checks, award sweet spots, round-trip fares. It hands back the cheaper option and shows what it saved.
 - **It is honest when a source fails.** Typed statuses and labelled estimates, never an empty result dressed up as "nothing found."
@@ -82,13 +82,14 @@ Restart your client. `trvl mcp install --client <name>` targets a specific one (
 
 ```bash
 # Direct binary (no Homebrew)
-curl -fsSL https://github.com/MikkoParkkola/trvl/releases/latest/download/trvl_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz | tar xz -C /usr/local/bin trvl
+TRVL_VERSION="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/MikkoParkkola/trvl/releases/latest | sed 's#.*/v##')"
+curl -fsSL "https://github.com/MikkoParkkola/trvl/releases/download/v${TRVL_VERSION}/trvl_${TRVL_VERSION}_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz -C /usr/local/bin trvl
 
 # Go
 go install github.com/MikkoParkkola/trvl/cmd/trvl@latest
 
 # Docker
-docker run --rm ghcr.io/mikkoparkkola/trvl flights HEL NRT 2026-06-15
+docker run --rm ghcr.io/mikkoparkkola/trvl flights HEL NRT 2027-06-15
 
 # Build from source
 git clone https://github.com/MikkoParkkola/trvl.git && cd trvl && make build
@@ -144,7 +145,7 @@ export TRVL_NO_BROWSER_COOKIES=1   # never read your browsers or the sessions in
 export TRVL_NO_TIER2_CDP=1         # never start a headless browser of its own
 ```
 
-Both cost you results, and it is worth knowing how: a site that answers with a bot challenge simply returns nothing, which looks like trvl finding no trains rather than like a setting you chose. That is the trade, stated so you can make it deliberately.
+Both controls trade coverage for isolation. Cookie access is enabled by default because protected hotel and rail sources rely on existing sessions; turning it off can materially reduce results. The headless fallback starts an installed Chrome, Brave, or Edge with an empty profile only when a challenged source needs fresh cookies. It does not read your existing browser sessions, show a window, or take focus. Turning it off can leave a challenged source empty. A visible-browser recovery path exists for a small number of providers, but it is separate, provider-specific, and asks before opening; disabling the headless fallback does not enable it automatically.
 
 ### If you are behind a proxy
 
@@ -238,7 +239,7 @@ Local stdio is the default and safest transport. `trvl mcp --http` binds to `127
 ## Troubleshooting
 
 - **No tools showing?** Restart your AI client after `trvl mcp install`; confirm `which trvl` is on `$PATH`.
-- **Empty flight results?** Some routes have no Google Flights data — try a major pair like `trvl flights HEL LHR 2026-07-01`.
+- **Empty flight results?** Some routes have no Google Flights data — try a major pair like `trvl flights HEL LHR 2027-07-01`.
 - **Ground transport times out?** Rail/ferry providers throttle; retry after 30s or pass `--timeout 3m`.
 
 Full troubleshooting: [docs/CLI.md](docs/CLI.md).
@@ -246,6 +247,8 @@ Full troubleshooting: [docs/CLI.md](docs/CLI.md).
 ## Available on
 
 [Glama](https://glama.ai/mcp/servers/MikkoParkkola/trvl) · [LobeHub](https://lobehub.com/mcp/mikkoparkkola-trvl) · [Smithery](https://smithery.ai/server/@MikkoParkkola/trvl) · [MCPHub](https://www.mcphub.com/mcp-servers/MikkoParkkola/trvl) · [Cursor Directory](https://cursor.directory/mcp/trvl) · [PulseMCP](https://www.pulsemcp.com/servers/mikkoparkkola-trvl) · [MCP Market](https://mcpmarket.com/server/trvl) · [pkg.go.dev](https://pkg.go.dev/github.com/MikkoParkkola/trvl)
+
+Third-party directories cache their own descriptions and may show older tool or command counts. Use this README, the [changelog](CHANGELOG.md), and the [official MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.MikkoParkkola%2Ftrvl) for the current surface and release version.
 
 **Independent coverage:** Roberto Reale's [Budget Travel Pipeline](https://blog-roberto-reale.vercel.app) — an independent build-and-test that surfaced real fixes and shaped the v1.10 trust roadmap.
 
@@ -261,7 +264,7 @@ trvl is a **personal-use tool** that reads public-facing web APIs (Google Flight
 
 ```bash
 export TRVL_STEALTH_ALLOWLIST=".google.com"
-trvl flights HEL NRT 2026-09-01 --stealth
+trvl flights HEL NRT 2027-09-01 --stealth
 ```
 
 Licensed under [PolyForm Noncommercial 1.0](LICENSE) — free for personal and noncommercial use. Commercial use (company-internal, hosted service, embedding in paid platforms) requires a separate license: EUR 500/month per named project via [GitHub Sponsors](https://github.com/sponsors/MikkoParkkola), see [COMMERCIAL.md](COMMERCIAL.md).

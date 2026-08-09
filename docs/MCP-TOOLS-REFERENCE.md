@@ -2,6 +2,8 @@
 
 > Moved out of the README to keep it readable. The smart `travel` router and its 66 legacy-compatible capabilities, the search-filter matrices, and the MCP protocol feature set.
 
+Dates in the compact examples are illustrative; use future dates for live provider calls.
+
 ## MCP Tool + Callable Capabilities
 
 | Tool | What it does | Example |
@@ -118,9 +120,8 @@
 | **Output schemas** | Full JSON Schema validation for the `travel` smart router and all 66 legacy-compatible capability tool responses |
 | **Prompts** | `plan-trip`, `find-cheapest-dates`, `compare-hotels`, `where-should-i-go`, `packing-list`, `setup_profile`, `setup_providers` |
 | **Resources** | Airport codes (50 major hubs), flight/hotel usage guides, price-watch subscriptions |
-| **Tool description orchestration** | `find_trip_window` instructs the LLM to fetch calendar data first, then pass busy intervals in — works on every MCP client. See [docs/MCP-ORCHESTRATION.md](docs/MCP-ORCHESTRATION.md) |
+| **Tool description orchestration** | `find_trip_window` instructs the LLM to fetch calendar data first, then pass busy intervals in — works on every MCP client. See [MCP-ORCHESTRATION.md](MCP-ORCHESTRATION.md) |
 | **Progress notifications** | Long-running searches stream progress tokens to the client |
 | **Resource subscriptions** | Price-watch resources notify subscribers on price changes |
 | **Progressive disclosure** | Suggestions for follow-up searches in every response |
 | **Booking links** | Direct Google Flights/Hotels links in results |
-

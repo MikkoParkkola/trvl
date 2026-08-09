@@ -19,8 +19,7 @@ Contributions follow the rules in [`CONTRIBUTING.md`](CONTRIBUTING.md) — in pa
   - earlier iterations (#123, #146, #147, #148) reworked into the landed versions above
 
 - **@RobertoReale** — *Roberto Reale*
-  - Independent build-and-test of the full budget-travel pipeline ([Budget Travel Pipeline](https://blog-roberto-reale.vercel.app)) across v1.8.0 to v1.18.0, which surfaced the list-vs-actual hotel price gap, a wrong-hotel name match (fixed in v1.9.2), and silent ad-click link expiry
-  - Contributed the island / unindexed-destination command sequence now documented in [`docs/CLI.md`](docs/CLI.md)
+  - Feedback across several releases helped improve hotel matching, price verification, booking-readiness evidence, and the island / unindexed-destination workflow documented in [`docs/CLI.md`](docs/CLI.md).
 
 ---
 

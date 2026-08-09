@@ -53,7 +53,7 @@ CLI / MCP tool call
    │    ├── Booking.com           │
    │    ├── Airbnb                │
    │    ├── Hostelworld           │
-   │    └── <user configs>        │
+   │    └── reviewed definitions  │
    └──────────────────────────────┘
         |
    models.MergeHotelResults()
@@ -66,8 +66,8 @@ CLI / MCP tool call
 
 The provider runtime (`internal/providers/`) is the generic execution engine for
 anything requiring auth, custom headers, SSR unwrapping, or city ID resolution. Google
-Hotels and Trivago bypass the runtime; Booking, Airbnb, Hostelworld, and user-added
-providers go through it.
+Hotels and Trivago bypass the runtime; Booking, Airbnb, Hostelworld, and reviewed
+optional definitions shipped in the binary go through it.
 
 ---
 
@@ -118,8 +118,8 @@ literal placeholder strings.
 ```
 searchProvider(ctx, cfg, location, lat, lon, checkin, checkout, ...)
     │
-    ├─ ReloadIfChanged()          config hot-reload: re-reads JSON if mtime advanced
-    │                             preserves cookie jar across reloads
+    ├─ Check runtime state        consent/enabled state may change; the embedded
+    │                             definition itself is immutable at runtime
     │
     ├─ rate limiter Wait()        token bucket per provider, default 0.5 req/s
     │

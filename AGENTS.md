@@ -5,7 +5,7 @@
 
 ## What To Do
 
-You are setting up `trvl` — a travel MCP server + CLI for flights, hotels, trains, cars, and ferries, with no API keys required. It reads real-time Google Flights and Google Hotels directly, ships as a single Go binary, and works with any MCP client. Run these steps in order:
+You are setting up `trvl` — a travel MCP server + CLI for flights, hotels, trains, cars, and ferries. Default search requires no personal API keys. It reads current data from multiple flight, hotel, and ground sources, ships as a single Go binary, and works with MCP clients. Run these steps in order:
 
 ### Step 1: Install
 
@@ -17,7 +17,8 @@ Pre-built binary, no toolchain needed, 1 second. If Homebrew is not available:
 
 ```bash
 # Manual: detect OS/arch, download, extract
-curl -fsSL https://github.com/MikkoParkkola/trvl/releases/latest/download/trvl_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz | tar xz -C /usr/local/bin trvl
+TRVL_VERSION="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/MikkoParkkola/trvl/releases/latest | sed 's#.*/v##')"
+curl -fsSL "https://github.com/MikkoParkkola/trvl/releases/download/v${TRVL_VERSION}/trvl_${TRVL_VERSION}_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz -C /usr/local/bin trvl
 ```
 
 ### Step 2: Register as MCP server
@@ -59,9 +60,9 @@ The skills at `.claude/skills/trvl.md` and `.claude/skills/providers.md` teach y
 
 ```bash
 trvl version
-# Expected: trvl 1.18.0 (or later)
+# Expected: trvl 1.21.0 (or later)
 
-trvl flights HEL LHR 2026-07-01 --format json | head -5
+trvl flights HEL LHR 2027-07-01 --format json | head -5
 # Expected: JSON with flight results
 ```
 
@@ -94,7 +95,7 @@ Run the onboarding interview to learn how the user travels:
 2. After user answers, call `onboard_profile` with `phase: 2` — travel style (accommodation, budget, transport)
 3. Continue through phases 3 (favourite cities, properties), 4 (companion, wishlist), and 5 (reasoning and strategies)
 4. Each phase skips questions the profile already answers
-5. Save answers to `~/.trvl/profile.json` via `add_booking` or `update_preferences`
+5. Save preference answers to `~/.trvl/preferences.json` with `update_preferences`. Save real bookings to `~/.trvl/profile.json` with `add_booking`.
 
 If the user has email access (Gmail), also offer to scan booking history:
 ```
@@ -119,15 +120,16 @@ All free, no credit card, 2 min signup each. Walk the user through each signup:
 2. Tell them what to click (Sign up → Create project → Copy key)
 3. Have them paste the key
 4. Set it: `echo 'export TICKETMASTER_API_KEY="their-key"' >> ~/.zshrc && source ~/.zshrc`
-5. Verify: `trvl events "Barcelona" --from 2026-07-01 --to 2026-07-08`
+5. Verify: `trvl events "Barcelona" --from 2027-07-01 --to 2027-07-08`
 
 Use `/setup-api-keys` command for the guided wizard.
 
-### Step 7: Build the traveller profile (advanced — email scanning)
+### Step 7: Refine the traveller profile (advanced — email scanning)
 
-The profile lives at `~/.trvl/preferences.json`. The best profile comes
-from real booking history, not from asking questions. Try these approaches
-in order — use the first one the user agrees to.
+Traveller state is split between preferences in `~/.trvl/preferences.json` and
+booking-derived history in `~/.trvl/profile.json`. The best profile comes from
+real booking history, not from asking questions. Try these approaches in order;
+use the first one the user agrees to.
 
 **Tier 1 (best): Scan their email and calendar**
 
@@ -160,7 +162,8 @@ Then run a quick trvl search to detect geoip currency → infer location.
 Show the user what you found as a draft profile. Ask:
 "Here's what I see from your bookings. Anything wrong or missing?"
 
-Fix what they correct. Save with `update_preferences`.
+Fix what they correct. Record each confirmed booking with `add_booking`, and save
+inferred preference changes with `update_preferences`.
 
 **Tier 2 (good): Ask about a real trip**
 
@@ -289,10 +292,10 @@ You now have one `travel` MCP tool available by default. Older clients that call
 
 ### search_flights — Find flights between airports
 ```json
-{"origin": "HEL", "destination": "NRT", "departure_date": "2026-06-15"}
+{"origin": "HEL", "destination": "NRT", "departure_date": "2027-06-15"}
 ```
 Optional parameters:
-- `return_date`: "2026-06-22" (makes it round-trip)
+- `return_date`: "2027-06-22" (makes it round-trip)
 - `cabin_class`: "economy" | "premium_economy" | "business" | "first"
 - `max_stops`: "any" | "nonstop" | "one_stop" | "two_plus"
 - `sort_by`: "cheapest" | "duration" | "departure" | "arrival"
@@ -316,13 +319,13 @@ Response extras (single-airport, single-destination searches only):
 
 ### search_dates — Find the cheapest day to fly
 ```json
-{"origin": "HEL", "destination": "NRT", "start_date": "2026-06-01", "end_date": "2026-06-30"}
+{"origin": "HEL", "destination": "NRT", "start_date": "2027-06-01", "end_date": "2027-06-30"}
 ```
 Optional: `trip_duration` (days), `is_round_trip` (true/false)
 
 ### find_trip_window — Cheapest flexible-date window for a stay of N–M nights
 ```json
-{"origin": "BGY", "destination": "NAP", "earliest_depart": "2026-07-22", "latest_return": "2026-08-06", "min_nights": 5, "max_nights": 7}
+{"origin": "BGY", "destination": "NAP", "earliest_depart": "2027-07-22", "latest_return": "2027-08-06", "min_nights": 5, "max_nights": 7}
 ```
 Use this when the trip length is a *range*, not a fixed date: it returns the cheapest
 round-trip date combinations whose stay falls between `min_nights` (default 3) and
@@ -334,7 +337,7 @@ multi-airport city, call it once per airport code (e.g. BGY, MXP, LIN) and merge
 
 ### search_accommodations — Criteria-first room/apartment search
 ```json
-{"location": "Tokyo", "check_in": "2026-06-15", "check_out": "2026-06-18", "adults": 2, "children_ages": [7], "accommodation_type": "entire_apartment", "must_have_kitchen": true, "refundable_required": true}
+{"location": "Tokyo", "check_in": "2027-06-15", "check_out": "2027-06-18", "adults": 2, "children_ages": [7], "accommodation_type": "entire_apartment", "must_have_kitchen": true, "refundable_required": true}
 ```
 Use this before recommending where to stay. It searches candidate properties,
 checks room-level availability for the shortlist, and returns only
@@ -343,7 +346,7 @@ under `candidates` and must not be used for final trip-cost ranking.
 
 ### search_hotels — Find hotels in any city (Google Hotels + Trivago + Airbnb)
 ```json
-{"location": "Tokyo", "check_in": "2026-06-15", "check_out": "2026-06-18"}
+{"location": "Tokyo", "check_in": "2027-06-15", "check_out": "2027-06-18"}
 ```
 Optional:
 - `guests`: number of guests (default: 2)
@@ -362,7 +365,7 @@ Optional:
 
 ### search_hotels_with_details — Search hotels and enrich top picks
 ```json
-{"location": "Tokyo", "check_in": "2026-06-15", "check_out": "2026-06-18", "max_hotels": 3}
+{"location": "Tokyo", "check_in": "2027-06-15", "check_out": "2027-06-18", "max_hotels": 3}
 ```
 Runs `search_hotels`, then fetches room-level availability and full amenity detail for the top hotels in one call. Room results include best-effort normalized `cancellation_policy`, `refundable`, `free_cancellation`, `board`, `breakfast_included`, `nightly_price`, `total_price`, `taxes_and_fees`, and `taxes_fees_included` fields when providers expose them. Partial detail failures stay localized to typed `detail_errors` objects instead of failing the whole hotel search. Optional:
 - all `search_hotels` filters
@@ -372,7 +375,7 @@ Runs `search_hotels`, then fetches room-level availability and full amenity deta
 
 ### hotel_prices — Compare prices across booking sites
 ```json
-{"hotel_id": "<from search_hotels>", "check_in": "2026-06-15", "check_out": "2026-06-18"}
+{"hotel_id": "<from search_hotels>", "check_in": "2027-06-15", "check_out": "2027-06-18"}
 ```
 
 Use `hotel_prices` as a provider comparison when Google exposes booking partners,
@@ -389,7 +392,7 @@ Response extras:
 
 CLI re-book flow for existing refundable reservations:
 ```bash
-trvl prices hold "<hotel_id>" --name "Hotel Name" --checkin 2026-06-15 --checkout 2026-06-18 --price 420 --currency EUR --refundable
+trvl prices hold "<hotel_id>" --name "Hotel Name" --checkin 2027-06-15 --checkout 2027-06-18 --price 420 --currency EUR --refundable
 trvl prices rebook <hold_id> --min-savings 25
 ```
 Stores active holds in `~/.trvl/active_holds.json`, fetches current provider prices, and returns a hold-current vs. manual re-book decision. It never cancels or books automatically.
@@ -398,13 +401,13 @@ Stores active holds in `~/.trvl/active_holds.json`, fetches current provider pri
 ```json
 {"location": "Tokyo"}
 ```
-Optional: `travel_dates` ("2026-06-15,2026-06-18" — comma-separated check-in,check-out)
+Optional: `travel_dates` ("2027-06-15,2027-06-18" — comma-separated check-in,check-out)
 
 Returns: weather forecast, country info (capital, languages, currencies), public holidays during travel dates, safety advisory (1-5 scale), currency exchange rates vs EUR, timezone.
 
 ### calculate_trip_cost — Estimate total trip cost
 ```json
-{"origin": "HEL", "destination": "BCN", "depart_date": "2026-07-01", "return_date": "2026-07-08"}
+{"origin": "HEL", "destination": "BCN", "depart_date": "2027-07-01", "return_date": "2027-07-08"}
 ```
 Optional: `guests` (number, default 1), `currency` ("EUR" | "USD" etc.)
 
@@ -412,7 +415,7 @@ Returns: cheapest outbound flight + return flight + cheapest hotel per night, to
 
 ### weekend_getaway — Find cheap weekend destinations
 ```json
-{"origin": "HEL", "month": "july-2026"}
+{"origin": "HEL", "month": "july-2027"}
 ```
 Optional: `max_budget` (number in EUR, 0 = no limit), `nights` (default: 2)
 
@@ -420,7 +423,7 @@ Returns: top 10 cheapest weekend destinations ranked by total estimated cost (ro
 
 ### suggest_dates — Smart date suggestions around a target date
 ```json
-{"origin": "HEL", "destination": "BCN", "target_date": "2026-07-15"}
+{"origin": "HEL", "destination": "BCN", "target_date": "2027-07-15"}
 ```
 Optional: `flex_days` (default: 7), `round_trip` (boolean), `duration` (days for round-trip, default: 7)
 
@@ -428,9 +431,9 @@ Returns: 3 cheapest dates, weekday vs weekend analysis, savings insights, averag
 
 ### optimize_multi_city — Find cheapest routing for multi-city trips
 ```json
-{"home_airport": "HEL", "cities": "BCN,ROM,PAR", "depart_date": "2026-07-01"}
+{"home_airport": "HEL", "cities": "BCN,ROM,PAR", "depart_date": "2027-07-01"}
 ```
-Optional: `return_date` ("2026-07-21")
+Optional: `return_date` ("2027-07-21")
 
 Returns: optimal visit order, per-segment prices, total cost, savings vs worst order. Tries all permutations (up to 6 cities).
 
@@ -444,7 +447,7 @@ with the user before calling this tool.
 
 ### search_cars — Rental car search
 ```json
-{"pickup_location": "HEL", "pickup_date": "2026-07-01", "dropoff_date": "2026-07-04", "currency": "EUR", "passengers": 3}
+{"pickup_location": "HEL", "pickup_date": "2027-07-01", "dropoff_date": "2027-07-04", "currency": "EUR", "passengers": 3}
 ```
 Optional: `dropoff_location`, `pickup_time`, `dropoff_time`, `driver_age`, `vehicle_class`, `max_price`, `provider`.
 Uses optional Skyscanner Car Hire access when `SKYSCANNER_API_KEY` is configured. Without credentials it returns a typed `provider_statuses` setup result instead of crashing or inventing prices.
@@ -473,13 +476,13 @@ trvl points-value --cash 300 --offer world-of-hyatt:12000 --offer hilton-honors:
 
 ### search_awards — Rank cross-program award sweet spots
 ```json
-{"seats":[{"program":"VS","origin":"HEL","destination":"LHR","date":"2026-08-15","cabin":"business","miles_cost":50000,"cash_fees":35,"cash_equivalent":650,"bookable_segments":1}],"balances":[{"program":"MR","balance":80000},{"program":"VS","balance":20000}]}
+{"seats":[{"program":"VS","origin":"HEL","destination":"LHR","date":"2027-08-15","cabin":"business","miles_cost":50000,"cash_fees":35,"cash_equivalent":650,"bookable_segments":1}],"balances":[{"program":"MR","balance":80000},{"program":"VS","balance":20000}]}
 ```
 Returns: ranked award-seat redemption paths across native balances and transfer partners, including miles spent, cash fees, cents-per-point, affordability, and transfer route. Use when award availability is already known or supplied from another source.
 
 ### optimize_booking — Unified trip optimizer
 ```json
-{"origin": "HEL", "destination": "BCN", "departure_date": "2026-07-01", "return_date": "2026-07-08"}
+{"origin": "HEL", "destination": "BCN", "departure_date": "2027-07-01", "return_date": "2027-07-08"}
 ```
 Optional:
 - `flex_days`: date flexibility +/-N days (default 3)
@@ -513,14 +516,14 @@ Important: this tool never purchases, cancels, or guarantees availability. Stale
 
 ### optimize_trip_dates — Find cheapest dates across a range
 ```json
-{"origin": "HEL", "destination": "BCN", "from_date": "2026-07-01", "to_date": "2026-07-31", "trip_length": 7}
+{"origin": "HEL", "destination": "BCN", "from_date": "2027-07-01", "to_date": "2027-07-31", "trip_length": 7}
 ```
 
 Returns: cheapest departure dates across the entire range using a single CalendarGraph API call. Much faster than searching day by day.
 
 ### assess_trip — Trip viability pre-check
 ```json
-{"origin": "HEL", "destination": "BKK", "depart_date": "2026-07-01", "return_date": "2026-07-14"}
+{"origin": "HEL", "destination": "BKK", "depart_date": "2027-07-01", "return_date": "2027-07-14"}
 ```
 Optional: `passport` (ISO country code for visa check)
 
@@ -528,13 +531,13 @@ Returns: GO / WAIT / NO_GO verdict with parallel checks for flights, hotels, vis
 
 ### search_hotel_by_name — Find a specific property by name
 ```json
-{"name": "CORU House", "location": "Prague", "check_in": "2026-07-01", "check_out": "2026-07-05"}
+{"name": "CORU House", "location": "Prague", "check_in": "2027-07-01", "check_out": "2027-07-05"}
 ```
 Searches all providers (Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld, HomeToGo) using the property name as the search query, then fuzzy-matches results. Use when the user knows the exact hotel name.
 
 ### search_ground — Buses, trains, ferries between cities
 ```json
-{"from": "Amsterdam", "to": "Paris", "date": "2026-07-01"}
+{"from": "Amsterdam", "to": "Paris", "date": "2027-07-01"}
 ```
 Optional: `type` ("bus"|"train"|"ferry"), `currency`, `max_price`, `provider`
 Searches 22+ providers in parallel including FlixBus, RegioJet, Eurostar, DB, NS, SNCF, Trainline, Trenitalia, Italo, and ferries. Eurostar Snap fares auto-searched for valid routes.
@@ -547,7 +550,7 @@ Searches 22+ providers in parallel including FlixBus, RegioJet, Eurostar, DB, NS
 
 ### watch_price — Create a price alert (experimental)
 ```json
-{"type": "flight", "origin": "HEL", "destination": "BCN", "date": "2026-07-01", "target_price": 89, "currency": "EUR"}
+{"type": "flight", "origin": "HEL", "destination": "BCN", "date": "2027-07-01", "target_price": 89, "currency": "EUR"}
 ```
 Stores the watch transactionally in `~/.trvl/watch.db`. Use `check_watches` to re-check prices, `list_watches` to see all active watches. Hotel watches can set `last_minute: true` and `last_minute_drop_pct` (default 25) to alert when sub-48h availability drops materially below the last seen price.
 
@@ -572,7 +575,7 @@ Shows per-provider success rate, average latency, result-count quality, freshnes
 
 ### detect_travel_hacks — Find savings opportunities
 ```json
-{"origin": "HEL", "destination": "BCN", "date": "2026-07-01"}
+{"origin": "HEL", "destination": "BCN", "date": "2027-07-01"}
 ```
 Runs 36 detectors in parallel: hidden-city, throwaway, positioning, back-to-back, rail competition, ferry cabin, error fare, date flex, and more. Optional: `return_date`, `carry_on_only`.
 

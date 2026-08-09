@@ -65,7 +65,7 @@ can also use `watch_room_availability`; for rolling inspiration windows it uses
 ### 3. Research A Destination
 
 ```text
-/trvl destination-research Barcelona for 2026-07-01 to 2026-07-08, food, museums, and local events
+/trvl destination-research Barcelona for 2027-07-01 to 2027-07-08, food, museums, and local events
 ```
 
 The command routes to `trvl-destination-research`, composing
@@ -83,7 +83,7 @@ Flights:
 `search_natural`, `search_hidden_city`, `search_awards`, `plan_trip`,
 `optimize_booking`.
 
-Hotels:
+Hotels (6 sources, including HomeToGo vacation rentals):
 `search_accommodations`, `search_hotels`, `search_hotels_with_details`, `search_hotel_by_name`,
 `hotel_prices`, `hotel_reviews`, `hotel_rooms`, `watch_room_availability`,
 `detect_accommodation_hacks`.
@@ -91,6 +91,10 @@ Hotels:
 Ground and multimodal:
 `search_ground`, `search_route`, `search_airport_transfers`,
 `optimize_multi_city`.
+
+The default flight merge uses Google Flights, Kiwi, and Skiplagged. AFKLM and
+the low-cost-carrier integrations are solo or opt-in paths; see
+[`docs/PROVIDERS.md`](../docs/PROVIDERS.md) for their current requirements.
 
 Destination context:
 `destination_info`, `get_weather`, `travel_guide`, `local_events`,

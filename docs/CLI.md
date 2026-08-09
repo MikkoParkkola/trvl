@@ -2,6 +2,8 @@
 
 > Moved out of the README. The standalone CLI (56 commands), output formats, booking-link shape, and the full capability table.
 
+Most fixed dates below are illustrative captured examples. Replace them with future dates for live searches. The Ischia sequence keeps Roberto Reale's original 2026 retest dates because it documents a specific regression report.
+
 ## CLI Usage
 
 trvl also works as a standalone CLI tool with 56 commands:
@@ -309,7 +311,7 @@ Home airport and currency are auto-detected from your IP on first search. The AI
 | `default_companions: 1` | Hotel searches default to 2 guests (you + companion) |
 | `notes: "boutique hotels, no chains"` | Free-text — the AI applies these as soft filters |
 
-Full profile reference: [AGENTS.md](AGENTS.md#step-6-build-the-traveller-profile)
+Full profile reference: [AGENTS.md](../AGENTS.md#step-5-build-travel-profile-recommended)
 
 ### Points & Miles
 
@@ -362,7 +364,7 @@ The AI uses these to give you actionable handoff links. For accommodation decisi
 | | |
 |---|---|
 | **Binary** | Single static ~15MB for API-first flows. Optional protected-provider fallbacks may use local browser/python tooling. |
-| **Data** | Real-time from Google Flights (+ Kiwi, Ryanair, Wizz Air, easyJet, Vueling, Norwegian; Transavia/Skiplagged/AFKLM/Travelpayouts opt-in) + 6 hotel sources (Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld, HomeToGo) + 22 ground providers (FlixBus, RegioJet, Eurostar, DB, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, Trenitalia, Italo, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS, Ferryhopper) + free destination/enrichment APIs (weather, air quality, sun times, bike-share, holidays, currency) |
+| **Data** | Default flight search merges Google Flights, Kiwi, and Skiplagged; AFKLM and six low-cost-carrier integrations (Ryanair, Wizz Air, Transavia, easyJet, Vueling, Norwegian) are solo or opt-in paths. Hotel search uses 6 sources (Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld, HomeToGo). Ground search covers 22 providers (FlixBus, RegioJet, Eurostar, DB, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, Trenitalia, Italo, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS, Ferryhopper), plus free destination/enrichment APIs for weather, air quality, sun times, bike-share, holidays, and currency. |
 | **Auth** | No personal API keys required. Two providers (NS, Digitransit/VR) use public keys embedded in the binary. Optional browser/cookie fallbacks are available for protected providers when explicitly enabled. |
 | **MCP** | Full v2025-11-25 — 1 smart MCP tool, 66 legacy-compatible capabilities (incl. 4 profile, 3 price-watch, provider-health, award sweet-spot capabilities), 7 prompts, resources, structured content, progress notifications, resource subscriptions, tool description orchestration |
 | **CLI** | 56 commands (+ 9 watch subcommands) with table/JSON output, color, shell completion |
@@ -371,5 +373,5 @@ The AI uses these to give you actionable handoff links. For accommodation decisi
 | **Personal profile** | Learns from your booking history (email parsing + LLM). Remembers FF status, luggage needs, favourite properties, departure preferences, travel hacks used, accommodation preferences, family composition. Pre-search interviews skip questions the profile already answers. |
 | **Output** | Pretty tables with color (default) or JSON (`--format json`) |
 | **Platforms** | Linux, macOS (amd64, arm64). Windows CI in progress. |
-| **Code** | Go codebase with CI race/coverage gates and a documented local test matrix in [docs/TESTING.md](docs/TESTING.md) |
+| **Code** | Go codebase with CI race/coverage gates and a documented local test matrix in [TESTING.md](TESTING.md) |
 | **License** | PolyForm Noncommercial 1.0 |
