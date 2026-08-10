@@ -10,7 +10,7 @@ require (
 	github.com/browserutils/kooky v0.2.10
 	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
 	github.com/chromedp/chromedp v0.16.0
-	github.com/cloudflare/circl v1.6.4
+	github.com/cloudflare/circl v1.6.5
 	github.com/google/uuid v1.6.0
 	github.com/grafana/sobek v0.0.0-20260406180825-6d789dcdd177
 	github.com/klauspost/compress v1.19.2
