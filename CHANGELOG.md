@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.2] - 2026-08-10
+
+### Fixed
+
+- `trvl hotels` now rejects stays whose check-in date is in the past before
+  contacting providers or writing search results, matching the validation
+  already used by the other hotel command paths. ([#606](https://github.com/MikkoParkkola/trvl/issues/606))
+
 ## [1.21.1] - 2026-08-10
 
 ### Fixed
@@ -1173,7 +1181,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.1...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.2...HEAD
+[1.21.2]: https://github.com/MikkoParkkola/trvl/compare/v1.21.1...v1.21.2
 [1.21.1]: https://github.com/MikkoParkkola/trvl/compare/v1.21.0...v1.21.1
 [1.21.0]: https://github.com/MikkoParkkola/trvl/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/MikkoParkkola/trvl/compare/v1.19.1...v1.20.0
