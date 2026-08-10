@@ -157,8 +157,9 @@ func TestHotelsCmd_RequiresCheckinCheckout(t *testing.T) {
 }
 
 func TestHotelsCmd_RejectsPastStay(t *testing.T) {
-	checkIn := time.Now().AddDate(0, 0, -10).Format("2006-01-02")
-	checkOut := time.Now().AddDate(0, 0, -5).Format("2006-01-02")
+	now := time.Now()
+	checkIn := now.AddDate(0, 0, -10).Format("2006-01-02")
+	checkOut := now.AddDate(0, 0, -5).Format("2006-01-02")
 
 	cmd := hotelsCmd()
 	cmd.SilenceUsage = true
@@ -170,12 +171,15 @@ func TestHotelsCmd_RejectsPastStay(t *testing.T) {
 		"--enrich-rooms=false",
 	})
 
-	err := cmd.Execute()
+	stdout, stderr, err := captureTripCostOutput(t, cmd.Execute)
 	if err == nil {
 		t.Fatalf("expected wholly past stay %s to %s to be rejected", checkIn, checkOut)
 	}
 	if !strings.Contains(err.Error(), "invalid start date") || !strings.Contains(err.Error(), "in the past") {
 		t.Fatalf("expected past-date validation error, got %v", err)
+	}
+	if stdout != "" || stderr != "" {
+		t.Fatalf("past stay reached provider/output work: stdout=%q stderr=%q", stdout, stderr)
 	}
 }
 
