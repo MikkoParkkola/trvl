@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -152,6 +153,33 @@ func TestHotelsCmd_RequiresCheckinCheckout(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error when --checkin/--checkout missing")
+	}
+}
+
+func TestHotelsCmd_RejectsPastStay(t *testing.T) {
+	now := time.Now()
+	checkIn := now.AddDate(0, 0, -10).Format("2006-01-02")
+	checkOut := now.AddDate(0, 0, -5).Format("2006-01-02")
+
+	cmd := hotelsCmd()
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
+	cmd.SetArgs([]string{
+		"Ischia Italy",
+		"--checkin", checkIn,
+		"--checkout", checkOut,
+		"--enrich-rooms=false",
+	})
+
+	stdout, stderr, err := captureTripCostOutput(t, cmd.Execute)
+	if err == nil {
+		t.Fatalf("expected wholly past stay %s to %s to be rejected", checkIn, checkOut)
+	}
+	if !strings.Contains(err.Error(), "invalid start date") || !strings.Contains(err.Error(), "in the past") {
+		t.Fatalf("expected past-date validation error, got %v", err)
+	}
+	if stdout != "" || stderr != "" {
+		t.Fatalf("past stay reached provider/output work: stdout=%q stderr=%q", stdout, stderr)
 	}
 }
 

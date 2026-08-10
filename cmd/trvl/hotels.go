@@ -120,6 +120,10 @@ func runHotels(cmd *cobra.Command, args []string) error {
 	explain, _ := cmd.Flags().GetBool("explain")
 	stealth, _ := cmd.Flags().GetBool("stealth")
 
+	if err := models.ValidateDateRange(checkin, checkout); err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	ctx = providers.WithInteractive(ctx) // allow browser escape hatch for WAF challenges
