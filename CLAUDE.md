@@ -13,12 +13,12 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 - Flight providers: the default path merges Google Flights, Kiwi, and Skiplagged. Solo or opt-in integrations cover Ryanair, Wizz Air, Air France–KLM, Transavia, easyJet, Vueling, and Norwegian; protected or credentialed paths return typed setup/block statuses when unavailable. Travelpayouts/Aviasales price signals are opt-in through `trvl pricetrends` and are not part of the bookable merge.
 - Enrichment (free, unauthenticated): weather (Open-Meteo), air quality (`trvl air`), sun times (`trvl sun`, sunrise-sunset.org), bike-share (`trvl bikes`, CityBikes)
 - CI: build, vet, and race tests on Ubuntu and Windows; staticcheck, golangci-lint, govulncheck, and the >=80% coverage gate run on Ubuntu
-- Current release: v1.21.3, published 2026-08-11 from `main` to GitHub Releases, Homebrew, npm, GHCR, the Go module proxy, and the official MCP Registry.
-- v1.21.3 carries rental-provider destination-integrity guards, fail-closed Flatio fallback results, and noninteractive background Nab cookie access.
+- Current release: v1.21.4, published 2026-08-12 from `main` to GitHub Releases, Homebrew, npm, GHCR, the Go module proxy, and the official MCP Registry.
+- v1.21.4 returns completed hotel results at the auxiliary-provider deadline, reports unfinished providers as partial timeouts, and propagates cancellation into configured providers and Booking cookie access.
 
 ## Plan Forward (near-term, technical)
 
-- No GitHub issues are open as of 2026-08-09. Do not invent release scope from this file; use the live issue tracker.
+- No GitHub issues are open as of 2026-08-12. Do not invent release scope from this file; use the live issue tracker.
 - Keep provider-version self-healing and typed failure states healthy as upstream endpoints change.
 - Keep public counts, release metadata, the README, and the wiki aligned whenever a provider, command, or MCP capability changes.
 - New work needs a scoped issue with acceptance criteria before implementation.
