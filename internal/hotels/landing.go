@@ -237,7 +237,7 @@ func resolveLandingBuild(ctx context.Context, slug string) (buildID, market stri
 	}
 	canonicalURL.Path = "/s/" + market + "/apartments/furnished"
 	if err := validateDestinationResponseURL(canonicalURL, effectiveURL); err != nil {
-		return "", "", fmt.Errorf("landing destination scope: %w", err)
+		return "", "", fmt.Errorf("landing: %w", err)
 	}
 	return buildID, market, nil
 }

@@ -64,6 +64,9 @@ func TestResolveLandingBuildRejectsUnrelatedCanonicalDestination(t *testing.T) {
 				if err == nil {
 					t.Fatalf("accepted effective path %q with build=%q market=%q", tt.effectivePath, buildID, market)
 				}
+				if count := strings.Count(err.Error(), "destination scope:"); count != 1 {
+					t.Fatalf("destination scope prefix count = %d in %q, want 1", count, err)
+				}
 				return
 			}
 			if err != nil {
