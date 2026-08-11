@@ -341,6 +341,32 @@ func TestToStdResponse_EmptyResponse(t *testing.T) {
 	}
 }
 
+func TestToStdResponse_PreservesEffectiveRedirectURL(t *testing.T) {
+	finalReq, err := fhttp.NewRequest(http.MethodGet, "https://www.flatio.com/s", nil)
+	if err != nil {
+		t.Fatalf("create final request: %v", err)
+	}
+	fResp := &fhttp.Response{
+		Status:     "200 OK",
+		StatusCode: http.StatusOK,
+		Header:     fhttp.Header{},
+		Body:       http.NoBody,
+		Request:    finalReq,
+	}
+	originalReq, err := http.NewRequest(http.MethodGet, "https://www.flatio.com/s/Ischia_Italy", nil)
+	if err != nil {
+		t.Fatalf("create original request: %v", err)
+	}
+
+	stdResp := toStdResponse(fResp, originalReq)
+	if got, want := stdResp.Request.URL.String(), "https://www.flatio.com/s"; got != want {
+		t.Fatalf("effective response URL = %q, want %q", got, want)
+	}
+	if got, want := originalReq.URL.String(), "https://www.flatio.com/s/Ischia_Italy"; got != want {
+		t.Fatalf("conversion mutated original request URL to %q, want %q", got, want)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // cookies.go — findBraveCookiePath / findChromeCookiePath
 // ---------------------------------------------------------------------------

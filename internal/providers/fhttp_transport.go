@@ -182,6 +182,20 @@ func toFHTTPRequest(stdReq *http.Request) (*fhttp.Request, error) {
 // toStdResponse converts an fhttp.Response to a standard net/http.Response.
 // The body is shared (not copied) since only one consumer reads it.
 func toStdResponse(fResp *fhttp.Response, stdReq *http.Request) *http.Response {
+	responseReq := stdReq
+	if fResp.Request != nil && fResp.Request.URL != nil &&
+		(stdReq == nil || stdReq.URL == nil || fResp.Request.URL.String() != stdReq.URL.String()) {
+		if stdReq == nil {
+			responseReq = &http.Request{}
+		} else {
+			responseReq = stdReq.Clone(stdReq.Context())
+		}
+		effectiveURL := *fResp.Request.URL
+		responseReq.URL = &effectiveURL
+		responseReq.Method = fResp.Request.Method
+		responseReq.Host = fResp.Request.Host
+		responseReq.Body = nil
+	}
 	return &http.Response{
 		Status:           fResp.Status,
 		StatusCode:       fResp.StatusCode,
@@ -195,6 +209,6 @@ func toStdResponse(fResp *fhttp.Response, stdReq *http.Request) *http.Response {
 		Close:            fResp.Close,
 		Uncompressed:     fResp.Uncompressed,
 		Trailer:          http.Header(fResp.Trailer),
-		Request:          stdReq,
+		Request:          responseReq,
 	}
 }

@@ -92,6 +92,9 @@ func TestParseFlatioHTML_Fixture(t *testing.T) {
 		if !strings.HasPrefix(h.BookingURL, "https://www.flatio.com/") {
 			t.Errorf("booking url = %q", h.BookingURL)
 		}
+		if !strings.Contains(h.BookingURL, "-lisbon") {
+			t.Errorf("Lisbon fixture contains an out-of-destination booking URL: %q", h.BookingURL)
+		}
 		if h.Name == "" {
 			t.Errorf("missing name: %+v", h)
 		}
@@ -121,6 +124,37 @@ func TestSearchFlatio_MockServer(t *testing.T) {
 	}
 	if len(res) == 0 {
 		t.Fatalf("expected results, got 0")
+	}
+}
+
+func TestSearchFlatio_RejectsGenericFallbackRedirect(t *testing.T) {
+	body, err := os.ReadFile("testdata/flatio_lisbon.html")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/s/Ischia_Italy":
+			http.Redirect(w, r, "/s", http.StatusFound)
+		case "/s":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(body)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	prevEnabled, prevURL, prevClient := flatioEnabled, flatioBaseURL, flatioClient
+	flatioEnabled, flatioBaseURL, flatioClient = true, ts.URL, ts.Client()
+	defer func() { flatioEnabled, flatioBaseURL, flatioClient = prevEnabled, prevURL, prevClient }()
+
+	res, err := SearchFlatio(context.Background(), "Ischia Italy", HotelSearchOptions{})
+	if err == nil {
+		t.Fatalf("expected destination-scope error, got %d unrelated results", len(res))
+	}
+	if len(res) != 0 {
+		t.Fatalf("destination-scope error returned %d results, want 0", len(res))
 	}
 }
 
