@@ -23,6 +23,7 @@ func TestDestinationScopedProviderGettersRejectUnscopedResponses(t *testing.T) {
 	originalSpotahomeClient, originalSpotahomeLimiter := spotahomeClient, spotahomeLimiter
 	originalBluegroundClient, originalBluegroundLimiter := bluegroundClient, bluegroundLimiter
 	originalAnyplaceClient, originalAnyplaceLimiter := anyplaceHTTPClient, anyplaceLimiter
+	originalLandingClient, originalLandingLimiter := landingHTTPClient, landingLimiter
 	t.Cleanup(func() {
 		hometogoHTTPClient, hometogoLimiter = originalHomeToGoClient, originalHomeToGoLimiter
 		uniplacesHTTPClient, uniplacesLimiter = originalUniplacesClient, originalUniplacesLimiter
@@ -30,6 +31,7 @@ func TestDestinationScopedProviderGettersRejectUnscopedResponses(t *testing.T) {
 		spotahomeClient, spotahomeLimiter = originalSpotahomeClient, originalSpotahomeLimiter
 		bluegroundClient, bluegroundLimiter = originalBluegroundClient, originalBluegroundLimiter
 		anyplaceHTTPClient, anyplaceLimiter = originalAnyplaceClient, originalAnyplaceLimiter
+		landingHTTPClient, landingLimiter = originalLandingClient, originalLandingLimiter
 	})
 
 	providers := []struct {
@@ -95,12 +97,24 @@ func TestDestinationScopedProviderGettersRejectUnscopedResponses(t *testing.T) {
 				anyplaceLimiter = rate.NewLimiter(rate.Inf, 1)
 			},
 		},
+		{
+			name: "landing", path: "/s/austin/apartments/furnished", generic: "/s", sibling: "/s/dallas/apartments/furnished", lookalike: "/s/austinite/apartments/furnished",
+			get: func(ctx context.Context, rawURL string) ([]byte, error) {
+				return landingGet(ctx, rawURL, "text/html")
+			},
+			set: func(client *http.Client) {
+				landingHTTPClient = client
+				landingLimiter = rate.NewLimiter(rate.Inf, 1)
+			},
+		},
 	}
 
 	scenarios := []struct {
 		name           string
 		path           func(providerPath, generic, sibling, lookalike string) string
 		wantError      bool
+		wantErrorText  string
+		statusCode     int
 		missingRequest bool
 		missingURL     bool
 	}{
@@ -112,11 +126,12 @@ func TestDestinationScopedProviderGettersRejectUnscopedResponses(t *testing.T) {
 			return p + "/"
 		}},
 		{name: "query only", path: func(p, _, _, _ string) string { return p + "?campaign=summer" }},
-		{name: "generic parent", path: func(_, generic, _, _ string) string { return generic }, wantError: true},
-		{name: "sibling destination", path: func(_, _, sibling, _ string) string { return sibling }, wantError: true},
-		{name: "lookalike prefix", path: func(_, _, _, lookalike string) string { return lookalike }, wantError: true},
-		{name: "missing response request", path: func(p, _, _, _ string) string { return p }, wantError: true, missingRequest: true},
-		{name: "missing effective URL", path: func(p, _, _, _ string) string { return p }, wantError: true, missingURL: true},
+		{name: "generic parent", path: func(_, generic, _, _ string) string { return generic }, wantError: true, wantErrorText: "destination scope:"},
+		{name: "sibling destination", path: func(_, _, sibling, _ string) string { return sibling }, wantError: true, wantErrorText: "destination scope:"},
+		{name: "lookalike prefix", path: func(_, _, _, lookalike string) string { return lookalike }, wantError: true, wantErrorText: "destination scope:"},
+		{name: "missing response request", path: func(p, _, _, _ string) string { return p }, wantError: true, wantErrorText: "destination scope:", missingRequest: true},
+		{name: "missing effective URL", path: func(p, _, _, _ string) string { return p }, wantError: true, wantErrorText: "destination scope:", missingURL: true},
+		{name: "non-2xx status takes precedence", path: func(_, _, sibling, _ string) string { return sibling }, wantError: true, wantErrorText: "unexpected status 502", statusCode: http.StatusBadGateway},
 	}
 
 	for _, provider := range providers {
@@ -138,8 +153,12 @@ func TestDestinationScopedProviderGettersRejectUnscopedResponses(t *testing.T) {
 					if scenario.missingURL {
 						effectiveRequest.URL = nil
 					}
+					statusCode := scenario.statusCode
+					if statusCode == 0 {
+						statusCode = http.StatusOK
+					}
 					return &http.Response{
-						StatusCode: http.StatusOK,
+						StatusCode: statusCode,
 						Body:       io.NopCloser(strings.NewReader("destination inventory")),
 						Request:    effectiveRequest,
 					}, nil
@@ -150,6 +169,12 @@ func TestDestinationScopedProviderGettersRejectUnscopedResponses(t *testing.T) {
 				if scenario.wantError {
 					if err == nil {
 						t.Fatalf("accepted %q response body %q", effectivePath, body)
+					}
+					if !strings.Contains(err.Error(), scenario.wantErrorText) {
+						t.Fatalf("error = %q, want text %q", err, scenario.wantErrorText)
+					}
+					if strings.Count(err.Error(), "destination scope:") > 1 {
+						t.Fatalf("destination scope prefix duplicated in %q", err)
 					}
 					return
 				}

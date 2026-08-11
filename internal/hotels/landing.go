@@ -303,7 +303,7 @@ func landingGet(ctx context.Context, rawURL, accept string) ([]byte, error) {
 		return nil, err
 	}
 	if err := validateDestinationResponseURL(requestedURL, effectiveURL); err != nil {
-		return nil, fmt.Errorf("destination scope: %w", err)
+		return nil, err
 	}
 	return body, nil
 }
