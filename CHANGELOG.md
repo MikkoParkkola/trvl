@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rental-provider results are now accepted only when the provider's effective
   response URL and page metadata still match the requested destination. The
   shared guard covers HomeToGo, Uniplaces, Wunderflats, Spotahome, Blueground,
-  Anyplace, Landing, and HousingAnywhere, including redirects, generic landing
-  pages, sibling cities, and lookalike names. ([#612](https://github.com/MikkoParkkola/trvl/issues/612))
+  Anyplace, and Landing, including redirects, generic landing pages, sibling
+  cities, and lookalike names. HousingAnywhere applies the same fail-closed
+  destination rule to its Algolia payload hits. ([#612](https://github.com/MikkoParkkola/trvl/issues/612))
 - Flatio fallback results now fail closed when the returned page is for a
   different destination instead of presenting a global or unrelated listing
   pool as local inventory. ([#609](https://github.com/MikkoParkkola/trvl/issues/609))

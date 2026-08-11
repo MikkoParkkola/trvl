@@ -4,7 +4,8 @@ Living roadmap. Sequenced by ROI and dependency, not by wishlist size. Each item
 
 ## Shipped
 
-- **v1.21.0** (2026-08-08): current release line. Added source-backed cancellation and refundability evidence, an offer-specific booking-readiness ceiling, browser-cookie and headless-browser opt-outs, source-only optional provider definitions, bounded transactional price-watch storage, private-proxy handling, and release/security hardening. See [CHANGELOG.md](CHANGELOG.md) and the [GitHub release](https://github.com/MikkoParkkola/trvl/releases/tag/v1.21.0).
+- **v1.21.3** (2026-08-11): current release line. Fixed destination-integrity failures across rental providers, made Flatio fallback results fail closed on unrelated inventory, and disabled prompt-capable Keychain access for background Nab fetches. See [CHANGELOG.md](CHANGELOG.md) and the [GitHub release](https://github.com/MikkoParkkola/trvl/releases/tag/v1.21.3).
+- **v1.21.0** (2026-08-08): added source-backed cancellation and refundability evidence, an offer-specific booking-readiness ceiling, browser-cookie and headless-browser opt-outs, source-only optional provider definitions, bounded transactional price-watch storage, private-proxy handling, and release/security hardening.
 - **v1.18.0** (2026-06-28): booking-readiness verdict from composed trust signals, per-package weather/holidays/events enrichment with typed status, native Google round-trip flight queries, and a privacy-preserving daily active-user heartbeat.
 - **v1.10 — Trust & Discoverability** (shipped, v1.10.0 2026-06-14): the batch surfaced by @RobertoReale's "Budget Travel Pipeline" blog. All five items landed and their issues are closed:
   - #167 (P1) — docs surfacing `find_trip_window`, multi-pax, verified accommodation.
