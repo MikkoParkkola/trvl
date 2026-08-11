@@ -62,3 +62,28 @@ func TestExtractViaNabRefusesWhenDeclined(t *testing.T) {
 		t.Fatal("nab was not started without a decline; the gate refuses more than it should")
 	}
 }
+
+func TestExtractViaNabForbidsKeychainInteractionInChild(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake nab is a shell script")
+	}
+	t.Setenv(DisableEnv, "")
+	t.Setenv("NAB_KEYCHAIN_INTERACTION", "allow")
+	dir := t.TempDir()
+	script := `#!/bin/sh
+[ "$NAB_KEYCHAIN_INTERACTION" = "never" ] || exit 31
+printf '%s\n' '.example.com	TRUE	/	TRUE	0	session	controlled'
+`
+	if err := os.WriteFile(filepath.Join(dir, "nab"), []byte(script), 0o755); err != nil {
+		t.Fatalf("writing fake nab: %v", err)
+	}
+	t.Setenv("PATH", dir)
+
+	got, err := extractViaNab(context.Background(), "brave", "example.com")
+	if err != nil {
+		t.Fatalf("extractViaNab: %v", err)
+	}
+	if got != "session=controlled" {
+		t.Fatalf("cookie header = %q, want session=controlled", got)
+	}
+}

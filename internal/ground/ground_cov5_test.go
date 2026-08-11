@@ -457,18 +457,11 @@ func TestSearchSNCF_403_NoBrowserFallback_v2(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSearchTrainline_403_WithBrowserFallbackAllowed(t *testing.T) {
-	// When allowBrowserFallbacks=true and 403, it tries multiple fallbacks.
-	// Since nab/curl/browser aren't available, eventually returns 403 error.
-	origDo := trainlineDo
-	origLimiter := trainlineLimiter
-	origTier1Cookies := trainlineTier1Cookies
-	t.Cleanup(func() {
-		trainlineDo = origDo
-		trainlineLimiter = origLimiter
-		trainlineTier1Cookies = origTier1Cookies
-	})
-	trainlineLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-	trainlineTier1Cookies = func(string) []*http.Cookie { return nil }
+	// When allowBrowserFallbacks=true and 403, it tries every fallback.
+	// Stub the complete escalation chain: availability of nab, curl, browser
+	// profiles, or Keychain access on the developer machine must not change this
+	// deterministic test or trigger external UI.
+	resetTrainlineSeams(t)
 
 	callCount := 0
 	trainlineDo = func(req *http.Request) (*http.Response, error) {

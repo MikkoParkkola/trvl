@@ -115,6 +115,24 @@ printf '%s' '{"status":200,"markdown":"{\"ok\":true}"}'
 	}
 }
 
+func TestClientFetchForbidsKeychainInteractionInChild(t *testing.T) {
+	skipOnWindows(t)
+	t.Setenv("NAB_KEYCHAIN_INTERACTION", "allow")
+	script := writeMockNab(t, `#!/bin/sh
+[ "$NAB_KEYCHAIN_INTERACTION" = "never" ] || { echo "keychain interaction was not disabled" >&2; exit 31; }
+printf '%s' '{"status":200,"markdown":"non-interactive"}'
+`)
+
+	client := &Client{path: script}
+	body, err := client.Fetch(context.Background(), "https://example.com", FetchOptions{})
+	if err != nil {
+		t.Fatalf("Fetch returned error: %v", err)
+	}
+	if got := string(body); got != "non-interactive" {
+		t.Fatalf("body = %q, want non-interactive", got)
+	}
+}
+
 func writeMockNab(t *testing.T, script string) string {
 	t.Helper()
 

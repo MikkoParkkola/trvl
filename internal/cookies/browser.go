@@ -334,6 +334,7 @@ func extractViaNab(ctx context.Context, browser, domain string) (string, error) 
 	cmd, _, cancel := safeexec.Command(ctx, nabCookieTimeout,
 		nabPath, "cookies", "export", domain, "--cookies", browser)
 	defer cancel()
+	trvlnab.ForbidKeychainInteraction(cmd)
 
 	out, err := safeexec.Output(cmd)
 	if err != nil {
