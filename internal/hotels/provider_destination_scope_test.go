@@ -42,6 +42,11 @@ func TestValidateDestinationResponseURL(t *testing.T) {
 			effective: parse("https://www.flatio.com/s/Lisbon"),
 		},
 		{
+			name:      "explicit default port",
+			requested: parse("https://www.flatio.com:443/s/Lisbon"),
+			effective: parse("https://www.flatio.com/s/Lisbon"),
+		},
+		{
 			name:      "generic parent fallback",
 			requested: parse("https://www.flatio.com/s/Ischia_Italy"),
 			effective: parse("https://www.flatio.com/s"),
@@ -63,6 +68,18 @@ func TestValidateDestinationResponseURL(t *testing.T) {
 			name:      "different host",
 			requested: parse("https://www.flatio.com/s/Lisbon"),
 			effective: parse("https://example.com/s/Lisbon"),
+			wantErr:   true,
+		},
+		{
+			name:      "non-default port removed",
+			requested: parse("https://www.flatio.com:8443/s/Lisbon"),
+			effective: parse("https://www.flatio.com/s/Lisbon"),
+			wantErr:   true,
+		},
+		{
+			name:      "different non-default port",
+			requested: parse("https://www.flatio.com:8443/s/Lisbon"),
+			effective: parse("https://www.flatio.com:9443/s/Lisbon"),
 			wantErr:   true,
 		},
 		{

@@ -18,8 +18,24 @@ func validateDestinationResponseURL(requested, effective *url.URL) error {
 	if effective == nil {
 		return fmt.Errorf("destination scope: effective URL is missing")
 	}
-	if !strings.EqualFold(requested.Host, effective.Host) {
-		return fmt.Errorf("destination scope: response host %q differs from requested host %q", effective.Host, requested.Host)
+	if !strings.EqualFold(requested.Hostname(), effective.Hostname()) {
+		return fmt.Errorf("destination scope: response hostname %q differs from requested hostname %q", effective.Hostname(), requested.Hostname())
+	}
+	normalizedPort := func(u *url.URL) string {
+		port := u.Port()
+		switch {
+		case strings.EqualFold(u.Scheme, "http") && port == "80":
+			return ""
+		case strings.EqualFold(u.Scheme, "https") && port == "443":
+			return ""
+		default:
+			return port
+		}
+	}
+	requestedPort := normalizedPort(requested)
+	effectivePort := normalizedPort(effective)
+	if requestedPort != effectivePort {
+		return fmt.Errorf("destination scope: response port %q differs from requested port %q", effectivePort, requestedPort)
 	}
 	requestedPath := path.Clean(requested.Path)
 	effectivePath := path.Clean(effective.Path)
