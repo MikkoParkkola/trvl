@@ -268,6 +268,9 @@ func anyplaceGet(ctx context.Context, url, accept string) ([]byte, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, url)
 	}
+	if err := validateDestinationResponseURL(req.URL, effectiveResponseURL(resp)); err != nil {
+		return nil, err
+	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20)) // 8 MiB cap
 	if err != nil {
 		return nil, err

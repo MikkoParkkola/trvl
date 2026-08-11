@@ -210,11 +210,16 @@ func TestSearchBlueground_MockServer(t *testing.T) {
 	detailBody, _ := os.ReadFile("testdata/blueground_detail_ath327.html")
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if strings.HasPrefix(r.URL.Path, "/p/") {
+		switch {
+		case r.URL.Path == "/furnished-apartments-athens-gr":
+			http.Redirect(w, r, "/furnished-apartments-athens-greece", http.StatusMovedPermanently)
+		case r.URL.Path == "/furnished-apartments-athens-greece":
+			_, _ = w.Write(listBody)
+		case strings.HasPrefix(r.URL.Path, "/p/"):
 			_, _ = w.Write(detailBody)
-			return
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
 		}
-		_, _ = w.Write(listBody)
 	}))
 	defer ts.Close()
 	prevEnabled, prevURL, prevClient := bluegroundEnabled, bluegroundBaseURL, bluegroundClient

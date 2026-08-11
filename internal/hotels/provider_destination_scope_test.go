@@ -42,6 +42,29 @@ func TestValidateDestinationResponseURL(t *testing.T) {
 			effective: parse("https://www.flatio.com/s/Lisbon"),
 		},
 		{
+			name:      "scheme upgrade with explicit defaults",
+			requested: parse("http://www.flatio.com:80/s/Lisbon"),
+			effective: parse("https://www.flatio.com:443/s/Lisbon"),
+		},
+		{
+			name:      "https downgrade",
+			requested: parse("https://www.flatio.com/s/Lisbon"),
+			effective: parse("http://www.flatio.com/s/Lisbon"),
+			wantErr:   true,
+		},
+		{
+			name:      "https downgrade with explicit defaults",
+			requested: parse("https://www.flatio.com:443/s/Lisbon"),
+			effective: parse("http://www.flatio.com:80/s/Lisbon"),
+			wantErr:   true,
+		},
+		{
+			name:      "unrelated scheme",
+			requested: parse("https://www.flatio.com/s/Lisbon"),
+			effective: parse("ftp://www.flatio.com/s/Lisbon"),
+			wantErr:   true,
+		},
+		{
 			name:      "explicit default port",
 			requested: parse("https://www.flatio.com:443/s/Lisbon"),
 			effective: parse("https://www.flatio.com/s/Lisbon"),
@@ -99,6 +122,35 @@ func TestValidateDestinationResponseURL(t *testing.T) {
 			err := validateDestinationResponseURL(tt.requested, tt.effective)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("validateDestinationResponseURL(%v, %v) error = %v, wantErr %v", tt.requested, tt.effective, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateBluegroundDestinationResponseURL(t *testing.T) {
+	parse := func(raw string) *url.URL {
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u
+	}
+	requested := parse("https://www.theblueground.com/furnished-apartments-athens-gr")
+	for _, tt := range []struct {
+		name      string
+		effective string
+		wantErr   bool
+	}{
+		{name: "exact ISO path", effective: "https://www.theblueground.com/furnished-apartments-athens-gr"},
+		{name: "canonical country name", effective: "https://www.theblueground.com/furnished-apartments-athens-greece"},
+		{name: "different city", effective: "https://www.theblueground.com/furnished-apartments-paris-greece", wantErr: true},
+		{name: "different country", effective: "https://www.theblueground.com/furnished-apartments-athens-portugal", wantErr: true},
+		{name: "lookalike suffix", effective: "https://www.theblueground.com/furnished-apartments-athens-greece-cheap", wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateBluegroundDestinationResponseURL(requested, parse(tt.effective))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

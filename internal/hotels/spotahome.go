@@ -187,6 +187,9 @@ func spotahomeGet(ctx context.Context, url string) ([]byte, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, url)
 	}
+	if err := validateDestinationResponseURL(req.URL, effectiveResponseURL(resp)); err != nil {
+		return nil, err
+	}
 	return io.ReadAll(io.LimitReader(resp.Body, 16<<20)) // 16 MiB cap
 }
 

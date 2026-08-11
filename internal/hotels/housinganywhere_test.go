@@ -161,15 +161,73 @@ func TestHAIndexForSort(t *testing.T) {
 
 func TestHACityFromLocation(t *testing.T) {
 	cases := map[string]string{
-		"Berlin":          "Berlin",
-		"Berlin, Germany": "Berlin",
-		"  Paris ":        "Paris",
-		"Den Haag":        "Den Haag",
+		"Berlin":                  "Berlin",
+		"Berlin, Germany":         "Berlin",
+		"Aix-en-Provence, France": "Aix-en-Provence",
+		"  Paris ":                "Paris",
+		"Den Haag":                "Den Haag",
 	}
 	for in, want := range cases {
 		if got := haCityFromLocation(in); got != want {
 			t.Errorf("haCityFromLocation(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestHADestinationFromLocation(t *testing.T) {
+	for _, tt := range []struct {
+		location, city, country string
+	}{
+		{location: "Berlin, Germany", city: "Berlin", country: "Germany"},
+		{location: "Aix-en-Provence, France", city: "Aix-en-Provence", country: "France"},
+		{location: "Den Haag", city: "Den Haag"},
+	} {
+		city, country := haDestinationFromLocation(tt.location)
+		if city != tt.city || country != tt.country {
+			t.Fatalf("haDestinationFromLocation(%q) = (%q,%q), want (%q,%q)", tt.location, city, country, tt.city, tt.country)
+		}
+	}
+}
+
+func TestHAHitMatchesRequestedDestination(t *testing.T) {
+	for _, tt := range []struct {
+		name                               string
+		hitCity, hitCountry, city, country string
+		want                               bool
+	}{
+		{name: "exact", hitCity: "Berlin", hitCountry: "Germany", city: "Berlin", country: "Germany", want: true},
+		{name: "country alias", hitCity: "New York", hitCountry: "United States", city: "New York", country: "USA", want: true},
+		{name: "same city wrong country", hitCity: "Berlin", hitCountry: "United States", city: "Berlin", country: "Germany"},
+		{name: "missing payload country", hitCity: "Berlin", city: "Berlin", country: "Germany"},
+		{name: "country omitted by caller", hitCity: "Berlin", hitCountry: "Germany", city: "Berlin", want: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := haHitMatchesRequestedDestination(tt.hitCity, tt.hitCountry, tt.city, tt.country); got != tt.want {
+				t.Fatalf("match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHAHitMatchesRequestedCity(t *testing.T) {
+	tests := []struct {
+		name      string
+		hitCity   string
+		requested string
+		want      bool
+	}{
+		{name: "exact", hitCity: "Berlin", requested: "Berlin", want: true},
+		{name: "case and whitespace", hitCity: " berlin ", requested: "Berlin", want: true},
+		{name: "sibling city", hitCity: "Potsdam", requested: "Berlin"},
+		{name: "lookalike", hitCity: "Berlinchen", requested: "Berlin"},
+		{name: "missing payload city", requested: "Berlin"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := haHitMatchesRequestedCity(tt.hitCity, tt.requested); got != tt.want {
+				t.Fatalf("haHitMatchesRequestedCity(%q, %q) = %v, want %v", tt.hitCity, tt.requested, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -285,13 +343,14 @@ func TestSearchHousingAnywhereEndToEnd(t *testing.T) {
 
 	// Mock Algolia host: assert auth headers + body shape, return the fixture.
 	var gotAppID, gotAPIKey, gotBody string
+	algoliaBody := raw
 	algolia := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAppID = r.Header.Get("X-Algolia-Application-Id")
 		gotAPIKey = r.Header.Get("X-Algolia-API-Key")
 		b, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		gotBody = string(b)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(raw)
+		_, _ = w.Write(algoliaBody)
 	}))
 	defer algolia.Close()
 
@@ -331,6 +390,15 @@ func TestSearchHousingAnywhereEndToEnd(t *testing.T) {
 	}
 	if !strings.Contains(gotBody, "city%3ABerlin") {
 		t.Errorf("body missing Berlin city facet: %q", gotBody)
+	}
+
+	algoliaBody = []byte(`{"results":[{"hits":[{"objectID":"wrong-country","priceEUR":1200,"currency":"EUR","city":"Berlin","country":"United States","path":"/listing/wrong-country"}],"nbHits":1}]}`)
+	hotels, err = SearchHousingAnywhere(context.Background(), "Berlin, Germany", HotelSearchOptions{Currency: "EUR"})
+	if err != nil {
+		t.Fatalf("same-city wrong-country search: %v", err)
+	}
+	if len(hotels) != 0 {
+		t.Fatalf("same-city wrong-country payload returned %d results, want 0", len(hotels))
 	}
 
 	// Disabled -> nil, nil.

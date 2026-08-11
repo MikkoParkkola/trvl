@@ -2,10 +2,18 @@ package hotels
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"path"
 	"strings"
 )
+
+func effectiveResponseURL(resp *http.Response) *url.URL {
+	if resp == nil || resp.Request == nil {
+		return nil
+	}
+	return resp.Request.URL
+}
 
 // validateDestinationResponseURL fails closed when a destination-scoped HTTP
 // request is redirected to a generic page, another destination, or another
@@ -17,6 +25,11 @@ func validateDestinationResponseURL(requested, effective *url.URL) error {
 	}
 	if effective == nil {
 		return fmt.Errorf("destination scope: effective URL is missing")
+	}
+	sameScheme := strings.EqualFold(requested.Scheme, effective.Scheme)
+	safeUpgrade := strings.EqualFold(requested.Scheme, "http") && strings.EqualFold(effective.Scheme, "https")
+	if !sameScheme && !safeUpgrade {
+		return fmt.Errorf("destination scope: response scheme %q is not a safe continuation of requested scheme %q", effective.Scheme, requested.Scheme)
 	}
 	if !strings.EqualFold(requested.Hostname(), effective.Hostname()) {
 		return fmt.Errorf("destination scope: response hostname %q differs from requested hostname %q", effective.Hostname(), requested.Hostname())

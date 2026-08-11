@@ -43,6 +43,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -175,10 +176,11 @@ func SearchBlueground(ctx context.Context, location string, opts HotelSearchOpti
 
 // bluegroundCountryISO2 maps full country names (the trailing token of a
 // "City, Country" location) to the ISO 3166-1 alpha-2 code Blueground now uses
-// in its listing slugs. As of 2026-06 the live pattern is
-// "furnished-apartments-{city}-{iso2}" (e.g. "...-paris-fr"); the older
-// full-country form ("...-paris-france") 404s. Covers Blueground's served
-// markets; unmapped countries fall through to the verbatim token.
+// in its requested listing slugs. Blueground may canonicalize that URL to a
+// full-country path (for example, athens-gr to athens-greece); the response URL
+// validator accepts only aliases that preserve both the exact city and country.
+// Covers Blueground's served markets; unmapped countries fall through to the
+// verbatim token.
 var bluegroundCountryISO2 = map[string]string{
 	"usa": "us", "united states": "us", "united states of america": "us",
 	"uk": "gb", "united kingdom": "gb", "england": "gb",
@@ -271,7 +273,57 @@ func bluegroundGet(ctx context.Context, url string) ([]byte, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, url)
 	}
+	if err := validateBluegroundDestinationResponseURL(req.URL, effectiveResponseURL(resp)); err != nil {
+		return nil, err
+	}
 	return io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+}
+
+func validateBluegroundDestinationResponseURL(requested, effective *url.URL) error {
+	if err := validateDestinationResponseURL(requested, effective); err == nil {
+		return nil
+	} else if requested == nil || effective == nil {
+		return err
+	}
+
+	requestedCity, requestedCountry, requestedOK := splitBluegroundDestinationPath(requested.Path)
+	effectiveCity, effectiveCountry, effectiveOK := splitBluegroundDestinationPath(effective.Path)
+	if !requestedOK || !effectiveOK || requestedCity != effectiveCity || requestedCountry != effectiveCountry {
+		return validateDestinationResponseURL(requested, effective)
+	}
+
+	canonical := *requested
+	canonical.Path = effective.Path
+	return validateDestinationResponseURL(&canonical, effective)
+}
+
+func splitBluegroundDestinationPath(rawPath string) (city, country string, ok bool) {
+	const prefix = "/furnished-apartments-"
+	slug := strings.TrimSuffix(rawPath, "/")
+	slug, found := strings.CutPrefix(slug, prefix)
+	if !found || slug == "" {
+		return "", "", false
+	}
+
+	bestToken := ""
+	bestCountry := ""
+	for name, iso := range bluegroundCountryISO2 {
+		for _, token := range []string{bluegroundToken(name), iso} {
+			if len(token) <= len(bestToken) || !strings.HasSuffix(slug, "-"+token) {
+				continue
+			}
+			bestToken = token
+			bestCountry = iso
+		}
+	}
+	if bestToken == "" {
+		return "", "", false
+	}
+	city = strings.TrimSuffix(slug, "-"+bestToken)
+	if city == "" {
+		return "", "", false
+	}
+	return city, bestCountry, true
 }
 
 // parseBluegroundList extracts properties from the list page __INITIAL_STATE__.
