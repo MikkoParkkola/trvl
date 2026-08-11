@@ -43,6 +43,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -206,8 +207,8 @@ func resolveLandingBuild(ctx context.Context, slug string) (buildID, market stri
 	if slug == "" {
 		return "", "", fmt.Errorf("empty slug")
 	}
-	url := landingBaseURL + "/s/" + slug + "/apartments/furnished"
-	body, err := landingGet(ctx, url, "text/html,application/xhtml+xml")
+	rawURL := landingBaseURL + "/s/" + slug + "/apartments/furnished"
+	body, effectiveURL, err := landingGetWithEffectiveURL(ctx, rawURL, "text/html,application/xhtml+xml")
 	if err != nil {
 		return "", "", err
 	}
@@ -223,6 +224,20 @@ func resolveLandingBuild(ctx context.Context, slug string) (buildID, market stri
 	market = slug
 	if m := landingMarketRe.FindSubmatch(body); m != nil {
 		market = string(m[1])
+	}
+	if market != slug && !strings.HasPrefix(market, slug+"-") {
+		return "", "", fmt.Errorf("destination scope: canonical market %q does not match requested slug %q", market, slug)
+	}
+	canonicalURL, err := url.Parse(rawURL)
+	if err != nil {
+		return "", "", err
+	}
+	if err := validateDestinationResponseURL(canonicalURL, effectiveURL); err == nil {
+		return buildID, market, nil
+	}
+	canonicalURL.Path = "/s/" + market + "/apartments/furnished"
+	if err := validateDestinationResponseURL(canonicalURL, effectiveURL); err != nil {
+		return "", "", fmt.Errorf("landing destination scope: %w", err)
 	}
 	return buildID, market, nil
 }
@@ -262,29 +277,47 @@ func fetchLandingSearch(ctx context.Context, buildID, market string) (json.RawMe
 
 // landingGet performs a rate-limited GET with the desktop UA and returns the
 // response body. Non-2xx responses are errors.
-func landingGet(ctx context.Context, url, accept string) ([]byte, error) {
-	if err := landingLimiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func landingGet(ctx context.Context, rawURL, accept string) ([]byte, error) {
+	body, effectiveURL, err := landingGetWithEffectiveURL(ctx, rawURL, accept)
 	if err != nil {
 		return nil, err
+	}
+	requestedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateDestinationResponseURL(requestedURL, effectiveURL); err != nil {
+		return nil, fmt.Errorf("destination scope: %w", err)
+	}
+	return body, nil
+}
+
+func landingGetWithEffectiveURL(ctx context.Context, rawURL, accept string) ([]byte, *url.URL, error) {
+	if err := landingLimiter.Wait(ctx); err != nil {
+		return nil, nil, fmt.Errorf("rate limiter: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, nil, err
 	}
 	req.Header.Set("User-Agent", landingUserAgent)
 	req.Header.Set("Accept", accept)
 	resp, err := landingHTTPClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, url)
+		return nil, nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, rawURL)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20)) // 8 MiB cap
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return body, nil
+	if resp.Request == nil {
+		return body, nil, nil
+	}
+	return body, resp.Request.URL, nil
 }
 
 // parseLandingHomes maps a Landing _next/data search payload to HotelResults.

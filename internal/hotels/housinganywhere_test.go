@@ -173,6 +173,28 @@ func TestHACityFromLocation(t *testing.T) {
 	}
 }
 
+func TestHAHitMatchesRequestedCity(t *testing.T) {
+	tests := []struct {
+		name      string
+		hitCity   string
+		requested string
+		want      bool
+	}{
+		{name: "exact", hitCity: "Berlin", requested: "Berlin", want: true},
+		{name: "case and whitespace", hitCity: " berlin ", requested: "Berlin", want: true},
+		{name: "sibling city", hitCity: "Potsdam", requested: "Berlin"},
+		{name: "lookalike", hitCity: "Berlinchen", requested: "Berlin"},
+		{name: "missing payload city", requested: "Berlin"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := haHitMatchesRequestedCity(tt.hitCity, tt.requested); got != tt.want {
+				t.Fatalf("haHitMatchesRequestedCity(%q, %q) = %v, want %v", tt.hitCity, tt.requested, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHAListingURL(t *testing.T) {
 	cases := map[string]string{
 		"":                              "",

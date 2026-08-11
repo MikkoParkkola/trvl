@@ -221,6 +221,9 @@ func hometogoGet(ctx context.Context, url, accept string) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if err := validateDestinationResponseURL(req.URL, resp.Request.URL); err != nil {
+		return nil, fmt.Errorf("destination scope: %w", err)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, url)
 	}

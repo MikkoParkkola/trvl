@@ -317,6 +317,12 @@ func haCityFromLocation(location string) string {
 	return strings.TrimSpace(city)
 }
 
+func haHitMatchesRequestedCity(hitCity, requestedCity string) bool {
+	hitCity = strings.TrimSpace(hitCity)
+	requestedCity = strings.TrimSpace(requestedCity)
+	return hitCity != "" && requestedCity != "" && strings.EqualFold(hitCity, requestedCity)
+}
+
 // buildAlgoliaParams assembles the URL-encoded Algolia params string: empty
 // query, hitsPerPage/page, a city facet filter, and optional priceEUR numeric
 // bounds. priceEUR is whole EUR (not cents), so min/max map straight through.
@@ -458,6 +464,9 @@ func SearchHousingAnywhere(ctx context.Context, location string, opts HotelSearc
 	currency := strings.TrimSpace(opts.Currency)
 	results := make([]models.HotelResult, 0, len(res.Hits))
 	for _, h := range res.Hits {
+		if !haHitMatchesRequestedCity(h.City, city) {
+			continue
+		}
 		if mapped, ok := mapHAHit(h, currency); ok {
 			results = append(results, mapped)
 		}

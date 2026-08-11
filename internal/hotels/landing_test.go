@@ -3,6 +3,7 @@ package hotels
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/testutil"
+	"golang.org/x/time/rate"
 )
 
 // loadLandingFixture reads the saved Landing _next/data search payload.
@@ -20,6 +22,57 @@ func loadLandingFixture(t *testing.T) json.RawMessage {
 		t.Fatalf("read fixture: %v", err)
 	}
 	return json.RawMessage(b)
+}
+
+func TestResolveLandingBuildRejectsUnrelatedCanonicalDestination(t *testing.T) {
+	originalClient, originalLimiter := landingHTTPClient, landingLimiter
+	t.Cleanup(func() {
+		landingHTTPClient, landingLimiter = originalClient, originalLimiter
+	})
+
+	tests := []struct {
+		name          string
+		effectivePath string
+		market        string
+		wantError     bool
+	}{
+		{name: "exact", effectivePath: "/s/austin/apartments/furnished", market: "austin"},
+		{name: "canonical suffix", effectivePath: "/s/austin-tx/apartments/furnished", market: "austin-tx"},
+		{name: "generic parent", effectivePath: "/s", market: "austin", wantError: true},
+		{name: "sibling destination", effectivePath: "/s/dallas-tx/apartments/furnished", market: "dallas-tx", wantError: true},
+		{name: "lookalike prefix", effectivePath: "/s/austinite/apartments/furnished", market: "austinite", wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			landingLimiter = rate.NewLimiter(rate.Inf, 1)
+			landingHTTPClient = &http.Client{Transport: destinationScopeRoundTripper(func(req *http.Request) (*http.Response, error) {
+				effective := *req.URL
+				effective.Path = tt.effectivePath
+				body := `<script id="__NEXT_DATA__" type="application/json">{"buildId":"build-123"}</script>` +
+					`{"market":"` + tt.market + `"}`
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(body)),
+					Request:    &http.Request{URL: &effective},
+				}, nil
+			})}
+
+			buildID, market, err := resolveLandingBuild(context.Background(), "austin")
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("accepted effective path %q with build=%q market=%q", tt.effectivePath, buildID, market)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveLandingBuild: %v", err)
+			}
+			if buildID != "build-123" || market != tt.market {
+				t.Fatalf("got build=%q market=%q", buildID, market)
+			}
+		})
+	}
 }
 
 // TestParseLandingHomesFixture asserts the saved Austin search payload maps to
