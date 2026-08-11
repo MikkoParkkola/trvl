@@ -51,6 +51,39 @@ func TestTier1Client_Get_LiveTLS(t *testing.T) {
 	}
 }
 
+func TestTier1Client_Get_PreservesEffectiveRedirectURL(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/destination/Ischia" {
+			http.Redirect(w, r, "/destination", http.StatusFound)
+			return
+		}
+		_, _ = io.WriteString(w, "generic inventory")
+	}))
+	defer srv.Close()
+
+	c, err := NewTier1Client(WithTier1InsecureSkipVerify())
+	if err != nil {
+		t.Fatalf("NewTier1Client: %v", err)
+	}
+	requestedURL := srv.URL + "/destination/Ischia"
+	req, err := http.NewRequest(http.MethodGet, requestedURL, nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if got, want := resp.Request.URL.Path, "/destination"; got != want {
+		t.Fatalf("effective response path = %q, want %q", got, want)
+	}
+	if got, want := req.URL.String(), requestedURL; got != want {
+		t.Fatalf("original request URL mutated to %q, want %q", got, want)
+	}
+}
+
 func TestTier1Client_SeedCookies_FromCache(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
