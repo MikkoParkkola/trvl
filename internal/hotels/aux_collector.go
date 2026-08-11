@@ -12,19 +12,41 @@ import (
 // function returns owned slices: workers never mutate state retained by the
 // caller after the auxiliary budget expires.
 type hotelAuxTask struct {
-	id   string
-	name string
-	run  func(context.Context) hotelAuxOutcome
+	id        string
+	name      string
+	breakerID string
+	run       func(context.Context) hotelAuxOutcome
 }
 
+type hotelAuxBreakerAction uint8
+
+const (
+	hotelAuxBreakerNone hotelAuxBreakerAction = iota
+	hotelAuxBreakerSuccess
+	hotelAuxBreakerFailure
+)
+
 type hotelAuxOutcome struct {
-	results  []models.HotelResult
-	statuses []models.ProviderStatus
+	results       []models.HotelResult
+	statuses      []models.ProviderStatus
+	breakerAction hotelAuxBreakerAction
 }
 
 type indexedHotelAuxOutcome struct {
 	index   int
 	outcome hotelAuxOutcome
+}
+
+func applyHotelAuxBreakerOutcome(task hotelAuxTask, outcome hotelAuxOutcome) {
+	if task.breakerID == "" {
+		return
+	}
+	switch outcome.breakerAction {
+	case hotelAuxBreakerSuccess:
+		hotelBreaker.RecordSuccess(task.breakerID)
+	case hotelAuxBreakerFailure:
+		hotelBreaker.RecordFailure(task.breakerID)
+	}
 }
 
 // collectHotelAuxTasks returns one outcome per task, in declaration order. A
@@ -64,6 +86,9 @@ func collectHotelAuxTasks(ctx context.Context, timeout time.Duration, tasks []ho
 				}
 				outcomes[index].statuses = []models.ProviderStatus{
 					hotelProviderStatusFromError(task.id, task.name, fmt.Errorf("auxiliary provider budget exceeded: %w", auxCtx.Err())),
+				}
+				if task.breakerID != "" {
+					outcomes[index].breakerAction = hotelAuxBreakerFailure
 				}
 			}
 			return outcomes

@@ -505,6 +505,9 @@ func BrowserCookiesForURL(targetURL string) []*http.Cookie {
 // provider searches. The legacy wrapper remains for callers without a request
 // context.
 func BrowserCookiesForURLContext(ctx context.Context, targetURL string) []*http.Cookie {
+	if ctx.Err() != nil {
+		return nil
+	}
 	out, outcome, readErr := browserCookiesForURLWithOutcomeContext(ctx, targetURL)
 	reportOutcome(targetURL, outcome, readErr)
 	return out

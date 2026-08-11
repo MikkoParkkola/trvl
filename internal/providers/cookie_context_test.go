@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -26,10 +27,15 @@ func TestBrowserCookiesForURLContext_CancelledBeforeRead(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if got := BrowserCookiesForURLContext(ctx, targetURL); got != nil {
-		t.Fatalf("cookies = %v, want nil for cancelled lookup", got)
-	}
+	logs := captureLogs(t, func() {
+		if got := BrowserCookiesForURLContext(ctx, targetURL); got != nil {
+			t.Fatalf("cookies = %v, want nil for cancelled lookup", got)
+		}
+	})
 	if got := reads.Load(); got != 0 {
 		t.Fatalf("browser cookie reads = %d, want zero after cancellation", got)
+	}
+	if strings.Contains(logs, "browser cookie lookup timed out") {
+		t.Fatalf("cancelled lookup emitted a misleading timeout warning: %s", logs)
 	}
 }

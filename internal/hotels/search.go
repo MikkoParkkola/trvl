@@ -360,8 +360,9 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// successful probe. Zero results without an error counts as success.
 	addAux := func(id, name, source string, search func(context.Context, string, HotelSearchOptions) ([]models.HotelResult, error)) {
 		auxTasks = append(auxTasks, hotelAuxTask{
-			id:   id,
-			name: name,
+			id:        id,
+			name:      name,
+			breakerID: id,
 			run: func(providerCtx context.Context) hotelAuxOutcome {
 				if hotelBreaker.Tripped(id) {
 					return hotelAuxOutcome{statuses: []models.ProviderStatus{{
@@ -374,22 +375,26 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 				}
 				res, err := search(providerCtx, location, auxOpts)
 				if ctxErr := providerCtx.Err(); ctxErr != nil {
-					hotelBreaker.RecordFailure(id)
 					slog.Warn(id+" search failed", "error", logredact.Err(ctxErr))
-					return hotelAuxOutcome{statuses: []models.ProviderStatus{hotelProviderStatusFromError(id, name, ctxErr)}}
+					return hotelAuxOutcome{
+						statuses:      []models.ProviderStatus{hotelProviderStatusFromError(id, name, ctxErr)},
+						breakerAction: hotelAuxBreakerFailure,
+					}
 				}
 				if err != nil {
-					hotelBreaker.RecordFailure(id)
 					slog.Warn(id+" search failed", "error", logredact.Err(err))
-					return hotelAuxOutcome{statuses: []models.ProviderStatus{hotelProviderStatusFromError(id, name, err)}}
+					return hotelAuxOutcome{
+						statuses:      []models.ProviderStatus{hotelProviderStatusFromError(id, name, err)},
+						breakerAction: hotelAuxBreakerFailure,
+					}
 				}
-				hotelBreaker.RecordSuccess(id)
 				if source != "" {
 					res = tagHotelSource(res, source)
 				}
 				return hotelAuxOutcome{
-					results:  res,
-					statuses: []models.ProviderStatus{hotelProviderStatusFromResults(id, name, len(res))},
+					results:       res,
+					statuses:      []models.ProviderStatus{hotelProviderStatusFromResults(id, name, len(res))},
+					breakerAction: hotelAuxBreakerSuccess,
 				}
 			},
 		})
@@ -458,7 +463,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// unconfigured we surface an honest not_configured status (with the
 	// AKAMAI_BLOCK root cause and a fix hint) rather than a silent skip or a
 	// fabricated empty result. Non-fatal in all cases.
-	auxTasks = append(auxTasks, hotelAuxTask{id: "expedia", name: "Expedia", run: func(providerCtx context.Context) hotelAuxOutcome {
+	auxTasks = append(auxTasks, hotelAuxTask{id: "expedia", name: "Expedia", breakerID: "expedia", run: func(providerCtx context.Context) hotelAuxOutcome {
 		if !expediaConfigured() {
 			return hotelAuxOutcome{statuses: []models.ProviderStatus{{
 				ID:          "expedia",
@@ -480,19 +485,23 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		}
 		res, err := SearchExpedia(providerCtx, location, auxOpts)
 		if ctxErr := providerCtx.Err(); ctxErr != nil {
-			hotelBreaker.RecordFailure("expedia")
 			slog.Warn("expedia search failed", "error", logredact.Err(ctxErr))
-			return hotelAuxOutcome{statuses: []models.ProviderStatus{hotelProviderStatusFromError("expedia", "Expedia", ctxErr)}}
+			return hotelAuxOutcome{
+				statuses:      []models.ProviderStatus{hotelProviderStatusFromError("expedia", "Expedia", ctxErr)},
+				breakerAction: hotelAuxBreakerFailure,
+			}
 		}
 		if err != nil {
-			hotelBreaker.RecordFailure("expedia")
 			slog.Warn("expedia search failed", "error", logredact.Err(err))
-			return hotelAuxOutcome{statuses: []models.ProviderStatus{hotelProviderStatusFromError("expedia", "Expedia", err)}}
+			return hotelAuxOutcome{
+				statuses:      []models.ProviderStatus{hotelProviderStatusFromError("expedia", "Expedia", err)},
+				breakerAction: hotelAuxBreakerFailure,
+			}
 		}
-		hotelBreaker.RecordSuccess("expedia")
 		return hotelAuxOutcome{
-			results:  tagHotelSource(res, "expedia"),
-			statuses: []models.ProviderStatus{hotelProviderStatusFromResults("expedia", "Expedia", len(res))},
+			results:       tagHotelSource(res, "expedia"),
+			statuses:      []models.ProviderStatus{hotelProviderStatusFromResults("expedia", "Expedia", len(res))},
+			breakerAction: hotelAuxBreakerSuccess,
 		}
 	}})
 
@@ -557,6 +566,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	auxOutcomes := collectHotelAuxTasks(ctx, hotelAuxProviderTimeout, auxTasks)
 	var externalResults []models.HotelResult
 	for index, outcome := range auxOutcomes {
+		applyHotelAuxBreakerOutcome(auxTasks[index], outcome)
 		if len(outcome.results) > 0 {
 			rawBatches = append(rawBatches, outcome.results)
 			if auxTasks[index].id == "external" {

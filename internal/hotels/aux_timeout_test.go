@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/breaker"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -13,11 +14,14 @@ func TestSearchHotels_ReturnsPartialResultsWhenAuxProviderIgnoresCancellation(t 
 	origFetch := fetchHotelPageFullFn
 	origBooking := SearchBooking
 	origTimeout := hotelAuxProviderTimeout
+	origBreaker := hotelBreaker
 	t.Cleanup(func() {
 		fetchHotelPageFullFn = origFetch
 		SearchBooking = origBooking
 		hotelAuxProviderTimeout = origTimeout
+		hotelBreaker = origBreaker
 	})
+	hotelBreaker = breaker.NewWithConfig(1, time.Minute)
 
 	fetchHotelPageFullFn = func(_ context.Context, _ *batchexec.Client, _ string, _ HotelSearchOptions, _ int, _ string) (parseResult, error) {
 		return parseResult{Hotels: []models.HotelResult{{
@@ -63,9 +67,13 @@ func TestSearchHotels_ReturnsPartialResultsWhenAuxProviderIgnoresCancellation(t 
 		<-slowProviderReturned
 		t.Fatal("SearchHotels still waited for an auxiliary provider after its budget")
 	}
+	bookingBreakerTrippedBeforeLateReturn := hotelBreaker.Tripped("booking")
 	close(releaseSlowProvider)
 	<-slowProviderReturned
 	result, err := response.result, response.err
+	if !bookingBreakerTrippedBeforeLateReturn {
+		t.Fatal("booking breaker was not tripped when the collector synthesized its timeout")
+	}
 
 	if err != nil {
 		t.Fatalf("SearchHotels returned an error despite a completed primary result: %v", err)
