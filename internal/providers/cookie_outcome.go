@@ -244,6 +244,10 @@ func hostForLog(targetURL string) string {
 var readCookies = kooky.ReadCookies
 
 func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outcome browserCookieOutcome, readErr error) {
+	return browserCookiesForURLWithOutcomeContext(context.Background(), targetURL)
+}
+
+func browserCookiesForURLWithOutcomeContext(parentCtx context.Context, targetURL string) (out []*http.Cookie, outcome browserCookieOutcome, readErr error) {
 	// The outcome must agree with what is actually returned.
 	//
 	// permittedAfterRead re-asks for consent AFTER the seconds-long read, so it
@@ -284,9 +288,12 @@ func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outc
 	if cookies.Disabled() {
 		return nil, outcomeDeclined, nil
 	}
+	if err := parentCtx.Err(); err != nil {
+		return nil, outcomeTimedOut, err
+	}
 
 	// Check warm cache first — returns instantly if pre-warmed.
-	if cached := warmBrowserCookiesResult(targetURL, "", browserCookieLookupTimeout); cached != nil {
+	if cached := warmBrowserCookiesResultContext(parentCtx, targetURL, "", browserCookieLookupTimeout); cached != nil {
 		// len, not nil. readBrowserCookiesDirect builds its result with
 		// make([]*http.Cookie, 0, n), so a CLEAN read that matched no cookies for
 		// this domain returns a slice that is empty but not nil -- and the warm
@@ -306,6 +313,9 @@ func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outc
 			return nil, outcomeNoMatch, nil
 		}
 		return cached, outcomeFound, nil
+	}
+	if err := parentCtx.Err(); err != nil {
+		return nil, outcomeTimedOut, err
 	}
 
 	// Skip browser cookie lookups during `go test` to avoid macOS Keychain
@@ -336,7 +346,7 @@ func browserCookiesForURLWithOutcome(targetURL string) (out []*http.Cookie, outc
 		return nil, outcomeBadURL, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), browserCookieLookupTimeout)
+	ctx, cancel := context.WithTimeout(parentCtx, browserCookieLookupTimeout)
 	defer cancel()
 
 	host := u.Hostname()
