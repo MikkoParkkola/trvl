@@ -42,6 +42,29 @@ func TestValidateDestinationResponseURL(t *testing.T) {
 			effective: parse("https://www.flatio.com/s/Lisbon"),
 		},
 		{
+			name:      "scheme upgrade with explicit defaults",
+			requested: parse("http://www.flatio.com:80/s/Lisbon"),
+			effective: parse("https://www.flatio.com:443/s/Lisbon"),
+		},
+		{
+			name:      "https downgrade",
+			requested: parse("https://www.flatio.com/s/Lisbon"),
+			effective: parse("http://www.flatio.com/s/Lisbon"),
+			wantErr:   true,
+		},
+		{
+			name:      "https downgrade with explicit defaults",
+			requested: parse("https://www.flatio.com:443/s/Lisbon"),
+			effective: parse("http://www.flatio.com:80/s/Lisbon"),
+			wantErr:   true,
+		},
+		{
+			name:      "unrelated scheme",
+			requested: parse("https://www.flatio.com/s/Lisbon"),
+			effective: parse("ftp://www.flatio.com/s/Lisbon"),
+			wantErr:   true,
+		},
+		{
 			name:      "explicit default port",
 			requested: parse("https://www.flatio.com:443/s/Lisbon"),
 			effective: parse("https://www.flatio.com/s/Lisbon"),

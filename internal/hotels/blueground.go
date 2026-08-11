@@ -176,10 +176,11 @@ func SearchBlueground(ctx context.Context, location string, opts HotelSearchOpti
 
 // bluegroundCountryISO2 maps full country names (the trailing token of a
 // "City, Country" location) to the ISO 3166-1 alpha-2 code Blueground now uses
-// in its listing slugs. As of 2026-06 the live pattern is
-// "furnished-apartments-{city}-{iso2}" (e.g. "...-paris-fr"); the older
-// full-country form ("...-paris-france") 404s. Covers Blueground's served
-// markets; unmapped countries fall through to the verbatim token.
+// in its requested listing slugs. Blueground may canonicalize that URL to a
+// full-country path (for example, athens-gr to athens-greece); the response URL
+// validator accepts only aliases that preserve both the exact city and country.
+// Covers Blueground's served markets; unmapped countries fall through to the
+// verbatim token.
 var bluegroundCountryISO2 = map[string]string{
 	"usa": "us", "united states": "us", "united states of america": "us",
 	"uk": "gb", "united kingdom": "gb", "england": "gb",
