@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.4] - 2026-08-12
+
+### Fixed
+
+- Hotel searches now return completed primary and auxiliary results when the
+  shared auxiliary-provider deadline expires instead of waiting for a provider
+  that ignores cancellation until the whole request times out. Unfinished
+  providers receive explicit timeout statuses, completeness remains partial,
+  and collector timeouts count toward each provider's circuit breaker so stuck
+  workers are not launched indefinitely. ([#616](https://github.com/MikkoParkkola/trvl/issues/616))
+- Configured hotel providers and Booking browser-cookie reads now inherit the
+  same request deadline. Already-cancelled cookie lookups do no work and emit no
+  misleading timeout warning.
+
 ## [1.21.3] - 2026-08-11
 
 ### Fixed
@@ -1199,7 +1213,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.3...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.4...HEAD
+[1.21.4]: https://github.com/MikkoParkkola/trvl/compare/v1.21.3...v1.21.4
 [1.21.3]: https://github.com/MikkoParkkola/trvl/compare/v1.21.2...v1.21.3
 [1.21.2]: https://github.com/MikkoParkkola/trvl/compare/v1.21.1...v1.21.2
 [1.21.1]: https://github.com/MikkoParkkola/trvl/compare/v1.21.0...v1.21.1
