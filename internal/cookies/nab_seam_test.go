@@ -35,6 +35,7 @@ func TestExtractViaNabRefusesWhenDeclined(t *testing.T) {
 		t.Fatalf("writing the fake nab: %v", err)
 	}
 	t.Setenv("PATH", dir)
+	useNabPath(t, filepath.Join(dir, "nab"))
 
 	ran := func() bool {
 		_, err := os.Stat(marker)
@@ -78,6 +79,7 @@ printf '%s\n' '.example.com	TRUE	/	TRUE	0	session	controlled'
 		t.Fatalf("writing fake nab: %v", err)
 	}
 	t.Setenv("PATH", dir)
+	useNabPath(t, filepath.Join(dir, "nab"))
 
 	got, err := extractViaNab(context.Background(), "brave", "example.com")
 	if err != nil {

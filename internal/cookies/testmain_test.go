@@ -1,73 +1,43 @@
 package cookies
 
 import (
+	"errors"
 	"os"
-	"path/filepath"
-	"runtime"
-	"strings"
+	"os/exec"
 	"testing"
 )
 
-// TestMain removes developer-installed nab executables from the package test
-// process's PATH. Tests that exercise the helper contract put their own
-// controlled fake first; every other test must remain offline and must never
-// reach a real browser cookie store or macOS Keychain.
+var originalTestProcessPATH = os.Getenv("PATH")
+
+// TestMain keeps the package offline by default without changing PATH. A
+// developer-installed nab may share its directory with unrelated tools, so
+// removing that directory would make otherwise-valid tests environment
+// dependent. Tests that exercise the helper contract opt into their exact fake
+// executable with useNabPath.
 func TestMain(m *testing.M) {
-	originalPath := os.Getenv("PATH")
-	if err := os.Setenv("PATH", pathWithoutNab(originalPath)); err != nil {
-		_, _ = os.Stderr.WriteString("internal/cookies: isolate nab from PATH: " + err.Error() + "\n")
-		os.Exit(1)
-	}
-
-	code := m.Run()
-	_ = os.Setenv("PATH", originalPath)
-	os.Exit(code)
+	lookupNabPath = func() (string, error) { return "", exec.ErrNotFound }
+	os.Exit(m.Run())
 }
 
-// pathWithoutNab preserves normal system tools while removing any PATH entry
-// that could resolve the real nab helper. This is safer than replacing PATH
-// with an empty directory because several controlled fake-helper tests use
-// shell utilities such as sleep.
-func pathWithoutNab(pathValue string) string {
-	entries := filepath.SplitList(pathValue)
-	kept := entries[:0]
-	for _, entry := range entries {
-		if entry == "" || !directoryContainsNab(entry) {
-			kept = append(kept, entry)
-		}
-	}
-	return strings.Join(kept, string(os.PathListSeparator))
+func useNabPath(t *testing.T, path string) {
+	t.Helper()
+	previous := lookupNabPath
+	lookupNabPath = func() (string, error) { return path, nil }
+	t.Cleanup(func() { lookupNabPath = previous })
 }
 
-func directoryContainsNab(dir string) bool {
-	candidates := []string{"nab"}
-	if runtime.GOOS == "windows" {
-		candidates = append(candidates, "nab.exe", "nab.com", "nab.bat", "nab.cmd")
-	}
-	for _, name := range candidates {
-		if info, err := os.Stat(filepath.Join(dir, name)); err == nil && !info.IsDir() {
-			return true
-		}
-	}
-	return false
+func hideNabAtLookupSeam(t *testing.T) {
+	t.Helper()
+	previous := lookupNabPath
+	lookupNabPath = func() (string, error) { return "", errors.New("controlled nab lookup failure") }
+	t.Cleanup(func() { lookupNabPath = previous })
 }
 
-func TestPathWithoutNabRemovesHelperDirectoryAndPreservesSystemTools(t *testing.T) {
-	withNab := t.TempDir()
-	withoutNab := t.TempDir()
-	name := "nab"
-	if runtime.GOOS == "windows" {
-		name = "nab.exe"
+func TestPackageIsolationPreservesPATH(t *testing.T) {
+	if originalTestProcessPATH == "" {
+		t.Skip("PATH is empty in this test environment")
 	}
-	if err := os.WriteFile(filepath.Join(withNab, name), []byte("controlled test helper"), 0o600); err != nil {
-		t.Fatalf("write controlled nab marker: %v", err)
-	}
-
-	got := filepath.SplitList(pathWithoutNab(strings.Join(
-		[]string{withoutNab, withNab},
-		string(os.PathListSeparator),
-	)))
-	if len(got) != 1 || got[0] != withoutNab {
-		t.Fatalf("sanitized PATH entries = %q, want only %q", got, withoutNab)
+	if got := os.Getenv("PATH"); got != originalTestProcessPATH {
+		t.Fatalf("package isolation changed PATH from %q to %q", originalTestProcessPATH, got)
 	}
 }

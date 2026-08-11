@@ -53,6 +53,7 @@ func captureWarnings(t *testing.T) func() []string {
 func hideNab(t *testing.T) {
 	t.Helper()
 	t.Setenv("PATH", t.TempDir())
+	hideNabAtLookupSeam(t)
 	resetCookieCache()
 }
 
@@ -186,6 +187,7 @@ func TestExtractViaNab_DistinguishesItsOutcomes(t *testing.T) {
 			t.Fatalf("write fake nab: %v", err)
 		}
 		t.Setenv("PATH", dir)
+		useNabPath(t, filepath.Join(dir, "nab"))
 		resetCookieCache()
 
 		got, err := extractViaNab(context.Background(), "brave", testDomain)

@@ -37,6 +37,7 @@ const nabCookieBudget = 6 * time.Second
 
 var (
 	browserAuthNow   = time.Now
+	lookupNabPath    = trvlnab.LookupPath
 	browserAuthStart = func(name string, args ...string) error {
 		// #nosec G204 -- production callers select fixed browser launcher names;
 		// the variable signature exists solely as a test seam and never uses a shell.
@@ -322,7 +323,7 @@ func extractViaNab(ctx context.Context, browser, domain string) (string, error) 
 		return "", nil
 	}
 
-	nabPath, err := trvlnab.LookupPath()
+	nabPath, err := lookupNabPath()
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", errNabUnavailable, err)
 	}
