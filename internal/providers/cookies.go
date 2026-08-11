@@ -313,6 +313,10 @@ func WarmBrowserCookies(targetURL, browserHint string) {
 // (up to the given timeout) and returns the cached cookies. Returns nil if
 // no warm-up was started or the timeout expires.
 func warmBrowserCookiesResult(targetURL, browserHint string, timeout time.Duration) (out []*http.Cookie) {
+	return warmBrowserCookiesResultContext(context.Background(), targetURL, browserHint, timeout)
+}
+
+func warmBrowserCookiesResultContext(ctx context.Context, targetURL, browserHint string, timeout time.Duration) (out []*http.Cookie) {
 	defer func() { out = permittedAfterRead(out) }()
 
 	key := warmCacheKey(targetURL, browserHint)
@@ -328,6 +332,8 @@ func warmBrowserCookiesResult(targetURL, browserHint string, timeout time.Durati
 	select {
 	case <-entry.done:
 		return entry.cookies
+	case <-ctx.Done():
+		return nil
 	case <-time.After(timeout):
 		return nil
 	}
@@ -493,6 +499,15 @@ func permittedAfterRead(list []*http.Cookie) []*http.Cookie {
 // same bounded, test-guarded path as provider search recovery.
 func BrowserCookiesForURL(targetURL string) []*http.Cookie {
 	return browserCookiesForURL(targetURL)
+}
+
+// BrowserCookiesForURLContext is the caller-cancellable form used by bounded
+// provider searches. The legacy wrapper remains for callers without a request
+// context.
+func BrowserCookiesForURLContext(ctx context.Context, targetURL string) []*http.Cookie {
+	out, outcome, readErr := browserCookiesForURLWithOutcomeContext(ctx, targetURL)
+	reportOutcome(targetURL, outcome, readErr)
+	return out
 }
 
 // browserCookiesForURLWithHint reads cookies from a specific browser's cookie

@@ -182,7 +182,7 @@ func acquireBookingWAFToken(ctx context.Context, searchURL string, forceRefresh 
 		if tok := awsWAFToken(providers.CachedCookiesForURL(bookingBaseURL)); tok != "" {
 			return tok, nil
 		}
-		if tok := awsWAFToken(providers.BrowserCookiesForURL(bookingBaseURL)); tok != "" {
+		if tok := awsWAFToken(providers.BrowserCookiesForURLContext(ctx, bookingBaseURL)); tok != "" {
 			return tok, nil
 		}
 	}
