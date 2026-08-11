@@ -33,12 +33,16 @@ func TestDestinationScopedProviderGettersRejectUnscopedResponses(t *testing.T) {
 	})
 
 	providers := []struct {
-		name string
-		get  func(context.Context, string) ([]byte, error)
-		set  func(*http.Client)
+		name      string
+		path      string
+		generic   string
+		sibling   string
+		lookalike string
+		get       func(context.Context, string) ([]byte, error)
+		set       func(*http.Client)
 	}{
 		{
-			name: "hometogo",
+			name: "hometogo", path: "/lisbon/", generic: "/", sibling: "/porto/", lookalike: "/lisbon-cheap/",
 			get: func(ctx context.Context, rawURL string) ([]byte, error) {
 				return hometogoGet(ctx, rawURL, "text/html")
 			},
@@ -48,7 +52,7 @@ func TestDestinationScopedProviderGettersRejectUnscopedResponses(t *testing.T) {
 			},
 		},
 		{
-			name: "uniplaces",
+			name: "uniplaces", path: "/accommodation/lisbon", generic: "/accommodation", sibling: "/accommodation/porto", lookalike: "/accommodation/lisbon-cheap",
 			get: func(ctx context.Context, rawURL string) ([]byte, error) {
 				return uniplacesGet(ctx, rawURL, "text/html")
 			},
@@ -58,31 +62,31 @@ func TestDestinationScopedProviderGettersRejectUnscopedResponses(t *testing.T) {
 			},
 		},
 		{
-			name: "wunderflats",
-			get:  wunderflatsGet,
+			name: "wunderflats", path: "/en/furnished-apartments/lisbon", generic: "/en/furnished-apartments", sibling: "/en/furnished-apartments/porto", lookalike: "/en/furnished-apartments/lisbon-cheap",
+			get: wunderflatsGet,
 			set: func(client *http.Client) {
 				wunderflatsHTTPClient = client
 				wunderflatsLimiter = rate.NewLimiter(rate.Inf, 1)
 			},
 		},
 		{
-			name: "spotahome",
-			get:  spotahomeGet,
+			name: "spotahome", path: "/s/lisbon/for-rent:apartments.data", generic: "/s", sibling: "/s/porto/for-rent:apartments.data", lookalike: "/s/lisbon-cheap/for-rent:apartments.data",
+			get: spotahomeGet,
 			set: func(client *http.Client) {
 				spotahomeClient = client
 				spotahomeLimiter = rate.NewLimiter(rate.Inf, 1)
 			},
 		},
 		{
-			name: "blueground",
-			get:  bluegroundGet,
+			name: "blueground", path: "/furnished-apartments-athens-gr", generic: "/", sibling: "/furnished-apartments-paris-fr", lookalike: "/furnished-apartments-athens-gr-cheap",
+			get: bluegroundGet,
 			set: func(client *http.Client) {
 				bluegroundClient = client
 				bluegroundLimiter = rate.NewLimiter(rate.Inf, 1)
 			},
 		},
 		{
-			name: "anyplace",
+			name: "anyplace", path: "/listings/lisbon", generic: "/listings", sibling: "/listings/porto", lookalike: "/listings/lisbon-cheap",
 			get: func(ctx context.Context, rawURL string) ([]byte, error) {
 				return anyplaceGet(ctx, rawURL, "text/html")
 			},
@@ -94,32 +98,43 @@ func TestDestinationScopedProviderGettersRejectUnscopedResponses(t *testing.T) {
 	}
 
 	scenarios := []struct {
-		name          string
-		effectivePath string
-		wantError     bool
-		missingURL    bool
+		name           string
+		path           func(providerPath, generic, sibling, lookalike string) string
+		wantError      bool
+		missingRequest bool
+		missingURL     bool
 	}{
-		{name: "exact", effectivePath: "/s/lisbon"},
-		{name: "trailing slash", effectivePath: "/s/lisbon/"},
-		{name: "query only", effectivePath: "/s/lisbon?campaign=summer"},
-		{name: "generic parent", effectivePath: "/s", wantError: true},
-		{name: "sibling destination", effectivePath: "/s/porto", wantError: true},
-		{name: "lookalike prefix", effectivePath: "/s/lisbon-cheap", wantError: true},
-		{name: "missing effective URL", wantError: true, missingURL: true},
+		{name: "exact", path: func(p, _, _, _ string) string { return p }},
+		{name: "trailing slash", path: func(p, _, _, _ string) string {
+			if strings.HasSuffix(p, "/") {
+				return strings.TrimSuffix(p, "/")
+			}
+			return p + "/"
+		}},
+		{name: "query only", path: func(p, _, _, _ string) string { return p + "?campaign=summer" }},
+		{name: "generic parent", path: func(_, generic, _, _ string) string { return generic }, wantError: true},
+		{name: "sibling destination", path: func(_, _, sibling, _ string) string { return sibling }, wantError: true},
+		{name: "lookalike prefix", path: func(_, _, _, lookalike string) string { return lookalike }, wantError: true},
+		{name: "missing response request", path: func(p, _, _, _ string) string { return p }, wantError: true, missingRequest: true},
+		{name: "missing effective URL", path: func(p, _, _, _ string) string { return p }, wantError: true, missingURL: true},
 	}
 
 	for _, provider := range providers {
 		for _, scenario := range scenarios {
 			t.Run(provider.name+"/"+scenario.name, func(t *testing.T) {
+				effectivePath := scenario.path(provider.path, provider.generic, provider.sibling, provider.lookalike)
 				client := &http.Client{Transport: destinationScopeRoundTripper(func(req *http.Request) (*http.Response, error) {
 					effective := *req.URL
-					parts := strings.SplitN(scenario.effectivePath, "?", 2)
+					parts := strings.SplitN(effectivePath, "?", 2)
 					effective.Path = parts[0]
 					effective.RawQuery = ""
 					if len(parts) == 2 {
 						effective.RawQuery = parts[1]
 					}
 					effectiveRequest := &http.Request{URL: &effective}
+					if scenario.missingRequest {
+						effectiveRequest = nil
+					}
 					if scenario.missingURL {
 						effectiveRequest.URL = nil
 					}
@@ -131,15 +146,15 @@ func TestDestinationScopedProviderGettersRejectUnscopedResponses(t *testing.T) {
 				})}
 				provider.set(client)
 
-				body, err := provider.get(context.Background(), "https://provider.example/s/lisbon")
+				body, err := provider.get(context.Background(), "https://provider.example"+provider.path)
 				if scenario.wantError {
 					if err == nil {
-						t.Fatalf("accepted %q response body %q", scenario.effectivePath, body)
+						t.Fatalf("accepted %q response body %q", effectivePath, body)
 					}
 					return
 				}
 				if err != nil {
-					t.Fatalf("rejected safe effective path %q: %v", scenario.effectivePath, err)
+					t.Fatalf("rejected safe effective path %q: %v", effectivePath, err)
 				}
 				if string(body) != "destination inventory" {
 					t.Fatalf("body = %q", body)

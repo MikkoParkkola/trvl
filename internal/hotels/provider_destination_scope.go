@@ -2,10 +2,18 @@ package hotels
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"path"
 	"strings"
 )
+
+func effectiveResponseURL(resp *http.Response) *url.URL {
+	if resp == nil || resp.Request == nil {
+		return nil
+	}
+	return resp.Request.URL
+}
 
 // validateDestinationResponseURL fails closed when a destination-scoped HTTP
 // request is redirected to a generic page, another destination, or another

@@ -103,3 +103,32 @@ func TestValidateDestinationResponseURL(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateBluegroundDestinationResponseURL(t *testing.T) {
+	parse := func(raw string) *url.URL {
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u
+	}
+	requested := parse("https://www.theblueground.com/furnished-apartments-athens-gr")
+	for _, tt := range []struct {
+		name      string
+		effective string
+		wantErr   bool
+	}{
+		{name: "exact ISO path", effective: "https://www.theblueground.com/furnished-apartments-athens-gr"},
+		{name: "canonical country name", effective: "https://www.theblueground.com/furnished-apartments-athens-greece"},
+		{name: "different city", effective: "https://www.theblueground.com/furnished-apartments-paris-greece", wantErr: true},
+		{name: "different country", effective: "https://www.theblueground.com/furnished-apartments-athens-portugal", wantErr: true},
+		{name: "lookalike suffix", effective: "https://www.theblueground.com/furnished-apartments-athens-greece-cheap", wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateBluegroundDestinationResponseURL(requested, parse(tt.effective))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

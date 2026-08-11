@@ -225,7 +225,7 @@ func resolveLandingBuild(ctx context.Context, slug string) (buildID, market stri
 	if m := landingMarketRe.FindSubmatch(body); m != nil {
 		market = string(m[1])
 	}
-	if market != slug && !strings.HasPrefix(market, slug+"-") {
+	if !landingCanonicalMarketMatches(slug, market) {
 		return "", "", fmt.Errorf("destination scope: canonical market %q does not match requested slug %q", market, slug)
 	}
 	canonicalURL, err := url.Parse(rawURL)
@@ -240,6 +240,22 @@ func resolveLandingBuild(ctx context.Context, slug string) (buildID, market stri
 		return "", "", fmt.Errorf("landing destination scope: %w", err)
 	}
 	return buildID, market, nil
+}
+
+func landingCanonicalMarketMatches(requested, canonical string) bool {
+	if canonical == requested {
+		return true
+	}
+	suffix, ok := strings.CutPrefix(canonical, requested+"-")
+	if !ok || len(suffix) != 2 {
+		return false
+	}
+	for _, r := range suffix {
+		if r < 'a' || r > 'z' {
+			return false
+		}
+	}
+	return true
 }
 
 // landingExtractBuildID pulls the buildId out of a city page, decoding the

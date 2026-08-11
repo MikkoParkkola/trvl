@@ -38,6 +38,7 @@ func TestResolveLandingBuildRejectsUnrelatedCanonicalDestination(t *testing.T) {
 	}{
 		{name: "exact", effectivePath: "/s/austin/apartments/furnished", market: "austin"},
 		{name: "canonical suffix", effectivePath: "/s/austin-tx/apartments/furnished", market: "austin-tx"},
+		{name: "unrecognized canonical suffix", effectivePath: "/s/austin-heights/apartments/furnished", market: "austin-heights", wantError: true},
 		{name: "generic parent", effectivePath: "/s", market: "austin", wantError: true},
 		{name: "sibling destination", effectivePath: "/s/dallas-tx/apartments/furnished", market: "dallas-tx", wantError: true},
 		{name: "lookalike prefix", effectivePath: "/s/austinite/apartments/furnished", market: "austinite", wantError: true},

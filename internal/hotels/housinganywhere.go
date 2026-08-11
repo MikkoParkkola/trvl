@@ -310,17 +310,44 @@ func haIndexForSort(sort string) string {
 // the Algolia city facet, e.g. "Berlin, Germany" -> "Berlin", "  Paris " ->
 // "Paris".
 func haCityFromLocation(location string) string {
-	city := location
-	if i := strings.IndexAny(location, ",-"); i >= 0 {
-		city = location[:i]
+	city, _ := haDestinationFromLocation(location)
+	return city
+}
+
+func haDestinationFromLocation(location string) (city, country string) {
+	parts := strings.Split(location, ",")
+	city = strings.TrimSpace(parts[0])
+	if len(parts) > 1 {
+		country = strings.TrimSpace(parts[len(parts)-1])
 	}
-	return strings.TrimSpace(city)
+	return city, country
 }
 
 func haHitMatchesRequestedCity(hitCity, requestedCity string) bool {
 	hitCity = strings.TrimSpace(hitCity)
 	requestedCity = strings.TrimSpace(requestedCity)
 	return hitCity != "" && requestedCity != "" && strings.EqualFold(hitCity, requestedCity)
+}
+
+func haHitMatchesRequestedDestination(hitCity, hitCountry, requestedCity, requestedCountry string) bool {
+	if !haHitMatchesRequestedCity(hitCity, requestedCity) {
+		return false
+	}
+	if strings.TrimSpace(requestedCountry) == "" {
+		return true
+	}
+	return haCountryMatchKey(hitCountry) != "" && haCountryMatchKey(hitCountry) == haCountryMatchKey(requestedCountry)
+}
+
+func haCountryMatchKey(country string) string {
+	country = strings.ToLower(strings.TrimSpace(country))
+	if iso, ok := bluegroundCountryISO2[country]; ok {
+		return iso
+	}
+	if len(country) == 2 {
+		return country
+	}
+	return bluegroundToken(country)
 }
 
 // buildAlgoliaParams assembles the URL-encoded Algolia params string: empty
@@ -443,7 +470,7 @@ func SearchHousingAnywhere(ctx context.Context, location string, opts HotelSearc
 		return nil, fmt.Errorf("housinganywhere: location is required")
 	}
 
-	city := haCityFromLocation(location)
+	city, country := haDestinationFromLocation(location)
 	index := haIndexForSort(opts.Sort)
 	hitsPerPage := 20
 	params := buildAlgoliaParams(city, hitsPerPage, 0, opts.MinPrice, opts.MaxPrice)
@@ -464,7 +491,7 @@ func SearchHousingAnywhere(ctx context.Context, location string, opts HotelSearc
 	currency := strings.TrimSpace(opts.Currency)
 	results := make([]models.HotelResult, 0, len(res.Hits))
 	for _, h := range res.Hits {
-		if !haHitMatchesRequestedCity(h.City, city) {
+		if !haHitMatchesRequestedDestination(h.City, h.Country, city, country) {
 			continue
 		}
 		if mapped, ok := mapHAHit(h, currency); ok {

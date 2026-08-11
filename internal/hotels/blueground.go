@@ -43,6 +43,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -268,13 +269,60 @@ func bluegroundGet(ctx context.Context, url string) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if err := validateDestinationResponseURL(req.URL, resp.Request.URL); err != nil {
+	if err := validateBluegroundDestinationResponseURL(req.URL, effectiveResponseURL(resp)); err != nil {
 		return nil, fmt.Errorf("destination scope: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, url)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+}
+
+func validateBluegroundDestinationResponseURL(requested, effective *url.URL) error {
+	if err := validateDestinationResponseURL(requested, effective); err == nil {
+		return nil
+	} else if requested == nil || effective == nil {
+		return err
+	}
+
+	requestedCity, requestedCountry, requestedOK := splitBluegroundDestinationPath(requested.Path)
+	effectiveCity, effectiveCountry, effectiveOK := splitBluegroundDestinationPath(effective.Path)
+	if !requestedOK || !effectiveOK || requestedCity != effectiveCity || requestedCountry != effectiveCountry {
+		return validateDestinationResponseURL(requested, effective)
+	}
+
+	canonical := *requested
+	canonical.Path = effective.Path
+	return validateDestinationResponseURL(&canonical, effective)
+}
+
+func splitBluegroundDestinationPath(rawPath string) (city, country string, ok bool) {
+	const prefix = "/furnished-apartments-"
+	slug := strings.TrimSuffix(rawPath, "/")
+	slug, found := strings.CutPrefix(slug, prefix)
+	if !found || slug == "" {
+		return "", "", false
+	}
+
+	bestToken := ""
+	bestCountry := ""
+	for name, iso := range bluegroundCountryISO2 {
+		for _, token := range []string{bluegroundToken(name), iso} {
+			if len(token) <= len(bestToken) || !strings.HasSuffix(slug, "-"+token) {
+				continue
+			}
+			bestToken = token
+			bestCountry = iso
+		}
+	}
+	if bestToken == "" {
+		return "", "", false
+	}
+	city = strings.TrimSuffix(slug, "-"+bestToken)
+	if city == "" {
+		return "", "", false
+	}
+	return city, bestCountry, true
 }
 
 // parseBluegroundList extracts properties from the list page __INITIAL_STATE__.
