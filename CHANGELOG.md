@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.3] - 2026-08-11
+
+### Fixed
+
+- Rental-provider results are now accepted only when the provider's effective
+  response URL and page metadata still match the requested destination. The
+  shared guard covers HomeToGo, Uniplaces, Wunderflats, Spotahome, Blueground,
+  Anyplace, Landing, and HousingAnywhere, including redirects, generic landing
+  pages, sibling cities, and lookalike names. ([#612](https://github.com/MikkoParkkola/trvl/issues/612))
+- Flatio fallback results now fail closed when the returned page is for a
+  different destination instead of presenting a global or unrelated listing
+  pool as local inventory. ([#609](https://github.com/MikkoParkkola/trvl/issues/609))
+- Background Nab fetches explicitly disable prompt-capable Keychain access, and
+  automated tests isolate ambient Nab binaries, preventing unattended hotel
+  searches and the formal test suite from displaying repeated macOS password
+  dialogs. ([#611](https://github.com/MikkoParkkola/trvl/issues/611))
+
 ## [1.21.2] - 2026-08-10
 
 ### Fixed
@@ -1181,7 +1198,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.2...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.3...HEAD
+[1.21.3]: https://github.com/MikkoParkkola/trvl/compare/v1.21.2...v1.21.3
 [1.21.2]: https://github.com/MikkoParkkola/trvl/compare/v1.21.1...v1.21.2
 [1.21.1]: https://github.com/MikkoParkkola/trvl/compare/v1.21.0...v1.21.1
 [1.21.0]: https://github.com/MikkoParkkola/trvl/compare/v1.20.0...v1.21.0
