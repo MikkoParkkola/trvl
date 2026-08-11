@@ -3,7 +3,6 @@ package cookies
 import (
 	"errors"
 	"net/http"
-	"os/exec"
 	"testing"
 	"time"
 )
@@ -111,10 +110,7 @@ func TestIsCaptchaResponse(t *testing.T) {
 }
 
 func TestBrowserCookiesEmpty(t *testing.T) {
-	// When nab is not in PATH, BrowserCookies must return empty string without panicking.
-	if _, err := exec.LookPath("nab"); err == nil {
-		t.Skip("nab is installed; skipping no-nab path test")
-	}
+	// Package tests default the nab lookup seam to unavailable.
 	got := BrowserCookies("example.com")
 	if got != "" {
 		t.Errorf("BrowserCookies without nab = %q, want empty", got)
@@ -156,9 +152,6 @@ func TestApplyCookies(t *testing.T) {
 	})
 
 	t.Run("ApplyCookies no-op when nab absent", func(t *testing.T) {
-		if _, err := exec.LookPath("nab"); err == nil {
-			t.Skip("nab is installed; result depends on live browser cookies")
-		}
 		req, err := http.NewRequest(http.MethodGet, "https://example.com/", nil)
 		if err != nil {
 			t.Fatal(err)

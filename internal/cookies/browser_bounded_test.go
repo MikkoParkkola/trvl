@@ -21,6 +21,7 @@ func writeFakeNab(t *testing.T, body string) (dir string) {
 		t.Fatalf("write fake nab: %v", err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useNabPath(t, filepath.Join(dir, "nab"))
 	resetCookieCache()
 	return dir
 }

@@ -115,6 +115,59 @@ printf '%s' '{"status":200,"markdown":"{\"ok\":true}"}'
 	}
 }
 
+func TestClientFetchForbidsKeychainInteractionInChild(t *testing.T) {
+	skipOnWindows(t)
+	t.Setenv("NAB_KEYCHAIN_INTERACTION", "allow")
+	script := writeMockNab(t, `#!/bin/sh
+[ "$NAB_KEYCHAIN_INTERACTION" = "never" ] || { echo "keychain interaction was not disabled" >&2; exit 31; }
+printf '%s' '{"status":200,"markdown":"non-interactive"}'
+`)
+
+	client := &Client{path: script}
+	body, err := client.Fetch(context.Background(), "https://example.com", FetchOptions{})
+	if err != nil {
+		t.Fatalf("Fetch returned error: %v", err)
+	}
+	if got := string(body); got != "non-interactive" {
+		t.Fatalf("body = %q, want non-interactive", got)
+	}
+}
+
+func TestForbidKeychainInteractionReplacesValuesWithoutChangingOtherEnvironment(t *testing.T) {
+	cmd := exec.Command("controlled-nab")
+	cmd.Env = []string{
+		"KEEP=value",
+		"NAB_KEYCHAIN_INTERACTION=allow",
+		"nab_keychain_interaction=on",
+		"ALSO_KEEP=another",
+	}
+
+	ForbidKeychainInteraction(cmd)
+
+	var policyValues []string
+	for _, entry := range cmd.Env {
+		name, value, _ := strings.Cut(entry, "=")
+		if strings.EqualFold(name, keychainInteractionEnv) {
+			policyValues = append(policyValues, value)
+		}
+	}
+	if len(policyValues) != 1 || policyValues[0] != "never" {
+		t.Fatalf("keychain policy values = %q, want exactly [never]", policyValues)
+	}
+	if !containsString(cmd.Env, "KEEP=value") || !containsString(cmd.Env, "ALSO_KEEP=another") {
+		t.Fatalf("unrelated environment was changed: %q", cmd.Env)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func writeMockNab(t *testing.T, script string) string {
 	t.Helper()
 

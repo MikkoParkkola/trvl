@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -25,6 +26,8 @@ import (
 func BrowserCookiesDeclined() bool { return consent.CookiesDeclined() }
 
 var ErrNotAvailable = errors.New("nab not available")
+
+const keychainInteractionEnv = "NAB_KEYCHAIN_INTERACTION"
 
 var (
 	lookPath       = exec.LookPath
@@ -45,6 +48,29 @@ type FetchOptions struct {
 type fetchResponse struct {
 	Status   int    `json:"status"`
 	Markdown string `json:"markdown"`
+}
+
+// ForbidKeychainInteraction configures a background nab child so supported nab
+// versions cannot open macOS Keychain authorization UI. Existing values are
+// replaced rather than duplicated; older nab versions ignore the variable and
+// keep their existing CLI compatibility.
+func ForbidKeychainInteraction(cmd *exec.Cmd) {
+	if cmd == nil {
+		return
+	}
+	environ := cmd.Env
+	if environ == nil {
+		environ = os.Environ()
+	}
+	filtered := make([]string, 0, len(environ)+1)
+	for _, entry := range environ {
+		name, _, _ := strings.Cut(entry, "=")
+		if strings.EqualFold(name, keychainInteractionEnv) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	cmd.Env = append(filtered, keychainInteractionEnv+"=never")
 }
 
 func LookupPath() (string, error) {
@@ -125,6 +151,7 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, opts FetchOptions) ([
 	}
 
 	cmd := commandContext(ctx, c.path, args...)
+	ForbidKeychainInteraction(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError

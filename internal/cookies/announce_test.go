@@ -88,6 +88,7 @@ func TestCookieReadIsAnnouncedBeforeTheHelperStarts(t *testing.T) {
 		t.Fatalf("writing the fake nab: %v", err)
 	}
 	t.Setenv("PATH", dir)
+	useNabPath(t, filepath.Join(dir, "nab"))
 	t.Setenv(DisableEnv, "")
 
 	rec := &noticeRecorder{marker: notice}
@@ -153,6 +154,7 @@ func TestCookieReadNoticeIsSaidOnceAndNotAtAllOnADecline(t *testing.T) {
 		t.Fatalf("writing the fake nab: %v", err)
 	}
 	t.Setenv("PATH", dir)
+	useNabPath(t, filepath.Join(dir, "nab"))
 
 	count := func(rec *noticeRecorder) int {
 		n := 0
