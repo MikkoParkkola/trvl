@@ -129,13 +129,13 @@ func TestWizzDiscoverFromConfig(t *testing.T) {
 	}
 }
 
-// TestWizzDefaultVersionRatchet is a downgrade guard, not a behaviour test: #506
-// verified 29.8.0 live, so a later edit that lowers the compiled default below it
-// would ship users a known-dead version on first run.
+// TestWizzDefaultVersionRatchet is a downgrade guard, not a behaviour test: the
+// scheduled sentinel verified 29.11.0 live on 2026-08-12, so a later edit that
+// lowers the compiled default would ship users a known-dead version on first run.
 func TestWizzDefaultVersionRatchet(t *testing.T) {
-	const verified = "29.8.0"
+	const verified = "29.11.0"
 	if wizzDefaultVersion != verified && !wizzVersionNewer(wizzDefaultVersion, verified) {
-		t.Errorf("wizzDefaultVersion = %q, must not be older than the #506-verified %q", wizzDefaultVersion, verified)
+		t.Errorf("wizzDefaultVersion = %q, must not be older than the sentinel-verified %q", wizzDefaultVersion, verified)
 	}
 }
 

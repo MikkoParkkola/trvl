@@ -120,6 +120,7 @@ release_homebrew_stays_formula_only_until_notarized() {
 
 check "workflow action uses refs are pinned to commit SHAs" all_workflow_uses_are_sha_pinned
 check "setup-node jobs use Node 24" all_setup_node_jobs_use_node24
+check "Wizz sentinel safely recovers orphaned automation branches" scripts/ci/push-wizzair-version-branch_test.sh
 check "GitNexus CLI calls include an explicit npm package version" no_unpinned_gitnexus_cli_calls
 check "GitNexus CI and local refresh use the same pinned CLI version" gitnexus_version_is_pinned_consistently
 check "GitNexus cached-index docs use a SHA-pinned cache action example" gitnexus_docs_use_sha_pinned_cache_example
