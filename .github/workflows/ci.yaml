@@ -230,7 +230,7 @@ jobs:
           done
       - name: Upload gosec report
         if: always()
-        # v5.0.0
+        # v7.0.1
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: gosec-report
