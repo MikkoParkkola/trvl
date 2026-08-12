@@ -88,7 +88,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
           git commit -am "fix(flights): bump Wizz Air API version ${CUR} -> ${NEW} (auto, #430)"
-          git push -u origin "$branch"
+          scripts/ci/push-wizzair-version-branch.sh "$branch"
 
           body="Automated by the Wizz Air version sentinel.
 
