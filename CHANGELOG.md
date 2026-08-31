@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Go toolchain pinned to 1.26.6 (was 1.26.5) so CI `govulncheck` matches the
+  standard-library fixes in that patch, including GO-2026-6218 (`net/url`),
+  GO-2026-6088 (`encoding/xml`), GO-2026-5972 (`encoding/asn1`), and
+  GO-2026-5026 (`net/http`). Indirect `golang.org/x/crypto` is 0.55.0 so the
+  OSV scanner matches GO-2026-6303.
+
 ## [1.21.4] - 2026-08-12
 
 ### Fixed
