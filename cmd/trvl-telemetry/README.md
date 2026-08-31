@@ -10,7 +10,7 @@ object per line.
 A heartbeat is a small JSON object with exactly these fields and nothing else:
 
 ```json
-{"project":"trvl","event":"heartbeat","version":"1.2.3","runtime":"linux/amd64/go1.26.5","install_id":"<hex>"}
+{"project":"trvl","event":"heartbeat","version":"1.2.3","runtime":"linux/amd64/go1.26.6","install_id":"<hex>"}
 ```
 
 The collector rejects anything that does not fit the contract:

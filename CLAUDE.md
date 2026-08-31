@@ -1,6 +1,6 @@
 # trvl
 
-Travel MCP server + CLI. 1 smart MCP tool plus 66 legacy-compatible capabilities, 56 CLI commands. Go 1.26.5, no frameworks.
+Travel MCP server + CLI. 1 smart MCP tool plus 66 legacy-compatible capabilities, 56 CLI commands. Go 1.26.6, no frameworks.
 
 ## Product Vision
 
@@ -8,7 +8,7 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 
 ## Current Status
 
-- Go 1.26.5 · MCP 2025-11-25 · single binary · 24 transport providers (+ flight & hotel sources below)
+- Go 1.26.6 · MCP 2025-11-25 · single binary · 24 transport providers (+ flight & hotel sources below)
 - Hotel providers working: Google Hotels, Booking.com (browser cookies), Airbnb (SSR/Niobe), Hostelworld (autocomplete), Trivago (Streamable HTTP MCP), HomeToGo (public SSR+JSON, vacation rentals)
 - Flight providers: the default path merges Google Flights, Kiwi, and Skiplagged. Solo or opt-in integrations cover Ryanair, Wizz Air, Air France–KLM, Transavia, easyJet, Vueling, and Norwegian; protected or credentialed paths return typed setup/block statuses when unavailable. Travelpayouts/Aviasales price signals are opt-in through `trvl pricetrends` and are not part of the bookable merge.
 - Enrichment (free, unauthenticated): weather (Open-Meteo), air quality (`trvl air`), sun times (`trvl sun`, sunrise-sunset.org), bike-share (`trvl bikes`, CityBikes)
@@ -29,7 +29,7 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 |---|---|---|
 | **No frameworks** — stdlib + carefully chosen libs only | Predictable behavior, minimal deps, long-lived binary | Add web frameworks, ORMs, DI containers |
 | **No API keys required by default** | Zero-friction onboarding; "API-first" phrasing uses *provider* APIs, not user-paid ones | Introduce paid-API requirements on default code paths |
-| **`GOTOOLCHAIN=go1.26.5` pinning via Makefile** | CI reproducibility; host `go` on PATH may be older | Run raw `go build/test` without the prefix on older hosts |
+| **`GOTOOLCHAIN=go1.26.6` pinning via Makefile** | CI reproducibility; host `go` on PATH may be older | Run raw `go build/test` without the prefix on older hosts |
 | **`internal/models` is the shared type package** | Unidirectional import flow; no cycles | Import from other `internal/` packages into `models/` |
 | **Live tests are opt-in** via `TRVL_TEST_LIVE_INTEGRATIONS=1` and `TRVL_TEST_LIVE_PROBES=1` | Default suite must be deterministic and offline | Enable live probes in the default `go test ./...` suite |
 | **Protobuf-style encoding for Google Flights is hand-rolled** (no `.proto` files) | The upstream format is undocumented; hand-rolled is auditable | Add `protoc` / `.proto`-generation to the build pipeline |
@@ -122,9 +122,9 @@ go vet ./...                        # Vet (CI runs this)
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yaml`): build, vet, staticcheck, govulncheck, test with race detector, coverage threshold (80%). Runs on ubuntu + windows, Go 1.26.5.
+GitHub Actions (`.github/workflows/ci.yaml`): build, vet, staticcheck, govulncheck, test with race detector, coverage threshold (80%). Runs on ubuntu + windows, Go 1.26.6.
 
-Make targets pin `GOTOOLCHAIN=go1.26.5` so local build/test entrypoints match CI even when the host `go` on `PATH` is older. For raw `go ...` commands on such hosts, prefix `GOTOOLCHAIN=go1.26.5`.
+Make targets pin `GOTOOLCHAIN=go1.26.6` so local build/test entrypoints match CI even when the host `go` on `PATH` is older. For raw `go ...` commands on such hosts, prefix `GOTOOLCHAIN=go1.26.6`.
 
 ## Key Details
 
