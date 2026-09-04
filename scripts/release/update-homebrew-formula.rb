@@ -34,8 +34,10 @@ end
 content = File.read(formula_path)
 
 unless content.sub!(/version "[^"]+"/, %Q(version "#{version}"))
-  warn "failed to update version in #{formula_path}"
-  exit 1
+  unless content.sub!(/^(  license .+)\n/, %Q(\\1\n  version "#{version}"\n))
+    warn "failed to update version in #{formula_path}"
+    exit 1
+  end
 end
 
 platforms.each do |platform|
