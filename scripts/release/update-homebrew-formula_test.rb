@@ -29,6 +29,18 @@ class UpdateHomebrewFormulaTest < Minitest::Test
     end
   end
 
+  def test_inserts_version_when_formula_has_none
+    with_fixture(include_version: false) do |formula, checksums|
+      _stdout, stderr, status = Open3.capture3(
+        RbConfig.ruby, SCRIPT, formula, "1.21.0", checksums
+      )
+
+      assert status.success?, stderr
+      content = File.read(formula)
+      assert_includes content, "license \"PolyForm-Noncommercial-1.0.0\"\n  version \"1.21.0\"\n"
+    end
+  end
+
   def test_missing_platform_checksum_fails_without_rewriting_formula
     with_fixture(omit: "linux_arm64") do |formula, checksums|
       before = File.read(formula)
@@ -44,26 +56,27 @@ class UpdateHomebrewFormulaTest < Minitest::Test
 
   private
 
-  def with_fixture(omit: nil)
+  def with_fixture(omit: nil, include_version: true)
     Dir.mktmpdir("trvl-homebrew-formula-test") do |dir|
       formula = File.join(dir, "trvl.rb")
       checksums = File.join(dir, "checksums.txt")
-      File.write(formula, formula_fixture)
+      File.write(formula, formula_fixture(include_version: include_version))
       File.write(checksums, checksum_fixture(omit: omit))
       yield formula, checksums
     end
   end
 
-  def formula_fixture
+  def formula_fixture(include_version: true)
     blocks = PLATFORMS.map do |platform|
       %(      url "https://github.com/MikkoParkkola/trvl/releases/download/v1.20.0/trvl_1.20.0_#{platform}.tar.gz"\n) \
         + %(      sha256 "#{'0' * 64}"\n)
     end.join("\n")
+    version_line = include_version ? "  version \"1.20.0\"\n" : ""
 
     <<~RUBY
       class Trvl < Formula
-        version "1.20.0"
-      #{blocks}
+        license "PolyForm-Noncommercial-1.0.0"
+      #{version_line}#{blocks}
       end
     RUBY
   end
