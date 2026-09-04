@@ -125,7 +125,7 @@ var ErrWizzRejected = errors.New("wizzair declined the request (validationCodes)
 // the old path returning 404 and the new path live, but its pre-existing orphan
 // branch caused a non-fast-forward push failure. The sentinel push path now
 // recovers that exact automation-owned branch with a force-with-lease.
-const wizzDefaultVersion = "29.11.0"
+const wizzDefaultVersion = "29.15.0"
 
 // wizzVersion is the active API version. Overridable in tests; the env var
 // WIZZAIR_API_VERSION takes precedence at request time via wizzResolvedVersion.
