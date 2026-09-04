@@ -7,13 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.5] - 2026-09-04
+
+### Fixed
+
+- Deal search with `--from` no longer aborts the whole query when one RSS
+  source is down. Remaining sources still return.
+  ([#634](https://github.com/MikkoParkkola/trvl/pull/634))
+- Wizz Air client recovers from upstream sentinel-version bumps instead of
+  failing closed on a stale version pin.
+  ([#619](https://github.com/MikkoParkkola/trvl/pull/619))
+
 ### Security
 
 - Go toolchain pinned to 1.26.6 (was 1.26.5) so CI `govulncheck` matches the
   standard-library fixes in that patch, including GO-2026-6218 (`net/url`),
   GO-2026-6088 (`encoding/xml`), GO-2026-5972 (`encoding/asn1`), and
-  GO-2026-5026 (`net/http`). Indirect `golang.org/x/crypto` is 0.55.0 so the
-  OSV scanner matches GO-2026-6303.
+  GO-2026-5026 (`net/http`).
+- `google.golang.org/grpc` 1.83.1 (CVE-2026-84304).
+  ([#633](https://github.com/MikkoParkkola/trvl/pull/633))
+- Indirect `golang.org/x/crypto` 0.56.0 (GO-2026-6354 / GO-2026-6355).
 
 ## [1.21.4] - 2026-08-12
 
@@ -1221,7 +1234,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.4...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.5...HEAD
+[1.21.5]: https://github.com/MikkoParkkola/trvl/compare/v1.21.4...v1.21.5
 [1.21.4]: https://github.com/MikkoParkkola/trvl/compare/v1.21.3...v1.21.4
 [1.21.3]: https://github.com/MikkoParkkola/trvl/compare/v1.21.2...v1.21.3
 [1.21.2]: https://github.com/MikkoParkkola/trvl/compare/v1.21.1...v1.21.2
