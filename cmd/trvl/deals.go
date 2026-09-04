@@ -77,6 +77,9 @@ func printDealsTable(ctx context.Context, targetCurrency string, result *deals.D
 		}
 		return nil
 	}
+	if result.Error != "" {
+		_, _ = fmt.Fprintf(os.Stderr, "Some sources failed: %s\n", result.Error)
+	}
 
 	// Convert prices if --currency specified.
 	if targetCurrency != "" {

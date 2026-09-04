@@ -30,6 +30,24 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	orig := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = orig }()
+
+	fn()
+	_ = w.Close()
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	return buf.String()
+}
+
 // ---------------------------------------------------------------------------
 // printFlightsTable
 // ---------------------------------------------------------------------------
@@ -461,6 +479,33 @@ func TestPrintDealsTable_Success(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q", want)
 		}
+	}
+}
+
+func TestPrintDealsTable_PartialSourceFailure(t *testing.T) {
+	models.UseColor = false
+	result := &deals.DealsResult{
+		Success: true,
+		Count:   1,
+		Error:   "parse RSS (secretflying): expected element type <rss> but have <html>",
+		Deals: []deals.Deal{
+			{
+				Title:     "Helsinki to Tokyo",
+				Origin:    "HEL",
+				Type:      "deal",
+				Source:    "fly4free",
+				Published: time.Now(),
+			},
+		},
+	}
+	stderr := captureStderr(t, func() {
+		_ = printDealsTable(context.Background(), "", result)
+	})
+	if !strings.Contains(stderr, "Some sources failed") {
+		t.Fatalf("expected source-failure warning on stderr, got %q", stderr)
+	}
+	if strings.Contains(stderr, "No deals found") {
+		t.Fatalf("must not abort the command: %q", stderr)
 	}
 }
 

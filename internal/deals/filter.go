@@ -52,6 +52,28 @@ func originMatchesDeal(dealOrigin string, filterOrigins []string) bool {
 	return false
 }
 
+// originMatchesText reports whether title/summary text names a filter origin
+// (IATA code or aliased city). Used when RSS left Deal.Origin empty.
+func originMatchesText(text string, filterOrigins []string) bool {
+	hay := strings.ToLower(text)
+	if strings.TrimSpace(hay) == "" {
+		return false
+	}
+	for _, filter := range filterOrigins {
+		f := strings.ToLower(strings.TrimSpace(filter))
+		if f == "" {
+			continue
+		}
+		if strings.Contains(hay, f) {
+			return true
+		}
+		if alias, ok := cityAliases[strings.ToUpper(filter)]; ok && strings.Contains(hay, alias) {
+			return true
+		}
+	}
+	return false
+}
+
 // FilterDeals applies the given filter to a slice of deals.
 func FilterDeals(deals []Deal, f DealFilter) []Deal {
 	hoursAgo := f.HoursAgo
@@ -66,9 +88,10 @@ func FilterDeals(deals []Deal, f DealFilter) []Deal {
 		if !d.Published.IsZero() && d.Published.Before(cutoff) {
 			continue
 		}
-		// Origin filter.
+		// Origin filter. Empty Origin is common on RSS items; fall back to
+		// title/summary so --from still matches "Warsaw to Barcelona" headlines.
 		if len(f.Origins) > 0 {
-			if d.Origin == "" || !originMatchesDeal(d.Origin, f.Origins) {
+			if !originMatchesDeal(d.Origin, f.Origins) && !originMatchesText(d.Title+" "+d.Summary, f.Origins) {
 				continue
 			}
 		}

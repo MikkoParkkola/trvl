@@ -104,9 +104,14 @@ func FetchDeals(ctx context.Context, sources []string, filter DealFilter) (*Deal
 		Count:   len(filtered),
 		Deals:   filtered,
 	}
-	if len(errs) > 0 && len(filtered) == 0 {
-		result.Success = false
+	if len(errs) > 0 {
 		result.Error = strings.Join(errs, "; ")
+		// Only fail the whole command when no source produced deals.
+		// An origin/price filter that empties an otherwise healthy set
+		// must not promote a single dead feed into "no deals found".
+		if len(allDeals) == 0 {
+			result.Success = false
+		}
 	}
 	return result, nil
 }
