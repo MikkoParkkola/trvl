@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -102,6 +103,49 @@ func TestFetchDeals_MockHTTP(t *testing.T) {
 			t.Error("deals should be sorted newest first")
 			break
 		}
+	}
+}
+
+func TestFetchDeals_OriginFilterDoesNotPromoteSourceError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/bad", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		_, _ = fmt.Fprint(w, "<html><body>bot wall</body></html>")
+	})
+	mux.HandleFunc("/good", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = fmt.Fprint(w, sampleRSS)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	origFeeds := make(map[string]string)
+	for k, v := range SourceFeeds {
+		origFeeds[k] = v
+	}
+	SourceFeeds["secretflying"] = srv.URL + "/bad"
+	SourceFeeds["fly4free"] = srv.URL + "/good"
+	defer func() {
+		for k, v := range origFeeds {
+			SourceFeeds[k] = v
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := FetchDeals(ctx, []string{"secretflying", "fly4free"}, DealFilter{
+		Origins:  []string{"WAW"},
+		HoursAgo: 999999,
+	})
+	if err != nil {
+		t.Fatalf("FetchDeals error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("healthy feeds must keep Success=true when --from filters them to empty; got error %q", result.Error)
+	}
+	if !strings.Contains(result.Error, "secretflying") {
+		t.Errorf("failed source should still be named in Error, got %q", result.Error)
 	}
 }
 

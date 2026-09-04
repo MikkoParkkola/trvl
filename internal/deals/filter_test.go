@@ -1,6 +1,7 @@
 package deals
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -76,4 +77,21 @@ func TestFilterDealsOriginFlexible(t *testing.T) {
 			t.Errorf("expected 5 deals, got %d", len(result))
 		}
 	})
+}
+
+func TestFilterDeals_TitleFallbackWhenOriginEmpty(t *testing.T) {
+	now := time.Now()
+	deals := []Deal{
+		{Title: "Warsaw to Barcelona from EUR49", Origin: "", Published: now},
+		{Title: "getaway easier cities", Origin: "", Published: now},
+		{Title: "HEL-BCN flash sale", Origin: "", Published: now},
+	}
+	got := FilterDeals(deals, DealFilter{Origins: []string{"WAW"}})
+	if len(got) != 1 || !strings.Contains(got[0].Title, "Warsaw") {
+		t.Fatalf("expected the Warsaw headline, got %+v", got)
+	}
+	hel := FilterDeals(deals, DealFilter{Origins: []string{"HEL"}})
+	if len(hel) != 1 || !strings.Contains(hel[0].Title, "HEL-BCN") {
+		t.Fatalf("expected HEL-BCN headline, got %+v", hel)
+	}
 }
