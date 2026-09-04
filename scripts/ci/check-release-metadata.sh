@@ -53,7 +53,8 @@ check_equal "server.json npm identifier" "$server_npm_identifier" "$npm_name"
 check_equal "server.json npm version" "$server_npm_version" "$latest_version"
 check_equal "npm/package.json version" "$npm_version" "$latest_version"
 
-check_contains "release workflow derives metadata from the pushed tag" 'VERSION="${GITHUB_REF_NAME#v}"' .github/workflows/release.yml
+check_contains "release workflow derives metadata from RELEASE_TAG" 'VERSION="${RELEASE_TAG#v}"' .github/workflows/release.yml
+check_contains "RELEASE_TAG comes from dispatch tag or github.ref_name" 'github.event.inputs.tag || github.ref_name' .github/workflows/release.yml
 check_contains "release workflow stamps server.json version" '.version = $v' .github/workflows/release.yml
 check_contains "release workflow stamps OCI identifier" '.packages[0].identifier = "ghcr.io/mikkoparkkola/trvl:" + $v' .github/workflows/release.yml
 check_contains "release workflow stamps npm package version" 'select(.registryType=="npm") | .version' .github/workflows/release.yml
