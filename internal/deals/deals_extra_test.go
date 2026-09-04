@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 func TestClassifyDeal_ErrorFare(t *testing.T) {
@@ -130,6 +132,10 @@ func TestFetchDeals_OriginFilterDoesNotPromoteSourceError(t *testing.T) {
 			SourceFeeds[k] = v
 		}
 	}()
+
+	origLimiter := limiter
+	limiter = rate.NewLimiter(rate.Inf, 8)
+	defer func() { limiter = origLimiter }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
