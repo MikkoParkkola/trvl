@@ -189,7 +189,7 @@ jobs:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: homebrew-tap
 
-      - name: Publish Homebrew Formula
+      - name: Update Homebrew Formula
         if: env.HAS_HOMEBREW_TAP_TOKEN == 'true'
         run: |
           set -euo pipefail
@@ -198,9 +198,25 @@ jobs:
             homebrew-tap/Formula/trvl.rb \
             "${VERSION}" \
             dist/checksums.txt
+
+      - name: Validate Homebrew Formula
+        if: env.HAS_HOMEBREW_TAP_TOKEN == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
           ruby -c homebrew-tap/Formula/trvl.rb
-          grep -F "version \"${VERSION}\"" homebrew-tap/Formula/trvl.rb
-          git -C homebrew-tap diff --check
+          test "$(grep -Fc "/v${VERSION}/trvl_${VERSION}_" homebrew-tap/Formula/trvl.rb)" -eq 4
+          if grep -Eq '^[[:space:]]*version[[:space:](]' homebrew-tap/Formula/trvl.rb; then
+            echo "::error::explicit version is not allowed in the TRVL formula" >&2
+            exit 1
+          fi
+          git -C homebrew-tap diff --check -- Formula/trvl.rb
+
+      - name: Publish Homebrew Formula
+        if: env.HAS_HOMEBREW_TAP_TOKEN == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
           if git -C homebrew-tap diff --quiet -- Formula/trvl.rb; then
             echo "Formula/trvl.rb already matches ${VERSION}."
             exit 0
