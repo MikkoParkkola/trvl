@@ -6,7 +6,7 @@ require (
 	github.com/andybalholm/brotli v1.2.3
 	github.com/bogdanfinn/fhttp v0.6.8
 	github.com/bogdanfinn/tls-client v1.15.1
-	github.com/bogdanfinn/utls v1.7.7-barnius
+	github.com/bogdanfinn/utls v1.7.8-barnius
 	github.com/browserutils/kooky v0.2.10
 	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
 	github.com/chromedp/chromedp v0.16.0
