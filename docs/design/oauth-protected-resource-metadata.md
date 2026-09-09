@@ -1,6 +1,8 @@
 # OAuth Protected Resource Metadata (RFC 9728) for HTTP MCP mode
 
-Status: implemented
+Status: implemented, with one known residual (see (d) 403 note) — an
+authenticated token holding only unrecognized scopes returns 401 instead of
+403; tracked as a follow-up, not fixed here.
 Date: 2026-09-09
 
 ## Why
@@ -190,6 +192,12 @@ still gets the same machine-readable detail) and:
 `WWW-Authenticate: Bearer resource_metadata="<path-suffixed well-known URL>", error="insufficient_scope", scope="<trvl:read|trvl:write>"`
 (the `resource_metadata` parameter is omitted in static-token-only mode, same
 as the 401 case — there is no authorization server to point a client at).
+
+**Known residual.** A token that is active and audience-valid but carries
+only unrecognized scopes (neither `trvl:read` nor `trvl:write`) still falls
+into the pre-existing `mcp/http_auth.go` scope check and returns `401`, not
+the `403` above — that check predates this change and is out of scope for
+it. Tracked as a follow-up.
 
 ## (e) Discovery endpoints are unauthenticated
 

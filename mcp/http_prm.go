@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 )
@@ -12,10 +13,18 @@ const wellKnownPRMRoot = "/.well-known/oauth-protected-resource"
 // its path, so the value is stable to append "/mcp" or a well-known segment
 // to (RFC 9728 §3.3: resource must equal the URL clients actually call). A
 // query or fragment is rejected (RFC 9728 §1.2 prohibits both in a resource
-// identifier); a `{` or `}` in the path is rejected because it would be
-// registered verbatim as an http.ServeMux pattern (net/http, Go 1.22+
-// wildcard syntax), panicking at route-registration time instead of failing
-// closed here.
+// identifier) — including a bare "?" with no key=value, which net/url
+// tracks as ForceQuery rather than a nonempty RawQuery but which
+// (*url.URL).String() still re-emits, so it would otherwise leak into the
+// resource identifier undetected. A `{` or `}` in the decoded path is
+// rejected because the well-known pattern built from it
+// (wellKnownPRMRoot+path+"/mcp") would register as a live http.ServeMux
+// wildcard route (Go 1.22+ wildcard syntax) instead of a literal path match
+// — it does not panic, it silently serves the PRM document under attacker-
+// controlled path segments. Any other path that is well-formed URL-wise but
+// that http.ServeMux itself refuses to register (e.g. embedded whitespace)
+// is caught by patternRegistrable below, so a bad --public-url fails here
+// rather than panicking the server at route-registration time.
 func normalizePublicURL(raw string) (*url.URL, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -28,14 +37,30 @@ func normalizePublicURL(raw string) (*url.URL, error) {
 	if u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("--public-url %q must be an absolute URL", trimmed)
 	}
-	if u.RawQuery != "" || u.Fragment != "" {
+	if u.RawQuery != "" || u.Fragment != "" || u.ForceQuery {
 		return nil, fmt.Errorf("--public-url %q must not contain a query or fragment", trimmed)
 	}
 	if strings.ContainsAny(u.Path, "{}") {
 		return nil, fmt.Errorf("--public-url %q path must not contain '{' or '}'", trimmed)
 	}
 	u.Path = strings.TrimSuffix(u.Path, "/")
+	if err := patternRegistrable(wellKnownPRMRoot + u.Path + "/mcp"); err != nil {
+		return nil, fmt.Errorf("--public-url %q produces an unregistrable route: %v", trimmed, err)
+	}
 	return u, nil
+}
+
+// patternRegistrable reports whether pattern can be registered on an
+// http.ServeMux without panicking (net/http panics at registration time for
+// a malformed pattern, e.g. one containing whitespace).
+func patternRegistrable(pattern string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	http.NewServeMux().HandleFunc(pattern, func(http.ResponseWriter, *http.Request) {})
+	return nil
 }
 
 // resourceIdentifier is the RFC 9728 `resource` value: the MCP endpoint
@@ -131,9 +156,10 @@ func requireOAuthPRMConfig(opts HTTPServerOptions) error {
 		)
 	}
 	issuer := strings.TrimSpace(opts.OAuthIssuer)
-	if iu, err := url.Parse(issuer); err != nil || iu.Scheme != "https" || iu.Host == "" {
+	iu, err := url.Parse(issuer)
+	if err != nil || iu.Scheme != "https" || iu.Host == "" || iu.RawQuery != "" || iu.Fragment != "" || iu.ForceQuery {
 		return fmt.Errorf(
-			"refusing to start: --oauth-issuer %q must be an absolute https:// URL (RFC 8414 §2)",
+			"refusing to start: --oauth-issuer %q must be an absolute https:// URL with no query or fragment (RFC 8414 §2)",
 			issuer,
 		)
 	}

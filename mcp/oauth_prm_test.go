@@ -285,18 +285,56 @@ func TestHandleProtectedResourceMetadata_405HasAllowHeader(t *testing.T) {
 }
 
 // RFC 9728 §1.2: a --public-url with a query or fragment, or a `{`/`}` in
-// its path (reserved http.ServeMux wildcard syntax — registering one
-// unvalidated panics at startup), is refused rather than accepted.
+// its path (Go 1.22+ http.ServeMux wildcard syntax — a brace segment in the
+// decoded path becomes a live wildcard route in the well-known pattern, not
+// a literal path match), is refused rather than accepted. A bare `?` with no
+// key=value (net/url's ForceQuery) is refused the same way a real query is:
+// RawQuery is empty but u.String() still re-emits the `?`.
 func TestNormalizePublicURL_RejectsQueryFragmentAndBraces(t *testing.T) {
 	t.Parallel()
 	for _, raw := range []string{
 		"https://host/base?x=1",
 		"https://host/base#frag",
+		"https://host/base?",
 		"https://host/{id}",
 		"https://host/}",
+		"https://host/%7Bid%7D", // decodes to /{id} — still a wildcard, still rejected
 	} {
 		if _, err := normalizePublicURL(raw); err == nil {
 			t.Errorf("normalizePublicURL(%q) = nil error, want rejection", raw)
+		}
+	}
+}
+
+// A --public-url path with a bare `?` must not leak into the resource
+// identifier or the challenge URL served in WWW-Authenticate.
+func TestBuildProtectedResourceMetadata_RejectsForceQueryPublicURL(t *testing.T) {
+	t.Parallel()
+	prm := buildProtectedResourceMetadata(HTTPServerOptions{
+		OAuthIntrospectionURL: "https://idp.example.org/oauth/introspect",
+		OAuthIssuer:           "https://tenant.auth0.com/",
+		PublicURL:             "https://host/base?",
+	})
+	if prm != nil {
+		t.Fatalf("buildProtectedResourceMetadata with ForceQuery public-url = %+v, want nil", prm)
+	}
+}
+
+// RFC 9728 §1.2 / the http.ServeMux route these paths build (see design doc
+// (b)): a --public-url path that is well-formed URL-wise but produces a
+// pattern http.ServeMux itself refuses to register (whitespace) must be
+// caught here, not left to panic the server at route-registration time. A
+// bare brace segment (no whitespace) is caught by the wildcard check above,
+// not this one — it registers fine, it just means something other than a
+// literal path.
+func TestNormalizePublicURL_RejectsUnregistrablePatterns(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{
+		"https://host/a b",
+		"https://host/a\tb",
+	} {
+		if _, err := normalizePublicURL(raw); err == nil {
+			t.Errorf("normalizePublicURL(%q) = nil error, want rejection (unregistrable http.ServeMux pattern)", raw)
 		}
 	}
 }
@@ -317,6 +355,9 @@ func TestRequireOAuthPRMConfig_OAuthIssuerMustBeAbsoluteHTTPSURL(t *testing.T) {
 		{"bare word rejected", "auth0", true},
 		{"http scheme rejected", "http://tenant.auth0.com/", true},
 		{"absolute https accepted", "https://tenant.auth0.com/", false},
+		{"query rejected", "https://tenant.auth0.com/?x=1", true},
+		{"fragment rejected", "https://tenant.auth0.com/#f", true},
+		{"bare question mark rejected", "https://tenant.auth0.com/?", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := base
