@@ -139,10 +139,21 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Limit request body to 1MB to prevent abuse. Read before the auth check
+	// so a 401 can pick the right WWW-Authenticate challenge scope from the
+	// tool being called (design doc (d)); a read failure still 401s below,
+	// and is reported as a body error only once the request is authorized.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	body, bodyErr := io.ReadAll(r.Body)
+	defer func() { _ = r.Body.Close() }()
+
 	access, ok := h.authorize(r)
 	if !ok {
 		h.audit.denied.Add(1)
 		slogHTTPAuthDecision("deny", "", "", "missing or invalid bearer token")
+		if challenge := h.wwwAuthenticateChallenge(body); challenge != "" {
+			w.Header().Set("WWW-Authenticate", challenge)
+		}
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -152,14 +163,10 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Limit request body to 1MB to prevent abuse.
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
+	if bodyErr != nil {
 		http.Error(w, "failed to read body", http.StatusBadRequest)
 		return
 	}
-	defer func() { _ = r.Body.Close() }()
 
 	var req Request
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -198,6 +205,34 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// challengeScope picks the WWW-Authenticate scope for an unauthenticated
+// request (design doc (d)): trvl:write only for a tools/call naming a tool
+// toolRequiresWrite reports as write; trvl:read for everything else,
+// including no body, an unparseable body, or a non-tools/call method.
+func (h *HTTPServer) challengeScope(body []byte) string {
+	if len(body) == 0 {
+		return scopeRead
+	}
+	var req Request
+	if err := json.Unmarshal(body, &req); err != nil || req.Method != "tools/call" {
+		return scopeRead
+	}
+	if _, requiresWrite, ok := h.server.toolWriteRequirement(&req); ok && requiresWrite {
+		return scopeWrite
+	}
+	return scopeRead
+}
+
+// wwwAuthenticateChallenge returns the 401 challenge header value, or "" when
+// PRM is disabled (static-token-only mode has no authorization server to
+// point a client at — design doc (c)).
+func (h *HTTPServer) wwwAuthenticateChallenge(body []byte) string {
+	if h.prm == nil {
+		return ""
+	}
+	return fmt.Sprintf(`Bearer resource_metadata="%s", scope=%q`, h.prm.challengeURL, h.challengeScope(body))
 }
 
 func (h *HTTPServer) authorize(r *http.Request) (RequestAccess, bool) {
