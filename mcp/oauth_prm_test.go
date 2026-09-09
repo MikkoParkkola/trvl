@@ -299,6 +299,8 @@ func TestNormalizePublicURL_RejectsQueryFragmentAndBraces(t *testing.T) {
 		"https://host/{id}",
 		"https://host/}",
 		"https://host/%7Bid%7D", // decodes to /{id} — still a wildcard, still rejected
+		"https://:443/x",        // port-only authority, empty hostname
+		"https://host/base#",    // bare fragment marker, Fragment=="" but still a fragment
 	} {
 		if _, err := normalizePublicURL(raw); err == nil {
 			t.Errorf("normalizePublicURL(%q) = nil error, want rejection", raw)
@@ -306,17 +308,26 @@ func TestNormalizePublicURL_RejectsQueryFragmentAndBraces(t *testing.T) {
 	}
 }
 
-// A --public-url path with a bare `?` must not leak into the resource
-// identifier or the challenge URL served in WWW-Authenticate.
+// The same rejections normalizePublicURL enforces on --public-url must also
+// stop buildProtectedResourceMetadata from publishing a resource identifier
+// or challenge URL built from one: a real query, a real fragment, and a
+// bare "?" (ForceQuery) all take the same path through normalizePublicURL,
+// so all three must make buildProtectedResourceMetadata return nil.
 func TestBuildProtectedResourceMetadata_RejectsForceQueryPublicURL(t *testing.T) {
 	t.Parallel()
-	prm := buildProtectedResourceMetadata(HTTPServerOptions{
-		OAuthIntrospectionURL: "https://idp.example.org/oauth/introspect",
-		OAuthIssuer:           "https://tenant.auth0.com/",
-		PublicURL:             "https://host/base?",
-	})
-	if prm != nil {
-		t.Fatalf("buildProtectedResourceMetadata with ForceQuery public-url = %+v, want nil", prm)
+	for _, publicURL := range []string{
+		"https://host/base?",
+		"https://host/base?x=1",
+		"https://host/base#frag",
+	} {
+		prm := buildProtectedResourceMetadata(HTTPServerOptions{
+			OAuthIntrospectionURL: "https://idp.example.org/oauth/introspect",
+			OAuthIssuer:           "https://tenant.auth0.com/",
+			PublicURL:             publicURL,
+		})
+		if prm != nil {
+			t.Errorf("buildProtectedResourceMetadata(publicURL=%q) = %+v, want nil", publicURL, prm)
+		}
 	}
 }
 
@@ -343,8 +354,13 @@ func TestNormalizePublicURL_RejectsUnregistrablePatterns(t *testing.T) {
 // structure (e.g. %2F for a literal "/") makes RawPath diverge from Path,
 // so the well-known route registered from the decoded Path and the
 // resource identifier published from the encoded String() disagree — a
-// client following the published URL 404s. Encodings that don't change
-// segment structure (café, "a+b") leave RawPath empty and must still work.
+// client following the published URL 404s. The RawPath!="" check is a
+// deliberately conservative proxy for "encoding changes segment
+// structure", not an exact test of it — it also rejects benign
+// non-default encodings that don't change structure (%41 for "A"), which
+// is an accepted false positive, not a claim that every such encoding is
+// unsupported. Encodings that don't set RawPath at all (café, "a+b")
+// leave it empty and must still work.
 func TestNormalizePublicURL_RejectsPathEncodingThatChangesSegments(t *testing.T) {
 	t.Parallel()
 	if _, err := normalizePublicURL("https://h/a%2Fb"); err == nil {

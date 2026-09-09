@@ -9,14 +9,35 @@ import (
 
 const wellKnownPRMRoot = "/.well-known/oauth-protected-resource"
 
+// validateAuthorityAndQuery enforces, on any absolute URL regardless of
+// scheme, the checks RFC 9728 §1.2 / RFC 8414 §2 impose on a resource or
+// issuer identifier that a field comparison alone can miss: an empty
+// hostname (u.Host can be non-empty for a port-only authority like ":443"
+// while u.Hostname() is ""), a query — including a bare "?" with no
+// key=value, which net/url tracks as ForceQuery rather than a nonempty
+// RawQuery — and a fragment — including a bare "#", which parses to
+// Fragment=="" and so has to be checked against the raw string, not the
+// field. raw is the original (trimmed) string, used only for that string
+// check and for the error message.
+func validateAuthorityAndQuery(u *url.URL, raw string) error {
+	if u.Hostname() == "" {
+		return fmt.Errorf("%q has an empty hostname (a port-only authority is not a valid identifier)", raw)
+	}
+	if u.RawQuery != "" || u.ForceQuery {
+		return fmt.Errorf("%q must not contain a query", raw)
+	}
+	if u.Fragment != "" || strings.Contains(raw, "#") {
+		return fmt.Errorf("%q must not contain a fragment", raw)
+	}
+	return nil
+}
+
 // normalizePublicURL parses --public-url and strips any trailing slash from
 // its path, so the value is stable to append "/mcp" or a well-known segment
-// to (RFC 9728 §3.3: resource must equal the URL clients actually call). A
-// query or fragment is rejected (RFC 9728 §1.2 prohibits both in a resource
-// identifier) — including a bare "?" with no key=value, which net/url
-// tracks as ForceQuery rather than a nonempty RawQuery but which
-// (*url.URL).String() still re-emits, so it would otherwise leak into the
-// resource identifier undetected. A `{` or `}` in the decoded path is
+// to (RFC 9728 §3.3: resource must equal the URL clients actually call).
+// validateAuthorityAndQuery rejects an empty hostname, a query, or a
+// fragment (RFC 9728 §1.2 prohibits both of the latter in a resource
+// identifier). A `{` or `}` in the decoded path is
 // rejected because the well-known pattern built from it
 // (wellKnownPRMRoot+path+"/mcp") would register as a live http.ServeMux
 // wildcard route (Go 1.22+ wildcard syntax) instead of a literal path match
@@ -37,16 +58,18 @@ func normalizePublicURL(raw string) (*url.URL, error) {
 	if u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("--public-url %q must be an absolute URL", trimmed)
 	}
-	if u.RawQuery != "" || u.Fragment != "" || u.ForceQuery {
-		return nil, fmt.Errorf("--public-url %q must not contain a query or fragment", trimmed)
+	if err := validateAuthorityAndQuery(u, trimmed); err != nil {
+		return nil, fmt.Errorf("--public-url %w", err)
 	}
 	if strings.ContainsAny(u.Path, "{}") {
 		return nil, fmt.Errorf("--public-url %q path must not contain '{' or '}'", trimmed)
 	}
 	if u.RawPath != "" {
 		return nil, fmt.Errorf(
-			"--public-url %q path encoding changes segment structure (e.g. %%2F); "+
-				"the published resource and the registered route would disagree", trimmed,
+			"--public-url %q path uses a non-default percent-encoding; rejected as a "+
+				"deliberately conservative proxy for encodings that would change segment "+
+				"structure (e.g. %%2F) and make the published resource and the registered "+
+				"route disagree", trimmed,
 		)
 	}
 	u.Path = strings.TrimSuffix(u.Path, "/")
@@ -161,12 +184,14 @@ func requireOAuthPRMConfig(opts HTTPServerOptions) error {
 	}
 	issuer := strings.TrimSpace(opts.OAuthIssuer)
 	iu, err := url.Parse(issuer)
-	if err != nil || iu.Scheme != "https" || iu.Host == "" || iu.Hostname() == "" ||
-		iu.RawQuery != "" || iu.Fragment != "" || iu.ForceQuery || strings.Contains(issuer, "#") {
+	if err != nil || iu.Scheme != "https" || iu.Host == "" {
 		return fmt.Errorf(
-			"refusing to start: --oauth-issuer %q must be an absolute https:// URL with no query or fragment (RFC 8414 §2)",
+			"refusing to start: --oauth-issuer %q must be an absolute https:// URL (RFC 8414 §2)",
 			issuer,
 		)
+	}
+	if verr := validateAuthorityAndQuery(iu, issuer); verr != nil {
+		return fmt.Errorf("refusing to start: --oauth-issuer %w", verr)
 	}
 	publicURL := strings.TrimSpace(opts.PublicURL)
 	if publicURL == "" {
