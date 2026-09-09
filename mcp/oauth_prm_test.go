@@ -53,3 +53,39 @@ func TestWellKnownPaths_PathMountedPublicURL(t *testing.T) {
 		})
 	}
 }
+
+// Audience derivation (design doc (a)): --oauth-audience defaults to the
+// published resource (<public-url>/mcp) when unset; an explicit value that
+// agrees is accepted; one that disagrees is refused at startup.
+func TestRequireOAuthPRMConfig_AudienceDerivationMatrix(t *testing.T) {
+	t.Parallel()
+	base := HTTPServerOptions{
+		OAuthIntrospectionURL: "https://idp.example.org/oauth/introspect",
+		OAuthIssuer:           "https://tenant.auth0.com/",
+		PublicURL:             "https://travel.example.org",
+	}
+
+	t.Run("audience unset derives from resource, no error", func(t *testing.T) {
+		opts := base
+		if err := requireOAuthPRMConfig(opts); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("explicit audience equal to derived resource accepted", func(t *testing.T) {
+		opts := base
+		opts.OAuthAudience = "https://travel.example.org/mcp"
+		if err := requireOAuthPRMConfig(opts); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("explicit audience differing from derived resource refused", func(t *testing.T) {
+		opts := base
+		opts.OAuthAudience = "trvl-mcp"
+		err := requireOAuthPRMConfig(opts)
+		if err == nil {
+			t.Fatal("expected refusal for mismatched --oauth-audience")
+		}
+	})
+}
