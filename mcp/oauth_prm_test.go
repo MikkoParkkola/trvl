@@ -2,6 +2,33 @@ package mcp
 
 import "testing"
 
+// 401 challenge scope (design doc (d)): default trvl:read, escalate to
+// trvl:write only for a tools/call naming a write tool; anything else
+// (no body, unparseable body, read-only tool) falls back to trvl:read.
+func TestChallengeScope_ReadVsWriteViaToolRequiresWrite(t *testing.T) {
+	t.Parallel()
+	hs := NewHTTPServer(0)
+
+	tests := []struct {
+		name string
+		body []byte
+		want string
+	}{
+		{"no body", nil, scopeRead},
+		{"unparseable body", []byte("not json"), scopeRead},
+		{"tools/call read-only tool", []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_preferences","arguments":{}}}`), scopeRead},
+		{"tools/call write tool", []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"update_preferences","arguments":{"display_currency":"EUR"}}}`), scopeWrite},
+		{"non-tools/call method", []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`), scopeRead},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hs.challengeScope(tt.body); got != tt.want {
+				t.Errorf("challengeScope(%s) = %q, want %q", tt.body, got, tt.want)
+			}
+		})
+	}
+}
+
 // RFC 9728 §3: the well-known path segment goes immediately after the
 // authority; any path component --public-url carries (a reverse-proxy mount
 // prefix) comes after the well-known segment, not before it.
