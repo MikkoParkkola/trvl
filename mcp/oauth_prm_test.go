@@ -106,6 +106,58 @@ func TestStaticTokenOnlyMode_WellKnownRoutesUnregistered(t *testing.T) {
 	}
 }
 
+// OAuth configured (design doc (d)): both well-known routes serve the same
+// two-field document, GET only, and the 401 challenge carries the
+// path-suffixed well-known URL plus the picked scope.
+func TestOAuthConfigured_PRMDocumentAndChallenge(t *testing.T) {
+	t.Parallel()
+	hs := NewHTTPServerWithOptions(HTTPServerOptions{
+		Port:                  0,
+		OAuthIntrospectionURL: "https://idp.example.org/oauth/introspect",
+		OAuthIssuer:           "https://tenant.auth0.com/",
+		PublicURL:             "https://travel.example.org",
+	})
+	mux := hs.newMux()
+
+	for _, path := range []string{
+		"/.well-known/oauth-protected-resource",
+		"/.well-known/oauth-protected-resource/mcp",
+	} {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200", path, rr.Code)
+		}
+		if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
+			t.Errorf("Content-Type = %q, want application/json", ct)
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, `"resource":"https://travel.example.org/mcp"`) {
+			t.Errorf("body = %s, want resource field", body)
+		}
+		if !strings.Contains(body, `"authorization_servers":["https://tenant.auth0.com/"]`) {
+			t.Errorf("body = %s, want authorization_servers array", body)
+		}
+
+		rr = httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, path, nil))
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Errorf("POST %s = %d, want 405", path, rr.Code)
+		}
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	hs.handleMCP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated POST /mcp = %d, want 401", rr.Code)
+	}
+	want := `Bearer resource_metadata="https://travel.example.org/.well-known/oauth-protected-resource/mcp", scope="trvl:read"`
+	if got := rr.Header().Get("WWW-Authenticate"); got != want {
+		t.Errorf("WWW-Authenticate = %q, want %q", got, want)
+	}
+}
+
 // RFC 9728 §3: the well-known path segment goes immediately after the
 // authority; any path component --public-url carries (a reverse-proxy mount
 // prefix) comes after the well-known segment, not before it.
