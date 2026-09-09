@@ -55,7 +55,56 @@ func wellKnownPaths(publicURL string) (root, suffixed string, err error) {
 	return wellKnownPRMRoot, wellKnownPRMRoot + u.Path + "/mcp", nil
 }
 
-// requireOAuthPRMConfig enforces the design's fail-closed startup gate: OAuth
+// prmDocument is the RFC 9728 Protected Resource Metadata document: exactly
+// the two fields the design settled on, nothing optional guessed at.
+type prmDocument struct {
+	Resource             string   `json:"resource"`
+	AuthorizationServers []string `json:"authorization_servers"`
+}
+
+// protectedResourceMetadata holds an HTTPServer's PRM config: the document to
+// serve, the routes to serve it on, and the absolute URL used in the
+// WWW-Authenticate challenge.
+type protectedResourceMetadata struct {
+	doc          prmDocument
+	rootPath     string
+	suffixedPath string
+	challengeURL string
+}
+
+// buildProtectedResourceMetadata returns nil (PRM disabled) unless OAuth
+// introspection, an issuer, and a valid public URL are all configured — the
+// same fields requireOAuthPRMConfig enforces at startup. NewHTTPServerWithOptions
+// is also called directly by tests that don't go through that gate, so this
+// stays lenient rather than panicking on incomplete config.
+func buildProtectedResourceMetadata(opts HTTPServerOptions) *protectedResourceMetadata {
+	issuer := strings.TrimSpace(opts.OAuthIssuer)
+	publicURL := strings.TrimSpace(opts.PublicURL)
+	if strings.TrimSpace(opts.OAuthIntrospectionURL) == "" || issuer == "" || publicURL == "" {
+		return nil
+	}
+	u, err := normalizePublicURL(publicURL)
+	if err != nil {
+		return nil
+	}
+	root, suffixed, err := wellKnownPaths(publicURL)
+	if err != nil {
+		return nil
+	}
+	challenge := *u
+	challenge.Path = suffixed
+	challenge.RawQuery = ""
+	challenge.Fragment = ""
+	return &protectedResourceMetadata{
+		doc: prmDocument{
+			Resource:             resourceIdentifier(u),
+			AuthorizationServers: []string{issuer},
+		},
+		rootPath:     root,
+		suffixedPath: suffixed,
+		challengeURL: challenge.String(),
+	}
+}
 // configured without a usable --oauth-issuer/--public-url is fatal, same
 // shape as requireHTTPAuth. A no-op when OAuth introspection isn't configured.
 func requireOAuthPRMConfig(opts HTTPServerOptions) error {

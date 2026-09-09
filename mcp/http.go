@@ -34,6 +34,7 @@ type HTTPServer struct {
 	port   int
 	auth   *HTTPAuth
 	audit  authAudit
+	prm    *protectedResourceMetadata
 }
 
 // HTTPServerOptions configures the HTTP MCP transport.
@@ -68,6 +69,7 @@ func NewHTTPServerWithOptions(opts HTTPServerOptions) *HTTPServer {
 		host:   host,
 		port:   opts.Port,
 		auth:   NewHTTPAuth(opts),
+		prm:    buildProtectedResourceMetadata(opts),
 	}
 }
 
@@ -76,10 +78,7 @@ func NewHTTPServerWithOptions(opts HTTPServerOptions) *HTTPServer {
 // Coverage exclusion: blocking HTTP server entry point.
 // The handler logic (handleMCP, handleHealth) is tested via httptest in server_extra_test.go.
 func (h *HTTPServer) ListenAndServe() error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/mcp", h.handleMCP)
-	mux.HandleFunc("/health", h.handleHealth)
-	mux.HandleFunc("/dashboard", h.handleDashboard)
+	mux := h.newMux()
 
 	addr := net.JoinHostPort(h.host, strconv.Itoa(h.port))
 	log.Printf("trvl MCP server listening on http://%s/mcp", addr)
@@ -91,6 +90,39 @@ func (h *HTTPServer) ListenAndServe() error {
 		IdleTimeout:  120 * time.Second,
 	}
 	return srv.ListenAndServe()
+}
+
+// newMux builds the route table. Split out from ListenAndServe so tests can
+// exercise routing (well-known 404s in static-token-only mode) without
+// binding a socket.
+func (h *HTTPServer) newMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mcp", h.handleMCP)
+	mux.HandleFunc("/health", h.handleHealth)
+	mux.HandleFunc("/dashboard", h.handleDashboard)
+	if h.prm != nil {
+		mux.HandleFunc(h.prm.rootPath, h.handleProtectedResourceMetadata)
+		if h.prm.suffixedPath != h.prm.rootPath {
+			mux.HandleFunc(h.prm.suffixedPath, h.handleProtectedResourceMetadata)
+		}
+	}
+	return mux
+}
+
+// handleProtectedResourceMetadata serves the RFC 9728 PRM document. Both
+// well-known routes are unregistered (404) unless OAuth introspection, an
+// issuer, and a valid public URL are all configured (design doc (c)).
+func (h *HTTPServer) handleProtectedResourceMetadata(w http.ResponseWriter, r *http.Request) {
+	if h.prm == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(h.prm.doc)
 }
 
 func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
