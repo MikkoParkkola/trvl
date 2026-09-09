@@ -36,7 +36,7 @@ compliant to a client's discovery probe while failing to name an issuer. This
 mirrors the codebase's existing convention: missing *required* config fails
 closed at startup (`requireHTTPAuth`).
 
-**`--oauth-audience` moves into that same required-and-fail-closed bucket.**
+**`--oauth-audience` needs to stop being silently optional.**
 MCP 2025-11-25 requires resource servers to bind and validate token
 audience: a token issued for another service must not be accepted. Today
 (`mcp/http_auth.go:224` `audienceMatches`, called from `authenticateOAuth` at
@@ -85,7 +85,8 @@ https requirement on issuer/resource identifiers). trvl cannot default to
 
 - When `--oauth-introspection-url` is configured, `--public-url` is
   required and must be an `https://` URL — refuse to start otherwise, same
-  fail-closed treatment as `--oauth-issuer` and `--oauth-audience` above.
+  fail-closed treatment as `--oauth-issuer` above (`--oauth-audience`
+  itself now defaults rather than requiring an explicit value, per (a)).
 - **Exception:** `http://localhost` and `http://127.0.0.1` public URLs are
   accepted without erroring, for local development only. This is a known,
   documented non-compliant convenience (an RFC 9728 client is free to reject

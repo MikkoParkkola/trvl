@@ -89,18 +89,30 @@ trvl mcp --http \
   --oauth-introspection-url "https://idp.example.org/oauth/introspect" \
   --oauth-client-id "trvl-mcp" \
   --oauth-client-secret "$INTROSPECTION_SECRET" \
-  --oauth-audience "trvl-mcp"
+  --oauth-issuer "https://tenant.auth0.com/" \
+  --public-url "https://travel.example.org"
 ```
 
 Environment variables: `TRVL_MCP_OAUTH_INTROSPECTION_URL`,
 `TRVL_MCP_OAUTH_CLIENT_ID`, `TRVL_MCP_OAUTH_CLIENT_SECRET`,
-`TRVL_MCP_OAUTH_AUDIENCE`.
+`TRVL_MCP_OAUTH_ISSUER`, `TRVL_MCP_PUBLIC_URL`, `TRVL_MCP_OAUTH_AUDIENCE`.
 
-**Required for production.** Set `--oauth-audience` to the resource identifier
-you registered for trvl so a token minted for a different service at the same
-IdP is rejected (confused-deputy protection, RFC 7662 §2.2). Without it, trvl
-accepts any active token from the introspection endpoint and logs a startup
-warning.
+**`--oauth-issuer` and `--public-url` are required** whenever
+`--oauth-introspection-url` is set — trvl refuses to start without them.
+They back the OAuth 2.0 Protected Resource Metadata (RFC 9728) document trvl
+serves at `/.well-known/oauth-protected-resource`, so a client can discover
+which authorization server protects this deployment. `--public-url` must be
+an `https://` URL reachable at the address clients actually use (a plain
+`http://localhost`/`http://127.0.0.1` is allowed for local development only).
+
+**`--oauth-audience` defaults to `<public-url>/mcp`** — the resource
+identifier trvl publishes, and the value an RFC 8707-compliant client will
+request as the token's audience. You normally don't need to set it
+yourself: leave it unset and it matches by construction (confused-deputy
+protection, RFC 7662 §2.2). If you set it explicitly, it must equal
+`<public-url>/mcp` or trvl refuses to start — a mismatched audience would
+otherwise reject every token after a successful IdP consent, which is a
+confusing failure to hit at request time instead of startup.
 
 ### Client-side flow: Authorization Code + PKCE
 
@@ -158,8 +170,8 @@ for per-decision detail.
 
 - Keep the default loopback bind unless you genuinely need remote access.
 - Never expose a remote host without auth; trvl refuses this by design.
-- Use OAuth introspection with a pinned `--oauth-audience` (required for production) over static tokens
-  for multi-user deployments.
+- Use OAuth introspection (with `--oauth-issuer` and `--public-url`, which
+  are required) over static tokens for multi-user deployments.
 - Hand out `trvl:read` by default; grant `trvl:write` only to clients that must
   mutate `~/.trvl` state.
 - Terminate TLS at a reverse proxy/load balancer in front of trvl.
