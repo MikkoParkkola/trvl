@@ -106,17 +106,21 @@ resource indicator and this server's audience check. So: strip any trailing
 slash from `--public-url` before appending `/mcp`; preserve IPv6 literal
 brackets (`https://[::1]:8080`); and do not treat `localhost` and `127.0.0.1`
 as interchangeable — RFC 9728 §3.3 does not, and a token minted for one will
-not match the other. A `--public-url` carrying a query or fragment is
-refused at startup (RFC 9728 §1.2 prohibits both in a resource identifier);
-so is one whose path contains `{` or `}` — those are reserved wildcard
-syntax in the `http.ServeMux` route patterns built from it, and an
+not match the other. A `--public-url` with an empty hostname (e.g. a
+port-only authority like `https://:443/x`) or carrying a query or fragment
+is refused at startup (an empty hostname isn't a valid identifier at all;
+RFC 9728 §1.2 prohibits both a query and a fragment in a resource
+identifier); so is one whose path contains `{` or `}` — those are reserved
+wildcard syntax in the `http.ServeMux` route patterns built from it, and an
 unvalidated one would register as a live wildcard route instead of a
 literal path match, silently serving the PRM document under
 attacker-controlled path segments rather than failing closed. A path whose
-percent-encoding changes segment structure (`%2F` for a literal `/`) is
-also refused, because the well-known route registered from the decoded
-path and the resource identifier published from the encoded string would
-then disagree.
+percent-encoding is non-default (`u.RawPath != ""`) is also refused — this
+is a deliberately conservative proxy for encodings that would change segment
+structure (`%2F` for a literal `/`) and make the well-known route registered
+from the decoded path disagree with the resource identifier published from
+the encoded string; it also rejects some benign encodings that don't change
+segment structure (e.g. `%41` for `A`), an accepted false positive.
 
 ## (c) Static bearer tokens have no authorization server — PRM is meaningless there
 
