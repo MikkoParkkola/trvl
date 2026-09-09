@@ -1,6 +1,11 @@
 package mcp
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
 
 // 401 challenge scope (design doc (d)): default trvl:read, escalate to
 // trvl:write only for a tools/call naming a write tool; anything else
@@ -68,6 +73,36 @@ func TestRequireOAuthPRMConfig_NoOAuthConfiguredIsNoop(t *testing.T) {
 	t.Parallel()
 	if err := requireOAuthPRMConfig(HTTPServerOptions{}); err != nil {
 		t.Fatalf("unexpected error with no OAuth configured: %v", err)
+	}
+}
+
+// Static-token-only mode (design doc (c)): no authorization server to name,
+// so both well-known routes stay unregistered (404) and the 401 carries no
+// resource_metadata challenge.
+func TestStaticTokenOnlyMode_WellKnownRoutesUnregistered(t *testing.T) {
+	t.Parallel()
+	hs := NewHTTPServerWithOptions(HTTPServerOptions{Port: 0, Token: "secret-token"})
+	mux := hs.newMux()
+
+	for _, path := range []string{
+		"/.well-known/oauth-protected-resource",
+		"/.well-known/oauth-protected-resource/mcp",
+	} {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404 in static-token-only mode", path, rr.Code)
+		}
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	hs.handleMCP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated POST /mcp = %d, want 401", rr.Code)
+	}
+	if wa := rr.Header().Get("WWW-Authenticate"); strings.Contains(wa, "resource_metadata") {
+		t.Errorf("WWW-Authenticate = %q, want no resource_metadata in static-token-only mode", wa)
 	}
 }
 
