@@ -131,6 +131,7 @@ func buildProtectedResourceMetadata(opts HTTPServerOptions) *protectedResourceMe
 	challenge.Path = suffixed
 	challenge.RawQuery = ""
 	challenge.Fragment = ""
+	challenge.ForceQuery = false
 	return &protectedResourceMetadata{
 		doc: prmDocument{
 			Resource:             resourceIdentifier(u),
