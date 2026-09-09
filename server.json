@@ -15,7 +15,31 @@
       "identifier": "ghcr.io/mikkoparkkola/trvl:1.21.5",
       "transport": {
         "type": "stdio"
-      }
+      },
+      "environmentVariables": [
+        { "name": "TRVL_MCP_TOKEN", "description": "Bearer token for HTTP-mode auth (unused in stdio). Optional.", "isRequired": false, "isSecret": true },
+        { "name": "TRVL_MCP_READ_TOKEN", "description": "Read-scoped bearer token for HTTP-mode auth (unused in stdio). Optional.", "isRequired": false, "isSecret": true },
+        { "name": "TRVL_MCP_WRITE_TOKEN", "description": "Write-scoped bearer token for HTTP-mode auth (unused in stdio). Optional.", "isRequired": false, "isSecret": true },
+        { "name": "TRVL_MCP_OAUTH_INTROSPECTION_URL", "description": "OAuth token introspection endpoint for HTTP-mode auth (unused in stdio). Optional.", "isRequired": false, "isSecret": false },
+        { "name": "TRVL_MCP_OAUTH_CLIENT_ID", "description": "OAuth client ID for HTTP-mode token introspection (unused in stdio). Optional.", "isRequired": false, "isSecret": false },
+        { "name": "TRVL_MCP_OAUTH_CLIENT_SECRET", "description": "OAuth client secret for HTTP-mode token introspection (unused in stdio). Optional.", "isRequired": false, "isSecret": true },
+        { "name": "TRVL_MCP_OAUTH_AUDIENCE", "description": "Expected OAuth audience for HTTP-mode token introspection (unused in stdio). Optional.", "isRequired": false, "isSecret": false },
+        { "name": "TRVL_MCP_TOOL_MODE", "description": "Selects which MCP tool set is registered (e.g. smart/full). Optional, defaults to full set.", "isRequired": false, "isSecret": false },
+        { "name": "TRVL_MCP_TOOL_TIMEOUT", "description": "Per-tool-call timeout override. Optional, defaults to the built-in timeout.", "isRequired": false, "isSecret": false },
+        { "name": "AFKLM_KEY", "description": "Air France-KLM API key; unlocks that airline's live fares/award search. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "AFKLM_OP_REF", "description": "1Password reference for the Air France-KLM API key. Optional, alternative to AFKLM_KEY.", "isRequired": false, "isSecret": false },
+        { "name": "AFKLM_KEYCHAIN_SERVICE", "description": "macOS Keychain service name to read the Air France-KLM API key from. Optional, alternative to AFKLM_KEY.", "isRequired": false, "isSecret": false },
+        { "name": "AFKL_KLM_COOKIES", "description": "Session cookies for Air France-KLM award search. Optional, unlocks award-fare lookups only.", "isRequired": false, "isSecret": true },
+        { "name": "SERPAPI_KEY", "description": "SerpApi API key; unlocks search-engine-backed lookups used by some providers. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "TRAVELPAYOUTS_TOKEN", "description": "Travelpayouts API token; unlocks that flight-price data source. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "TRANSAVIA_API_KEY", "description": "Transavia API key; unlocks that airline's live fares. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "TICKETMASTER_API_KEY", "description": "Ticketmaster API key; unlocks event listings for destinations. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "FOURSQUARE_API_KEY", "description": "Foursquare API key; unlocks that place-search data source. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "OPENTRIPMAP_API_KEY", "description": "OpenTripMap API key; unlocks that attractions data source. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "GEOAPIFY_API_KEY", "description": "Geoapify API key; unlocks that places/geocoding data source. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "DISTRIBUSION_API_KEY", "description": "Distribusion API key; unlocks that ground-transport data source. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "SKYSCANNER_API_KEY", "description": "Skyscanner API key; unlocks that car-hire data source. Optional, trvl works without it.", "isRequired": false, "isSecret": true }
+      ]
     },
     {
       "registryType": "npm",
@@ -25,7 +49,31 @@
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
-      }
+      },
+      "environmentVariables": [
+        { "name": "TRVL_MCP_TOKEN", "description": "Bearer token for HTTP-mode auth (unused in stdio). Optional.", "isRequired": false, "isSecret": true },
+        { "name": "TRVL_MCP_READ_TOKEN", "description": "Read-scoped bearer token for HTTP-mode auth (unused in stdio). Optional.", "isRequired": false, "isSecret": true },
+        { "name": "TRVL_MCP_WRITE_TOKEN", "description": "Write-scoped bearer token for HTTP-mode auth (unused in stdio). Optional.", "isRequired": false, "isSecret": true },
+        { "name": "TRVL_MCP_OAUTH_INTROSPECTION_URL", "description": "OAuth token introspection endpoint for HTTP-mode auth (unused in stdio). Optional.", "isRequired": false, "isSecret": false },
+        { "name": "TRVL_MCP_OAUTH_CLIENT_ID", "description": "OAuth client ID for HTTP-mode token introspection (unused in stdio). Optional.", "isRequired": false, "isSecret": false },
+        { "name": "TRVL_MCP_OAUTH_CLIENT_SECRET", "description": "OAuth client secret for HTTP-mode token introspection (unused in stdio). Optional.", "isRequired": false, "isSecret": true },
+        { "name": "TRVL_MCP_OAUTH_AUDIENCE", "description": "Expected OAuth audience for HTTP-mode token introspection (unused in stdio). Optional.", "isRequired": false, "isSecret": false },
+        { "name": "TRVL_MCP_TOOL_MODE", "description": "Selects which MCP tool set is registered (e.g. smart/full). Optional, defaults to full set.", "isRequired": false, "isSecret": false },
+        { "name": "TRVL_MCP_TOOL_TIMEOUT", "description": "Per-tool-call timeout override. Optional, defaults to the built-in timeout.", "isRequired": false, "isSecret": false },
+        { "name": "AFKLM_KEY", "description": "Air France-KLM API key; unlocks that airline's live fares/award search. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "AFKLM_OP_REF", "description": "1Password reference for the Air France-KLM API key. Optional, alternative to AFKLM_KEY.", "isRequired": false, "isSecret": false },
+        { "name": "AFKLM_KEYCHAIN_SERVICE", "description": "macOS Keychain service name to read the Air France-KLM API key from. Optional, alternative to AFKLM_KEY.", "isRequired": false, "isSecret": false },
+        { "name": "AFKL_KLM_COOKIES", "description": "Session cookies for Air France-KLM award search. Optional, unlocks award-fare lookups only.", "isRequired": false, "isSecret": true },
+        { "name": "SERPAPI_KEY", "description": "SerpApi API key; unlocks search-engine-backed lookups used by some providers. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "TRAVELPAYOUTS_TOKEN", "description": "Travelpayouts API token; unlocks that flight-price data source. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "TRANSAVIA_API_KEY", "description": "Transavia API key; unlocks that airline's live fares. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "TICKETMASTER_API_KEY", "description": "Ticketmaster API key; unlocks event listings for destinations. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "FOURSQUARE_API_KEY", "description": "Foursquare API key; unlocks that place-search data source. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "OPENTRIPMAP_API_KEY", "description": "OpenTripMap API key; unlocks that attractions data source. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "GEOAPIFY_API_KEY", "description": "Geoapify API key; unlocks that places/geocoding data source. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "DISTRIBUSION_API_KEY", "description": "Distribusion API key; unlocks that ground-transport data source. Optional, trvl works without it.", "isRequired": false, "isSecret": true },
+        { "name": "SKYSCANNER_API_KEY", "description": "Skyscanner API key; unlocks that car-hire data source. Optional, trvl works without it.", "isRequired": false, "isSecret": true }
+      ]
     }
   ]
 }
