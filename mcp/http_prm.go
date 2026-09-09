@@ -105,6 +105,8 @@ func buildProtectedResourceMetadata(opts HTTPServerOptions) *protectedResourceMe
 		challengeURL: challenge.String(),
 	}
 }
+
+// requireOAuthPRMConfig enforces the design's fail-closed startup gate: OAuth
 // configured without a usable --oauth-issuer/--public-url is fatal, same
 // shape as requireHTTPAuth. A no-op when OAuth introspection isn't configured.
 func requireOAuthPRMConfig(opts HTTPServerOptions) error {
