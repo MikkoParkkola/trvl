@@ -118,6 +118,7 @@ func (h *HTTPServer) handleProtectedResourceMetadata(w http.ResponseWriter, r *h
 		return
 	}
 	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -180,11 +181,12 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if errResp := h.authorizeJSONRPC(&req, access); errResp != nil {
+	if errResp, requiredScope := h.authorizeJSONRPC(&req, access); errResp != nil {
 		h.audit.denied.Add(1)
 		slogHTTPAuthDecision("deny", req.Method, scopeSummary(access), errResp.Message)
+		w.Header().Set("WWW-Authenticate", h.insufficientScopeChallenge(requiredScope))
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusForbidden)
 		_ = json.NewEncoder(w).Encode(Response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -235,6 +237,17 @@ func (h *HTTPServer) wwwAuthenticateChallenge(body []byte) string {
 	return fmt.Sprintf(`Bearer resource_metadata="%s", scope=%q`, h.prm.challengeURL, h.challengeScope(body))
 }
 
+// insufficientScopeChallenge returns the 403 WWW-Authenticate value for an
+// authenticated request whose token lacks requiredScope (RFC 6750 §3.1). It
+// omits resource_metadata in static-token-only mode (design doc (c) — no
+// authorization server to point a client at there).
+func (h *HTTPServer) insufficientScopeChallenge(requiredScope string) string {
+	if h.prm == nil {
+		return fmt.Sprintf(`Bearer error="insufficient_scope", scope=%q`, requiredScope)
+	}
+	return fmt.Sprintf(`Bearer resource_metadata="%s", error="insufficient_scope", scope=%q`, h.prm.challengeURL, requiredScope)
+}
+
 func (h *HTTPServer) authorize(r *http.Request) (RequestAccess, bool) {
 	if h.auth == nil || !h.auth.Configured() {
 		return FullAccess("anonymous", "disabled"), true
@@ -247,21 +260,21 @@ func (h *HTTPServer) authorize(r *http.Request) (RequestAccess, bool) {
 	return h.auth.Authenticate(r.Context(), strings.TrimSpace(strings.TrimPrefix(auth, prefix)))
 }
 
-func (h *HTTPServer) authorizeJSONRPC(req *Request, access RequestAccess) *Error {
+func (h *HTTPServer) authorizeJSONRPC(req *Request, access RequestAccess) (*Error, string) {
 	if !access.CanRead() {
-		return &Error{Code: -32001, Message: "permission denied: token requires trvl:read scope"}
+		return &Error{Code: -32001, Message: "permission denied: token requires trvl:read scope"}, scopeRead
 	}
 	if req.Method != "tools/call" {
-		return nil
+		return nil, ""
 	}
 	tool, requiresWrite, ok := h.server.toolWriteRequirement(req)
 	if !ok {
-		return nil
+		return nil, ""
 	}
 	if requiresWrite && !access.CanWrite() {
-		return &Error{Code: -32001, Message: fmt.Sprintf("permission denied: tool %s requires trvl:write scope", tool)}
+		return &Error{Code: -32001, Message: fmt.Sprintf("permission denied: tool %s requires trvl:write scope", tool)}, scopeWrite
 	}
-	return nil
+	return nil, ""
 }
 
 func (h *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {

@@ -80,8 +80,8 @@ func TestHTTPHandler_POST_ReadTokenDeniesMutatingTool(t *testing.T) {
 	resp, status := postHTTPToolCall(t, hs, "read-token", "update_preferences", map[string]any{
 		"display_currency": "EUR",
 	})
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200 JSON-RPC permission error", status)
+	if status != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (RFC 6750 §3.1 insufficient_scope)", status)
 	}
 	if resp.Error == nil {
 		t.Fatalf("expected permission error, got result %#v", resp.Result)
@@ -173,8 +173,8 @@ func TestHTTPHandler_POST_OAuthIntrospectionScopes(t *testing.T) {
 	}
 
 	deniedResp, status := postHTTPToolCall(t, hs, "oauth-read", "update_preferences", map[string]any{"display_currency": "EUR"})
-	if status != http.StatusOK {
-		t.Fatalf("denied status = %d, want 200 JSON-RPC error", status)
+	if status != http.StatusForbidden {
+		t.Fatalf("denied status = %d, want 403 (RFC 6750 §3.1 insufficient_scope)", status)
 	}
 	if deniedResp.Error == nil || !strings.Contains(deniedResp.Error.Message, "requires trvl:write") {
 		t.Fatalf("denied error = %+v, want write-scope denial", deniedResp.Error)

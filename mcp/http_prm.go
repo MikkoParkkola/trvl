@@ -10,7 +10,12 @@ const wellKnownPRMRoot = "/.well-known/oauth-protected-resource"
 
 // normalizePublicURL parses --public-url and strips any trailing slash from
 // its path, so the value is stable to append "/mcp" or a well-known segment
-// to (RFC 9728 §3.3: resource must equal the URL clients actually call).
+// to (RFC 9728 §3.3: resource must equal the URL clients actually call). A
+// query or fragment is rejected (RFC 9728 §1.2 prohibits both in a resource
+// identifier); a `{` or `}` in the path is rejected because it would be
+// registered verbatim as an http.ServeMux pattern (net/http, Go 1.22+
+// wildcard syntax), panicking at route-registration time instead of failing
+// closed here.
 func normalizePublicURL(raw string) (*url.URL, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -22,6 +27,12 @@ func normalizePublicURL(raw string) (*url.URL, error) {
 	}
 	if u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("--public-url %q must be an absolute URL", trimmed)
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return nil, fmt.Errorf("--public-url %q must not contain a query or fragment", trimmed)
+	}
+	if strings.ContainsAny(u.Path, "{}") {
+		return nil, fmt.Errorf("--public-url %q path must not contain '{' or '}'", trimmed)
 	}
 	u.Path = strings.TrimSuffix(u.Path, "/")
 	return u, nil
@@ -117,6 +128,13 @@ func requireOAuthPRMConfig(opts HTTPServerOptions) error {
 		return fmt.Errorf(
 			"refusing to start: --oauth-issuer (or TRVL_MCP_OAUTH_ISSUER) is required when " +
 				"--oauth-introspection-url is set, to publish RFC 9728 Protected Resource Metadata",
+		)
+	}
+	issuer := strings.TrimSpace(opts.OAuthIssuer)
+	if iu, err := url.Parse(issuer); err != nil || iu.Scheme != "https" || iu.Host == "" {
+		return fmt.Errorf(
+			"refusing to start: --oauth-issuer %q must be an absolute https:// URL (RFC 8414 §2)",
+			issuer,
 		)
 	}
 	publicURL := strings.TrimSpace(opts.PublicURL)

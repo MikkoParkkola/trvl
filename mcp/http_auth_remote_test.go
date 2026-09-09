@@ -234,8 +234,8 @@ func TestOAuthIntrospection_ScopeEnforcement(t *testing.T) {
 
 	// Read-only OAuth token denied on a write tool.
 	resp, status := postHTTPToolCall(t, hs, "ro", "update_preferences", map[string]any{"display_currency": "EUR"})
-	if status != http.StatusOK {
-		t.Fatalf("ro write-tool status = %d, want 200 JSON-RPC error", status)
+	if status != http.StatusForbidden {
+		t.Fatalf("ro write-tool status = %d, want 403 (RFC 6750 §3.1 insufficient_scope)", status)
 	}
 	if resp.Error == nil || resp.Error.Code != -32001 {
 		t.Fatalf("ro write-tool expected -32001 scope error, got %#v", resp.Error)

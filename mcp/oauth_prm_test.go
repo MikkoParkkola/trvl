@@ -210,6 +210,125 @@ func TestWellKnownPaths_PathMountedPublicURL(t *testing.T) {
 	}
 }
 
+// Insufficient scope on an authenticated request (design doc (d)): a
+// trvl:read-only token calling a write tool gets 403, not 200, with a
+// WWW-Authenticate insufficient_scope challenge (RFC 6750 §3.1).
+func TestHandleMCP_InsufficientScopeReturns403(t *testing.T) {
+	t.Parallel()
+	hs := NewHTTPServerWithOptions(HTTPServerOptions{Port: 0, ReadToken: "read-only-token"})
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"update_preferences","arguments":{"display_currency":"EUR"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer read-only-token")
+	rr := httptest.NewRecorder()
+	hs.handleMCP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("insufficient-scope tools/call = %d, want 403; body=%s", rr.Code, rr.Body.String())
+	}
+	want := `Bearer error="insufficient_scope", scope="trvl:write"`
+	if got := rr.Header().Get("WWW-Authenticate"); got != want {
+		t.Errorf("WWW-Authenticate = %q, want %q", got, want)
+	}
+	if !strings.Contains(rr.Body.String(), "requires trvl:write scope") {
+		t.Errorf("body = %s, want JSON-RPC error detail", rr.Body.String())
+	}
+}
+
+// Same insufficient-scope case, but with OAuth/PRM configured: the challenge
+// carries resource_metadata too, matching the 401 challenge shape.
+func TestHandleMCP_InsufficientScopeChallengeCarriesResourceMetadataWhenPRMConfigured(t *testing.T) {
+	t.Parallel()
+	hs := NewHTTPServerWithOptions(HTTPServerOptions{
+		Port:                  0,
+		OAuthIntrospectionURL: "https://idp.example.org/oauth/introspect",
+		OAuthIssuer:           "https://tenant.auth0.com/",
+		PublicURL:             "https://travel.example.org",
+		ReadToken:             "read-only-token",
+	})
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"update_preferences","arguments":{"display_currency":"EUR"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer read-only-token")
+	rr := httptest.NewRecorder()
+	hs.handleMCP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("insufficient-scope tools/call = %d, want 403", rr.Code)
+	}
+	want := `Bearer resource_metadata="https://travel.example.org/.well-known/oauth-protected-resource/mcp", error="insufficient_scope", scope="trvl:write"`
+	if got := rr.Header().Get("WWW-Authenticate"); got != want {
+		t.Errorf("WWW-Authenticate = %q, want %q", got, want)
+	}
+}
+
+// GET/POST etc. on the well-known routes: 405 must carry an Allow header
+// (RFC 9110 §15.5.6).
+func TestHandleProtectedResourceMetadata_405HasAllowHeader(t *testing.T) {
+	t.Parallel()
+	hs := NewHTTPServerWithOptions(HTTPServerOptions{
+		Port:                  0,
+		OAuthIntrospectionURL: "https://idp.example.org/oauth/introspect",
+		OAuthIssuer:           "https://tenant.auth0.com/",
+		PublicURL:             "https://travel.example.org",
+	})
+	mux := hs.newMux()
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/.well-known/oauth-protected-resource", nil))
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST well-known = %d, want 405", rr.Code)
+	}
+	if got := rr.Header().Get("Allow"); got != http.MethodGet {
+		t.Errorf("Allow = %q, want %q", got, http.MethodGet)
+	}
+}
+
+// RFC 9728 §1.2: a --public-url with a query or fragment, or a `{`/`}` in
+// its path (reserved http.ServeMux wildcard syntax — registering one
+// unvalidated panics at startup), is refused rather than accepted.
+func TestNormalizePublicURL_RejectsQueryFragmentAndBraces(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{
+		"https://host/base?x=1",
+		"https://host/base#frag",
+		"https://host/{id}",
+		"https://host/}",
+	} {
+		if _, err := normalizePublicURL(raw); err == nil {
+			t.Errorf("normalizePublicURL(%q) = nil error, want rejection", raw)
+		}
+	}
+}
+
+// RFC 8414 §2: --oauth-issuer must be an absolute https:// URL, not any
+// nonempty string.
+func TestRequireOAuthPRMConfig_OAuthIssuerMustBeAbsoluteHTTPSURL(t *testing.T) {
+	t.Parallel()
+	base := HTTPServerOptions{
+		OAuthIntrospectionURL: "https://idp.example.org/oauth/introspect",
+		PublicURL:             "https://travel.example.org",
+	}
+	for _, tt := range []struct {
+		name    string
+		issuer  string
+		wantErr bool
+	}{
+		{"bare word rejected", "auth0", true},
+		{"http scheme rejected", "http://tenant.auth0.com/", true},
+		{"absolute https accepted", "https://tenant.auth0.com/", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := base
+			opts.OAuthIssuer = tt.issuer
+			err := requireOAuthPRMConfig(opts)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("requireOAuthPRMConfig(issuer=%q) err=%v, wantErr=%v", tt.issuer, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 // Audience derivation (design doc (a)): --oauth-audience defaults to the
 // published resource (<public-url>/mcp) when unset; an explicit value that
 // agrees is accepted; one that disagrees is refused at startup.

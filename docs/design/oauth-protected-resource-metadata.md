@@ -1,6 +1,6 @@
 # OAuth Protected Resource Metadata (RFC 9728) for HTTP MCP mode
 
-Status: designed, implementation pending
+Status: implemented
 Date: 2026-09-09
 
 ## Why
@@ -24,7 +24,9 @@ against is exactly `https://tenant.auth0.com/`). Deriving one from the other
 would be a guess trvl has no basis for.
 
 **Decision: add `--oauth-issuer` / `TRVL_MCP_OAUTH_ISSUER`.** It is the
-`authorization_servers[0]` value verbatim.
+`authorization_servers[0]` value verbatim, validated as an absolute
+`https://` URL (RFC 8414 §2 — the issuer identifier's format requirement)
+before the server starts.
 
 **When OAuth is configured but the issuer is not set: refuse to start.**
 Same failure shape as `requireHTTPAuth`/`requireRemoteAuth` (GH-89.AUTH.4) —
@@ -102,7 +104,11 @@ resource indicator and this server's audience check. So: strip any trailing
 slash from `--public-url` before appending `/mcp`; preserve IPv6 literal
 brackets (`https://[::1]:8080`); and do not treat `localhost` and `127.0.0.1`
 as interchangeable — RFC 9728 §3.3 does not, and a token minted for one will
-not match the other.
+not match the other. A `--public-url` carrying a query or fragment is
+refused at startup (RFC 9728 §1.2 prohibits both in a resource identifier);
+so is one whose path contains `{` or `}` — those are reserved wildcard
+syntax in the `http.ServeMux` route patterns built from it, and registering
+one unvalidated panics the server at startup instead of failing closed.
 
 ## (c) Static bearer tokens have no authorization server — PRM is meaningless there
 
@@ -173,6 +179,17 @@ falls back to `scope="trvl:read"`.
 Full header when OAuth is configured (omitted in static-token-only mode,
 per (c)):
 `WWW-Authenticate: Bearer resource_metadata="<path-suffixed well-known URL>", scope="<trvl:read|trvl:write>"`
+
+**Insufficient scope on an authenticated request.** A request that
+authenticates but whose token lacks the scope a `tools/call` needs (e.g. a
+`trvl:read`-only token calling a write tool) is a distinct case from the
+missing/invalid-token 401 above: RFC 6750 §3.1 requires this to be `403`, not
+`200` with a JSON-RPC error body — a `200` tells an HTTP-layer client the call
+succeeded. The response is `403` with a JSON-RPC error body (so an MCP client
+still gets the same machine-readable detail) and:
+`WWW-Authenticate: Bearer resource_metadata="<path-suffixed well-known URL>", error="insufficient_scope", scope="<trvl:read|trvl:write>"`
+(the `resource_metadata` parameter is omitted in static-token-only mode, same
+as the 401 case — there is no authorization server to point a client at).
 
 ## (e) Discovery endpoints are unauthenticated
 
