@@ -47,12 +47,28 @@ not fail-closed; `NewHTTPAuth` (`:57-61`) only logs a startup warning for the
 gap today, it does not refuse to start. That warn-only posture predates this
 spec requirement and no longer satisfies it.
 
-**Decision:** when `--oauth-introspection-url` is configured, require
-`--oauth-audience` too, and refuse to start without it — the same
-fail-closed treatment `--oauth-issuer` gets above, replacing today's
-warning. Audience *matching* itself (`audienceMatches`) is already correctly
-enforced whenever an audience value is present; only the "is one present"
-gate needs to become mandatory.
+**Decision: derive `--oauth-audience` from the PRM `resource` when unset, and
+refuse to start when both are set and differ.** Requiring the flag separately
+would leave a correct config and a broken one looking identical. A client that
+follows RFC 8707 does exactly what the PRM document tells it to: it sends
+`resource=<public-url>/mcp` to the authorization server and receives a token
+whose `aud` is that URI. Today `docs/REMOTE-MCP-OAUTH.md:87-92` documents the
+flag as `--oauth-audience "trvl-mcp"`, an opaque string, and that is the value
+`audienceMatches` compares against — so the token is rejected and the user
+sees a 401 immediately after a successful consent flow, which is the worst
+place to put a failure. Defaulting the audience to the published `resource`
+collapses the two values into one; an explicit `--oauth-audience` that
+disagrees with `resource` is a misconfiguration, not a preference, so it fails
+at startup rather than at the first request.
+
+This replaces today's warn-only posture. `NewHTTPAuth` (`:57-61`) currently
+logs a startup warning when OAuth is configured with no audience and does not
+refuse to start; with the audience always derived, that gap closes and the
+warning goes away. Audience *matching* itself (`audienceMatches`) is already
+correctly enforced whenever a value is present.
+
+`docs/REMOTE-MCP-OAUTH.md` must be updated in the same change: its worked
+example currently teaches the value that breaks.
 
 ## (b) Where does `resource` come from?
 
@@ -78,6 +94,14 @@ https requirement on issuer/resource identifiers). trvl cannot default to
 `resource` in the served document is `<public-url>/mcp` — the MCP endpoint
 itself, not the bare host — because that's the identifier a client actually
 holds a token for.
+
+**Normalization.** `resource` must equal the URL clients actually call,
+byte for byte, because it is compared as a string by both the client's
+resource indicator and this server's audience check. So: strip any trailing
+slash from `--public-url` before appending `/mcp`; preserve IPv6 literal
+brackets (`https://[::1]:8080`); and do not treat `localhost` and `127.0.0.1`
+as interchangeable — RFC 9728 §3.3 does not, and a token minted for one will
+not match the other.
 
 ## (c) Static bearer tokens have no authorization server — PRM is meaningless there
 
@@ -117,6 +141,18 @@ Example: `--public-url=https://host/base` gives the path-suffixed URL
 
 Both well-known routes serve the identical document.
 
+**The document.** `GET` only — any other method gets `405`. Served as
+`Content-Type: application/json`. Exactly two fields, both mandatory here per
+(a) and RFC 9728 §2; `authorization_servers` is a JSON array of strings, not a
+bare string:
+
+```json
+{
+  "resource": "https://travel.example.org/mcp",
+  "authorization_servers": ["https://tenant.auth0.com/"]
+}
+```
+
 **401 challenge scope.** The initial challenge must not push a read-only
 client into consenting to write access. `mcp/http_auth.go:281
 toolWriteRequirement` / `:290 toolRequiresWrite` already know, given a
@@ -142,6 +178,14 @@ per (c)):
 A discovery document behind auth can't be discovered — a client with no
 token yet is precisely who needs to fetch it to learn where to get one. Both
 well-known routes, like `/health`, run before/outside `h.authorize()`.
+
+## Migration: this is a breaking startup change
+
+Anyone already running with `--oauth-introspection-url` will fail to start
+after this lands until they also pass `--oauth-issuer` and `--public-url`.
+That is deliberate — both are required to serve a compliant PRM document, and
+starting without them means advertising OAuth support the server cannot back
+up. Call it out in the release notes and in `docs/REMOTE-MCP-OAUTH.md`.
 
 ## What's out of scope
 
