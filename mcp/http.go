@@ -47,6 +47,8 @@ type HTTPServerOptions struct {
 	OAuthClientID         string
 	OAuthClientSecret     string
 	OAuthAudience         string
+	OAuthIssuer           string
+	PublicURL             string
 	HTTPClient            *http.Client
 }
 
@@ -326,7 +328,16 @@ func RunHTTPWithOptions(opts HTTPServerOptions) error {
 	if strings.TrimSpace(opts.OAuthAudience) == "" {
 		opts.OAuthAudience = strings.TrimSpace(os.Getenv("TRVL_MCP_OAUTH_AUDIENCE"))
 	}
+	if strings.TrimSpace(opts.OAuthIssuer) == "" {
+		opts.OAuthIssuer = strings.TrimSpace(os.Getenv("TRVL_MCP_OAUTH_ISSUER"))
+	}
+	if strings.TrimSpace(opts.PublicURL) == "" {
+		opts.PublicURL = strings.TrimSpace(os.Getenv("TRVL_MCP_PUBLIC_URL"))
+	}
 	if err := requireHTTPAuth(opts.Host, httpAuthConfigured(opts)); err != nil {
+		return err
+	}
+	if err := requireOAuthPRMConfig(opts); err != nil {
 		return err
 	}
 	if strings.TrimSpace(opts.OAuthIntrospectionURL) != "" {
