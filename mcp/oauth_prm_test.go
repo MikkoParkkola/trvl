@@ -29,6 +29,48 @@ func TestChallengeScope_ReadVsWriteViaToolRequiresWrite(t *testing.T) {
 	}
 }
 
+// Startup refusals (design doc (a)/(b)): OAuth configured but --oauth-issuer
+// or a valid --public-url missing is fatal, same shape as requireHTTPAuth.
+// http://localhost and http://127.0.0.1 are an explicit dev-only exception.
+func TestRequireOAuthPRMConfig_StartupRefusals(t *testing.T) {
+	t.Parallel()
+	introspection := "https://idp.example.org/oauth/introspect"
+	issuer := "https://tenant.auth0.com/"
+	tests := []struct {
+		name      string
+		issuer    string
+		publicURL string
+		wantErr   bool
+	}{
+		{"missing issuer refused", "", "https://travel.example.org", true},
+		{"missing public-url refused", issuer, "", true},
+		{"http non-loopback public-url refused", issuer, "http://travel.example.org", true},
+		{"https public-url accepted", issuer, "https://travel.example.org", false},
+		{"http localhost accepted (dev exception)", issuer, "http://localhost", false},
+		{"http 127.0.0.1 accepted (dev exception)", issuer, "http://127.0.0.1:8080", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := requireOAuthPRMConfig(HTTPServerOptions{
+				OAuthIntrospectionURL: introspection,
+				OAuthIssuer:           tt.issuer,
+				PublicURL:             tt.publicURL,
+			})
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("requireOAuthPRMConfig(issuer=%q, publicURL=%q) err=%v, wantErr=%v", tt.issuer, tt.publicURL, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// No OAuth configured: PRM validation is a no-op regardless of issuer/public-url.
+func TestRequireOAuthPRMConfig_NoOAuthConfiguredIsNoop(t *testing.T) {
+	t.Parallel()
+	if err := requireOAuthPRMConfig(HTTPServerOptions{}); err != nil {
+		t.Fatalf("unexpected error with no OAuth configured: %v", err)
+	}
+}
+
 // RFC 9728 §3: the well-known path segment goes immediately after the
 // authority; any path component --public-url carries (a reverse-proxy mount
 // prefix) comes after the well-known segment, not before it.
