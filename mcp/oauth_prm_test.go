@@ -339,6 +339,27 @@ func TestNormalizePublicURL_RejectsUnregistrablePatterns(t *testing.T) {
 	}
 }
 
+// A --public-url path segment whose percent-encoding changes segment
+// structure (e.g. %2F for a literal "/") makes RawPath diverge from Path,
+// so the well-known route registered from the decoded Path and the
+// resource identifier published from the encoded String() disagree — a
+// client following the published URL 404s. Encodings that don't change
+// segment structure (café, "a+b") leave RawPath empty and must still work.
+func TestNormalizePublicURL_RejectsPathEncodingThatChangesSegments(t *testing.T) {
+	t.Parallel()
+	if _, err := normalizePublicURL("https://h/a%2Fb"); err == nil {
+		t.Error(`normalizePublicURL("https://h/a%2Fb") = nil error, want rejection (RawPath diverges from Path)`)
+	}
+	for _, raw := range []string{
+		"https://h/caf%C3%A9",
+		"https://h/a+b",
+	} {
+		if _, err := normalizePublicURL(raw); err != nil {
+			t.Errorf("normalizePublicURL(%q) = %v, want acceptance (no segment-structure change)", raw, err)
+		}
+	}
+}
+
 // RFC 8414 §2: --oauth-issuer must be an absolute https:// URL, not any
 // nonempty string.
 func TestRequireOAuthPRMConfig_OAuthIssuerMustBeAbsoluteHTTPSURL(t *testing.T) {
@@ -358,6 +379,8 @@ func TestRequireOAuthPRMConfig_OAuthIssuerMustBeAbsoluteHTTPSURL(t *testing.T) {
 		{"query rejected", "https://tenant.auth0.com/?x=1", true},
 		{"fragment rejected", "https://tenant.auth0.com/#f", true},
 		{"bare question mark rejected", "https://tenant.auth0.com/?", true},
+		{"bare hash rejected", "https://host/#", true},
+		{"port-only host with empty hostname rejected", "https://:443", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := base

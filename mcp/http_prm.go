@@ -43,6 +43,12 @@ func normalizePublicURL(raw string) (*url.URL, error) {
 	if strings.ContainsAny(u.Path, "{}") {
 		return nil, fmt.Errorf("--public-url %q path must not contain '{' or '}'", trimmed)
 	}
+	if u.RawPath != "" {
+		return nil, fmt.Errorf(
+			"--public-url %q path encoding changes segment structure (e.g. %%2F); "+
+				"the published resource and the registered route would disagree", trimmed,
+		)
+	}
 	u.Path = strings.TrimSuffix(u.Path, "/")
 	if err := patternRegistrable(wellKnownPRMRoot + u.Path + "/mcp"); err != nil {
 		return nil, fmt.Errorf("--public-url %q produces an unregistrable route: %v", trimmed, err)
@@ -129,9 +135,6 @@ func buildProtectedResourceMetadata(opts HTTPServerOptions) *protectedResourceMe
 	}
 	challenge := *u
 	challenge.Path = suffixed
-	challenge.RawQuery = ""
-	challenge.Fragment = ""
-	challenge.ForceQuery = false
 	return &protectedResourceMetadata{
 		doc: prmDocument{
 			Resource:             resourceIdentifier(u),
@@ -158,7 +161,8 @@ func requireOAuthPRMConfig(opts HTTPServerOptions) error {
 	}
 	issuer := strings.TrimSpace(opts.OAuthIssuer)
 	iu, err := url.Parse(issuer)
-	if err != nil || iu.Scheme != "https" || iu.Host == "" || iu.RawQuery != "" || iu.Fragment != "" || iu.ForceQuery {
+	if err != nil || iu.Scheme != "https" || iu.Host == "" || iu.Hostname() == "" ||
+		iu.RawQuery != "" || iu.Fragment != "" || iu.ForceQuery || strings.Contains(issuer, "#") {
 		return fmt.Errorf(
 			"refusing to start: --oauth-issuer %q must be an absolute https:// URL with no query or fragment (RFC 8414 §2)",
 			issuer,

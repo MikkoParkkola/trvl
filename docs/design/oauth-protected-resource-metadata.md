@@ -109,8 +109,14 @@ as interchangeable — RFC 9728 §3.3 does not, and a token minted for one will
 not match the other. A `--public-url` carrying a query or fragment is
 refused at startup (RFC 9728 §1.2 prohibits both in a resource identifier);
 so is one whose path contains `{` or `}` — those are reserved wildcard
-syntax in the `http.ServeMux` route patterns built from it, and registering
-one unvalidated panics the server at startup instead of failing closed.
+syntax in the `http.ServeMux` route patterns built from it, and an
+unvalidated one would register as a live wildcard route instead of a
+literal path match, silently serving the PRM document under
+attacker-controlled path segments rather than failing closed. A path whose
+percent-encoding changes segment structure (`%2F` for a literal `/`) is
+also refused, because the well-known route registered from the decoded
+path and the resource identifier published from the encoded string would
+then disagree.
 
 ## (c) Static bearer tokens have no authorization server — PRM is meaningless there
 
