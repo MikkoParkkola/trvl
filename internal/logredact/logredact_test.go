@@ -1,6 +1,7 @@
 package logredact
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -8,13 +9,29 @@ import (
 	"testing"
 )
 
-func TestURLKeepsNothing(t *testing.T) {
+func TestURLKeepsOnlyOpaqueFingerprint(t *testing.T) {
 	raw := "https://user:pw@hooks.slack.com:443/services/T000/B111/SUPERSECRET?token=abc123&x=1#frag"
 	got := URL(raw)
-	if !strings.HasPrefix(got, "url#") {
-		t.Fatalf("URL() = %q, want url# prefix", got)
+	const prefix = "url#"
+	if !strings.HasPrefix(got, prefix) {
+		t.Fatalf("URL() = %q, want %q prefix", got, prefix)
 	}
-	for _, leak := range []string{"slack", "hooks", "SUPERSECRET", "abc123", "T000", "B111", "user", "pw", "443", "https", "frag"} {
+
+	// Validate the output contract rather than searching the fingerprint for
+	// short source substrings: a digest can contain "443", "pw" or "user" by
+	// chance without retaining the input port, password or username.
+	fingerprint := strings.TrimPrefix(got, prefix)
+	if len(fingerprint) != 12 {
+		t.Fatalf("URL() = %q, want a 12-character fingerprint", got)
+	}
+	if _, err := hex.DecodeString(fingerprint); err != nil {
+		t.Fatalf("URL() = %q, fingerprint is not hexadecimal: %v", got, err)
+	}
+
+	// The shape contract alone does not cover the tokens that matter. These are
+	// long enough that a coincidental match is not a plausible explanation, so
+	// their absence is still worth asserting directly.
+	for _, leak := range []string{"SUPERSECRET", "abc123", "slack", "hooks", "T000", "B111", "frag"} {
 		if strings.Contains(got, leak) {
 			t.Errorf("URL() = %q leaks %q", got, leak)
 		}
