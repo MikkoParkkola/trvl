@@ -140,12 +140,23 @@ func TestFetchDeals_OriginFilterDoesNotPromoteSourceError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	healthy, err := FetchDeals(ctx, []string{"fly4free"}, DealFilter{HoursAgo: 999999})
+	if err != nil {
+		t.Fatalf("healthy source FetchDeals error: %v", err)
+	}
+	if !healthy.Success || len(healthy.Deals) == 0 {
+		t.Fatalf("healthy source must return unfiltered deals; got count %d, error %q", len(healthy.Deals), healthy.Error)
+	}
+
 	result, err := FetchDeals(ctx, []string{"secretflying", "fly4free"}, DealFilter{
 		Origins:  []string{"WAW"},
 		HoursAgo: 999999,
 	})
 	if err != nil {
 		t.Fatalf("FetchDeals error: %v", err)
+	}
+	if len(result.Deals) != 0 || result.Count != 0 {
+		t.Fatalf("--from WAW must filter the healthy fixture to empty; got %d deals, count %d", len(result.Deals), result.Count)
 	}
 	if !result.Success {
 		t.Fatalf("healthy feeds must keep Success=true when --from filters them to empty; got error %q", result.Error)
