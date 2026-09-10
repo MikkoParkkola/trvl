@@ -55,10 +55,20 @@ func NewHTTPAuth(opts HTTPServerOptions) *HTTPAuth {
 		client:                client,
 	}
 	if a.oauthIntrospectionURL != "" && a.oauthAudience == "" {
-		// Confused-deputy guard (RFC 7662 §2.2): without a pinned audience, any
-		// valid token at this IdP — including tokens minted for other services —
-		// is accepted. Warn loudly; do not hard-fail (single-tenant dev setups).
-		slog.Warn("mcp oauth: no --oauth-audience configured; tokens issued for any client at this introspection endpoint will be accepted (set --oauth-audience for production)")
+		// Derive the confused-deputy guard (RFC 7662 §2.2) from the published
+		// PRM resource: an RFC 8707 client requests resource=<public-url>/mcp
+		// and gets a token with that aud, so this is the value trvl should
+		// pin by construction rather than require the operator to repeat.
+		if publicURL := strings.TrimSpace(opts.PublicURL); publicURL != "" {
+			if u, err := normalizePublicURL(publicURL); err == nil {
+				a.oauthAudience = resourceIdentifier(u)
+			}
+		}
+	}
+	if a.oauthIntrospectionURL != "" && a.oauthAudience == "" {
+		// No --public-url either: nothing to derive from. Warn loudly; do not
+		// hard-fail (single-tenant dev setups).
+		slog.Warn("mcp oauth: no --oauth-audience/--public-url configured; tokens issued for any client at this introspection endpoint will be accepted (set --public-url for production)")
 	}
 	return a
 }

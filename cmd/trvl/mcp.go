@@ -17,6 +17,8 @@ func mcpCmd() *cobra.Command {
 		oauthClientID         string
 		oauthClientSecret     string
 		oauthAudience         string
+		oauthIssuer           string
+		publicURL             string
 	)
 
 	cmd := &cobra.Command{
@@ -48,6 +50,8 @@ refused before binding a listener. See docs/REMOTE-MCP-OAUTH.md.`,
 					OAuthClientID:         oauthClientID,
 					OAuthClientSecret:     oauthClientSecret,
 					OAuthAudience:         oauthAudience,
+					OAuthIssuer:           oauthIssuer,
+					PublicURL:             publicURL,
 				})
 			}
 			return mcp.Run()
@@ -63,7 +67,9 @@ refused before binding a listener. See docs/REMOTE-MCP-OAUTH.md.`,
 	cmd.Flags().StringVar(&oauthIntrospectionURL, "oauth-introspection-url", "", "OAuth 2.1 token introspection URL for HTTP mode (default: TRVL_MCP_OAUTH_INTROSPECTION_URL)")
 	cmd.Flags().StringVar(&oauthClientID, "oauth-client-id", "", "OAuth introspection client ID (default: TRVL_MCP_OAUTH_CLIENT_ID)")
 	cmd.Flags().StringVar(&oauthClientSecret, "oauth-client-secret", "", "OAuth introspection client secret (default: TRVL_MCP_OAUTH_CLIENT_SECRET)")
-	cmd.Flags().StringVar(&oauthAudience, "oauth-audience", "", "Required OAuth audience claim for HTTP mode (default: TRVL_MCP_OAUTH_AUDIENCE)")
+	cmd.Flags().StringVar(&oauthAudience, "oauth-audience", "", "Required OAuth audience claim for HTTP mode (default: TRVL_MCP_OAUTH_AUDIENCE; derived from --public-url when unset)")
+	cmd.Flags().StringVar(&oauthIssuer, "oauth-issuer", "", "OAuth authorization server issuer URL, required with --oauth-introspection-url (default: TRVL_MCP_OAUTH_ISSUER)")
+	cmd.Flags().StringVar(&publicURL, "public-url", "", "Public URL clients use to reach this server, required with --oauth-introspection-url (default: TRVL_MCP_PUBLIC_URL)")
 
 	cmd.AddCommand(mcpInstallCmd())
 

@@ -34,6 +34,7 @@ type HTTPServer struct {
 	port   int
 	auth   *HTTPAuth
 	audit  authAudit
+	prm    *protectedResourceMetadata
 }
 
 // HTTPServerOptions configures the HTTP MCP transport.
@@ -47,6 +48,8 @@ type HTTPServerOptions struct {
 	OAuthClientID         string
 	OAuthClientSecret     string
 	OAuthAudience         string
+	OAuthIssuer           string
+	PublicURL             string
 	HTTPClient            *http.Client
 }
 
@@ -66,6 +69,7 @@ func NewHTTPServerWithOptions(opts HTTPServerOptions) *HTTPServer {
 		host:   host,
 		port:   opts.Port,
 		auth:   NewHTTPAuth(opts),
+		prm:    buildProtectedResourceMetadata(opts),
 	}
 }
 
@@ -74,10 +78,7 @@ func NewHTTPServerWithOptions(opts HTTPServerOptions) *HTTPServer {
 // Coverage exclusion: blocking HTTP server entry point.
 // The handler logic (handleMCP, handleHealth) is tested via httptest in server_extra_test.go.
 func (h *HTTPServer) ListenAndServe() error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/mcp", h.handleMCP)
-	mux.HandleFunc("/health", h.handleHealth)
-	mux.HandleFunc("/dashboard", h.handleDashboard)
+	mux := h.newMux()
 
 	addr := net.JoinHostPort(h.host, strconv.Itoa(h.port))
 	log.Printf("trvl MCP server listening on http://%s/mcp", addr)
@@ -89,6 +90,40 @@ func (h *HTTPServer) ListenAndServe() error {
 		IdleTimeout:  120 * time.Second,
 	}
 	return srv.ListenAndServe()
+}
+
+// newMux builds the route table. Split out from ListenAndServe so tests can
+// exercise routing (well-known 404s in static-token-only mode) without
+// binding a socket.
+func (h *HTTPServer) newMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mcp", h.handleMCP)
+	mux.HandleFunc("/health", h.handleHealth)
+	mux.HandleFunc("/dashboard", h.handleDashboard)
+	if h.prm != nil {
+		mux.HandleFunc(h.prm.rootPath, h.handleProtectedResourceMetadata)
+		if h.prm.suffixedPath != h.prm.rootPath {
+			mux.HandleFunc(h.prm.suffixedPath, h.handleProtectedResourceMetadata)
+		}
+	}
+	return mux
+}
+
+// handleProtectedResourceMetadata serves the RFC 9728 PRM document. Both
+// well-known routes are unregistered (404) unless OAuth introspection, an
+// issuer, and a valid public URL are all configured (design doc (c)).
+func (h *HTTPServer) handleProtectedResourceMetadata(w http.ResponseWriter, r *http.Request) {
+	if h.prm == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(h.prm.doc)
 }
 
 func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
@@ -105,10 +140,21 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Limit request body to 1MB to prevent abuse. Read before the auth check
+	// so a 401 can pick the right WWW-Authenticate challenge scope from the
+	// tool being called (design doc (d)); a read failure still 401s below,
+	// and is reported as a body error only once the request is authorized.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	body, bodyErr := io.ReadAll(r.Body)
+	defer func() { _ = r.Body.Close() }()
+
 	access, ok := h.authorize(r)
 	if !ok {
 		h.audit.denied.Add(1)
 		slogHTTPAuthDecision("deny", "", "", "missing or invalid bearer token")
+		if challenge := h.wwwAuthenticateChallenge(body); challenge != "" {
+			w.Header().Set("WWW-Authenticate", challenge)
+		}
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -118,14 +164,10 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Limit request body to 1MB to prevent abuse.
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
+	if bodyErr != nil {
 		http.Error(w, "failed to read body", http.StatusBadRequest)
 		return
 	}
-	defer func() { _ = r.Body.Close() }()
 
 	var req Request
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -139,11 +181,12 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if errResp := h.authorizeJSONRPC(&req, access); errResp != nil {
+	if errResp, requiredScope := h.authorizeJSONRPC(&req, access); errResp != nil {
 		h.audit.denied.Add(1)
 		slogHTTPAuthDecision("deny", req.Method, scopeSummary(access), errResp.Message)
+		w.Header().Set("WWW-Authenticate", h.insufficientScopeChallenge(requiredScope))
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusForbidden)
 		_ = json.NewEncoder(w).Encode(Response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -166,6 +209,45 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// challengeScope picks the WWW-Authenticate scope for an unauthenticated
+// request (design doc (d)): trvl:write only for a tools/call naming a tool
+// toolRequiresWrite reports as write; trvl:read for everything else,
+// including no body, an unparseable body, or a non-tools/call method.
+func (h *HTTPServer) challengeScope(body []byte) string {
+	if len(body) == 0 {
+		return scopeRead
+	}
+	var req Request
+	if err := json.Unmarshal(body, &req); err != nil || req.Method != "tools/call" {
+		return scopeRead
+	}
+	if _, requiresWrite, ok := h.server.toolWriteRequirement(&req); ok && requiresWrite {
+		return scopeWrite
+	}
+	return scopeRead
+}
+
+// wwwAuthenticateChallenge returns the 401 challenge header value, or "" when
+// PRM is disabled (static-token-only mode has no authorization server to
+// point a client at — design doc (c)).
+func (h *HTTPServer) wwwAuthenticateChallenge(body []byte) string {
+	if h.prm == nil {
+		return ""
+	}
+	return fmt.Sprintf(`Bearer resource_metadata="%s", scope=%q`, h.prm.challengeURL, h.challengeScope(body))
+}
+
+// insufficientScopeChallenge returns the 403 WWW-Authenticate value for an
+// authenticated request whose token lacks requiredScope (RFC 6750 §3.1). It
+// omits resource_metadata in static-token-only mode (design doc (c) — no
+// authorization server to point a client at there).
+func (h *HTTPServer) insufficientScopeChallenge(requiredScope string) string {
+	if h.prm == nil {
+		return fmt.Sprintf(`Bearer error="insufficient_scope", scope=%q`, requiredScope)
+	}
+	return fmt.Sprintf(`Bearer resource_metadata="%s", error="insufficient_scope", scope=%q`, h.prm.challengeURL, requiredScope)
+}
+
 func (h *HTTPServer) authorize(r *http.Request) (RequestAccess, bool) {
 	if h.auth == nil || !h.auth.Configured() {
 		return FullAccess("anonymous", "disabled"), true
@@ -178,21 +260,21 @@ func (h *HTTPServer) authorize(r *http.Request) (RequestAccess, bool) {
 	return h.auth.Authenticate(r.Context(), strings.TrimSpace(strings.TrimPrefix(auth, prefix)))
 }
 
-func (h *HTTPServer) authorizeJSONRPC(req *Request, access RequestAccess) *Error {
+func (h *HTTPServer) authorizeJSONRPC(req *Request, access RequestAccess) (*Error, string) {
 	if !access.CanRead() {
-		return &Error{Code: -32001, Message: "permission denied: token requires trvl:read scope"}
+		return &Error{Code: -32001, Message: "permission denied: token requires trvl:read scope"}, scopeRead
 	}
 	if req.Method != "tools/call" {
-		return nil
+		return nil, ""
 	}
 	tool, requiresWrite, ok := h.server.toolWriteRequirement(req)
 	if !ok {
-		return nil
+		return nil, ""
 	}
 	if requiresWrite && !access.CanWrite() {
-		return &Error{Code: -32001, Message: fmt.Sprintf("permission denied: tool %s requires trvl:write scope", tool)}
+		return &Error{Code: -32001, Message: fmt.Sprintf("permission denied: tool %s requires trvl:write scope", tool)}, scopeWrite
 	}
-	return nil
+	return nil, ""
 }
 
 func (h *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -326,7 +408,16 @@ func RunHTTPWithOptions(opts HTTPServerOptions) error {
 	if strings.TrimSpace(opts.OAuthAudience) == "" {
 		opts.OAuthAudience = strings.TrimSpace(os.Getenv("TRVL_MCP_OAUTH_AUDIENCE"))
 	}
+	if strings.TrimSpace(opts.OAuthIssuer) == "" {
+		opts.OAuthIssuer = strings.TrimSpace(os.Getenv("TRVL_MCP_OAUTH_ISSUER"))
+	}
+	if strings.TrimSpace(opts.PublicURL) == "" {
+		opts.PublicURL = strings.TrimSpace(os.Getenv("TRVL_MCP_PUBLIC_URL"))
+	}
 	if err := requireHTTPAuth(opts.Host, httpAuthConfigured(opts)); err != nil {
+		return err
+	}
+	if err := requireOAuthPRMConfig(opts); err != nil {
 		return err
 	}
 	if strings.TrimSpace(opts.OAuthIntrospectionURL) != "" {
