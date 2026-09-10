@@ -9,12 +9,18 @@
 # internal/flights/wizzair_selfheal.go, used by the version sentinel.
 #
 # The match requires the URL to begin at a quote delimiter, so a lookalike host
-# (notbe.wizzair.com) or a URL embedded in another URL's query string
-# (https://evil.example/?u=https://be.wizzair.com/1.2.3/Api) cannot contribute a
-# version. The Go side parses each candidate and compares the host for exact
-# equality, which a shell pattern cannot do — hence the delimiter requirement
-# here, and hence the caller's obligation to probe the result. What this emits
-# is a claim, never a verdict.
+# (notbe.wizzair.com), the host appearing as a path segment
+# (https://evil.example/be.wizzair.com/1.2.3/Api) and a bare URL in another URL's
+# query string (https://evil.example/?u=https://be.wizzair.com/1.2.3/Api) cannot
+# contribute a version.
+#
+# The ceiling, stated rather than glossed over: a *quoted* URL nested inside
+# another URL's query value (?next='https://be.wizzair.com/1.2.3/Api') still
+# matches. wizzVersionFromConfigBody has the identical property — its candidate
+# regex also breaks on quotes, so the inner URL is scanned as its own candidate
+# and its host does compare equal. Neither side treats extraction as the
+# safeguard. What this emits is a claim; the caller MUST confirm it against the
+# live host with a probe before acting on it, and does.
 set -euo pipefail
 
 # No qualifying URL is a normal outcome, not an error: the caller falls back to

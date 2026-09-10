@@ -66,7 +66,10 @@ esac
 # The result is a claim, never a verdict: nothing is reported until probe()
 # confirms it against the live host.
 discover_from_config() {
-	curl -s -m 20 -A "$UA" "https://www.wizzair.com/en-gb" 2>/dev/null \
+	# -L because a silent locale or canonicalization redirect would otherwise
+	# yield an empty body and drop the sentinel back into the blind walk this
+	# exists to bypass -- the runtime client (wizzClient.Do) follows redirects too.
+	curl -sL -m 20 -A "$UA" "https://www.wizzair.com/en-gb" 2>/dev/null \
 		| bash "$(dirname "$0")/ci/wizzair-config-version.sh"
 }
 
