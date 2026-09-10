@@ -33,11 +33,22 @@ end
 
 content = File.read(formula_path)
 
-unless content.sub!(/version "[^"]+"/, %Q(version "#{version}"))
-  unless content.sub!(/^(  license .+)\n/, %Q(\\1\n  version "#{version}"\n))
-    warn "failed to update version in #{formula_path}"
+# Normalize only the redundant standalone form; reject ambiguity before writing.
+version_lines = content.lines
+version_index = version_lines.index { |line| line.match?(/\A[ \t]*version[ \t(]/) }
+if version_index && version_lines.count { |line| line.match?(/\A[ \t]*version[ \t(]/) } > 1
+  warn "multiple version declarations in #{formula_path}"
+  exit 1
+end
+if version_index
+  unless version_lines[version_index].match?(/\A[ \t]*version[ \t]+"[^"\r\n]+"[ \t]*(?:\r?\n)?\z/)
+    warn "unsupported version declaration in #{formula_path}"
     exit 1
   end
+  # Delete by index: a comment or heredoc holding the same text cannot absorb
+  # a substring substitution and leave the real declaration in place.
+  version_lines.delete_at(version_index)
+  content = version_lines.join
 end
 
 platforms.each do |platform|

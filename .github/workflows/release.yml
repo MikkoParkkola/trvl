@@ -189,7 +189,7 @@ jobs:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: homebrew-tap
 
-      - name: Publish Homebrew Formula
+      - name: Update Homebrew Formula
         if: env.HAS_HOMEBREW_TAP_TOKEN == 'true'
         run: |
           set -euo pipefail
@@ -198,9 +198,34 @@ jobs:
             homebrew-tap/Formula/trvl.rb \
             "${VERSION}" \
             dist/checksums.txt
+
+      - name: Validate Homebrew Formula
+        if: env.HAS_HOMEBREW_TAP_TOKEN == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
           ruby -c homebrew-tap/Formula/trvl.rb
-          grep -F "version \"${VERSION}\"" homebrew-tap/Formula/trvl.rb
-          git -C homebrew-tap diff --check
+          # Assert each platform URL, not four copies of a shared prefix: a
+          # duplicated darwin URL would satisfy a count while a linux URL is
+          # missing or still pointing at the previous release.
+          for platform in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            url="/v${VERSION}/trvl_${VERSION}_${platform}.tar.gz"
+            if ! grep -Fq "${url}" homebrew-tap/Formula/trvl.rb; then
+              echo "::error::formula is missing the ${platform} URL for ${VERSION}" >&2
+              exit 1
+            fi
+          done
+          if grep -Eq '^[[:space:]]*version[[:space:](]' homebrew-tap/Formula/trvl.rb; then
+            echo "::error::explicit version is not allowed in the TRVL formula" >&2
+            exit 1
+          fi
+          git -C homebrew-tap diff --check -- Formula/trvl.rb
+
+      - name: Publish Homebrew Formula
+        if: env.HAS_HOMEBREW_TAP_TOKEN == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
           if git -C homebrew-tap diff --quiet -- Formula/trvl.rb; then
             echo "Formula/trvl.rb already matches ${VERSION}."
             exit 0
