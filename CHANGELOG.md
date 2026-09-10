@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.6] - 2026-09-10
+
+### Added
+
+- MCP servers publish OAuth Protected Resource Metadata per RFC 9728, so
+  clients can discover the authorization server without out-of-band config.
+  ([#650](https://github.com/MikkoParkkola/trvl/pull/650))
+
+### Fixed
+
+- Wizz Air API version rotated to 29.15.1. The version sentinel now reads the
+  homepage bootstrap config before falling back to its bounded candidate walk,
+  which could not reach a new minor at a non-zero patch.
+  ([#653](https://github.com/MikkoParkkola/trvl/pull/653))
+- `server.json` declares the environment variables each package accepts, so MCP
+  clients can prompt for them instead of failing at runtime.
+  ([#651](https://github.com/MikkoParkkola/trvl/pull/651))
+- Release workflow publishes Docker, npm and the MCP registry after a GitHub
+  Release exists, keeps the security gate ahead of dispatch publishes, and
+  survives a skipped GoReleaser job.
+  ([#637](https://github.com/MikkoParkkola/trvl/pull/637),
+  [#638](https://github.com/MikkoParkkola/trvl/pull/638),
+  [#639](https://github.com/MikkoParkkola/trvl/pull/639),
+  [#640](https://github.com/MikkoParkkola/trvl/pull/640))
+
+### Security
+
+- `google.golang.org/grpc` 1.83.2 (GHSA-2v4p-qf9q-27wj).
+  ([#652](https://github.com/MikkoParkkola/trvl/pull/652))
+- Dependency refresh: `bogdanfinn/tls-client` 1.16.0, `bogdanfinn/fhttp` 0.6.9,
+  `bogdanfinn/utls`, `klauspost/compress` 1.20.0, OpenTelemetry OTLP HTTP trace
+  exporter, base image `golang:1.27.1-alpine`, `trufflehog` 3.97.4, and
+  `docker/setup-qemu-action` 4.3.0.
+
 ## [1.21.5] - 2026-09-04
 
 ### Fixed
