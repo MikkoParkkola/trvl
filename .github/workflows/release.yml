@@ -205,7 +205,16 @@ jobs:
           set -euo pipefail
           VERSION="${RELEASE_TAG#v}"
           ruby -c homebrew-tap/Formula/trvl.rb
-          test "$(grep -Fc "/v${VERSION}/trvl_${VERSION}_" homebrew-tap/Formula/trvl.rb)" -eq 4
+          # Assert each platform URL, not four copies of a shared prefix: a
+          # duplicated darwin URL would satisfy a count while a linux URL is
+          # missing or still pointing at the previous release.
+          for platform in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            url="/v${VERSION}/trvl_${VERSION}_${platform}.tar.gz"
+            if ! grep -Fq "${url}" homebrew-tap/Formula/trvl.rb; then
+              echo "::error::formula is missing the ${platform} URL for ${VERSION}" >&2
+              exit 1
+            fi
+          done
           if grep -Eq '^[[:space:]]*version[[:space:](]' homebrew-tap/Formula/trvl.rb; then
             echo "::error::explicit version is not allowed in the TRVL formula" >&2
             exit 1

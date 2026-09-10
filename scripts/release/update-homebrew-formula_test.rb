@@ -109,6 +109,15 @@ class UpdateHomebrewFormulaTest < Minitest::Test
     refute status.success?
   end
 
+  # A count of four tag-versioned URLs is satisfied by a duplicate; only a
+  # per-platform assertion notices that linux_arm64 went missing.
+  def test_actual_validation_rejects_a_duplicated_platform_url
+    input = FIXTURE.sub("/v1.20.0/trvl_1.20.0_linux_arm64", "/v1.20.0/trvl_1.20.0_darwin_arm64")
+    _out, err, status = run_validation(input)
+    refute status.success?
+    assert_includes err, "linux_arm64"
+  end
+
   def test_actual_validation_rejects_a_single_quoted_version
     _out, err, status = run_validation(with_version("  version '1.20.0'"))
     refute status.success?
