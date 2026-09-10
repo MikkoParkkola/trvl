@@ -188,10 +188,28 @@ func TestWizzConfigVersionRequiresWizzOrigin(t *testing.T) {
 		`apiUrl:"https://be.wizzair.com.evil.example/29.8.0/Api"`,
 		// Right host, wrong path shape.
 		`apiUrl:"https://be.wizzair.com/29.8.0/NotApi"`,
+		// Right host, path merely BEGINNING with /Api -- the shape the shell
+		// mirror accepted until its match gained a closing delimiter.
+		`apiUrl:"https://be.wizzair.com/29.8.0/Apiary"`,
 	}
 	for _, page := range reject {
 		if got := wizzVersionFromConfigBody([]byte(page)); got != "" {
 			t.Errorf("accepted a non-Wizz-origin string and would adopt version %q from it: %q", got, page)
 		}
+	}
+}
+
+// A *quoted* URL nested inside another URL's query value is accepted: the
+// candidate scan breaks on quotes, so the inner URL is parsed as its own
+// candidate and its host does compare equal. That is a known ceiling, not an
+// oversight -- extraction is not the safeguard here, wizzHeal probes a
+// discovered version against the live host before adopting it. The shell mirror
+// scripts/ci/wizzair-config-version.sh has the same property and pins the same
+// case, so hardening either side fails the other's test instead of drifting
+// apart unnoticed.
+func TestWizzConfigVersionAcceptsQuotedNestedURL(t *testing.T) {
+	const page = `apiUrl:"https://evil.example/?next='https://be.wizzair.com/29.8.0/Api'"`
+	if got := wizzVersionFromConfigBody([]byte(page)); got != "29.8.0" {
+		t.Fatalf("extracted %q, want %q: the shell mirror accepts this shape, and parity is what leaves the live probe as the single guard", got, "29.8.0")
 	}
 }

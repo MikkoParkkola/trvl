@@ -125,7 +125,15 @@ var ErrWizzRejected = errors.New("wizzair declined the request (validationCodes)
 // the old path returning 404 and the new path live, but its pre-existing orphan
 // branch caused a non-fast-forward push failure. The sentinel push path now
 // recovers that exact automation-owned branch with a force-with-lease.
-const wizzDefaultVersion = "29.11.0"
+// 2026-09-10: rotated "29.11.0" -> "29.15.1" (#641). The sentinel had been
+// reporting `exhausted` rather than `rotated` for weeks, so nothing proposed
+// the bump. Probing says why: 29.12.0 through 29.16.0 all return 404 and only
+// the patch release 29.15.1 answers (405 on GET). The candidate walk probes
+// shifted minors at patch .0 only, so a rotation to X.Y.Z with Z > 0 on a new
+// minor is outside its reach by construction. The homepage bootstrap config
+// named 29.15.1 outright, which is why the sentinel now reads it first, as
+// wizzDiscoverFromConfig already does at runtime.
+const wizzDefaultVersion = "29.15.1"
 
 // wizzVersion is the active API version. Overridable in tests; the env var
 // WIZZAIR_API_VERSION takes precedence at request time via wizzResolvedVersion.
