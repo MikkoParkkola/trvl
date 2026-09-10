@@ -8,11 +8,15 @@
 # the shell mirror of wizzVersionFromConfigBody in
 # internal/flights/wizzair_selfheal.go, used by the version sentinel.
 #
-# The match requires the URL to begin at a quote delimiter, so a lookalike host
-# (notbe.wizzair.com), the host appearing as a path segment
+# The match is delimited by quotes at BOTH ends. The opening quote is what stops
+# a lookalike host (notbe.wizzair.com), the host appearing as a path segment
 # (https://evil.example/be.wizzair.com/1.2.3/Api) and a bare URL in another URL's
-# query string (https://evil.example/?u=https://be.wizzair.com/1.2.3/Api) cannot
-# contribute a version.
+# query string (https://evil.example/?u=https://be.wizzair.com/1.2.3/Api) from
+# contributing a version. The closing quote is what stops a longer path that
+# merely begins with /Api (.../1.2.3/Apiary) being read as the API base:
+# wizzVersionFromConfigBody anchors its path pattern end to end, so without that
+# delimiter this side would accept a version the runtime rejects, and a page
+# carrying such a URL ahead of the real config would shadow it.
 #
 # The ceiling, stated rather than glossed over: a *quoted* URL nested inside
 # another URL's query value (?next='https://be.wizzair.com/1.2.3/Api') still
@@ -26,7 +30,7 @@ set -euo pipefail
 # No qualifying URL is a normal outcome, not an error: the caller falls back to
 # the candidate walk. Exit 0 with empty output rather than making "nothing found"
 # indistinguishable from "the page could not be read".
-version="$(grep -oE "[\"']https://be\.wizzair\.com/[0-9]+\.[0-9]+\.[0-9]+/Api" \
+version="$(grep -oE "[\"']https://be\.wizzair\.com/[0-9]+\.[0-9]+\.[0-9]+/Api[\"']" \
 	| grep -oE '[0-9]+\.[0-9]+\.[0-9]+' \
 	| head -1 || true)"
 [ -z "$version" ] || echo "$version"

@@ -41,6 +41,16 @@ expect "a different path is not the API base" "" \
 expect "a page naming no version" "" \
 	'<html><body>no config here</body></html>'
 
+# A longer path that merely BEGINS with /Api is not the API base. Without the
+# closing delimiter this matched, and because the first match wins, a page
+# carrying such a URL ahead of the real config would shadow it -- while
+# wizzVersionFromConfigBody, whose path pattern is anchored end to end, would
+# have rejected the same string. The pair below pins both halves.
+expect "a longer path beginning with /Api is not the API base" "" \
+	'"https://be.wizzair.com/1.2.3/Apiary"'
+expect "a prefix lookalike does not shadow the real config" 29.15.1 \
+	'"https://be.wizzair.com/1.2.3/Apiary" {apiUrl:"https://be.wizzair.com/29.15.1/Api"}'
+
 # Known ceiling, pinned deliberately rather than left to be discovered: a QUOTED
 # URL nested in another URL's query value is accepted. wizzVersionFromConfigBody
 # behaves the same way — its candidate regex also breaks on quotes — so this

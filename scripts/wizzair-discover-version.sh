@@ -73,11 +73,18 @@ discover_from_config() {
 		| bash "$(dirname "$0")/ci/wizzair-config-version.sh"
 }
 
+# Declared before the config probe so a throttled edge there is carried into the
+# final verdict. Discarding it reported STATUS=exhausted -- "rotated, and nothing
+# is live" -- when the truth was "we could not tell", and exhausted is the status
+# that files an issue at a human.
+saw_inconclusive=false
+
 config_version="$(discover_from_config || true)"
 if [ -n "$config_version" ] && [ "$config_version" != "$current" ]; then
-	if [ "$(probe "$config_version")" = live ]; then
-		echo "STATUS=rotated CURRENT=$current NEW=$config_version"; exit 10
-	fi
+	case "$(probe "$config_version")" in
+		live) echo "STATUS=rotated CURRENT=$current NEW=$config_version"; exit 10 ;;
+		inconclusive) saw_inconclusive=true ;;
+	esac
 fi
 
 # Discovery walk, most-likely first. Fallback only: it runs when the config read
@@ -94,7 +101,6 @@ for d in 1 2 3 4 5 6; do candidates+=("$MA.$((MI+d)).0"); done   # next minors
 for d in 1 2 3;       do candidates+=("$MA.$MI.$((PA+d))"); done    # next patches
 candidates+=("$((MA+1)).0.0" "$((MA+1)).1.0" "$((MA+2)).0.0")        # next majors
 
-saw_inconclusive=false
 for c in "${candidates[@]}"; do
 	case "$(probe "$c")" in
 		live) echo "STATUS=rotated CURRENT=$current NEW=$c"; exit 10 ;;

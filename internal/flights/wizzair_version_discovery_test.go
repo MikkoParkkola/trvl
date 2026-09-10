@@ -188,6 +188,9 @@ func TestWizzConfigVersionRequiresWizzOrigin(t *testing.T) {
 		`apiUrl:"https://be.wizzair.com.evil.example/29.8.0/Api"`,
 		// Right host, wrong path shape.
 		`apiUrl:"https://be.wizzair.com/29.8.0/NotApi"`,
+		// Right host, path merely BEGINNING with /Api -- the shape the shell
+		// mirror accepted until its match gained a closing delimiter.
+		`apiUrl:"https://be.wizzair.com/29.8.0/Apiary"`,
 	}
 	for _, page := range reject {
 		if got := wizzVersionFromConfigBody([]byte(page)); got != "" {
