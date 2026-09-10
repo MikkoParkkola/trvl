@@ -115,7 +115,7 @@ jobs:
         run: |
           set -euo pipefail
           title="Wizz Air version rotated beyond auto-discovery range"
-          body="The Wizz Air version sentinel found that \`${CUR}\` rotated away (404 on the live oracle) but no candidate version in the bounded search range (next minors/patches/majors) is live. Wizz likely jumped further than the walk covers. Read the current version from be.wizzair.com (DevTools Network tab -> any be.wizzair.com request -> /<version>/Api/...) and bump \`wizzDefaultVersion\` in internal/flights/wizzair.go, or widen the search in scripts/wizzair-discover-version.sh."
+          body="The Wizz Air version sentinel found that \`${CUR}\` rotated away (404 on the live oracle), the homepage bootstrap config named no version that probes live, and no candidate in the bounded walk (next minors/patches/majors) is live either. Read the current version from the homepage config (view-source on https://www.wizzair.com/en-gb, search for \`be.wizzair.com/\`) or from DevTools (Network tab -> any be.wizzair.com request -> /<version>/Api/...), then bump \`wizzDefaultVersion\` in internal/flights/wizzair.go. Widening the walk is not the fix: it probes shifted minors at patch .0 only, so a rotation to X.Y.Z with Z > 0 on a new minor is outside its reach at any range (#641)."
           existing="$(gh issue list --state open --label provider-drift --search "in:title $title" --json number -q '.[0].number')"
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "$body"
