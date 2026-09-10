@@ -13,8 +13,8 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 - Flight providers: the default path merges Google Flights, Kiwi, and Skiplagged. Solo or opt-in integrations cover Ryanair, Wizz Air, Air France–KLM, Transavia, easyJet, Vueling, and Norwegian; protected or credentialed paths return typed setup/block statuses when unavailable. Travelpayouts/Aviasales price signals are opt-in through `trvl pricetrends` and are not part of the bookable merge.
 - Enrichment (free, unauthenticated): weather (Open-Meteo), air quality (`trvl air`), sun times (`trvl sun`, sunrise-sunset.org), bike-share (`trvl bikes`, CityBikes)
 - CI: build, vet, and race tests on Ubuntu and Windows; staticcheck, golangci-lint, govulncheck, and the >=80% coverage gate run on Ubuntu
-- Current release: v1.21.5, published 2026-09-04 from `main` to GitHub Releases, Homebrew, npm, GHCR, the Go module proxy, and the official MCP Registry.
-- v1.21.5 keeps `--from` deal search alive when one RSS source is down, recovers Wizz Air sentinel-version bumps, and ships grpc 1.83.1 plus x/crypto 0.56.0.
+- Current release: v1.21.6, published 2026-09-10 from `main` to GitHub Releases, Homebrew, npm, GHCR, the Go module proxy, and the official MCP Registry.
+- v1.21.6 publishes OAuth Protected Resource Metadata (RFC 9728), rotates the Wizz Air API version to 29.15.1 via homepage-config discovery, declares per-package environment variables in `server.json`, and ships grpc 1.83.2.
 
 ## Plan Forward (near-term, technical)
 
