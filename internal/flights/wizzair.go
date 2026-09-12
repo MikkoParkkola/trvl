@@ -133,7 +133,7 @@ var ErrWizzRejected = errors.New("wizzair declined the request (validationCodes)
 // minor is outside its reach by construction. The homepage bootstrap config
 // named 29.15.1 outright, which is why the sentinel now reads it first, as
 // wizzDiscoverFromConfig already does at runtime.
-const wizzDefaultVersion = "29.15.1"
+const wizzDefaultVersion = "29.16.0"
 
 // wizzVersion is the active API version. Overridable in tests; the env var
 // WIZZAIR_API_VERSION takes precedence at request time via wizzResolvedVersion.
