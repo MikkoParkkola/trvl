@@ -560,6 +560,11 @@ func (c *Client) PostCalendarGrid(ctx context.Context, encodedPayload string) (i
 func ChromeHTTPClient() *http.Client {
 	dialTLS := dialTLSChromeH2
 
+	//lint:ignore SA1019 net/http upgrades to HTTP/2 only when the connection reports
+	// crypto/tls.ConnectionState; dialTLSChromeH2 returns a *utls.UConn, whose
+	// ConnectionState is a distinct type, so http.Transport would silently serve
+	// every request over HTTP/1.1 and expose the fingerprint this package hides.
+	// Revisit when utls conns satisfy net/http's h2 bootstrap.
 	h2Transport := &http2.Transport{
 		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
 			return dialTLS(ctx, network, addr)
@@ -587,6 +592,11 @@ func ChromeHTTPClient() *http.Client {
 // ErrSkipAltSvc / connection errors when h2 is not negotiated; we fall back
 // to the plain http1 transport in that case.
 type chromeRoundTripper struct {
+	//lint:ignore SA1019 net/http upgrades to HTTP/2 only when the connection reports
+	// crypto/tls.ConnectionState; dialTLSChromeH2 returns a *utls.UConn, whose
+	// ConnectionState is a distinct type, so http.Transport would silently serve
+	// every request over HTTP/1.1 and expose the fingerprint this package hides.
+	// Revisit when utls conns satisfy net/http's h2 bootstrap.
 	h2 *http2.Transport
 	h1 *http.Transport
 }
@@ -594,6 +604,11 @@ type chromeRoundTripper struct {
 func (t *chromeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Try h2 first. If the server did not negotiate h2 the transport returns
 	// an error and we fall through to h1.
+	//lint:ignore SA1019 net/http upgrades to HTTP/2 only when the connection reports
+	// crypto/tls.ConnectionState; dialTLSChromeH2 returns a *utls.UConn, whose
+	// ConnectionState is a distinct type, so http.Transport would silently serve
+	// every request over HTTP/1.1 and expose the fingerprint this package hides.
+	// Revisit when utls conns satisfy net/http's h2 bootstrap.
 	resp, err := t.h2.RoundTrip(req)
 	if err == nil {
 		return resp, nil
