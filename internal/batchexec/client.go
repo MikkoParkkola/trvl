@@ -562,9 +562,11 @@ func ChromeHTTPClient() *http.Client {
 
 	//lint:ignore SA1019 net/http upgrades to HTTP/2 only when the connection reports
 	// crypto/tls.ConnectionState; dialTLSChromeH2 returns a *utls.UConn, whose
-	// ConnectionState is a distinct type, so http.Transport would silently serve
-	// every request over HTTP/1.1 and expose the fingerprint this package hides.
-	// Revisit when utls conns satisfy net/http's h2 bootstrap.
+	// ConnectionState is a distinct type, so http.Transport never bootstraps h2.
+	// The Chrome ClientHello still offers h2 first, so the server negotiates it
+	// and a plain http.Transport would speak HTTP/1.1 into an h2 connection:
+	// protocol errors, not a quiet downgrade. Revisit when a conn wrapper
+	// exposing crypto/tls.ConnectionState is verified against this dialer.
 	h2Transport := &http2.Transport{
 		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
 			return dialTLS(ctx, network, addr)
@@ -594,9 +596,11 @@ func ChromeHTTPClient() *http.Client {
 type chromeRoundTripper struct {
 	//lint:ignore SA1019 net/http upgrades to HTTP/2 only when the connection reports
 	// crypto/tls.ConnectionState; dialTLSChromeH2 returns a *utls.UConn, whose
-	// ConnectionState is a distinct type, so http.Transport would silently serve
-	// every request over HTTP/1.1 and expose the fingerprint this package hides.
-	// Revisit when utls conns satisfy net/http's h2 bootstrap.
+	// ConnectionState is a distinct type, so http.Transport never bootstraps h2.
+	// The Chrome ClientHello still offers h2 first, so the server negotiates it
+	// and a plain http.Transport would speak HTTP/1.1 into an h2 connection:
+	// protocol errors, not a quiet downgrade. Revisit when a conn wrapper
+	// exposing crypto/tls.ConnectionState is verified against this dialer.
 	h2 *http2.Transport
 	h1 *http.Transport
 }
@@ -606,9 +610,11 @@ func (t *chromeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	// an error and we fall through to h1.
 	//lint:ignore SA1019 net/http upgrades to HTTP/2 only when the connection reports
 	// crypto/tls.ConnectionState; dialTLSChromeH2 returns a *utls.UConn, whose
-	// ConnectionState is a distinct type, so http.Transport would silently serve
-	// every request over HTTP/1.1 and expose the fingerprint this package hides.
-	// Revisit when utls conns satisfy net/http's h2 bootstrap.
+	// ConnectionState is a distinct type, so http.Transport never bootstraps h2.
+	// The Chrome ClientHello still offers h2 first, so the server negotiates it
+	// and a plain http.Transport would speak HTTP/1.1 into an h2 connection:
+	// protocol errors, not a quiet downgrade. Revisit when a conn wrapper
+	// exposing crypto/tls.ConnectionState is verified against this dialer.
 	resp, err := t.h2.RoundTrip(req)
 	if err == nil {
 		return resp, nil
