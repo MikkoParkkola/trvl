@@ -567,7 +567,7 @@ func ChromeHTTPClient() *http.Client {
 	// and a plain http.Transport would speak HTTP/1.1 into an h2 connection:
 	// protocol errors, not a quiet downgrade. Revisit when a conn wrapper
 	// exposing crypto/tls.ConnectionState is verified against this dialer.
-	h2Transport := &http2.Transport{
+	h2Transport := &http2.Transport{ //nolint:staticcheck // golangci-lint's staticcheck ignores //lint:ignore directives
 		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
 			return dialTLS(ctx, network, addr)
 		},
@@ -594,28 +594,16 @@ func ChromeHTTPClient() *http.Client {
 // ErrSkipAltSvc / connection errors when h2 is not negotiated; we fall back
 // to the plain http1 transport in that case.
 type chromeRoundTripper struct {
-	//lint:ignore SA1019 net/http upgrades to HTTP/2 only when the connection reports
-	// crypto/tls.ConnectionState; dialTLSChromeH2 returns a *utls.UConn, whose
-	// ConnectionState is a distinct type, so http.Transport never bootstraps h2.
-	// The Chrome ClientHello still offers h2 first, so the server negotiates it
-	// and a plain http.Transport would speak HTTP/1.1 into an h2 connection:
-	// protocol errors, not a quiet downgrade. Revisit when a conn wrapper
-	// exposing crypto/tls.ConnectionState is verified against this dialer.
-	h2 *http2.Transport
+	//lint:ignore SA1019 http.Transport cannot bootstrap h2 on this dialer; see ChromeHTTPClient
+	h2 *http2.Transport //nolint:staticcheck // golangci-lint's staticcheck ignores //lint:ignore directives
 	h1 *http.Transport
 }
 
 func (t *chromeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Try h2 first. If the server did not negotiate h2 the transport returns
 	// an error and we fall through to h1.
-	//lint:ignore SA1019 net/http upgrades to HTTP/2 only when the connection reports
-	// crypto/tls.ConnectionState; dialTLSChromeH2 returns a *utls.UConn, whose
-	// ConnectionState is a distinct type, so http.Transport never bootstraps h2.
-	// The Chrome ClientHello still offers h2 first, so the server negotiates it
-	// and a plain http.Transport would speak HTTP/1.1 into an h2 connection:
-	// protocol errors, not a quiet downgrade. Revisit when a conn wrapper
-	// exposing crypto/tls.ConnectionState is verified against this dialer.
-	resp, err := t.h2.RoundTrip(req)
+	//lint:ignore SA1019 http.Transport cannot bootstrap h2 on this dialer; see ChromeHTTPClient
+	resp, err := t.h2.RoundTrip(req) //nolint:staticcheck // golangci-lint's staticcheck ignores //lint:ignore directives
 	if err == nil {
 		return resp, nil
 	}
