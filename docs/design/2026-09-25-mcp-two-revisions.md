@@ -193,34 +193,35 @@ revisions, latest first, and `requested` to the revision the client named.
 A second error type was rejected because this server has one JSON-RPC error
 struct.
 
-A request that names `2026-07-28` in `_meta`, or on HTTP in
-`MCP-Protocol-Version` when the body does not name the other supported
-revision, is served as `2026-07-28`. The result carries `resultType`. No
-prior `initialize` is required. `ping` and `resources/subscribe` stay absent
-on that revision, as they are today.
+`_meta` and the HTTP `MCP-Protocol-Version` header are the two declaration
+channels. The handshake string is a declaration only when both of those are
+absent. The first matching rule wins:
 
-A request that names `2025-11-25` in `_meta`, or in that header on the same
-terms, is served as `2025-11-25` on that request alone. `ping` and
-`resources/subscribe` work. The result has no `resultType`.
-
-A request that names any other revision in `_meta` or in that header,
-including an `initialize`, is not served. The response is `-32022` with the
-`data` above.
-
-When the header and the body each name one of the two supported revisions and
-the two names differ, the response stays `-32020`. The client is not given a
-supported-list retry for a pair it already knows.
-
-An `initialize` that names its revision only in the handshake, with no `_meta`
-revision and no protocol header, is answered `2025-11-25` when the handshake
-names `2025-11-25`, and also answered `2025-11-25` when it names anything
-else, including `2026-07-28` and `2025-03-26`. That answer does not add the
-named revision to the supported set. Resource subscription stays on, because
-the session is the legacy revision.
-
-A request that declares no revision and is not `initialize` keeps the legacy
-shape. That is what v1.22.0 does, and the signals do not ask for a different
-default.
+1. If `_meta` or the header names a revision outside the pair, the response
+   is `-32022` with the `data` above. `data.requested` is the `_meta` value
+   when that value is outside the pair, and otherwise the header value.
+   This is checked before a mismatch and before serving. A header of
+   `2026-07-28` together with `_meta` of `2025-03-26` is this rule, not a
+   successful 2026 request.
+2. If `_meta` and the header each name one of the two supported revisions
+   and the names differ, the response is `-32020`. The handshake string is
+   not one of those two names.
+3. If `_meta` or the header names `2026-07-28`, and the other channel is
+   absent or names the same revision, the request is served as `2026-07-28`.
+   The result carries `resultType` and no cache hints. No prior `initialize`
+   is required. `ping` and `resources/subscribe` stay absent, as they are
+   today. An `initialize` whose header or `_meta` names `2026-07-28`, and
+   whose handshake says something else, is this rule.
+4. If `_meta` or the header names `2025-11-25`, and the other channel is
+   absent or names the same revision, the request is served as `2025-11-25`
+   on that request alone. `ping` and `resources/subscribe` work. The result
+   has no `resultType` and no cache hints.
+5. If neither channel names a revision, an `initialize` is answered
+   `2025-11-25`, whether the handshake names `2025-11-25`, `2026-07-28`,
+   `2025-03-26`, or anything else. That answer does not add the handshake
+   revision to the supported set. Resource subscription stays on. A request
+   that is not `initialize` and declares no revision keeps that same legacy
+   shape, which is what v1.22.0 does.
 
 The docs and changelog lines that still say the server advertises three
 revisions are updated to the two. The historical `## [1.22.0]` section and
@@ -230,13 +231,13 @@ bump and no tag.
 ### How the signals are met
 
 1. The slice and `server/discover` are the two revisions, latest first.
-2. `_meta` or the HTTP header naming `2026-07-28` is served as that revision,
+2. Rule 3 serves `_meta` or the header naming `2026-07-28` as that revision,
    with `resultType`, and without a prior `initialize`.
-3. A `2025-11-25` handshake with no other declaration, and a request that
-   names `2025-11-25` in `_meta` or the header, are served as that revision,
-   including `ping` and `resources/subscribe`, without `resultType`.
-4. Any other revision declared in `_meta` or in `MCP-Protocol-Version` is
-   `-32022` with `data.supported` and `data.requested`. A handshake string
-   alone is signal 5, not this one.
-5. A handshake-only `initialize` of anything other than `2025-11-25` is
-   answered `2025-11-25`.
+3. Rule 4 serves a request that names `2025-11-25` in `_meta` or the header
+   as that revision, including `ping` and `resources/subscribe`, without
+   `resultType` or cache hints. Rule 5 does the same for a handshake of
+   `2025-11-25` when neither channel names a revision.
+4. Rule 1 rejects any other revision in `_meta` or the header with `-32022`
+   and the `data` fields. A handshake string alone is rule 5, not this one.
+5. Rule 5 answers a handshake-only `initialize` of anything other than
+   `2025-11-25` with `2025-11-25`.
