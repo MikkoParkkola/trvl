@@ -1,8 +1,7 @@
 # MCP compatibility window: problem
 
-Status: **unratified problem**. The solution section is closed until this problem
-is reviewed and approved on its own. No implementation is authorized by this
-document.
+Status: **problem ratified, solution unratified**. No implementation is
+authorized until the solution below is reviewed on its own.
 
 Date: 2026-09-25
 
@@ -144,5 +143,100 @@ No deferred unknowns.
 
 ## Solution
 
-Closed. Not written. Opens only after this problem is ratified by the two
-review vendors required for this author.
+The problem was ratified on 2026-09-26. Claude Opus 5 returned SHIP, exit 0,
+on commit `50b4f795`, and closed the three findings that were open at that
+gate. Copilot, model `gpt-6-astra`, returned SHIP, exit 0, on the same text.
+The requester named Copilot on that model as the seat in place of `gpt-review`,
+which was still out of quota. GLM had already returned SHIP on an earlier
+revision of the problem; that row is not this ratification.
+
+Re-check before this section, 2026-09-26: `https://modelcontextprotocol.io/llms.txt`
+still lists the dated revisions `2026-07-28`, `2025-11-25`, `2025-06-18`,
+`2025-03-26`, `2024-11-05`. A `draft` entry is present and is not a published
+revision. The pair is unchanged, so the problem stays closed.
+
+One residual from the problem review is taken up here rather than by reopening
+the problem. Claude rated it BEFORE-DEPLOY: on HTTP the same per-request
+revision is also carried in the `MCP-Protocol-Version` header (2026-07-28
+versioning page). A header outside the pair has to get the same `-32022`
+answer as `_meta` outside the pair, including `data.supported` and
+`data.requested`. A header and a body that name two different revisions from
+the pair stay a header mismatch (`-32020`), which is disagreement, not an
+unknown revision.
+
+### Rejected
+
+The open patch `e4619ea0` only removes `2025-03-26` from
+`supportedProtocolVersions`. It leaves the handshake that names `2026-07-28`
+answered as `2026-07-28`, and it returns `-32022` with no `data`. That fails
+signals 4 and 5 and the error-shape constraint. It is not the solution.
+
+The official Go SDK is out of the problem. It would own the HTTP server.
+
+Rejecting every handshake that is not exactly `2025-11-25` with `-32022`
+breaks the legacy rule the problem quotes: a server answers a legacy
+handshake with a revision it supports.
+
+Answering a handshake of `2026-07-28` with `2026-07-28`, because that revision
+is supported, treats `initialize` as the modern selector. The versioning page
+says `initialize` selects legacy semantics. The modern revision is selected
+by `_meta`, and on HTTP also by the protocol header.
+
+### Chosen
+
+The hand-rolled server stays. `supportedProtocolVersions` is `2026-07-28`
+then `2025-11-25`. `server/discover` reports that slice.
+
+`mcp.Error` gains an optional `data` value, omitted on every error that does
+not set it. The unsupported-version error sets `supported` to the two
+revisions, latest first, and `requested` to the revision the client named.
+A second error type was rejected because this server has one JSON-RPC error
+struct.
+
+A request that names `2026-07-28` in `_meta`, or on HTTP in
+`MCP-Protocol-Version` when the body does not name the other supported
+revision, is served as `2026-07-28`. The result carries `resultType`. No
+prior `initialize` is required. `ping` and `resources/subscribe` stay absent
+on that revision, as they are today.
+
+A request that names `2025-11-25` in `_meta`, or in that header on the same
+terms, is served as `2025-11-25` on that request alone. `ping` and
+`resources/subscribe` work. The result has no `resultType`.
+
+A request that names any other revision in `_meta` or in that header,
+including an `initialize`, is not served. The response is `-32022` with the
+`data` above.
+
+When the header and the body each name one of the two supported revisions and
+the two names differ, the response stays `-32020`. The client is not given a
+supported-list retry for a pair it already knows.
+
+An `initialize` that names its revision only in the handshake, with no `_meta`
+revision and no protocol header, is answered `2025-11-25` when the handshake
+names `2025-11-25`, and also answered `2025-11-25` when it names anything
+else, including `2026-07-28` and `2025-03-26`. That answer does not add the
+named revision to the supported set. Resource subscription stays on, because
+the session is the legacy revision.
+
+A request that declares no revision and is not `initialize` keeps the legacy
+shape. That is what v1.22.0 does, and the signals do not ask for a different
+default.
+
+The docs and changelog lines that still say the server advertises three
+revisions are updated to the two. The historical `## [1.22.0]` section and
+the ROADMAP sentence for that tag stay as the record of the tag. No version
+bump and no tag.
+
+### How the signals are met
+
+1. The slice and `server/discover` are the two revisions, latest first.
+2. `_meta` or the HTTP header naming `2026-07-28` is served as that revision,
+   with `resultType`, and without a prior `initialize`.
+3. A `2025-11-25` handshake with no other declaration, and a request that
+   names `2025-11-25` in `_meta` or the header, are served as that revision,
+   including `ping` and `resources/subscribe`, without `resultType`.
+4. Any other revision declared in `_meta` or in `MCP-Protocol-Version` is
+   `-32022` with `data.supported` and `data.requested`. A handshake string
+   alone is signal 5, not this one.
+5. A handshake-only `initialize` of anything other than `2025-11-25` is
+   answered `2025-11-25`.
