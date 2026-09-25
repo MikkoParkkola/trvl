@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- MCP compatibility is the two latest revisions, **2026-07-28** and **2025-11-25**. `server/discover` no longer lists 2025-03-26. A `_meta` protocol version outside those two returns `UnsupportedProtocolVersion` (`-32022`). An `initialize` that names an older revision is answered as 2025-11-25.
+
 ## [1.22.0] - 2026-09-25
 
 ### Added

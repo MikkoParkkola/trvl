@@ -111,7 +111,7 @@ Dates in the compact examples are illustrative; use future dates for live provid
 
 > **Unique feature:** The `checked_bags` filter on `search_flights` directly sets the checked-bags slot in Google's internal `batchexecute` filter array — the same wire position as carry-on bags. Google's own Flights UI only exposes the carry-on filter; the checked-bag slot works server-side but is undocumented and not surfaced in the UI. trvl is the only client that exposes it.
 
-### MCP Protocol Features (v2026-07-28, with 2025-11-25 and 2025-03-26 still accepted)
+### MCP Protocol Features (2026-07-28 and 2025-11-25)
 
 | Feature | Details |
 |---------|---------|

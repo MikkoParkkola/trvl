@@ -12,7 +12,9 @@ import (
 // owns the HTTP server it serves, and trvl's bearer, scope, and protected-resource
 // metadata handling lives in http.go and http_auth.go. Handing that transport to
 // the SDK would replace the auth boundary. The revision is therefore implemented
-// here, and 2025-11-25 / 2025-03-26 clients keep the response shape they have now.
+// here. Compatibility is the two latest revisions: 2026-07-28 and 2025-11-25.
+// An initialize that names anything older is answered as 2025-11-25. A
+// 2026-style _meta version outside those two is rejected.
 
 const (
 	protocolVersion20250326 = "2025-03-26"
@@ -33,12 +35,12 @@ const (
 	cacheTTLDiscover = 3600000
 )
 
-// supportedProtocolVersions is the set a client may select. Latest first so a
-// client that picks the first entry speaks the current revision.
+// supportedProtocolVersions is the two latest published revisions a client may
+// select. Latest first so a client that picks the first entry speaks the
+// current revision. 2025-03-26 is not in this set.
 var supportedProtocolVersions = []string{
 	protocolVersion20260728,
 	protocolVersion20251125,
-	protocolVersion20250326,
 }
 
 type cacheHint struct {
@@ -91,9 +93,10 @@ func metaProtocolVersionOf(req *Request) (string, bool) {
 	return v, true
 }
 
-// protocolOf classifies one request. An explicit version that trvl does not
-// speak is an error. Absence means the legacy 2025-11-25 shape, which is what
-// initialize returns today for both advertised 2025 versions.
+// protocolOf classifies one request. An explicit _meta version outside the two
+// supported revisions is an error. Absence means the 2025-11-25 shape. An
+// initialize that names 2026-07-28 speaks that revision; any other initialize
+// version is answered as 2025-11-25.
 func protocolOf(req *Request) (string, *Error) {
 	if v, ok := metaProtocolVersionOf(req); ok {
 		if !supportedProtocol(v) {

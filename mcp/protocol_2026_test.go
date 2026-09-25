@@ -105,7 +105,30 @@ func TestProtocol2026PublicListIgnoresCallerState(t *testing.T) {
 	}
 }
 
+func TestProtocolSupportIsTheTwoLatestRevisions(t *testing.T) {
+	if len(supportedProtocolVersions) != 2 ||
+		supportedProtocolVersions[0] != protocolVersion20260728 ||
+		supportedProtocolVersions[1] != protocolVersion20251125 {
+		t.Fatalf("supported versions = %v, want 2026-07-28 then 2025-11-25", supportedProtocolVersions)
+	}
+	for _, version := range supportedProtocolVersions {
+		if version == protocolVersion20250326 {
+			t.Fatal("2025-03-26 is older than the two latest revisions")
+		}
+	}
+
+	s := NewServer()
+	rejected := s.HandleRequest(jsonRequest(t, "tools/list", 1, map[string]any{
+		"_meta": map[string]any{metaProtocolVersion: protocolVersion20250326},
+	}))
+	if rejected.Error == nil || rejected.Error.Code != codeUnsupportedProtocolVersion {
+		t.Fatalf("2025-03-26 _meta = %#v, want unsupported protocol version", rejected.Error)
+	}
+}
+
 func TestProtocol2026LegacySessionsUnchanged(t *testing.T) {
+	// 2025-11-25 is the older supported revision. 2025-03-26 is not supported;
+	// an initialize that names it is answered as 2025-11-25.
 	for _, version := range []string{protocolVersion20251125, protocolVersion20250326} {
 		t.Run(version, func(t *testing.T) {
 			s := NewServer()
