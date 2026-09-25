@@ -15,14 +15,16 @@ evidence that this problem is solved, and it is not the design.
 
 ## Problem
 
-trvl's MCP server tells clients it can speak three published revisions,
-including 2025-03-26. The current published set has moved on. A client written
-to the specification's compatibility rule — stay within the revisions the
-server actually claims — cannot learn a two-revision window from trvl, because
-trvl still claims the older one.
+On the tagged release v1.22.0 (`d9c84ca3`), `supportedProtocolVersions` in
+`mcp/protocol_2026.go` is `2026-07-28`, `2025-11-25`, and `2025-03-26`. The
+published specification index has moved on. A client that stays inside the
+revisions the server claims still sees `2025-03-26` in that set.
 
-Whose problem: a person connecting an MCP client to `trvl mcp`. They hit it
-on first connect, whenever their client picks a protocol revision.
+Whose problem: a person connecting an MCP client to `trvl mcp`, on first
+connect, whenever the client picks a protocol revision. A client that still
+sends `2025-03-26` on `initialize` is outside the window. The legacy rule
+answers with a revision the server does support. The client is expected to
+disconnect if it cannot speak that answered revision.
 
 Why now: v1.22.0, tagged 2026-09-25, advertises three revisions. The request
 after that tag was that compatibility be the two latest published revisions.
@@ -65,16 +67,22 @@ Solved means all of the following are observable against a server built from
 the revision under review:
 
 1. The revisions a client can select are exactly `2026-07-28` and
-   `2025-11-25`, latest first. `server/discover` reports that list.
+   `2025-11-25`, latest first. `server/discover` reports that list. The
+   2026-07-28 versioning page requires every server to implement
+   `server/discover` so a client can read the supported revisions before any
+   other call. trvl already handles that method (`mcp/protocol_2026.go`).
 2. A `2026-07-28` request is served as that revision.
-3. An `initialize` of `2025-11-25` is served as `2025-11-25`, including `ping`
-   and `resources/subscribe`.
-4. A request that names any other revision is not served as that revision.
-   The client is told the two revisions above.
-5. An `initialize` that names an older legacy revision receives a legacy
-   revision the server supports (`2025-11-25`), which is the negotiation rule
-   of the legacy revision being kept. It does not add that older revision to
-   the supported set.
+3. An `initialize` of `2025-11-25` is served as `2025-11-25`. That session
+   still accepts `ping` and `resources/subscribe`, and its results do not
+   carry the 2026-only `resultType` or cache hints.
+4. A modern request (one that names its revision in `_meta`) for any other
+   revision is not served as that revision. The `-32022` error tells the
+   client the two revisions above.
+5. An `initialize` that names an older legacy revision is not signal 4.
+   It receives `2025-11-25`, the legacy revision the server supports, and
+   that older revision is not added to the supported set. The initialize
+   result carries the one negotiated revision, which is what the legacy
+   handshake returns.
 
 ## Out
 
@@ -99,6 +107,12 @@ mechanism is not chosen here.
 Resolved: what `initialize` does with a revision outside the pair — 2025-11-25
 lifecycle, "MUST respond with another protocol version it supports" — signal 5.
 Not load-bearing on which Go type carries the modern error `data`.
+
+Re-check, not an open unknown: before a solution review, fetch
+`https://modelcontextprotocol.io/llms.txt` again. If the two newest published
+revisions are no longer `2026-07-28` and `2025-11-25`, this problem reopens.
+Owner of that fetch: whoever opens the solution gate. If the fetch fails, the
+solution gate stays closed.
 
 No deferred unknowns.
 
