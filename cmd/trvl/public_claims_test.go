@@ -221,7 +221,7 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 			// subcommands, and the at-a-glance capability table.
 			path: filepath.Join("..", "..", "docs", "CLI.md"),
 			required: []string{
-				fmt.Sprintf("Full v2025-11-25 — %d smart MCP tool, %d legacy-compatible capabilities", toolCount, compatAliasCount),
+				fmt.Sprintf("2026-07-28, plus 2025-11-25 and 2025-03-26 clients unchanged — %d smart MCP tool, %d legacy-compatible capabilities", toolCount, compatAliasCount),
 				fmt.Sprintf("%d commands (+ %d watch subcommands)", cliCommandCount, watchSubcommandCount),
 				fmt.Sprintf("Searches %d providers in parallel:", groundProviderCount),
 			},

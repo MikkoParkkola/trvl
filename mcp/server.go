@@ -8,7 +8,8 @@
 // transport, trip state, weather, baggage, and travel hacks. It also provides
 // prompts and resources.
 //
-// Protocol version: 2025-11-25
+// Protocol versions: 2026-07-28, 2025-11-25, and 2025-03-26.
+// A request without a 2026 _meta protocol version keeps the 2025-11-25 shape.
 // Key features: structured output, content annotations, progress notifications,
 // and logging.
 package mcp
@@ -116,6 +117,11 @@ type Server struct {
 	// Resource subscriptions: map from URI to true.
 	subsMu sync.Mutex
 	subs   map[string]bool
+
+	// listens are 2026-07-28 subscriptions/listen streams. Keyed by pointer so
+	// two HTTP clients that both use request id 1 do not close each other.
+	listenMu sync.Mutex
+	listens  []*listenSub
 
 	// Concurrency semaphore: limits parallel tool executions.
 	toolSem chan struct{}
@@ -370,42 +376,62 @@ func (s *Server) makeProgressFunc(token string) ProgressFunc {
 
 // HandleRequest processes a single JSON-RPC request and returns the response.
 func (s *Server) HandleRequest(req *Request) *Response {
-	switch req.Method {
-	case "initialize":
-		return s.handleInitialize(req)
-	case "notifications/initialized":
-		return nil
-	case "notifications/cancelled":
-		return nil // Client cancelled a request; acknowledged.
-	case "ping":
-		return &Response{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{}}
-	case "logging/setLevel":
-		return s.handleLoggingSetLevel(req)
-	case "completion/complete":
-		return s.handleCompletionComplete(req)
-	case "tools/list":
-		return s.handleToolsList(req)
-	case "tools/call":
-		return s.handleToolsCall(req)
-	case "prompts/list":
-		return s.handlePromptsList(req)
-	case "prompts/get":
-		return s.handlePromptsGet(req)
-	case "resources/list":
-		return s.handleResourcesList(req)
-	case "resources/read":
-		return s.handleResourcesRead(req)
-	case "resources/subscribe":
-		return s.handleResourcesSubscribe(req)
-	case "resources/unsubscribe":
-		return s.handleResourcesUnsubscribe(req)
-	default:
+	version, verr := protocolOf(req)
+	if verr != nil {
+		return &Response{JSONRPC: "2.0", ID: req.ID, Error: verr}
+	}
+	if isProtocol2026(version) && removedIn2026(req.Method) {
 		return &Response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
 			Error:   &Error{Code: -32601, Message: fmt.Sprintf("method not found: %s", req.Method)},
 		}
 	}
+
+	var resp *Response
+	switch req.Method {
+	case "initialize":
+		resp = s.handleInitialize(req)
+	case "notifications/initialized":
+		return nil
+	case "notifications/cancelled":
+		resp = s.handleCancelled(req)
+	case "ping":
+		resp = &Response{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{}}
+	case "logging/setLevel":
+		resp = s.handleLoggingSetLevel(req)
+	case "completion/complete":
+		resp = s.handleCompletionComplete(req)
+	case "tools/list":
+		resp = s.handleToolsList(req)
+	case "tools/call":
+		resp = s.handleToolsCall(req)
+	case "prompts/list":
+		resp = s.handlePromptsList(req)
+	case "prompts/get":
+		resp = s.handlePromptsGet(req)
+	case "resources/list":
+		resp = s.handleResourcesList(req)
+	case "resources/templates/list":
+		resp = s.handleResourceTemplatesList(req)
+	case "resources/read":
+		resp = s.handleResourcesRead(req)
+	case "resources/subscribe":
+		resp = s.handleResourcesSubscribe(req)
+	case "resources/unsubscribe":
+		resp = s.handleResourcesUnsubscribe(req)
+	case "server/discover":
+		resp = s.handleDiscover(req)
+	case "subscriptions/listen":
+		resp = s.handleSubscriptionsListen(req)
+	default:
+		resp = &Response{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Error:   &Error{Code: -32601, Message: fmt.Sprintf("method not found: %s", req.Method)},
+		}
+	}
+	return s.finish(req, resp)
 }
 
 func (s *Server) handleInitialize(req *Request) *Response {
@@ -425,15 +451,22 @@ func (s *Server) handleInitialize(req *Request) *Response {
 		}
 	}
 
+	advertised := protocolVersion
+	subscribe := true
+	if initializeProtocol(req) == protocolVersion20260728 {
+		advertised = protocolVersion20260728
+		subscribe = false
+	}
+
 	return &Response{
 		JSONRPC: "2.0",
 		ID:      req.ID,
 		Result: InitializeResult{
-			ProtocolVersion: protocolVersion,
+			ProtocolVersion: advertised,
 			Capabilities: Capabilities{
 				Tools:     &ToolsCapability{ListChanged: false},
 				Prompts:   &PromptsCapability{ListChanged: false},
-				Resources: &ResourcesCapability{Subscribe: true, ListChanged: true},
+				Resources: &ResourcesCapability{Subscribe: subscribe, ListChanged: true},
 				Logging:   &LoggingCapability{},
 			},
 			ServerInfo: ServerInfo{
@@ -640,8 +673,8 @@ func (s *Server) SendResourceUpdated(uri string) {
 	s.subsMu.Lock()
 	subscribed := s.subs[uri]
 	s.subsMu.Unlock()
-	if !subscribed {
-		return
+	if subscribed {
+		_ = s.SendNotification("notifications/resources/updated", map[string]string{"uri": uri})
 	}
-	_ = s.SendNotification("notifications/resources/updated", map[string]string{"uri": uri})
+	s.fanoutResourceUpdated(uri)
 }

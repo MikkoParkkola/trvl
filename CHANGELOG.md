@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-09-25
+
+### Added
+
+- MCP **2026-07-28** on the existing server: `server/discover`, `resultType: "complete"`, `ttlMs` and `cacheScope` on `tools/list`, `prompts/list`, `resources/list`, `resources/read`, and `resources/templates/list`, and `subscriptions/listen` with per-type opt-in. Streamable HTTP checks `Mcp-Method` and `Mcp-Name` and returns `HeaderMismatch` (`-32020`) when they disagree with the body. Clients that `initialize` with **2025-11-25** or **2025-03-26** keep that session shape, including `ping` and `resources/subscribe`. The official Go SDK was not adopted: it would own the HTTP server, and trvl's bearer, scope, and protected-resource metadata handling stays in `mcp/http.go` and `mcp/http_auth.go`.
+
+### Fixed
+
+- The nightly live flight probe searched a fixed 15 September 2026 date. Once that day passed, Skiplagged and Wizz rejected it and the probe reported a zero price as if the checker had been stubbed. The departure is now 21 days ahead.
+  ([#664](https://github.com/MikkoParkkola/trvl/issues/664))
+- `internal/watch` repeated-session coverage no longer opens a store transaction hundreds of times inside the two-minute Windows timing budget. When `go test -timeout` kills the package, the timing summary says the package failed without a failing test instead of reporting a test failure.
+  ([#670](https://github.com/MikkoParkkola/trvl/issues/670))
+- Homebrew infers the version from the release URL.
+  ([#657](https://github.com/MikkoParkkola/trvl/pull/657))
+- Log-redaction tests assert the fingerprint contract, and the empty origin-filter regression on deals stays covered.
+  ([#656](https://github.com/MikkoParkkola/trvl/pull/656),
+  [#655](https://github.com/MikkoParkkola/trvl/pull/655))
+
+### Security
+
+- `golang.org/x/net` 0.59.0, with the existing http2 exemption recorded.
+  ([#663](https://github.com/MikkoParkkola/trvl/pull/663))
+- Dependency refresh: `golang.org/x/sync` 0.23.0, `golang.org/x/term` 0.46.0, and `github.com/andybalholm/brotli` 1.2.4.
+  ([#660](https://github.com/MikkoParkkola/trvl/pull/660),
+  [#659](https://github.com/MikkoParkkola/trvl/pull/659),
+  [#662](https://github.com/MikkoParkkola/trvl/pull/662))
+
 ## [1.21.6] - 2026-09-10
 
 ### Added
@@ -1268,7 +1295,9 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.21.5...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.22.0...HEAD
+[1.22.0]: https://github.com/MikkoParkkola/trvl/compare/v1.21.6...v1.22.0
+[1.21.6]: https://github.com/MikkoParkkola/trvl/compare/v1.21.5...v1.21.6
 [1.21.5]: https://github.com/MikkoParkkola/trvl/compare/v1.21.4...v1.21.5
 [1.21.4]: https://github.com/MikkoParkkola/trvl/compare/v1.21.3...v1.21.4
 [1.21.3]: https://github.com/MikkoParkkola/trvl/compare/v1.21.2...v1.21.3

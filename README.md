@@ -4,7 +4,7 @@
 [![Downloads](https://img.shields.io/github/downloads/MikkoParkkola/trvl/total)](https://github.com/MikkoParkkola/trvl/releases)
 [![License](https://img.shields.io/badge/license-PolyForm%20NC%201.0-blue)](LICENSE)
 [![Go Reference](https://pkg.go.dev/badge/github.com/MikkoParkkola/trvl.svg)](https://pkg.go.dev/github.com/MikkoParkkola/trvl)
-[![MCP](https://img.shields.io/badge/MCP-2025--11--25-blue)](https://modelcontextprotocol.io)
+[![MCP](https://img.shields.io/badge/MCP-2026--07--28-blue)](https://modelcontextprotocol.io/specification/2026-07-28)
 [![Providers](https://img.shields.io/badge/providers-24-brightgreen)](https://github.com/MikkoParkkola/trvl#what-it-can-do)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/MikkoParkkola/trvl)](https://go.dev/)
 [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP-0078d4?logo=visualstudiocode)](https://insiders.vscode.dev/redirect/mcp/install?name=trvl&config=%7B%22command%22%3A%22trvl%22%2C%22args%22%3A%5B%22mcp%22%5D%7D)
@@ -29,6 +29,8 @@
 ## How it works, in one paragraph
 
 trvl is a single binary that runs on your machine. Your AI client talks to it over MCP; it queries flight, hotel, transport, weather, and places sources, then merges, de-duplicates and optimizes the results before handing back one answer. Most sources are free public endpoints, so there is nothing to sign up for. The ones behind bot protection may reuse the browser session you already have, which is the one thing worth reading about before you install: see [What trvl reads, and what it keeps](#what-trvl-reads-and-what-it-keeps).
+
+trvl speaks MCP **2026-07-28**, **2025-11-25**, and **2025-03-26**. A client that sends `initialize` with a 2025 version gets that same session shape as before, including `ping` and `resources/subscribe`. A client that sends `2026-07-28` in `_meta["io.modelcontextprotocol/protocolVersion"]` on each request gets `server/discover`, `resultType`, cache hints on the list and read endpoints, and `subscriptions/listen` instead of resource subscribe. On HTTP, a 2026 request must send `Mcp-Method` (and `Mcp-Name` for `tools/call`, `resources/read`, and `prompts/get`); a mismatch returns JSON-RPC `-32020`.
 
 ## Why trvl, not the alternatives
 
