@@ -133,7 +133,7 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 	}
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Mcp-Method, Mcp-Name, MCP-Protocol-Version")
 
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
@@ -198,6 +198,18 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 	h.audit.allowed.Add(1)
 	slogHTTPAuthDecision("allow", req.Method, scopeSummary(access), access.Subject)
 
+	if errResp := headerContractError(r.Header.Get("MCP-Protocol-Version"), r.Header.Get("Mcp-Method"), r.Header.Get("Mcp-Name"), &req); errResp != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(Response{JSONRPC: "2.0", ID: req.ID, Error: errResp})
+		return
+	}
+
+	if req.Method == "subscriptions/listen" {
+		h.streamListen(w, r, &req)
+		return
+	}
+
 	resp := h.server.HandleRequest(&req)
 	if resp == nil {
 		// Notification — return 204 No Content.
@@ -207,6 +219,56 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// streamListen is the HTTP form of subscriptions/listen: the ack is the first
+// SSE event, updates for opted-in resource URIs follow, and the JSON-RPC
+// result is written when the client disconnects.
+func (h *HTTPServer) streamListen(w http.ResponseWriter, r *http.Request, req *Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+
+	sub, ack, rpcErr := h.server.openListen(req, func(method string, params any) {
+		writeSSE(w, map[string]any{"jsonrpc": "2.0", "method": method, "params": params})
+		flusher.Flush()
+	})
+	if rpcErr != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr})
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	writeSSE(w, map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "notifications/subscriptions/acknowledged",
+		"params":  ack,
+	})
+	flusher.Flush()
+	h.server.markListenReady(sub)
+
+	<-r.Context().Done()
+	resp := h.server.finish(req, h.server.closeListen(sub))
+	if resp != nil {
+		writeSSE(w, resp)
+		flusher.Flush()
+	}
+}
+
+func writeSSE(w http.ResponseWriter, v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 }
 
 // challengeScope picks the WWW-Authenticate scope for an unauthenticated

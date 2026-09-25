@@ -279,7 +279,11 @@ func TestStoreAddDoesNotAccumulateAcrossSessions(t *testing.T) {
 	s := NewStore(t.TempDir())
 	routes := [][2]string{{"HEL", "BCN"}, {"HEL", "PRG"}, {"PRG", "AMS"}}
 
-	for session := 0; session < 200; session++ {
+	// Eight sessions is enough to show a second session does not append. A
+	// few hundred iterations fsync the store once per add and, on a slow
+	// Windows runner, that alone fills the CI step's two-minute budget.
+	const sessions = 8
+	for session := 0; session < sessions; session++ {
 		for _, r := range routes {
 			if _, _, err := s.Add(Watch{
 				Type: "flight", Origin: r[0], Destination: r[1], BelowPrice: 200, Currency: "EUR",
@@ -290,8 +294,8 @@ func TestStoreAddDoesNotAccumulateAcrossSessions(t *testing.T) {
 	}
 
 	if got := len(s.List()); got != len(routes) {
-		t.Fatalf("200 sessions over %d routes produced %d watches, want %d (this is the 468-watch bug)",
-			len(routes), got, len(routes))
+		t.Fatalf("%d sessions over %d routes produced %d watches, want %d (this is the 468-watch bug)",
+			sessions, len(routes), got, len(routes))
 	}
 }
 

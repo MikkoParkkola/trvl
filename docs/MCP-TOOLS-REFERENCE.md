@@ -111,7 +111,7 @@ Dates in the compact examples are illustrative; use future dates for live provid
 
 > **Unique feature:** The `checked_bags` filter on `search_flights` directly sets the checked-bags slot in Google's internal `batchexecute` filter array — the same wire position as carry-on bags. Google's own Flights UI only exposes the carry-on filter; the checked-bag slot works server-side but is undocumented and not surfaced in the UI. trvl is the only client that exposes it.
 
-### MCP Protocol Features (v2025-11-25)
+### MCP Protocol Features (v2026-07-28, with 2025-11-25 and 2025-03-26 still accepted)
 
 | Feature | Details |
 |---------|---------|
@@ -122,6 +122,6 @@ Dates in the compact examples are illustrative; use future dates for live provid
 | **Resources** | Airport codes (50 major hubs), flight/hotel usage guides, price-watch subscriptions |
 | **Tool description orchestration** | `find_trip_window` instructs the LLM to fetch calendar data first, then pass busy intervals in — works on every MCP client. See [MCP-ORCHESTRATION.md](MCP-ORCHESTRATION.md) |
 | **Progress notifications** | Long-running searches stream progress tokens to the client |
-| **Resource subscriptions** | Price-watch resources notify subscribers on price changes |
+| **Resource subscriptions** | 2026 clients opt in with `subscriptions/listen`. 2025 clients still use `resources/subscribe`. Price-watch resources notify subscribers on price changes |
 | **Progressive disclosure** | Suggestions for follow-up searches in every response |
 | **Booking links** | Direct Google Flights/Hotels links in results |

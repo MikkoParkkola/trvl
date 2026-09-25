@@ -24,38 +24,57 @@ type testTiming struct {
 	Failed  bool
 }
 
-func summarizeEvents(r io.Reader) ([]testTiming, bool, error) {
+type streamOutcome int
+
+const (
+	outcomeOK streamOutcome = iota
+	outcomeTestFailed
+	outcomePackageFailed
+)
+
+func summarizeEvents(r io.Reader) ([]testTiming, streamOutcome, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 	var timings []testTiming
-	failed := false
+	testFailed := false
+	packageFailed := false
 	sawPackageResult := false
 	for scanner.Scan() {
 		var event testEvent
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
-			return nil, false, fmt.Errorf("decode go test event: %w", err)
+			return nil, outcomeOK, fmt.Errorf("decode go test event: %w", err)
 		}
 		switch event.Action {
 		case "pass", "fail", "skip":
 			if event.Test == "" {
 				sawPackageResult = true
-				failed = failed || event.Action == "fail"
+				packageFailed = packageFailed || event.Action == "fail"
 				continue
 			}
+			failed := event.Action == "fail"
 			timings = append(timings, testTiming{
 				Name:    event.Test,
 				Elapsed: event.Elapsed,
-				Failed:  event.Action == "fail",
+				Failed:  failed,
 			})
-			failed = failed || event.Action == "fail"
+			testFailed = testFailed || failed
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, false, fmt.Errorf("read go test events: %w", err)
+		return nil, outcomeOK, fmt.Errorf("read go test events: %w", err)
 	}
 	if !sawPackageResult {
-		return nil, false, errors.New("go test stream ended without a package result")
+		return nil, outcomeOK, errors.New("go test stream ended without a package result")
+	}
+	outcome := outcomeOK
+	if testFailed {
+		outcome = outcomeTestFailed
+	} else if packageFailed {
+		// go test -timeout kills the package and emits a package fail after the
+		// tests that finished have already been reported as pass. That is a
+		// timeout, not a failing test.
+		outcome = outcomePackageFailed
 	}
 
 	sort.Slice(timings, func(i, j int) bool {
@@ -64,7 +83,7 @@ func summarizeEvents(r io.Reader) ([]testTiming, bool, error) {
 		}
 		return timings[i].Elapsed > timings[j].Elapsed
 	})
-	return timings, failed, nil
+	return timings, outcome, nil
 }
 
 func writeSummary(w io.Writer, timings []testTiming) error {
@@ -123,7 +142,7 @@ func appendSummaryFile(summaryPath string, timings []testTiming) (err error) {
 }
 
 func run(input io.Reader, output io.Writer, summaryPath string) error {
-	timings, failed, err := summarizeEvents(input)
+	timings, outcome, err := summarizeEvents(input)
 	if err != nil {
 		return err
 	}
@@ -135,10 +154,14 @@ func run(input io.Reader, output io.Writer, summaryPath string) error {
 			return err
 		}
 	}
-	if failed {
+	switch outcome {
+	case outcomeTestFailed:
 		return errors.New("internal/watch tests failed")
+	case outcomePackageFailed:
+		return errors.New("go test reported a package failure without a failing test (timeout or crash)")
+	default:
+		return nil
 	}
-	return nil
 }
 
 func main() {

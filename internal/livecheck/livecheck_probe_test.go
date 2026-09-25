@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/testutil"
 	"github.com/MikkoParkkola/trvl/internal/watch"
@@ -22,8 +23,11 @@ func TestChecker_LiveFlightProbe(t *testing.T) {
 		Type:        "flight",
 		Origin:      "HEL",
 		Destination: "LHR",
-		DepartDate:  "2026-09-15",
-		Currency:    "EUR",
+		// A fixed date goes stale and every provider then rejects it as "not today
+		// or later", which the probe reports as a zero price. Keep the departure
+		// inside the window providers will still quote.
+		DepartDate: time.Now().UTC().AddDate(0, 0, 21).Format("2006-01-02"),
+		Currency:   "EUR",
 	})
 	// A throttled night (Google 429 from the CI datacenter IP) is transient
 	// noise, not the re-stubbed-checker regression this guard exists for: skip

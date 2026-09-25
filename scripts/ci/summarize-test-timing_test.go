@@ -13,11 +13,11 @@ func TestSummarizeEventsSortsSlowestFirst(t *testing.T) {
 		`{"Action":"pass","Package":"example/watch","Elapsed":1.26}`,
 	}, "\n")
 
-	timings, failed, err := summarizeEvents(strings.NewReader(input))
+	timings, outcome, err := summarizeEvents(strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if failed {
+	if outcome != outcomeOK {
 		t.Fatal("successful stream reported failure")
 	}
 	if len(timings) != 2 || timings[0].Name != "TestSlow" || timings[1].Name != "TestFast" {
@@ -51,6 +51,22 @@ func TestRunRejectsRelativeSummaryPath(t *testing.T) {
 	err := run(strings.NewReader(input), &output, summaryPath)
 	if err == nil || !strings.Contains(err.Error(), "absolute") {
 		t.Fatalf("run accepted relative summary path %q: %v", summaryPath, err)
+	}
+}
+
+func TestRunNamesPackageTimeoutSeparatelyFromTestFailure(t *testing.T) {
+	input := strings.Join([]string{
+		`{"Action":"pass","Package":"example/watch","Test":"TestSlow","Elapsed":55}`,
+		`{"Action":"fail","Package":"example/watch","Elapsed":120}`,
+	}, "\n")
+
+	var output bytes.Buffer
+	err := run(strings.NewReader(input), &output, "")
+	if err == nil || !strings.Contains(err.Error(), "without a failing test") {
+		t.Fatalf("timeout reported as a test failure: %v", err)
+	}
+	if !strings.Contains(output.String(), "TestSlow") || !strings.Contains(output.String(), "pass") {
+		t.Fatalf("summary hid the tests that passed: %q", output.String())
 	}
 }
 
