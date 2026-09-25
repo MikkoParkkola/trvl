@@ -16,20 +16,30 @@ evidence that this problem is solved, and it is not the design.
 ## Problem
 
 On the tagged release v1.22.0 (`d9c84ca3`), `supportedProtocolVersions` in
-`mcp/protocol_2026.go` is `2026-07-28`, `2025-11-25`, and `2025-03-26`. The
-published specification index has moved on. A client that stays inside the
-revisions the server claims still sees `2025-03-26` in that set.
+`mcp/protocol_2026.go` is `2026-07-28`, `2025-11-25`, and `2025-03-26`.
+`server/discover` reports that list. Two behaviours do not honour it.
 
-Whose problem: a person connecting an MCP client to `trvl mcp`, on first
-connect, whenever the client picks a protocol revision. A client that still
-sends `2025-03-26` on `initialize` is outside the window. The legacy rule
-answers with a revision the server does support. The client is expected to
-disconnect if it cannot speak that answered revision.
+A handshake that names `2025-03-26` is answered `2025-11-25`.
+`handleInitialize` in `mcp/server.go` advertises the constant `2025-11-25`
+unless the handshake names exactly `2026-07-28`. The legacy rule below says a
+server that supports the requested revision must answer with that same
+revision. v1.22.0 lists `2025-03-26` and answers with a different one.
 
-Why now: v1.22.0, tagged 2026-09-25, advertises three revisions. The request
-after that tag was that compatibility be the two latest published revisions.
-Leaving the third in the advertised set keeps a window the requester has
-already closed.
+A handshake that names `2026-07-28` is answered `2026-07-28`, with resource
+subscription turned off. The 2026-07-28 versioning page says an `initialize`
+request selects legacy semantics. v1.22.0 treats that handshake as the modern
+revision.
+
+Whose problem: a client that trusts the list `server/discover` returns. It
+can select `2025-03-26` and not be served that revision. The same client,
+sending `2026-07-28` on the handshake, gets a modern session from a request
+the specification keeps on the legacy side.
+
+Why now: both mismatches are on the release tagged 2026-09-25. The requester
+asked that day for the two latest published revisions. `2025-03-26` is outside
+that pair, and it is the revision the handshake lists and does not answer.
+The handshake that names `2026-07-28` is the second mismatch: the specification
+keeps `initialize` on the legacy side.
 
 ## Measured constraints
 
@@ -76,11 +86,15 @@ the revision under review:
 3. An `initialize` whose handshake names `2025-11-25`, and which does not
    also name a revision in `_meta`, is served as `2025-11-25`. That session
    still accepts `ping` and `resources/subscribe`, and its results do not
-   carry `resultType` or cache hints.
-4. A request that names any other revision in `_meta`, including an
-   `initialize` that does so, is not served as that revision. The `-32022`
-   error's `data.supported` is the two revisions above, and `data.requested`
-   is the revision the client named.
+   carry `resultType` or cache hints. A request that names `2025-11-25` in
+   `_meta` is the same revision on that request alone, with that same legacy
+   shape, and it does not need a prior `initialize`. It is not rejected.
+   The specification's retry path sends a version from `data.supported`
+   back on the request, and both revisions are in that list.
+4. A request that names a revision other than `2026-07-28` and `2025-11-25`
+   in `_meta`, including an `initialize` that does so, is not served as that
+   revision. The `-32022` error's `data.supported` is the two revisions
+   above, and `data.requested` is the revision the client named.
 5. An `initialize` that names its revision only in the handshake parameters,
    and names anything other than `2025-11-25`, is not signal 4. It receives
    `2025-11-25`. That includes a handshake that names `2026-07-28` or an
