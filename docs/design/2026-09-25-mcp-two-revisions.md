@@ -71,18 +71,21 @@ the revision under review:
    2026-07-28 versioning page requires every server to implement
    `server/discover` so a client can read the supported revisions before any
    other call. trvl already handles that method (`mcp/protocol_2026.go`).
-2. A `2026-07-28` request is served as that revision.
-3. An `initialize` of `2025-11-25` is served as `2025-11-25`. That session
+2. A request that names `2026-07-28` in `_meta` is served as that revision.
+   Its result carries `resultType`. It does not need a prior `initialize`.
+3. An `initialize` whose handshake names `2025-11-25`, and which does not
+   also name a revision in `_meta`, is served as `2025-11-25`. That session
    still accepts `ping` and `resources/subscribe`, and its results do not
-   carry the 2026-only `resultType` or cache hints.
-4. A modern request (one that names its revision in `_meta`) for any other
-   revision is not served as that revision. The `-32022` error tells the
-   client the two revisions above.
-5. An `initialize` that names an older legacy revision is not signal 4.
-   It receives `2025-11-25`, the legacy revision the server supports, and
-   that older revision is not added to the supported set. The initialize
-   result carries the one negotiated revision, which is what the legacy
-   handshake returns.
+   carry `resultType` or cache hints.
+4. A request that names any other revision in `_meta`, including an
+   `initialize` that does so, is not served as that revision. The `-32022`
+   error's `data.supported` is the two revisions above, and `data.requested`
+   is the revision the client named.
+5. An `initialize` that names its revision only in the handshake parameters,
+   and names anything other than `2025-11-25`, is not signal 4. It receives
+   `2025-11-25`. That includes a handshake that names `2026-07-28` or an
+   older legacy revision. The named revision is not added to the supported
+   set. The initialize result carries that one negotiated revision.
 
 ## Out
 
