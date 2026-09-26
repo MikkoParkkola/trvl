@@ -453,7 +453,7 @@ func (s *Server) handleInitialize(req *Request) *Response {
 
 	advertised := protocolVersion
 	subscribe := true
-	if initializeProtocol(req) == protocolVersion20260728 {
+	if version, err := protocolOf(req); err == nil && isProtocol2026(version) {
 		advertised = protocolVersion20260728
 		subscribe = false
 	}

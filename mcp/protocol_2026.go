@@ -94,20 +94,28 @@ func metaProtocolVersionOf(req *Request) (string, bool) {
 }
 
 // protocolOf classifies one request. An explicit _meta version outside the two
-// supported revisions is an error. Absence means the 2025-11-25 shape. An
-// initialize that names 2026-07-28 speaks that revision; any other initialize
-// version is answered as 2025-11-25.
+// supported revisions is an error. Absence means the 2025-11-25 shape. The
+// initialize handshake does not select 2026-07-28; that revision is selected
+// by _meta, and on HTTP by a header that matches it.
 func protocolOf(req *Request) (string, *Error) {
 	if v, ok := metaProtocolVersionOf(req); ok {
 		if !supportedProtocol(v) {
-			return "", &Error{Code: codeUnsupportedProtocolVersion, Message: "unsupported protocol version: " + v}
+			return "", unsupportedProtocol(v)
 		}
 		return v, nil
 	}
-	if req != nil && req.Method == "initialize" && initializeProtocol(req) == protocolVersion20260728 {
-		return protocolVersion20260728, nil
-	}
 	return protocolVersion, nil
+}
+
+func unsupportedProtocol(requested string) *Error {
+	return &Error{
+		Code:    codeUnsupportedProtocolVersion,
+		Message: "unsupported protocol version: " + requested,
+		Data: map[string]any{
+			"supported": []string{protocolVersion20260728, protocolVersion20251125},
+			"requested": requested,
+		},
+	}
 }
 
 func initializeProtocol(req *Request) string {
@@ -402,23 +410,23 @@ func idKey(id any) string {
 // 2025 requests are not required to send the headers; a session that omits
 // them stays valid.
 func headerContractError(protocolHeader, methodHeader, nameHeader string, req *Request) *Error {
+	protocolHeader = strings.TrimSpace(protocolHeader)
+	meta, hasMeta := metaProtocolVersionOf(req)
+	if protocolHeader != "" && hasMeta && protocolHeader != meta {
+		return &Error{Code: codeHeaderMismatch, Message: "MCP-Protocol-Version header disagrees with the request protocol version"}
+	}
+	if (protocolHeader == protocolVersion20260728 && !hasMeta) || (hasMeta && meta == protocolVersion20260728 && protocolHeader == "") {
+		return &Error{Code: codeHeaderMismatch, Message: "MCP-Protocol-Version header disagrees with the request protocol version"}
+	}
+	if protocolHeader != "" && !supportedProtocol(protocolHeader) && (!hasMeta || protocolHeader == meta) {
+		return unsupportedProtocol(protocolHeader)
+	}
+	if hasMeta && !supportedProtocol(meta) && (protocolHeader == "" || protocolHeader == meta) {
+		return unsupportedProtocol(meta)
+	}
 	version, verr := protocolOf(req)
 	if verr != nil {
 		return verr
-	}
-	protocolHeader = strings.TrimSpace(protocolHeader)
-	if protocolHeader != "" {
-		bodyVersion, ok := metaProtocolVersionOf(req)
-		if !ok && req.Method == "initialize" {
-			bodyVersion = initializeProtocol(req)
-			ok = bodyVersion != ""
-		}
-		if !ok {
-			bodyVersion = protocolVersion
-		}
-		if protocolHeader != bodyVersion {
-			return &Error{Code: codeHeaderMismatch, Message: "MCP-Protocol-Version header disagrees with the request protocol version"}
-		}
 	}
 	if !isProtocol2026(version) {
 		return nil

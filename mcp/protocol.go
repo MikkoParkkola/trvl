@@ -28,6 +28,7 @@ type Response struct {
 type Error struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
 }
 
 // --- MCP protocol types ---
