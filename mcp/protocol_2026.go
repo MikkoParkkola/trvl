@@ -414,10 +414,7 @@ func headerContractError(protocolHeader, methodHeader, nameHeader string, req *R
 	if hasMeta && !supportedProtocol(meta) && (protocolHeader == "" || protocolHeader == meta) {
 		return unsupportedProtocol(meta)
 	}
-	version, verr := protocolOf(req)
-	if verr != nil {
-		return verr
-	}
+	version, _ := protocolOf(req)
 	if !isProtocol2026(version) {
 		return nil
 	}
