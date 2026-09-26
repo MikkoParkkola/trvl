@@ -23,3 +23,12 @@ func TestOpenJawCommandRejectsADifferentArrival(t *testing.T) {
 		t.Fatal("expected the ground leg to be rejected")
 	}
 }
+
+func TestOpenJawCommandKeepsAFerryMode(t *testing.T) {
+	cmd := openJawCmd()
+	addInheritedFormatFlag(t, cmd, "json")
+	out := executeCommandWithStdout(t, cmd, "HEL:STO:180:EUR", "STO:HEL:40:EUR:ferry")
+	if !strings.Contains(out, `"mode": "ferry"`) {
+		t.Fatalf("output = %q", out)
+	}
+}

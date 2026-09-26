@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -16,12 +17,13 @@ func openJawCmd() *cobra.Command {
 		Short: "Price a flight into a city and a ground leg out of it as one total",
 		Long: `open-jaw adds one flight and one ground leg that leaves the flight's arrival city.
 
-Each leg is ORIGIN:DESTINATION:COST[:CURRENCY].
-The first leg is the flight. The second is the train, bus, or ferry.
-When both legs name a currency, the currencies have to match.
+Each leg is ORIGIN:DESTINATION:COST:CURRENCY[:MODE].
+The first leg is the flight. The second defaults to train. Its mode may be train, bus, or ferry.
+Both currencies are required and have to match.
 
 Examples:
   trvl open-jaw HEL:VIE:180:EUR VIE:BUD:40:EUR
+  trvl open-jaw HEL:VIE:180:EUR VIE:BUD:40:EUR:ferry
   trvl open-jaw HEL:VIE:180:EUR VIE:BUD:40:EUR --format json`,
 		Args: cobra.ExactArgs(2),
 		RunE: runOpenJaw,
@@ -59,23 +61,32 @@ func runOpenJaw(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func parseOpenJawLeg(raw, mode string) (openjaw.Leg, error) {
+func parseOpenJawLeg(raw, defaultMode string) (openjaw.Leg, error) {
 	parts := strings.Split(raw, ":")
-	if len(parts) < 3 || len(parts) > 4 {
-		return openjaw.Leg{}, fmt.Errorf("leg %q must be ORIGIN:DESTINATION:COST[:CURRENCY]", raw)
+	if len(parts) < 4 || len(parts) > 5 {
+		return openjaw.Leg{}, fmt.Errorf("leg %q must be ORIGIN:DESTINATION:COST:CURRENCY[:MODE]", raw)
 	}
 	cost, err := strconv.ParseFloat(strings.TrimSpace(parts[2]), 64)
-	if err != nil {
-		return openjaw.Leg{}, fmt.Errorf("cost in %q: %w", raw, err)
+	if err != nil || math.IsNaN(cost) || math.IsInf(cost, 0) || cost < 0 {
+		return openjaw.Leg{}, fmt.Errorf("cost in %q must be a finite zero or positive number", raw)
 	}
-	leg := openjaw.Leg{
+	mode := defaultMode
+	if len(parts) == 5 {
+		if defaultMode == "flight" {
+			return openjaw.Leg{}, fmt.Errorf("flight leg %q does not take a mode", raw)
+		}
+		mode = strings.ToLower(strings.TrimSpace(parts[4]))
+		switch mode {
+		case "train", "bus", "ferry":
+		default:
+			return openjaw.Leg{}, fmt.Errorf("ground mode %q must be train, bus, or ferry", parts[4])
+		}
+	}
+	return openjaw.Leg{
 		Mode:        mode,
 		Origin:      strings.TrimSpace(parts[0]),
 		Destination: strings.TrimSpace(parts[1]),
 		Cost:        cost,
-	}
-	if len(parts) == 4 {
-		leg.Currency = strings.TrimSpace(parts[3])
-	}
-	return leg, nil
+		Currency:    strings.TrimSpace(parts[3]),
+	}, nil
 }

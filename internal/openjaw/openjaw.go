@@ -3,25 +3,26 @@ package openjaw
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
 // Leg is one priced hop. Mode is "flight" or a ground mode such as "train".
 type Leg struct {
-	Mode          string
-	Origin        string
-	Destination   string
-	Cost          float64
-	Currency      string
-	DurationMin   int
-	TransferAfter string
+	Mode          string  `json:"mode"`
+	Origin        string  `json:"origin"`
+	Destination   string  `json:"destination"`
+	Cost          float64 `json:"cost"`
+	Currency      string  `json:"currency"`
+	DurationMin   int     `json:"duration_min,omitempty"`
+	TransferAfter string  `json:"transfer_after,omitempty"`
 }
 
 // Bundle is the single price of the composed journey.
 type Bundle struct {
-	Legs     []Leg
-	Total    float64
-	Currency string
+	Legs     []Leg   `json:"legs"`
+	Total    float64 `json:"total"`
+	Currency string  `json:"currency"`
 }
 
 // Compose prices the flight into A and the onward ground leg out of A as one
@@ -30,8 +31,12 @@ func Compose(flight, onward Leg) (Bundle, error) {
 	if flight.Origin == "" || flight.Destination == "" || onward.Origin == "" || onward.Destination == "" {
 		return Bundle{}, fmt.Errorf("both legs need an origin and a destination")
 	}
-	if flight.Cost < 0 || onward.Cost < 0 {
-		return Bundle{}, fmt.Errorf("leg cost must be zero or positive")
+	if !finiteNonNegative(flight.Cost) || !finiteNonNegative(onward.Cost) {
+		return Bundle{}, fmt.Errorf("leg cost must be a finite zero or positive number")
+	}
+	total := flight.Cost + onward.Cost
+	if !finiteNonNegative(total) {
+		return Bundle{}, fmt.Errorf("bundle total is not a finite number")
 	}
 	currency, err := oneCurrency(flight.Currency, onward.Currency)
 	if err != nil {
@@ -45,24 +50,25 @@ func Compose(flight, onward Leg) (Bundle, error) {
 	flight.TransferAfter = flight.Destination
 	return Bundle{
 		Legs:     []Leg{flight, onward},
-		Total:    flight.Cost + onward.Cost,
+		Total:    total,
 		Currency: currency,
 	}, nil
+}
+
+func finiteNonNegative(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0
 }
 
 func oneCurrency(a, b string) (string, error) {
 	a = strings.ToUpper(strings.TrimSpace(a))
 	b = strings.ToUpper(strings.TrimSpace(b))
-	switch {
-	case a == "":
-		return b, nil
-	case b == "":
-		return a, nil
-	case a != b:
-		return "", fmt.Errorf("leg currencies differ: %s and %s", a, b)
-	default:
-		return a, nil
+	if a == "" || b == "" {
+		return "", fmt.Errorf("both legs need a currency")
 	}
+	if a != b {
+		return "", fmt.Errorf("leg currencies differ: %s and %s", a, b)
+	}
+	return a, nil
 }
 
 func samePlace(a, b string) bool {

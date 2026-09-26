@@ -56,7 +56,7 @@ func searchFlightsTool() ToolDef {
 				"first_result":        {Type: "boolean", Description: "Return only the first result with a valid price after sorting. Combine with sort_by to get e.g. the shortest priced flight (duration) or cheapest. Default: false."},
 				"airline":             {Type: "array", Items: &Property{Type: "string"}, Description: "Restrict results to these airline IATA codes (e.g. AY, AF, KL). Accepts a JSON array or a comma-separated string. Empty = no filter. Mirrors the CLI --airline flag: the codes are passed to the provider and the results are also narrowed post-search to flights with at least one matching leg."},
 				"provider":            {Type: "string", Description: "Flight provider: empty (default) = Google Flights + Kiwi + Skiplagged merge, 'skiplagged' = Skiplagged MCP only (hidden-city + virtual-interlining defaults), 'afklm' (aliases: af-klm, airfranceklm) = Air France-KLM Offers API only (opt-in, native round-trip fares; requires a credential). Use a solo provider when you want to cross-validate candidates."},
-				"seat_preference":     {Type: "string", Description: "Seat to write onto the booking URL when the host accepts one: window or aisle. Kiwi uses seat. KLM uses seatPreference. Other hosts are left unchanged."},
+				"seat_preference":     {Type: "string", Description: "Seat to write onto an existing booking URL: window or aisle. Applied only when the host is kiwi.com (query seat) or klm.com (query seatPreference). An empty URL, and every other host, stays unchanged."},
 			},
 			Required: []string{"destination", "departure_date"},
 		},

@@ -39,3 +39,15 @@ func TestPreferBucketDoesNotMixDirections(t *testing.T) {
 		t.Fatalf("order = %s/%s then %s/%s", routes[0].Direction, routes[0].Arrival.City, routes[1].Direction, routes[1].Arrival.City)
 	}
 }
+
+func TestPreferBucketRanksInsideOneDirection(t *testing.T) {
+	routes := []models.GroundRoute{
+		{Direction: "outbound", Arrival: models.GroundStop{City: "Paris"}, Price: 10},
+		{Direction: "inbound", Arrival: models.GroundStop{City: "Helsinki"}, Price: 20},
+		{Direction: "outbound", Arrival: models.GroundStop{City: "Reykjavik"}, Price: 90},
+	}
+	PreferBucket(routes, []string{"Iceland"})
+	if routes[0].Arrival.City != "Reykjavik" || routes[1].Arrival.City != "Helsinki" || routes[2].Arrival.City != "Paris" {
+		t.Fatalf("order = %s, %s, %s", routes[0].Arrival.City, routes[1].Arrival.City, routes[2].Arrival.City)
+	}
+}

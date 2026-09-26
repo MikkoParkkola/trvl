@@ -15,11 +15,31 @@ func PreferBucket(routes []models.GroundRoute, bucket []string) {
 	if len(routes) < 2 || len(bucket) == 0 {
 		return
 	}
-	sort.SliceStable(routes, func(i, j int) bool {
-		if routes[i].Direction != routes[j].Direction {
-			return false
+	// Rank inside each direction, writing the result back into that direction's
+	// own slots. A comparator that treats different directions as equal is not
+	// a valid order, and it can leave a matching outbound stuck behind another.
+	slots := map[string][]int{}
+	var dirs []string
+	for i, route := range routes {
+		if _, ok := slots[route.Direction]; !ok {
+			dirs = append(dirs, route.Direction)
 		}
-		return preferences.MatchesBucket(routes[i].Arrival.City, "", bucket) &&
-			!preferences.MatchesBucket(routes[j].Arrival.City, "", bucket)
-	})
+		slots[route.Direction] = append(slots[route.Direction], i)
+	}
+	next := make([]models.GroundRoute, len(routes))
+	for _, dir := range dirs {
+		idxs := slots[dir]
+		group := make([]models.GroundRoute, len(idxs))
+		for j, i := range idxs {
+			group[j] = routes[i]
+		}
+		sort.SliceStable(group, func(a, b int) bool {
+			return preferences.MatchesBucket(group[a].Arrival.City, "", bucket) &&
+				!preferences.MatchesBucket(group[b].Arrival.City, "", bucket)
+		})
+		for j, i := range idxs {
+			next[i] = group[j]
+		}
+	}
+	copy(routes, next)
 }

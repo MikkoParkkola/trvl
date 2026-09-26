@@ -1,11 +1,14 @@
 package openjaw
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestComposeFlyInTrainOut(t *testing.T) {
 	bundle, err := Compose(
-		Leg{Mode: "flight", Origin: "HEL", Destination: "VIE", Cost: 180, DurationMin: 140},
-		Leg{Mode: "train", Origin: "Vienna", Destination: "Budapest", Cost: 40, DurationMin: 160},
+		Leg{Mode: "flight", Origin: "HEL", Destination: "VIE", Cost: 180, Currency: "EUR", DurationMin: 140},
+		Leg{Mode: "train", Origin: "Vienna", Destination: "Budapest", Cost: 40, Currency: "EUR", DurationMin: 160},
 	)
 	if err == nil {
 		t.Fatal("expected a city mismatch between VIE and Vienna")
@@ -30,8 +33,8 @@ func TestComposeFlyInTrainOut(t *testing.T) {
 
 func TestComposeRejectsNegativeCost(t *testing.T) {
 	_, err := Compose(
-		Leg{Mode: "flight", Origin: "HEL", Destination: "VIE", Cost: -1},
-		Leg{Mode: "train", Origin: "VIE", Destination: "BUD", Cost: 10},
+		Leg{Mode: "flight", Origin: "HEL", Destination: "VIE", Cost: -1, Currency: "EUR"},
+		Leg{Mode: "train", Origin: "VIE", Destination: "BUD", Cost: 10, Currency: "EUR"},
 	)
 	if err == nil {
 		t.Fatal("expected negative cost to fail")
@@ -45,5 +48,25 @@ func TestComposeRejectsMixedCurrency(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("expected mixed currencies to fail")
+	}
+}
+
+func TestComposeRejectsAMissingCurrency(t *testing.T) {
+	_, err := Compose(
+		Leg{Mode: "flight", Origin: "HEL", Destination: "VIE", Cost: 180, Currency: "EUR"},
+		Leg{Mode: "train", Origin: "VIE", Destination: "BUD", Cost: 40},
+	)
+	if err == nil {
+		t.Fatal("expected a missing currency to fail")
+	}
+}
+
+func TestComposeRejectsNaN(t *testing.T) {
+	_, err := Compose(
+		Leg{Mode: "flight", Origin: "HEL", Destination: "VIE", Cost: math.NaN(), Currency: "EUR"},
+		Leg{Mode: "train", Origin: "VIE", Destination: "BUD", Cost: 40, Currency: "EUR"},
+	)
+	if err == nil {
+		t.Fatal("expected a non-finite cost to fail")
 	}
 }
