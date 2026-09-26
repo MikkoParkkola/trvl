@@ -118,17 +118,6 @@ func unsupportedProtocol(requested string) *Error {
 	}
 }
 
-func initializeProtocol(req *Request) string {
-	if req == nil || len(req.Params) == 0 {
-		return ""
-	}
-	var params InitializeParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(params.ProtocolVersion)
-}
-
 func isProtocol2026(version string) bool {
 	return version == protocolVersion20260728
 }
