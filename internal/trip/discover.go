@@ -182,6 +182,7 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*DiscoverOutput, error
 				dests = filtered
 			}
 
+			dests = dropExcludedDestinations(dests, prefs)
 			if len(dests) > 5 {
 				dests = dests[:5]
 			}
@@ -366,6 +367,27 @@ func buildDiscoverMatchRequest(opts DiscoverOptions, from, until time.Time, curr
 		MaxNightsDrift:   (opts.MaxNights - opts.MinNights) / 2,
 		Currency:         currency,
 	}
+}
+
+// dropExcludedDestinations removes cities the profile forbids before the
+// shortlist cut. Doing it afterwards lets five excluded cities occupy every
+// hotel-search slot and hide a permitted one.
+func dropExcludedDestinations(dests []models.ExploreDestination, prefs *preferences.Preferences) []models.ExploreDestination {
+	if prefs == nil || len(prefs.ExcludedDestinations) == 0 || len(dests) == 0 {
+		return dests
+	}
+	kept := make([]models.ExploreDestination, 0, len(dests))
+	for _, dest := range dests {
+		_, breakdown := scoring.ComputeProfileMatch(prefs, scoring.DiscoverInput{
+			CityName:    dest.CityName,
+			AirportCode: dest.AirportCode,
+		})
+		if breakdown[scoring.FactorWarsawFilter] == 0 {
+			continue
+		}
+		kept = append(kept, dest)
+	}
+	return kept
 }
 
 // rankDiscoverTrials scores and ranks discover candidates.

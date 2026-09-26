@@ -28,3 +28,20 @@ func TestRankDiscoverTrialsOmitsAnExcludedCity(t *testing.T) {
 		t.Fatalf("results = %#v", results)
 	}
 }
+
+func TestDropExcludedDestinationsRunsBeforeTheShortlistCut(t *testing.T) {
+	dests := make([]models.ExploreDestination, 0, 6)
+	for i := 0; i < 5; i++ {
+		dests = append(dests, models.ExploreDestination{CityName: "Rome", AirportCode: "FCO", Price: float64(10 + i)})
+	}
+	dests = append(dests, models.ExploreDestination{CityName: "Reykjavik", AirportCode: "KEF", Price: 400})
+	prefs := preferences.Default()
+	prefs.ExcludedDestinations = []string{"FCO"}
+	kept := dropExcludedDestinations(dests, prefs)
+	if len(kept) > 5 {
+		kept = kept[:5]
+	}
+	if len(kept) != 1 || kept[0].AirportCode != "KEF" {
+		t.Fatalf("shortlist = %#v", kept)
+	}
+}
