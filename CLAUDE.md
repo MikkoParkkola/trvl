@@ -4,11 +4,11 @@ Travel MCP server + CLI. 1 smart MCP tool plus 66 legacy-compatible capabilities
 
 ## Product Vision
 
-trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, Windsurf, Codex, …) direct access to flights, hotels, trains, buses, ferries, price alerts, travel hacks, weather, baggage rules, airport lounges, and destination intelligence — **without requiring personal API keys**. Single Go binary, MCP 2026-07-28 with 2025-11-25 and 2025-03-26 clients still served on the previous response shape, 1 smart MCP tool plus 66 legacy-compatible capabilities, 56 CLI commands, API-first with optional browser-assisted fallbacks for a handful of protected providers. The smart `travel` router advertises a single tool (~378 tokens of `tools/list` context) instead of all 66 (~33,500 tokens) — a ~98.9% context reduction; the 66 legacy-compatible capabilities stay callable via the `intent` field, and `TRVL_MCP_TOOL_MODE=legacy` advertises the full surface for clients that need it.
+trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, Windsurf, Codex, …) direct access to flights, hotels, trains, buses, ferries, price alerts, travel hacks, weather, baggage rules, airport lounges, and destination intelligence — **without requiring personal API keys**. Single Go binary, MCP 2026-07-28 and 2025-11-25, 1 smart MCP tool plus 66 legacy-compatible capabilities, 56 CLI commands, API-first with optional browser-assisted fallbacks for a handful of protected providers. The smart `travel` router advertises a single tool (~378 tokens of `tools/list` context) instead of all 66 (~33,500 tokens) — a ~98.9% context reduction; the 66 legacy-compatible capabilities stay callable via the `intent` field, and `TRVL_MCP_TOOL_MODE=legacy` advertises the full surface for clients that need it.
 
 ## Current Status
 
-- Go 1.26.6 · MCP 2026-07-28 (2025-11-25 and 2025-03-26 still accepted) · single binary · 24 transport providers (+ flight & hotel sources below)
+- Go 1.26.6 · MCP 2026-07-28 and 2025-11-25 · single binary · 24 transport providers (+ flight & hotel sources below)
 - Hotel providers working: Google Hotels, Booking.com (browser cookies), Airbnb (SSR/Niobe), Hostelworld (autocomplete), Trivago (Streamable HTTP MCP), HomeToGo (public SSR+JSON, vacation rentals)
 - Flight providers: the default path merges Google Flights, Kiwi, and Skiplagged. Solo or opt-in integrations cover Ryanair, Wizz Air, Air France–KLM, Transavia, easyJet, Vueling, and Norwegian; protected or credentialed paths return typed setup/block statuses when unavailable. Travelpayouts/Aviasales price signals are opt-in through `trvl pricetrends` and are not part of the bookable merge.
 - Enrichment (free, unauthenticated): weather (Open-Meteo), air quality (`trvl air`), sun times (`trvl sun`, sunrise-sunset.org), bike-share (`trvl bikes`, CityBikes)
@@ -34,7 +34,7 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 | **Live tests are opt-in** via `TRVL_TEST_LIVE_INTEGRATIONS=1` and `TRVL_TEST_LIVE_PROBES=1` | Default suite must be deterministic and offline | Enable live probes in the default `go test ./...` suite |
 | **Protobuf-style encoding for Google Flights is hand-rolled** (no `.proto` files) | The upstream format is undocumented; hand-rolled is auditable | Add `protoc` / `.proto`-generation to the build pipeline |
 | **License: PolyForm Noncommercial 1.0.0** | Commercial users contact for license | Relicense without explicit user direction |
-| **MCP 2026-07-28, 2025 sessions unchanged** | 2026 clients opt in with `_meta`. 2025-11-25 and 2025-03-26 keep the previous response shape | Put 2026-only fields on a 2025 session, or drop `ping` / `resources/subscribe` for those clients |
+| **MCP 2026-07-28 and 2025-11-25 only** | Compatibility is the two latest revisions. 2026 clients opt in with `_meta`. 2025-11-25 keeps `ping` and `resources/subscribe` | Advertise a third revision, or put 2026-only fields on a 2025-11-25 session |
 
 ## Anti-Patterns (things agents get wrong in this repo)
 

@@ -24,8 +24,8 @@ func TestProtocol2026Discover(t *testing.T) {
 		t.Fatalf("resultType = %#v, want complete", m["resultType"])
 	}
 	got := stringList(t, m["supportedVersions"])
-	if strings.Join(got, ",") != strings.Join(supportedProtocolVersions, ",") {
-		t.Fatalf("supportedVersions = %v, want %v", got, supportedProtocolVersions)
+	if len(got) != 2 || got[0] != "2026-07-28" || got[1] != "2025-11-25" {
+		t.Fatalf("supportedVersions = %v, want [2026-07-28 2025-11-25]", got)
 	}
 	if m["cacheScope"] != "public" {
 		t.Fatalf("cacheScope = %#v, want public", m["cacheScope"])
@@ -105,7 +105,30 @@ func TestProtocol2026PublicListIgnoresCallerState(t *testing.T) {
 	}
 }
 
+func TestProtocolSupportIsTheTwoLatestRevisions(t *testing.T) {
+	if len(supportedProtocolVersions) != 2 ||
+		supportedProtocolVersions[0] != "2026-07-28" ||
+		supportedProtocolVersions[1] != "2025-11-25" {
+		t.Fatalf("supported versions = %v, want 2026-07-28 then 2025-11-25", supportedProtocolVersions)
+	}
+	for _, version := range supportedProtocolVersions {
+		if version == protocolVersion20250326 {
+			t.Fatal("2025-03-26 is older than the two latest revisions")
+		}
+	}
+
+	s := NewServer()
+	rejected := s.HandleRequest(jsonRequest(t, "tools/list", 1, map[string]any{
+		"_meta": map[string]any{metaProtocolVersion: protocolVersion20250326},
+	}))
+	if rejected.Error == nil || rejected.Error.Code != -32022 {
+		t.Fatalf("2025-03-26 _meta = %#v, want unsupported protocol version", rejected.Error)
+	}
+}
+
 func TestProtocol2026LegacySessionsUnchanged(t *testing.T) {
+	// 2025-11-25 is the older supported revision. 2025-03-26 is not supported;
+	// an initialize that names it is answered as 2025-11-25.
 	for _, version := range []string{protocolVersion20251125, protocolVersion20250326} {
 		t.Run(version, func(t *testing.T) {
 			s := NewServer()
@@ -125,8 +148,8 @@ func TestProtocol2026LegacySessionsUnchanged(t *testing.T) {
 			if err := json.Unmarshal(initJSON, &init); err != nil {
 				t.Fatal(err)
 			}
-			if init.ProtocolVersion != protocolVersion20251125 {
-				t.Fatalf("protocolVersion = %q, want %q", init.ProtocolVersion, protocolVersion20251125)
+			if init.ProtocolVersion != "2025-11-25" {
+				t.Fatalf("protocolVersion = %q, want 2025-11-25", init.ProtocolVersion)
 			}
 
 			tools := s.HandleRequest(jsonRequest(t, "tools/list", 2, nil))
@@ -155,8 +178,7 @@ func TestProtocol2026ListenReplacesSubscribeAndHonoursOptIn(t *testing.T) {
 	if gone.Error == nil || gone.Error.Code != -32601 {
 		t.Fatalf("2026 resources/subscribe = %#v, want method not found", gone.Error)
 	}
-	ping := s.HandleRequest(modernRequest(t, "ping", 8, nil))
-	if ping.Error == nil || ping.Error.Code != -32601 {
+	if ping := s.HandleRequest(modernRequest(t, "ping", 8, nil)); ping.Error == nil || ping.Error.Code != -32601 {
 		t.Fatalf("2026 ping = %#v, want method not found", ping.Error)
 	}
 
@@ -200,17 +222,17 @@ func TestProtocol2026ListenReplacesSubscribeAndHonoursOptIn(t *testing.T) {
 
 func TestProtocol2026HeaderMismatch(t *testing.T) {
 	req := modernRequest(t, "tools/call", 1, map[string]any{"name": "travel"})
-	if err := headerContractError("", "", "", req); err == nil || err.Code != codeHeaderMismatch {
+	if err := headerContractError(protocolVersion20260728, "", "", req); err == nil || err.Code != codeHeaderMismatch {
 		t.Fatalf("missing Mcp-Method = %#v", err)
 	}
-	if err := headerContractError("", "tools/list", "", req); err == nil || !strings.Contains(err.Message, "Mcp-Method") {
+	if err := headerContractError(protocolVersion20260728, "tools/list", "", req); err == nil || !strings.Contains(err.Message, "Mcp-Method") {
 		t.Fatalf("wrong method = %#v", err)
 	}
-	if err := headerContractError("", "tools/call", "other", req); err == nil || !strings.Contains(err.Message, "Mcp-Name") {
+	if err := headerContractError(protocolVersion20260728, "tools/call", "other", req); err == nil || !strings.Contains(err.Message, "Mcp-Name") {
 		t.Fatalf("wrong name = %#v", err)
 	}
-	if err := headerContractError("", "tools/call", "travel", req); err != nil {
-		t.Fatalf("matching headers rejected: %s", err.Message)
+	if err := headerContractError("", "tools/call", "travel", req); err == nil || err.Code != codeHeaderMismatch {
+		t.Fatalf("2026 body without MCP-Protocol-Version = %#v, want header mismatch", err)
 	}
 	encoded := "=?base64?" + "dHJhdmVs" + "?=" // "travel"
 	if err := headerContractError(protocolVersion20260728, "tools/call", encoded, req); err != nil {

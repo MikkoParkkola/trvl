@@ -8,7 +8,7 @@
 // transport, trip state, weather, baggage, and travel hacks. It also provides
 // prompts and resources.
 //
-// Protocol versions: 2026-07-28, 2025-11-25, and 2025-03-26.
+// Protocol versions: 2026-07-28 and 2025-11-25, the two latest revisions.
 // A request without a 2026 _meta protocol version keeps the 2025-11-25 shape.
 // Key features: structured output, content annotations, progress notifications,
 // and logging.
@@ -453,7 +453,7 @@ func (s *Server) handleInitialize(req *Request) *Response {
 
 	advertised := protocolVersion
 	subscribe := true
-	if initializeProtocol(req) == protocolVersion20260728 {
+	if version, err := protocolOf(req); err == nil && isProtocol2026(version) {
 		advertised = protocolVersion20260728
 		subscribe = false
 	}

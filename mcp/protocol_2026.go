@@ -12,7 +12,10 @@ import (
 // owns the HTTP server it serves, and trvl's bearer, scope, and protected-resource
 // metadata handling lives in http.go and http_auth.go. Handing that transport to
 // the SDK would replace the auth boundary. The revision is therefore implemented
-// here, and 2025-11-25 / 2025-03-26 clients keep the response shape they have now.
+// here. Compatibility is the two latest revisions: 2026-07-28 and 2025-11-25.
+// An initialize handshake with no _meta is answered as 2025-11-25, including
+// a handshake that names 2026-07-28. _meta of 2026-07-28 selects that
+// revision. A _meta version outside the two supported revisions is rejected.
 
 const (
 	protocolVersion20250326 = "2025-03-26"
@@ -33,12 +36,12 @@ const (
 	cacheTTLDiscover = 3600000
 )
 
-// supportedProtocolVersions is the set a client may select. Latest first so a
-// client that picks the first entry speaks the current revision.
+// supportedProtocolVersions is the two latest published revisions a client may
+// select. Latest first so a client that picks the first entry speaks the
+// current revision. 2025-03-26 is not in this set.
 var supportedProtocolVersions = []string{
 	protocolVersion20260728,
 	protocolVersion20251125,
-	protocolVersion20250326,
 }
 
 type cacheHint struct {
@@ -91,31 +94,29 @@ func metaProtocolVersionOf(req *Request) (string, bool) {
 	return v, true
 }
 
-// protocolOf classifies one request. An explicit version that trvl does not
-// speak is an error. Absence means the legacy 2025-11-25 shape, which is what
-// initialize returns today for both advertised 2025 versions.
+// protocolOf classifies one request. An explicit _meta version outside the two
+// supported revisions is an error. Absence means the 2025-11-25 shape. The
+// initialize handshake does not select 2026-07-28; that revision is selected
+// by _meta, and on HTTP by a header that matches it.
 func protocolOf(req *Request) (string, *Error) {
 	if v, ok := metaProtocolVersionOf(req); ok {
 		if !supportedProtocol(v) {
-			return "", &Error{Code: codeUnsupportedProtocolVersion, Message: "unsupported protocol version: " + v}
+			return "", unsupportedProtocol(v)
 		}
 		return v, nil
-	}
-	if req != nil && req.Method == "initialize" && initializeProtocol(req) == protocolVersion20260728 {
-		return protocolVersion20260728, nil
 	}
 	return protocolVersion, nil
 }
 
-func initializeProtocol(req *Request) string {
-	if req == nil || len(req.Params) == 0 {
-		return ""
+func unsupportedProtocol(requested string) *Error {
+	return &Error{
+		Code:    codeUnsupportedProtocolVersion,
+		Message: "unsupported protocol version: " + requested,
+		Data: map[string]any{
+			"supported": []string{protocolVersion20260728, protocolVersion20251125},
+			"requested": requested,
+		},
 	}
-	var params InitializeParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(params.ProtocolVersion)
 }
 
 func isProtocol2026(version string) bool {
@@ -399,23 +400,23 @@ func idKey(id any) string {
 // 2025 requests are not required to send the headers; a session that omits
 // them stays valid.
 func headerContractError(protocolHeader, methodHeader, nameHeader string, req *Request) *Error {
+	protocolHeader = strings.TrimSpace(protocolHeader)
+	meta, hasMeta := metaProtocolVersionOf(req)
+	if protocolHeader != "" && hasMeta && protocolHeader != meta {
+		return &Error{Code: codeHeaderMismatch, Message: "MCP-Protocol-Version header disagrees with the request protocol version"}
+	}
+	if (protocolHeader == protocolVersion20260728 && !hasMeta) || (hasMeta && meta == protocolVersion20260728 && protocolHeader == "") {
+		return &Error{Code: codeHeaderMismatch, Message: "MCP-Protocol-Version header disagrees with the request protocol version"}
+	}
+	if protocolHeader != "" && !supportedProtocol(protocolHeader) && (!hasMeta || protocolHeader == meta) {
+		return unsupportedProtocol(protocolHeader)
+	}
+	if hasMeta && !supportedProtocol(meta) && (protocolHeader == "" || protocolHeader == meta) {
+		return unsupportedProtocol(meta)
+	}
 	version, verr := protocolOf(req)
 	if verr != nil {
 		return verr
-	}
-	protocolHeader = strings.TrimSpace(protocolHeader)
-	if protocolHeader != "" {
-		bodyVersion, ok := metaProtocolVersionOf(req)
-		if !ok && req.Method == "initialize" {
-			bodyVersion = initializeProtocol(req)
-			ok = bodyVersion != ""
-		}
-		if !ok {
-			bodyVersion = protocolVersion
-		}
-		if protocolHeader != bodyVersion {
-			return &Error{Code: codeHeaderMismatch, Message: "MCP-Protocol-Version header disagrees with the request protocol version"}
-		}
 	}
 	if !isProtocol2026(version) {
 		return nil
