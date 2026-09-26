@@ -208,6 +208,26 @@ func TestFactor_BucketListBoost_AirportCodeMatch(t *testing.T) {
 	}
 }
 
+func TestFactor_BucketListBoost_IcelandAndBalkans(t *testing.T) {
+	prefs := defaultPrefs()
+	prefs.BucketList = []string{"Iceland", "Balkans"}
+
+	in := baseInput()
+	in.CityName = "Reykjavik"
+	in.AirportCode = "KEF"
+	_, bd := scoring.ComputeProfileMatch(prefs, in)
+	if bd[scoring.FactorBucketListBoost] < 0.9 {
+		t.Errorf("Reykjavik boost = %.2f, want ≥ 0.9 when the bucket list says Iceland", bd[scoring.FactorBucketListBoost])
+	}
+
+	in.CityName = "Dubrovnik"
+	in.AirportCode = "DBV"
+	_, bd = scoring.ComputeProfileMatch(prefs, in)
+	if bd[scoring.FactorBucketListBoost] < 0.9 {
+		t.Errorf("Dubrovnik boost = %.2f, want ≥ 0.9 when the bucket list says Balkans", bd[scoring.FactorBucketListBoost])
+	}
+}
+
 // ── Factor: airport_affinity ──────────────────────────────────────────────────
 
 func TestFactor_AirportAffinity_High(t *testing.T) {

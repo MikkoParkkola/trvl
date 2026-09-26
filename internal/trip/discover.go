@@ -182,6 +182,9 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*DiscoverOutput, error
 				dests = filtered
 			}
 
+			if prefs != nil {
+				preferBucketDestinations(dests, prefs.BucketList)
+			}
 			if len(dests) > 5 {
 				dests = dests[:5]
 			}
@@ -303,7 +306,7 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*DiscoverOutput, error
 	}
 	hotelWg.Wait()
 
-	results := rankDiscoverTrials(trials, hotelResults, opts.Budget, currency, opts.Top,
+	results := rankDiscoverTrials(trials, hotelResults, opts.Budget, currency, opts.Top, prefs,
 		buildDiscoverMatchRequest(opts, fromDate, untilDate, currency))
 
 	return &DiscoverOutput{
@@ -368,12 +371,25 @@ func buildDiscoverMatchRequest(opts DiscoverOptions, from, until time.Time, curr
 	}
 }
 
+// preferBucketDestinations moves bucket-list cities ahead of the others while
+// keeping the existing price order inside each group. Discover keeps only a
+// few destinations per window, so this has to happen before that cut.
+func preferBucketDestinations(dests []models.ExploreDestination, bucket []string) {
+	if len(dests) < 2 || len(bucket) == 0 {
+		return
+	}
+	sort.SliceStable(dests, func(i, j int) bool {
+		return preferences.MatchesBucket(dests[i].CityName, dests[i].AirportCode, bucket) &&
+			!preferences.MatchesBucket(dests[j].CityName, dests[j].AirportCode, bucket)
+	})
+}
+
 // rankDiscoverTrials scores and ranks discover candidates.
 //
 // Each candidate receives a RequestMatch score (0–100) measuring how closely
 // the literal request was satisfied, and a ProfileMatch score (0–100) from the
 // user's preference profile. Results are sorted by RequestMatch descending.
-func rankDiscoverTrials(trials []discoverTrial, hotelResults map[discoverTrialKey]*discoverHotelInfo, budget float64, currency string, top int, matchReq match.Request) []DiscoverResult {
+func rankDiscoverTrials(trials []discoverTrial, hotelResults map[discoverTrialKey]*discoverHotelInfo, budget float64, currency string, top int, prefs *preferences.Preferences, matchReq match.Request) []DiscoverResult {
 	var results []DiscoverResult
 	for _, t := range trials {
 		k := discoverTrialKey{airport: t.dest.AirportCode, nights: t.window.nights}
@@ -405,7 +421,7 @@ func rankDiscoverTrials(trials []discoverTrial, hotelResults map[discoverTrialKe
 			HotelName:   h.name,
 		}
 
-		matchScore, breakdown := scoring.ComputeProfileMatch(nil, input)
+		matchScore, breakdown := scoring.ComputeProfileMatch(prefs, input)
 		reasoning := buildDiscoverReasoning(h.rating, slack, currency)
 
 		offered := match.Offered{

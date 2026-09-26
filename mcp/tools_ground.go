@@ -32,6 +32,7 @@ func searchGroundTool() ToolDef {
 				"max_price":               {Type: "number", Description: "Maximum price filter (0 = no limit)"},
 				"provider":                {Type: "string", Description: "Restrict to provider: flixbus, regiojet, trainline, sncf, transitous, db, oebb, ns, vr, tallink, dfds, vikingline, eckeroline, ferryhopper"},
 				"allow_browser_fallbacks": {Type: "boolean", Description: "Allow browser/curl/cookie-assisted provider fallbacks (default: false)"},
+				"bucket_list":             {Type: "array", Items: &Property{Type: "string"}, Description: "Dream destinations used to rank routes. Iceland matches Reykjavik and Keflavik. Balkans (or Balkan) matches Split, Dubrovnik, and the other regional cities. Routes that all arrive in the requested city stay in price order. A round trip's outbound and inbound legs are not mixed."},
 			},
 			Required: []string{"from", "to", "date"},
 		},

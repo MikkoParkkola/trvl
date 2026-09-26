@@ -2,48 +2,24 @@ package ground
 
 import (
 	"sort"
-	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
 
 // PreferBucket orders routes whose arrival city matches the user's bucket list
-// ahead of routes that do not. Matching is a case-insensitive substring either
-// way. Price order among matches, and among non-matches, is kept.
+// ahead of routes that do not. Price order inside each group is kept. Routes
+// travelling in different directions stay in their original order, so a
+// round-trip's outbound and inbound legs are not shuffled together.
 func PreferBucket(routes []models.GroundRoute, bucket []string) {
 	if len(routes) < 2 || len(bucket) == 0 {
 		return
 	}
 	sort.SliceStable(routes, func(i, j int) bool {
-		return bucketMatch(routes[i], bucket) && !bucketMatch(routes[j], bucket)
+		if routes[i].Direction != routes[j].Direction {
+			return false
+		}
+		return preferences.MatchesBucket(routes[i].Arrival.City, "", bucket) &&
+			!preferences.MatchesBucket(routes[j].Arrival.City, "", bucket)
 	})
-}
-
-func bucketMatch(route models.GroundRoute, bucket []string) bool {
-	city := strings.ToLower(strings.TrimSpace(route.Arrival.City))
-	if city == "" {
-		return false
-	}
-	for _, want := range bucket {
-		want = strings.ToLower(strings.TrimSpace(want))
-		if want == "" {
-			continue
-		}
-		if strings.Contains(city, want) || strings.Contains(want, city) {
-			return true
-		}
-		for _, alias := range bucketAliases[want] {
-			if city == alias || strings.Contains(city, alias) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// bucketAliases maps a dream-destination name onto arrival cities a ground
-// route actually uses. The profile stores "Iceland", not "Reykjavik".
-var bucketAliases = map[string][]string{
-	"iceland": {"reykjavik", "keflavik"},
-	"balkans": {"split", "dubrovnik", "zagreb", "belgrade", "sarajevo", "sofia", "tirana", "skopje", "pristina", "podgorica"},
 }

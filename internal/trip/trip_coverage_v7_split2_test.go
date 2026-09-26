@@ -21,7 +21,7 @@ func TestRankDiscoverTrials_ZeroRating(t *testing.T) {
 	hotelResults := map[discoverTrialKey]*discoverHotelInfo{
 		{airport: "RIX", nights: 2}: {total: 100, name: "Hotel", rating: 0},
 	}
-	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, match.Request{})
+	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, nil, match.Request{})
 	if len(results) != 1 {
 		t.Fatalf("expected 1, got %d", len(results))
 	}
@@ -43,7 +43,7 @@ func TestRankDiscoverTrials_FallbackCityName(t *testing.T) {
 	hotelResults := map[discoverTrialKey]*discoverHotelInfo{
 		{airport: "HEL", nights: 2}: {total: 100, name: "Hotel", rating: 4.0},
 	}
-	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, match.Request{})
+	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, nil, match.Request{})
 	if len(results) != 1 {
 		t.Fatalf("expected 1, got %d", len(results))
 	}
@@ -53,7 +53,7 @@ func TestRankDiscoverTrials_FallbackCityName(t *testing.T) {
 }
 
 func TestRankDiscoverTrials_EmptyTrials(t *testing.T) {
-	results := rankDiscoverTrials(nil, nil, 500, "EUR", 5, match.Request{})
+	results := rankDiscoverTrials(nil, nil, 500, "EUR", 5, nil, match.Request{})
 	if len(results) != 0 {
 		t.Errorf("expected 0 for nil trials, got %d", len(results))
 	}
@@ -72,7 +72,7 @@ func TestRankDiscoverTrials_BudgetFitClampedAtZero(t *testing.T) {
 	hotelResults := map[discoverTrialKey]*discoverHotelInfo{
 		{airport: "LIS", nights: 2}: {total: 100, name: "H", rating: 5.0},
 	}
-	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, match.Request{})
+	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, nil, match.Request{})
 	if len(results) != 1 {
 		t.Fatalf("expected 1, got %d", len(results))
 	}

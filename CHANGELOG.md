@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Open-jaw bundles price a flight into one city and a train out of that city as one total (`internal/openjaw`).
-- `search_ground` ranks a `bucket_list` arrival (Iceland, the Balkans) ahead of other routes.
-- `search_flights` writes `seat_preference` (`window` or `aisle`) onto Kiwi and KLM booking URLs.
+- `trvl open-jaw` prices a flight into one city and a ground leg out of that city as one total. The two legs have to use the same currency.
+- A bucket list of Iceland or the Balkans ranks those arrival cities ahead of others. Discover keeps them inside its short destination list, and `search_ground` reorders a mixed arrival list without mixing a round trip's directions.
+- `search_flights` accepts `seat_preference` (`window` or `aisle`) and writes it onto Kiwi and KLM booking URLs.
 
 ## [1.23.0] - 2026-09-26
 

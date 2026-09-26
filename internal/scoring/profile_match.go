@@ -459,14 +459,8 @@ func scoreBucketListBoost(prefs *preferences.Preferences, input DiscoverInput) f
 	if len(prefs.BucketList) == 0 {
 		return 0.5
 	}
-	city := strings.ToLower(input.CityName)
-	airport := strings.ToUpper(input.AirportCode)
-	for _, item := range prefs.BucketList {
-		item = strings.TrimSpace(item)
-		if strings.EqualFold(item, city) || strings.EqualFold(item, airport) ||
-			strings.Contains(strings.ToLower(item), city) {
-			return 1.0
-		}
+	if preferences.MatchesBucket(input.CityName, input.AirportCode, prefs.BucketList) {
+		return 1.0
 	}
 	return 0.5
 }

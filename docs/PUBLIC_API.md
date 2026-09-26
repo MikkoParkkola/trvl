@@ -6,11 +6,11 @@ trvl's public surface is the CLI and the MCP server in one binary. Packages unde
 
 One smart tool, `travel`, routes to the legacy tools. The compatibility window is MCP `2026-07-28` and `2025-11-25`.
 
-Ground search (`search_ground`) returns each route with mode (`type`), price, duration, transfers, and legs. A `bucket_list` argument ranks Iceland and Balkan arrivals first.
+Ground search (`search_ground`) returns each route with mode (`type`), price, duration, transfers, and legs. Its `bucket_list` argument ranks Iceland and Balkan arrivals ahead of other cities. A search that arrives in only one city keeps price order.
 
 Flight search (`search_flights`) accepts `seat_preference` of `window` or `aisle` and writes it onto Kiwi and KLM booking URLs.
 
-`trvl railpass` compares a rail pass with point-to-point fares. An open-jaw price is `internal/openjaw.Compose`: one flight into a city plus one ground leg out of that city.
+`trvl rail-pass` compares a rail pass with point-to-point fares. `trvl open-jaw` prices one flight into a city plus one ground leg out of that city. `trvl cabin-arb` flags a cabin upgrade within 15% of the cheaper fare.
 
 ## CLI
 
