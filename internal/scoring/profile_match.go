@@ -493,6 +493,9 @@ func scoreFamilyModeCompatibility(prefs *preferences.Preferences, input Discover
 func isExcluded(prefs *preferences.Preferences, airportCode, cityName string) bool {
 	for _, excl := range prefs.ExcludedDestinations {
 		excl = strings.TrimSpace(excl)
+		if excl == "" {
+			continue
+		}
 		if strings.EqualFold(excl, airportCode) ||
 			strings.EqualFold(excl, cityName) ||
 			(cityName != "" && strings.Contains(strings.ToLower(cityName), strings.ToLower(excl))) {

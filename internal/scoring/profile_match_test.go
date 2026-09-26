@@ -152,6 +152,20 @@ func TestFactor_WarsawFilter_ExcludedCity(t *testing.T) {
 	}
 }
 
+func TestFactor_WarsawFilter_BlankEntryDoesNotExcludeEveryone(t *testing.T) {
+	prefs := defaultPrefs()
+	prefs.ExcludedDestinations = []string{"", "  "}
+
+	in := baseInput()
+	in.AirportCode = "KEF"
+	in.CityName = "Reykjavik"
+
+	_, bd := scoring.ComputeProfileMatch(prefs, in)
+	if bd[scoring.FactorWarsawFilter] != 1.0 {
+		t.Fatalf("warsaw_filter = %.2f, a blank exclusion must not match every city", bd[scoring.FactorWarsawFilter])
+	}
+}
+
 func TestFactor_WarsawFilter_NonExcluded(t *testing.T) {
 	prefs := defaultPrefs()
 	prefs.ExcludedDestinations = []string{"WAW"}
