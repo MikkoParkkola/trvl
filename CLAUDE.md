@@ -13,7 +13,8 @@ trvl is a travel MCP server + CLI that gives any AI assistant (Claude, Cursor, W
 - Flight providers: the default path merges Google Flights, Kiwi, and Skiplagged. Solo or opt-in integrations cover Ryanair, Wizz Air, Air France–KLM, Transavia, easyJet, Vueling, and Norwegian; protected or credentialed paths return typed setup/block statuses when unavailable. Travelpayouts/Aviasales price signals are opt-in through `trvl pricetrends` and are not part of the bookable merge.
 - Enrichment (free, unauthenticated): weather (Open-Meteo), air quality (`trvl air`), sun times (`trvl sun`, sunrise-sunset.org), bike-share (`trvl bikes`, CityBikes)
 - CI: build, vet, and race tests on Ubuntu and Windows; staticcheck, golangci-lint, govulncheck, and the >=80% coverage gate run on Ubuntu
-- Current release: v1.22.0, published 2026-09-25 from `main` to GitHub Releases, Homebrew, npm, GHCR, the Go module proxy, and the official MCP Registry.
+- Current release: v1.23.0, published 2026-09-26 from `main` to GitHub Releases, Homebrew, npm, GHCR, the Go module proxy, and the official MCP Registry.
+- v1.23.0 narrows MCP compatibility to 2026-07-28 and 2025-11-25. A handshake with no `_meta` is answered as 2025-11-25.
 - v1.22.0 adds MCP 2026-07-28 (`server/discover`, cache hints, `subscriptions/listen`, HTTP header checks) while 2025 clients keep their session shape. It also keeps the live flight probe on a future date and stops the Windows watch-timing step from calling a timeout a test failure.
 
 ## Plan Forward (near-term, technical)

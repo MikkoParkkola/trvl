@@ -48,7 +48,7 @@ func TestReleaseFacingDocsStayAligned(t *testing.T) {
 			"no personal keys for default search",
 		},
 		"ROADMAP.md": {
-			"v1.22.0** (2026-09-25): current release line",
+			"v1.23.0** (2026-09-26): current release line",
 		},
 		"CHANGELOG.md": {
 			"## [1.21.6] - 2026-09-10",

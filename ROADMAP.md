@@ -4,7 +4,8 @@ Living roadmap. Sequenced by ROI and dependency, not by wishlist size. Each item
 
 ## Shipped
 
-- **v1.22.0** (2026-09-25): current release line. MCP 2026-07-28 (`server/discover`, cache hints, `subscriptions/listen`, HTTP header checks) with 2025-11-25 and 2025-03-26 sessions unchanged. The live flight probe searches 21 days ahead, and a Windows package timeout is no longer reported as a failing watch test. See [CHANGELOG.md](CHANGELOG.md) and the [GitHub release](https://github.com/MikkoParkkola/trvl/releases/tag/v1.22.0).
+- **v1.23.0** (2026-09-26): current release line. MCP compatibility is the two latest revisions, 2026-07-28 and 2025-11-25. A handshake with no `_meta` is answered as 2025-11-25. See [CHANGELOG.md](CHANGELOG.md) and the [GitHub release](https://github.com/MikkoParkkola/trvl/releases/tag/v1.23.0).
+- **v1.22.0** (2026-09-25): MCP 2026-07-28 (`server/discover`, cache hints, `subscriptions/listen`, HTTP header checks) with 2025-11-25 and 2025-03-26 sessions unchanged. The live flight probe searches 21 days ahead, and a Windows package timeout is no longer reported as a failing watch test. See [CHANGELOG.md](CHANGELOG.md) and the [GitHub release](https://github.com/MikkoParkkola/trvl/releases/tag/v1.22.0).
 - **v1.21.6** (2026-09-10): MCP servers publish OAuth Protected Resource Metadata (RFC 9728), the Wizz Air version sentinel reads the homepage bootstrap config before its bounded walk, `server.json` declares per-package environment variables, and the tree ships grpc 1.83.2 (GHSA-2v4p-qf9q-27wj). See [CHANGELOG.md](CHANGELOG.md) and the [GitHub release](https://github.com/MikkoParkkola/trvl/releases/tag/v1.21.6).
 - **v1.21.5** (2026-09-04): Deal search with `--from` no longer aborts when one RSS source is down, Wizz Air recovers from sentinel-version bumps, and the tree ships grpc 1.83.1 (CVE-2026-84304) plus x/crypto 0.56.0. See [CHANGELOG.md](CHANGELOG.md) and the [GitHub release](https://github.com/MikkoParkkola/trvl/releases/tag/v1.21.5).
 - **v1.21.4** (2026-08-12): hotel search now returns completed results at the auxiliary-provider deadline, marks unfinished providers as partial timeouts, and propagates cancellation into configured providers and Booking cookie access. See [CHANGELOG.md](CHANGELOG.md) and the [GitHub release](https://github.com/MikkoParkkola/trvl/releases/tag/v1.21.4).
@@ -22,7 +23,7 @@ Living roadmap. Sequenced by ROI and dependency, not by wishlist size. Each item
 
 ## Next
 
-Nothing else is committed to the release after v1.22.0. Open product work that is explicitly not in this release: the global ground graph (MIK-3086) and the polish pass (MIK-3090). New work starts as a scoped issue with acceptance criteria; the [issue tracker](https://github.com/MikkoParkkola/trvl/issues) is the live source of truth.
+Nothing else is committed to the release after v1.23.0. Open product work that is explicitly not in this release: the global ground graph (MIK-3086) and the polish pass (MIK-3090). New work starts as a scoped issue with acceptance criteria; the [issue tracker](https://github.com/MikkoParkkola/trvl/issues) is the live source of truth.
 
 ## Meta
 

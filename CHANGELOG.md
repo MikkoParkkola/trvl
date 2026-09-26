@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-09-26
+
 ### Changed
 
-- MCP compatibility is the two latest revisions, **2026-07-28** and **2025-11-25**. `server/discover` no longer lists 2025-03-26. A `_meta` protocol version outside those two returns `UnsupportedProtocolVersion` (`-32022`) with `data.supported` and `data.requested`. An `initialize` handshake that names any other revision, including 2026-07-28, and does not also set `_meta`, is answered as 2025-11-25. `_meta` of `2026-07-28` on that `initialize` selects the 2026 shape. On HTTP the `MCP-Protocol-Version` header has to match `_meta`; a 2026 header with no matching body is `HeaderMismatch` (`-32020`).
+- MCP compatibility is the two latest revisions, **2026-07-28** and **2025-11-25**. `server/discover` no longer lists 2025-03-26. A `_meta` protocol version outside those two returns `UnsupportedProtocolVersion` (`-32022`) with `data.supported` and `data.requested`. An `initialize` handshake that names any other revision, including 2026-07-28, and does not also set `_meta`, is answered as 2025-11-25. `_meta` of `2026-07-28` on an `initialize` selects the 2026 shape. On HTTP the `MCP-Protocol-Version` header has to match `_meta`; a 2026 header with no matching body is `HeaderMismatch` (`-32020`).
 
 ## [1.22.0] - 2026-09-25
 
@@ -1299,7 +1301,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.22.0...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.23.0...HEAD
+[1.23.0]: https://github.com/MikkoParkkola/trvl/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/MikkoParkkola/trvl/compare/v1.21.6...v1.22.0
 [1.21.6]: https://github.com/MikkoParkkola/trvl/compare/v1.21.5...v1.21.6
 [1.21.5]: https://github.com/MikkoParkkola/trvl/compare/v1.21.4...v1.21.5
