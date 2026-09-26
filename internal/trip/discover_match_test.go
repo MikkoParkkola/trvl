@@ -40,7 +40,7 @@ func TestRankDiscoverTrials_PopulatesRequestMatch(t *testing.T) {
 		{airport: "BCN", nights: 3}: {price: 75, total: 225, name: "Hotel BCN", rating: 4.2},
 	}
 
-	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, matchReq)
+	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, nil, matchReq)
 	if len(results) != 1 {
 		t.Fatalf("results = %d, want 1", len(results))
 	}
@@ -84,7 +84,7 @@ func TestRankDiscoverTrials_RequestMatchPenalisesEdgeNights(t *testing.T) {
 		{airport: "BCN", nights: 2}: {price: 75, total: 150, name: "Hotel BCN", rating: 4.2},
 	}
 
-	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, matchReq)
+	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, nil, matchReq)
 	if len(results) != 1 {
 		t.Fatalf("results = %d, want 1", len(results))
 	}

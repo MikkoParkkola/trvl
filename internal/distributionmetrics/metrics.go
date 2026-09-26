@@ -1,3 +1,4 @@
+// Package distributionmetrics records release and download counts for the public dashboard.
 package distributionmetrics
 
 import (

@@ -109,6 +109,7 @@ func init() {
 	rootCmd.AddCommand(multidestCmd())
 	rootCmd.AddCommand(losCmd())
 	rootCmd.AddCommand(railPassCmd())
+	rootCmd.AddCommand(openJawCmd())
 	rootCmd.AddCommand(expensesCmd())
 	rootCmd.AddCommand(opportunityScoreCmd())
 	rootCmd.AddCommand(rateStatusCmd())

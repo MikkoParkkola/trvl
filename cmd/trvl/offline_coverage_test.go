@@ -212,6 +212,7 @@ func TestCommandConstructorsDoNotRequireNetwork(t *testing.T) {
 		"points-value":      func() any { return pointsValueCmd() },
 		"price-trends":      func() any { return pricetrendsCmd() },
 		"providers":         func() any { return providersCmd() },
+		"open-jaw":          func() any { return openJawCmd() },
 		"rail-pass":         func() any { return railPassCmd() },
 		"rate-status":       func() any { return rateStatusCmd() },
 		"reviews":           func() any { return reviewsCmd },

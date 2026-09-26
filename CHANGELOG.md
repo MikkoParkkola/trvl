@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `trvl open-jaw` prices a flight into one city and a ground leg out of that city as one total. The two legs have to use the same currency.
+- A bucket list of Iceland or the Balkans raises those cities in the profile-match score. `search_ground` ranks a mixed arrival list inside each direction. Discover omits a destination the profile excludes.
+- `search_flights` accepts `seat_preference` (`window` or `aisle`) and writes it onto Kiwi and KLM booking URLs.
+
 ## [1.23.0] - 2026-09-26
 
 ### Changed
