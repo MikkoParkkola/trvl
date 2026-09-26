@@ -193,36 +193,45 @@ revisions, latest first, and `requested` to the revision the client named.
 A second error type was rejected because this server has one JSON-RPC error
 struct.
 
-`_meta` and the HTTP `MCP-Protocol-Version` header are the two declaration
-channels. The handshake string is a declaration only when both of those are
-absent. The first matching rule wins:
+On stdio the only declaration channel is `_meta`. On HTTP the
+`MCP-Protocol-Version` header must match that field when the request is
+modern. The 2026-07-28 streamable HTTP page says the header value must match
+`io.modelcontextprotocol/protocolVersion` in `_meta`, and a mismatch is HTTP
+400 with `-32020`. A version the server does not implement is HTTP 400 with
+`-32022` and the supported list. A header of `2026-07-28` with no `_meta`
+does not select the revision. The handshake string counts only when neither
+channel names a revision. The first matching rule wins.
 
-1. If `_meta` or the header names a revision outside the pair, the response
-   is `-32022` with the `data` above. `data.requested` is the `_meta` value
-   when that value is outside the pair, and otherwise the header value.
-   This is checked before a mismatch and before serving. A header of
-   `2026-07-28` together with `_meta` of `2025-03-26` is this rule, not a
-   successful 2026 request.
-2. If `_meta` and the header each name one of the two supported revisions
-   and the names differ, the response is `-32020`. The handshake string is
-   not one of those two names.
-3. If `_meta` or the header names `2026-07-28`, and the other channel is
-   absent or names the same revision, the request is served as `2026-07-28`.
-   The result carries `resultType`. A list result also carries `ttlMs` and
-   `cacheScope`, as it does today. No prior `initialize`
-   is required. `ping` and `resources/subscribe` stay absent, as they are
-   today. An `initialize` whose header or `_meta` names `2026-07-28`, and
-   whose handshake says something else, is this rule.
-4. If `_meta` or the header names `2025-11-25`, and the other channel is
-   absent or names the same revision, the request is served as `2025-11-25`
-   on that request alone. `ping` and `resources/subscribe` work. The result
-   has no `resultType` and no cache hints.
-5. If neither channel names a revision, an `initialize` is answered
+1. HTTP, and the header names a revision, and `_meta` names a different
+   revision: HTTP 400 and `-32020`. `data` is absent. This is checked before
+   unsupported-version. Header `2026-07-28` with `_meta` `2025-03-26` is this
+   rule.
+2. `_meta` names a revision outside the pair, and the header is absent or
+   names that same revision: `-32022` with the `data` above.
+   `data.requested` is that revision. On HTTP the status is 400. The same
+   answer is used when the header names a revision outside the pair and
+   `_meta` names none.
+3. HTTP, header `2026-07-28`, and `_meta` names no revision: HTTP 400 and
+   `-32020`. The same answer is used when `_meta` names `2026-07-28` and the
+   header is absent.
+4. `_meta` names `2026-07-28`, and on HTTP the header names it too: the
+   request is served as `2026-07-28`. The result carries `resultType`. A
+   list result also carries `ttlMs` and `cacheScope`, as it does today. No
+   prior `initialize` is required. `ping` and `resources/subscribe` stay
+   absent. An `initialize` whose `_meta` names `2026-07-28` while the
+   handshake names something else is this rule, provided the HTTP header
+   matches when the request is HTTP.
+5. `_meta` names `2025-11-25`, or the HTTP header names `2025-11-25` and
+   `_meta` names no revision: the request is served as `2025-11-25` on that
+   request alone. `ping` and `resources/subscribe` work. The result has no
+   `resultType` and no cache hints. On HTTP a matching header is not
+   required for this legacy revision.
+6. Neither channel names a revision: an `initialize` is answered
    `2025-11-25`, whether the handshake names `2025-11-25`, `2026-07-28`,
    `2025-03-26`, or anything else. That answer does not add the handshake
-   revision to the supported set. Resource subscription stays on. A request
-   that is not `initialize` and declares no revision keeps that same legacy
-   shape, which is what v1.22.0 does.
+   revision to the supported set. Resource subscription stays on. Any other
+   method with no declaration keeps that legacy shape, which is what
+   v1.22.0 does.
 
 The docs and changelog lines that still say the server advertises three
 revisions are updated to the two. The historical `## [1.22.0]` section and
@@ -232,15 +241,16 @@ bump and no tag.
 ### How the signals are met
 
 1. The slice and `server/discover` are the two revisions, latest first.
-2. Rule 3 serves `_meta` or the header naming `2026-07-28` as that revision,
-   with `resultType`, and without a prior `initialize`.
-3. Rule 4 serves a request that names `2025-11-25` in `_meta` or the header
-   as that revision, including `ping` and `resources/subscribe`, without
-   `resultType` or cache hints. Rule 5 does the same for a handshake of
-   `2025-11-25` when neither channel names a revision.
-4. Rule 1 rejects any other revision in `_meta` or the header with `-32022`
-   and the `data` fields. A handshake string alone is rule 5, not this one.
-5. Rule 5 answers a handshake-only `initialize` of anything other than
+2. Rule 4 serves `_meta` `2026-07-28`, with the HTTP header matching when
+   the call is HTTP, as that revision, with `resultType`, and without a
+   prior `initialize`.
+3. Rule 5 serves `2025-11-25` from `_meta` or from a legacy header. Rule 6
+   does the same for a handshake of `2025-11-25` when neither channel names
+   a revision.
+4. Rule 2 rejects a declared revision outside the pair with `-32022` and
+   the `data` fields. Rule 1 is the HTTP mismatch when the two channels
+   disagree, and that is not signal 4. A handshake string alone is rule 6.
+5. Rule 6 answers a handshake-only `initialize` of anything other than
    `2025-11-25` with `2025-11-25`.
 
 ## Test plan
@@ -259,17 +269,18 @@ Stdio `HandleRequest` cannot see an HTTP header. Header rows go through
 | S1 | signal 1, rules of the slice | `server/discover` with `_meta` `2026-07-28` | `supportedVersions` is exactly `["2026-07-28","2025-11-25"]` in that order. `2025-03-26` is absent. `resultType` is `complete` | no. The list is already those two. The new assertion is the literals, so adding `2025-03-26` back to the slice fails it. The current discover test would stay green |
 | S2 | signal 2, rule 3 | `tools/list` with `_meta` `2026-07-28` and no prior `initialize` | no error. `resultType` is `complete`. `cacheScope` is `public` | no. `TestProtocol2026Discover` and `TestProtocol2026ListEndpointsCarryCacheHints` already require this. They stay |
 | S2b | signal 2, ping absent | `resources/subscribe` and `ping` with `_meta` `2026-07-28` | both return code `-32601` | no. `TestProtocol2026ListenReplacesSubscribeAndHonoursOptIn` already requires the subscribe rejection. Add `ping` to that same server, same `_meta`, so a 2026 session that grew `ping` back fails |
-| S2c | rule 3, header alone | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2026-07-28`, no `_meta`, `Mcp-Method: tools/list` | HTTP 200. Body has `resultType` `complete` and no error | yes. Today the header is compared with the legacy constant and the response is `-32020` |
+| S2c | rule 3 | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2026-07-28`, no `_meta`, `Mcp-Method: tools/list` | HTTP 400. Code `-32020`. No `resultType` | no. This is already `-32020`. The row fails if a modern header with no `_meta` is served as 2026 |
 | S3 | signal 3, rule 5 | `initialize` handshake `2025-11-25`, no `_meta`, no header | `protocolVersion` is `2025-11-25`. No `resultType`, no `ttlMs`. `resources.subscribe` is true. Then `ping` and `resources/subscribe` on that server succeed | no. `TestProtocol2026LegacySessionsUnchanged` already requires this for `2025-11-25`. It stays. The expected revision in the new rows is the literal `2025-11-25`, not the Go constant |
 | S3b | signal 3, rule 4 | `tools/list` with `_meta` `2025-11-25` and no prior `initialize`, then `ping` and `resources/subscribe` on new requests with the same `_meta` | no error on any of the three. The list result has no `resultType`, no `ttlMs`, and no `cacheScope`. `ping` and `resources/subscribe` succeed | no. Deleting the legacy branch makes `ping` and `resources/subscribe` return `-32601` |
 | S3c | rule 4, header alone | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2025-11-25`, no `_meta`, no `Mcp-Method`. A second POST `resources/subscribe` with the same header and no prior `initialize` | both HTTP 200. Neither body has an `error`. The list body has a `result` and has no `resultType`, no `ttlMs`, and no `cacheScope`. The subscribe body has no `error` | no. A JSON-RPC error with no `resultType` would have passed the old wording. The subscribe call fails if legacy subscription is only wired after a handshake |
 | S3d | rule 4, one request | one server, in order: `tools/list` with `_meta` `2026-07-28`, then `tools/list` with `_meta` `2025-11-25`, then `tools/list` with no `_meta`, then `tools/list` with `_meta` `2026-07-28` again | first and fourth have `resultType` `complete`. Second and third have no `resultType`, no `ttlMs`, and no `cacheScope` | no. A revision remembered from the first request makes the second carry `resultType`, and this row fails |
 | S4 | signal 4, rule 1 | `tools/list` with `_meta` `2025-03-26` | error code `-32022`. `data.supported` is exactly `["2026-07-28","2025-11-25"]`. `data.requested` is `2025-03-26`. No `result` | yes. Today the code is `-32022` and `data` is absent. `TestProtocolSupportIsTheTwoLatestRevisions` checks the code only and will grow this `data` assertion |
-| S4b | rule 1 before rule 3 | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2026-07-28`, `_meta` `2025-03-26`, `Mcp-Method: tools/list` | `-32022`. `data.requested` is `2025-03-26`. Body has no `resultType` | yes. The code is already `-32022` because `_meta` is rejected, and `data` is absent. If rule 1 is deleted and the header is served, the body has `resultType` and this row fails |
-| S4c | rule 1, header alone | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2025-03-26`, no `_meta` | `-32022`. `data.requested` is `2025-03-26`. `data.supported` is the same two literals. Not `-32020` | yes. Today this is a header mismatch, `-32020` |
-| S4d | rule 1 tie-break | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2025-06-18`, `_meta` `2025-03-26` | `-32022`. `data.requested` is `2025-03-26`, not `2025-06-18` | yes. `data` is absent today. The two bad names are the whole point: one field, `_meta` wins |
+| S4b | rule 1 | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2026-07-28`, `_meta` `2025-03-26`, `Mcp-Method: tools/list` | HTTP 400. Code `-32020`. `data` is absent. No `resultType` | yes. Today `_meta` is rejected first, so the code is `-32022`. The row fails until a header that disagrees with `_meta` is `-32020` |
+| S4c | rule 2, header alone | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2025-03-26`, no `_meta` | HTTP 400. Code `-32022`. `data.requested` is `2025-03-26`. `data.supported` is `["2026-07-28","2025-11-25"]`. Not `-32020` | yes. Today this is a header mismatch, `-32020` |
+| S4d | rule 1, two bad names | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2025-06-18`, `_meta` `2025-03-26` | HTTP 400. Code `-32020`. `data` is absent | yes. Today the `_meta` rejection returns `-32022`. The names disagree, so the spec answer is a mismatch |
+| S4h | rule 2, both channels agree on a bad name | HTTP POST `tools/list`, header and `_meta` both `2025-03-26`, `Mcp-Method: tools/list` | HTTP 400. Code `-32022`. `data.requested` is `2025-03-26`. `data.supported` is `["2026-07-28","2025-11-25"]` | yes. The code is already `-32022` and `data` is absent |
 | S4e | signal 4 on initialize | `initialize` with handshake `2025-11-25` and `_meta` `2025-03-26`, no header | `-32022`. `data.requested` is `2025-03-26`. `data.supported` is `["2026-07-28","2025-11-25"]`. There is no `result` | yes. The code is already `-32022` and `data` is absent. If `initialize` is answered before the `_meta` check, the result is `protocolVersion` `2025-11-25` and this row fails |
-| S4f | rule 1, header is the bad name | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2025-03-26`, `_meta` `2026-07-28`, `Mcp-Method: tools/list` | `-32022`. `data.requested` is `2025-03-26`, not `2026-07-28`. No `resultType` | yes. Today the header disagrees with `_meta` and the code is `-32020`. Rule 1 has to win |
+| S4f | rule 1, other order | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2025-03-26`, `_meta` `2026-07-28`, `Mcp-Method: tools/list` | HTTP 400. Code `-32020`. `data` is absent. No `resultType` | no. This mismatch is already `-32020`. The row fails if the bad header is ignored because `_meta` is supported |
 | S4g | rule 1, unknown name | `tools/list` with `_meta` `1900-01-01` | `-32022`. `data.requested` is `1900-01-01`. `data.supported` is the two literals | yes. `data` is absent. A denylist of only `2025-03-26` would accept this name |
 | S5 | signal 5, rule 5 | `initialize` handshake `2026-07-28`, no `_meta`, no header | `protocolVersion` is `2025-11-25`. `resources.subscribe` is true. No `resultType`. No error | yes. Today the handshake is answered `2026-07-28` with subscription off |
 | S5b | signal 5 | `initialize` handshake `2025-03-26`, no `_meta`, no header | `protocolVersion` is `2025-11-25`. No `resultType`. A later `server/discover` with `_meta` `2026-07-28` still has `supportedVersions` exactly `["2026-07-28","2025-11-25"]` | the initialize half is already green (`TestProtocol2026LegacySessionsUnchanged`). The discover half is S1. This row keeps the handshake from being added to the advertised set |
@@ -277,7 +288,7 @@ Stdio `HandleRequest` cannot see an HTTP header. Header rows go through
 | S5d | rule 5, unknown handshake | `initialize` handshake `1900-01-01`, no `_meta`, no header | `protocolVersion` is `2025-11-25`. No error. No `resultType` | no. An unknown handshake is already answered `2025-11-25`. The row fails if that handshake is `-32022` or is echoed as `1900-01-01` |
 | R2 | rule 2 | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2026-07-28`, `_meta` `2025-11-25`, `Mcp-Method: tools/list` | code `-32020`. `data` is absent. Body has no `resultType` | no. The header and `_meta` are both in the pair and differ, and that is already `-32020` |
 | R2b | rule 2, other order | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2025-11-25`, `_meta` `2026-07-28`, `Mcp-Method: tools/list` | code `-32020`. `data` is absent. Body has no `resultType` | no. Same mismatch in the other order. It fails if only one order is checked |
-| R3 | rules 3 and 4, channels agree | HTTP POST `tools/list` twice. First: header and `_meta` both `2026-07-28`, `Mcp-Method: tools/list`. Second: header and `_meta` both `2025-11-25`, no `Mcp-Method` | first HTTP 200, `resultType` `complete`, no error. Second HTTP 200, no error, no `resultType`, no `ttlMs`, no `cacheScope` | the second is green today. The first is not: a header of `2026-07-28` is currently `-32020` unless the body is classified the same way |
+| R3 | rules 4 and 5, channels agree | HTTP POST `tools/list` twice. First: header and `_meta` both `2026-07-28`, `Mcp-Method: tools/list`. Second: header and `_meta` both `2025-11-25`, no `Mcp-Method` | first HTTP 200, `resultType` `complete`, no error. Second HTTP 200, no error, no `resultType`, no `ttlMs`, no `cacheScope` | no. Agreement on either revision is already served that way. The row fails if agreement is rejected |
 | R5 | rule 5 default | `tools/list` with no `_meta` and no header, no prior `initialize` | no error. No `resultType`. No `ttlMs`. `ping` on the same shape succeeds | no. This is the current default. It fails if an undeclared request becomes 2026 |
 | D1 | solution docs sentence | `CHANGELOG.md` Unreleased section, the `## [1.22.0]` section, `docs/CLI.md`, `ROADMAP.md` | Unreleased contains the literals `2026-07-28` and `2025-11-25`. The `## [1.22.0]` section still contains `with **2025-11-25** or **2025-03-26**`. CLI contains `2026-07-28 and 2025-11-25`. ROADMAP still contains `v1.22.0** (2026-09-25): current release line` | no. The changelog and CLI already say this. The row fails if Unreleased drops the pair or the 1.22.0 paragraph is rewritten |
 
