@@ -241,3 +241,45 @@ bump and no tag.
    and the `data` fields. A handshake string alone is rule 5, not this one.
 5. Rule 5 answers a handshake-only `initialize` of anything other than
    `2025-11-25` with `2025-11-25`.
+
+## Test plan
+
+Status: **unratified**. No new test code until this table is reviewed.
+Level is unit unless the row says HTTP. Type is the assertion's job.
+Expected values are literals. A case that reads `supportedProtocolVersions`
+and expects that same variable is not a case: `TestProtocol2026Discover`
+does that today and will be replaced for the list assertion.
+
+Stdio `HandleRequest` cannot see an HTTP header. Header rows go through
+`HTTPServer.handleMCP`. One defect per row.
+
+| id | proves | input | expect | fails on this branch before the solution |
+|---|---|---|---|---|
+| S1 | signal 1, rules of the slice | `server/discover` with `_meta` `2026-07-28` | `supportedVersions` is exactly `["2026-07-28","2025-11-25"]` in that order. `2025-03-26` is absent. `resultType` is `complete` | no. The list is already those two. The new assertion is the literals, so adding `2025-03-26` back to the slice fails it. The current discover test would stay green |
+| S2 | signal 2, rule 3 | `tools/list` with `_meta` `2026-07-28` and no prior `initialize` | no error. `resultType` is `complete`. `cacheScope` is `public` | no. `TestProtocol2026Discover` and `TestProtocol2026ListEndpointsCarryCacheHints` already require this. They stay |
+| S2b | signal 2, ping absent | `resources/subscribe` and `ping` with `_meta` `2026-07-28` | both return code `-32601` | no. `TestProtocol2026ListenReplacesSubscribeAndHonoursOptIn` already requires the subscribe rejection. Add `ping` to that same server, same `_meta`, so a 2026 session that grew `ping` back fails |
+| S2c | rule 3, header alone | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2026-07-28`, no `_meta`, `Mcp-Method: tools/list` | HTTP 200. Body has `resultType` `complete` and no error | yes. Today the header is compared with the legacy constant and the response is `-32020` |
+| S3 | signal 3, rule 5 | `initialize` handshake `2025-11-25`, no `_meta`, no header | `protocolVersion` is `2025-11-25`. No `resultType`, no `ttlMs`. `resources.subscribe` is true. Then `ping` and `resources/subscribe` on that server succeed | no. `TestProtocol2026LegacySessionsUnchanged` already requires this for `2025-11-25`. It stays. The expected revision in the new rows is the literal `2025-11-25`, not the Go constant |
+| S3b | signal 3, rule 4 | `tools/list` with `_meta` `2025-11-25` and no prior `initialize` | no error. Result JSON has neither `resultType` nor `ttlMs`. A following `ping` on that same request shape succeeds | no. This is the regression guard for serving the legacy revision through `_meta`. Deleting the legacy branch makes `ping` return `-32601` |
+| S3c | rule 4, header alone | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2025-11-25`, no `_meta`, no `Mcp-Method` | HTTP 200. Body has no `resultType` and no `ttlMs` | no. A legacy header that matches the default revision is already accepted. The row stops a later change from requiring 2026 headers on that header |
+| S4 | signal 4, rule 1 | `tools/list` with `_meta` `2025-03-26` | error code `-32022`. `data.supported` is exactly `["2026-07-28","2025-11-25"]`. `data.requested` is `2025-03-26`. No `result` | yes. Today the code is `-32022` and `data` is absent. `TestProtocolSupportIsTheTwoLatestRevisions` checks the code only and will grow this `data` assertion |
+| S4b | rule 1 before rule 3 | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2026-07-28`, `_meta` `2025-03-26`, `Mcp-Method: tools/list` | `-32022`. `data.requested` is `2025-03-26`. Body has no `resultType` | yes. The code is already `-32022` because `_meta` is rejected, and `data` is absent. If rule 1 is deleted and the header is served, the body has `resultType` and this row fails |
+| S4c | rule 1, header alone | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2025-03-26`, no `_meta` | `-32022`. `data.requested` is `2025-03-26`. `data.supported` is the same two literals. Not `-32020` | yes. Today this is a header mismatch, `-32020` |
+| S4d | rule 1 tie-break | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2025-06-18`, `_meta` `2025-03-26` | `-32022`. `data.requested` is `2025-03-26`, not `2025-06-18` | yes. `data` is absent today. The two bad names are the whole point: one field, `_meta` wins |
+| S5 | signal 5, rule 5 | `initialize` handshake `2026-07-28`, no `_meta`, no header | `protocolVersion` is `2025-11-25`. `resources.subscribe` is true. No `resultType`. No error | yes. Today the handshake is answered `2026-07-28` with subscription off |
+| S5b | signal 5 | `initialize` handshake `2025-03-26`, no `_meta`, no header | `protocolVersion` is `2025-11-25`. No `resultType`. `supportedVersions` from a later discover that names `2026-07-28` in `_meta` still does not contain `2025-03-26` | the initialize half is already green (`TestProtocol2026LegacySessionsUnchanged`). The discover half is S1. This row keeps the handshake from being added to the advertised set |
+| R2 | rule 2 | HTTP POST `tools/list`, header `MCP-Protocol-Version: 2026-07-28`, `_meta` `2025-11-25`, `Mcp-Method: tools/list` | code `-32020`. `data` is absent. Body has no `resultType` | no, if the current mismatch check compares header to `_meta`. The row fails if that pair is served, or if it is rejected as `-32022` |
+| R5 | rule 5 default | `tools/list` with no `_meta` and no header, no prior `initialize` | no error. No `resultType`. No `ttlMs`. `ping` on the same shape succeeds | no. This is the current default. It fails if an undeclared request becomes 2026 |
+| D1 | solution docs sentence | `docs/CLI.md` and the Unreleased changelog | the CLI row contains the literal `2026-07-28 and 2025-11-25`. `## [1.22.0]` remains. ROADMAP still contains `v1.22.0** (2026-09-25): current release line` | no. `TestPublicDocsAdvertiseCurrentCounts` and `TestReleaseFacingDocsStayAligned` already require those literals. They stay. No new docs test |
+
+Sweep before review:
+
+- A1, A4. S1 states both revisions and the order, not a length. S4 states both the refused code and the permitted list inside `data.supported`.
+- A2. `data` on `-32022` is the key set `supported` and `requested`. R2 says `data` is absent, so an error that carries the list does not pass the mismatch row.
+- A3. S1 names what arrived. Absence of `2025-03-26` is additional, not the only assertion.
+- A5. S4b is the row that dies if an outside-the-pair `_meta` is ignored whenever the header is `2026-07-28`. S4c dies if a header outside the pair is only a mismatch. S2c dies if a header of `2026-07-28` with no body revision is treated as the legacy default.
+- A8. New assertions use the literals `2026-07-28`, `2025-11-25`, `2025-03-26`, `-32022`, and `-32020`. They do not expect `supportedProtocolVersions` or `protocolVersion`.
+- A9. S4d is only the tie-break. S4b is only precedence against a successful 2026 response. They are not the same input.
+- A6, A7. No time and no named-constant identity. Not applicable.
+
+`TestProtocol2026LegacySessionsUnchanged` does not send a `2026-07-28` handshake. S5 is that handshake, expecting `2025-11-25`. The existing loop must not gain a `2026-07-28` handshake that expects the modern answer.
