@@ -1,7 +1,9 @@
 # MCP compatibility window: problem
 
-Status: **problem ratified, solution unratified**. No implementation is
-authorized until the solution below is reviewed on its own.
+Status: **implemented on `d70ce738`**. The problem and the solution were
+reviewed before the code. The test plan was reviewed, then the tests were
+written. This file is the record of those gates, not a request for a new
+implementation.
 
 Date: 2026-09-25
 
@@ -93,7 +95,11 @@ the revision under review:
 4. A request that names a revision other than `2026-07-28` and `2025-11-25`
    in `_meta`, including an `initialize` that does so, is not served as that
    revision. The `-32022` error's `data.supported` is the two revisions
-   above, and `data.requested` is the revision the client named.
+   above, and `data.requested` is the revision the client named. On HTTP,
+   when the header names a different revision from `_meta`, the answer is
+   `-32020` instead. The streamable HTTP page requires that mismatch when
+   the two values differ. Signal 4 is the case where the only named
+   revision is outside the pair, or both channels name that same revision.
 5. An `initialize` that names its revision only in the handshake parameters,
    and names anything other than `2025-11-25`, is not signal 4. It receives
    `2025-11-25`. That includes a handshake that names `2026-07-28` or an
@@ -158,11 +164,12 @@ revision. The pair is unchanged, so the problem stays closed.
 One residual from the problem review is taken up here rather than by reopening
 the problem. Claude rated it BEFORE-DEPLOY: on HTTP the same per-request
 revision is also carried in the `MCP-Protocol-Version` header (2026-07-28
-versioning page). A header outside the pair has to get the same `-32022`
-answer as `_meta` outside the pair, including `data.supported` and
-`data.requested`. A header and a body that name two different revisions from
-the pair stay a header mismatch (`-32020`), which is disagreement, not an
-unknown revision.
+versioning page). The streamable HTTP page then says the header must match
+`_meta`, and a difference is HTTP 400 with `-32020`. That includes a header
+inside the pair and a `_meta` value outside it. `-32022` with
+`data.supported` and `data.requested` is the answer when the only named
+revision is outside the pair, or when the header and `_meta` name that same
+outside revision.
 
 ### Rejected
 
@@ -211,9 +218,10 @@ channel names a revision. The first matching rule wins.
    `data.requested` is that revision. On HTTP the status is 400. The same
    answer is used when the header names a revision outside the pair and
    `_meta` names none.
-3. HTTP, header `2026-07-28`, and `_meta` names no revision: HTTP 400 and
-   `-32020`. The same answer is used when `_meta` names `2026-07-28` and the
-   header is absent.
+3. On HTTP, header `2026-07-28` and `_meta` names no revision: HTTP 400 and
+   `-32020`. On HTTP, the same answer is used when `_meta` names
+   `2026-07-28` and the header is absent. Stdio has no header, so a `_meta`
+   of `2026-07-28` is rule 4.
 4. `_meta` names `2026-07-28`, and on HTTP the header names it too: the
    request is served as `2026-07-28`. The result carries `resultType`. A
    list result also carries `ttlMs` and `cacheScope`, as it does today. No
@@ -255,7 +263,10 @@ bump and no tag.
 
 ## Test plan
 
-Status: **unratified**. No new test code until this table is reviewed.
+Status: **reviewed, then implemented** in `TestMCPWindow` and the retained
+protocol tests. The "fails on this branch before the solution" column is the
+record of what was red before `484f876d`. It is not a claim about the
+current code.
 Level is unit unless the row says HTTP. Type is the assertion's job.
 Expected values are literals. A case that reads `supportedProtocolVersions`
 and expects that same variable is not a case: `TestProtocol2026Discover`

@@ -25,8 +25,8 @@ func TestProtocol2026Discover(t *testing.T) {
 		t.Fatalf("resultType = %#v, want complete", m["resultType"])
 	}
 	got := stringList(t, m["supportedVersions"])
-	if strings.Join(got, ",") != strings.Join(supportedProtocolVersions, ",") {
-		t.Fatalf("supportedVersions = %v, want %v", got, supportedProtocolVersions)
+	if len(got) != 2 || got[0] != "2026-07-28" || got[1] != "2025-11-25" {
+		t.Fatalf("supportedVersions = %v, want [2026-07-28 2025-11-25]", got)
 	}
 	if m["cacheScope"] != "public" {
 		t.Fatalf("cacheScope = %#v, want public", m["cacheScope"])
@@ -180,10 +180,6 @@ func TestProtocol2026ListenReplacesSubscribeAndHonoursOptIn(t *testing.T) {
 		t.Fatalf("2026 resources/subscribe = %#v, want method not found", gone.Error)
 	}
 	if ping := s.HandleRequest(modernRequest(t, "ping", 8, nil)); ping.Error == nil || ping.Error.Code != -32601 {
-		t.Fatalf("2026 ping = %#v, want method not found", ping.Error)
-	}
-	ping := s.HandleRequest(modernRequest(t, "ping", 8, nil))
-	if ping.Error == nil || ping.Error.Code != -32601 {
 		t.Fatalf("2026 ping = %#v, want method not found", ping.Error)
 	}
 
@@ -643,6 +639,67 @@ func TestMCPWindow(t *testing.T) {
 			"Mcp-Method":           "tools/list",
 		})
 		assertHTTPCode(t, rec, http.StatusBadRequest, -32020)
+	})
+
+	t.Run("S3c", func(t *testing.T) {
+		list := postWindow(t, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`, map[string]string{
+			"MCP-Protocol-Version": "2025-11-25",
+		})
+		if list.Code != http.StatusOK {
+			t.Fatalf("list status = %d: %s", list.Code, list.Body.String())
+		}
+		var listBody struct {
+			Result json.RawMessage `json:"result"`
+			Error  *struct {
+				Code int `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(list.Body.Bytes(), &listBody); err != nil {
+			t.Fatal(err)
+		}
+		if listBody.Error != nil || len(listBody.Result) == 0 {
+			t.Fatalf("list = %s", list.Body.String())
+		}
+		if bytes.Contains(listBody.Result, []byte("resultType")) || bytes.Contains(listBody.Result, []byte("ttlMs")) || bytes.Contains(listBody.Result, []byte("cacheScope")) {
+			t.Fatalf("legacy header gained 2026 fields: %s", listBody.Result)
+		}
+		sub := postWindow(t, `{"jsonrpc":"2.0","id":2,"method":"resources/subscribe","params":{"uri":"trvl://watches"}}`, map[string]string{
+			"MCP-Protocol-Version": "2025-11-25",
+		})
+		if sub.Code != http.StatusOK || bytes.Contains(sub.Body.Bytes(), []byte(`"error"`)) {
+			t.Fatalf("subscribe = %d %s", sub.Code, sub.Body.String())
+		}
+	})
+
+	t.Run("R3", func(t *testing.T) {
+		modern := postWindow(t, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`, map[string]string{
+			"MCP-Protocol-Version": "2026-07-28",
+			"Mcp-Method":           "tools/list",
+		})
+		if modern.Code != http.StatusOK || !bytes.Contains(modern.Body.Bytes(), []byte(`"resultType":"complete"`)) {
+			t.Fatalf("modern = %d %s", modern.Code, modern.Body.String())
+		}
+		legacy := postWindow(t, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2025-11-25"}}}`, map[string]string{
+			"MCP-Protocol-Version": "2025-11-25",
+		})
+		if legacy.Code != http.StatusOK || bytes.Contains(legacy.Body.Bytes(), []byte("resultType")) || bytes.Contains(legacy.Body.Bytes(), []byte(`"error"`)) {
+			t.Fatalf("legacy = %d %s", legacy.Code, legacy.Body.String())
+		}
+	})
+
+	t.Run("R5", func(t *testing.T) {
+		s := NewServer()
+		list := s.HandleRequest(jsonRequest(t, "tools/list", 1, nil))
+		if list.Error != nil {
+			t.Fatalf("tools/list: %s", list.Error.Message)
+		}
+		raw := mustJSON(t, list.Result)
+		if bytes.Contains(raw, []byte("resultType")) || bytes.Contains(raw, []byte("ttlMs")) {
+			t.Fatalf("undeclared tools/list gained 2026 fields: %s", raw)
+		}
+		if ping := s.HandleRequest(jsonRequest(t, "ping", 2, nil)); ping.Error != nil {
+			t.Fatalf("ping: %s", ping.Error.Message)
+		}
 	})
 
 	t.Run("D1", func(t *testing.T) {
