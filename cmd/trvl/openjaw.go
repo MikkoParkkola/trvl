@@ -54,11 +54,13 @@ func runOpenJaw(cmd *cobra.Command, args []string) error {
 	if currency != "" {
 		currency = " " + currency
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Open-jaw total: %.2f%s\n", bundle.Total, currency)
-	fmt.Fprintf(cmd.OutOrStdout(), "%s %s -> %s, then %s %s -> %s\n",
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Open-jaw total: %.2f%s\n", bundle.Total, currency); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s -> %s, then %s %s -> %s\n",
 		bundle.Legs[0].Mode, bundle.Legs[0].Origin, bundle.Legs[0].Destination,
 		bundle.Legs[1].Mode, bundle.Legs[1].Origin, bundle.Legs[1].Destination)
-	return nil
+	return err
 }
 
 func parseOpenJawLeg(raw, defaultMode string) (openjaw.Leg, error) {
