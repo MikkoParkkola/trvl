@@ -13,8 +13,9 @@ import (
 // metadata handling lives in http.go and http_auth.go. Handing that transport to
 // the SDK would replace the auth boundary. The revision is therefore implemented
 // here. Compatibility is the two latest revisions: 2026-07-28 and 2025-11-25.
-// An initialize that names anything older is answered as 2025-11-25. A
-// 2026-style _meta version outside those two is rejected.
+// An initialize handshake with no _meta is answered as 2025-11-25, including
+// a handshake that names 2026-07-28. _meta of 2026-07-28 selects that
+// revision. A _meta version outside the two supported revisions is rejected.
 
 const (
 	protocolVersion20250326 = "2025-03-26"
