@@ -108,8 +108,8 @@ func TestProtocol2026PublicListIgnoresCallerState(t *testing.T) {
 
 func TestProtocolSupportIsTheTwoLatestRevisions(t *testing.T) {
 	if len(supportedProtocolVersions) != 2 ||
-		supportedProtocolVersions[0] != protocolVersion20260728 ||
-		supportedProtocolVersions[1] != protocolVersion20251125 {
+		supportedProtocolVersions[0] != "2026-07-28" ||
+		supportedProtocolVersions[1] != "2025-11-25" {
 		t.Fatalf("supported versions = %v, want 2026-07-28 then 2025-11-25", supportedProtocolVersions)
 	}
 	for _, version := range supportedProtocolVersions {
@@ -122,7 +122,7 @@ func TestProtocolSupportIsTheTwoLatestRevisions(t *testing.T) {
 	rejected := s.HandleRequest(jsonRequest(t, "tools/list", 1, map[string]any{
 		"_meta": map[string]any{metaProtocolVersion: protocolVersion20250326},
 	}))
-	if rejected.Error == nil || rejected.Error.Code != codeUnsupportedProtocolVersion {
+	if rejected.Error == nil || rejected.Error.Code != -32022 {
 		t.Fatalf("2025-03-26 _meta = %#v, want unsupported protocol version", rejected.Error)
 	}
 }
@@ -149,8 +149,8 @@ func TestProtocol2026LegacySessionsUnchanged(t *testing.T) {
 			if err := json.Unmarshal(initJSON, &init); err != nil {
 				t.Fatal(err)
 			}
-			if init.ProtocolVersion != protocolVersion20251125 {
-				t.Fatalf("protocolVersion = %q, want %q", init.ProtocolVersion, protocolVersion20251125)
+			if init.ProtocolVersion != "2025-11-25" {
+				t.Fatalf("protocolVersion = %q, want 2025-11-25", init.ProtocolVersion)
 			}
 
 			tools := s.HandleRequest(jsonRequest(t, "tools/list", 2, nil))
@@ -429,6 +429,70 @@ func TestMCPWindow(t *testing.T) {
 		if resources["subscribe"] != false {
 			t.Fatalf("subscribe = %#v, want false", resources["subscribe"])
 		}
+	})
+
+	t.Run("S5e", func(t *testing.T) {
+		resp := NewServer().HandleRequest(jsonRequest(t, "initialize", 1, map[string]any{
+			"protocolVersion": "2026-07-28",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "legacy", "version": "1"},
+			"_meta":           map[string]any{metaProtocolVersion: "2025-11-25"},
+		}))
+		if resp.Error != nil {
+			t.Fatalf("initialize: %s", resp.Error.Message)
+		}
+		raw := mustJSON(t, resp.Result)
+		if bytes.Contains(raw, []byte("resultType")) {
+			t.Fatalf("legacy _meta initialize gained resultType: %s", raw)
+		}
+		var init InitializeResult
+		if err := json.Unmarshal(raw, &init); err != nil {
+			t.Fatal(err)
+		}
+		if init.ProtocolVersion != "2025-11-25" {
+			t.Fatalf("protocolVersion = %q, want 2025-11-25", init.ProtocolVersion)
+		}
+		if init.Capabilities.Resources == nil || !init.Capabilities.Resources.Subscribe {
+			t.Fatalf("subscribe = %#v, want true", init.Capabilities.Resources)
+		}
+	})
+
+	t.Run("S5f", func(t *testing.T) {
+		rec := postWindow(t, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`, map[string]string{
+			"MCP-Protocol-Version": "2026-07-28",
+			"Mcp-Method":           "initialize",
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		result, _ := body["result"].(map[string]any)
+		if result["resultType"] != "complete" || result["protocolVersion"] != "2026-07-28" {
+			t.Fatalf("result = %#v", result)
+		}
+		resources, _ := result["capabilities"].(map[string]any)["resources"].(map[string]any)
+		if resources["subscribe"] != false {
+			t.Fatalf("subscribe = %#v, want false", resources["subscribe"])
+		}
+	})
+
+	t.Run("S5g", func(t *testing.T) {
+		rec := postWindow(t, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"}}}`, map[string]string{
+			"MCP-Protocol-Version": "2026-07-28",
+			"Mcp-Method":           "initialize",
+		})
+		assertHTTPCode(t, rec, http.StatusBadRequest, -32020)
+	})
+
+	t.Run("R2c", func(t *testing.T) {
+		rec := postWindow(t, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2025-11-25"}}}`, map[string]string{
+			"MCP-Protocol-Version": "2026-07-28",
+			"Mcp-Method":           "initialize",
+		})
+		assertHTTPCode(t, rec, http.StatusBadRequest, -32020)
 	})
 
 	t.Run("S5d", func(t *testing.T) {
