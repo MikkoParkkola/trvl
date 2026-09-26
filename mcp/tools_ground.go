@@ -180,6 +180,9 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 
 	// Best-effort, free sea-state enrichment for ferry legs only. Never blocks
 	// the core result: failures and missing coordinates leave routes unchanged.
+	if bucket := argStringSliceOrJSON(args, "bucket_list"); len(bucket) > 0 {
+		ground.PreferBucket(result.Routes, bucket)
+	}
 	enrichFerrySeaState(ctx, result.Routes)
 
 	// Best-effort destination intelligence for the arrival city on the default

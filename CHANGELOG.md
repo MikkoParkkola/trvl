@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Open-jaw bundles price a flight into one city and a train out of that city as one total (`internal/openjaw`).
+- `search_ground` ranks a `bucket_list` arrival (Iceland, the Balkans) ahead of other routes.
+- `search_flights` writes `seat_preference` (`window` or `aisle`) onto Kiwi and KLM booking URLs.
+
 ## [1.23.0] - 2026-09-26
 
 ### Changed
