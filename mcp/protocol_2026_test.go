@@ -231,6 +231,18 @@ func TestProtocol2026HeaderMismatch(t *testing.T) {
 	if err := headerContractError(protocolVersion20260728, "tools/call", "other", req); err == nil || !strings.Contains(err.Message, "Mcp-Name") {
 		t.Fatalf("wrong name = %#v", err)
 	}
+	if err := headerContractError(protocolVersion20260728, "tools/call", "", req); err == nil || !strings.Contains(err.Message, "required") {
+		t.Fatalf("empty name = %#v", err)
+	}
+	if err := headerContractError(protocolVersion20260728, "tools/call", "=?base64?***?=", req); err == nil || !strings.Contains(err.Message, "base64") {
+		t.Fatalf("bad base64 name = %#v", err)
+	}
+	badMeta := jsonRequest(t, "tools/list", 3, map[string]any{
+		"_meta": map[string]any{metaProtocolVersion: "2025-03-26"},
+	})
+	if err := headerContractError("", "", "", badMeta); err == nil || err.Code != -32022 {
+		t.Fatalf("bad _meta with no header = %#v, want -32022", err)
+	}
 	if err := headerContractError("", "tools/call", "travel", req); err == nil || err.Code != codeHeaderMismatch {
 		t.Fatalf("2026 body without MCP-Protocol-Version = %#v, want header mismatch", err)
 	}
