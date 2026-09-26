@@ -182,9 +182,6 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*DiscoverOutput, error
 				dests = filtered
 			}
 
-			if prefs != nil {
-				preferBucketDestinations(dests, prefs.BucketList)
-			}
 			if len(dests) > 5 {
 				dests = dests[:5]
 			}
@@ -371,19 +368,6 @@ func buildDiscoverMatchRequest(opts DiscoverOptions, from, until time.Time, curr
 	}
 }
 
-// preferBucketDestinations moves bucket-list cities ahead of the others while
-// keeping the existing price order inside each group. Discover keeps only a
-// few destinations per window, so this has to happen before that cut.
-func preferBucketDestinations(dests []models.ExploreDestination, bucket []string) {
-	if len(dests) < 2 || len(bucket) == 0 {
-		return
-	}
-	sort.SliceStable(dests, func(i, j int) bool {
-		return preferences.MatchesBucket(dests[i].CityName, dests[i].AirportCode, bucket) &&
-			!preferences.MatchesBucket(dests[j].CityName, dests[j].AirportCode, bucket)
-	})
-}
-
 // rankDiscoverTrials scores and ranks discover candidates.
 //
 // Each candidate receives a RequestMatch score (0–100) measuring how closely
@@ -422,6 +406,9 @@ func rankDiscoverTrials(trials []discoverTrial, hotelResults map[discoverTrialKe
 		}
 
 		matchScore, breakdown := scoring.ComputeProfileMatch(prefs, input)
+		if breakdown[scoring.FactorWarsawFilter] == 0 {
+			continue
+		}
 		reasoning := buildDiscoverReasoning(h.rating, slack, currency)
 
 		offered := match.Offered{
