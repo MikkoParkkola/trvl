@@ -1,3 +1,4 @@
+// Package searchctx keeps request values after the caller's cancel signal stops.
 package searchctx
 
 import (

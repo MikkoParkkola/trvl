@@ -98,6 +98,9 @@ jobs:
       - name: Test
         if: runner.os != 'Windows'
         run: go test -p=1 -race -timeout=10m -coverprofile coverage.out ./...
+      - name: Fuzz flight filter builder
+        if: runner.os != 'Windows'
+        run: go test ./internal/flights/ -run '^$' -fuzz=FuzzBuildFilters -fuzztime=60s
       - name: Test (Windows)
         if: runner.os == 'Windows'
         run: go test -short -p=1 -race -timeout=10m -coverprofile coverage.out ./...

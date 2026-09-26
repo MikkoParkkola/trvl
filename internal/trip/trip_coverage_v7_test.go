@@ -367,7 +367,7 @@ func TestRankDiscoverTrials_Basic(t *testing.T) {
 	hotelResults := map[discoverTrialKey]*discoverHotelInfo{
 		{airport: "BCN", nights: 2}: {price: 75, total: 150, name: "Hotel BCN", rating: 4.2},
 	}
-	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, match.Request{})
+	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, nil, match.Request{})
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -433,7 +433,7 @@ func TestRankDiscoverTrials_ExceedsBudget(t *testing.T) {
 		{airport: "BCN", nights: 2}: {total: 200, name: "H"},
 	}
 	// Budget=500, total=600 -> exceeds.
-	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, match.Request{})
+	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, nil, match.Request{})
 	if len(results) != 0 {
 		t.Errorf("expected 0 results for over-budget, got %d", len(results))
 	}
@@ -450,7 +450,7 @@ func TestRankDiscoverTrials_NoHotelData(t *testing.T) {
 		},
 	}
 	// No hotel data for BCN.
-	results := rankDiscoverTrials(trials, map[discoverTrialKey]*discoverHotelInfo{}, 500, "EUR", 5, match.Request{})
+	results := rankDiscoverTrials(trials, map[discoverTrialKey]*discoverHotelInfo{}, 500, "EUR", 5, nil, match.Request{})
 	if len(results) != 0 {
 		t.Errorf("expected 0 results for missing hotel, got %d", len(results))
 	}
@@ -473,7 +473,7 @@ func TestRankDiscoverTrials_RankedByProfileMatch(t *testing.T) {
 		{airport: "TLL", nights: 2}: {total: 50, name: "Hostel", rating: 4.5},
 		{airport: "NRT", nights: 2}: {total: 50, name: "Hostel2", rating: 3.0},
 	}
-	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, match.Request{})
+	results := rankDiscoverTrials(trials, hotelResults, 500, "EUR", 5, nil, match.Request{})
 	if len(results) != 2 {
 		t.Fatalf("expected 2, got %d", len(results))
 	}
@@ -502,7 +502,7 @@ func TestRankDiscoverTrials_TopCap(t *testing.T) {
 			total: 50, name: "H", rating: 4.0,
 		}
 	}
-	results := rankDiscoverTrials(trials, hotelResults, 1000, "EUR", 3, match.Request{})
+	results := rankDiscoverTrials(trials, hotelResults, 1000, "EUR", 3, nil, match.Request{})
 	if len(results) != 3 {
 		t.Errorf("expected 3 (top cap), got %d", len(results))
 	}

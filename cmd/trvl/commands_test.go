@@ -27,7 +27,8 @@ func TestRootCmd_SubcommandCount(t *testing.T) {
 	// wiring: inbox confirmation import and day-graph itinerary compose).
 	// 73 -> 74 with `tempfiles` (#513: report orphaned temp files left by
 	// interrupted atomic writes, and delete only provably dead owners).
-	const want = 74
+	// 74 -> 75 with `open-jaw` (one flight plus one ground leg).
+	const want = 75
 	got := len(rootCmd.Commands())
 	if got != want {
 		names := make([]string, 0, got)

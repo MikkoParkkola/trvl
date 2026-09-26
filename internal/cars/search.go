@@ -1,3 +1,4 @@
+// Package cars searches rental-car providers.
 package cars
 
 import (

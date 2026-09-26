@@ -182,6 +182,7 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*DiscoverOutput, error
 				dests = filtered
 			}
 
+			dests = dropExcludedDestinations(dests, prefs)
 			if len(dests) > 5 {
 				dests = dests[:5]
 			}
@@ -303,7 +304,7 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*DiscoverOutput, error
 	}
 	hotelWg.Wait()
 
-	results := rankDiscoverTrials(trials, hotelResults, opts.Budget, currency, opts.Top,
+	results := rankDiscoverTrials(trials, hotelResults, opts.Budget, currency, opts.Top, prefs,
 		buildDiscoverMatchRequest(opts, fromDate, untilDate, currency))
 
 	return &DiscoverOutput{
@@ -368,12 +369,33 @@ func buildDiscoverMatchRequest(opts DiscoverOptions, from, until time.Time, curr
 	}
 }
 
+// dropExcludedDestinations removes cities the profile forbids before the
+// shortlist cut. Doing it afterwards lets five excluded cities occupy every
+// hotel-search slot and hide a permitted one.
+func dropExcludedDestinations(dests []models.ExploreDestination, prefs *preferences.Preferences) []models.ExploreDestination {
+	if prefs == nil || len(prefs.ExcludedDestinations) == 0 || len(dests) == 0 {
+		return dests
+	}
+	kept := make([]models.ExploreDestination, 0, len(dests))
+	for _, dest := range dests {
+		_, breakdown := scoring.ComputeProfileMatch(prefs, scoring.DiscoverInput{
+			CityName:    dest.CityName,
+			AirportCode: dest.AirportCode,
+		})
+		if breakdown[scoring.FactorWarsawFilter] == 0 {
+			continue
+		}
+		kept = append(kept, dest)
+	}
+	return kept
+}
+
 // rankDiscoverTrials scores and ranks discover candidates.
 //
 // Each candidate receives a RequestMatch score (0–100) measuring how closely
 // the literal request was satisfied, and a ProfileMatch score (0–100) from the
 // user's preference profile. Results are sorted by RequestMatch descending.
-func rankDiscoverTrials(trials []discoverTrial, hotelResults map[discoverTrialKey]*discoverHotelInfo, budget float64, currency string, top int, matchReq match.Request) []DiscoverResult {
+func rankDiscoverTrials(trials []discoverTrial, hotelResults map[discoverTrialKey]*discoverHotelInfo, budget float64, currency string, top int, prefs *preferences.Preferences, matchReq match.Request) []DiscoverResult {
 	var results []DiscoverResult
 	for _, t := range trials {
 		k := discoverTrialKey{airport: t.dest.AirportCode, nights: t.window.nights}
@@ -405,7 +427,10 @@ func rankDiscoverTrials(trials []discoverTrial, hotelResults map[discoverTrialKe
 			HotelName:   h.name,
 		}
 
-		matchScore, breakdown := scoring.ComputeProfileMatch(nil, input)
+		matchScore, breakdown := scoring.ComputeProfileMatch(prefs, input)
+		if breakdown[scoring.FactorWarsawFilter] == 0 {
+			continue
+		}
 		reasoning := buildDiscoverReasoning(h.rating, slack, currency)
 
 		offered := match.Offered{

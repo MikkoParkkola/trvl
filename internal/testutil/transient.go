@@ -1,3 +1,4 @@
+// Package testutil holds shared HTTP fixtures and live-probe helpers for tests.
 package testutil
 
 import (

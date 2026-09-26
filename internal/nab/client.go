@@ -1,3 +1,4 @@
+// Package nab fetches pages through the nab CLI, and stops when cookie reads are declined.
 package nab
 
 import (

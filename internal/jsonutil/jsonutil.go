@@ -1,3 +1,4 @@
+// Package jsonutil walks decoded JSON without panicking on a missing path.
 package jsonutil
 
 import "encoding/json"
