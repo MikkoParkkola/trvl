@@ -30,9 +30,9 @@ func Apply(raw, pref string) string {
 }
 
 func canonical(pref string) string {
-	switch pref {
+	switch strings.ToLower(strings.TrimSpace(pref)) {
 	case "window", "aisle":
-		return pref
+		return strings.ToLower(strings.TrimSpace(pref))
 	default:
 		return ""
 	}

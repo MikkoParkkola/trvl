@@ -496,9 +496,7 @@ func isExcluded(prefs *preferences.Preferences, airportCode, cityName string) bo
 		if excl == "" {
 			continue
 		}
-		if strings.EqualFold(excl, airportCode) ||
-			strings.EqualFold(excl, cityName) ||
-			(cityName != "" && strings.Contains(strings.ToLower(cityName), strings.ToLower(excl))) {
+		if strings.EqualFold(excl, airportCode) || strings.EqualFold(excl, cityName) {
 			return true
 		}
 	}

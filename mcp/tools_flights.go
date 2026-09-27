@@ -514,32 +514,3 @@ func buildBookingContext(date, origin string, originSource travelctx.Source) *bo
 	bc.Advisory = window.Advisory()
 	return bc
 }
-
-// applyFlightProfileHints layers profile-derived defaults onto opts, but only
-// for parameters the caller did not set explicitly.
-//
-// IMPORTANT: PreferredAlliance (and, by the same reasoning, MaxPrice) are
-// intentionally NOT auto-applied as hard filters here:
-//
-//   - Alliances: auto-applying the user's dominant alliance silently disables
-//     Kiwi and Skiplagged in the multi-provider merge (their eligibility
-//     checks bail when `len(opts.Alliances) > 0`) and over-narrows Google
-//     Flights to alliance-only routes. Reverted as part of the
-//     merge-zero-results regression (default search returned 0 flights when
-//     the user's profile had a preferred alliance set).
-//   - MaxPrice: AvgFlightPrice*1.5 is a coarse historical-average ceiling.
-//     On a route priced above the user's average (e.g. a long-haul they
-//     rarely book), auto-applying it as a hard `flights.SearchOptions.MaxPrice`
-//     silently discards the majority of legitimately fetched inventory from
-//     every provider except the cheapest one, while provider_statuses still
-//     reports those providers "ok" (the filter runs after fetch). It also
-//     breaks CLI parity: `cmd/trvl` never applies profile hints. Root cause
-//     of the search_flights truncation bug (MCP returned 4 kiwi-only flights
-//     instead of the full 106-flight multi-provider set for identical
-//     params).
-//
-// CabinClass is intentionally not auto-applied either. Although it narrows the
-// provider query rather than post-filtering results, that query shaping can
-// skip economy-only providers and violates CLI/MCP parity for identical
-// parameters (MIK-6878). The hint remains available to recommendation layers;
-// search_flights only applies an explicit cabin_class argument.

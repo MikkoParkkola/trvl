@@ -20,6 +20,26 @@ func TestFactor_WarsawFilter_BlankEntryDoesNotExcludeEveryone(t *testing.T) {
 	}
 }
 
+func TestFactor_WarsawFilter_ShortNameDoesNotExcludeADifferentCity(t *testing.T) {
+	prefs := defaultPrefs()
+	prefs.ExcludedDestinations = []string{"Nice", "Bar"}
+
+	in := baseInput()
+	in.CityName = "Venice"
+	in.AirportCode = "VCE"
+	_, bd := scoring.ComputeProfileMatch(prefs, in)
+	if bd[scoring.FactorWarsawFilter] != 1.0 {
+		t.Fatalf("venice warsaw_filter = %.2f, Nice must not exclude Venice", bd[scoring.FactorWarsawFilter])
+	}
+
+	in.CityName = "Barcelona"
+	in.AirportCode = "BCN"
+	_, bd = scoring.ComputeProfileMatch(prefs, in)
+	if bd[scoring.FactorWarsawFilter] != 1.0 {
+		t.Fatalf("barcelona warsaw_filter = %.2f, Bar must not exclude Barcelona", bd[scoring.FactorWarsawFilter])
+	}
+}
+
 func TestFactor_BucketListBoost_IcelandAndBalkans(t *testing.T) {
 	prefs := defaultPrefs()
 	prefs.BucketList = []string{"Iceland", "Balkans"}
