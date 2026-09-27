@@ -2,7 +2,7 @@
 
 ## What trvl does
 
-trvl accesses public-facing internal APIs from Google and European transport providers. It sends HTTP requests to the same endpoints that a web browser uses when you visit google.com/travel, flixbus.com, or similar sites. This is the same approach used by [fli](https://github.com/punitarani/fli) (1,400+ stars, MIT licensed, openly reverse-engineers Google Flights since 2023).
+trvl accesses public-facing internal APIs from Google and European transport providers. It sends HTTP requests to the same endpoints that a web browser uses when you visit google.com/travel, flixbus.com, or similar sites. This is the same approach used by [fli](https://github.com/punitarani/fli) (3,100+ stars, MIT licensed, openly reverse-engineers Google Flights since January 2025).
 
 Specifically, trvl:
 
@@ -19,7 +19,7 @@ Three cases are directly relevant:
 
 **Meta Platforms v. Bright Data (2024, N.D. Cal.)** -- Meta's claims were dismissed for Bright Data's collection of publicly available data. The court distinguished between accessing public pages (lawful) and circumventing access controls to reach private data (potentially unlawful). trvl only accesses public pages.
 
-**fli library (2023-present)** -- The [fli](https://github.com/punitarani/fli) library has openly reverse-engineered Google Flights' batchexecute protocol for over two years, accumulating 1,400+ stars. It remains available on GitHub and PyPI with no legal challenge from Google. trvl uses the same protocol and approach, with attribution to fli.
+**fli library (2025-present)** -- The [fli](https://github.com/punitarani/fli) library has openly reverse-engineered Google Flights' batchexecute protocol since January 2025, accumulating 3,100+ stars. It remains available on GitHub and PyPI with no legal challenge from Google. trvl uses the same protocol and approach, with attribution to fli.
 
 ## What trvl does NOT do
 
@@ -50,7 +50,7 @@ In addition, all Google requests retry with exponential backoff (base 1s, max 3 
 
 ### Google Flights and Hotels
 
-trvl uses Google's `batchexecute` protocol -- the same internal RPC mechanism that google.com/travel uses in the browser. The [fli](https://github.com/punitarani/fli) library documented this protocol in 2023 and it has been used by thousands of developers since. Google has not taken action against fli or any similar project. The TLS fingerprint impersonation (via [utls](https://github.com/refraction-networking/utls)) ensures requests look like normal Chrome browser traffic.
+trvl uses Google's `batchexecute` protocol -- the same internal RPC mechanism that google.com/travel uses in the browser. The [fli](https://github.com/punitarani/fli) library documented this protocol in January 2025 and it has been used by thousands of developers since. Google has not taken action against fli or any similar project. The TLS fingerprint impersonation (via [utls](https://github.com/refraction-networking/utls)) ensures requests look like normal Chrome browser traffic.
 
 ### FlixBus
 

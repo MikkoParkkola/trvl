@@ -26,7 +26,8 @@ import (
 // Current exclusions: version, providers (both are utility/meta commands).
 // Bumped 51 -> 55 with air, sun, bikes, pricetrends (functional travel commands).
 // Bumped 55 -> 56 with cars (rental car search; functional travel command).
-const cliCommandCountMarketed = 56
+// Bumped 56 -> 57 with open-jaw (one flight plus one ground leg).
+const cliCommandCountMarketed = 57
 
 var readmeToolMarkers = []string{
 	"travel",

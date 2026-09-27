@@ -292,7 +292,7 @@ MCP (Model Context Protocol) is how AI assistants call external tools. trvl as a
 - **Progressive disclosure**: Every response includes suggestions for follow-up searches ("Try nearby airports", "Check flexible dates"). The AI can chain these automatically.
 - **No integration work for local mode**: Adding trvl to any MCP client is one config line. Local stdio needs no REST API, webhook, or OAuth setup. Remote HTTP mode is explicit and can use scoped bearer tokens or OAuth 2.1 introspection when a gateway/provider handles Authorization Code + PKCE.
 
-trvl also works as a standalone CLI (56 commands) for users who prefer the terminal or want to script searches.
+trvl also works as a standalone CLI (57 commands) for users who prefer the terminal or want to script searches.
 
 ### Why a monorepo with internal packages?
 

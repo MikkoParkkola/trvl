@@ -110,7 +110,7 @@ done
 - setup_profile()
 - setup_providers()
 
-## CLI (56 commands — selected examples below)
+## CLI (57 commands — selected examples below)
 
 trvl flights JFK LHR 2026-07-01
 trvl flights HEL BCN 2026-07-01 --return 2026-07-08 --cabin business
