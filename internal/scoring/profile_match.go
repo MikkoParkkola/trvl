@@ -13,6 +13,7 @@ package scoring
 import (
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
@@ -512,12 +513,30 @@ func matchesExcludedPlace(airportCode, cityName, excl string) bool {
 	if strings.EqualFold(excl, airportCode) || strings.EqualFold(excl, cityName) {
 		return true
 	}
-	city := strings.ToLower(strings.TrimSpace(cityName))
-	needle := strings.ToLower(strings.TrimSpace(excl))
+	city := placeWords(cityName)
+	needle := placeWords(excl)
 	if city == "" || needle == "" {
 		return false
 	}
-	return strings.Contains(" "+city+" ", " "+needle+" ")
+	return strings.Contains(city, needle)
+}
+
+// placeWords lowercases a label and turns punctuation into word gaps, so
+// "Dallas" matches "Dallas/Fort Worth" and "Chicago O'Hare".
+func placeWords(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte(' ')
+	}
+	fields := strings.Fields(b.String())
+	if len(fields) == 0 {
+		return ""
+	}
+	return " " + strings.Join(fields, " ") + " "
 }
 
 // parseHHMM converts a "HH:MM" string to minutes-since-midnight.

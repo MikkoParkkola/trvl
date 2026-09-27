@@ -42,9 +42,9 @@ func TestFactor_WarsawFilter_ShortNameDoesNotExcludeADifferentCity(t *testing.T)
 
 func TestFactor_WarsawFilter_CityExcludesAirportQualifiedName(t *testing.T) {
 	prefs := defaultPrefs()
-	prefs.ExcludedDestinations = []string{"London", "Paris", "Rome"}
+	prefs.ExcludedDestinations = []string{"London", "Paris", "Rome", "Dallas", "Chicago"}
 
-	for _, city := range []string{"London Heathrow", "Paris CDG", "Rome Fiumicino"} {
+	for _, city := range []string{"London Heathrow", "Paris CDG", "Rome Fiumicino", "Dallas/Fort Worth", "Chicago O'Hare"} {
 		in := baseInput()
 		in.CityName = city
 		in.AirportCode = "XXX"
