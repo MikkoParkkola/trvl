@@ -268,7 +268,7 @@ Create `internal/ground/amtrak_test.go` with:
 - **No API keys**: for the core sources, nothing to manage, rotate, or pay for. No `.env` files, no secrets in CI. Optional providers can be switched on with a key of your own, listed in the README; none is required.
 - **No rate limits imposed by the provider**: Official APIs typically limit you to N requests per day. trvl's self-imposed limits are conservative but not artificially low.
 - **Same data**: The batchexecute protocol returns the exact same data that google.com/travel shows. No "lite" tier, no missing fields.
-- **Precedent**: [fli](https://github.com/punitarani/fli) has done this for Google Flights since 2023 with no legal issues.
+- **Precedent**: [fli](https://github.com/punitarani/fli) has done this for Google Flights since January 2025 with no legal issues.
 
 The tradeoff is maintenance: when Google changes their protocol (rare but possible), trvl needs updating. This is a conscious choice -- free and keyless access is worth occasional breakage.
 
@@ -292,7 +292,7 @@ MCP (Model Context Protocol) is how AI assistants call external tools. trvl as a
 - **Progressive disclosure**: Every response includes suggestions for follow-up searches ("Try nearby airports", "Check flexible dates"). The AI can chain these automatically.
 - **No integration work for local mode**: Adding trvl to any MCP client is one config line. Local stdio needs no REST API, webhook, or OAuth setup. Remote HTTP mode is explicit and can use scoped bearer tokens or OAuth 2.1 introspection when a gateway/provider handles Authorization Code + PKCE.
 
-trvl also works as a standalone CLI (56 commands) for users who prefer the terminal or want to script searches.
+trvl also works as a standalone CLI (57 commands) for users who prefer the terminal or want to script searches.
 
 ### Why a monorepo with internal packages?
 

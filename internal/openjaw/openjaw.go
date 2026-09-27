@@ -72,20 +72,14 @@ func oneCurrency(a, b string) (string, error) {
 }
 
 func samePlace(a, b string) bool {
-	return trimLower(a) == trimLower(b)
+	return strings.EqualFold(stripSpace(a), stripSpace(b))
 }
 
-func trimLower(s string) string {
-	out := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == ' ' || c == '\t' {
-			continue
+func stripSpace(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == ' ' || r == '\t' {
+			return -1
 		}
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		out = append(out, c)
-	}
-	return string(out)
+		return r
+	}, s)
 }

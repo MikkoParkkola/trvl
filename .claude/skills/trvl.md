@@ -56,7 +56,7 @@ allowed-tools:
 
 # trvl — AI Travel Agent
 
-> **1 smart MCP tool, 66 legacy-compatible capabilities, 56 CLI commands, 36 hack detectors, 24 providers.** Single-binary travel agent for any AI assistant. No API keys required by default.
+> **1 smart MCP tool, 66 legacy-compatible capabilities, 57 CLI commands, 36 hack detectors, 24 providers.** Single-binary travel agent for any AI assistant. No API keys required by default.
 
 ## LOAD PROFILE — ALWAYS FIRST
 

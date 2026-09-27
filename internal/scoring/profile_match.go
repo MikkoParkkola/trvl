@@ -13,6 +13,7 @@ package scoring
 import (
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
@@ -496,13 +497,46 @@ func isExcluded(prefs *preferences.Preferences, airportCode, cityName string) bo
 		if excl == "" {
 			continue
 		}
-		if strings.EqualFold(excl, airportCode) ||
-			strings.EqualFold(excl, cityName) ||
-			(cityName != "" && strings.Contains(strings.ToLower(cityName), strings.ToLower(excl))) {
+		if matchesExcludedPlace(airportCode, cityName, excl) {
 			return true
 		}
 	}
 	return false
+}
+
+// matchesExcludedPlace matches an airport code or a city name. A city name
+// also matches when the exclusion is a whole word in an airport-qualified
+// label such as "London Heathrow". A shorter string inside another word does
+// not match, so "Nice" does not exclude Venice and "Bar" does not exclude
+// Barcelona.
+func matchesExcludedPlace(airportCode, cityName, excl string) bool {
+	if strings.EqualFold(excl, airportCode) || strings.EqualFold(excl, cityName) {
+		return true
+	}
+	city := placeWords(cityName)
+	needle := placeWords(excl)
+	if city == "" || needle == "" {
+		return false
+	}
+	return strings.Contains(city, needle)
+}
+
+// placeWords lowercases a label and turns punctuation into word gaps, so
+// "Dallas" matches "Dallas/Fort Worth" and "Chicago O'Hare".
+func placeWords(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte(' ')
+	}
+	fields := strings.Fields(b.String())
+	if len(fields) == 0 {
+		return ""
+	}
+	return " " + strings.Join(fields, " ") + " "
 }
 
 // parseHHMM converts a "HH:MM" string to minutes-since-midnight.

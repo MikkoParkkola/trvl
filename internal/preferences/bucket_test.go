@@ -15,4 +15,7 @@ func TestMatchesBucketRegions(t *testing.T) {
 	if !MatchesBucket("Tokyo", "NRT", []string{"NRT"}) {
 		t.Fatal("airport code should match")
 	}
+	if !MatchesBucket("Reykjavík", "", []string{"Iceland"}) || !MatchesBucket("Keflavík", "", []string{"Iceland"}) {
+		t.Fatal("accented Icelandic names should match Iceland")
+	}
 }

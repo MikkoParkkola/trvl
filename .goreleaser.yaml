@@ -132,7 +132,7 @@ release:
   header: |
     ## trvl {{ .Version }}
 
-    AI travel agent for flights, hotels, ground transport, price alerts, and more. Current interface: 1 smart MCP tool, 66 legacy-compatible capabilities, and 56 CLI commands. No personal API keys required for default search.
+    AI travel agent for flights, hotels, ground transport, price alerts, and more. Current interface: 1 smart MCP tool, 66 legacy-compatible capabilities, and 57 CLI commands. No personal API keys required for default search.
 
     ### Install
 

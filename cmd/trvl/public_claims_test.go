@@ -26,7 +26,8 @@ import (
 // Current exclusions: version, providers (both are utility/meta commands).
 // Bumped 51 -> 55 with air, sun, bikes, pricetrends (functional travel commands).
 // Bumped 55 -> 56 with cars (rental car search; functional travel command).
-const cliCommandCountMarketed = 56
+// Bumped 56 -> 57 with open-jaw (one flight plus one ground leg).
+const cliCommandCountMarketed = 57
 
 var readmeToolMarkers = []string{
 	"travel",
@@ -298,6 +299,7 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 		{
 			path: filepath.Join("..", "..", ".claude", "skills", "trvl.md"),
 			required: []string{
+				fmt.Sprintf("%d CLI commands", cliCommandCount),
 				fmt.Sprintf("## CORE TOOL ROUTING (primary `travel` tool + %d legacy-compatible capabilities)", compatAliasCount),
 				fmt.Sprintf("Bus/train/ferry (%d providers)", groundProviderCount),
 				"`travel`",

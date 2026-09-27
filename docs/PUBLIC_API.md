@@ -6,7 +6,7 @@ trvl's public surface is the CLI and the MCP server in one binary. Packages unde
 
 One smart tool, `travel`, routes to the legacy tools. The compatibility window is MCP `2026-07-28` and `2025-11-25`.
 
-Ground search (`search_ground`) returns each route with mode (`type`), price, duration, transfers, and legs. Its `bucket_list` argument ranks Iceland and Balkan arrivals ahead of other cities. A search that arrives in only one city keeps price order.
+Ground search (`search_ground`) returns each route with mode (`type`), price, duration, transfers, and legs. A bucket list of Iceland or the Balkans raises those cities in discover. A ground search is one origin and one destination, so it does not take a bucket list.
 
 Flight search (`search_flights`) accepts `seat_preference` of `window` or `aisle` and writes it onto Kiwi and KLM booking URLs.
 

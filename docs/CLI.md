@@ -1,12 +1,12 @@
 # trvl — CLI Reference
 
-> Moved out of the README. The standalone CLI (56 commands), output formats, booking-link shape, and the full capability table.
+> Moved out of the README. The standalone CLI (57 commands), output formats, booking-link shape, and the full capability table.
 
 The examples below use future dates so they can be copied into a live search.
 
 ## CLI Usage
 
-trvl also works as a standalone CLI tool with 56 commands:
+trvl also works as a standalone CLI tool with 57 commands:
 
 All search commands accept `--currency <CODE>` (e.g. `--currency EUR`) to convert displayed prices. trvl detects the actual API currency and converts at the display layer — no hardcoded currencies.
 
@@ -368,7 +368,7 @@ The AI uses these to give you actionable handoff links. For accommodation decisi
 | **Data** | Default flight search merges Google Flights, Kiwi, and Skiplagged; AFKLM and six low-cost-carrier integrations (Ryanair, Wizz Air, Transavia, easyJet, Vueling, Norwegian) are solo or opt-in paths. Hotel search uses 6 sources (Google Hotels, Trivago, Airbnb, Booking.com, Hostelworld, HomeToGo). Ground search covers 22 providers (FlixBus, RegioJet, Eurostar, DB, ÖBB, NS, VR, SNCF, Trainline, Transitous, Renfe, Trenitalia, Italo, European Sleeper, Snälltåget, Tallink, Viking Line, Eckerö Line, Finnlines, Stena Line, DFDS, Ferryhopper), plus free destination/enrichment APIs for weather, air quality, sun times, bike-share, holidays, and currency. |
 | **Auth** | No personal API keys required. Two providers (NS, Digitransit/VR) use public keys embedded in the binary. Optional browser/cookie fallbacks are available for protected providers when explicitly enabled. |
 | **MCP** | 2026-07-28 and 2025-11-25 — 1 smart MCP tool, 66 legacy-compatible capabilities (incl. 4 profile, 3 price-watch, provider-health, award sweet-spot capabilities), 7 prompts, resources, structured content, progress notifications, `subscriptions/listen` (2025-11-25 clients still use resource subscriptions), tool description orchestration |
-| **CLI** | 56 commands (+ 9 watch subcommands) with table/JSON output, color, shell completion |
+| **CLI** | 57 commands (+ 9 watch subcommands) with table/JSON output, color, shell completion |
 | **Booking links** | Flight and hotel results include manual handoff links; hotel search prices must be verified before treating them as final |
 | **Travel hacks** | 36 detectors (throwaway, hidden-city, positioning, ferry, multi-modal, stopover, date-flex, error fare, back-to-back, rail competition, and more) |
 | **Personal profile** | Learns from your booking history (email parsing + LLM). Remembers FF status, luggage needs, favourite properties, departure preferences, travel hacks used, accommodation preferences, family composition. Pre-search interviews skip questions the profile already answers. |

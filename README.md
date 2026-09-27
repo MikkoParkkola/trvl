@@ -51,7 +51,7 @@ Full head-to-head against Google Flights, KAYAK, Skyscanner, Kiwi, and other tra
 | **Ground** | 22 train/bus/ferry providers across Europe, API-first | [PROVIDERS.md](docs/PROVIDERS.md) |
 | **Hotels** | 6 sources, discovery → verification trust model | [PROVIDERS.md](docs/PROVIDERS.md) |
 | **Travel hacks** | 36 parallel detectors (hidden-city, positioning, stopover, multimodal, error-fare…) | [PROVIDERS.md](docs/PROVIDERS.md) |
-| **CLI** | Standalone tool, 56 commands, table/JSON output | [CLI.md](docs/CLI.md) |
+| **CLI** | Standalone tool, 57 commands, table/JSON output | [CLI.md](docs/CLI.md) |
 | **Profile** | Learns home airports, FF status, luggage, preferences from your booking history | [traveller-workspace.md](docs/traveller-workspace.md) |
 
 ## Is this for you?
