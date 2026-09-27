@@ -496,11 +496,28 @@ func isExcluded(prefs *preferences.Preferences, airportCode, cityName string) bo
 		if excl == "" {
 			continue
 		}
-		if strings.EqualFold(excl, airportCode) || strings.EqualFold(excl, cityName) {
+		if matchesExcludedPlace(airportCode, cityName, excl) {
 			return true
 		}
 	}
 	return false
+}
+
+// matchesExcludedPlace matches an airport code or a city name. A city name
+// also matches when the exclusion is a whole word in an airport-qualified
+// label such as "London Heathrow". A shorter string inside another word does
+// not match, so "Nice" does not exclude Venice and "Bar" does not exclude
+// Barcelona.
+func matchesExcludedPlace(airportCode, cityName, excl string) bool {
+	if strings.EqualFold(excl, airportCode) || strings.EqualFold(excl, cityName) {
+		return true
+	}
+	city := strings.ToLower(strings.TrimSpace(cityName))
+	needle := strings.ToLower(strings.TrimSpace(excl))
+	if city == "" || needle == "" {
+		return false
+	}
+	return strings.Contains(" "+city+" ", " "+needle+" ")
 }
 
 // parseHHMM converts a "HH:MM" string to minutes-since-midnight.
