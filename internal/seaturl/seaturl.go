@@ -2,7 +2,10 @@
 // accept one. Kiwi uses seat. KLM uses seatPreference. Other hosts are unchanged.
 package seaturl
 
-import "net/url"
+import (
+	"net/url"
+	"strings"
+)
 
 // Apply adds the seat preference to a Kiwi or KLM booking URL.
 // pref is "window", "aisle", or "no_preference". An empty preference, an
@@ -16,7 +19,7 @@ func Apply(raw, pref string) string {
 	if err != nil || u.Host == "" {
 		return raw
 	}
-	key := paramKey(u.Host)
+	key := paramKey(strings.ToLower(u.Hostname()))
 	if key == "" {
 		return raw
 	}

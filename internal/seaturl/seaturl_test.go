@@ -1,6 +1,9 @@
 package seaturl
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestApplyKiwiAndKLM(t *testing.T) {
 	kiwi := Apply("https://www.kiwi.com/booking/1", "window")
@@ -9,6 +12,17 @@ func TestApplyKiwiAndKLM(t *testing.T) {
 	}
 	klm := Apply("https://www.klm.com/search?from=AMS", "aisle")
 	if klm != "https://www.klm.com/search?from=AMS&seatPreference=aisle" && klm != "https://www.klm.com/search?seatPreference=aisle&from=AMS" {
+		t.Fatalf("klm = %s", klm)
+	}
+}
+
+func TestApplyIgnoresHostCaseAndPort(t *testing.T) {
+	kiwi := Apply("https://WWW.KIWI.COM/booking/1", "window")
+	if kiwi != "https://WWW.KIWI.COM/booking/1?seat=window" && kiwi != "https://www.kiwi.com/booking/1?seat=window" {
+		t.Fatalf("kiwi = %s", kiwi)
+	}
+	klm := Apply("https://www.klm.com:443/search", "aisle")
+	if !strings.Contains(klm, "seatPreference=aisle") {
 		t.Fatalf("klm = %s", klm)
 	}
 }

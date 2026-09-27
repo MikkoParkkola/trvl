@@ -299,6 +299,7 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 		{
 			path: filepath.Join("..", "..", ".claude", "skills", "trvl.md"),
 			required: []string{
+				fmt.Sprintf("%d CLI commands", cliCommandCount),
 				fmt.Sprintf("## CORE TOOL ROUTING (primary `travel` tool + %d legacy-compatible capabilities)", compatAliasCount),
 				fmt.Sprintf("Bus/train/ferry (%d providers)", groundProviderCount),
 				"`travel`",
