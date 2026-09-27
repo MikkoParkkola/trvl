@@ -31,6 +31,19 @@ func TestComposeFlyInTrainOut(t *testing.T) {
 	}
 }
 
+func TestComposeMatchesCityCase(t *testing.T) {
+	bundle, err := Compose(
+		Leg{Mode: "flight", Origin: "HEL", Destination: "München", Cost: 120, Currency: "EUR"},
+		Leg{Mode: "train", Origin: "MÜNCHEN", Destination: "VIE", Cost: 30, Currency: "EUR"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Total != 150 {
+		t.Fatalf("total = %v, want 150", bundle.Total)
+	}
+}
+
 func TestComposeRejectsNegativeCost(t *testing.T) {
 	_, err := Compose(
 		Leg{Mode: "flight", Origin: "HEL", Destination: "VIE", Cost: -1, Currency: "EUR"},
