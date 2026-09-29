@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The daily heartbeat no longer defaults to `https://telemetry.trvl.app/v1/heartbeat`. A released build sends it only when `TRVL_TELEMETRY_ENDPOINT` is set, and does not create `~/.trvl/install-id` otherwise.
+
 ## [1.24.0] - 2026-09-27
 
 ### Added

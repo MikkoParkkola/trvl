@@ -1,19 +1,18 @@
 package telemetry
 
-// Privacy-preserving active-user heartbeat (MIK-6568).
+// Opt-in active-user heartbeat (MIK-6568).
 //
-// trvl emits at most one anonymous heartbeat per install per day to the shared
-// MIK-6565 collector so the project has a directional active-user and (server-
-// side, aggregate, k-anonymity >= 5) geography signal. The client never sends
-// an IP, hostname, username, or any host identity. The design deliberately
-// mirrors the fire-and-forget daily update check (internal/selfupdate) so the
-// footprint and risk are minimal.
+// A released build emits at most one anonymous heartbeat per install per day,
+// and only when TRVL_TELEMETRY_ENDPOINT names a collector. There is no default
+// host. The JSON body never contains an IP, hostname, username, or any host
+// identity. The design mirrors the fire-and-forget daily update check
+// (internal/selfupdate).
 //
 // It is failure-open: any collector timeout, 4xx, or 5xx is swallowed and never
-// reaches the product path. It is also opt-out via several standard env vars
-// (DO_NOT_TRACK, NO_TELEMETRY, TRVL_NO_TELEMETRY) and auto-suppressed for CI,
-// dev builds, and tests. Importing this package without calling
-// HeartbeatInBackground performs no network I/O — there are no init() effects.
+// reaches the product path. It is also opt-out via DO_NOT_TRACK, NO_TELEMETRY,
+// and TRVL_NO_TELEMETRY, and auto-suppressed for CI, dev builds, and tests.
+// Importing this package without calling HeartbeatInBackground performs no
+// network I/O — there are no init() effects.
 
 import (
 	"bytes"
@@ -36,12 +35,6 @@ const (
 	projectID      = "trvl"
 	heartbeatEvent = "heartbeat"
 
-	// defaultEndpoint is the shared MIK-6565 collector. Overridable via
-	// TRVL_TELEMETRY_ENDPOINT. The send is failure-open, so the client can
-	// ship before the collector is live (sends simply no-op until then).
-	// ponytail: confirm/replace with the real MIK-6565 URL before AC.7 deploy.
-	defaultEndpoint = "https://telemetry.trvl.app/v1/heartbeat"
-
 	// heartbeatFile is the daily-cap timestamp cache in ~/.trvl, matching the
 	// per-user state dir the rest of trvl uses (selfupdate, prefs, providers).
 	heartbeatFile = "heartbeat"
@@ -60,7 +53,8 @@ var optOutEnvs = []string{"DO_NOT_TRACK", "NO_TELEMETRY", "TRVL_NO_TELEMETRY"}
 var errPayloadTooLarge = errors.New("telemetry: payload exceeds size cap")
 
 // heartbeatPayload is the entire wire contract. No IP, host, or identity field
-// exists by construction — geography is derived server-side in aggregate.
+// exists in the body. The connection itself still reveals the caller IP to the
+// host named by TRVL_TELEMETRY_ENDPOINT.
 type heartbeatPayload struct {
 	Project   string `json:"project"`
 	Event     string `json:"event"`
@@ -70,15 +64,25 @@ type heartbeatPayload struct {
 }
 
 // HeartbeatInBackground fires a daily anonymous heartbeat in a detached
-// goroutine and returns immediately (before the network call completes).
-//
-// It claims the daily slot synchronously (writes the timestamp before
-// dispatching) so the at-most-one-per-24h cap holds even when the collector is
-// unreachable. Pass a non-cancellable context (e.g. context.Background()) so a
-// fast-exiting command does not abort the send mid-flight; the bounded client
-// timeout is the only deadline that matters.
+// goroutine and returns immediately. It does nothing when the build is
+// suppressed or TRVL_TELEMETRY_ENDPOINT is empty: no dial, and no install id
+// or daily-slot file. When it does send, it claims the daily slot
+// synchronously (writes the timestamp before dispatching) so the
+// at-most-one-per-24h cap holds even when the collector is unreachable. Pass
+// a non-cancellable context (e.g. context.Background()) so a fast-exiting
+// command does not abort the send mid-flight; the bounded client timeout is
+// the only deadline that matters.
 func HeartbeatInBackground(ctx context.Context, version string) {
 	if suppressed(version) {
+		return
+	}
+	dialHeartbeat(ctx, version, endpoint())
+}
+
+// dialHeartbeat sends one heartbeat to url. An empty url returns before any
+// cache directory, install id, or daily-slot write, and before any dial.
+func dialHeartbeat(ctx context.Context, version, url string) {
+	if url == "" {
 		return
 	}
 	dir, err := cacheDir()
@@ -91,7 +95,7 @@ func HeartbeatInBackground(ctx context.Context, version string) {
 	// Claim the slot up-front: failure-open daily cap (one attempt / 24h max).
 	_ = markSent(dir, time.Now())
 	id := installID(dir)
-	go func() { _ = send(ctx, endpoint(), buildPayload(version, id)) }()
+	go func() { _ = send(ctx, url, buildPayload(version, id)) }()
 }
 
 // suppressed reports whether the heartbeat must not fire. Under `go test` it is
@@ -120,10 +124,7 @@ func suppressedExceptTest(version string) bool {
 }
 
 func endpoint() string {
-	if e := os.Getenv("TRVL_TELEMETRY_ENDPOINT"); e != "" {
-		return e
-	}
-	return defaultEndpoint
+	return os.Getenv("TRVL_TELEMETRY_ENDPOINT")
 }
 
 func buildPayload(version, id string) heartbeatPayload {

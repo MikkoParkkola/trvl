@@ -1,9 +1,9 @@
 # trvl-telemetry
 
 This is the server side of the trvl heartbeat. The CLI sends one anonymous
-heartbeat per install per day (see `internal/telemetry/heartbeat.go`); this
-binary receives those POSTs and writes the accepted ones to a file, one JSON
-object per line.
+heartbeat per install per day only when `TRVL_TELEMETRY_ENDPOINT` points here
+(see `internal/telemetry/heartbeat.go`). This binary receives those POSTs and
+writes the accepted ones to a file, one JSON object per line.
 
 ## What it accepts
 
@@ -43,9 +43,9 @@ go build -o trvl-telemetry ./cmd/trvl-telemetry
 
 ## Deploy notes
 
-Point the CLI at the running collector through the `TRVL_TELEMETRY_ENDPOINT`
-environment variable, or set the production URL as the default endpoint in
-`internal/telemetry/heartbeat.go`. The path the binary serves is
+The CLI does not call a collector unless `TRVL_TELEMETRY_ENDPOINT` is set.
+Point that variable at this process, for example
+`http://127.0.0.1:8080/v1/heartbeat`. The path the binary serves is
 `/v1/heartbeat`.
 
 Put it behind a TLS-terminating proxy and keep the output file on durable

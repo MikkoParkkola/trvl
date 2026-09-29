@@ -1,6 +1,7 @@
 // Command trvl-telemetry is the receiver for the trvl CLI daily heartbeat
-// (MIK-6565). The CLI emits at most one anonymous heartbeat per install per day
-// (see internal/telemetry/heartbeat.go); this standalone binary accepts those
+// (MIK-6565). When TRVL_TELEMETRY_ENDPOINT points at this process, the CLI
+// emits at most one anonymous heartbeat per install per day (see
+// internal/telemetry/heartbeat.go). This standalone binary accepts those
 // POSTs, validates them against the exact wire contract, and appends each
 // accepted heartbeat to a newline-delimited JSON (NDJSON) file.
 //
