@@ -6,7 +6,7 @@ The body may contain only `project`, `event`, `version`, `runtime`, and `install
 
 The Worker does not read the client IP, country, or request headers into that point. Invocation logs are off, so the dataset is the only store this Worker writes. Cloudflare still terminates TLS, so Cloudflare can see the connection IP.
 
-`workers.dev` and preview hostnames are disabled. A released build dials this host. `TRVL_TELEMETRY_ENDPOINT` replaces it.
+`workers.dev` and preview hostnames are disabled. A released build dials `https://telemetry.revaluator.ai/v1/heartbeat`. `TRVL_TELEMETRY_ENDPOINT` replaces that URL.
 
 ```sh
 node --test
