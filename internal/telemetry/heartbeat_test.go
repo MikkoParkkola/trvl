@@ -180,12 +180,13 @@ func TestHeartbeat_SendPath(t *testing.T) {
 	}
 }
 
-// TestEndpoint_UnsetDoesNotNameAHost fails while a default host is compiled
-// in. An empty TRVL_TELEMETRY_ENDPOINT must not name any host.
-func TestEndpoint_UnsetDoesNotNameAHost(t *testing.T) {
+// TestEndpoint_DefaultIsOwnedHost checks the compiled collector. An empty
+// TRVL_TELEMETRY_ENDPOINT is unset, so the default host is used.
+func TestEndpoint_DefaultIsOwnedHost(t *testing.T) {
 	t.Setenv("TRVL_TELEMETRY_ENDPOINT", "")
-	if got := endpoint(); got != "" {
-		t.Fatalf("unset TRVL_TELEMETRY_ENDPOINT must not name a host, got %q", got)
+	const want = "https://telemetry.revaluator.ai/v1/heartbeat"
+	if got := endpoint(); got != want {
+		t.Fatalf("endpoint = %q, want %q", got, want)
 	}
 }
 

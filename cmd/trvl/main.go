@@ -19,11 +19,12 @@ func main() {
 	selfupdate.CheckInBackground(ctx, Version, os.Stderr)
 	defer cancel()
 
-	// Opt-in anonymous heartbeat (at most once / 24h). Sends only when
-	// TRVL_TELEMETRY_ENDPOINT is set. Uses a non-cancellable context so a fast
-	// exit doesn't abort it mid-send; the 3s client timeout bounds it. Opt out
-	// with TRVL_NO_TELEMETRY / NO_TELEMETRY / DO_NOT_TRACK; auto-skipped for CI
-	// and dev builds. See telemetry.HeartbeatInBackground (MIK-6568).
+	// Anonymous heartbeat (at most once / 24h) to telemetry.revaluator.ai.
+	// TRVL_TELEMETRY_ENDPOINT replaces that host. Uses a non-cancellable
+	// context so a fast exit doesn't abort it mid-send; the 3s client timeout
+	// bounds it. Opt out with TRVL_NO_TELEMETRY / NO_TELEMETRY / DO_NOT_TRACK;
+	// auto-skipped for CI and dev builds. See telemetry.HeartbeatInBackground
+	// (MIK-6568).
 	telemetry.HeartbeatInBackground(context.Background(), Version)
 
 	if err := rootCmd.Execute(); err != nil {

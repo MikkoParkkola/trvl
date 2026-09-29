@@ -1,0 +1,8 @@
+{
+  "name": "trvl-heartbeat",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

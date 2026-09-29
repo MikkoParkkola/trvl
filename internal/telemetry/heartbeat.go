@@ -1,12 +1,14 @@
 package telemetry
 
-// Opt-in active-user heartbeat (MIK-6568).
+// Daily heartbeat (MIK-6568).
 //
-// A released build emits at most one anonymous heartbeat per install per day,
-// and only when TRVL_TELEMETRY_ENDPOINT names a collector. There is no default
-// host. The JSON body never contains an IP, hostname, username, or any host
-// identity. The design mirrors the fire-and-forget daily update check
-// (internal/selfupdate).
+// A released build emits at most one heartbeat per install per day to
+// https://telemetry.revaluator.ai/v1/heartbeat. A non-empty
+// TRVL_TELEMETRY_ENDPOINT replaces that URL. The JSON body never contains an
+// IP, hostname, username, or any host identity. Cloudflare terminates TLS for
+// the default host, so Cloudflare can see the connection address; the receiver
+// does not copy that address into the stored record. The design mirrors the
+// fire-and-forget daily update check (internal/selfupdate).
 //
 // It is failure-open: any collector timeout, 4xx, or 5xx is swallowed and never
 // reaches the product path. It is also opt-out via DO_NOT_TRACK, NO_TELEMETRY,
@@ -42,6 +44,9 @@ const (
 
 	sendInterval   = 24 * time.Hour
 	maxPayloadSize = 2048
+
+	// defaultEndpoint is the heartbeat receiver on telemetry.revaluator.ai.
+	defaultEndpoint = "https://telemetry.revaluator.ai/v1/heartbeat"
 )
 
 // optOutEnvs are honored independently; any set (non-empty, not "0"/"false")
@@ -53,8 +58,8 @@ var optOutEnvs = []string{"DO_NOT_TRACK", "NO_TELEMETRY", "TRVL_NO_TELEMETRY"}
 var errPayloadTooLarge = errors.New("telemetry: payload exceeds size cap")
 
 // heartbeatPayload is the entire wire contract. No IP, host, or identity field
-// exists in the body. The connection itself still reveals the caller IP to the
-// host named by TRVL_TELEMETRY_ENDPOINT.
+// exists in the body. The connection itself still reveals the caller IP to
+// whoever terminates TLS for the URL from endpoint.
 type heartbeatPayload struct {
 	Project   string `json:"project"`
 	Event     string `json:"event"`
@@ -65,8 +70,8 @@ type heartbeatPayload struct {
 
 // HeartbeatInBackground fires a daily anonymous heartbeat in a detached
 // goroutine and returns immediately. It does nothing when the build is
-// suppressed or TRVL_TELEMETRY_ENDPOINT is empty: no dial, and no install id
-// or daily-slot file. When it does send, it claims the daily slot
+// suppressed: no dial, and no install id or daily-slot file. When it does
+// send, it claims the daily slot
 // synchronously (writes the timestamp before dispatching) so the
 // at-most-one-per-24h cap holds even when the collector is unreachable. Pass
 // a non-cancellable context (e.g. context.Background()) so a fast-exiting
@@ -123,8 +128,14 @@ func suppressedExceptTest(version string) bool {
 	return false
 }
 
+// endpoint returns TRVL_TELEMETRY_ENDPOINT when that value is non-empty.
+// os.Getenv cannot tell an unset variable from an empty one, so empty uses
+// defaultEndpoint.
 func endpoint() string {
-	return os.Getenv("TRVL_TELEMETRY_ENDPOINT")
+	if e := os.Getenv("TRVL_TELEMETRY_ENDPOINT"); e != "" {
+		return e
+	}
+	return defaultEndpoint
 }
 
 func buildPayload(version, id string) heartbeatPayload {
