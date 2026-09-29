@@ -52,6 +52,8 @@ jobs:
         run: scripts/ci/check-home-isolation.sh
       - name: Check test-only helpers stay out of production
         run: scripts/ci/check-test-only-helpers.sh
+      - name: Test the heartbeat receiver
+        run: node --test workers/heartbeat/src/index.test.js
 
   test:
     permissions:

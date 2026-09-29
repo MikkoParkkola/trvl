@@ -201,6 +201,7 @@ func TestEndpoint_ExplicitIsHonored(t *testing.T) {
 func TestDialHeartbeat_EmptyURLWritesNothing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	dialHeartbeat(context.Background(), "1.2.3", "")
 	if _, err := os.Stat(filepath.Join(home, ".trvl")); !os.IsNotExist(err) {
 		t.Fatalf("empty endpoint must not create ~/.trvl: %v", err)
@@ -210,6 +211,7 @@ func TestDialHeartbeat_EmptyURLWritesNothing(t *testing.T) {
 func TestDialHeartbeat_ExplicitEndpointSendsAndCaps(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	got := make(chan heartbeatPayload, 2)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var p heartbeatPayload
@@ -243,6 +245,7 @@ func TestDialHeartbeat_ExplicitEndpointSendsAndCaps(t *testing.T) {
 func TestHeartbeatInBackground_TestBinaryWritesNothing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("TRVL_TELEMETRY_ENDPOINT", "http://127.0.0.1:1/v1/heartbeat")
 	HeartbeatInBackground(context.Background(), "1.2.3")
 	if _, err := os.Stat(filepath.Join(home, ".trvl")); !os.IsNotExist(err) {

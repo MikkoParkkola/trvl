@@ -142,8 +142,8 @@ test("a body of exactly 2048 bytes is accepted", () => {
   assert.equal(got.record.version, pad);
 });
 
-function request(method, url, { contentType = "application/json", body } = {}) {
-  const init = { method, headers: {} };
+function request(method, url, { contentType = "application/json", body, headers = {} } = {}) {
+  const init = { method, headers: { ...headers } };
   if (contentType) init.headers["content-type"] = contentType;
   if (body !== undefined) init.body = body;
   return new Request(url, init);
@@ -161,6 +161,10 @@ test("an accepted request writes five blobs and the install id index", async () 
   const res = await worker.fetch(
     request("POST", "https://telemetry.revaluator.ai/v1/heartbeat?x=1", {
       body: validBody,
+      headers: {
+        "cf-connecting-ip": "203.0.113.7",
+        "x-forwarded-for": "203.0.113.7",
+      },
     }),
     env,
   );
