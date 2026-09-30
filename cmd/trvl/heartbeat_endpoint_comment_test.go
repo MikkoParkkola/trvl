@@ -36,7 +36,7 @@ func TestStartupCommentNamesCompiledHeartbeatURL(t *testing.T) {
 	if !ok {
 		t.Fatal("no comment immediately above HeartbeatInBackground")
 	}
-	if !strings.Contains(comment, compiled) {
+	if !commentNamesEndpoint(comment, compiled) {
 		t.Fatalf("startup comment does not name compiled endpoint %q", compiled)
 	}
 	if !strings.Contains(comment, "TRVL_TELEMETRY_ENDPOINT replaces that URL") {
@@ -45,6 +45,20 @@ func TestStartupCommentNamesCompiledHeartbeatURL(t *testing.T) {
 	if strings.Contains(text, "trvl.app") {
 		t.Fatal("main.go still names trvl.app")
 	}
+}
+
+// commentNamesEndpoint reports whether comment names compiled as its own
+// token. A shorter address that only sits inside the documented URL does
+// not count.
+func commentNamesEndpoint(comment, compiled string) bool {
+	for _, line := range strings.Split(comment, "\n") {
+		for _, field := range strings.Fields(line) {
+			if strings.TrimRight(field, ".,;)") == compiled {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // commentImmediatelyAbove returns the contiguous // lines directly above the
