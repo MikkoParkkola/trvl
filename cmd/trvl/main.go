@@ -19,7 +19,8 @@ func main() {
 	selfupdate.CheckInBackground(ctx, Version, os.Stderr)
 	defer cancel()
 
-	// Anonymous heartbeat (at most once / 24h) to telemetry.revaluator.ai.
+	// Anonymous heartbeat (at most once / 24h) to
+	// https://telemetry.revaluator.ai/v1/heartbeat.
 	// TRVL_TELEMETRY_ENDPOINT replaces that URL. Uses a non-cancellable
 	// context so a fast exit doesn't abort it mid-send; the 3s client timeout
 	// bounds it. Opt out with TRVL_NO_TELEMETRY / NO_TELEMETRY / DO_NOT_TRACK;

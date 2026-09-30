@@ -26,29 +26,18 @@ func TestStartupCommentNamesCompiledHeartbeatURL(t *testing.T) {
 		t.Fatal("heartbeat.go has no defaultEndpoint string")
 	}
 	compiled := string(match[1])
-	host := compiled
-	if i := strings.Index(compiled, "://"); i >= 0 {
-		host = compiled[i+3:]
-	}
-	if slash := strings.IndexByte(host, '/'); slash >= 0 {
-		host = host[:slash]
-	}
-	if host == "" {
-		t.Fatalf("compiled default %q has no host", compiled)
-	}
 
 	text := string(mainSrc)
 	call := strings.Index(text, "telemetry.HeartbeatInBackground(")
 	if call < 0 {
 		t.Fatal("main.go does not call telemetry.HeartbeatInBackground")
 	}
-	start := call - 500
-	if start < 0 {
-		start = 0
+	comment, ok := commentImmediatelyAbove(text, call)
+	if !ok {
+		t.Fatal("no comment immediately above HeartbeatInBackground")
 	}
-	comment := text[start:call]
-	if !strings.Contains(comment, host) {
-		t.Fatalf("startup comment does not name compiled host %q", host)
+	if !strings.Contains(comment, compiled) {
+		t.Fatalf("startup comment does not name compiled endpoint %q", compiled)
 	}
 	if !strings.Contains(comment, "TRVL_TELEMETRY_ENDPOINT replaces that URL") {
 		t.Fatal("startup comment must say TRVL_TELEMETRY_ENDPOINT replaces that URL")
@@ -56,4 +45,23 @@ func TestStartupCommentNamesCompiledHeartbeatURL(t *testing.T) {
 	if strings.Contains(text, "trvl.app") {
 		t.Fatal("main.go still names trvl.app")
 	}
+}
+
+// commentImmediatelyAbove returns the contiguous // lines directly above the
+// call at index call. A blank line or a code line ends the block.
+func commentImmediatelyAbove(text string, call int) (string, bool) {
+	lineStart := strings.LastIndex(text[:call], "\n") + 1
+	lines := strings.Split(text[:lineStart], "\n")
+	end := len(lines)
+	for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	start := end
+	for start > 0 && strings.HasPrefix(strings.TrimSpace(lines[start-1]), "//") {
+		start--
+	}
+	if start == end {
+		return "", false
+	}
+	return strings.Join(lines[start:end], "\n"), true
 }
