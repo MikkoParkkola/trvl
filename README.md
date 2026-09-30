@@ -36,7 +36,7 @@ trvl speaks the two latest MCP revisions: **2026-07-28** and **2025-11-25**. An 
 
 - **Whole journey, door to door.** It plans the entire trip across modes — home to airport, flight, arrival transfer, hotel, onward train — and prices each leg in its real mode. Most tools stop at one flight, one hotel.
 - **No personal API key for default search.** There is no Amadeus key to apply for, subscription, or per-call bill on the default paths. Optional providers switch on when you supply their credentials; none is required for the default flight, hotel, or ground searches.
-- **Your assistant, your machine.** One local binary, any MCP client, not locked to a vendor. Searching sends the query to the providers being searched, the same as any travel site would: route, dates and traveller count go to Google, Kiwi, Booking and the rest. What trvl keeps for itself stays on your machine, apart from a daily anonymous heartbeat you can switch off and any webhook you configure yourself — both spelled out below.
+- **Your assistant, your machine.** One local binary, any MCP client, not locked to a vendor. Searching sends the query to the providers being searched, the same as any travel site would: route, dates and traveller count go to Google, Kiwi, Booking and the rest. What trvl keeps for itself stays on your machine, apart from any webhook you configure yourself. A released build sends one daily heartbeat to `https://telemetry.revaluator.ai/v1/heartbeat`, and you can switch that off. `TRVL_TELEMETRY_ENDPOINT` replaces that URL. Both are spelled out below.
 - **It optimizes, not just lists.** Shift-day pricing, split-airline routing, hidden-city checks, award sweet spots, round-trip fares. It hands back the cheaper option and shows what it saved.
 - **It is honest when a source fails.** Typed statuses and labelled estimates, never an empty result dressed up as "nothing found."
 
@@ -136,7 +136,7 @@ Two things happen without you asking for them. Neither is obvious, so both are s
 
 **Optional provider definitions are source-only.** `trvl providers enable <id>` can enable only a reviewed definition shipped in the current binary. The runtime state file records consent, enabled state, and health; it cannot replace endpoints, headers, authentication, request templates, or response mappings. Older files under `~/.trvl/providers` are left in place for rollback or manual migration, but trvl does not load them. New definitions must arrive through a reviewed source change (or a user-maintained fork).
 
-**It keeps working state under `~/.trvl`:** saved trips, preferences and traveller profile, price watches, search history, cached cookies and provider tokens, a provider health log, upgrade and provider self-heal bookkeeping, and a random install id. That state is local, and trvl uploads none of it — with two exceptions it would be dishonest to bury. The install id is the one field the telemetry heartbeat sends, described below, and `TRVL_NO_TELEMETRY=1` stops it. A price watch you give a webhook URL to POSTs that watch's route and price data to the address you supplied, which is the point of a webhook.
+**It keeps working state under `~/.trvl`:** saved trips, preferences and traveller profile, price watches, search history, cached cookies and provider tokens, a provider health log, upgrade and provider self-heal bookkeeping, and a random install id. That state is local. A released build sends the install id, and nothing else from this directory, at most once a day to `https://telemetry.revaluator.ai/v1/heartbeat`. `TRVL_TELEMETRY_ENDPOINT` replaces that URL. `TRVL_NO_TELEMETRY=1` stops the send. A price watch you give a webhook URL to POSTs that watch's route and price data to the address you supplied, which is the point of a webhook.
 
 JSON state files are written to a temp file and then renamed over the target, so a crash cannot leave a half-written JSON document behind. Price watches and their history use transactional `watch.db` storage; the first migration backs up the legacy JSON before committing the database. Temp-file replacement can still leave **orphaned temp files from interrupted writes**, each a full copy of the JSON file it was about to replace. trvl does not delete them on its own, because the orphan is occasionally the only surviving copy of the target. `trvl tempfiles` reports what is there with sizes and ages; `trvl tempfiles --delete` removes only the ones whose writing process is provably gone.
 
@@ -215,24 +215,22 @@ Every one of these reads its key from the environment. AF-KLM is the single exce
 
 ## Privacy & telemetry
 
-trvl sends one anonymous heartbeat per install per day so the project knows roughly how many people use it and on which platforms. That is the entire purpose. The heartbeat carries only:
+A released build POSTs at most one heartbeat a day to `https://telemetry.revaluator.ai/v1/heartbeat`. Set `TRVL_TELEMETRY_ENDPOINT` to send that same body somewhere else. The body is only:
 
 - a fixed project tag (`trvl`) and event name (`heartbeat`)
 - the trvl version
 - the Go runtime string (OS, architecture, Go version, e.g. `darwin/arm64/go1.26.6`)
-- a random install id generated locally on first run (stored in `~/.trvl/install-id`)
+- a random install id, created on the first such send and stored in `~/.trvl/install-id`
 
-No hostname, no username, no search queries, no travel data. Two things that list does not make obvious, stated rather than left to inference. Your IP is not in the payload, but the request reveals it as any HTTP request does, and the collector uses it server-side to derive coarse geography, reported only in aggregate with a minimum group size of 5. And the install id is stable, so repeated heartbeats from one machine are linkable to each other over time; it is random and contains nothing about you, but it is not a fresh value each time. The request has a 3-second timeout and fails silently — if the collector is down, trvl behaves exactly as if telemetry were off.
+No hostname, no username, no search queries, no travel data. The JSON body does not contain your IP. Cloudflare terminates TLS for the default host, so Cloudflare can see the connection address. The receiver does not write that address down, and trvl does not derive a location from it. The install id stays the same across days, so those requests can be linked to each other. It is random and contains nothing about you. The request has a 3-second timeout and a failure is ignored.
 
-To turn it off, set any one of these before running trvl:
+Development builds (`go build` / `go run`, version `dev`), CI, and tests do not send. To turn it off, set any one of these before running trvl:
 
 ```bash
 export TRVL_NO_TELEMETRY=1   # trvl-specific switch
 export NO_TELEMETRY=1        # common convention
 export DO_NOT_TRACK=1        # cross-tool Do-Not-Track signal
 ```
-
-It is also skipped automatically in CI and for development builds. Override the endpoint with `TRVL_TELEMETRY_ENDPOINT` if you run your own collector.
 
 ## Run it as an HTTP / remote server
 
