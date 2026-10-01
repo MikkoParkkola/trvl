@@ -1,0 +1,21 @@
+{
+  "name": "trvl-counts",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "account_id": "e88256e8f368cdae614ec878b7b8f98a",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": false
+  },
+  "vars": {
+    "ACCESS_AUD": "12e7aaac021ae471a4562ce4b3008c2c2007eac1b2eeca84d38d8329d2968d76"
+  },
+  "routes": [
+    {
+      "pattern": "counts.revaluator.ai",
+      "custom_domain": true,
+      "previews_enabled": false
+    }
+  ]
+}

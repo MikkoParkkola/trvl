@@ -53,7 +53,7 @@ jobs:
       - name: Check test-only helpers stay out of production
         run: scripts/ci/check-test-only-helpers.sh
       - name: Test the heartbeat receiver
-        run: node --test workers/heartbeat/src/index.test.js
+        run: node --test workers/heartbeat/src/index.test.js workers/counts/src/index.test.js
 
   test:
     permissions:
