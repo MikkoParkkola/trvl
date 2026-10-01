@@ -6,8 +6,10 @@ package telemetry
 // https://telemetry.revaluator.ai/v1/heartbeat. A non-empty
 // TRVL_TELEMETRY_ENDPOINT replaces that URL. The JSON body never contains an
 // IP, hostname, username, or any host identity. Cloudflare terminates TLS for
-// the default host, so Cloudflare can see the connection address; the receiver
-// does not copy that address into the stored record. The design mirrors the
+// the default host, so Cloudflare can see the connection address. The receiver
+// does not copy that address into the stored record. It does store the city
+// name and country code from Cloudflare's geolocation of the connection.
+// Coordinates and request headers are not stored. The design mirrors the
 // fire-and-forget daily update check (internal/selfupdate).
 //
 // It is failure-open: any collector timeout, 4xx, or 5xx is swallowed and never

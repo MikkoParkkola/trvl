@@ -222,7 +222,7 @@ A released build POSTs at most one heartbeat a day to `https://telemetry.revalua
 - the Go runtime string (OS, architecture, Go version, e.g. `darwin/arm64/go1.26.6`)
 - a random install id, created on the first such send and stored in `~/.trvl/install-id`
 
-No hostname, no username, no search queries, no travel data. The JSON body does not contain your IP. Cloudflare terminates TLS for the default host, so Cloudflare can see the connection address. The receiver does not write that address down, and trvl does not derive a location from it. The install id stays the same across days, so those requests can be linked to each other. It is random and contains nothing about you. The request has a 3-second timeout and a failure is ignored.
+No hostname, no username, no search queries, no travel data. The JSON body does not contain your IP. Cloudflare terminates TLS for the default host, so Cloudflare can see the connection address. The receiver does not write that address down. From the connection, Cloudflare’s geolocation supplies a city name and a country code, and those two values are stored with the heartbeat. They are approximate: a VPN, a relay, or a mobile network can place the city at the network exit rather than where you are, and some connections have no city. Coordinates and request headers are not stored. The install id stays the same across days, so those requests can be linked to each other, including the city stored with them. It is random and contains nothing about you. The request has a 3-second timeout and a failure is ignored.
 
 Development builds (`go build` / `go run`, version `dev`), CI, and tests do not send. To turn it off, set any one of these before running trvl:
 
