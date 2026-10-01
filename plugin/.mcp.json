@@ -1,9 +1,10 @@
 {
   "mcpServers": {
     "trvl": {
-      "command": "trvl",
+      "command": "npx",
       "args": [
-        "mcp"
+        "-y",
+        "trvl-mcp@1.25.0"
       ]
     }
   }

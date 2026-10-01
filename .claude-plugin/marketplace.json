@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "trvl",
-      "source": "./",
+      "source": "./plugin",
       "description": "AI Travel Agent — flights, hotels, destinations, travel hacks, trip optimization"
     }
   ]

@@ -10,11 +10,14 @@ From a local clone of this repository (run from the repo root):
 
 ```bash
 claude plugin validate ./plugin
-claude plugin marketplace add ./plugin --scope user
+claude plugin marketplace add . --scope user
 claude plugin install trvl --scope user
 ```
 
-The plugin MCP config launches `trvl mcp`, so install the `trvl` binary first:
+The plugin starts `trvl-mcp@1.25.0` through npx. That package downloads the
+released binary. A `trvl` binary already on PATH is not required.
+
+The CLI can also be installed on its own:
 
 ```bash
 brew install MikkoParkkola/tap/trvl
