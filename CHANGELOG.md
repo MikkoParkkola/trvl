@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The heartbeat receiver stores a city name and a country code from Cloudflare’s geolocation of the connection. It still does not store the connection address, coordinates, or request headers. Older points stay without a place. No new trvl release is required for this.
+
 ## [1.25.0] - 2026-10-01
 
 ### Changed

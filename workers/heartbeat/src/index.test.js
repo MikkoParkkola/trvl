@@ -142,22 +142,27 @@ test("a body of exactly 2048 bytes is accepted", () => {
   assert.equal(got.record.version, pad);
 });
 
-function request(method, url, { contentType = "application/json", body, headers = {} } = {}) {
+function request(method, url, { contentType = "application/json", body, headers = {}, cf } = {}) {
   const init = { method, headers: { ...headers } };
   if (contentType) init.headers["content-type"] = contentType;
   if (body !== undefined) init.body = body;
-  return new Request(url, init);
+  const req = new Request(url, init);
+  if (cf !== undefined) Object.defineProperty(req, "cf", { value: cf });
+  return req;
 }
 
-test("an accepted request writes five blobs and the install id index", async () => {
-  const points = [];
-  const env = {
+function capturingEnv(points) {
+  return {
     HEARTBEAT: {
       writeDataPoint(point) {
         points.push(point);
       },
     },
   };
+}
+
+test("an accepted request writes the body fields and an empty place when geolocation is absent", async () => {
+  const points = [];
   const res = await worker.fetch(
     request("POST", "https://telemetry.revaluator.ai/v1/heartbeat?x=1", {
       body: validBody,
@@ -166,32 +171,93 @@ test("an accepted request writes five blobs and the install id index", async () 
         "x-forwarded-for": "203.0.113.7",
       },
     }),
-    env,
+    capturingEnv(points),
   );
   assert.equal(res.status, 204);
   assert.equal(await res.text(), "");
   assert.equal(points.length, 1);
   assert.deepEqual(points[0], {
     indexes: ["deadbeef"],
-    blobs: ["trvl", "heartbeat", "1.2.3", "linux/amd64/go1.26.4", "deadbeef"],
+    blobs: ["trvl", "heartbeat", "1.2.3", "linux/amd64/go1.26.4", "deadbeef", "", ""],
   });
   assert.equal(JSON.stringify(points[0]).includes("203.0.113"), false);
 });
 
+test("geolocation stores the city and country and drops coordinates and the caller address", async () => {
+  const points = [];
+  const res = await worker.fetch(
+    request("POST", "https://telemetry.revaluator.ai/v1/heartbeat", {
+      body: validBody,
+      headers: {
+        "cf-connecting-ip": "203.0.113.7",
+        "x-forwarded-for": "203.0.113.7",
+      },
+      cf: {
+        city: "Prague",
+        country: "CZ",
+        latitude: "50.0755",
+        longitude: "14.4378",
+        postalCode: "110 00",
+        region: "Hlavni mesto Praha",
+        colo: "PRG",
+      },
+    }),
+    capturingEnv(points),
+  );
+  assert.equal(res.status, 204);
+  assert.equal(points.length, 1);
+  assert.deepEqual(Object.keys(points[0]).sort(), ["blobs", "indexes"]);
+  assert.deepEqual(points[0].blobs, [
+    "trvl",
+    "heartbeat",
+    "1.2.3",
+    "linux/amd64/go1.26.4",
+    "deadbeef",
+    "Prague",
+    "CZ",
+  ]);
+  const stored = JSON.stringify(points[0]);
+  assert.equal(stored.includes("203.0.113"), false);
+  assert.equal(stored.includes("50.0755"), false);
+  assert.equal(stored.includes("14.4378"), false);
+  assert.equal(stored.includes("110 00"), false);
+  assert.equal(stored.includes("PRG"), false);
+  assert.equal(stored.includes("Hlavni mesto Praha"), false);
+});
+
+test("a non-string city or country is stored empty", async () => {
+  const points = [];
+  const res = await worker.fetch(
+    request("POST", "https://telemetry.revaluator.ai/v1/heartbeat", {
+      body: validBody,
+      cf: { city: 50, country: null, latitude: "50.0755" },
+    }),
+    capturingEnv(points),
+  );
+  assert.equal(res.status, 204);
+  assert.deepEqual(points[0].blobs.slice(5), ["", ""]);
+  assert.equal(JSON.stringify(points[0]).includes("50.0755"), false);
+});
+
+test("a city field in the JSON body is rejected and writes nothing", async () => {
+  const points = [];
+  const res = await worker.fetch(
+    request("POST", "https://telemetry.revaluator.ai/v1/heartbeat", {
+      body: '{"project":"trvl","event":"heartbeat","city":"Prague","country":"CZ"}',
+    }),
+    capturingEnv(points),
+  );
+  assert.equal(res.status, 400);
+  assert.equal(points.length, 0);
+});
+
 test("a rejected request writes nothing", async () => {
   const points = [];
-  const env = {
-    HEARTBEAT: {
-      writeDataPoint(point) {
-        points.push(point);
-      },
-    },
-  };
   const res = await worker.fetch(
     request("POST", "https://telemetry.revaluator.ai/v1/heartbeat", {
       body: '{"project":"trvl","event":"heartbeat","ip":"203.0.113.7"}',
     }),
-    env,
+    capturingEnv(points),
   );
   assert.equal(res.status, 400);
   assert.equal(points.length, 0);
@@ -199,18 +265,11 @@ test("a rejected request writes nothing", async () => {
 
 test("an empty install id is stored under the trvl index", async () => {
   const points = [];
-  const env = {
-    HEARTBEAT: {
-      writeDataPoint(point) {
-        points.push(point);
-      },
-    },
-  };
   const res = await worker.fetch(
     request("POST", "https://telemetry.revaluator.ai/v1/heartbeat", {
       body: '{"project":"trvl","event":"heartbeat"}',
     }),
-    env,
+    capturingEnv(points),
   );
   assert.equal(res.status, 204);
   assert.deepEqual(points[0].indexes, ["trvl"]);
@@ -219,13 +278,6 @@ test("an empty install id is stored under the trvl index", async () => {
 
 test("an install id longer than the index limit still stores the id as a blob", async () => {
   const points = [];
-  const env = {
-    HEARTBEAT: {
-      writeDataPoint(point) {
-        points.push(point);
-      },
-    },
-  };
   const id = "p".repeat(97);
   const res = await worker.fetch(
     request("POST", "https://telemetry.revaluator.ai/v1/heartbeat", {
@@ -235,7 +287,7 @@ test("an install id longer than the index limit still stores the id as a blob", 
         install_id: id,
       }),
     }),
-    env,
+    capturingEnv(points),
   );
   assert.equal(res.status, 204);
   assert.deepEqual(points[0].indexes, ["trvl"]);

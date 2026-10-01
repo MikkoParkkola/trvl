@@ -1,7 +1,10 @@
 // Receiver for the trvl daily heartbeat. Same accept/reject rules as
 // cmd/trvl-telemetry: POST /v1/heartbeat, application/json, at most 2048
 // bytes, and only the five wire fields. Accepted points go to Analytics
-// Engine. The connection IP is not copied into the point.
+// Engine. The connection IP is not copied into the point. Cloudflare's
+// geolocation of that connection supplies a city name and a country code,
+// and those two strings are stored with the point. Coordinates and the
+// rest of request.cf are not.
 
 export const MAX_PAYLOAD = 2048;
 
@@ -124,12 +127,33 @@ async function readCapped(request, max) {
   return { oversize: false, text: new TextDecoder().decode(merged) };
 }
 
-function writePoint(env, record) {
+function cfString(cf, key) {
+  if (cf == null || typeof cf !== "object") return "";
+  const value = cf[key];
+  return typeof value === "string" ? value : "";
+}
+
+// City and country come only from the runtime geolocation object. A missing
+// or non-string value is stored as empty. Nothing else on that object is read.
+function connectionPlace(request) {
+  const cf = request == null ? undefined : request.cf;
+  return { city: cfString(cf, "city"), country: cfString(cf, "country") };
+}
+
+function writePoint(env, record, place) {
   const idBytes = byteLength(record.install_id);
   const index = idBytes > 0 && idBytes <= MAX_INDEX_BYTES ? record.install_id : "trvl";
   env.HEARTBEAT.writeDataPoint({
     indexes: [index],
-    blobs: [record.project, record.event, record.version, record.runtime, record.install_id],
+    blobs: [
+      record.project,
+      record.event,
+      record.version,
+      record.runtime,
+      record.install_id,
+      place.city,
+      place.country,
+    ],
   });
 }
 
@@ -151,7 +175,7 @@ export default {
     const decision = decide(request.method, url.pathname, contentType, read.text);
     if (decision.record) {
       try {
-        writePoint(env, decision.record);
+        writePoint(env, decision.record, connectionPlace(request));
       } catch {
         return text({ status: 500, body: "storage error\n" });
       }
