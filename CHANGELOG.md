@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- A private page at `https://counts.revaluator.ai` shows how many installs checked in, by day, and the stored city and country. Cloudflare Access admits only the author. Install ids are not shown.
+- A private page at `https://counts.revaluator.ai` shows how many installs checked in, by day, and the stored city and country. A map frames every city it can place. Cloudflare Access admits only the author. Install ids are not shown.
 
 ### Changed
 

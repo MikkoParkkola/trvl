@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { createSign, generateKeyPairSync } from "node:crypto";
 import test from "node:test";
+import { locate } from "./geo.js";
 import worker, { QUERIES, loadReport, render } from "./index.js";
+import { frame, project } from "./map.js";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const publicJwk = publicKey.export({ format: "jwk" });
@@ -178,6 +180,57 @@ test("a sql failure returns storage error and does not echo the token", async ()
   } finally {
     globalThis.fetch = previous;
   }
+});
+
+function viewBox(html) {
+  const match = html.match(/viewBox="([^"]+)"/);
+  const [x, y, w, h] = match[1].split(" ").map(Number);
+  return { x, y, w, h };
+}
+
+function inside(box, lat, lon) {
+  const [x, y] = project(lat, lon);
+  return x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
+}
+
+test("the map frames every located city and leaves a blank place off it", () => {
+  const html = render(report);
+  const box = viewBox(html);
+  assert.equal(html.includes('class="heat"'), true);
+  assert.equal((html.match(/class="heat"/g) || []).length, 1);
+  assert.equal(inside(box, 48.85, 2.35), true);
+  assert.equal(box.w < 250, true);
+  assert.equal(box.w > 40, true);
+  assert.equal(html.includes("No city stored yet"), false);
+});
+
+test("a spread of cities stays inside one frame", () => {
+  const points = [
+    { lat: 48.85, lon: 2.35, installs: 2 },
+    { lat: 60.17, lon: 24.94, installs: 1 },
+    { lat: 28.46, lon: -16.25, installs: 4 },
+  ];
+  const box = frame(points);
+  for (const point of points) assert.equal(inside(box, point.lat, point.lon), true);
+  assert.equal(box.w < 1000, true);
+});
+
+test("cities on opposite sides of the globe still fit", () => {
+  const points = [
+    { lat: 48.85, lon: 2.35, installs: 1 },
+    { lat: 35.68, lon: 139.69, installs: 1 },
+  ];
+  const box = frame(points);
+  for (const point of points) assert.equal(inside(box, point.lat, point.lon), true);
+});
+
+test("locate uses the city directory and not a stored coordinate", () => {
+  const paris = locate("Paris", "FR");
+  assert.equal(Math.abs(paris.lat - 48.85) < 0.2, true);
+  assert.equal(Math.abs(paris.lon - 2.35) < 0.2, true);
+  assert.equal(locate("", ""), null);
+  assert.equal(locate("<Utrecht>", "NL"), null);
+  assert.equal(locate("", "FR") != null, true);
 });
 
 test("loadReport keeps only the count fields it renders", async () => {
