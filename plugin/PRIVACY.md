@@ -20,7 +20,7 @@ A build from 1.25.0 onward sends at most one POST per install per day to `https:
 - the Go runtime string (operating system, architecture, and Go version)
 - `install_id`, a random value stored in `~/.trvl/install-id`
 
-The payload contains no hostname, no username, and no search. No location is derived or stored. Cloudflare terminates the connection, so Cloudflare can see the caller IP. That address is not written into the stored record. The install id stays the same until you delete `~/.trvl`, so heartbeats from one install can be linked to each other. The id is random and contains none of your name. The request times out after 3 seconds, and a failed send is ignored. Cloudflare Analytics Engine keeps the records for three months.
+The payload contains no hostname, no username, and no search. Cloudflare terminates the connection, so Cloudflare can see the caller IP. That address is not written into the stored record. From the connection, Cloudflare’s geolocation supplies a city name and a country code, and those two values are stored with the heartbeat. They are approximate: a VPN, a relay, or a mobile network can place the city at the network exit rather than where you are, and some connections have no city. The install id stays the same until you delete `~/.trvl`, so heartbeats from one install can be linked to each other, including the city stored with them. The id is random and contains none of your name. The request times out after 3 seconds, and a failed send is ignored. Cloudflare Analytics Engine keeps the records for three months.
 
 Builds from 1.18.0 through 1.24.0 still attempt `https://telemetry.trvl.app/v1/heartbeat`. The TLS handshake fails, so the JSON is not delivered. The connection still reaches that host.
 
