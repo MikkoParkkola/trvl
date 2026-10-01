@@ -12,7 +12,7 @@ A search sends the route, the dates, and the traveller count to the travel sites
 
 ## Daily heartbeat
 
-A released build sends at most one POST per install per day to `https://telemetry.trvl.app/v1/heartbeat`. The JSON has five fields and no others:
+A build from 1.25.0 onward sends at most one POST per install per day to `https://telemetry.revaluator.ai/v1/heartbeat`. The JSON has five fields and no others:
 
 - `project`, always `trvl`
 - `event`, always `heartbeat`
@@ -20,11 +20,11 @@ A released build sends at most one POST per install per day to `https://telemetr
 - the Go runtime string (operating system, architecture, and Go version)
 - `install_id`, a random value stored in `~/.trvl/install-id`
 
-The payload contains no hostname, no username, and no search. The connection shows your IP address to that host, as any HTTPS request does. The project uses the address to derive coarse geography and reports that geography only in groups of at least five. The install id stays the same until you delete `~/.trvl`, so heartbeats from one install can be linked to each other. The id is random and contains none of your name.
+The payload contains no hostname, no username, and no search. No location is derived or stored. Cloudflare terminates the connection, so Cloudflare can see the caller IP. That address is not written into the stored record. The install id stays the same until you delete `~/.trvl`, so heartbeats from one install can be linked to each other. The id is random and contains none of your name. The request times out after 3 seconds, and a failed send is ignored. Cloudflare Analytics Engine keeps the records for three months.
 
-Development builds, tests, and CI skip the heartbeat. Set any one of these to turn it off: `TRVL_NO_TELEMETRY=1`, `NO_TELEMETRY=1`, or `DO_NOT_TRACK=1`. `TRVL_TELEMETRY_ENDPOINT` replaces the host when you run your own collector.
+Builds from 1.18.0 through 1.24.0 still attempt `https://telemetry.trvl.app/v1/heartbeat`. The TLS handshake fails, so the JSON is not delivered. The connection still reaches that host.
 
-No deletion window for heartbeat records is published.
+Development builds, tests, and CI skip the heartbeat. Set any one of these to turn it off: `TRVL_NO_TELEMETRY=1`, `NO_TELEMETRY=1`, or `DO_NOT_TRACK=1`. `TRVL_TELEMETRY_ENDPOINT` replaces the whole URL when you run your own collector. An empty value does not.
 
 ## Webhooks you set
 
