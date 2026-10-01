@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The daily heartbeat defaults to `https://telemetry.revaluator.ai/v1/heartbeat` instead of `https://telemetry.trvl.app/v1/heartbeat`. `TRVL_TELEMETRY_ENDPOINT` replaces that URL. The receiver stores the five body fields and does not store the connection address.
 
+### Fixed
+
+- Wizz Air API version rotated from 29.15.1 to 29.18.0.
+  ([#680](https://github.com/MikkoParkkola/trvl/pull/680))
+
 ## [1.24.0] - 2026-09-27
 
 ### Added
