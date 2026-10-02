@@ -1,6 +1,7 @@
-// Receiver for the trvl daily heartbeat. Same accept/reject rules as
-// cmd/trvl-telemetry: POST /v1/heartbeat, application/json, at most 2048
-// bytes, and only the five wire fields. Accepted points go to Analytics
+// Receiver for the daily heartbeat. POST /v1/heartbeat, application/json,
+// at most 2048 bytes. The original five fields stay required in shape.
+// install_date and machine_id are optional, so an older client still
+// gets a 204. Any other field is rejected. Accepted points go to Analytics
 // Engine. The connection IP is not copied into the point. Cloudflare's
 // geolocation of that connection supplies a city name and a country code,
 // and those two strings are stored with the point. Coordinates and the
@@ -8,7 +9,15 @@
 
 export const MAX_PAYLOAD = 2048;
 
-const ALLOWED = ["project", "event", "version", "runtime", "install_id"];
+const ALLOWED = [
+  "project",
+  "event",
+  "version",
+  "runtime",
+  "install_id",
+  "install_date",
+  "machine_id",
+];
 const ALLOWED_SET = new Set(ALLOWED);
 // Analytics Engine drops a point whose index is longer than 96 bytes.
 const MAX_INDEX_BYTES = 96;
@@ -39,9 +48,24 @@ function screen(method, pathname, contentType) {
   return null;
 }
 
-// decide is the pure contract check. A 204 result carries the five fields
-// and nothing else. Every other status carries no record, so the caller
-// must not write.
+function validDay(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function validMachine(value) {
+  return /^[0-9a-f]{32}$/.test(value);
+}
+
+// decide is the pure contract check. A 204 result carries the allowed
+// fields and nothing else. Every other status carries no record, so the
+// caller must not write.
 export function decide(method, pathname, contentType, body) {
   const early = screen(method, pathname, contentType);
   if (early) return early;
@@ -74,6 +98,12 @@ export function decide(method, pathname, contentType, body) {
   }
   if (record.project === "" || record.event === "") {
     return { status: 400, body: "missing required field\n" };
+  }
+  if (record.install_date !== "" && !validDay(record.install_date)) {
+    return { status: 400, body: "malformed json\n" };
+  }
+  if (record.machine_id !== "" && !validMachine(record.machine_id)) {
+    return { status: 400, body: "malformed json\n" };
   }
   return { status: 204, record };
 }
@@ -153,6 +183,8 @@ function writePoint(env, record, place) {
       record.install_id,
       place.city,
       place.country,
+      record.install_date,
+      record.machine_id,
     ],
   });
 }

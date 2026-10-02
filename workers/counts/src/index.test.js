@@ -71,7 +71,15 @@ test("the queries count installs and do not select ids", () => {
     assert.equal(sql.includes("SELECT index1"), false);
     assert.equal(sql.includes("SELECT blob5"), false);
   }
-  assert.deepEqual(Object.keys(QUERIES).sort(), ["byDay", "byPlace", "byProduct"]);
+  assert.equal(QUERIES.byMachine.includes("blob9"), true);
+  assert.equal(QUERIES.byInstalled.includes("blob8"), true);
+  assert.deepEqual(Object.keys(QUERIES).sort(), [
+    "byDay",
+    "byInstalled",
+    "byMachine",
+    "byPlace",
+    "byProduct",
+  ]);
 });
 
 test("the page splits installs by product and does not add them together", () => {
@@ -106,6 +114,41 @@ test("the page splits installs by product and does not add them together", () =>
   assert.equal(html.includes("7 installs"), false);
   assert.match(html, /&lt;mcp-gateway&gt;/);
   assert.equal(html.includes("<mcp-gateway>"), false);
+});
+
+test("cohorts stay inside one product and a shared machine is counted without its id", () => {
+  const machine = "0123456789abcdef0123456789abcdef";
+  const other = "fedcba9876543210fedcba9876543210";
+  const html = render({
+    today: "2026-10-02",
+    products: [
+      { product: "trvl", installs: "4" },
+      { product: "nab", installs: "2" },
+    ],
+    days: [],
+    places: [],
+    installed: [
+      { product: "trvl", installed: "2026-09-01", installs: "3" },
+      { product: "trvl", installed: "2026-10-01", installs: "1" },
+      { product: "nab", installed: "2025-01-01", installs: "2" },
+    ],
+    machines: [
+      { product: "trvl", machine, installs: "4" },
+      { product: "nab", machine, installs: "2" },
+      { product: "nab", machine: other, installs: "1" },
+    ],
+  });
+  const trvl = html.split('data-product="nab"')[0];
+  const nab = html.split('data-product="nab"')[1];
+  assert.match(trvl, /Using it for 30 to 89 days: 3/);
+  assert.match(trvl, /Using it for under 7 days: 1/);
+  assert.match(trvl, /Installed 2026-09: 3/);
+  assert.equal(trvl.includes("a year or more"), false);
+  assert.match(nab, /Using it for a year or more: 2/);
+  assert.equal(nab.includes("30 to 89 days"), false);
+  assert.match(html, /1 machine runs nab and trvl/);
+  assert.equal(html.includes(machine), false);
+  assert.equal(html.includes(other), false);
 });
 
 test("the page shows the total, the day, and the city, and not an id", () => {
@@ -163,7 +206,7 @@ test("an authorised request renders the sql rows", async () => {
     assert.match(html, /Paris, FR/);
     assert.equal(html.includes("deadbeef"), false);
     assert.equal(html.includes("sekret"), false);
-    assert.equal(seen.length, 3);
+    assert.equal(seen.length, 5);
   } finally {
     globalThis.fetch = previous;
   }

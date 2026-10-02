@@ -27,6 +27,16 @@ GROUP BY product, day ORDER BY product, day`,
   byPlace: `SELECT blob1 AS product, blob7 AS country, blob6 AS city, count(DISTINCT index1) AS installs
 FROM trvl_heartbeat ${COUNTED}
 GROUP BY product, country, city ORDER BY installs DESC`,
+  // blob8 is the UTC day the install id was created. It rides on later
+  // heartbeats, so a cohort survives after the first row ages out.
+  byInstalled: `SELECT blob1 AS product, blob8 AS installed, count(DISTINCT index1) AS installs
+FROM trvl_heartbeat ${COUNTED}
+GROUP BY product, installed ORDER BY product, installed`,
+  // blob9 is read only to match products on one machine. It is not rendered.
+  byMachine: `SELECT blob1 AS product, blob9 AS machine, count(DISTINCT index1) AS installs
+FROM trvl_heartbeat ${COUNTED}
+  AND blob9 != ''
+GROUP BY product, machine`,
 };
 
 function text(status, body) {
@@ -109,12 +119,14 @@ async function query(fetchImpl, token, sql) {
 }
 
 export async function loadReport(fetchImpl, token) {
-  const [products, days, places] = await Promise.all([
+  const [products, days, places, installed, machines] = await Promise.all([
     query(fetchImpl, token, QUERIES.byProduct),
     query(fetchImpl, token, QUERIES.byDay),
     query(fetchImpl, token, QUERIES.byPlace),
+    query(fetchImpl, token, QUERIES.byInstalled),
+    query(fetchImpl, token, QUERIES.byMachine),
   ]);
-  return { products, days, places };
+  return { products, days, places, installed, machines };
 }
 
 function productName(row) {
@@ -161,6 +173,85 @@ function productTotal(report, name) {
   return null;
 }
 
+function daysBetween(start, end) {
+  const from = Date.parse(`${start}T00:00:00Z`);
+  const to = Date.parse(`${end}T00:00:00Z`);
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  return Math.round((to - from) / 86400000);
+}
+
+function tenureHtml(report, name) {
+  const rows = (report.installed || []).filter((row) => productName(row) === name);
+  if (rows.length === 0) return "";
+  const today = /^\d{4}-\d{2}-\d{2}$/.test(String(report.today || ""))
+    ? String(report.today)
+    : new Date().toISOString().slice(0, 10);
+  const buckets = [
+    ["under 7 days", 0, 6],
+    ["7 to 29 days", 7, 29],
+    ["30 to 89 days", 30, 89],
+    ["90 to 364 days", 90, 364],
+    ["a year or more", 365, 100000],
+  ];
+  const counts = buckets.map(() => 0);
+  let unknown = 0;
+  const months = new Map();
+  for (const row of rows) {
+    const installs = Number(row.installs) || 0;
+    const day = row.installed ? String(row.installed) : "";
+    const age = /^\d{4}-\d{2}-\d{2}$/.test(day) ? daysBetween(day, today) : null;
+    if (age == null || age < 0) {
+      unknown += installs;
+      continue;
+    }
+    const index = buckets.findIndex((bucket) => age >= bucket[1] && age <= bucket[2]);
+    if (index >= 0) counts[index] += installs;
+    const month = day.slice(0, 7);
+    months.set(month, (months.get(month) || 0) + installs);
+  }
+  const parts = [];
+  buckets.forEach((bucket, index) => {
+    if (counts[index] > 0) parts.push(`Using it for ${bucket[0]}: ${counts[index]}.`);
+  });
+  if (unknown > 0) parts.push(`Install date not sent yet: ${unknown}.`);
+  for (const [month, installs] of [...months.entries()].sort()) {
+    parts.push(`Installed ${month}: ${installs}.`);
+  }
+  if (parts.length === 0) return "";
+  return `<h2>How long</h2><p class="total">${escapeHtml(parts.join(" "))}</p>`;
+}
+
+function overlapHtml(report) {
+  const grouped = new Map();
+  for (const row of report.machines || []) {
+    const machine = row.machine ? String(row.machine) : "";
+    const name = productName(row);
+    if (!machine || !name) continue;
+    if (!grouped.has(machine)) grouped.set(machine, new Set());
+    grouped.get(machine).add(name);
+  }
+  if (grouped.size === 0) {
+    return `<section class="overlap"><h2>Same machine</h2><p class="total">No heartbeat has included a machine id yet, so products cannot be matched.</p></section>`;
+  }
+  const combos = new Map();
+  for (const names of grouped.values()) {
+    if (names.size < 2) continue;
+    const label = [...names].sort().join(" and ");
+    combos.set(label, (combos.get(label) || 0) + 1);
+  }
+  if (combos.size === 0) {
+    return `<section class="overlap"><h2>Same machine</h2><p class="total">No machine has reported more than one product.</p></section>`;
+  }
+  const lines = [...combos.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([label, count]) => {
+      const verb = count === 1 ? "machine runs" : "machines run";
+      return `<li>${escapeHtml(count)} ${verb} ${escapeHtml(label)}.</li>`;
+    })
+    .join("");
+  return `<section class="overlap"><h2>Same machine</h2><ul>${lines}</ul></section>`;
+}
+
 function productBlock(report, name, index) {
   const places = (report.places || [])
     .filter((row) => productName(row) === name)
@@ -198,6 +289,7 @@ function productBlock(report, name, index) {
   return `<section class="product" data-product="${escapeHtml(name)}">
 <h2 class="product">${escapeHtml(heading)}</h2>
 ${totalLine}
+${tenureHtml(report, name)}
 <h2>Where they are</h2>
 <figure>
 ${mapSvg(mapped, `heat-${index}`)}
@@ -214,6 +306,7 @@ export function render(report) {
   const blocks = sectionOrder(report)
     .map((name, index) => productBlock(report, name, index))
     .join("");
+  const overlap = overlapHtml(report);
   const empty = blocks ? "" : `<p class="total">No heartbeats in the last 90 days.</p>`;
   return `<!DOCTYPE html>
 <html lang="en">
@@ -258,8 +351,9 @@ export function render(report) {
 <main>
 <p class="mark">telemetry</p>
 <h1>Installs</h1>
+${overlap}
 ${empty}${blocks}
-<p class="note">An install is one copy of one product, not a person. Each product is counted on its own. The install id is not shown. A released build sends at most one heartbeat a day. The city is Cloudflare’s lookup of that connection: a VPN, a relay, or a mobile network can place it at the network exit, and some connections have no city. The map marks the directory position of that city name. It is not a GPS point, and the heartbeat does not store coordinates. Heartbeats from before the city was stored stay blank. Rows are kept for 90 days. Receiver proof rows are left out. Coastline from Natural Earth. City positions from GeoNames.</p>
+<p class="note">An install is one copy of one product, not a person. Each product is counted on its own. The install id is not shown. A released build sends at most one heartbeat a day. install_date is the UTC day that copy first stored its install id, sent again later so the cohort is still known after older rows age out. The machine id is a random value shared by the products on one machine. It matches those products to the same machine. It is not a name, and it is not shown. The city is Cloudflare’s lookup of that connection: a VPN, a relay, or a mobile network can place it at the network exit, and some connections have no city. The map marks the directory position of that city name. It is not a GPS point, and the heartbeat does not store coordinates. Heartbeats from before the city was stored stay blank. Rows are kept for 90 days. Receiver proof rows are left out. Coastline from Natural Earth. City positions from GeoNames.</p>
 </main>
 </body>
 </html>`;
