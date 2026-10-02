@@ -3,7 +3,7 @@ import { createSign, generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 import { locate } from "./geo.js";
 import worker, { QUERIES, loadReport, render } from "./index.js";
-import { frame, project } from "./map.js";
+import { frame, heatRadius, mapSvg, project } from "./map.js";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const publicJwk = publicKey.export({ format: "jwk" });
@@ -304,6 +304,27 @@ test("cities on opposite sides of the globe still fit", () => {
   ];
   const box = frame(points);
   for (const point of points) assert.equal(inside(box, point.lat, point.lon), true);
+});
+
+test("one or two installs on a world view stay a city mark", () => {
+  const svg = mapSvg([
+    { label: "Wheaton, US", installs: 1, lat: 41.86, lon: -88.11 },
+    { label: "Paris, FR", installs: 1, lat: 48.85, lon: 2.35 },
+    { label: "Shanghai, CN", installs: 2, lat: 31.22, lon: 121.47 },
+  ]);
+  const box = viewBox(svg);
+  assert.equal(box.w > 900, true);
+  const radii = [...svg.matchAll(/\sr="([0-9.]+)"/g)].map((match) => Number(match[1]));
+  assert.equal(radii.length, 3);
+  for (const radius of radii) {
+    assert.equal(radius > 2, true);
+    assert.equal(radius < 22, true);
+    assert.equal(radius / box.w < 0.025, true);
+  }
+  assert.equal(heatRadius(1, 2, 1000) < heatRadius(2, 2, 1000), true);
+  assert.equal(heatRadius(2, 2, 1000) < 16, true);
+  assert.equal(svg.includes("feGaussianBlur"), false);
+  assert.equal((svg.match(/class="heat"/g) || []).length, 3);
 });
 
 test("locate uses the city directory and not a stored coordinate", () => {

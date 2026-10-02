@@ -59,19 +59,35 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function boxAttr(box) {
+  return `${box.x.toFixed(2)} ${box.y.toFixed(2)} ${box.w.toFixed(2)} ${box.h.toFixed(2)}`;
+}
+
+// A mark is a share of the view. The busiest city is 1.5% of the frame
+// width, so on a world map it is a dot. The page keeps that share as the
+// view changes, which stops a zoomed-in city from filling the screen.
+export function heatRadius(installs, maxCount, frameWidth) {
+  const count = Math.max(0, Number(installs) || 0);
+  const max = Math.max(1, Number(maxCount) || 1);
+  const weight = Math.sqrt(count / max);
+  const width = Math.max(1, Number(frameWidth) || 1);
+  return width * (0.006 + 0.009 * weight);
+}
+
 export function mapSvg(points, mark = "heat") {
   const box = frame(points);
   const maxCount = Math.max(1, ...points.map((point) => point.installs));
-  const blur = (box.w * 0.009).toFixed(2);
   const heatId = String(mark).replace(/[^a-z0-9-]/gi, "") || "heat";
-  const softenId = `${heatId}-soften`;
+  const labelSize = (box.w * 0.018).toFixed(2);
+  const labelLift = box.w * 0.028;
   const blobs = points
     .map((point) => {
       const [x, y] = project(point.lat, point.lon);
-      const weight = point.installs / maxCount;
-      const radius = box.w * (0.02 + 0.1 * weight);
-      const opacity = (0.5 + 0.5 * weight).toFixed(2);
-      return `<circle class="heat" style="fill:url(#${heatId})" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${radius.toFixed(2)}" fill-opacity="${opacity}"><title>${escapeHtml(point.label)}: ${escapeHtml(point.installs)}</title></circle>`;
+      const radius = heatRadius(point.installs, maxCount, box.w);
+      const weight = Math.sqrt(Math.max(0, Number(point.installs) || 0) / maxCount);
+      const opacity = (0.55 + 0.45 * weight).toFixed(2);
+      const span = (radius / box.w).toFixed(5);
+      return `<circle class="heat" data-span="${span}" style="fill:url(#${heatId})" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${radius.toFixed(2)}" fill-opacity="${opacity}"><title>${escapeHtml(point.label)}: ${escapeHtml(point.installs)}</title></circle>`;
     })
     .join("");
   const labels =
@@ -79,28 +95,31 @@ export function mapSvg(points, mark = "heat") {
       ? points
           .map((point) => {
             const [x, y] = project(point.lat, point.lon);
-            const size = (box.w * 0.034).toFixed(2);
-            const dy = box.w * 0.012;
-            return `<text class="label" x="${x.toFixed(2)}" y="${(y - dy).toFixed(2)}" font-size="${size}">${escapeHtml(point.label)}</text>`;
+            const caption = `${point.label} · ${point.installs}`;
+            const half = caption.length * box.w * 0.018 * 0.32;
+            let lx = x;
+            const left = box.x + half;
+            const right = box.x + box.w - half;
+            if (right > left) lx = Math.max(left, Math.min(right, x));
+            const above = y - labelLift;
+            const ly = above < box.y + labelLift ? y + labelLift * 1.15 : above;
+            return `<text class="label" data-px="${x.toFixed(2)}" data-py="${y.toFixed(2)}" x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" font-size="${labelSize}">${escapeHtml(point.label)} · ${escapeHtml(point.installs)}</text>`;
           })
           .join("")
       : "";
-  const empty = points.length === 0 ? `<text class="empty" x="${(box.x + box.w / 2).toFixed(2)}" y="${(box.y + box.h / 2).toFixed(2)}" font-size="${(box.w * 0.04).toFixed(2)}">No city stored yet</text>` : "";
-  return `<svg viewBox="${box.x.toFixed(2)} ${box.y.toFixed(2)} ${box.w.toFixed(2)} ${box.h.toFixed(2)}" role="img" aria-label="Where installs are">
+  const empty = points.length === 0 ? `<text class="empty" x="${(box.x + box.w / 2).toFixed(2)}" y="${(box.y + box.h / 2).toFixed(2)}" font-size="${(box.w * 0.028).toFixed(2)}">No city stored yet</text>` : "";
+  return `<svg class="atlas" viewBox="${boxAttr(box)}" data-home="${boxAttr(box)}" data-world="${boxAttr(FULL)}" aria-label="Where installs are" tabindex="0">
 <defs>
   <radialGradient id="${heatId}" cx="50%" cy="50%" r="50%">
-    <stop offset="0%" stop-color="#7c2d12" stop-opacity="0.92"/>
-    <stop offset="28%" stop-color="#c2410c" stop-opacity="0.62"/>
-    <stop offset="62%" stop-color="#fdba74" stop-opacity="0.28"/>
+    <stop offset="0%" stop-color="#7c2d12" stop-opacity="1"/>
+    <stop offset="38%" stop-color="#9a3412" stop-opacity="0.96"/>
+    <stop offset="68%" stop-color="#ea580c" stop-opacity="0.42"/>
     <stop offset="100%" stop-color="#fdba74" stop-opacity="0"/>
   </radialGradient>
-  <filter id="${softenId}" x="-80%" y="-80%" width="260%" height="260%">
-    <feGaussianBlur stdDeviation="${blur}"/>
-  </filter>
 </defs>
-<rect class="sea" x="${box.x.toFixed(2)}" y="${box.y.toFixed(2)}" width="${box.w.toFixed(2)}" height="${box.h.toFixed(2)}"/>
+<rect class="sea" x="${FULL.x.toFixed(2)}" y="${FULL.y.toFixed(2)}" width="${FULL.w.toFixed(2)}" height="${FULL.h.toFixed(2)}"/>
 <path class="land" d="${LAND}"/>
-<g filter="url(#${softenId})">${blobs}</g>
+<g>${blobs}</g>
 ${labels}${empty}
 </svg>`;
 }
