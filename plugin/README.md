@@ -96,8 +96,9 @@ Ground and multimodal:
 `optimize_multi_city`.
 
 The default flight merge uses Google Flights, Kiwi, and Skiplagged. AFKLM and
-the low-cost-carrier integrations are solo or opt-in paths; see
-[`docs/PROVIDERS.md`](../docs/PROVIDERS.md) for their current requirements.
+the low-cost-carrier integrations are solo or opt-in paths. Their requirements
+are in the repository at
+[docs/PROVIDERS.md](https://github.com/MikkoParkkola/trvl/blob/main/docs/PROVIDERS.md).
 
 Destination context:
 `destination_info`, `get_weather`, `travel_guide`, `local_events`,
@@ -133,6 +134,33 @@ providers arrive by pull request or in a fork.
 Awards and points:
 `calculate_points_value`, `search_awards`, and miles earning annotations on
 flight searches.
+
+## What this plugin runs and where data goes
+
+Installing the plugin runs `npx -y trvl-mcp@1.25.0`. That fetches the package
+from the npm registry. The package then downloads one release archive from
+`https://github.com/MikkoParkkola/trvl/releases/download/v1.25.0/` and runs the
+`trvl` binary inside it. No separate `trvl` install is required.
+
+A search sends the route, the dates, and the traveller count to the travel
+sites that search uses. The default flight merge reaches Google Flights, Kiwi,
+and Skiplagged. Optional providers run only when you turn them on.
+
+The program keeps trips, preferences, the traveller profile, price watches,
+search history, cached cookies, provider tokens, and a random install id under
+`~/.trvl` until you delete those files. It does not send your Claude
+conversation to the author.
+
+A current release sends at most one POST per install per day to
+`https://telemetry.revaluator.ai/v1/heartbeat`. The JSON has five fields:
+`project` (`trvl`), `event` (`heartbeat`), the version, the Go runtime string,
+and `install_id`. It has no search, no hostname, and no username. Cloudflare
+sees the connection and stores an approximate city and country with the
+heartbeat for 90 days. Set `TRVL_NO_TELEMETRY=1`, `NO_TELEMETRY=1`, or
+`DO_NOT_TRACK=1` to stop it. The full text is [PRIVACY.md](PRIVACY.md).
+
+If you attach a webhook URL to a price watch, trvl POSTs that watch's route
+and price to the address you supplied.
 
 ## Notes
 
