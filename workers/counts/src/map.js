@@ -59,17 +59,19 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-export function mapSvg(points) {
+export function mapSvg(points, mark = "heat") {
   const box = frame(points);
   const maxCount = Math.max(1, ...points.map((point) => point.installs));
   const blur = (box.w * 0.009).toFixed(2);
+  const heatId = String(mark).replace(/[^a-z0-9-]/gi, "") || "heat";
+  const softenId = `${heatId}-soften`;
   const blobs = points
     .map((point) => {
       const [x, y] = project(point.lat, point.lon);
       const weight = point.installs / maxCount;
       const radius = box.w * (0.02 + 0.1 * weight);
       const opacity = (0.5 + 0.5 * weight).toFixed(2);
-      return `<circle class="heat" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${radius.toFixed(2)}" fill-opacity="${opacity}"><title>${escapeHtml(point.label)}: ${escapeHtml(point.installs)}</title></circle>`;
+      return `<circle class="heat" style="fill:url(#${heatId})" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${radius.toFixed(2)}" fill-opacity="${opacity}"><title>${escapeHtml(point.label)}: ${escapeHtml(point.installs)}</title></circle>`;
     })
     .join("");
   const labels =
@@ -86,19 +88,19 @@ export function mapSvg(points) {
   const empty = points.length === 0 ? `<text class="empty" x="${(box.x + box.w / 2).toFixed(2)}" y="${(box.y + box.h / 2).toFixed(2)}" font-size="${(box.w * 0.04).toFixed(2)}">No city stored yet</text>` : "";
   return `<svg viewBox="${box.x.toFixed(2)} ${box.y.toFixed(2)} ${box.w.toFixed(2)} ${box.h.toFixed(2)}" role="img" aria-label="Where installs are">
 <defs>
-  <radialGradient id="heat" cx="50%" cy="50%" r="50%">
+  <radialGradient id="${heatId}" cx="50%" cy="50%" r="50%">
     <stop offset="0%" stop-color="#7c2d12" stop-opacity="0.92"/>
     <stop offset="28%" stop-color="#c2410c" stop-opacity="0.62"/>
     <stop offset="62%" stop-color="#fdba74" stop-opacity="0.28"/>
     <stop offset="100%" stop-color="#fdba74" stop-opacity="0"/>
   </radialGradient>
-  <filter id="soften" x="-80%" y="-80%" width="260%" height="260%">
+  <filter id="${softenId}" x="-80%" y="-80%" width="260%" height="260%">
     <feGaussianBlur stdDeviation="${blur}"/>
   </filter>
 </defs>
 <rect class="sea" x="${box.x.toFixed(2)}" y="${box.y.toFixed(2)}" width="${box.w.toFixed(2)}" height="${box.h.toFixed(2)}"/>
 <path class="land" d="${LAND}"/>
-<g filter="url(#soften)">${blobs}</g>
+<g filter="url(#${softenId})">${blobs}</g>
 ${labels}${empty}
 </svg>`;
 }

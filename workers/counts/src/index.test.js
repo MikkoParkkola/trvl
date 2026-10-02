@@ -43,11 +43,11 @@ function pageEnv(extra = {}) {
 }
 
 const report = {
-  installs: "4",
-  days: [{ day: "2026-10-01", installs: "4" }],
+  products: [{ product: "trvl", installs: "4" }],
+  days: [{ product: "trvl", day: "2026-10-01", installs: "4" }],
   places: [
-    { country: "FR", city: "Paris", installs: "2" },
-    { country: "", city: "", installs: "2" },
+    { product: "trvl", country: "FR", city: "Paris", installs: "2" },
+    { product: "trvl", country: "", city: "", installs: "2" },
   ],
 };
 
@@ -64,9 +64,48 @@ test("the queries count installs and do not select ids", () => {
     assert.equal(sql.includes("blob5"), false);
     assert.equal(/\bindex1\b/.test(sql.replaceAll("count(DISTINCT index1)", "")), true);
     assert.equal(sql.includes("probe-city-20261001"), true);
+    assert.equal(sql.includes("blob3 NOT IN"), true);
+    assert.match(sql, /blob1 AS product/);
+    assert.match(sql, /GROUP BY[\s\S]*\bproduct\b/);
+    assert.equal(sql.includes("blob1 = 'trvl'"), false);
     assert.equal(sql.includes("SELECT index1"), false);
     assert.equal(sql.includes("SELECT blob5"), false);
   }
+  assert.deepEqual(Object.keys(QUERIES).sort(), ["byDay", "byPlace", "byProduct"]);
+});
+
+test("the page splits installs by product and does not add them together", () => {
+  const html = render({
+    products: [
+      { product: "trvl", installs: "4" },
+      { product: "nab", installs: "2" },
+      { product: "<mcp-gateway>", installs: "1" },
+    ],
+    days: [
+      { product: "trvl", day: "2026-10-01", installs: "4" },
+      { product: "nab", day: "2026-10-02", installs: "2" },
+    ],
+    places: [
+      { product: "trvl", country: "FR", city: "Paris", installs: "4" },
+      { product: "nab", country: "NL", city: "Amsterdam", installs: "2" },
+    ],
+  });
+  const trvl = html.split('data-product="nab"')[0];
+  const nab = html.split('data-product="nab"')[1].split('data-product="')[0];
+  assert.match(trvl, /data-product="trvl"/);
+  assert.match(trvl, /4 installs in the last 90 days/);
+  assert.match(trvl, /Paris, FR/);
+  assert.match(trvl, /2026-10-01/);
+  assert.equal(trvl.includes("Amsterdam"), false);
+  assert.equal(trvl.includes("2026-10-02"), false);
+  assert.match(nab, /2 installs in the last 90 days/);
+  assert.match(nab, /Amsterdam, NL/);
+  assert.match(nab, /2026-10-02/);
+  assert.equal(nab.includes("Paris"), false);
+  assert.equal(html.includes("6 installs"), false);
+  assert.equal(html.includes("7 installs"), false);
+  assert.match(html, /&lt;mcp-gateway&gt;/);
+  assert.equal(html.includes("<mcp-gateway>"), false);
 });
 
 test("the page shows the total, the day, and the city, and not an id", () => {
@@ -110,7 +149,7 @@ test("an authorised request renders the sql rows", async () => {
     assert.equal(init.headers.authorization, "Bearer sekret");
     if (String(init.body).includes("toDate")) return sqlResult(report.days);
     if (String(init.body).includes("blob6")) return sqlResult(report.places);
-    return sqlResult([{ installs: "4", index1: "deadbeef" }]);
+    return sqlResult([{ product: "trvl", installs: "4", index1: "deadbeef" }]);
   };
   try {
     const response = await worker.fetch(
@@ -236,9 +275,11 @@ test("locate uses the city directory and not a stored coordinate", () => {
 test("loadReport keeps only the count fields it renders", async () => {
   const reportFromSql = await loadReport(async (_url, init) => {
     const sql = String(init.body);
-    if (sql.includes("toDate")) return sqlResult([{ day: "2026-10-01", installs: "1", index1: "deadbeef" }]);
-    if (sql.includes("blob6")) return sqlResult([{ country: "FR", city: "Paris", installs: "1" }]);
-    return sqlResult([{ installs: "1" }]);
+    if (sql.includes("toDate")) {
+      return sqlResult([{ product: "trvl", day: "2026-10-01", installs: "1", index1: "deadbeef" }]);
+    }
+    if (sql.includes("blob6")) return sqlResult([{ product: "trvl", country: "FR", city: "Paris", installs: "1" }]);
+    return sqlResult([{ product: "trvl", installs: "1", blob5: "deadbeef" }]);
   }, "sekret");
   assert.equal(render(reportFromSql).includes("deadbeef"), false);
 });

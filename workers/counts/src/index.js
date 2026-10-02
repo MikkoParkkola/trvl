@@ -10,19 +10,23 @@ const ACCOUNT = "e88256e8f368cdae614ec878b7b8f98a";
 const SQL_URL = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/analytics_engine/sql`;
 const ACCESS_CERTS = "https://revaluator.cloudflareaccess.com/cdn-cgi/access/certs";
 
+// blob1 is the heartbeat project name. Products share this dataset.
+// Every count groups by that name, so one product is not added into another.
 const COUNTED = `
 WHERE timestamp > NOW() - INTERVAL '90' DAY
   AND index1 != 'probe-city-20261001'
   AND blob3 NOT IN ('probe', 'go-http')`;
 
 export const QUERIES = {
-  total: `SELECT count(DISTINCT index1) AS installs FROM trvl_heartbeat ${COUNTED}`,
-  byDay: `SELECT toDate(timestamp) AS day, count(DISTINCT index1) AS installs
+  byProduct: `SELECT blob1 AS product, count(DISTINCT index1) AS installs
 FROM trvl_heartbeat ${COUNTED}
-GROUP BY day ORDER BY day`,
-  byPlace: `SELECT blob7 AS country, blob6 AS city, count(DISTINCT index1) AS installs
+GROUP BY product ORDER BY installs DESC`,
+  byDay: `SELECT blob1 AS product, toDate(timestamp) AS day, count(DISTINCT index1) AS installs
 FROM trvl_heartbeat ${COUNTED}
-GROUP BY country, city ORDER BY installs DESC`,
+GROUP BY product, day ORDER BY product, day`,
+  byPlace: `SELECT blob1 AS product, blob7 AS country, blob6 AS city, count(DISTINCT index1) AS installs
+FROM trvl_heartbeat ${COUNTED}
+GROUP BY product, country, city ORDER BY installs DESC`,
 };
 
 function text(status, body) {
@@ -105,16 +109,17 @@ async function query(fetchImpl, token, sql) {
 }
 
 export async function loadReport(fetchImpl, token) {
-  const [totalRows, days, places] = await Promise.all([
-    query(fetchImpl, token, QUERIES.total),
+  const [products, days, places] = await Promise.all([
+    query(fetchImpl, token, QUERIES.byProduct),
     query(fetchImpl, token, QUERIES.byDay),
     query(fetchImpl, token, QUERIES.byPlace),
   ]);
-  return {
-    installs: totalRows[0]?.installs ?? "0",
-    days,
-    places,
-  };
+  return { products, days, places };
+}
+
+function productName(row) {
+  if (!row || row.product == null) return "";
+  return String(row.product);
 }
 
 function placeLabel(row) {
@@ -135,12 +140,35 @@ function dayText(iso) {
   return `${Number(day)} ${MONTHS[index]}`;
 }
 
-export function render(report) {
-  const places = report.places.map((row) => {
-    const installs = Number(row.installs) || 0;
-    const spot = locate(row.city, row.country);
-    return { label: placeLabel(row), installs, spot, named: Boolean(row.city || row.country) };
-  });
+function sectionOrder(report) {
+  const names = [];
+  const seen = new Set();
+  const add = (name) => {
+    if (seen.has(name)) return;
+    seen.add(name);
+    names.push(name);
+  };
+  for (const row of report.products || []) add(productName(row));
+  for (const row of report.days || []) add(productName(row));
+  for (const row of report.places || []) add(productName(row));
+  return names;
+}
+
+function productTotal(report, name) {
+  for (const row of report.products || []) {
+    if (productName(row) === name) return row.installs ?? "0";
+  }
+  return null;
+}
+
+function productBlock(report, name, index) {
+  const places = (report.places || [])
+    .filter((row) => productName(row) === name)
+    .map((row) => {
+      const installs = Number(row.installs) || 0;
+      const spot = locate(row.city, row.country);
+      return { label: placeLabel(row), installs, spot, named: Boolean(row.city || row.country) };
+    });
   const mapped = places.filter((place) => place.spot).map((place) => ({
     label: place.label,
     installs: place.installs,
@@ -155,33 +183,59 @@ export function render(report) {
       return `<div class="place"><span class="name">${escapeHtml(place.label)}</span><span class="track"><span class="fill" style="width:${width}%"></span></span><span class="n">${escapeHtml(place.installs)}</span>${missed ? `<span class="missed">${missed}</span>` : ""}</div>`;
     })
     .join("");
-  const maxDay = Math.max(1, ...report.days.map((row) => Number(row.installs) || 0));
-  const dayCols = report.days
+  const days = (report.days || []).filter((row) => productName(row) === name);
+  const maxDay = Math.max(1, ...days.map((row) => Number(row.installs) || 0));
+  const dayCols = days
     .map((row) => {
       const installs = Number(row.installs) || 0;
       const height = Math.max(8, Math.round((100 * installs) / maxDay));
       return `<div class="col"><div class="plot"><span class="stem" style="height:${height}%"></span></div><span class="n">${escapeHtml(installs)}</span><time datetime="${escapeHtml(row.day)}">${escapeHtml(dayText(row.day))}</time></div>`;
     })
     .join("");
+  const total = productTotal(report, name);
+  const totalLine = total == null ? "" : `<p class="total">${escapeHtml(total)} installs in the last 90 days.</p>`;
+  const heading = name === "" ? "unnamed" : name;
+  return `<section class="product" data-product="${escapeHtml(name)}">
+<h2 class="product">${escapeHtml(heading)}</h2>
+${totalLine}
+<h2>Where they are</h2>
+<figure>
+${mapSvg(mapped, `heat-${index}`)}
+<div class="scale"><span>fewer</span><i></i><span>more</span></div>
+</figure>
+<h2>By day</h2>
+<div class="days">${dayCols}</div>
+<h2>Places</h2>
+<div class="places">${placeRows}</div>
+</section>`;
+}
+
+export function render(report) {
+  const blocks = sectionOrder(report)
+    .map((name, index) => productBlock(report, name, index))
+    .join("");
+  const empty = blocks ? "" : `<p class="total">No heartbeats in the last 90 days.</p>`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>trvl installs</title>
+<title>Installs</title>
 <style>
   :root { color-scheme: light; }
   body { margin: 0; background: #f3efe6; color: #241c16; font: 17px/1.45 Palatino, "Iowan Old Style", Georgia, serif; }
   main { max-width: 52rem; margin: 0 auto; padding: 2rem 1.25rem 3rem; }
   .mark { margin: 0; letter-spacing: 0.16em; text-transform: uppercase; font: 600 0.72rem/1 system-ui, sans-serif; color: #8a5a32; }
   h1 { margin: 0.2rem 0 0; font-size: 2.4rem; font-weight: 600; letter-spacing: -0.03em; }
+  section.product { margin-top: 1.6rem; }
+  section.product + section.product { border-top: 1px solid #e4d9c8; padding-top: 0.4rem; }
+  h2.product { margin: 0.2rem 0 0; font: 600 1.7rem/1.1 Palatino, "Iowan Old Style", Georgia, serif; letter-spacing: -0.03em; text-transform: none; color: #241c16; }
   .total { margin: 0.35rem 0 1.4rem; color: #5c534b; }
   h2 { margin: 1.6rem 0 0.6rem; font: 600 0.78rem/1 system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: #6f655c; }
   figure { margin: 0; }
   svg { width: 100%; height: auto; display: block; border-radius: 18px; background: #d5e3ec; }
   .sea { fill: #d5e3ec; }
   .land { fill: #f7f3ea; stroke: #cabbab; stroke-width: 1; vector-effect: non-scaling-stroke; }
-  .heat { fill: url(#heat); }
   .label { font-family: system-ui, sans-serif; fill: #241c16; text-anchor: middle; stroke: #f7f3ea; stroke-width: 0.35; paint-order: stroke; }
   .empty { font-family: system-ui, sans-serif; fill: #5c534b; text-anchor: middle; }
   .scale { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.55rem; color: #6f655c; font: 0.78rem/1 system-ui, sans-serif; }
@@ -202,19 +256,10 @@ export function render(report) {
 </head>
 <body>
 <main>
-<p class="mark">trvl</p>
+<p class="mark">telemetry</p>
 <h1>Installs</h1>
-<p class="total">${escapeHtml(report.installs)} installs in the last 90 days.</p>
-<h2>Where they are</h2>
-<figure>
-${mapSvg(mapped)}
-<div class="scale"><span>fewer</span><i></i><span>more</span></div>
-</figure>
-<h2>By day</h2>
-<div class="days">${dayCols}</div>
-<h2>Places</h2>
-<div class="places">${placeRows}</div>
-<p class="note">An install is one copy of trvl, not a person. The install id is not shown. A released build sends at most one heartbeat a day. The city is Cloudflare’s lookup of that connection: a VPN, a relay, or a mobile network can place it at the network exit, and some connections have no city. The map marks the directory position of that city name. It is not a GPS point, and the heartbeat does not store coordinates. Heartbeats from before the city was stored stay blank. Rows are kept for 90 days. Receiver proof rows are left out. Coastline from Natural Earth. City positions from GeoNames.</p>
+${empty}${blocks}
+<p class="note">An install is one copy of one product, not a person. Each product is counted on its own. The install id is not shown. A released build sends at most one heartbeat a day. The city is Cloudflare’s lookup of that connection: a VPN, a relay, or a mobile network can place it at the network exit, and some connections have no city. The map marks the directory position of that city name. It is not a GPS point, and the heartbeat does not store coordinates. Heartbeats from before the city was stored stay blank. Rows are kept for 90 days. Receiver proof rows are left out. Coastline from Natural Earth. City positions from GeoNames.</p>
 </main>
 </body>
 </html>`;
