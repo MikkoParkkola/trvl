@@ -8,6 +8,9 @@
   },
   "homepage": "https://github.com/MikkoParkkola/trvl/tree/directory/plugin-ready/plugin",
   "repository": "https://github.com/MikkoParkkola/trvl",
+  "documentationUrl": "https://github.com/MikkoParkkola/trvl/blob/directory/plugin-ready/README.md",
+  "privacyPolicyUrl": "https://github.com/MikkoParkkola/trvl/blob/directory/plugin-ready/plugin/PRIVACY.md",
+  "supportUrl": "https://github.com/MikkoParkkola/trvl/issues",
   "license": "PolyForm-Noncommercial-1.0.0",
   "keywords": [
     "travel",
