@@ -19,11 +19,12 @@ Install the trvl program separately, then connect it as an MCP server named
 
 ```bash
 brew install MikkoParkkola/tap/trvl
-claude mcp add trvl --transport stdio -- trvl mcp
+claude mcp add --scope user --transport stdio trvl -- trvl mcp
 ```
 
-`trvl mcp install` writes that same client entry. This plugin does not run
-either command.
+`trvl mcp install --client claude-code` writes the user-level Claude Code
+config at `~/.claude.json`. Without `--client claude-code`, that command
+targets Claude Desktop. This plugin runs neither command.
 
 The skills call `mcp__trvl__*` tools when that server is already connected.
 If it is not, they can call the same tool through an mcp-gateway that already

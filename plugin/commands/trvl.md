@@ -31,8 +31,11 @@ and connect it under the name `trvl`:
 
 ```bash
 brew install MikkoParkkola/tap/trvl
-claude mcp add trvl --transport stdio -- trvl mcp
+claude mcp add --scope user --transport stdio trvl -- trvl mcp
 ```
+
+`trvl mcp install` without `--client claude-code` targets Claude Desktop.
+Do not offer that default.
 
 ## Response Contract
 

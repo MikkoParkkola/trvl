@@ -98,7 +98,7 @@ func TestMIK3400PluginBundle(t *testing.T) {
 	assertFileContainsAll(t, root, "README.md",
 		"claude plugin install",
 		"brew install MikkoParkkola/tap/trvl",
-		"claude mcp add trvl --transport stdio -- trvl mcp",
+		"claude mcp add --scope user --transport stdio trvl -- trvl mcp",
 		"/trvl plan",
 		"/trvl price-watch",
 		"/trvl destination-research",
