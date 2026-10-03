@@ -35,6 +35,9 @@ exposes a server named `trvl`. This plugin starts neither server.
 
 ## Worked Examples
 
+These examples assume the separately installed trvl program is already connected.
+This plugin does not run the searches itself.
+
 ### 1. Plan A Trip
 
 ```text
