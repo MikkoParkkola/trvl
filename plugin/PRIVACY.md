@@ -1,10 +1,14 @@
 # Privacy policy for the trvl Claude plugin
 
-This policy covers the trvl plugin in this folder and the trvl program it starts. The author is Mikko Parkkola. Questions and security reports go to GitHub issues: https://github.com/MikkoParkkola/trvl/issues
+This policy covers the trvl plugin in this folder: three skills, the /trvl command, and the trip-coordinator agent. The plugin does not download a program and does not start one. It sends no data. The trvl program is a separate install (`brew install MikkoParkkola/tap/trvl`). When you install and run that program, the sections below describe what it does. The author is Mikko Parkkola (mikko.parkkola@iki.fi). Questions and security reports go to GitHub issues: https://github.com/MikkoParkkola/trvl/issues
 
-## What stays on your machine
+## What the plugin sends
 
-trvl keeps trips, preferences, the traveller profile, price watches, search history, cached cookies, provider tokens, and a random install id under `~/.trvl`. Those files remain until you delete them. The plugin downloads the released trvl binary for this version. It sends none of your Claude conversation to the author.
+Nothing. It does not read credentials from the machine, does not send the Claude conversation, and does not contact `https://telemetry.revaluator.ai/v1/heartbeat`.
+
+## What the trvl program keeps on your machine
+
+The trvl program keeps trips, preferences, the traveller profile, price watches, search history, cached cookies, provider tokens, and a random install id under `~/.trvl`. Those files remain until you delete them. The plugin does not download that program. The program sends none of your Claude conversation to the author.
 
 ## Searches
 
@@ -12,7 +16,7 @@ A search sends the route, the dates, and the traveller count to the travel sites
 
 ## Daily heartbeat
 
-A current release sends at most one POST per install per day to `https://telemetry.revaluator.ai/v1/heartbeat`. The JSON has five fields and no others:
+A released build of the trvl program sends at most one POST per install per day to `https://telemetry.revaluator.ai/v1/heartbeat`. The JSON has five fields and no others:
 
 - `project`, always `trvl`
 - `event`, always `heartbeat`

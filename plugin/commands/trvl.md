@@ -24,6 +24,9 @@ When the user is advanced, asks for a specific trvl tool, or the intent does
 not match the three skills, this command falls back to MCP tool selection.
 Prefer native `mcp__trvl__<tool>` calls. If native tools are not loaded, call
 `mcp__gateway__gateway_invoke` with `server="trvl"` and the requested tool.
+This plugin does not start the trvl server. Those tools exist only when the
+separately installed trvl program is already connected, or when a gateway
+already exposes it.
 
 ## Response Contract
 

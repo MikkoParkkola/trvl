@@ -1,20 +1,20 @@
 {
   "name": "trvl",
   "version": "1.25.0",
-  "description": "Claude Code travel companion for the trvl MCP server, with trip planning, price watches, and destination research. 1 smart MCP tool plus 66 legacy-compatible capabilities, including 36 travel hack detectors. Default search needs no API key.",
+  "description": "Travel skills, the /trvl command, and a trip coordinator for Claude Code. They plan trips, watch prices, and research destinations by calling a trvl program you install yourself. This plugin does not download or start that program.",
   "author": {
     "name": "Mikko Parkkola",
+    "email": "mikko.parkkola@iki.fi",
     "url": "https://github.com/MikkoParkkola"
   },
   "homepage": "https://github.com/MikkoParkkola/trvl/tree/directory/plugin-ready/plugin",
   "repository": "https://github.com/MikkoParkkola/trvl",
-  "documentationUrl": "https://github.com/MikkoParkkola/trvl/blob/directory/plugin-ready/README.md",
+  "documentationUrl": "https://github.com/MikkoParkkola/trvl/blob/directory/plugin-ready/plugin/README.md",
   "privacyPolicyUrl": "https://github.com/MikkoParkkola/trvl/blob/directory/plugin-ready/plugin/PRIVACY.md",
   "supportUrl": "https://github.com/MikkoParkkola/trvl/issues",
   "license": "PolyForm-Noncommercial-1.0.0",
   "keywords": [
     "travel",
-    "mcp",
     "flights",
     "hotels",
     "trip-planning",
@@ -25,6 +25,5 @@
   "commands": "./commands/",
   "agents": [
     "./agents/trip-coordinator.md"
-  ],
-  "mcpServers": "./.mcp.json"
+  ]
 }

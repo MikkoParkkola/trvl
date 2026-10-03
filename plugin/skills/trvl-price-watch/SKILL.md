@@ -61,3 +61,6 @@ Do not create or update saved preferences unless the user explicitly confirms
 the profile change. If native `mcp__trvl__travel` is unavailable, invoke
 `tool="travel"` through `mcp__gateway__gateway_invoke` with `server="trvl"`.
 Exact legacy tool names remain legacy-compatible capabilities.
+This plugin does not start the trvl server. Those tools exist only when the
+separately installed trvl program is already connected, or when a gateway
+already exposes it.

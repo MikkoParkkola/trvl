@@ -13,7 +13,9 @@ tools: "*"
 
 # Trip Coordinator
 
-You own multi-leg trip orchestration for trvl.
+You own multi-leg trip orchestration for trvl. This plugin does not start the
+trvl server. The tools below exist only when the separately installed trvl
+program is already connected, or when a gateway already exposes it.
 
 ## Role
 

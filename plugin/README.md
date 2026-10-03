@@ -1,10 +1,10 @@
 # trvl Claude Code Plugin
 
-This plugin bundles trvl as a Claude Code travel companion: MCP registration,
-three travel skills, a `/trvl` command router, and a `trip-coordinator` agent
-for complex itineraries.
+This plugin adds three travel skills, a `/trvl` command, and a
+`trip-coordinator` agent. It does not download a program and it does not start
+one. The trvl MCP server is the `trvl` program, installed on its own.
 
-## Install From Local Path
+## Install
 
 From a local clone of this repository (run from the repo root):
 
@@ -14,14 +14,16 @@ claude plugin marketplace add . --scope user
 claude plugin install trvl --scope user
 ```
 
-The plugin starts `trvl-mcp@1.25.0` through npx. That package downloads the
-released binary. A `trvl` binary already on PATH is not required.
-
-The CLI can also be installed on its own:
+Install the trvl program separately, then connect it as an MCP server in your
+own client configuration:
 
 ```bash
 brew install MikkoParkkola/tap/trvl
 ```
+
+The skills call `mcp__trvl__*` tools when that server is already connected.
+If it is not, they can call the same tool through an mcp-gateway that already
+exposes a server named `trvl`. This plugin starts neither server.
 
 ## Components
 
@@ -30,7 +32,6 @@ brew install MikkoParkkola/tap/trvl
 - Skill: `trvl-destination-research`
 - Command: `/trvl`
 - Agent: `trip-coordinator`
-- MCP server: `trvl`
 
 ## Worked Examples
 
@@ -46,7 +47,7 @@ the `travel` smart tool, then dispatches to `plan_trip`, `search_flights`,
 It runs `assess_trip` and
 reports the itinerary with travel hack savings.
 
-For hotels, the plugin must use `search_accommodations` for traveller-facing
+For hotels, use `search_accommodations` for traveller-facing
 stay recommendations and treat `search_hotels` prices as discovery lead-ins.
 Before a final recommendation, use criteria-matched offers or verify shortlisted
 properties with `search_hotels_with_details`, `hotel_rooms`, or `trvl serpapi`
@@ -77,8 +78,8 @@ The command routes to `trvl-destination-research`, composing
 
 ## Underlying Tool Surface
 
-The current trvl MCP server advertises 1 smart MCP tool plus 66 legacy-compatible capabilities,
-and this plugin is wired for the full current surface.
+The trvl program at v1.25.0 advertises 1 smart MCP tool plus 66 legacy-compatible capabilities.
+These skills and the `/trvl` command are written for that surface. They run only when that program is connected separately.
 
 Flights:
 `search_flights`, `search_dates`, `suggest_dates`, `optimize_trip_dates`,
@@ -137,21 +138,20 @@ flight searches.
 
 ## What this plugin runs and where data goes
 
-Installing the plugin runs `npx -y trvl-mcp@1.25.0`. That fetches the package
-from the npm registry. The package then downloads one release archive from
-`https://github.com/MikkoParkkola/trvl/releases/download/v1.25.0/` and runs the
-`trvl` binary inside it. No separate `trvl` install is required.
+This plugin runs no program and downloads nothing. It sends no telemetry and
+it does not read credentials.
 
-A search sends the route, the dates, and the traveller count to the travel
-sites that search uses. The default flight merge reaches Google Flights, Kiwi,
-and Skiplagged. Optional providers run only when you turn them on.
+The separate trvl program is what searches, stores state, and sends the daily
+heartbeat. A search sends the route, the dates, and the traveller count to the
+travel sites that search uses. The default flight merge reaches Google Flights,
+Kiwi, and Skiplagged. Optional providers run only when you turn them on.
 
 The program keeps trips, preferences, the traveller profile, price watches,
 search history, cached cookies, provider tokens, and a random install id under
 `~/.trvl` until you delete those files. It does not send your Claude
 conversation to the author.
 
-A current release sends at most one POST per install per day to
+A released build of that program sends at most one POST per install per day to
 `https://telemetry.revaluator.ai/v1/heartbeat`. The JSON has five fields:
 `project` (`trvl`), `event` (`heartbeat`), the version, the Go runtime string,
 and `install_id`. It has no search, no hostname, and no username. Cloudflare

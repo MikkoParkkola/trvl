@@ -64,3 +64,6 @@ Do not overstate live availability; mark event, restaurant, and POI details as
 current search results. If native `mcp__trvl__travel` is unavailable, use
 `mcp__gateway__gateway_invoke` with `server="trvl"` and `tool="travel"`.
 Exact legacy tool names remain legacy-compatible capabilities.
+This plugin does not start the trvl server. Those tools exist only when the
+separately installed trvl program is already connected, or when a gateway
+already exposes it.
