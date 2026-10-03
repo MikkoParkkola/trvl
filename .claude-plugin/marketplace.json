@@ -1,13 +1,14 @@
 {
   "name": "trvl-marketplace",
   "owner": {
-    "name": "Mikko Parkkola"
+    "name": "Mikko Parkkola",
+    "email": "mikko.parkkola@iki.fi"
   },
   "plugins": [
     {
       "name": "trvl",
       "source": "./plugin",
-      "description": "AI Travel Agent — flights, hotels, destinations, travel hacks, trip optimization"
+      "description": "Travel skills, the /trvl command, and a trip coordinator. They call a trvl program you install yourself."
     }
   ]
 }

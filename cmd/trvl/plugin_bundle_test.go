@@ -33,9 +33,11 @@ func TestMIK3400PluginBundle(t *testing.T) {
 	assertJSONPath(t, "skills", manifest.Skills, "./skills/")
 	assertJSONPath(t, "commands", manifest.Commands, "./commands/")
 	assertJSONPathIn(t, "agents", manifest.Agents, "./agents/trip-coordinator.md")
-	assertJSONPath(t, "mcpServers", manifest.MCPServers, "./.mcp.json")
-	if !containsString(manifest.Keywords, "travel") || !containsString(manifest.Keywords, "mcp") {
-		t.Fatalf("plugin keywords = %v, want travel and mcp", manifest.Keywords)
+	if manifest.MCPServers != "" {
+		t.Fatalf("mcpServers = %q, want absent", manifest.MCPServers)
+	}
+	if !containsString(manifest.Keywords, "travel") || !containsString(manifest.Keywords, "flights") {
+		t.Fatalf("plugin keywords = %v, want travel and flights", manifest.Keywords)
 	}
 
 	skillExpectations := map[string][]string{
@@ -93,14 +95,10 @@ func TestMIK3400PluginBundle(t *testing.T) {
 		"add_trip_leg",
 		"detect_travel_hacks",
 	)
-	assertFileContainsAll(t, root, ".mcp.json",
-		"mcpServers",
-		"trvl",
-		"mcp",
-	)
 	assertFileContainsAll(t, root, "README.md",
 		"claude plugin install",
 		"brew install MikkoParkkola/tap/trvl",
+		"claude mcp add trvl --transport stdio -- trvl mcp",
 		"/trvl plan",
 		"/trvl price-watch",
 		"/trvl destination-research",

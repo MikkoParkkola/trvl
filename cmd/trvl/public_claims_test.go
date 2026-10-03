@@ -285,18 +285,6 @@ func TestPublicDocsAdvertiseCurrentCounts(t *testing.T) {
 			},
 		},
 		{
-			path: filepath.Join("..", "..", "plugin", ".claude-plugin", "plugin.json"),
-			required: []string{
-				fmt.Sprintf("%d smart MCP tool", toolCount),
-				fmt.Sprintf("%d legacy-compatible capabilities", compatAliasCount),
-			},
-			forbidden: []string{
-				"16 MCP tools",
-				"31 MCP tools",
-				"62 MCP tools",
-			},
-		},
-		{
 			path: filepath.Join("..", "..", ".claude", "skills", "trvl.md"),
 			required: []string{
 				fmt.Sprintf("%d CLI commands", cliCommandCount),
@@ -491,7 +479,6 @@ func TestPublicDocsAdvertiseDetectorCount(t *testing.T) {
 		{filepath.Join("..", "..", "docs", "MCP-TOOLS-REFERENCE.md"), "%d parallel detectors"},
 		{filepath.Join("..", "..", "npm", "README.md"), "%d detectors"},
 		{filepath.Join("..", "..", "docs", "COMPARISON.md"), "%d detectors"},
-		{filepath.Join("..", "..", "plugin", ".claude-plugin", "plugin.json"), "%d travel hack detectors"},
 	}
 
 	for _, doc := range docs {

@@ -26,7 +26,13 @@ Prefer native `mcp__trvl__<tool>` calls. If native tools are not loaded, call
 `mcp__gateway__gateway_invoke` with `server="trvl"` and the requested tool.
 This plugin does not start the trvl server. Those tools exist only when the
 separately installed trvl program is already connected, or when a gateway
-already exposes it.
+already exposes it. If neither is available, tell the user to install trvl
+and connect it under the name `trvl`:
+
+```bash
+brew install MikkoParkkola/tap/trvl
+claude mcp add trvl --transport stdio -- trvl mcp
+```
 
 ## Response Contract
 

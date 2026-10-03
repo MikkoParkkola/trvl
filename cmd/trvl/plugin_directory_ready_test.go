@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,9 +26,13 @@ func TestPluginDirectoryReady(t *testing.T) {
 	}
 
 	var manifest struct {
-		Name    string `json:"name"`
-		Version string `json:"version"`
-		License string `json:"license"`
+		Name       string          `json:"name"`
+		Version    string          `json:"version"`
+		License    string          `json:"license"`
+		MCPServers json.RawMessage `json:"mcpServers"`
+		Author     struct {
+			Email string `json:"email"`
+		} `json:"author"`
 	}
 	decodeJSON(t, wantManifest, &manifest)
 	if manifest.Name != "trvl" {
@@ -40,6 +45,14 @@ func TestPluginDirectoryReady(t *testing.T) {
 	if manifest.Version != strings.TrimPrefix(latest, "v") {
 		t.Fatalf("plugin version %q, latest release %q", manifest.Version, latest)
 	}
+	if len(manifest.MCPServers) != 0 && string(manifest.MCPServers) != "null" {
+		t.Fatalf("mcpServers = %s, want absent", manifest.MCPServers)
+	}
+	const developerEmail = "mikko.parkkola@iki.fi"
+	if manifest.Author.Email != developerEmail {
+		t.Fatal("author.email is not the developer address")
+	}
+	forbidPluginLaunchers(t, plugin)
 
 	readme := string(readPluginFile(t, plugin, "README.md"))
 	if wordsOutsideCode(readme) < 40 {
@@ -74,31 +87,6 @@ func TestPluginDirectoryReady(t *testing.T) {
 		t.Fatalf("repository licence should differ only by its contact email, got %d extra lines", len(onlyInRepo))
 	}
 
-	var mcp struct {
-		MCPServers map[string]struct {
-			Command string   `json:"command"`
-			Args    []string `json:"args"`
-		} `json:"mcpServers"`
-	}
-	decodeJSON(t, filepath.Join(plugin, ".mcp.json"), &mcp)
-	server, ok := mcp.MCPServers["trvl"]
-	if !ok {
-		t.Fatal("mcp server trvl is missing")
-	}
-	if isShell(server.Command) {
-		t.Fatalf("command %q is a shell", server.Command)
-	}
-	if server.Command != "npx" {
-		t.Fatalf("command = %q, want npx", server.Command)
-	}
-	pin := "trvl-mcp@" + strings.TrimPrefix(latest, "v")
-	if !containsString(server.Args, pin) {
-		t.Fatalf("args = %v, want exact pin %s", server.Args, pin)
-	}
-	if containsString(server.Args, "trvl") {
-		t.Fatal("launcher must not invoke a trvl binary already on PATH")
-	}
-
 	privacy := string(readPluginFile(t, plugin, "PRIVACY.md"))
 	for _, needle := range []string{
 		"https://telemetry.revaluator.ai/v1/heartbeat",
@@ -125,14 +113,44 @@ func TestPluginDirectoryReady(t *testing.T) {
 	if strings.Contains(privacy, "telemetry.trvl.app") {
 		t.Fatal("PRIVACY.md names telemetry.trvl.app")
 	}
-	if emailInTree(t, plugin) {
-		t.Fatal("plugin folder contains an email address")
+	if path, ok := unexpectedEmail(t, plugin, developerEmail); ok {
+		t.Fatalf("unexpected email in %s", path)
 	}
 }
 
-func emailInTree(t *testing.T, root string) bool {
+func forbidPluginLaunchers(t *testing.T, plugin string) {
 	t.Helper()
-	found := false
+	if _, err := os.Stat(filepath.Join(plugin, ".mcp.json")); !os.IsNotExist(err) {
+		t.Fatal("plugin/.mcp.json must not exist")
+	}
+	needles := []string{"npx", "uvx", "trvl-mcp@", "mcpServers"}
+	err := filepath.WalkDir(plugin, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		text := string(b)
+		for _, needle := range needles {
+			if strings.Contains(text, needle) {
+				t.Errorf("%s contains %q", path, needle)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk plugin: %v", err)
+	}
+}
+
+func unexpectedEmail(t *testing.T, root, allowed string) (string, bool) {
+	t.Helper()
+	var hit string
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -144,16 +162,18 @@ func emailInTree(t *testing.T, root string) bool {
 		if err != nil {
 			return err
 		}
-		if emailPattern.Match(b) {
-			t.Errorf("email in %s", path)
-			found = true
+		for _, match := range emailPattern.FindAll(b, -1) {
+			if string(match) != allowed {
+				hit = path
+				return fs.SkipAll
+			}
 		}
 		return nil
 	})
-	if err != nil {
+	if err != nil && err != fs.SkipAll {
 		t.Fatalf("walk plugin: %v", err)
 	}
-	return found
+	return hit, hit != ""
 }
 
 func findPluginManifests(t *testing.T, repo string) []string {
@@ -212,15 +232,6 @@ func latestReleaseTag(t *testing.T, repo string) string {
 func wordsOutsideCode(markdown string) int {
 	without := regexp.MustCompile("(?s)```.*?```").ReplaceAllString(markdown, " ")
 	return len(strings.Fields(without))
-}
-
-func isShell(command string) bool {
-	switch strings.ToLower(filepath.Base(command)) {
-	case "sh", "bash", "zsh", "dash", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh":
-		return true
-	default:
-		return false
-	}
 }
 
 func decodeJSON(t *testing.T, path string, dest any) {

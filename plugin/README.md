@@ -14,12 +14,16 @@ claude plugin marketplace add . --scope user
 claude plugin install trvl --scope user
 ```
 
-Install the trvl program separately, then connect it as an MCP server in your
-own client configuration:
+Install the trvl program separately, then connect it as an MCP server named
+`trvl`:
 
 ```bash
 brew install MikkoParkkola/tap/trvl
+claude mcp add trvl --transport stdio -- trvl mcp
 ```
+
+`trvl mcp install` writes that same client entry. This plugin does not run
+either command.
 
 The skills call `mcp__trvl__*` tools when that server is already connected.
 If it is not, they can call the same tool through an mcp-gateway that already
@@ -53,9 +57,8 @@ reports the itinerary with travel hack savings.
 For hotels, use `search_accommodations` for traveller-facing
 stay recommendations and treat `search_hotels` prices as discovery lead-ins.
 Before a final recommendation, use criteria-matched offers or verify shortlisted
-properties with `search_hotels_with_details`, `hotel_rooms`, or `trvl serpapi`
-when the user has `SERPAPI_KEY`, then rank on room-level totals or
-tax-inclusive provider totals.
+properties with `search_hotels_with_details` or `hotel_rooms`, then rank on
+room-level totals or tax-inclusive provider totals.
 Do not present a hotel rate as booked, held, locked, or guaranteed.
 
 ### 2. Watch A Flight Or Hotel Deal
@@ -130,10 +133,9 @@ Providers:
 `list_providers`, `provider_health`, `suggest_providers`, `test_provider`,
 `remove_provider`, plus provider status blocks returned by search tools.
 
-Provider definitions are reviewed source shipped in the binary; `trvl providers
-enable <id>` turns one on. `configure_provider` still exists but refuses with an
-error — runtime JSON definitions were removed in 1.21.0 (#538), and new
-providers arrive by pull request or in a fork.
+Provider definitions ship inside the trvl program. New providers arrive by
+pull request or in a fork. On that program, `configure_provider` refuses:
+runtime JSON definitions were removed in 1.21.0 (#538).
 
 Awards and points:
 `calculate_points_value`, `search_awards`, and miles earning annotations on
@@ -159,7 +161,7 @@ A released build of that program sends at most one POST per install per day to
 `project` (`trvl`), `event` (`heartbeat`), the version, the Go runtime string,
 and `install_id`. It has no search, no hostname, and no username. Cloudflare
 sees the connection and stores an approximate city and country with the
-heartbeat for 90 days. Set `TRVL_NO_TELEMETRY=1`, `NO_TELEMETRY=1`, or
+heartbeat for three months. Set `TRVL_NO_TELEMETRY=1`, `NO_TELEMETRY=1`, or
 `DO_NOT_TRACK=1` to stop it. The full text is [PRIVACY.md](PRIVACY.md).
 
 If you attach a webhook URL to a price watch, trvl POSTs that watch's route
