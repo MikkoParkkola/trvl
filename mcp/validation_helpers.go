@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -17,20 +18,40 @@ import (
 func validateAirportList(s string) (string, error) {
 	codes := flights.ParseFlightLocations(s)
 	if len(codes) == 0 {
-		// Fall back to the legacy single-token resolve so the error message and
-		// city-resolution behavior are unchanged for non-list input.
+		// Fall back to the legacy single-token resolve so city-resolution
+		// behavior is unchanged for non-list input.
 		code := resolveMCPLocation(s)
 		if err := models.ValidateIATA(code); err != nil {
-			return "", err
+			return "", unresolvedLocationError(s, code)
 		}
 		return code, nil
 	}
 	for _, code := range codes {
 		if err := models.ValidateIATA(code); err != nil {
-			return "", err
+			return "", unresolvedLocationError(s, code)
 		}
 	}
 	return strings.Join(codes, ","), nil
+}
+
+// unresolvedLocationError explains a token that is neither an IATA code nor a
+// city in the local airport table. The generic "must be exactly 3 uppercase
+// letters" error made agents believe city names never work, while the schema
+// promises they do for known cities (MIK-7987). The caller's own spelling is
+// echoed, not the upper-cased token, so the agent can see what it sent.
+func unresolvedLocationError(input, code string) error {
+	name := code
+	for _, tok := range strings.Split(input, ",") {
+		if tok = strings.TrimSpace(tok); strings.EqualFold(tok, code) {
+			name = tok
+			break
+		}
+	}
+	msg := fmt.Sprintf("%q is not an IATA airport code and not a city in trvl's airport list; pass the 3-letter IATA code of the airport instead", name)
+	if similar := models.SimilarCities(name, 3); len(similar) > 0 {
+		msg += " (known cities with a similar name: " + strings.Join(similar, ", ") + ")"
+	}
+	return errors.New(msg)
 }
 
 // validateOriginDest extracts and validates origin/destination from tool

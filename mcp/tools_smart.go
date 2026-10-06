@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 const smartToolModeEnv = "TRVL_MCP_TOOL_MODE"
@@ -22,7 +25,10 @@ func travelTool() ToolDef {
 			"watches, preferences, or providers, and params for the target tool arguments. Exact " +
 			"legacy tool names such as search_flights, search_accommodations, search_hotels, search_ground, watch_price, " +
 			"update_preferences, or configure_provider are accepted as intent values and remain " +
-			"legacy-compatible capabilities.",
+			"legacy-compatible capabilities. Params for the two main searches: search_flights needs " +
+			"destination and departure_date (YYYY-MM-DD), origin optional (IATA code or known city); " +
+			"search_ground needs from, to and date (YYYY-MM-DD). For any other tool's exact params, " +
+			"call with that intent and action describe.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
@@ -52,7 +58,13 @@ func travelTool() ToolDef {
 				"action":        schemaString(),
 				"dispatched_to": schemaString(),
 				"params":        schemaObject(),
-				"result":        schemaObject(),
+				"renamed": map[string]interface{}{
+					"type": "array", "items": schemaString(),
+				},
+				"unrecognized_params": map[string]interface{}{
+					"type": "array", "items": schemaString(),
+				},
+				"result": schemaObject(),
 			},
 		},
 		Annotations: &ToolAnnotations{
@@ -174,12 +186,150 @@ func redactSecretsInText(s string) string {
 }
 
 type travelSmartResult struct {
-	Query        string         `json:"query,omitempty"`
-	Intent       string         `json:"intent"`
-	Action       string         `json:"action,omitempty"`
-	DispatchedTo string         `json:"dispatched_to"`
-	Params       map[string]any `json:"params,omitempty"`
-	Result       interface{}    `json:"result,omitempty"`
+	Query              string         `json:"query,omitempty"`
+	Intent             string         `json:"intent"`
+	Action             string         `json:"action,omitempty"`
+	DispatchedTo       string         `json:"dispatched_to"`
+	Params             map[string]any `json:"params,omitempty"`
+	Renamed            []string       `json:"renamed,omitempty"`
+	UnrecognizedParams []string       `json:"unrecognized_params,omitempty"`
+	Result             interface{}    `json:"result,omitempty"`
+}
+
+// routerParamAliases maps a target tool's foreign spelling to its canonical
+// argument. search_flights and search_ground name the same concepts
+// differently (origin/destination/departure_date vs from/to/date), and agents
+// carry one tool's names to the other (MIK-7987). An alias applies only when
+// the canonical key is absent, so an explicit canonical value always wins.
+var routerParamAliases = map[string]map[string]string{
+	"search_flights": {"from": "origin", "to": "destination", "date": "departure_date"},
+	"search_ground":  {"origin": "from", "destination": "to", "departure_date": "date"},
+}
+
+// routerRequiredChecked lists targets whose declared Required list matches what
+// the handler enforces. Others are skipped: onboard_profile, for one, declares
+// phase required but defaults it to 1, so a router-wide check would break it.
+var routerRequiredChecked = map[string]bool{"search_flights": true, "search_ground": true}
+
+// applyParamAliases renames alias keys in place and returns "alias -> canonical"
+// notes for each rename. An alias the target declares itself is a real
+// argument there and is never renamed.
+func applyParamAliases(target string, def ToolDef, params map[string]any) []string {
+	var renamed []string
+	aliases := routerParamAliases[target]
+	keys := make([]string, 0, len(aliases))
+	for alias := range aliases {
+		keys = append(keys, alias)
+	}
+	sort.Strings(keys)
+	for _, alias := range keys {
+		canonical := aliases[alias]
+		v, ok := params[alias]
+		if !ok {
+			continue
+		}
+		if _, declared := def.InputSchema.Properties[alias]; declared {
+			continue
+		}
+		if _, taken := params[canonical]; taken {
+			continue
+		}
+		params[canonical] = v
+		delete(params, alias)
+		renamed = append(renamed, alias+" -> "+canonical)
+	}
+	return renamed
+}
+
+// unrecognizedParams returns params the target does not declare. They are
+// still forwarded: some handlers read undeclared arguments (watch_price reads
+// depart_date), so "not declared" must never be reported as "ignored".
+func unrecognizedParams(def ToolDef, params map[string]any) []string {
+	var out []string
+	for k := range params {
+		if _, ok := def.InputSchema.Properties[k]; !ok {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func missingRequired(def ToolDef, params map[string]any) []string {
+	var out []string
+	for _, k := range def.InputSchema.Required {
+		if v, ok := params[k]; !ok || v == nil || v == "" {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// describeContract renders a target's full argument contract: every declared
+// argument with type and complete description, required ones first.
+func describeContract(def ToolDef) string {
+	required := make(map[string]bool, len(def.InputSchema.Required))
+	for _, k := range def.InputSchema.Required {
+		required[k] = true
+	}
+	names := make([]string, 0, len(def.InputSchema.Properties))
+	for k := range def.InputSchema.Properties {
+		names = append(names, k)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if required[names[i]] != required[names[j]] {
+			return required[names[i]]
+		}
+		return names[i] < names[j]
+	})
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s arguments (pass inside params; required: %s):\n", def.Name, strings.Join(def.InputSchema.Required, ", "))
+	for _, k := range names {
+		p := def.InputSchema.Properties[k]
+		typ := p.Type
+		if p.Items != nil {
+			typ += " of " + p.Items.Type
+		}
+		mark := ""
+		if required[k] {
+			mark = ", required"
+		}
+		fmt.Fprintf(&b, "- %s (%s%s): %s\n", k, typ, mark, p.Description)
+	}
+	return b.String()
+}
+
+func routerNotes(def ToolDef, renamed, unrecognized []string) string {
+	var notes []string
+	if len(renamed) > 0 {
+		notes = append(notes, "renamed: "+strings.Join(renamed, ", "))
+	}
+	if len(unrecognized) > 0 {
+		described := make([]string, len(unrecognized))
+		for i, k := range unrecognized {
+			described[i] = k
+			if near := closestParam(def, k); near != "" {
+				described[i] += " (did you mean " + near + "?)"
+			}
+		}
+		notes = append(notes, "not in the declared schema, forwarded anyway (the tool may still use them): "+strings.Join(described, ", "))
+	}
+	return strings.Join(notes, "\n")
+}
+
+// closestParam returns the declared argument nearest to key, if within edit
+// distance 2, so a typo such as departure_dat points at the real name.
+func closestParam(def ToolDef, key string) string {
+	best, bestDist := "", 3
+	for name := range def.InputSchema.Properties {
+		if d := models.EditDistance(strings.ToLower(key), name); d < bestDist || (d == bestDist && name < best) {
+			best, bestDist = name, d
+		}
+	}
+	if bestDist > 2 {
+		return ""
+	}
+	return best
 }
 
 func (s *Server) handleTravel(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
@@ -209,26 +359,57 @@ func (s *Server) handleTravel(ctx context.Context, args map[string]any, elicit E
 		return nil, nil, fmt.Errorf("resolved travel intent %q to unavailable tool %q", resolvedIntent, target)
 	}
 
-	content, structured, err := handler(ctx, params, elicit, sampling, progress)
-	if err != nil {
-		return content, travelSmartResult{
-			Query:        redactSecretsInText(query),
+	// The router checks params against the target's declared schema when it is
+	// known; bare test servers without toolDefs keep the old pass-through.
+	def, hasDef := s.toolDefs[target]
+	if hasDef && strings.EqualFold(action, "describe") {
+		contract := describeContract(def)
+		return []ContentBlock{{Type: "text", Text: contract}}, travelSmartResult{
 			Intent:       resolvedIntent,
 			Action:       action,
 			DispatchedTo: target,
-			Params:       redactSecretParams(params),
-			Result:       structured,
-		}, err
+			Result:       map[string]any{"input_schema": def.InputSchema},
+		}, nil
 	}
+	renamed := applyParamAliases(target, def, params)
+	var unrecognized []string
+	if hasDef {
+		unrecognized = unrecognizedParams(def, params)
+		if routerRequiredChecked[target] {
+			if missing := missingRequired(def, params); len(missing) > 0 {
+				msg := fmt.Sprintf("%s is missing required argument(s): %s", target, strings.Join(missing, ", "))
+				if notes := routerNotes(def, renamed, unrecognized); notes != "" {
+					msg += "\n" + notes
+				}
+				return nil, nil, fmt.Errorf("%s\n%s", msg, describeContract(def))
+			}
+		}
+	}
+	notes := routerNotes(def, renamed, unrecognized)
 
-	return content, travelSmartResult{
-		Query:        redactSecretsInText(query),
-		Intent:       resolvedIntent,
-		Action:       action,
-		DispatchedTo: target,
-		Params:       redactSecretParams(params),
-		Result:       structured,
-	}, nil
+	content, structured, err := handler(ctx, params, elicit, sampling, progress)
+	result := travelSmartResult{
+		Query:              redactSecretsInText(query),
+		Intent:             resolvedIntent,
+		Action:             action,
+		DispatchedTo:       target,
+		Params:             redactSecretParams(params),
+		Renamed:            renamed,
+		UnrecognizedParams: unrecognized,
+		Result:             structured,
+	}
+	if err != nil {
+		// tools/call keeps only the error text on failure, so the notes ride in
+		// the error itself or the agent never sees them.
+		if notes != "" {
+			err = fmt.Errorf("%w\n%s", err, notes)
+		}
+		return content, result, err
+	}
+	if notes != "" {
+		content = append(content, ContentBlock{Type: "text", Text: notes})
+	}
+	return content, result, nil
 }
 
 func smartToolParams(args map[string]any) map[string]any {

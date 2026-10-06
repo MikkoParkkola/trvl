@@ -387,3 +387,58 @@ func ResolveCityToAirports(name string) []string {
 	copy(out, codes)
 	return out
 }
+
+// SimilarCities returns known city names within edit distance 2 of name,
+// closest first, at most limit of them. Used to suggest a fix when a city is
+// not in the airport table (e.g. a misspelling); it cannot help with a city
+// the table simply lacks.
+func SimilarCities(name string, limit int) []string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" || limit <= 0 {
+		return nil
+	}
+	cityAirportsOnce.Do(buildCityAirports)
+	type match struct {
+		city string
+		dist int
+	}
+	var matches []match
+	for city := range cityAirports {
+		if d := EditDistance(name, city); d <= 2 {
+			matches = append(matches, match{city, d})
+		}
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].dist != matches[j].dist {
+			return matches[i].dist < matches[j].dist
+		}
+		return matches[i].city < matches[j].city
+	})
+	var out []string
+	for i := 0; i < len(matches) && i < limit; i++ {
+		out = append(out, matches[i].city)
+	}
+	return out
+}
+
+// EditDistance is the Levenshtein distance between a and b, by rune.
+func EditDistance(a, b string) int {
+	ra, rb := []rune(a), []rune(b)
+	prev := make([]int, len(rb)+1)
+	cur := make([]int, len(rb)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ra); i++ {
+		cur[0] = i
+		for j := 1; j <= len(rb); j++ {
+			cost := 1
+			if ra[i-1] == rb[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(rb)]
+}

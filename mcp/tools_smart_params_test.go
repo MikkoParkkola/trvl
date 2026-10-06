@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -241,5 +242,176 @@ func TestTravelToolStaysCompact(t *testing.T) {
 	t.Logf("travel tool serializes to %d bytes", len(raw))
 	if len(raw) > travelToolBaselineBytes+600 {
 		t.Fatalf("travel tool serializes to %d bytes; budget is %d", len(raw), travelToolBaselineBytes+600)
+	}
+}
+
+// assertFullContract checks text carries every declared argument of def with
+// its type and complete description, and every required name.
+func assertFullContract(t *testing.T, text string, def ToolDef) {
+	t.Helper()
+	for name, p := range def.InputSchema.Properties {
+		if !strings.Contains(text, "- "+name+" ("+p.Type) || !strings.Contains(text, p.Description) {
+			t.Fatalf("contract for %s lacks argument %q with type and full description", def.Name, name)
+		}
+	}
+	for _, req := range def.InputSchema.Required {
+		if !strings.Contains(text, req+" ("+def.InputSchema.Properties[req].Type) || !strings.Contains(text, ", required)") {
+			t.Fatalf("contract for %s does not mark %q as required", def.Name, req)
+		}
+	}
+}
+
+func TestTravelContractIsCompleteForBothSearches(t *testing.T) {
+	for _, target := range []string{"search_flights", "search_ground"} {
+		t.Run(target, func(t *testing.T) {
+			s := NewServer()
+			got := stubTarget(t, s, target)
+			def := s.toolDefs[target]
+
+			text, _, isErr := callTravel(t, s, map[string]any{"intent": target, "action": "describe"})
+			if isErr || *got != nil {
+				t.Fatalf("describe must succeed without dispatch: %s", text)
+			}
+			assertFullContract(t, text, def)
+
+			// Every required field missing at once: all are named, none dispatched.
+			text, _, isErr = callTravel(t, s, map[string]any{"intent": target, "params": map[string]any{"currency": "EUR"}})
+			if !isErr || *got != nil {
+				t.Fatalf("missing required fields must fail without dispatch: %s", text)
+			}
+			missingLine := strings.SplitN(text, "\n", 2)[0]
+			for _, req := range def.InputSchema.Required {
+				if !strings.Contains(missingLine, req) {
+					t.Fatalf("missing-field line must name %q, got %q", req, missingLine)
+				}
+			}
+			assertFullContract(t, text, def)
+		})
+	}
+}
+
+func TestTravelAliasesTable(t *testing.T) {
+	for target, aliases := range routerParamAliases {
+		for alias, canonical := range aliases {
+			t.Run(target+"/"+alias, func(t *testing.T) {
+				s := NewServer()
+				got := stubTarget(t, s, target)
+				params := map[string]any{alias: "X"}
+				for _, req := range s.toolDefs[target].InputSchema.Required {
+					if req != canonical {
+						params[req] = "2026-11-01"
+					}
+				}
+				text, structured, isErr := callTravel(t, s, map[string]any{"intent": target, "params": params})
+				if isErr {
+					t.Fatalf("aliased call failed: %s", text)
+				}
+				if (*got)[canonical] != "X" {
+					t.Fatalf("%s must reach the handler as %s; got %#v", alias, canonical, *got)
+				}
+				note := alias + " -> " + canonical
+				if !strings.Contains(text, note) {
+					t.Fatalf("text must report %q, got %q", note, text)
+				}
+				renamed, _ := structured["renamed"].([]any)
+				if len(renamed) != 1 || renamed[0] != note {
+					t.Fatalf("structured renamed = %#v, want [%q]", structured["renamed"], note)
+				}
+			})
+		}
+	}
+}
+
+func TestTravelAliasNeverShadowsADeclaredArgument(t *testing.T) {
+	// If a target ever declares an alias name itself, the router must leave
+	// that argument alone rather than rename it away.
+	s := NewServer()
+	got := stubTarget(t, s, "search_flights")
+	def := s.toolDefs["search_flights"]
+	props := make(map[string]Property, len(def.InputSchema.Properties)+1)
+	for k, v := range def.InputSchema.Properties {
+		props[k] = v
+	}
+	props["from"] = Property{Type: "string", Description: "declared for this test"}
+	def.InputSchema.Properties = props
+	s.toolDefs["search_flights"] = def
+
+	callTravel(t, s, map[string]any{"intent": "search_flights", "params": map[string]any{"from": "A", "destination": "CDG", "departure_date": "2026-11-01"}})
+	if (*got)["from"] != "A" {
+		t.Fatalf("declared from must be forwarded untouched, got %#v", *got)
+	}
+	if _, renamed := (*got)["origin"]; renamed {
+		t.Fatalf("declared from must not be renamed to origin, got %#v", *got)
+	}
+}
+
+func TestTravelUnrecognizedParamSuggestsAndExplains(t *testing.T) {
+	s := NewServer()
+	stubTarget(t, s, "search_flights")
+
+	text, structured, isErr := callTravel(t, s, map[string]any{
+		"intent": "search_flights",
+		"params": map[string]any{"destination": "CDG", "departure_date": "2026-11-01", "cabin_clas": "business"},
+	})
+	if isErr {
+		t.Fatalf("typo in an optional arg must not fail the call: %s", text)
+	}
+	if !strings.Contains(text, "cabin_clas (did you mean cabin_class?)") || !strings.Contains(text, "forwarded") {
+		t.Fatalf("text must suggest cabin_class and say the key was forwarded, got %q", text)
+	}
+	un, _ := structured["unrecognized_params"].([]any)
+	if len(un) != 1 || un[0] != "cabin_clas" {
+		t.Fatalf("structured unrecognized_params = %#v, want [cabin_clas]", structured["unrecognized_params"])
+	}
+}
+
+func TestTravelNotesSurviveAFailingHandler(t *testing.T) {
+	s := NewServer()
+	s.handlers["search_flights"] = func(_ context.Context, _ map[string]any, _ ElicitFunc, _ SamplingFunc, _ ProgressFunc) ([]ContentBlock, interface{}, error) {
+		return nil, nil, errors.New("upstream exploded")
+	}
+	text, _, isErr := callTravel(t, s, map[string]any{
+		"intent": "search_flights",
+		"params": map[string]any{"destination": "CDG", "date": "2026-11-01", "cabin_clas": "business"},
+	})
+	if !isErr {
+		t.Fatal("handler error must surface as a tool error")
+	}
+	for _, want := range []string{"upstream exploded", "date -> departure_date", "cabin_clas (did you mean cabin_class?)"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("serialized error must contain %q, got %q", want, text)
+		}
+	}
+}
+
+func TestTravelDescriptionSignaturesAreAssociated(t *testing.T) {
+	desc := travelTool().Description
+	for _, want := range []string{
+		"search_flights needs destination and departure_date",
+		"search_ground needs from, to and date",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("travel description must say %q", want)
+		}
+	}
+}
+
+func TestCityDiagnosticsSuggestAndStayTruthful(t *testing.T) {
+	_, err := validateAirportList("Helsinkii")
+	if err == nil || !strings.Contains(err.Error(), "helsinki") {
+		t.Fatalf("a misspelled known city must suggest it, got %v", err)
+	}
+	_, err = validateAirportList("CDG,Torino")
+	if err == nil {
+		t.Fatal("an unresolvable city inside a list must fail")
+	}
+	if msg := err.Error(); !strings.Contains(msg, `"Torino"`) || !strings.Contains(msg, "airport list") || !strings.Contains(msg, "IATA") {
+		t.Fatalf("list token must get the full diagnostic, got %q", msg)
+	}
+	for _, name := range []string{"origin", "destination"} {
+		d := searchFlightsTool().InputSchema.Properties[name].Description
+		if !strings.Contains(d, "airport list") || strings.Contains(d, "City names resolve") {
+			t.Fatalf("search_flights %s description must state the known-city limit, got %q", name, d)
+		}
 	}
 }

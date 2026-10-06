@@ -290,6 +290,15 @@ CLI alternative: `trvl prefs init`
 
 You now have one `travel` MCP tool available by default. Older clients that call legacy per-domain tool names still work — 66 of them remain legacy-compatible capabilities. Use `travel` for new clients and the legacy names when an older workflow names a specific tool:
 
+Through `travel`, name the capability in `intent` and put its arguments in `params`:
+```json
+{"intent": "search_flights", "params": {"origin": "HEL", "destination": "NRT", "departure_date": "2027-06-15"}}
+{"intent": "search_ground", "params": {"from": "Amsterdam", "to": "Paris", "date": "2027-07-01"}}
+```
+- Argument names differ per capability. For any capability, `{"intent": "<name>", "action": "describe"}` returns its exact arguments without running a search.
+- The router accepts the other search's spelling for the same thing (`date` for `departure_date`, `origin` for `from`, and so on) and reports each rename. A missing required argument returns the full argument list.
+- Flight `origin`/`destination` take IATA codes or cities in trvl's airport list. For any other city, pass the airport's IATA code (Turin is `TRN`); ground search takes city or station names.
+
 ### search_flights — Find flights between airports
 ```json
 {"origin": "HEL", "destination": "NRT", "departure_date": "2027-06-15"}
