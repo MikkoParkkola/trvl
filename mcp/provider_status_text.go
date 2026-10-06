@@ -15,3 +15,14 @@ func withProviderFailures(err error, statuses []models.ProviderStatus) error {
 	}
 	return err
 }
+
+// incompleteAbsence returns the wording for an empty search where some
+// provider did not answer, and false when every provider answered and a plain
+// "nothing found" is true.
+func incompleteAbsence(what string, statuses []models.ProviderStatus) (string, bool) {
+	c := models.ComputeCompleteness(statuses)
+	if c.MayClaimExhaustive() {
+		return "", false
+	}
+	return fmt.Sprintf("No %s returned. %s\n%s", what, c.IncompleteNote(), models.ProviderFailureLines(statuses)), true
+}

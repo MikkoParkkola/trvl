@@ -702,6 +702,9 @@ func hotelDetailsSummary(result hotelDetailsSearchResponse, location string) str
 		if result.Error != "" {
 			return fmt.Sprintf("Detailed hotel search in %s failed: %s", location, result.Error)
 		}
+		if msg, ok := incompleteAbsence("hotels in "+location, result.ProviderStatuses); ok {
+			return msg
+		}
 		return fmt.Sprintf("No hotels found in %s.", location)
 	}
 

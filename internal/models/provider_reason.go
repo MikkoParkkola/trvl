@@ -35,21 +35,29 @@ func ClassifyProviderReason(msg string) string {
 	if strings.TrimSpace(msg) == "" {
 		return ""
 	}
-	m := strings.ToLower(reasonURL.ReplaceAllString(msg, ""))
-	code := ""
-	if c := reasonCode.FindString(m); c != "" {
-		code = c
+	// Providers wrap ErrRateLimited for every retryable failure (403, 429 and
+	// 503 alike), so its own text says nothing about which one happened.
+	m := strings.ToLower(strings.ReplaceAll(msg, ErrRateLimited.Error(), ""))
+	m = reasonURL.ReplaceAllString(m, "")
+	codes := reasonCode.FindAllString(m, -1)
+	hasCode := func(match func(string) bool) bool {
+		for _, c := range codes {
+			if match(c) {
+				return true
+			}
+		}
+		return false
 	}
 	switch {
 	case containsAny(m, "no such host", "server misbehaving", "dns"):
 		return ReasonDNS
 	case containsAny(m, "timeout", "timed out", "deadline exceeded"):
 		return ReasonTimeout
-	case code == "429" || containsAny(m, "too many requests", "rate limit", "rate-limit", "ratelimit"):
+	case hasCode(func(c string) bool { return c == "429" }) || containsAny(m, "too many requests", "rate limit", "rate-limit", "ratelimit"):
 		return ReasonRateLimited
-	case code == "403" || containsAny(m, "forbidden", "blocked", "captcha", "challenge", "bot detect", "datadome", "akamai", "cloudfront"):
+	case hasCode(func(c string) bool { return c == "403" }) || containsAny(m, "forbidden", "blocked", "captcha", "challenge", "bot detect", "datadome", "akamai", "cloudfront"):
 		return ReasonBlocked
-	case strings.HasPrefix(code, "5") || containsAny(m, "service unavailable", "temporarily unavailable", "bad gateway"):
+	case hasCode(func(c string) bool { return strings.HasPrefix(c, "5") }) || containsAny(m, "service unavailable", "temporarily unavailable", "bad gateway"):
 		return ReasonUnavailable
 	case containsAny(m, "connection refused", "connection reset", "no route to host", "network is unreachable", "tls:", "eof"):
 		return ReasonNetwork

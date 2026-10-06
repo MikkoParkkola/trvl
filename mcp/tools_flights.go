@@ -441,19 +441,25 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		PricePosition  *pricesignal.Position   `json:"price_position,omitempty"`
 		Savings        []counterfactual.Saving `json:"savings,omitempty"`
 		Destination    *models.DestinationInfo `json:"destination,omitempty"`
+		// Kept so a partial search shows which providers failed and why
+		// (MIK-7989); dropping them made failed providers invisible.
+		ProviderStatuses []models.ProviderStatus `json:"provider_statuses,omitempty"`
+		Completeness     models.Completeness     `json:"completeness,omitempty"`
 	}
 	resp := enrichedFlightSearchResult{
-		Success:        result.Success,
-		Count:          result.Count,
-		TripType:       result.TripType,
-		Flights:        enrichedFlights,
-		Error:          result.Error,
-		Suggestions:    suggestions,
-		Hacks:          flightHacks,
-		HackSaving:     result.HackSaving,
-		BookingContext: buildBookingContext(date, primaryOrigin, originSource),
-		PricePosition:  pricePos,
-		Savings:        cfSavings,
+		Success:          result.Success,
+		Count:            result.Count,
+		TripType:         result.TripType,
+		Flights:          enrichedFlights,
+		Error:            result.Error,
+		Suggestions:      suggestions,
+		Hacks:            flightHacks,
+		HackSaving:       result.HackSaving,
+		BookingContext:   buildBookingContext(date, primaryOrigin, originSource),
+		PricePosition:    pricePos,
+		Savings:          cfSavings,
+		ProviderStatuses: result.ProviderStatuses,
+		Completeness:     result.Completeness,
 	}
 	// Best-effort destination intelligence for the arrival on the default flight
 	// search path: weather, safety, holidays, currency, country facts inline,

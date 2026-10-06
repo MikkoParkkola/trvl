@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -26,6 +27,15 @@ func TestClassifyProviderReason(t *testing.T) {
 		{`Get "https://d111.cloudfront.net/api": read: connection reset by peer`, ReasonNetwork},
 		{`Get "https://blocked.example.com/x": dial tcp 1.2.3.4:443: connect: connection refused`, ReasonNetwork},
 		{"unexpected JSON shape", ReasonOther},
+		// Real provider errors wrap the shared ErrRateLimited sentinel, whose
+		// own text must not decide the reason.
+		{fmt.Errorf("google flights blocked the request (HTTP 403): %w", ErrRateLimited).Error(), ReasonBlocked},
+		{fmt.Errorf("google flights temporarily unavailable (HTTP 503): %w", ErrRateLimited).Error(), ReasonUnavailable},
+		{fmt.Errorf("google flights rate-limited (HTTP 429): %w", ErrRateLimited).Error(), ReasonRateLimited},
+		{fmt.Errorf("kiwi: HTTP 403: denied: %w", ErrRateLimited).Error(), ReasonBlocked},
+		// 429 wins wherever it appears.
+		{"HTTP 403 then retry got HTTP 429", ReasonRateLimited},
+		{"upstream 503, later 429 too many", ReasonRateLimited},
 	}
 	for _, tc := range cases {
 		if got := ClassifyProviderReason(tc.msg); got != tc.want {

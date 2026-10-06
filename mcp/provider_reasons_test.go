@@ -34,6 +34,53 @@ func TestEmptySummariesDoNotClaimAbsenceWhenProvidersFailed(t *testing.T) {
 	if !strings.Contains(clean, "No hotels found") {
 		t.Fatalf("a fully checked empty search may say so, got %q", clean)
 	}
+
+	details := hotelDetailsSummary(hotelDetailsSearchResponse{ProviderStatuses: failed}, "Lyon")
+	if strings.Contains(details, "No hotels found") || !strings.Contains(details, "Booking.com: blocked") {
+		t.Fatalf("detailed hotel summary must report the blocked provider, not absence: %q", details)
+	}
+	acc := accommodationSearchSummary(accommodationSearchResponse{ProviderStatuses: failed})
+	if strings.Contains(acc, "No accommodation candidates found") || !strings.Contains(acc, "Booking.com: blocked") {
+		t.Fatalf("accommodation summary must report the blocked provider, not absence: %q", acc)
+	}
+}
+
+// A flight search where some providers answered must still expose which ones
+// failed and why in its structured output.
+func TestPartialFlightSuccessKeepsProviderReasons(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	date := time.Now().AddDate(0, 1, 0).Format("2006-01-02")
+	orig := dispatchFlightSearchFunc
+	t.Cleanup(func() { dispatchFlightSearchFunc = orig })
+	statuses := []models.ProviderStatus{
+		{ID: "kiwi", Name: "Kiwi", Status: models.StatusOK, Results: 0},
+		{ID: "google_flights", Name: "Google Flights", Status: models.StatusRateLimited, Error: "google flights blocked the request (HTTP 403): " + models.ErrRateLimited.Error()},
+	}
+	dispatchFlightSearchFunc = func(context.Context, map[string]any, string, string, string, flights.SearchOptions) (*models.FlightSearchResult, error) {
+		return &models.FlightSearchResult{Success: true, ProviderStatuses: statuses, Completeness: models.ComputeCompleteness(statuses)}, nil
+	}
+
+	_, structured, isErr := callTravel(t, NewServer(), map[string]any{
+		"intent": "search_flights",
+		"params": map[string]any{"origin": "HEL", "destination": "CDG", "departure_date": date},
+	})
+	if isErr {
+		t.Fatal("partial success must not be an error")
+	}
+	result, _ := structured["result"].(map[string]any)
+	list, _ := result["provider_statuses"].([]any)
+	var reason any
+	for _, st := range list {
+		if m, _ := st.(map[string]any); m["id"] == "google_flights" {
+			reason = m["reason"]
+		}
+	}
+	if reason != models.ReasonBlocked {
+		t.Fatalf("structured result must carry google_flights reason blocked, got statuses %#v", result["provider_statuses"])
+	}
+	if c, _ := result["completeness"].(map[string]any); c["state"] != models.CompletenessPartial {
+		t.Fatalf("structured result must carry partial completeness, got %#v", result["completeness"])
+	}
 }
 
 // MIK-7989: when every provider fails (the cloud-IP case), the reply must
