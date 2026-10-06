@@ -180,6 +180,7 @@ func accommodationSearchOutputSchema() interface{} {
 					"error":         schemaString(),
 					"fix_hint":      schemaString(),
 					"fix_hint_code": schemaString(),
+					"reason":        schemaString(),
 				},
 			}),
 			"completeness": schemaObject(),

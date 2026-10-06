@@ -163,6 +163,12 @@ That relaxes the proxy hop only. Destinations are still refused on private addre
 
 Authenticated proxies (`http://user:pass@host`) are not supported.
 
+### If you run trvl on a cloud server
+
+trvl calls travel sites directly, and many of them treat cloud and datacenter IP addresses as bots. From a server, the same search can return fewer options than from home. trvl reports this instead of hiding it. Each provider in `provider_statuses` carries a `reason` when it did not answer: `blocked` (refused, usually HTTP 403 or a bot check), `rate_limited`, `unavailable` (the provider's own 5xx error), `dns`, `network` or `timeout`. A search where some providers failed is marked partial, never "nothing found".
+
+One user measured this from a Kubernetes cluster in October 2026: SNCF, Trainline and Rome2Rio answered 403, Wizz Air answered 503, and Italo's host did not resolve on some DNS resolvers. Only the 403s point to IP blocking; a 503 or a DNS failure can have other causes. A home or office connection, or the proxy support above, usually improves coverage but cannot guarantee it.
+
 ### How much price history trvl keeps
 
 **Price watching is experimental.** It works, and it keeps data — your watches and their whole price history live under `~/.trvl`. Treat that history as something you could lose. The store is backed up before any migration and the legacy files are kept afterwards, so a bad outcome is recoverable; but the feature is younger than the rest of trvl and is being changed more often.

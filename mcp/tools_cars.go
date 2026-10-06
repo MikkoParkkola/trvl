@@ -85,6 +85,7 @@ func carSearchOutputSchema() interface{} {
 					"error":         schemaString(),
 					"fix_hint":      schemaString(),
 					"fix_hint_code": schemaString(),
+					"reason":        schemaString(),
 				},
 			}),
 			"error": schemaString(),
@@ -160,6 +161,9 @@ func buildCarSearchSummary(result *models.CarSearchResult, opts cars.SearchOptio
 		return "No rental car search result was returned."
 	}
 	if !result.Success {
+		if msg, ok := incompleteAbsence(fmt.Sprintf("rental car offers for %s from %s to %s", opts.PickupLocation, opts.PickupDate, opts.DropoffDate), result.ProviderStatuses); ok {
+			return msg
+		}
 		if result.Error != "" {
 			return fmt.Sprintf("No rental car offers found for %s from %s to %s: %s", opts.PickupLocation, opts.PickupDate, opts.DropoffDate, result.Error)
 		}

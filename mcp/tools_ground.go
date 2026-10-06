@@ -53,6 +53,17 @@ func groundSearchOutputSchema() interface{} {
 			"count":   schemaInt(),
 			"routes":  groundRoutesOutputSchema(),
 			"error":   schemaString(),
+			"provider_statuses": schemaArrayDesc("Per-provider outcome. reason is blocked, rate_limited, unavailable, dns, network, timeout or other when a provider did not answer, so a blocked provider is not mistaken for an empty search.", map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"id":      schemaString(),
+					"name":    schemaString(),
+					"status":  schemaString(),
+					"results": schemaInt(),
+					"error":   schemaString(),
+					"reason":  schemaString(),
+				},
+			}),
 		},
 		"required": []string{"success", "count"},
 	}
@@ -165,7 +176,7 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 
 	if !result.Success {
 		if result.Error != "" {
-			return nil, nil, toolResultError("Ground transport search", result.Error)
+			return nil, nil, withProviderFailures(toolResultError("Ground transport search", result.Error), result.ProviderStatuses)
 		}
 		// Evidence guard: only claim a definitive "no routes" when every relevant
 		// provider was actually reached. If some timed out / rate-limited / failed,

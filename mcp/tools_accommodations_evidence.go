@@ -710,6 +710,9 @@ func accommodationSearchSummary(resp accommodationSearchResponse) string {
 		if resp.Error != "" {
 			return fmt.Sprintf("Accommodation search in %s failed: %s", location, resp.Error)
 		}
+		if msg, ok := incompleteAbsence("accommodation candidates in "+location, resp.ProviderStatuses); ok {
+			return msg
+		}
 		return fmt.Sprintf("No accommodation candidates found in %s.", location)
 	}
 	if resp.Count == 0 {
