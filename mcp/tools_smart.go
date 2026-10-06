@@ -362,7 +362,12 @@ func (s *Server) handleTravel(ctx context.Context, args map[string]any, elicit E
 	// The router checks params against the target's declared schema when it is
 	// known; bare test servers without toolDefs keep the old pass-through.
 	def, hasDef := s.toolDefs[target]
-	if hasDef && strings.EqualFold(action, "describe") {
+	if strings.EqualFold(action, "describe") {
+		// describe is discovery only: it must never run the capability, even
+		// one registered without a published schema.
+		if !hasDef {
+			return nil, nil, fmt.Errorf("%s has no published argument list; call it with params, or use query for a natural-language request", target)
+		}
 		contract := describeContract(def)
 		return []ContentBlock{{Type: "text", Text: contract}}, travelSmartResult{
 			Intent:       resolvedIntent,

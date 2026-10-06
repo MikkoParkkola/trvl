@@ -165,6 +165,20 @@ func TestTravelDescribeReturnsSchemaWithoutDispatch(t *testing.T) {
 	}
 }
 
+func TestTravelDescribeNeverDispatches(t *testing.T) {
+	// plan_journey has a handler but no published ToolDef; describe must
+	// report that rather than fall through and run the capability.
+	s := NewServer()
+	got := stubTarget(t, s, "plan_journey")
+	text, _, isErr := callTravel(t, s, map[string]any{"intent": "plan_journey", "action": "describe"})
+	if *got != nil {
+		t.Fatalf("describe must never run the capability")
+	}
+	if !isErr || !strings.Contains(text, "plan_journey") {
+		t.Fatalf("describe without a published schema must say so, got %q", text)
+	}
+}
+
 func TestTravelRequiredCheckLeavesOtherToolsAlone(t *testing.T) {
 	s := NewServer()
 	got := stubTarget(t, s, "onboard_profile")
