@@ -7,9 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.0] - 2026-10-06
+
+### Added
+
+- The `travel` tool accepts `action: "describe"` with an `intent` and returns that capability's exact arguments without running it. The tool description lists the arguments for flight and ground search.
+  ([#689](https://github.com/MikkoParkkola/trvl/pull/689))
+- Each entry in `provider_statuses` carries a `reason` when the provider did not answer: `blocked`, `rate_limited`, `unavailable`, `dns`, `network`, `timeout` or `other`. The README explains running trvl from a cloud server, where several providers refuse datacenter addresses.
+  ([#690](https://github.com/MikkoParkkola/trvl/pull/690))
+
 ### Changed
 
+- Through `travel`, `search_flights` and `search_ground` accept each other's argument names (`date`, `origin`, `from`, `to` and the rest) and report every rename. A missing required argument returns the full argument list, and arguments a capability does not declare are flagged with a suggestion and still forwarded.
+  ([#689](https://github.com/MikkoParkkola/trvl/pull/689))
+- A flight or ground search where every provider failed names each provider and why it failed. Hotel, accommodation and car searches with a failed provider say coverage was partial instead of reporting no results. Flight results keep `provider_statuses` and `completeness`.
+  ([#690](https://github.com/MikkoParkkola/trvl/pull/690))
+- `plugin/` is the only Claude plugin folder, and its manifest version follows the release.
+  ([#681](https://github.com/MikkoParkkola/trvl/pull/681), [#688](https://github.com/MikkoParkkola/trvl/pull/688))
 - The heartbeat receiver stores a city name and a country code from Cloudflare’s geolocation of the connection. It still does not store the connection address, coordinates, or request headers. Older points stay without a place. No new trvl release is required for this.
+
+### Fixed
+
+- A city missing from trvl's airport list is reported by name with an IATA-code hint and close matches, instead of "invalid IATA code". Flight `origin` and `destination` descriptions state that limit.
+  ([#689](https://github.com/MikkoParkkola/trvl/pull/689))
+- Wizz Air API version rotated from 29.18.0 to 29.19.0.
+  ([#687](https://github.com/MikkoParkkola/trvl/pull/687))
 
 ## [1.25.0] - 2026-10-01
 
@@ -1324,7 +1346,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.25.0...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.26.0...HEAD
+[1.26.0]: https://github.com/MikkoParkkola/trvl/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/MikkoParkkola/trvl/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/MikkoParkkola/trvl/compare/v1.23.0...v1.24.0
 [1.23.0]: https://github.com/MikkoParkkola/trvl/compare/v1.22.0...v1.23.0
