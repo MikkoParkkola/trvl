@@ -7,10 +7,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/cars"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
+
+// Empty-result summaries must not claim "nothing found" when providers failed.
+func TestEmptySummariesDoNotClaimAbsenceWhenProvidersFailed(t *testing.T) {
+	failed := []models.ProviderStatus{
+		{ID: "booking", Name: "Booking.com", Status: models.StatusRateLimited, Error: "HTTP 403 Forbidden"},
+		{ID: "google_hotels", Name: "Google Hotels", Status: models.StatusCheckedNoHit},
+	}
+	hotel := hotelSummary(&models.HotelSearchResult{ProviderStatuses: failed}, "Lyon")
+	if strings.Contains(hotel, "No hotels found") || !strings.Contains(hotel, "Booking.com: blocked") {
+		t.Fatalf("hotel summary must report the blocked provider, not absence: %q", hotel)
+	}
+
+	car := buildCarSearchSummary(&models.CarSearchResult{ProviderStatuses: failed}, cars.SearchOptions{PickupLocation: "LYS", PickupDate: "2026-11-01", DropoffDate: "2026-11-03"})
+	if strings.Contains(car, "No rental car offers found") || !strings.Contains(car, "Booking.com: blocked") {
+		t.Fatalf("car summary must report the blocked provider, not absence: %q", car)
+	}
+
+	// Every provider answered with nothing: the definitive wording stays.
+	clean := hotelSummary(&models.HotelSearchResult{ProviderStatuses: failed[1:]}, "Lyon")
+	if !strings.Contains(clean, "No hotels found") {
+		t.Fatalf("a fully checked empty search may say so, got %q", clean)
+	}
+}
 
 // MIK-7989: when every provider fails (the cloud-IP case), the reply must
 // still name each provider and why it failed. tools/call keeps only the error

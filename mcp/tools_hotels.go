@@ -333,6 +333,9 @@ func hotelSummary(result *models.HotelSearchResult, location string) string {
 		if result.Error != "" {
 			return fmt.Sprintf("Hotel search in %s failed: %s", location, result.Error)
 		}
+		if c := models.ComputeCompleteness(result.ProviderStatuses); !c.MayClaimExhaustive() {
+			return fmt.Sprintf("No hotels returned in %s. %s\n%s", location, c.IncompleteNote(), models.ProviderFailureLines(result.ProviderStatuses))
+		}
 		return fmt.Sprintf("No hotels found in %s.", location)
 	}
 

@@ -229,6 +229,9 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 
 	result, err := dispatchFlightSearchFunc(ctx, args, origin, dest, date, opts)
 	if err != nil {
+		if result != nil {
+			return nil, nil, withProviderFailures(err, result.ProviderStatuses)
+		}
 		return nil, nil, err
 	}
 

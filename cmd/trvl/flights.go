@@ -208,6 +208,11 @@ Examples:
 				return fmt.Errorf("unsupported --provider %q (valid: skiplagged, afklm, ryanair, wizzair, transavia, easyjet, vueling, norwegian, or empty for default Google+Kiwi+Skiplagged merge)", provider)
 			}
 			if err != nil {
+				if result != nil {
+					if lines := models.ProviderFailureLines(result.ProviderStatuses); lines != "" {
+						return fmt.Errorf("%w\n%s", err, lines)
+					}
+				}
 				return err
 			}
 
