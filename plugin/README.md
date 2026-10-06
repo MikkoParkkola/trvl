@@ -14,11 +14,15 @@ claude plugin marketplace add ./plugin --scope user
 claude plugin install trvl --scope user
 ```
 
-The plugin MCP config launches `trvl mcp`, so install the `trvl` binary first:
+The plugin starts the `trvl` binary already on your PATH, so install it first:
 
 ```bash
 brew install MikkoParkkola/tap/trvl
 ```
+
+## Privacy
+
+A search sends the route, dates, and traveller count to the travel sites you are searching. A released build also sends one anonymous heartbeat per day. Switch that off with `TRVL_NO_TELEMETRY=1`. The policy is [PRIVACY.md](PRIVACY.md) (https://github.com/MikkoParkkola/trvl/blob/main/plugin/PRIVACY.md). Support is GitHub issues: https://github.com/MikkoParkkola/trvl/issues
 
 ## Components
 
