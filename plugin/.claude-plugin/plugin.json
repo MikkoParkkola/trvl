@@ -1,6 +1,6 @@
 {
   "name": "trvl",
-  "version": "1.24.0",
+  "version": "1.25.0",
   "description": "Claude Code travel companion for the trvl MCP server, with trip planning, price watches, and destination research. 1 smart MCP tool plus 66 legacy-compatible capabilities, including 36 travel hack detectors. Default search needs no API key.",
   "author": {
     "name": "Mikko Parkkola",
