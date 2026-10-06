@@ -48,7 +48,9 @@ func TestEmptySummariesDoNotClaimAbsenceWhenProvidersFailed(t *testing.T) {
 // A flight search where some providers answered must still expose which ones
 // failed and why in its structured output.
 func TestPartialFlightSuccessKeepsProviderReasons(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	date := time.Now().AddDate(0, 1, 0).Format("2006-01-02")
 	orig := dispatchFlightSearchFunc
 	t.Cleanup(func() { dispatchFlightSearchFunc = orig })
@@ -87,7 +89,9 @@ func TestPartialFlightSuccessKeepsProviderReasons(t *testing.T) {
 // still name each provider and why it failed. tools/call keeps only the error
 // text on failure, so that is where the diagnostics have to be.
 func TestAllProvidersBlockedStillReportsReasons(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	date := time.Now().AddDate(0, 1, 0).Format("2006-01-02")
 
 	origFlight := dispatchFlightSearchFunc
