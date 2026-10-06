@@ -17,7 +17,9 @@ import (
 // provider, with the right route and date, within two tools/call requests,
 // and the only input to the retry is what the first reply said.
 func TestColdAgentReachesBothSearchesInTwoCalls(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	date := time.Now().AddDate(0, 1, 0).Format("2006-01-02")
 
 	type flightCall struct{ origin, dest, date string }
