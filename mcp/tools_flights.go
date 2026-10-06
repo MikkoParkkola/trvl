@@ -19,6 +19,9 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/travelctx"
 )
 
+// dispatchFlightSearchFunc is the provider call, swappable in tests.
+var dispatchFlightSearchFunc = dispatchFlightSearch
+
 // --- Tool definitions ---
 
 func searchFlightsTool() ToolDef {
@@ -29,8 +32,8 @@ func searchFlightsTool() ToolDef {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"origin":              {Type: "string", Description: "Departure airport IATA code or city name (e.g., HEL, JFK, Paris, Tokyo). OPTIONAL: if omitted, trvl resolves the origin from the user's saved home airport, then best-effort from their current location (geo-IP). City names resolve to primary airport."},
-				"destination":         {Type: "string", Description: "Arrival airport IATA code or city name (e.g., NRT, LAX, London, Barcelona). City names resolve to primary airport."},
+				"origin":              {Type: "string", Description: "Departure airport IATA code or city name (e.g., HEL, JFK, Paris, Tokyo). OPTIONAL: if omitted, trvl resolves the origin from the user's saved home airport, then best-effort from their current location (geo-IP). Cities in trvl's airport list resolve to their primary airport; for any other city pass the IATA code."},
+				"destination":         {Type: "string", Description: "Arrival airport IATA code or city name (e.g., NRT, LAX, London, Barcelona). Cities in trvl's airport list resolve to their primary airport; for any other city pass the IATA code."},
 				"departure_date":      {Type: "string", Description: "Departure date in YYYY-MM-DD format"},
 				"return_date":         {Type: "string", Description: "Return date in YYYY-MM-DD format for round-trip (omit for one-way)"},
 				"cabin_class":         {Type: "string", Description: "Cabin class: economy, premium_economy, business, or first (default: economy)"},
@@ -78,8 +81,8 @@ func searchDatesTool() ToolDef {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"origin":        {Type: "string", Description: "Departure airport IATA code or city name (e.g., HEL, JFK, Paris, Tokyo). City names resolve to primary airport."},
-				"destination":   {Type: "string", Description: "Arrival airport IATA code or city name (e.g., NRT, LAX, London, Barcelona). City names resolve to primary airport."},
+				"origin":        {Type: "string", Description: "Departure airport IATA code or city name (e.g., HEL, JFK, Paris, Tokyo). Cities in trvl's airport list resolve to their primary airport; for any other city pass the IATA code."},
+				"destination":   {Type: "string", Description: "Arrival airport IATA code or city name (e.g., NRT, LAX, London, Barcelona). Cities in trvl's airport list resolve to their primary airport; for any other city pass the IATA code."},
 				"start_date":    {Type: "string", Description: "Start of date range in YYYY-MM-DD format"},
 				"end_date":      {Type: "string", Description: "End of date range in YYYY-MM-DD format"},
 				"trip_duration": {Type: "integer", Description: "Trip duration in days for round-trip (omit for one-way)"},
@@ -224,7 +227,7 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 	// preferences.BudgetFlightMax (applied uniformly to both CLI and MCP
 	// below via FilterFlightsByBudget).
 
-	result, err := dispatchFlightSearch(ctx, args, origin, dest, date, opts)
+	result, err := dispatchFlightSearchFunc(ctx, args, origin, dest, date, opts)
 	if err != nil {
 		return nil, nil, err
 	}
