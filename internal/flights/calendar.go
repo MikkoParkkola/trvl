@@ -166,7 +166,7 @@ func refuseCalendarFallback(status int, body []byte) error {
 		return batchexec.ErrBlocked
 	}
 	if code, ok := batchexec.WrbStatus(body); ok && code > 0 {
-		return fmt.Errorf("google flights declined the request (code %d): %w", code, models.ErrRateLimited)
+		return googleWrbError(code)
 	}
 	if status == 429 || batchexec.QuotaRefusal(status, body) {
 		return fmt.Errorf("google flights rate-limited: %w", models.ErrRateLimited)
@@ -496,4 +496,14 @@ func detectSourceCurrencyWithClient(ctx context.Context, client *batchexec.Clien
 		return flights[0].Currency
 	}
 	return ""
+}
+
+// googleWrbError describes a Google Flights rejection carried as a wrb.fr
+// status. Status 13 is the quota refusal and is named as one, so the provider
+// reason reads rate_limited; any other code is a plain rejection.
+func googleWrbError(code int) error {
+	if code == 13 {
+		return fmt.Errorf("google flights quota refusal (code %d): %w", code, models.ErrRateLimited)
+	}
+	return fmt.Errorf("google flights declined the request (code %d): %w", code, models.ErrRateLimited)
 }

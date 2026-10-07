@@ -30,7 +30,7 @@ func TestSearchGoogleFlights_Code13OneUpstreamCall(t *testing.T) {
 	if !errors.Is(err, models.ErrRateLimited) {
 		t.Fatalf("first err = %v, want rate limited", err)
 	}
-	if !strings.Contains(err.Error(), "declined the request (code 13)") {
+	if !strings.Contains(err.Error(), "quota refusal (code 13)") {
 		t.Fatalf("first err = %q, want the wrb code", err)
 	}
 

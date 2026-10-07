@@ -33,6 +33,12 @@ func TestClassifyProviderReason(t *testing.T) {
 		{fmt.Errorf("google flights temporarily unavailable (HTTP 503): %w", ErrRateLimited).Error(), ReasonUnavailable},
 		{fmt.Errorf("google flights rate-limited (HTTP 429): %w", ErrRateLimited).Error(), ReasonRateLimited},
 		{fmt.Errorf("kiwi: HTTP 403: denied: %w", ErrRateLimited).Error(), ReasonBlocked},
+		// Google quota refusals and the cooldown that follows them.
+		{fmt.Errorf("google flights cooling down: %w", ErrRateLimited).Error(), ReasonRateLimited},
+		{fmt.Errorf("google refused further requests until the cooldown ends: %w", ErrRateLimited).Error(), ReasonRateLimited},
+		{fmt.Errorf("google flights quota refusal (code 13): %w", ErrRateLimited).Error(), ReasonRateLimited},
+		// A non-quota rejection is not a rate limit.
+		{fmt.Errorf("google flights declined the request (code 3): %w", ErrRateLimited).Error(), ReasonOther},
 		// 429 wins wherever it appears.
 		{"HTTP 403 then retry got HTTP 429", ReasonRateLimited},
 		{"upstream 503, later 429 too many", ReasonRateLimited},

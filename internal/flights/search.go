@@ -767,7 +767,7 @@ func searchGoogleFlightsWithClient(ctx context.Context, client *batchexec.Client
 	if !isFlightPayload(inner) {
 		slog.Debug("google flights returned non-flight payload", "detail", "unexpected flight data format")
 		if code, ok := batchexec.WrbStatus(body); ok && code > 0 {
-			rlErr := fmt.Errorf("google flights declined the request (code %d): %w", code, models.ErrRateLimited)
+			rlErr := googleWrbError(code)
 			return &models.FlightSearchResult{Error: rlErr.Error()}, rlErr
 		}
 		rlErr := fmt.Errorf("google flights returned a non-flight error/challenge payload: %w", models.ErrRateLimited)

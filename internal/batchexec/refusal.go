@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 )
 
 const (
@@ -132,7 +134,7 @@ func (c *Client) armGoogleRefusal(wait time.Duration) {
 		c.refuseUntil = until
 	}
 	if err := c.writeRefusalDeadline(c.refuseUntil); err != nil {
-		slog.Debug("google refusal persist", "error", err)
+		slog.Debug("google refusal persist", "error", logredact.Err(err))
 	}
 }
 
