@@ -497,13 +497,3 @@ func detectSourceCurrencyWithClient(ctx context.Context, client *batchexec.Clien
 	}
 	return ""
 }
-
-// googleWrbError describes a Google Flights rejection carried as a wrb.fr
-// status. Status 13 is the quota refusal and is named as one, so the provider
-// reason reads rate_limited; any other code is a plain rejection.
-func googleWrbError(code int) error {
-	if code == 13 {
-		return fmt.Errorf("google flights quota refusal (code %d): %w", code, models.ErrRateLimited)
-	}
-	return fmt.Errorf("google flights declined the request (code %d): %w", code, models.ErrRateLimited)
-}
