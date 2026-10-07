@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -53,6 +54,18 @@ func TestRefusalWaitHugeHintIsCappedNotWrapped(t *testing.T) {
 	if got := capSeconds(30); got != 30*time.Second {
 		t.Fatalf("capSeconds(30) = %s", got)
 	}
+	// The same overflow through the quota error object's retryAfterSeconds.
+	fixture, err := os.ReadFile("../flights/testdata/google_flights_error_response.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	huge := strings.Replace(string(fixture), `retryAfterSeconds\":60`, `retryAfterSeconds\":18446744074`, 1)
+	if huge == string(fixture) {
+		t.Fatal("fixture no longer carries retryAfterSeconds 60")
+	}
+	if got := googleRefusalWait(http.StatusOK, "", []byte(huge), now); got != googleRefusalCap {
+		t.Fatalf("huge embedded retryAfterSeconds = %s, want the cap %s", got, googleRefusalCap)
+	}
 }
 
 func TestRestoredDeadlineIsBoundedByTheCap(t *testing.T) {
@@ -83,7 +96,6 @@ func TestBeginGoogleHonoursCancellation(t *testing.T) {
 	if err != nil || refused {
 		t.Fatalf("first admission: refused=%v err=%v", refused, err)
 	}
-	defer release()
 
 	check := func(name string, client *Client) {
 		t.Helper()
@@ -104,4 +116,17 @@ func TestBeginGoogleHonoursCancellation(t *testing.T) {
 	other := NewTestClient("http://127.0.0.1:1")
 	other.refusalDir = dir
 	check("other client", other)
+
+	// Cancelled waits must not leak a lock: once the holder releases, both
+	// clients are admitted again.
+	release()
+	for name, client := range map[string]*Client{"same client": c, "other client": other} {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		rel, refused, err := client.beginGoogle(ctx)
+		cancel()
+		if err != nil || refused {
+			t.Fatalf("%s after release: refused=%v err=%v", name, refused, err)
+		}
+		rel()
+	}
 }
