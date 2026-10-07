@@ -116,7 +116,7 @@ User: "flights HEL NRT 2026-06-15"
           |
           v
     batchexec.Client.Do()        Chrome TLS handshake (utls) -> POST to Google
-          |                      Rate limit (10 req/s) -> retry on 429/5xx
+          |                      Rate limit (10 req/s) -> 5xx retry; Google 429 stops
           |                      Cache check (5min TTL)
           v
     flights.Parse()              Decode anti-XSSI prefix, extract nested JSON arrays

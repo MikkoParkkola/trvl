@@ -59,13 +59,23 @@ const (
 )
 
 // Client wraps an http.Client with Chrome TLS fingerprint impersonation via utls.
-// It includes a token bucket rate limiter, retry with exponential backoff,
-// and an in-memory response cache.
+// It includes a token bucket rate limiter, retry with exponential backoff
+// for server errors, and an in-memory response cache. A Google quota refusal
+// stops later Google calls until a cooldown instead of retrying them.
 type Client struct {
 	http    *http.Client
 	limiter *rate.Limiter
 	cache   *cache.Cache
 	noCache bool
+
+	// googleMu is held across a Google dial so a concurrent caller observes a
+	// refusal written by the request it was waiting behind. refuseUntil is the
+	// in-process deadline. refusalDir is the shared cooldown directory
+	// (~/.trvl/cache for NewClient). Empty means memory only, so test clients
+	// do not write the user's cooldown file.
+	googleMu    sync.Mutex
+	refuseUntil time.Time
+	refusalDir  string
 
 	// stealthHTTP is the opt-in, operator-authorized stealth transport. It is
 	// the full Chrome 146 HTTP/2 fingerprint client (ChromeHTTPClient), which
@@ -95,7 +105,9 @@ type Client struct {
 // Google's servers support HTTP/1.1 and this is sufficient for API access.
 //
 // The client includes a token bucket rate limiter at 10 requests/second with
-// burst of 1, and automatic retry with exponential backoff for 429/5xx errors.
+// burst of 1. Server errors (5xx) retry with exponential backoff. A Google
+// HTTP 429 or quota refusal does not retry: the client records a cooldown
+// under ~/.trvl/cache and later Google calls fail until it expires.
 func NewClient() *Client {
 	transport := &http.Transport{
 		DialTLSContext:      dialTLSChromeHTTP1,
@@ -112,8 +124,9 @@ func NewClient() *Client {
 			Transport: transport,
 			Timeout:   20 * time.Second,
 		},
-		limiter: rate.NewLimiter(rate.Limit(10), 1),
-		cache:   cache.New(),
+		limiter:    rate.NewLimiter(rate.Limit(10), 1),
+		cache:      cache.New(),
+		refusalDir: defaultRefusalDir(),
 	}
 }
 
@@ -196,7 +209,8 @@ func dialTLSChromeHTTP1WithConfig(ctx context.Context, network, addr string, tls
 }
 
 // Get performs a GET request with Chrome headers.
-// The request is subject to rate limiting and automatic retry on 429/5xx.
+// The request is rate limited. Non-Google hosts retry HTTP 429 and 5xx.
+// A Google host stops on HTTP 429.
 func (c *Client) Get(ctx context.Context, url string) (int, []byte, error) {
 	return c.GetStealth(ctx, url, false)
 }
@@ -257,7 +271,8 @@ func (c *Client) GetWithHeaders(ctx context.Context, url string, headers map[str
 
 // PostForm sends a POST with form-encoded body to the given URL. It sets the
 // Content-Type to application/x-www-form-urlencoded and uses a Chrome User-Agent.
-// The request is subject to rate limiting and automatic retry on 429/5xx.
+// The request is rate limited. Non-Google hosts retry HTTP 429 and 5xx.
+// A Google host stops on HTTP 429.
 func (c *Client) PostForm(ctx context.Context, url, formBody string) (int, []byte, error) {
 	return c.PostFormStealth(ctx, url, formBody, false)
 }
@@ -286,9 +301,10 @@ func (c *Client) PostFormStealth(ctx context.Context, url, formBody string, stea
 }
 
 // doWithRetry executes an HTTP request with rate limiting and retry logic.
-// It retries up to 3 times on 429 (rate limit) and 5xx (server error) responses,
-// with exponential backoff (1s, 2s, 4s) plus jitter (+-25%).
-// Client errors (4xx except 429) are not retried.
+// Non-Google hosts retry HTTP 429 and 5xx up to 3 times (1s, 2s, 4s plus jitter).
+// A Google host does not retry HTTP 429 or a quota body: the first refusal
+// starts a cooldown and later Google calls return ErrRefused without dialing.
+// 5xx responses still retry. Other 4xx responses are not retried.
 func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request, error)) (int, []byte, error) {
 	return c.doWithRetryVia(ctx, c.http, buildReq)
 }
@@ -299,6 +315,28 @@ func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request
 // Chrome 146 client. Rate limiting, retry, and logging are identical regardless
 // of transport so behavior is observable and consistent.
 func (c *Client) doWithRetryVia(ctx context.Context, httpClient *http.Client, buildReq func() (*http.Request, error)) (int, []byte, error) {
+	// Callers rebuild the body inside buildReq, so this probe only names the
+	// host. It is not sent.
+	probe, err := buildReq()
+	if err != nil {
+		return 0, nil, err
+	}
+	if probe != nil && probe.Body != nil {
+		_ = probe.Body.Close()
+	}
+	google := probe != nil && probe.URL != nil && isGoogleHost(probe.URL.Hostname())
+	if google {
+		release, refused, err := c.beginGoogle(ctx)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer release()
+		if refused {
+			slog.Debug("google_cooldown", "skipped", true)
+			return 0, nil, ErrRefused
+		}
+	}
+
 	var lastStatus int
 	var lastBody []byte
 	var lastErr error
@@ -338,6 +376,15 @@ func (c *Client) doWithRetryVia(ctx context.Context, httpClient *http.Client, bu
 		_ = resp.Body.Close()
 		elapsed := time.Since(start)
 
+		// A Google 429 is a refusal even when its body cannot be read; the
+		// body is only needed for the wait hint, so stop before the retry path.
+		if google && readErr != nil && resp.StatusCode == http.StatusTooManyRequests {
+			wait := googleRefusalWait(resp.StatusCode, resp.Header.Get("Retry-After"), nil, time.Now())
+			c.armGoogleRefusal(wait)
+			slog.Warn("google_refused", "status", resp.StatusCode, "cooldown_s", wait.Seconds())
+			return resp.StatusCode, nil, nil
+		}
+
 		if readErr != nil {
 			lastErr = readErr
 			if attempt < defaultMaxRetries {
@@ -356,6 +403,15 @@ func (c *Client) doWithRetryVia(ctx context.Context, httpClient *http.Client, bu
 		lastStatus = resp.StatusCode
 		lastBody = body
 		lastErr = nil
+
+		// A Google 429 or quota body is the stop, not a cue to call again.
+		// 5xx stays on the retry path below. Non-Google 429 stays there too.
+		if google && shouldStopGoogle(resp.StatusCode, body) {
+			wait := googleRefusalWait(resp.StatusCode, resp.Header.Get("Retry-After"), body, time.Now())
+			c.armGoogleRefusal(wait)
+			slog.Warn("google_refused", "status", resp.StatusCode, "cooldown_s", wait.Seconds())
+			return resp.StatusCode, body, nil
+		}
 
 		// Don't retry on success or non-retryable client errors.
 		if !isRetryable(resp.StatusCode) {
@@ -379,8 +435,9 @@ func (c *Client) doWithRetryVia(ctx context.Context, httpClient *http.Client, bu
 	return lastStatus, lastBody, nil
 }
 
-// isRetryable returns true for HTTP status codes that should trigger a retry:
-// 429 (Too Many Requests) and 5xx (server errors).
+// isRetryable returns true for HTTP status codes that should trigger a retry
+// on a non-Google host: 429 (Too Many Requests) and 5xx (server errors).
+// Google 429 is handled before this check and is not retried.
 func isRetryable(statusCode int) bool {
 	return statusCode == 429 || statusCode >= 500
 }
@@ -463,8 +520,8 @@ func (c *Client) SearchFlightsGLCurrStealth(ctx context.Context, encodedFilters,
 		return 200, data, nil
 	}
 	status, body, err := c.PostFormStealth(ctx, url, payload, stealthRequested)
-	if err == nil && status == 200 {
-		c.setCached(url, payload, body, FlightCacheTTL)
+	if err == nil {
+		c.cacheSuccess(url, payload, status, body, FlightCacheTTL)
 	}
 	return status, body, err
 }
@@ -483,8 +540,8 @@ func (c *Client) BatchExecute(ctx context.Context, encodedPayload string) (int, 
 		return 200, data, nil
 	}
 	status, body, err := c.PostForm(ctx, HotelsURL, payload)
-	if err == nil && status == 200 {
-		c.setCached(HotelsURL, payload, body, HotelCacheTTL)
+	if err == nil {
+		c.cacheSuccess(HotelsURL, payload, status, body, HotelCacheTTL)
 	}
 	return status, body, err
 }
@@ -501,8 +558,8 @@ func (c *Client) PostExplore(ctx context.Context, encodedPayload string) (int, [
 		return 200, data, nil
 	}
 	status, body, err := c.PostForm(ctx, ExploreURL, payload)
-	if err == nil && status == 200 {
-		c.setCached(ExploreURL, payload, body, DestinationCacheTTL)
+	if err == nil {
+		c.cacheSuccess(ExploreURL, payload, status, body, DestinationCacheTTL)
 	}
 	return status, body, err
 }
@@ -519,8 +576,8 @@ func (c *Client) PostCalendarGraph(ctx context.Context, encodedPayload string) (
 		return 200, data, nil
 	}
 	status, body, err := c.PostForm(ctx, CalendarGraphURL, payload)
-	if err == nil && status == 200 {
-		c.setCached(CalendarGraphURL, payload, body, FlightCacheTTL)
+	if err == nil {
+		c.cacheSuccess(CalendarGraphURL, payload, status, body, FlightCacheTTL)
 	}
 	return status, body, err
 }
@@ -537,8 +594,8 @@ func (c *Client) PostCalendarGrid(ctx context.Context, encodedPayload string) (i
 		return 200, data, nil
 	}
 	status, body, err := c.PostForm(ctx, CalendarGridURL, payload)
-	if err == nil && status == 200 {
-		c.setCached(CalendarGridURL, payload, body, FlightCacheTTL)
+	if err == nil {
+		c.cacheSuccess(CalendarGridURL, payload, status, body, FlightCacheTTL)
 	}
 	return status, body, err
 }

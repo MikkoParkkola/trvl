@@ -30,6 +30,7 @@ var trvlHomeWriters = map[string]string{
 	"cmd/trvl/setup.go":                    "cached cookies and provider tokens",
 	"cmd/trvl/share.go":                    "search history",
 	"cmd/trvl/tempfiles.go":                "orphaned temp files from interrupted writes",
+	"internal/batchexec/refusal.go":        "a Google rate-limit cooldown",
 	"internal/dategrid/dategrid.go":        "search history",
 	"internal/dealquality/dealquality.go":  "search history",
 	"internal/flights/afklm/client.go":     "cached cookies and provider tokens",

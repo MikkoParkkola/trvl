@@ -25,7 +25,7 @@ Three cases are directly relevant:
 
 - **No authentication bypass** -- trvl never logs in, never supplies credentials, never accesses content behind a login wall
 - **No CAPTCHA solving** -- if Google or any provider presents a CAPTCHA, trvl returns an error
-- **No rate limit circumvention** -- trvl includes its own rate limiters that are more conservative than what the providers would allow; it backs off exponentially on 429/5xx responses
+- **No rate limit circumvention** -- trvl includes its own rate limiters that are more conservative than what the providers would allow; it backs off exponentially on 5xx responses and, after a Google HTTP 429 or quota refusal, makes no further Google calls until a cooldown ends
 - **No personal data collection** -- trvl searches for flights, hotels, and transport routes; it does not collect, store, or process personal information about individuals
 - **No content behind login** -- every endpoint trvl accesses is reachable by an unauthenticated browser visit
 - **No Terms of Service circumvention** -- trvl does not agree to any ToS (it never visits a page with a ToS clickwrap), so there is no contractual obligation to breach
@@ -44,7 +44,7 @@ Every provider has a client-side token-bucket rate limiter implemented via Go's 
 | Eurostar | 1 req/20s (0.05 req/s) | `internal/ground/eurostar.go` |
 | Transitous | 1 req/6s (~0.17 req/s) | `internal/ground/transitous.go` |
 
-In addition, all Google requests retry with exponential backoff (base 1s, max 3 retries) when receiving 429 or 5xx responses. The in-memory cache (5-minute TTL for flights, 10-minute for hotels, 1-hour for destinations) further reduces request volume.
+Google server errors (5xx) retry with exponential backoff (base 1s, max 3 retries). A Google HTTP 429, or an HTTP 200 quota refusal such as a wrb.fr status 13, is not retried: trvl records a cooldown (Google's Retry-After when the response carries one) and skips further Google calls, including from the next trvl process on the same machine, until the cooldown ends. Non-Google hosts still retry HTTP 429. The in-memory cache (5-minute TTL for flights, 10-minute for hotels, 1-hour for destinations) further reduces request volume, and a refusal body is not cached as a successful fare.
 
 ## Provider-specific notes
 

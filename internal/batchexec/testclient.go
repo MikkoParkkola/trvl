@@ -41,6 +41,8 @@ import (
 // rate limits for fast tests. The URL rewriting transport preserves the
 // original path and query string.
 func NewTestClient(baseURL string) *Client {
+	// refusalDir stays empty on purpose. Empty means memory-only, so a test
+	// response that looks like a Google refusal cannot arm ~/.trvl/cache.
 	return &Client{
 		http: &http.Client{
 			Transport: &testRedirectTransport{baseURL: baseURL},
