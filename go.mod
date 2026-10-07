@@ -3,7 +3,7 @@ module github.com/MikkoParkkola/trvl
 go 1.26.6
 
 require (
-	github.com/andybalholm/brotli v1.2.4
+	github.com/andybalholm/brotli v1.2.6
 	github.com/bogdanfinn/fhttp v0.6.9
 	github.com/bogdanfinn/tls-client v1.16.0
 	github.com/bogdanfinn/utls v1.7.8-barnius
@@ -13,7 +13,7 @@ require (
 	github.com/cloudflare/circl v1.6.5
 	github.com/google/uuid v1.6.0
 	github.com/grafana/sobek v0.0.0-20260406180825-6d789dcdd177
-	github.com/klauspost/compress v1.20.0
+	github.com/klauspost/compress v1.20.1
 	github.com/refraction-networking/utls v1.8.2
 	github.com/spf13/cobra v1.10.2
 	go.etcd.io/bbolt v1.5.0

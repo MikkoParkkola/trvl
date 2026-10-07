@@ -45,6 +45,7 @@ server_npm_identifier="$(jq -r '.packages[] | select(.registryType=="npm") | .id
 server_npm_version="$(jq -r '.packages[] | select(.registryType=="npm") | .version' server.json)"
 npm_name="$(jq -r '.name' npm/package.json)"
 npm_version="$(jq -r '.version' npm/package.json)"
+plugin_version="$(jq -r '.version' plugin/.claude-plugin/plugin.json)"
 
 check_equal "server.json version" "$server_version" "$latest_version"
 check_equal "server.json first package registry" "$server_first_registry" "oci"
@@ -52,6 +53,7 @@ check_equal "server.json OCI identifier" "$server_oci_identifier" "ghcr.io/mikko
 check_equal "server.json npm identifier" "$server_npm_identifier" "$npm_name"
 check_equal "server.json npm version" "$server_npm_version" "$latest_version"
 check_equal "npm/package.json version" "$npm_version" "$latest_version"
+check_equal "plugin.json version" "$plugin_version" "$latest_version"
 
 check_contains "release workflow derives metadata from RELEASE_TAG" 'VERSION="${RELEASE_TAG#v}"' .github/workflows/release.yml
 check_contains "RELEASE_TAG comes from dispatch tag or github.ref_name" 'github.event.inputs.tag || github.ref_name' .github/workflows/release.yml

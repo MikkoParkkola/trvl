@@ -208,7 +208,7 @@ Examples:
 				return fmt.Errorf("unsupported --provider %q (valid: skiplagged, afklm, ryanair, wizzair, transavia, easyjet, vueling, norwegian, or empty for default Google+Kiwi+Skiplagged merge)", provider)
 			}
 			if err != nil {
-				return err
+				return flightSearchError(result, err)
 			}
 
 			// Apply the traveller's saved preferences as post-search filters via
@@ -561,4 +561,17 @@ func printFlightsTable(ctx context.Context, origin, destination, targetCurrency 
 	}
 
 	return nil
+}
+
+// flightSearchError adds each failed provider and its reason to a failed
+// search's error, so a blocked provider is distinguishable from an outage
+// (MIK-7989). The search returns its provider statuses alongside the error.
+func flightSearchError(result *models.FlightSearchResult, err error) error {
+	if result == nil {
+		return err
+	}
+	if lines := models.ProviderFailureLines(result.ProviderStatuses); lines != "" {
+		return fmt.Errorf("%w\n%s", err, lines)
+	}
+	return err
 }

@@ -154,6 +154,7 @@ func hotelDetailsSearchOutputSchema() interface{} {
 					"error":         schemaString(),
 					"fix_hint":      schemaString(),
 					"fix_hint_code": schemaString(),
+					"reason":        schemaString(),
 				},
 			}),
 			"error": schemaString(),
@@ -700,6 +701,9 @@ func hotelDetailsSummary(result hotelDetailsSearchResponse, location string) str
 	if !result.Success || result.TotalAvailable == 0 {
 		if result.Error != "" {
 			return fmt.Sprintf("Detailed hotel search in %s failed: %s", location, result.Error)
+		}
+		if msg, ok := incompleteAbsence("hotels in "+location, result.ProviderStatuses); ok {
+			return msg
 		}
 		return fmt.Sprintf("No hotels found in %s.", location)
 	}

@@ -88,6 +88,7 @@ func flightSearchOutputSchema() interface{} {
 					"error":         schemaString(),
 					"fix_hint":      schemaString(),
 					"fix_hint_code": schemaString(),
+					"reason":        schemaString(),
 				},
 			}),
 			"price_position": map[string]interface{}{

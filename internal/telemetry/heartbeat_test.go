@@ -180,6 +180,79 @@ func TestHeartbeat_SendPath(t *testing.T) {
 	}
 }
 
+// TestEndpoint_DefaultIsOwnedHost checks the compiled collector. An empty
+// TRVL_TELEMETRY_ENDPOINT is unset, so the default host is used.
+func TestEndpoint_DefaultIsOwnedHost(t *testing.T) {
+	t.Setenv("TRVL_TELEMETRY_ENDPOINT", "")
+	const want = "https://telemetry.revaluator.ai/v1/heartbeat"
+	if got := endpoint(); got != want {
+		t.Fatalf("endpoint = %q, want %q", got, want)
+	}
+}
+
+func TestEndpoint_ExplicitIsHonored(t *testing.T) {
+	const want = "http://127.0.0.1:9/v1/heartbeat"
+	t.Setenv("TRVL_TELEMETRY_ENDPOINT", want)
+	if got := endpoint(); got != want {
+		t.Fatalf("endpoint = %q, want %q", got, want)
+	}
+}
+
+func TestDialHeartbeat_EmptyURLWritesNothing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	dialHeartbeat(context.Background(), "1.2.3", "")
+	if _, err := os.Stat(filepath.Join(home, ".trvl")); !os.IsNotExist(err) {
+		t.Fatalf("empty endpoint must not create ~/.trvl: %v", err)
+	}
+}
+
+func TestDialHeartbeat_ExplicitEndpointSendsAndCaps(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	got := make(chan heartbeatPayload, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var p heartbeatPayload
+		_ = json.NewDecoder(r.Body).Decode(&p)
+		got <- p
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	dialHeartbeat(context.Background(), "1.2.3", srv.URL)
+	select {
+	case p := <-got:
+		if p.Project != "trvl" || p.Event != "heartbeat" || p.Version != "1.2.3" || p.InstallID == "" {
+			t.Fatalf("collector received %+v", p)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("explicit endpoint never received the heartbeat")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".trvl", installIDFile)); err != nil {
+		t.Fatalf("install id not written for an explicit endpoint: %v", err)
+	}
+
+	dialHeartbeat(context.Background(), "1.2.3", srv.URL)
+	select {
+	case p := <-got:
+		t.Fatalf("second send inside 24h: %+v", p)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestHeartbeatInBackground_TestBinaryWritesNothing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("TRVL_TELEMETRY_ENDPOINT", "http://127.0.0.1:1/v1/heartbeat")
+	HeartbeatInBackground(context.Background(), "1.2.3")
+	if _, err := os.Stat(filepath.Join(home, ".trvl")); !os.IsNotExist(err) {
+		t.Fatalf("go test must not write telemetry state: %v", err)
+	}
+}
+
 // TestHeartbeat_NoNetworkOnImport proves HeartbeatInBackground is a no-op under
 // test (testing.Testing() suppresses) — importing the package never beacons.
 func TestHeartbeat_NoNetworkOnImport(t *testing.T) {

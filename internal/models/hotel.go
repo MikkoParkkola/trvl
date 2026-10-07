@@ -133,6 +133,10 @@ type ProviderStatus struct {
 	Error       string `json:"error,omitempty"`         // error message if status != "ok"
 	FixHint     string `json:"fix_hint,omitempty"`      // actionable hint for the LLM
 	FixHintCode string `json:"fix_hint_code,omitempty"` // typed root-cause code (e.g. "AKAMAI_BLOCK")
+	// Reason is the failure category (ReasonBlocked, ReasonDNS, ...). When
+	// empty it is derived from Error at serialization, so no provider has to
+	// set it; see EffectiveReason.
+	Reason string `json:"reason,omitempty"`
 }
 
 // HotelSearchResult is the top-level response for a hotel search.

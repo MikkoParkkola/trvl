@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -190,6 +191,52 @@ func TestServeHTTP_PersistsToFile(t *testing.T) {
 	for k := range raw {
 		if !allowedFields[k] {
 			t.Fatalf("stored record leaked field %q", k)
+		}
+	}
+}
+
+// TestReferenceReceiverMatchesWorkerContract locks the claim in this file's
+// comment: this binary is the reference receiver, and the Worker in
+// workers/heartbeat accepts the same posts. The two copies of the field list
+// and the payload cap have to stay the same list.
+func TestReferenceReceiverMatchesWorkerContract(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	comment := string(src)
+	if !strings.Contains(comment, "reference receiver") || !strings.Contains(comment, "workers/heartbeat") {
+		t.Fatal("collector comment must name this binary as the reference receiver and workers/heartbeat as the production receiver")
+	}
+
+	worker, err := os.ReadFile(filepath.Join("..", "..", "workers", "heartbeat", "src", "index.js"))
+	if err != nil {
+		t.Fatalf("read worker: %v", err)
+	}
+	js := string(worker)
+	if !strings.Contains(js, "export const MAX_PAYLOAD = 2048") {
+		t.Fatal("worker payload cap is not 2048")
+	}
+	if maxPayloadSize != 2048 {
+		t.Fatalf("reference payload cap = %d, want 2048", maxPayloadSize)
+	}
+	match := regexp.MustCompile(`const ALLOWED = \[([^\]]+)\]`).FindStringSubmatch(js)
+	if match == nil {
+		t.Fatal("worker ALLOWED list not found")
+	}
+	var workerFields []string
+	for _, part := range strings.Split(match[1], ",") {
+		field := strings.Trim(strings.TrimSpace(part), `"`)
+		if field != "" {
+			workerFields = append(workerFields, field)
+		}
+	}
+	if len(workerFields) != len(allowedFields) {
+		t.Fatalf("worker allows %v, reference allows %d fields", workerFields, len(allowedFields))
+	}
+	for _, field := range workerFields {
+		if !allowedFields[field] {
+			t.Fatalf("worker allows %q, which the reference collector rejects", field)
 		}
 	}
 }
