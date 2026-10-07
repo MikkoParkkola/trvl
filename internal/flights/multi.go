@@ -2,12 +2,17 @@ package flights
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
+
+// searchFlightsWithClientFunc runs one origin/destination search; tests
+// replace it to simulate provider outcomes.
+var searchFlightsWithClientFunc = SearchFlightsWithClient
 
 // SearchMultiAirport searches flights across multiple origin and destination airports.
 // Runs all origin×destination combinations in parallel (max 5 concurrent) and merges
@@ -23,6 +28,9 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 	sem := make(chan struct{}, 5) // max 5 concurrent searches
 	var mu sync.Mutex
 	var allFlights []models.FlightResult
+	var statuses []models.ProviderStatus
+	var errs []error
+	attempted, answered := 0, 0
 	var wg sync.WaitGroup
 
 	// AFKLM quota protection for multi-airport spread (#471):
@@ -53,20 +61,33 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 			if orig == dest {
 				continue
 			}
+			attempted++
 			wg.Add(1)
 			go func(o, d string) {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
 
-				result, err := SearchFlightsWithClient(ctx, client, o, d, date, subOpts)
-				if err != nil || !result.Success {
-					return // skip failed combos silently
-				}
-
+				result, err := searchFlightsWithClientFunc(ctx, client, o, d, date, subOpts)
 				mu.Lock()
-				allFlights = append(allFlights, result.Flights...)
-				mu.Unlock()
+				defer mu.Unlock()
+				// Keep every combination's provider statuses, labelled with
+				// its route, so a blocked provider is reported rather than
+				// silently dropped (MIK-8041).
+				if result != nil {
+					for _, st := range result.ProviderStatuses {
+						st.Name = routeLabel(st, o, d)
+						statuses = append(statuses, st)
+					}
+				}
+				if err != nil {
+					errs = append(errs, fmt.Errorf("%s-%s: %w", o, d, err))
+					return
+				}
+				answered++
+				if result.Success {
+					allFlights = append(allFlights, result.Flights...)
+				}
 			}(orig, dest)
 		}
 	}
@@ -75,12 +96,32 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 
 	sortFlightResults(allFlights, opts.SortBy)
 
+	completeness := models.ComputeCompleteness(statuses)
+	if attempted > 0 && answered == 0 && len(errs) > 0 {
+		err := errors.Join(errs...)
+		return &models.FlightSearchResult{
+			Error:            err.Error(),
+			TripType:         tripTypeForSearch(opts),
+			ProviderStatuses: statuses,
+			Completeness:     completeness,
+		}, err
+	}
 	return &models.FlightSearchResult{
-		Success:  len(allFlights) > 0,
-		Count:    len(allFlights),
-		TripType: tripTypeForSearch(opts),
-		Flights:  allFlights,
+		Success:          len(allFlights) > 0,
+		Count:            len(allFlights),
+		TripType:         tripTypeForSearch(opts),
+		Flights:          allFlights,
+		ProviderStatuses: statuses,
+		Completeness:     completeness,
 	}, nil
+}
+
+func routeLabel(st models.ProviderStatus, origin, dest string) string {
+	name := st.Name
+	if name == "" {
+		name = st.ID
+	}
+	return name + " (" + origin + "-" + dest + ")"
 }
 
 // ParseAirports splits a comma-separated airport string into a slice.
