@@ -10,10 +10,6 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-// searchFlightsWithClientFunc runs one origin/destination search; tests
-// replace it to simulate provider outcomes.
-var searchFlightsWithClientFunc = SearchFlightsWithClient
-
 // SearchMultiAirport searches flights across multiple origin and destination airports.
 // Runs all origin×destination combinations in parallel (max 5 concurrent) and merges
 // results sorted by price. Each flight already contains departure/arrival airport codes.
@@ -44,7 +40,11 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 	if opts.ReturnDate != "" && len(origins) > 0 && len(destinations) > 0 {
 		primO := origins[0]
 		primD := destinations[0]
-		afklmFl, _ := searchAFKLMNativeRoundTrip(ctx, primO, primD, date, opts.ReturnDate, opts)
+		afklmFl, afklmSt := searchAFKLMNativeRoundTrip(ctx, primO, primD, date, opts.ReturnDate, opts)
+		for _, st := range afklmSt {
+			st.Name = routeLabel(st, primO, primD)
+			statuses = append(statuses, st)
+		}
 		if len(afklmFl) > 0 {
 			mu.Lock()
 			allFlights = append(allFlights, afklmFl...)
@@ -68,7 +68,7 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 				sem <- struct{}{}
 				defer func() { <-sem }()
 
-				result, err := searchFlightsWithClientFunc(ctx, client, o, d, date, subOpts)
+				result, err := SearchFlightsWithClient(ctx, client, o, d, date, subOpts)
 				mu.Lock()
 				defer mu.Unlock()
 				// Keep every combination's provider statuses, labelled with
@@ -82,6 +82,16 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 				}
 				if err != nil {
 					errs = append(errs, fmt.Errorf("%s-%s: %w", o, d, err))
+					if !hasFailedStatus(result) {
+						// A pair that failed without provider evidence (a
+						// deadline, a nil result) must still count as missing.
+						statuses = append(statuses, models.ProviderStatus{
+							ID:     "flight_search",
+							Name:   "Flight search (" + o + "-" + d + ")",
+							Status: models.ClassifyProviderError(err),
+							Error:  err.Error(),
+						})
+					}
 					return
 				}
 				answered++
@@ -97,7 +107,9 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 	sortFlightResults(allFlights, opts.SortBy)
 
 	completeness := models.ComputeCompleteness(statuses)
-	if attempted > 0 && answered == 0 && len(errs) > 0 {
+	// Only a search with no fares at all is a failure: AFKLM fares from the
+	// primary pair still count when every fanned-out pair failed.
+	if allPairsFailed(len(allFlights), attempted, answered, len(errs)) {
 		err := errors.Join(errs...)
 		return &models.FlightSearchResult{
 			Error:            err.Error(),
@@ -107,7 +119,9 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 		}, err
 	}
 	return &models.FlightSearchResult{
-		Success:          len(allFlights) > 0,
+		// A pair that answered with no flights is a definitive empty answer,
+		// the same as a single-route search.
+		Success:          answered > 0 || len(allFlights) > 0,
 		Count:            len(allFlights),
 		TripType:         tripTypeForSearch(opts),
 		Flights:          allFlights,
@@ -178,4 +192,22 @@ func ParseFlightLocations(s string) []string {
 		}
 	}
 	return out
+}
+
+// allPairsFailed reports a search that produced nothing usable: no fares,
+// and no pair answered.
+func allPairsFailed(flights, attempted, answered, errs int) bool {
+	return flights == 0 && attempted > 0 && answered == 0 && errs > 0
+}
+
+func hasFailedStatus(result *models.FlightSearchResult) bool {
+	if result == nil {
+		return false
+	}
+	for _, st := range result.ProviderStatuses {
+		if st.Error != "" {
+			return true
+		}
+	}
+	return false
 }
