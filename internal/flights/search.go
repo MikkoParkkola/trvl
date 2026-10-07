@@ -725,6 +725,10 @@ func searchGoogleFlightsWithClient(ctx context.Context, client *batchexec.Client
 	gl := CurrencyToGL(opts.Currency)
 	status, body, err := client.SearchFlightsGLStealth(ctx, encoded, gl, opts.Stealth)
 	if err != nil {
+		if errors.Is(err, batchexec.ErrRefused) {
+			rlErr := fmt.Errorf("google flights cooling down: %w", models.ErrRateLimited)
+			return &models.FlightSearchResult{Error: rlErr.Error()}, rlErr
+		}
 		return &models.FlightSearchResult{
 			Error: fmt.Sprintf("request failed: %v", err),
 		}, fmt.Errorf("request failed: %w", err)
@@ -762,6 +766,10 @@ func searchGoogleFlightsWithClient(ctx context.Context, client *batchexec.Client
 	// survives only in a debug log.
 	if !isFlightPayload(inner) {
 		slog.Debug("google flights returned non-flight payload", "detail", "unexpected flight data format")
+		if code, ok := batchexec.WrbStatus(body); ok && code > 0 {
+			rlErr := fmt.Errorf("google flights declined the request (code %d): %w", code, models.ErrRateLimited)
+			return &models.FlightSearchResult{Error: rlErr.Error()}, rlErr
+		}
 		rlErr := fmt.Errorf("google flights returned a non-flight error/challenge payload: %w", models.ErrRateLimited)
 		return &models.FlightSearchResult{Error: rlErr.Error()}, rlErr
 	}

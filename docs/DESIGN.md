@@ -181,7 +181,7 @@ conn := tls.UClient(rawConn, tlsConfig, tls.HelloChrome_Auto)
 
 ### 4.6 Rate Limiting
 
-Token bucket: 10 requests/second (matching fli's rate limit). Configurable via `--rate-limit` flag. Automatic retry with exponential backoff (3 attempts, 1s/2s/4s).
+Token bucket: 10 requests/second (matching fli's rate limit). Configurable via `--rate-limit` flag. Server errors (5xx) retry with exponential backoff (3 attempts, 1s/2s/4s). A Google HTTP 429 or wrb.fr quota refusal stops further Google calls until a cooldown instead of retrying.
 
 ### 4.7 MCP Server
 
@@ -365,7 +365,7 @@ trvl mcp --http --host 127.0.0.1 --port 8000 \
 ### AC-1: batchexecute Client
 - **AC-1.1**: Client makes POST requests with Chrome TLS fingerprint (verified via JA3 hash comparison)
 - **AC-1.2**: Rate limiter enforces 10 req/s with token bucket
-- **AC-1.3**: Retry with exponential backoff on 429/5xx (3 attempts)
+- **AC-1.3**: Retry with exponential backoff on 5xx (3 attempts). A Google HTTP 429 or wrb.fr quota refusal is not retried; further Google calls wait out a cooldown
 - **AC-1.4**: Response parser strips `)]}'` prefix and extracts nested JSON correctly
 - **AC-1.5**: Graceful error on network failure, timeout, and malformed response
 

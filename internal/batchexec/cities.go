@@ -63,6 +63,13 @@ func ResolveCityCode(ctx context.Context, client *Client, query string) (string,
 	if status == 403 {
 		return "", ErrBlocked
 	}
+	// A refusal is not a cue to look the city up again, or to scan each day.
+	if code, ok := WrbStatus(body); ok && code > 0 {
+		return "", fmt.Errorf("city resolution declined (code %d): %w", code, ErrDeclined)
+	}
+	if status == 429 || QuotaRefusal(status, body) {
+		return "", fmt.Errorf("city resolution: %w", ErrDeclined)
+	}
 	if status != 200 {
 		return "", fmt.Errorf("city resolution: unexpected status %d", status)
 	}
