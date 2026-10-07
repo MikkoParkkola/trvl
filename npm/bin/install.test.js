@@ -86,7 +86,7 @@ test("download refuses a redirect to another host without requesting it", async 
   const evil = "https://evil.example/payload";
   const { get, seen } = fakeGet({ [start]: { status: 302, location: evil }, [evil]: { status: 200, body: "bad" } });
   await assert.rejects(download(start, get), /not an allowed download host/i);
-  assert.ok(!seen.includes(evil), "the off-host URL must never be requested");
+  assert.deepStrictEqual(seen, [start], "only the GitHub URL may be requested; the off-host target never");
 });
 
 test("download refuses a downgrade to http", async () => {
