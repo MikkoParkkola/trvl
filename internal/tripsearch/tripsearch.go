@@ -192,6 +192,11 @@ func Search(ctx context.Context, req Request, search SearchFunc, progress Progre
 	if result == nil || !result.Success {
 		return nil, fmt.Errorf("flight search returned no results")
 	}
+	// An empty answer with failed providers is not "no flights": report the
+	// failures instead of an ordinary empty result (MIK-8041).
+	if len(result.Flights) == 0 && !result.Completeness.MayClaimExhaustive() {
+		return nil, fmt.Errorf("flight search incomplete: %s\n%s", result.Completeness.IncompleteNote(), models.ProviderFailureLines(result.ProviderStatuses))
+	}
 
 	preFilterCount := len(result.Flights)
 

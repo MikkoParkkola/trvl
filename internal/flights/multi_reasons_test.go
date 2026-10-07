@@ -111,8 +111,20 @@ func TestSearchMultiAirportKeepsAFKLMFaresWhenPairsFail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AFKLM returned a fare; the search must not fail, got %v", err)
 	}
-	if result.Count != 1 {
-		t.Fatalf("the AFKLM fare must be kept, got %d flights", result.Count)
+	if !result.Success || result.Count != 1 || result.Flights[0].Price != 210 {
+		t.Fatalf("the AFKLM fare must be kept as a success, got success=%v %+v", result.Success, result.Flights)
+	}
+	if result.Completeness.State != models.CompletenessPartial {
+		t.Fatalf("completeness = %q, want partial", result.Completeness.State)
+	}
+	foundAFKLM := false
+	for _, st := range result.ProviderStatuses {
+		if strings.HasPrefix(st.ID, "native_roundtrip:afklm") {
+			foundAFKLM = true
+		}
+	}
+	if !foundAFKLM {
+		t.Fatalf("the AFKLM status must be kept, got %+v", result.ProviderStatuses)
 	}
 	if !strings.Contains(models.ProviderFailureLines(result.ProviderStatuses), "HEL-CDG") {
 		t.Fatalf("the failed pairs must still be reported, got %+v", result.ProviderStatuses)
