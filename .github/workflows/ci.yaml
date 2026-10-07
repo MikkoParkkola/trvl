@@ -54,6 +54,8 @@ jobs:
         run: scripts/ci/check-test-only-helpers.sh
       - name: Test the heartbeat receiver
         run: node --test workers/heartbeat/src/index.test.js
+      - name: Test the npm installer's download verification
+        run: node --test npm/bin/install.test.js
 
   test:
     permissions:

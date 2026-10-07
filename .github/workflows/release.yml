@@ -400,6 +400,20 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
+      # The installer refuses any archive whose SHA-256 is not in this file
+      # (MIK-8073). Shipping it inside the npm package means the expected hash
+      # reaches users through npm, not through the GitHub download it checks.
+      # A missing file fails the job rather than publishing a package that
+      # cannot install.
+      - name: Bundle release checksums into the npm package
+        working-directory: npm
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --pattern checksums.txt --clobber
+          test -s checksums.txt
+          grep -q "trvl_${RELEASE_TAG#v}_linux_amd64.tar.gz" checksums.txt
+
       - name: Stamp version from tag and publish (OIDC, no token)
         working-directory: npm
         run: |

@@ -2,11 +2,26 @@
 "use strict";
 
 const https = require("https");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 
 const VERSION = require("../package.json").version;
+
+// Release downloads start on github.com and redirect to GitHub's asset hosts.
+// Nothing else may serve the binary (MIK-8073).
+const ALLOWED_HOSTS = new Set([
+  "github.com",
+  "release-assets.githubusercontent.com",
+  "objects.githubusercontent.com",
+]);
+const MAX_REDIRECTS = 5;
+
+// checksums.txt is copied from the GitHub release into this package when it is
+// published to npm, so the expected hash reaches the user through npm rather
+// than through the same GitHub download it is meant to check.
+const CHECKSUMS_PATH = path.join(__dirname, "..", "checksums.txt");
 
 function getPlatform() {
   const platform = process.platform;
@@ -23,13 +38,49 @@ function getArch() {
   throw new Error(`Unsupported architecture: ${arch}`);
 }
 
-function download(url) {
+function isAllowedUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "https:" && ALLOWED_HOSTS.has(parsed.hostname);
+}
+
+// expectedSha returns the SHA-256 listed for filename in a goreleaser
+// checksums.txt ("<hex>  <name>" per line). The name must match exactly.
+function expectedSha(checksumsText, filename) {
+  for (const line of checksumsText.split(/\r?\n/)) {
+    const m = line.trim().match(/^([0-9a-f]{64})\s+\*?(.+)$/i);
+    if (m && m[2] === filename) return m[1].toLowerCase();
+  }
+  throw new Error(`no checksum for ${filename} in checksums.txt`);
+}
+
+function verifySha(buf, expected) {
+  const actual = crypto.createHash("sha256").update(buf).digest("hex");
+  if (actual !== expected) {
+    throw new Error(`checksum mismatch: expected ${expected}, got ${actual}`);
+  }
+}
+
+function download(url, get = https.get, redirects = 0) {
   return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
+    if (!isAllowedUrl(url)) {
+      return reject(new Error(`${url} is not an allowed download host`));
+    }
+    get(url, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return download(res.headers.location).then(resolve).catch(reject);
+        res.resume();
+        if (redirects >= MAX_REDIRECTS) {
+          return reject(new Error(`too many redirects downloading ${url}`));
+        }
+        const next = new URL(res.headers.location, url).toString();
+        return download(next, get, redirects + 1).then(resolve, reject);
       }
       if (res.statusCode !== 200) {
+        res.resume();
         return reject(new Error(`Download failed: HTTP ${res.statusCode} from ${url}`));
       }
       const chunks = [];
@@ -38,6 +89,13 @@ function download(url) {
       res.on("error", reject);
     }).on("error", reject);
   });
+}
+
+function fail(message) {
+  console.error(`\n${message}\n`);
+  console.error("You can manually download from:");
+  console.error(`  https://github.com/MikkoParkkola/trvl/releases/tag/v${VERSION}\n`);
+  process.exit(1);
 }
 
 async function install() {
@@ -55,17 +113,22 @@ async function install() {
     return;
   }
 
+  let expected;
+  try {
+    expected = expectedSha(fs.readFileSync(CHECKSUMS_PATH, "utf8"), filename);
+  } catch (err) {
+    fail(`Cannot verify the trvl download: ${err.message}`);
+  }
+
   console.log(`Downloading trvl v${VERSION} for ${os}/${arch}...`);
   console.log(`  ${url}`);
 
   let tarball;
   try {
     tarball = await download(url);
+    verifySha(tarball, expected);
   } catch (err) {
-    console.error(`\nFailed to download trvl binary:\n  ${err.message}\n`);
-    console.error("You can manually download from:");
-    console.error(`  https://github.com/MikkoParkkola/trvl/releases/tag/v${VERSION}\n`);
-    process.exit(1);
+    fail(`Failed to download a verified trvl binary:\n  ${err.message}`);
   }
 
   // Write tarball to temp file and extract
@@ -95,4 +158,8 @@ async function install() {
   console.log(`trvl v${VERSION} installed successfully.`);
 }
 
-install();
+if (require.main === module) {
+  install();
+}
+
+module.exports = { expectedSha, verifySha, isAllowedUrl, download };
