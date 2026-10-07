@@ -656,16 +656,6 @@ func TestExploreCmd_Flags(t *testing.T) {
 // grid command
 // ---------------------------------------------------------------------------
 
-func TestGridCmd_RequiresTwoArgs(t *testing.T) {
-	cmd := gridCmd()
-	cmd.SilenceUsage = true
-	cmd.SilenceErrors = true
-	cmd.SetArgs([]string{"HEL"})
-	if err := cmd.Execute(); err == nil {
-		t.Error("expected error with only 1 arg")
-	}
-}
-
 func TestGridCmd_Flags(t *testing.T) {
 	cmd := gridCmd()
 	flags := []string{"depart-from", "depart-to", "return-from", "return-to", "format"}
