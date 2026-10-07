@@ -445,7 +445,7 @@ func TestAccomHackCmd_FlagsV18(t *testing.T) {
 }
 
 func TestGridCmd_RequiredFlagsMissing(t *testing.T) {
-
+	gridOffline(t)
 	cmd := gridCmd()
 	cmd.SetArgs([]string{"HEL"})
 	err := cmd.Execute()
