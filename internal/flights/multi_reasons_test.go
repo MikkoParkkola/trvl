@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -128,5 +129,53 @@ func TestSearchMultiAirportKeepsAFKLMFaresWhenPairsFail(t *testing.T) {
 	}
 	if !strings.Contains(models.ProviderFailureLines(result.ProviderStatuses), "HEL-CDG") {
 		t.Fatalf("the failed pairs must still be reported, got %+v", result.ProviderStatuses)
+	}
+}
+
+// A failed pair whose only status is the round-trip composer's own empty
+// answer has no evidence of the failure itself; the composer's message is
+// not one. The pair must still count as missing, never as full coverage.
+func TestSearchMultiAirportComposerStatusDoesNotHideFailedPair(t *testing.T) {
+	opts := comboOpts(func(origin, dest string) (*models.FlightSearchResult, error) {
+		if origin == "TKU" {
+			err := context.DeadlineExceeded
+			return &models.FlightSearchResult{Error: err.Error(), ProviderStatuses: []models.ProviderStatus{
+				{ID: "roundtrip_composer", Name: "Round-trip composer", Status: models.StatusCheckedNoHit,
+					Error: "no priced pairing (outbound priced options=0, inbound priced options=0)"},
+			}}, err
+		}
+		return emptyCombo(origin, dest)
+	})
+	result, err := SearchMultiAirport(context.Background(), []string{"HEL", "TKU"}, []string{"CDG"}, "2026-11-01", opts)
+	if err != nil {
+		t.Fatalf("one pair answered; want a partial success, got error %v", err)
+	}
+	if result.Completeness.MayClaimExhaustive() {
+		t.Fatalf("a timed-out pair must keep coverage partial, got %+v", result.Completeness)
+	}
+	if lines := models.ProviderFailureLines(result.ProviderStatuses); !strings.Contains(lines, "TKU-CDG") || !strings.Contains(lines, "timeout") {
+		t.Fatalf("failure lines must name the timed-out pair, got %q", lines)
+	}
+}
+
+// Statuses follow the order of the requested routes, not goroutine finish
+// order, so output and errors are stable between runs.
+func TestSearchMultiAirportStatusesFollowRouteOrder(t *testing.T) {
+	opts := comboOpts(func(origin, dest string) (*models.FlightSearchResult, error) {
+		if origin == "HEL" {
+			time.Sleep(20 * time.Millisecond) // finish last
+		}
+		return blockedCombo(origin, dest)
+	})
+	for i := 0; i < 5; i++ {
+		result, _ := SearchMultiAirport(context.Background(), []string{"HEL", "TKU", "OUL"}, []string{"CDG"}, "2026-11-01", opts)
+		var got []string
+		for _, st := range result.ProviderStatuses {
+			got = append(got, st.Name)
+		}
+		want := []string{"Google Flights (HEL-CDG)", "Google Flights (TKU-CDG)", "Google Flights (OUL-CDG)"}
+		if strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Fatalf("run %d: statuses %v, want route order %v", i, got, want)
+		}
 	}
 }
