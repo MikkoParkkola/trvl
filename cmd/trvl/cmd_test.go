@@ -668,7 +668,7 @@ func gridOffline(t *testing.T) string {
 	return dir
 }
 
-func TestGridCmd_RequiresTwoArgs(t *testing.T) {
+func TestGridCmd_OneArgWithoutOriginFails(t *testing.T) {
 	gridOffline(t)
 	cmd := gridCmd()
 	cmd.SilenceUsage = true
@@ -677,6 +677,20 @@ func TestGridCmd_RequiresTwoArgs(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "no origin given") {
 		t.Errorf("one arg with no saved or detectable origin must fail on the origin, got %v", err)
+	}
+}
+
+func TestGridCmd_OneArgInvalidDestinationWithoutOriginFailsOnOrigin(t *testing.T) {
+	// Control for the preferences test below: with no saved airport the same
+	// arguments must stop at the origin, so that test cannot pass by skipping it.
+	gridOffline(t)
+	cmd := gridCmd()
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
+	cmd.SetArgs([]string{"1X"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "no origin given") {
+		t.Errorf("without a saved airport the origin step must fail first, got %v", err)
 	}
 }
 

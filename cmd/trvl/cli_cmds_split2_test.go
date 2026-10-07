@@ -444,16 +444,6 @@ func TestAccomHackCmd_FlagsV18(t *testing.T) {
 	}
 }
 
-func TestGridCmd_RequiredFlagsMissing(t *testing.T) {
-	gridOffline(t)
-	cmd := gridCmd()
-	cmd.SetArgs([]string{"HEL"})
-	err := cmd.Execute()
-	if err == nil {
-		t.Error("expected error with only one positional arg")
-	}
-}
-
 func TestMultiCityCmd_ValidArgsNoNetwork(t *testing.T) {
 	tmp := t.TempDir()
 	setTestHome(t, tmp)
