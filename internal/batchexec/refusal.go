@@ -164,7 +164,7 @@ func lockRefusalDir(ctx context.Context, dir string) (func(), error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return func() {}, nil
 	}
-	f, err := os.OpenFile(filepath.Join(dir, "google-refusal.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := os.OpenFile(filepath.Join(dir, "google-refusal.lock"), os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- fixed lock name under the client's own refusal directory
 	if err != nil {
 		return func() {}, nil
 	}
