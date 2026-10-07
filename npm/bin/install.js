@@ -107,7 +107,8 @@ async function install() {
   const binaryName = os === "windows" ? "trvl.exe" : "trvl";
   const binaryPath = path.join(binDir, binaryName);
 
-  // Skip if binary already exists
+  // Skip if binary already exists. It is not re-verified: verification covers
+  // the download this script performs, not a file already on disk.
   if (fs.existsSync(binaryPath)) {
     console.log(`trvl binary already exists at ${binaryPath}`);
     return;
