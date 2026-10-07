@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -582,8 +583,11 @@ func flightSearchError(result *models.FlightSearchResult, err error) error {
 // provider_statuses (each with its reason) when every provider failed
 // (MIK-8032).
 func reportFlightFailure(w io.Writer, format string, result *models.FlightSearchResult, err error) error {
+	searchErr := flightSearchError(result, err)
 	if format == "json" && result != nil {
-		_ = models.FormatJSON(w, result)
+		if writeErr := models.FormatJSON(w, result); writeErr != nil {
+			return errors.Join(searchErr, fmt.Errorf("write JSON: %w", writeErr))
+		}
 	}
-	return flightSearchError(result, err)
+	return searchErr
 }
