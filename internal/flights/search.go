@@ -770,6 +770,10 @@ func searchGoogleFlightsWithClient(ctx context.Context, client *batchexec.Client
 			rlErr := googleWrbError(code)
 			return &models.FlightSearchResult{Error: rlErr.Error()}, rlErr
 		}
+		if batchexec.QuotaRefusal(200, body) {
+			rlErr := fmt.Errorf("google flights quota refusal (rate-limit error object): %w", models.ErrRateLimited)
+			return &models.FlightSearchResult{Error: rlErr.Error()}, rlErr
+		}
 		rlErr := fmt.Errorf("google flights returned a non-flight error/challenge payload: %w", models.ErrRateLimited)
 		return &models.FlightSearchResult{Error: rlErr.Error()}, rlErr
 	}

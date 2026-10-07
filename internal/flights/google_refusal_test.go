@@ -62,8 +62,11 @@ func TestSearchGoogleFlights_RateLimitEnvelopeArmsCooldown(t *testing.T) {
 	if !errors.Is(err, models.ErrRateLimited) {
 		t.Fatalf("first err = %v", err)
 	}
-	if !strings.Contains(err.Error(), "non-flight error/challenge payload") {
-		t.Fatalf("envelope err = %q", err)
+	if !strings.Contains(err.Error(), "quota refusal") {
+		t.Fatalf("envelope err = %q, want it named a quota refusal", err)
+	}
+	if got := models.ClassifyProviderReason(err.Error()); got != models.ReasonRateLimited {
+		t.Fatalf("envelope err reason = %q, want rate_limited", got)
 	}
 	_, err = searchGoogleFlightsWithClient(context.Background(), client, "HEL", "AMS", "2026-10-16", opts)
 	if !strings.Contains(err.Error(), "cooling down") {

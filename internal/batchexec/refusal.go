@@ -1,6 +1,7 @@
 package batchexec
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -95,28 +96,95 @@ func (c *Client) cacheSuccess(endpoint, payload string, status int, body []byte,
 	c.setCached(endpoint, payload, body, ttl)
 }
 
+// lockPoll is how often a waiting caller retries the in-process and file
+// locks. Polling, rather than a blocking wait, lets the caller's context end
+// the wait.
+const lockPoll = 10 * time.Millisecond
+
 // beginGoogle serializes Google calls on this client and, when a shared
-// cooldown file is configured, across processes. release must be called.
-// refused means the deadline is still in the future and the caller must not dial.
-func (c *Client) beginGoogle() (release func(), refused bool) {
-	c.googleMu.Lock()
-	unlockFile := lockRefusalDir(c.refusalDir)
+// cooldown file is configured, across processes. release must be called when
+// err is nil. refused means the deadline is still in the future and the caller
+// must not dial. err is the context's error if it ended while waiting.
+func (c *Client) beginGoogle(ctx context.Context) (release func(), refused bool, err error) {
+	for !c.googleMu.TryLock() {
+		if err := waitPoll(ctx); err != nil {
+			return func() {}, false, err
+		}
+	}
+	unlockFile, err := lockRefusalDir(ctx, c.refusalDir)
+	if err != nil {
+		c.googleMu.Unlock()
+		return func() {}, false, err
+	}
+	done := func() {
+		unlockFile()
+		c.googleMu.Unlock()
+	}
 	now := time.Now()
 	if now.Before(c.refuseUntil) {
-		unlockFile()
-		c.googleMu.Unlock()
-		return func() {}, true
+		done()
+		return func() {}, true, nil
 	}
 	if deadline, ok := c.readRefusalDeadline(); ok && now.Before(deadline) {
+		// A deadline further out than the cap can only come from a clock that
+		// moved backwards or a damaged file; bound it and store the bound.
+		if limit := now.Add(googleRefusalCap); deadline.After(limit) {
+			deadline = limit
+			if err := c.writeRefusalDeadline(deadline); err != nil {
+				slog.Debug("google refusal persist", "error", logredact.Err(err))
+			}
+		}
 		c.refuseUntil = deadline
-		unlockFile()
-		c.googleMu.Unlock()
-		return func() {}, true
+		done()
+		return func() {}, true, nil
 	}
-	return func() {
-		unlockFile()
-		c.googleMu.Unlock()
-	}, false
+	return done, false, nil
+}
+
+func waitPoll(ctx context.Context) error {
+	t := time.NewTimer(lockPoll)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// lockRefusalDir takes an exclusive cross-process lock on the cooldown
+// directory, polling so ctx can end the wait. An empty directory, or any
+// failure to create or lock the file, degrades to no cross-process lock: the
+// in-process mutex still covers this process, and a lock problem must not
+// fail the search.
+func lockRefusalDir(ctx context.Context, dir string) (func(), error) {
+	if dir == "" {
+		return func() {}, nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return func() {}, nil
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "google-refusal.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return func() {}, nil
+	}
+	for {
+		locked, lockErr := tryLockFile(f)
+		if lockErr != nil {
+			_ = f.Close()
+			return func() {}, nil
+		}
+		if locked {
+			return func() {
+				unlockFile(f)
+				_ = f.Close()
+			}, nil
+		}
+		if err := waitPoll(ctx); err != nil {
+			_ = f.Close()
+			return func() {}, err
+		}
+	}
 }
 
 // armGoogleRefusal records a cooldown in memory and, when a directory is
@@ -189,12 +257,21 @@ func googleRefusalWait(status int, retryAfter string, body []byte, now time.Time
 		return hint
 	}
 	if secs, ok := embeddedRetryAfterSeconds(body); ok && secs > 0 {
-		return capRefusal(time.Duration(secs) * time.Second)
+		return capSeconds(secs)
 	}
 	if status == http.StatusTooManyRequests {
 		return googleRefusalFloor
 	}
 	return googleRefusalLong
+}
+
+// capSeconds converts a positive hint in seconds, comparing before
+// multiplying so a huge value cannot overflow time.Duration and wrap small.
+func capSeconds(secs int) time.Duration {
+	if secs >= int(googleRefusalCap/time.Second) {
+		return googleRefusalCap
+	}
+	return time.Duration(secs) * time.Second
 }
 
 func capRefusal(d time.Duration) time.Duration {
@@ -217,7 +294,7 @@ func parseRetryAfterHeader(value string, now time.Time) time.Duration {
 		if secs <= 0 {
 			return 0
 		}
-		return capRefusal(time.Duration(secs) * time.Second)
+		return capSeconds(secs)
 	}
 	when, err := http.ParseTime(v)
 	if err != nil || !when.After(now) {

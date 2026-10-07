@@ -326,7 +326,10 @@ func (c *Client) doWithRetryVia(ctx context.Context, httpClient *http.Client, bu
 	}
 	google := probe != nil && probe.URL != nil && isGoogleHost(probe.URL.Hostname())
 	if google {
-		release, refused := c.beginGoogle()
+		release, refused, err := c.beginGoogle(ctx)
+		if err != nil {
+			return 0, nil, err
+		}
 		defer release()
 		if refused {
 			slog.Debug("google_cooldown", "skipped", true)
@@ -372,6 +375,15 @@ func (c *Client) doWithRetryVia(ctx context.Context, httpClient *http.Client, bu
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024)) // 10MB limit
 		_ = resp.Body.Close()
 		elapsed := time.Since(start)
+
+		// A Google 429 is a refusal even when its body cannot be read; the
+		// body is only needed for the wait hint, so stop before the retry path.
+		if google && readErr != nil && resp.StatusCode == http.StatusTooManyRequests {
+			wait := googleRefusalWait(resp.StatusCode, resp.Header.Get("Retry-After"), nil, time.Now())
+			c.armGoogleRefusal(wait)
+			slog.Warn("google_refused", "status", resp.StatusCode, "cooldown_s", wait.Seconds())
+			return resp.StatusCode, nil, nil
+		}
 
 		if readErr != nil {
 			lastErr = readErr
