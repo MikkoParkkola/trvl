@@ -506,11 +506,9 @@ func TestSearchMultiAirport_Spread_AFKLMAtMostOnePerLogicalSearch(t *testing.T) 
 			return nil, fmt.Errorf("afklm test: no real call")
 		},
 	}
-	_, err := SearchMultiAirport(ctx, []string{"HEL", "AMS"}, []string{"BCN"}, "2026-07-01", opts)
-	if err != nil {
-		// SearchMultiAirport itself does not error on provider failures (they are silent-skipped).
-		t.Fatalf("SearchMultiAirport unexpected err: %v", err)
-	}
+	// The short deadline makes every sub-search fail, which SearchMultiAirport
+	// now reports as an error (MIK-8041); this test only counts AFKLM calls.
+	_, _ = SearchMultiAirport(ctx, []string{"HEL", "AMS"}, []string{"BCN"}, "2026-07-01", opts)
 	if calls > 1 {
 		t.Errorf("AFKLM seam called %d times on spread RT search; want <=1 (primary only)", calls)
 	}

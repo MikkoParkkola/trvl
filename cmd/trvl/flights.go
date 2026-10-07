@@ -364,7 +364,7 @@ func printFlightsTable(ctx context.Context, origin, destination, targetCurrency 
 	}
 
 	if result.Count == 0 {
-		fmt.Println("No flights found.")
+		fmt.Println(flightsEmptyMessage(result))
 		return nil
 	}
 
@@ -576,6 +576,16 @@ func flightSearchError(result *models.FlightSearchResult, err error) error {
 		return fmt.Errorf("%w\n%s", err, lines)
 	}
 	return err
+}
+
+// flightsEmptyMessage says "No flights found." only when every provider
+// answered; otherwise it reports partial coverage and the failed providers
+// (MIK-8041).
+func flightsEmptyMessage(result *models.FlightSearchResult) string {
+	if result.Completeness.MayClaimExhaustive() {
+		return "No flights found."
+	}
+	return "No flights returned. " + result.Completeness.IncompleteNote() + "\n" + models.ProviderFailureLines(result.ProviderStatuses)
 }
 
 // reportFlightFailure returns the error for a failed search. With
