@@ -2,6 +2,7 @@ package flights
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -21,8 +22,10 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 	}
 
 	sem := make(chan struct{}, 5) // max 5 concurrent searches
-	var mu sync.Mutex
 	var allFlights []models.FlightResult
+	var statuses []models.ProviderStatus
+	var errs []error
+	attempted, answered := 0, 0
 	var wg sync.WaitGroup
 
 	// AFKLM quota protection for multi-airport spread (#471):
@@ -36,51 +39,110 @@ func SearchMultiAirport(ctx context.Context, origins, destinations []string, dat
 	if opts.ReturnDate != "" && len(origins) > 0 && len(destinations) > 0 {
 		primO := origins[0]
 		primD := destinations[0]
-		afklmFl, _ := searchAFKLMNativeRoundTrip(ctx, primO, primD, date, opts.ReturnDate, opts)
-		if len(afklmFl) > 0 {
-			mu.Lock()
-			allFlights = append(allFlights, afklmFl...)
-			mu.Unlock()
+		afklmFl, afklmSt := searchAFKLMNativeRoundTrip(ctx, primO, primD, date, opts.ReturnDate, opts)
+		for _, st := range afklmSt {
+			st.Name = routeLabel(st, primO, primD)
+			statuses = append(statuses, st)
 		}
+		allFlights = append(allFlights, afklmFl...)
 		// Suppress AFKLM in the parallel spread subs (they would otherwise each
 		// call NewProvider + search, burning quota). Threaded via copied opts —
 		// no shared-global mutation, so concurrent SearchMultiAirport calls are race-free.
 		subOpts.suppressAFKLM = true
 	}
 
+	// Each pair writes only its own slot, and slots are merged in route
+	// order after the wait, so statuses and errors read the same on every
+	// run regardless of which pair finishes first.
+	type pairOutcome struct {
+		origin, dest string
+		result       *models.FlightSearchResult
+		err          error
+	}
+	var outcomes []*pairOutcome
 	for _, orig := range origins {
 		for _, dest := range destinations {
 			if orig == dest {
 				continue
 			}
+			attempted++
+			out := &pairOutcome{origin: orig, dest: dest}
+			outcomes = append(outcomes, out)
 			wg.Add(1)
-			go func(o, d string) {
+			go func(out *pairOutcome) {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
-
-				result, err := SearchFlightsWithClient(ctx, client, o, d, date, subOpts)
-				if err != nil || !result.Success {
-					return // skip failed combos silently
-				}
-
-				mu.Lock()
-				allFlights = append(allFlights, result.Flights...)
-				mu.Unlock()
-			}(orig, dest)
+				out.result, out.err = SearchFlightsWithClient(ctx, client, out.origin, out.dest, date, subOpts)
+			}(out)
 		}
 	}
 
 	wg.Wait()
 
+	for _, out := range outcomes {
+		o, d, result, err := out.origin, out.dest, out.result, out.err
+		// Keep every combination's provider statuses, labelled with its
+		// route, so a blocked provider is reported rather than silently
+		// dropped (MIK-8041).
+		if result != nil {
+			for _, st := range result.ProviderStatuses {
+				st.Name = routeLabel(st, o, d)
+				statuses = append(statuses, st)
+			}
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s-%s: %w", o, d, err))
+			if !hasFailedStatus(result) {
+				// A pair that failed without provider evidence (a deadline,
+				// a nil result) must still count as missing.
+				statuses = append(statuses, models.ProviderStatus{
+					ID:     "flight_search",
+					Name:   "Flight search (" + o + "-" + d + ")",
+					Status: models.ClassifyProviderError(err),
+					Error:  err.Error(),
+				})
+			}
+			continue
+		}
+		answered++
+		if result.Success {
+			allFlights = append(allFlights, result.Flights...)
+		}
+	}
+
 	sortFlightResults(allFlights, opts.SortBy)
 
+	completeness := models.ComputeCompleteness(statuses)
+	// Only a search with no fares at all is a failure: AFKLM fares from the
+	// primary pair still count when every fanned-out pair failed.
+	if allPairsFailed(len(allFlights), attempted, answered, len(errs)) {
+		err := errors.Join(errs...)
+		return &models.FlightSearchResult{
+			Error:            err.Error(),
+			TripType:         tripTypeForSearch(opts),
+			ProviderStatuses: statuses,
+			Completeness:     completeness,
+		}, err
+	}
 	return &models.FlightSearchResult{
-		Success:  len(allFlights) > 0,
-		Count:    len(allFlights),
-		TripType: tripTypeForSearch(opts),
-		Flights:  allFlights,
+		// A pair that answered with no flights is a definitive empty answer,
+		// the same as a single-route search.
+		Success:          answered > 0 || len(allFlights) > 0,
+		Count:            len(allFlights),
+		TripType:         tripTypeForSearch(opts),
+		Flights:          allFlights,
+		ProviderStatuses: statuses,
+		Completeness:     completeness,
 	}, nil
+}
+
+func routeLabel(st models.ProviderStatus, origin, dest string) string {
+	name := st.Name
+	if name == "" {
+		name = st.ID
+	}
+	return name + " (" + origin + "-" + dest + ")"
 }
 
 // ParseAirports splits a comma-separated airport string into a slice.
@@ -137,4 +199,20 @@ func ParseFlightLocations(s string) []string {
 		}
 	}
 	return out
+}
+
+// allPairsFailed reports a search that produced nothing usable: no fares,
+// and no pair answered.
+func allPairsFailed(flights, attempted, answered, errs int) bool {
+	return flights == 0 && attempted > 0 && answered == 0 && errs > 0
+}
+
+func hasFailedStatus(result *models.FlightSearchResult) bool {
+	if result == nil {
+		return false
+	}
+	// Only a status that leaves coverage incomplete is evidence of the
+	// failure. A definitive empty answer with a message, such as the
+	// round-trip composer's "no priced pairing", is not.
+	return len(models.ComputeCompleteness(result.ProviderStatuses).Missing) > 0
 }

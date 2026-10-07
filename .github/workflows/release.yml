@@ -181,6 +181,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TRVL_MLDSA_PRIVKEY_V1: ${{ secrets.TRVL_MLDSA_PRIVKEY_V1 }}
 
+      # The npm job bundles these checksums into the npm package (MIK-8073).
+      # They travel as a workflow artifact from this build, never re-fetched
+      # from the public release, so replacing release assets after upload
+      # cannot also replace the hashes the installer trusts.
+      - name: Hand build checksums to the npm job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-checksums
+          path: dist/checksums.txt
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Checkout Homebrew tap
         if: env.HAS_HOMEBREW_TAP_TOKEN == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -399,6 +411,27 @@ jobs:
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
+
+      # The installer refuses any archive whose SHA-256 is not in this file
+      # (MIK-8073). It comes from this run's build job as an artifact, not from
+      # the public release. A manual re-publish without a build in the same run
+      # has no artifact and fails here rather than publishing an unverifiable
+      # package.
+      - name: Bundle build checksums into the npm package
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-checksums
+          path: npm
+
+      - name: Check every supported archive has a checksum
+        working-directory: npm
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64 windows_amd64 windows_arm64; do
+            grep -Eq "^[0-9a-f]{64}  trvl_${VERSION}_${target}\.tar\.gz$" checksums.txt \
+              || { echo "::error::checksums.txt has no entry for trvl_${VERSION}_${target}.tar.gz"; exit 1; }
+          done
 
       - name: Stamp version from tag and publish (OIDC, no token)
         working-directory: npm

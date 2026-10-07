@@ -53,7 +53,7 @@ func ClassifyProviderReason(msg string) string {
 		return ReasonDNS
 	case containsAny(m, "timeout", "timed out", "deadline exceeded"):
 		return ReasonTimeout
-	case hasCode(func(c string) bool { return c == "429" }) || containsAny(m, "too many requests", "rate limit", "rate-limit", "ratelimit"):
+	case hasCode(func(c string) bool { return c == "429" }) || containsAny(m, "too many requests", "rate limit", "rate-limit", "ratelimit", "quota", "cooldown", "cooling down"):
 		return ReasonRateLimited
 	case hasCode(func(c string) bool { return c == "403" }) || containsAny(m, "forbidden", "blocked", "captcha", "challenge", "bot detect", "datadome", "akamai", "cloudfront"):
 		return ReasonBlocked

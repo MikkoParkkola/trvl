@@ -3,6 +3,7 @@ package flights
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -49,49 +50,70 @@ func (o *CalendarOptions) defaults() {
 // It first resolves IATA codes to Google city codes (required by the endpoint),
 // then calls GetCalendarGraph with those codes.
 //
-// Falls back to the legacy SearchDates approach if the CalendarGraph call fails.
+// Falls back to the legacy SearchDates approach when a real calendar body
+// cannot be parsed. A Google refusal is returned as an error: it does not
+// start a per-day scan.
 func SearchCalendar(ctx context.Context, origin, dest string, opts CalendarOptions) (*models.DateSearchResult, error) {
+	return searchCalendarWithClient(ctx, DefaultClient(), origin, dest, opts, searchCalendarFallback)
+}
+
+// calendarFallback is the per-day scan used when CalendarGraph did not return
+// a price list. Tests pass a stub so a refusal cannot dial the network.
+type calendarFallback func(ctx context.Context, origin, dest string, opts CalendarOptions) (*models.DateSearchResult, error)
+
+func searchCalendarWithClient(ctx context.Context, client *batchexec.Client, origin, dest string, opts CalendarOptions, fallback calendarFallback) (*models.DateSearchResult, error) {
 	opts.defaults()
 
 	if origin == "" || dest == "" {
 		return nil, fmt.Errorf("origin and destination are required")
 	}
-
-	client := DefaultClient()
+	if fallback == nil {
+		fallback = searchCalendarFallback
+	}
 
 	// Resolve IATA codes to Google city codes.
 	srcCode, err := batchexec.ResolveCityCode(ctx, client, origin)
+	if stop := calendarGoogleStop(err); stop != nil {
+		return nil, stop
+	}
 	if err != nil {
 		// Fall back to legacy approach on resolution failure.
-		return searchCalendarFallback(ctx, origin, dest, opts)
+		return fallback(ctx, origin, dest, opts)
 	}
 
 	dstCode, err := batchexec.ResolveCityCode(ctx, client, dest)
+	if stop := calendarGoogleStop(err); stop != nil {
+		return nil, stop
+	}
 	if err != nil {
-		return searchCalendarFallback(ctx, origin, dest, opts)
+		return fallback(ctx, origin, dest, opts)
 	}
 
 	// Build and send the CalendarGraph request.
 	encoded := encodeCalendarGraphPayload(srcCode, origin, dstCode, dest, opts)
 
 	status, body, err := client.PostCalendarGraph(ctx, encoded)
+	if stop := calendarGoogleStop(err); stop != nil {
+		return nil, stop
+	}
 	if err != nil {
-		return searchCalendarFallback(ctx, origin, dest, opts)
+		return fallback(ctx, origin, dest, opts)
 	}
 
-	if status == 403 {
-		return nil, batchexec.ErrBlocked
+	if stop := refuseCalendarFallback(status, body); stop != nil {
+		return nil, stop
 	}
 
 	if status != 200 {
-		return searchCalendarFallback(ctx, origin, dest, opts)
+		return fallback(ctx, origin, dest, opts)
 	}
 
 	// Try to parse the CalendarGraph response.
 	dates, err := parseCalendarGraphResponse(body)
 	if err != nil || len(dates) == 0 {
-		// Small response or [3] error -- fall back to legacy.
-		return searchCalendarFallback(ctx, origin, dest, opts)
+		// A refusal already returned above. A price list that did not parse
+		// still falls back to a per-day search.
+		return fallback(ctx, origin, dest, opts)
 	}
 
 	// Sort by date.
@@ -123,6 +145,33 @@ func SearchCalendar(ctx context.Context, origin, dest string, opts CalendarOptio
 		DateRange: fmt.Sprintf("%s to %s", opts.FromDate, opts.ToDate),
 		Dates:     dates,
 	}, nil
+}
+
+// calendarGoogleStop reports a Google refusal that must not fall through to
+// another Google endpoint. Other errors return nil so the caller can fall back.
+func calendarGoogleStop(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, batchexec.ErrRefused) || errors.Is(err, batchexec.ErrDeclined) {
+		return fmt.Errorf("%w: %w", err, models.ErrRateLimited)
+	}
+	return nil
+}
+
+// refuseCalendarFallback returns an error when the calendar response is a
+// Google refusal. nil means the caller may fall back to a per-day scan.
+func refuseCalendarFallback(status int, body []byte) error {
+	if status == 403 {
+		return batchexec.ErrBlocked
+	}
+	if code, ok := batchexec.WrbStatus(body); ok && code > 0 {
+		return googleWrbError(code)
+	}
+	if status == 429 || batchexec.QuotaRefusal(status, body) {
+		return fmt.Errorf("google flights rate-limited: %w", models.ErrRateLimited)
+	}
+	return nil
 }
 
 // searchCalendarFallback falls back to the legacy N-call date search.
