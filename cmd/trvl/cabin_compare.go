@@ -72,7 +72,7 @@ func runCabinComparison(ctx context.Context, origins, destinations []string, dat
 				return
 			}
 			if !result.Success || len(result.Flights) == 0 {
-				results[idx] = cabinResult{Cabin: spec.Name, Error: "no flights"}
+				results[idx] = cabinResult{Cabin: spec.Name, Error: "no flights", ProviderStatuses: result.ProviderStatuses}
 				return
 			}
 
@@ -91,6 +91,8 @@ func runCabinComparison(ctx context.Context, origins, destinations []string, dat
 				Airline:  airline,
 				Stops:    best.Stops,
 				Duration: duration,
+				// Kept on success too, so a partial search stays visible.
+				ProviderStatuses: result.ProviderStatuses,
 			}
 		}(i, cs)
 	}
