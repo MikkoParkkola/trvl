@@ -263,7 +263,7 @@ func runHotels(cmd *cobra.Command, args []string) error {
 
 func formatHotelsTable(ctx context.Context, targetCurrency, location string, result *models.HotelSearchResult, explain bool) error {
 	if len(result.Hotels) == 0 {
-		fmt.Println("No hotels found.")
+		fmt.Println(hotelsEmptyMessage(result))
 		return nil
 	}
 
@@ -589,4 +589,15 @@ func maybeShowAccomHackTip(ctx context.Context, city, checkIn, checkOut, currenc
 		fmt.Printf("    Run: trvl hacks-accom %q --checkin %s --checkout %s\n",
 			city, checkIn, checkOut)
 	}
+}
+
+// hotelsEmptyMessage says "No hotels found." only when every provider
+// answered; otherwise it reports partial coverage and the providers that
+// failed, so a blocked provider is not read as an empty city (MIK-8032).
+func hotelsEmptyMessage(result *models.HotelSearchResult) string {
+	c := models.ComputeCompleteness(result.ProviderStatuses)
+	if c.MayClaimExhaustive() {
+		return "No hotels found."
+	}
+	return "No hotels returned. " + c.IncompleteNote() + "\n" + models.ProviderFailureLines(result.ProviderStatuses)
 }

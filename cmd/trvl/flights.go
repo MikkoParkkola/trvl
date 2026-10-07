@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"strings"
@@ -208,7 +210,7 @@ Examples:
 				return fmt.Errorf("unsupported --provider %q (valid: skiplagged, afklm, ryanair, wizzair, transavia, easyjet, vueling, norwegian, or empty for default Google+Kiwi+Skiplagged merge)", provider)
 			}
 			if err != nil {
-				return flightSearchError(result, err)
+				return reportFlightFailure(os.Stdout, format, result, err)
 			}
 
 			// Apply the traveller's saved preferences as post-search filters via
@@ -584,4 +586,18 @@ func flightsEmptyMessage(result *models.FlightSearchResult) string {
 		return "No flights found."
 	}
 	return "No flights returned. " + result.Completeness.IncompleteNote() + "\n" + models.ProviderFailureLines(result.ProviderStatuses)
+}
+
+// reportFlightFailure returns the error for a failed search. With
+// --format json it first prints the result, so a script still gets
+// provider_statuses (each with its reason) when every provider failed
+// (MIK-8032).
+func reportFlightFailure(w io.Writer, format string, result *models.FlightSearchResult, err error) error {
+	searchErr := flightSearchError(result, err)
+	if format == "json" && result != nil {
+		if writeErr := models.FormatJSON(w, result); writeErr != nil {
+			return errors.Join(searchErr, fmt.Errorf("write JSON: %w", writeErr))
+		}
+	}
+	return searchErr
 }
