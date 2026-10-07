@@ -210,7 +210,7 @@ Examples:
 				return fmt.Errorf("unsupported --provider %q (valid: skiplagged, afklm, ryanair, wizzair, transavia, easyjet, vueling, norwegian, or empty for default Google+Kiwi+Skiplagged merge)", provider)
 			}
 			if err != nil {
-				return reportFlightFailure(os.Stdout, format, result, err)
+				return reportFlightFailure(os.Stdout, format, soloFailureResult(result, provider, err), err)
 			}
 
 			// Apply the traveller's saved preferences as post-search filters via
@@ -590,4 +590,27 @@ func reportFlightFailure(w io.Writer, format string, result *models.FlightSearch
 		}
 	}
 	return searchErr
+}
+
+// soloFailureResult gives a failed search a result to report. The
+// single-provider searches return no result on error, which left
+// --format json empty; their error becomes that provider's status
+// (MIK-8041). An existing result is returned unchanged.
+func soloFailureResult(result *models.FlightSearchResult, provider string, err error) *models.FlightSearchResult {
+	if result != nil {
+		return result
+	}
+	id := strings.ToLower(strings.TrimSpace(provider))
+	if id == "" {
+		id = "flights"
+	}
+	return &models.FlightSearchResult{
+		Error: err.Error(),
+		ProviderStatuses: []models.ProviderStatus{{
+			ID:     id,
+			Name:   id,
+			Status: models.ClassifyProviderError(err),
+			Error:  err.Error(),
+		}},
+	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -33,12 +34,15 @@ type cabinResult struct {
 	Stops    int
 	Duration int // minutes
 	Error    string
+	// ProviderStatuses explains a failed or partial cabin search (MIK-8041).
+	ProviderStatuses []models.ProviderStatus `json:"provider_statuses,omitempty"`
 }
 
 // runCabinComparison searches all 4 cabin classes in parallel and
 // displays a side-by-side comparison table.
 func runCabinComparison(ctx context.Context, origins, destinations []string, date string, baseOpts flights.SearchOptions, format string) error {
 	results := make([]cabinResult, len(cabinClasses))
+	errs := make([]error, len(cabinClasses))
 	var wg sync.WaitGroup
 
 	for i, cs := range cabinClasses {
@@ -59,6 +63,12 @@ func runCabinComparison(ctx context.Context, origins, destinations []string, dat
 
 			if err != nil {
 				results[idx] = cabinResult{Cabin: spec.Name, Error: err.Error()}
+				if result != nil {
+					results[idx].ProviderStatuses = result.ProviderStatuses
+					errs[idx] = withFailureLines(err, result.ProviderStatuses)
+				} else {
+					errs[idx] = err
+				}
 				return
 			}
 			if !result.Success || len(result.Flights) == 0 {
@@ -86,9 +96,14 @@ func runCabinComparison(ctx context.Context, origins, destinations []string, dat
 	}
 
 	wg.Wait()
+	// Every cabin failing is a failed command, not an empty comparison.
+	failure := allCabinsFailed(errs)
 
 	if format == "json" {
-		return models.FormatJSON(os.Stdout, results)
+		if err := models.FormatJSON(os.Stdout, results); err != nil {
+			return err
+		}
+		return failure
 	}
 
 	route := fmt.Sprintf("%s → %s", strings.Join(origins, ","), strings.Join(destinations, ","))
@@ -123,5 +138,22 @@ func runCabinComparison(ctx context.Context, origins, destinations []string, dat
 	}
 
 	models.FormatTable(os.Stdout, headers, rows)
-	return nil
+	return failure
+}
+
+func withFailureLines(err error, statuses []models.ProviderStatus) error {
+	if lines := models.ProviderFailureLines(statuses); lines != "" {
+		return fmt.Errorf("%w\n%s", err, lines)
+	}
+	return err
+}
+
+// allCabinsFailed returns the joined errors when no cabin search succeeded.
+func allCabinsFailed(errs []error) error {
+	for _, err := range errs {
+		if err == nil {
+			return nil
+		}
+	}
+	return errors.Join(errs...)
 }
