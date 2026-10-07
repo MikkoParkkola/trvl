@@ -85,3 +85,42 @@ func TestCabinComparisonSucceedsWhenACabinAnswers(t *testing.T) {
 		}
 	}
 }
+
+// With several origins, each cabin runs a multi-airport search. When every
+// pair of every cabin fails, the comparison must still fail and carry each
+// route's provider and reason (MIK-8041, depends on SearchMultiAirport).
+func TestCabinComparisonMultiAirportFailsWhenEveryPairFails(t *testing.T) {
+	opts := flights.SearchOptions{SearchOverride: func(_ context.Context, _, _, _ string, _ flights.SearchOptions) (*models.FlightSearchResult, error) {
+		err := errors.New("google flights blocked the request (HTTP 403)")
+		return &models.FlightSearchResult{Error: err.Error(), ProviderStatuses: []models.ProviderStatus{
+			{ID: "google_flights", Name: "Google Flights", Status: models.StatusRateLimited, Error: "HTTP 403 Forbidden"},
+		}}, err
+	}}
+	var err error
+	out := captureStdout(t, func() {
+		err = runCabinComparison(context.Background(), []string{"HEL", "TKU"}, []string{"CDG"}, "2026-11-01", opts, "json")
+	})
+	if err == nil {
+		t.Fatal("every pair of every cabin failed; the command must exit non-zero")
+	}
+	var cabins []cabinResult
+	if jsonErr := json.Unmarshal([]byte(out), &cabins); jsonErr != nil {
+		t.Fatalf("stdout must be the cabin JSON: %v\n%s", jsonErr, out)
+	}
+	if len(cabins) == 0 {
+		t.Fatal("cabin JSON must list the cabins")
+	}
+	var names []string
+	for _, st := range cabins[0].ProviderStatuses {
+		names = append(names, st.Name+"="+st.Reason)
+	}
+	got := strings.Join(names, ",")
+	for _, want := range []string{"Google Flights (HEL-CDG)=blocked", "Google Flights (TKU-CDG)=blocked"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("cabin statuses must include %q, got %q", want, got)
+		}
+	}
+	if !strings.Contains(err.Error(), "HEL-CDG") || !strings.Contains(err.Error(), "TKU-CDG") {
+		t.Fatalf("the error must name both failed routes, got %q", err)
+	}
+}
