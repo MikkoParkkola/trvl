@@ -18,9 +18,10 @@ const ALLOWED_HOSTS = new Set([
 ]);
 const MAX_REDIRECTS = 5;
 
-// checksums.txt is copied from the GitHub release into this package when it is
-// published to npm, so the expected hash reaches the user through npm rather
-// than through the same GitHub download it is meant to check.
+// checksums.txt is bundled into this package when it is published to npm, from
+// the release build's own output (a workflow artifact), not re-read from the
+// public release. The expected hash therefore reaches the user through npm
+// rather than through the same GitHub download it is meant to check.
 const CHECKSUMS_PATH = path.join(__dirname, "..", "checksums.txt");
 
 function getPlatform() {
