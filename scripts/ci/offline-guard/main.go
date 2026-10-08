@@ -55,7 +55,6 @@ func main() {
 	if err != nil {
 		fail(2, "%v", err)
 	}
-	defer os.RemoveAll(dir)
 
 	leaks := 0
 	var failed []string
@@ -73,6 +72,7 @@ func main() {
 			}
 		}
 	}
+	_ = os.RemoveAll(dir) // os.Exit below skips deferred calls
 	fmt.Printf("offline-guard: %d packages checked, %d reached outside hosts, %d failed\n", len(pkgs), leaks, len(failed))
 	if leaks > 0 || len(failed) > 0 {
 		os.Exit(1)
@@ -91,7 +91,7 @@ func defaultPackages(exemptPath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	exempt, err := readExempt(f)
 	if err != nil {
 		return nil, err
