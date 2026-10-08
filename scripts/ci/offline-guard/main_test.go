@@ -1,9 +1,7 @@
 package main
 
 import (
-	"io"
-	"net/http"
-	"net/url"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -20,59 +18,61 @@ func TestReadExemptSkipsCommentsAndBlanks(t *testing.T) {
 	}
 }
 
-func TestChildEnvRoutesEverythingThroughTheGuard(t *testing.T) {
-	base := []string{"PATH=/bin", "https_proxy=http://corp:3128", "HTTP_PROXY=http://corp:3128", "NO_PROXY=.example.com", "no_proxy=*", "GOPROXY=https://proxy.golang.org"}
-	env := childEnv(base, "http://127.0.0.1:9")
-	for _, want := range []string{"PATH=/bin", "HTTPS_PROXY=http://127.0.0.1:9", "HTTP_PROXY=http://127.0.0.1:9", "GOPROXY=off"} {
-		if !slices.Contains(env, want) {
-			t.Errorf("childEnv missing %q: %v", want, env)
-		}
-	}
-	for _, kv := range env {
-		key, _, _ := strings.Cut(kv, "=")
-		switch strings.ToUpper(key) {
-		case "NO_PROXY":
-			t.Errorf("childEnv kept %q; an inherited bypass list would hide leaks", kv)
-		case "HTTPS_PROXY", "HTTP_PROXY":
-			if !strings.HasSuffix(kv, "=http://127.0.0.1:9") {
-				t.Errorf("childEnv kept outside proxy %q", kv)
-			}
-		}
-	}
-}
-
-func TestRefusingProxyRecordsTheTarget(t *testing.T) {
-	p, err := startProxy()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer p.Close()
-	proxyURL, _ := url.Parse(p.URL())
-	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
-	if resp, err := client.Get("https://offline-guard.invalid/"); err == nil {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-		t.Fatal("request through the guard succeeded; want refusal")
-	}
-	if got := p.Hits(); !slices.Equal(got, []string{"offline-guard.invalid:443"}) {
-		t.Fatalf("Hits = %v, want [offline-guard.invalid:443]", got)
+// Lines as strace -yy writes them; one file per thread, so no interleaving.
+func TestOutsideTargets(t *testing.T) {
+	trace := strings.Join([]string{
+		// Real outside TCP connects count, whatever the port and result.
+		`connect(6<TCP:[640019132]>, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("142.251.156.119")}, 16) = -1 EINPROGRESS (Operation now in progress)`,
+		`connect(7<TCPv6:[640019140]>, {sa_family=AF_INET6, sin6_port=htons(53), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, "2001:4860:4802:32::78", &sin6_addr), sin6_scope_id=0}, 28) = -1 ECONNREFUSED (Connection refused)`,
+		// A UDP connect sends nothing: Go's address-selection probe.
+		`connect(4<UDP:[640032802]>, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("142.251.156.119")}, 16) = 0`,
+		// A UDP send with an explicit outside destination counts.
+		`sendto(6<UDPv6:[[::]:39832]>, "x", 1, 0, {sa_family=AF_INET6, sin6_port=htons(9), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, "::ffff:192.0.2.2", &sin6_addr), sin6_scope_id=0}, 28) = 1`,
+		// Loopback in every spelling stays local.
+		`connect(7<TCP:[640032810]>, {sa_family=AF_INET, sin_port=htons(35165), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)`,
+		`connect(7<TCP:[1]>, {sa_family=AF_INET, sin_port=htons(80), sin_addr=inet_addr("127.1.2.3")}, 16) = 0`,
+		`connect(7<TCPv6:[2]>, {sa_family=AF_INET6, sin6_port=htons(80), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, "::1", &sin6_addr), sin6_scope_id=0}, 28) = 0`,
+		`connect(7<TCPv6:[3]>, {sa_family=AF_INET6, sin6_port=htons(80), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, "::ffff:127.0.0.1", &sin6_addr), sin6_scope_id=0}, 28) = 0`,
+		`sendto(5<UDP:[4]>, "q", 1, 0, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("127.0.0.53")}, 16) = 1`,
+		// Unix sockets and exit markers are not network traffic.
+		`connect(3<UNIX:[5]>, {sa_family=AF_UNIX, sun_path="/var/run/nscd/socket"}, 110) = -1 ENOENT (No such file or directory)`,
+		`+++ exited with 0 +++`,
+	}, "\n")
+	got := outsideTargets(trace)
+	want := []string{"142.251.156.119:443", "[2001:4860:4802:32::78]:53", "[::ffff:192.0.2.2]:9"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("outsideTargets =\n  %v\nwant\n  %v", got, want)
 	}
 }
 
-func TestRunFlagsAPackageThatLeaks(t *testing.T) {
-	hits, err := run([]string{"./testdata/leaky"}, io.Discard, io.Discard)
-	if err != nil {
-		t.Fatalf("run: %v (the fixture test itself passes)", err)
+func requireStrace(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		// The guard itself runs go test -short under strace; a tracer cannot be
+		// traced, and the leak fixture would flag the guard's own run.
+		t.Skip("spawns strace; runs untraced in the offline-tests CI job")
 	}
-	if !slices.Contains(hits, "offline-guard.invalid:443") {
-		t.Fatalf("hits = %v, want offline-guard.invalid:443", hits)
+	if _, err := exec.LookPath("strace"); err != nil {
+		t.Skip("strace not installed")
 	}
 }
 
-func TestRunPassesALoopbackOnlyPackage(t *testing.T) {
-	hits, err := run([]string{"./testdata/loopback"}, io.Discard, io.Discard)
+func TestCheckPackageFlagsALeak(t *testing.T) {
+	requireStrace(t)
+	hits, err := checkPackage("./testdata/leaky", t.TempDir())
 	if err != nil {
-		t.Fatalf("run: %v", err)
+		t.Fatalf("checkPackage: %v (the fixture test itself passes)", err)
+	}
+	if !slices.Contains(hits, "192.0.2.1:443") {
+		t.Fatalf("hits = %v, want 192.0.2.1:443", hits)
+	}
+}
+
+func TestCheckPackagePassesLoopbackOnly(t *testing.T) {
+	requireStrace(t)
+	hits, err := checkPackage("./testdata/loopback", t.TempDir())
+	if err != nil {
+		t.Fatalf("checkPackage: %v", err)
 	}
 	if len(hits) != 0 {
 		t.Fatalf("hits = %v, want none: httptest on loopback must not count", hits)

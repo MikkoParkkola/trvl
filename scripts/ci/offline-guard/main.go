@@ -1,18 +1,21 @@
-// Command offline-guard runs the default test suite behind a local HTTP proxy
-// that refuses every request, and fails if any test tried to reach an outside
-// host (MIK-8100).
+// Command offline-guard runs the default test suite under strace and fails if
+// any test opened a connection to an outside host (MIK-8100).
 //
 // A test that leans on a short timeout, or ignores a provider error, still
 // passes when the network is up, so a leak is invisible in an ordinary run.
-// Routing the suite through a refusing proxy turns each attempt into a recorded
-// target. Go's ProxyFromEnvironment never proxies loopback, so httptest servers
-// are unaffected.
+// Detection is at the syscall because an HTTP proxy only sees clients that
+// honour HTTPS_PROXY; the Google client (internal/batchexec) and the fhttp
+// provider transport dial directly.
 //
-// Limit: a client that ignores HTTPS_PROXY (a custom transport with no Proxy
-// func, or a raw dialer) connects directly and is not seen.
+// Counted: a TCP connect to a non-loopback address, and a datagram sent to an
+// explicit non-loopback destination. A UDP connect alone sends nothing (Go's
+// resolver uses it to rank addresses) and is ignored.
+// Limit: a datagram written on a connected UDP socket is not seen.
+//
+// Linux only. Packages run one at a time so each hit names its package.
 //
 // Usage: go run ./scripts/ci/offline-guard [packages]
-// With no packages it tests `go list ./...` minus scripts/ci/offline-exempt.txt.
+// With no packages it checks `go list ./...` minus scripts/ci/offline-exempt.txt.
 package main
 
 import (
@@ -22,43 +25,67 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/url"
+	"net/netip"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
-	"sync"
-	"time"
 )
 
 func main() {
 	exemptPath := flag.String("exempt", "scripts/ci/offline-exempt.txt", "packages allowed to reach the network until fixed")
 	flag.Parse()
 
+	if err := exec.Command("strace", "-f", "--seccomp-bpf", "-e", "trace=connect", "-o", os.DevNull, "true").Run(); err != nil {
+		fail(2, "strace with --seccomp-bpf is required: %v", err)
+	}
+
 	pkgs := flag.Args()
 	if len(pkgs) == 0 {
 		var err error
 		if pkgs, err = defaultPackages(*exemptPath); err != nil {
-			fmt.Fprintln(os.Stderr, "offline-guard:", err)
-			os.Exit(2)
+			fail(2, "%v", err)
 		}
 	}
 
-	hits, err := run(pkgs, os.Stdout, os.Stderr)
-	if len(hits) > 0 {
-		fmt.Fprintf(os.Stderr, "offline-guard: tests tried to reach %d outside target(s); the default suite must stay offline:\n", len(hits))
-		for _, line := range summarize(hits) {
-			fmt.Fprintln(os.Stderr, "  "+line)
+	dir, err := os.MkdirTemp("", "offline-guard-")
+	if err != nil {
+		fail(2, "%v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	leaks := 0
+	var failed []string
+	for i, pkg := range pkgs {
+		hits, err := checkPackage(pkg, filepath.Join(dir, strconv.Itoa(i)))
+		if err != nil {
+			failed = append(failed, pkg)
+			fmt.Fprintf(os.Stderr, "offline-guard: %s: %v\n", pkg, err)
+		}
+		if len(hits) > 0 {
+			leaks++
+			fmt.Fprintf(os.Stderr, "offline-guard: %s reached outside hosts:\n", pkg)
+			for _, line := range summarize(hits) {
+				fmt.Fprintln(os.Stderr, "  "+line)
+			}
 		}
 	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "offline-guard:", err)
-	}
-	if err != nil || len(hits) > 0 {
+	fmt.Printf("offline-guard: %d packages checked, %d reached outside hosts, %d failed\n", len(pkgs), leaks, len(failed))
+	if leaks > 0 || len(failed) > 0 {
 		os.Exit(1)
 	}
 }
 
+func fail(code int, format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "offline-guard: "+format+"\n", args...)
+	os.Exit(code)
+}
+
+// defaultPackages lists the module's packages minus the exempt ones. A go list
+// that fails or finds nothing is an error, never a vacuous pass.
 func defaultPackages(exemptPath string) ([]string, error) {
 	f, err := os.Open(exemptPath)
 	if err != nil {
@@ -69,12 +96,18 @@ func defaultPackages(exemptPath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := exec.Command("go", "list", "./...").Output()
+	cmd := exec.Command("go", "list", "./...")
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("go list: %w", err)
 	}
+	all := strings.Fields(string(out))
+	if len(all) == 0 {
+		return nil, errors.New("go list found no packages")
+	}
 	var pkgs []string
-	for _, p := range strings.Fields(string(out)) {
+	for _, p := range all {
 		if !exempt[p] {
 			pkgs = append(pkgs, p)
 		}
@@ -95,115 +128,76 @@ func readExempt(r io.Reader) (map[string]bool, error) {
 	return exempt, sc.Err()
 }
 
-// run tests pkgs behind a refusing proxy and returns every outside target the
-// tests asked for, in arrival order.
-func run(pkgs []string, stdout, stderr io.Writer) ([]string, error) {
-	p, err := startProxy()
-	if err != nil {
+// checkPackage runs one package's short tests under strace, writing one trace
+// file per thread under dir, and returns the outside targets they reached.
+func checkPackage(pkg, dir string) ([]string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	args := append([]string{"test", "-short", "-count=1"}, pkgs...)
-	// #nosec G204 -- fixed go executable; arguments are package patterns from
-	// the CI workflow or go list.
-	cmd := exec.Command("go", args...)
-	cmd.Env = childEnv(os.Environ(), p.URL())
-	cmd.Stdout, cmd.Stderr = stdout, stderr
+	// #nosec G204 -- fixed strace and go executables; pkg is an import path
+	// from go list or the CI workflow.
+	cmd := exec.Command("strace", "-f", "-ff", "-yy", "--seccomp-bpf",
+		"-e", "trace=connect,sendto,sendmsg,sendmmsg", "-o", filepath.Join(dir, "t"),
+		"go", "test", "-short", "-count=1", pkg)
+	// Dependencies are downloaded before the run; module fetches must not
+	// count as test traffic.
+	cmd.Env = append(os.Environ(), "GOPROXY=off")
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	runErr := cmd.Run()
-	p.Close()
 	if runErr != nil {
-		runErr = fmt.Errorf("go test: %w", runErr)
+		runErr = fmt.Errorf("go test under strace: %w", runErr)
 	}
-	return p.Hits(), runErr
-}
 
-// childEnv points every proxy setting at the guard. An inherited NO_PROXY
-// would let listed hosts bypass it, and module downloads must not count as
-// test traffic, so GOPROXY is off: dependencies are fetched before the run.
-func childEnv(base []string, proxyURL string) []string {
-	env := make([]string, 0, len(base)+3)
-	for _, kv := range base {
-		key, _, _ := strings.Cut(kv, "=")
-		switch strings.ToUpper(key) {
-		case "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "GOPROXY":
-			continue
-		}
-		env = append(env, kv)
-	}
-	return append(env, "HTTPS_PROXY="+proxyURL, "HTTP_PROXY="+proxyURL, "GOPROXY=off")
-}
-
-type refusingProxy struct {
-	ln   net.Listener
-	wg   sync.WaitGroup
-	mu   sync.Mutex
-	hits []string
-}
-
-func startProxy() (*refusingProxy, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	files, err := filepath.Glob(filepath.Join(dir, "t.*"))
 	if err != nil {
 		return nil, err
 	}
-	p := &refusingProxy{ln: ln}
-	p.wg.Add(1)
-	go p.serve()
-	return p, nil
+	var hits []string
+	for _, f := range files {
+		b, err := os.ReadFile(f) // #nosec G304 -- trace file this process just created
+		if err != nil {
+			return nil, err
+		}
+		hits = append(hits, outsideTargets(string(b))...)
+	}
+	return hits, runErr
 }
 
-func (p *refusingProxy) URL() string { return "http://" + p.ln.Addr().String() }
+var (
+	callRe = regexp.MustCompile(`^(connect|sendto|sendmsg|sendmmsg)\(\d+<([A-Za-z0-9]+):`)
+	in4Re  = regexp.MustCompile(`sin_port=htons\((\d+)\), sin_addr=inet_addr\("([^"]+)"\)`)
+	in6Re  = regexp.MustCompile(`sin6_port=htons\((\d+)\).*?inet_pton\(AF_INET6, "([^"]+)"`)
+)
 
-func (p *refusingProxy) serve() {
-	defer p.wg.Done()
-	for {
-		conn, err := p.ln.Accept()
-		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				return
-			}
+// outsideTargets returns "addr:port" for each TCP connect, and each datagram
+// send with an explicit destination, that targets a non-loopback address.
+func outsideTargets(trace string) []string {
+	var out []string
+	for _, line := range strings.Split(trace, "\n") {
+		m := callRe.FindStringSubmatch(line)
+		if m == nil {
 			continue
 		}
-		p.wg.Add(1)
-		go p.refuse(conn)
-	}
-}
-
-// refuse records the request target and answers 403. CONNECT carries
-// host:port; a plain proxied request carries an absolute URL.
-func (p *refusingProxy) refuse(conn net.Conn) {
-	defer p.wg.Done()
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-	line, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil {
-		return
-	}
-	fields := strings.Fields(line)
-	if len(fields) < 2 {
-		return
-	}
-	target := fields[1]
-	if fields[0] != "CONNECT" {
-		if u, err := url.Parse(target); err == nil && u.Host != "" {
-			target = u.Host
+		if m[1] == "connect" && !strings.HasPrefix(m[2], "TCP") {
+			continue
 		}
+		a := in4Re.FindStringSubmatch(line)
+		if a == nil {
+			a = in6Re.FindStringSubmatch(line)
+		}
+		if a == nil {
+			continue
+		}
+		ip, err := netip.ParseAddr(a[2])
+		if err != nil {
+			continue
+		}
+		if u := ip.Unmap(); u.IsLoopback() || u.IsUnspecified() {
+			continue
+		}
+		out = append(out, net.JoinHostPort(ip.String(), a[1]))
 	}
-	p.mu.Lock()
-	p.hits = append(p.hits, target)
-	p.mu.Unlock()
-	_, _ = io.WriteString(conn, "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-}
-
-// Close stops accepting and waits for in-flight requests, so a request a test
-// sent just before exiting is still counted.
-func (p *refusingProxy) Close() {
-	_ = p.ln.Close()
-	p.wg.Wait()
-}
-
-func (p *refusingProxy) Hits() []string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return append([]string(nil), p.hits...)
+	return out
 }
 
 func summarize(hits []string) []string {
