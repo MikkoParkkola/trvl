@@ -40,25 +40,17 @@ func TestOptimizeMultiCity_TwoCities_LiveAPI(t *testing.T) {
 // 2 cities without network. fetchCheapestPriceWithClient will return price=9999
 // for all legs, then optimizeRoute is called and exercises the `continue` branch.
 func TestOptimizeMultiCity_TwoCities_NoNetworkFallback(t *testing.T) {
-	// This test does call the live API but returns quickly (price=9999 on failure).
-	// Use a very short timeout to force immediate failure.
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
+	// A cancelled context makes every leg search fail without a network call
+	// (MIK-8107); each leg falls back to the 9999 placeholder price.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 	result, err := OptimizeMultiCity(ctx, "HEL", []string{"AMS", "CDG"}, MultiCityOptions{
 		DepartDate: "2026-08-15",
 	})
-	// Either err from context cancel, or result with all-9999 prices.
 	if err != nil {
-		// Context cancelled before API calls — acceptable.
-		t.Logf("context expired before results: %v (acceptable)", err)
-		return
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Fatal("expected non-nil result")
-	}
-	// optimizeRoute ran with 2 cities: must have 2 permutations.
-	if result.Permutations != 2 {
-		t.Errorf("Permutations = %d, want 2 (2 cities = 2! permutations)", result.Permutations)
+	if result.Permutations != 2 || len(result.Segments) != 3 || result.TotalCost != 29997 {
+		t.Errorf("permutations=%d segments=%d total=%v, want 2 / 3 / 29997", result.Permutations, len(result.Segments), result.TotalCost)
 	}
 }

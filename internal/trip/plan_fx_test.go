@@ -1,0 +1,51 @@
+package trip
+
+import (
+	"context"
+	"testing"
+)
+
+// fakeFX converts USD<->EUR at a fixed rate and fails every other pair the
+// way destinations.ConvertCurrency does: amount and source currency unchanged.
+// Plan conversion tests use it instead of the live exchange-rate API (MIK-8107).
+func fakeFX(_ context.Context, amount float64, from, to string) (float64, string) {
+	switch {
+	case from == to:
+		return amount, to
+	case from == "USD" && to == "EUR":
+		return amount * 0.5, to
+	case from == "EUR" && to == "USD":
+		return amount * 2, to
+	}
+	return amount, from
+}
+
+func TestConvertPlanFlights_ConvertsPriceAndComparableWithCentRounding(t *testing.T) {
+	flights := []PlanFlight{{Price: 199.99, ComparablePrice: 100.01, Currency: "USD"}}
+	convertPlanFlights(context.Background(), flights, "EUR", fakeFX)
+	f := flights[0]
+	if f.Price != 100 || f.ComparablePrice != 50.01 || f.Currency != "EUR" {
+		t.Fatalf("got price=%v comparable=%v currency=%q, want 100 / 50.01 / EUR", f.Price, f.ComparablePrice, f.Currency)
+	}
+}
+
+func TestConvertPlanHotels_ConvertsPerNightAndTotal(t *testing.T) {
+	hotels := []PlanHotel{{PerNight: 50, Total: 200, Currency: "USD"}}
+	convertPlanHotels(context.Background(), hotels, "EUR", fakeFX)
+	h := hotels[0]
+	if h.PerNight != 25 || h.Total != 100 || h.Currency != "EUR" {
+		t.Fatalf("got perNight=%v total=%v currency=%q, want 25 / 100 / EUR", h.PerNight, h.Total, h.Currency)
+	}
+}
+
+// Pins current behaviour, which is a known defect (MIK-8138): when the rate is
+// unavailable the amount stays unconverted yet is stamped with the target
+// currency. Change this test together with the fix.
+func TestConvertPlanHotels_FailedConversionKeepsAmountAndStampsTarget(t *testing.T) {
+	hotels := []PlanHotel{{PerNight: 50, Total: 200, Currency: "GBP"}}
+	convertPlanHotels(context.Background(), hotels, "EUR", fakeFX)
+	h := hotels[0]
+	if h.PerNight != 50 || h.Total != 200 || h.Currency != "EUR" {
+		t.Fatalf("got perNight=%v total=%v currency=%q, want 50 / 200 / EUR", h.PerNight, h.Total, h.Currency)
+	}
+}

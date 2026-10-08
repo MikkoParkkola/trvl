@@ -70,7 +70,7 @@ func TestConvertPlanFlights_ZeroPriceSkipped(t *testing.T) {
 		{Price: 0, Currency: "USD"},
 	}
 	ctx := context.Background()
-	convertPlanFlights(ctx, flights, "EUR")
+	convertPlanFlights(ctx, flights, "EUR", fakeFX)
 	// Zero price should be skipped: currency should not change.
 	if flights[0].Currency != "USD" {
 		t.Errorf("zero-price flight had currency changed to %q", flights[0].Currency)

@@ -1,9 +1,7 @@
 package trip
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -81,23 +79,6 @@ func TestOptimizeTripDates_InvalidToDate(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid to_date")
 	}
-}
-
-func TestOptimizeTripDates_DefaultGuests(t *testing.T) {
-	// Guests defaults to 1 when 0. This attempts a network call; bound it
-	// with a short deadline so CI does not hang on provider retry/backoff
-	// (matches the _NoNetworkFallback idiom). The default-guests validation
-	// path still executes for coverage.
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	_, _ = OptimizeTripDates(ctx, OptimizeTripDatesInput{
-		Origin:      "HEL",
-		Destination: "BCN",
-		FromDate:    "2026-07-01",
-		ToDate:      "2026-07-31",
-		TripLength:  7,
-		Guests:      0,
-	})
 }
 
 func TestBuildDateOptions_BasicSorting(t *testing.T) {

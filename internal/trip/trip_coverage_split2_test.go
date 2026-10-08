@@ -432,17 +432,16 @@ func TestMergeAirportTransferRoutes_Empty(t *testing.T) {
 // ============================================================
 
 func TestConvertPlanFlights_DifferentCurrencyCallsConverter(t *testing.T) {
-	// USD source, EUR target — since we can't mock destinations.ConvertCurrency,
-	// we just verify the function runs without panic and updates the currency field.
+	// Same-currency and zero-price flights must pass through unconverted.
 	flights := []PlanFlight{
 		{Price: 100, Currency: "USD"},
 	}
-	convertPlanFlights(context.Background(), flights, "USD") // no-op: same currency
+	convertPlanFlights(context.Background(), flights, "USD", fakeFX) // no-op: same currency
 	// Now test with same price source to just exercise the else branch: verify no panic.
 	flights2 := []PlanFlight{
 		{Price: 0, Currency: "USD"},
 	}
-	convertPlanFlights(context.Background(), flights2, "EUR") // price=0 → skipped
+	convertPlanFlights(context.Background(), flights2, "EUR", fakeFX) // price=0 → skipped
 	if flights2[0].Currency != "USD" {
 		t.Errorf("zero-price flight currency changed: %q", flights2[0].Currency)
 	}
@@ -458,7 +457,7 @@ func TestConvertPlanHotels_ZeroTotalIsSkipped(t *testing.T) {
 	}
 	// Total=0 → Total conversion skipped; PerNight>0 → conversion attempted.
 	// With same currency it's a no-op.
-	convertPlanHotels(context.Background(), hotels, "USD")
+	convertPlanHotels(context.Background(), hotels, "USD", fakeFX)
 	if hotels[0].Total != 0 {
 		t.Errorf("zero total changed: %v", hotels[0].Total)
 	}
@@ -475,7 +474,7 @@ func TestConvertPlanHotels_DifferentCurrencyExercisesConversionPath(t *testing.T
 	hotels := []PlanHotel{
 		{PerNight: 50, Total: 150, Currency: "EUR"},
 	}
-	convertPlanHotels(context.Background(), hotels, "EUR")
+	convertPlanHotels(context.Background(), hotels, "EUR", fakeFX)
 	if hotels[0].PerNight != 50 {
 		t.Errorf("same-currency hotel PerNight changed: %v", hotels[0].PerNight)
 	}
@@ -490,7 +489,7 @@ func TestConvertPlanHotels_SameCurrencyMultipleHotels(t *testing.T) {
 		{PerNight: 0, Total: 0, Currency: ""},
 		{PerNight: 60, Total: 180, Currency: "EUR"},
 	}
-	convertPlanHotels(context.Background(), hotels, "EUR")
+	convertPlanHotels(context.Background(), hotels, "EUR", fakeFX)
 	if hotels[0].PerNight != 80 || hotels[2].PerNight != 60 {
 		t.Error("same-currency hotels should be unchanged")
 	}
@@ -501,7 +500,7 @@ func TestConvertPlanFlights_DifferentCurrencyUpdatesField(t *testing.T) {
 	flights := []PlanFlight{
 		{Price: 200, Currency: "EUR"},
 	}
-	convertPlanFlights(context.Background(), flights, "EUR")
+	convertPlanFlights(context.Background(), flights, "EUR", fakeFX)
 	if flights[0].Price != 200 {
 		t.Errorf("same-currency flight price changed: %v", flights[0].Price)
 	}

@@ -368,34 +368,38 @@ func choosePlanSummaryCurrency(requested string, result *PlanResult) string {
 }
 
 func convertedPlanAmount(ctx context.Context, amount float64, from, to string) float64 {
-	converted, _ := destinations.ConvertCurrency(ctx, amount, from, to)
+	return roundedPlanAmount(ctx, destinations.ConvertCurrency, amount, from, to)
+}
+
+func roundedPlanAmount(ctx context.Context, conv tripCostCurrencyConverter, amount float64, from, to string) float64 {
+	converted, _ := conv(ctx, amount, from, to)
 	return math.Round(converted*100) / 100
 }
 
-func convertPlanFlights(ctx context.Context, flights []PlanFlight, currency string) {
+func convertPlanFlights(ctx context.Context, flights []PlanFlight, currency string, conv tripCostCurrencyConverter) {
 	for i := range flights {
 		if flights[i].Price <= 0 || flights[i].Currency == "" || flights[i].Currency == currency {
 			continue
 		}
 		from := flights[i].Currency
-		flights[i].Price = convertedPlanAmount(ctx, flights[i].Price, from, currency)
+		flights[i].Price = roundedPlanAmount(ctx, conv, flights[i].Price, from, currency)
 		if flights[i].ComparablePrice > 0 {
-			flights[i].ComparablePrice = convertedPlanAmount(ctx, flights[i].ComparablePrice, from, currency)
+			flights[i].ComparablePrice = roundedPlanAmount(ctx, conv, flights[i].ComparablePrice, from, currency)
 		}
 		flights[i].Currency = currency
 	}
 }
 
-func convertPlanHotels(ctx context.Context, hotels []PlanHotel, currency string) {
+func convertPlanHotels(ctx context.Context, hotels []PlanHotel, currency string, conv tripCostCurrencyConverter) {
 	for i := range hotels {
 		if hotels[i].Currency == "" || hotels[i].Currency == currency {
 			continue
 		}
 		if hotels[i].PerNight > 0 {
-			hotels[i].PerNight = convertedPlanAmount(ctx, hotels[i].PerNight, hotels[i].Currency, currency)
+			hotels[i].PerNight = roundedPlanAmount(ctx, conv, hotels[i].PerNight, hotels[i].Currency, currency)
 		}
 		if hotels[i].Total > 0 {
-			hotels[i].Total = convertedPlanAmount(ctx, hotels[i].Total, hotels[i].Currency, currency)
+			hotels[i].Total = roundedPlanAmount(ctx, conv, hotels[i].Total, hotels[i].Currency, currency)
 		}
 		hotels[i].Currency = currency
 	}

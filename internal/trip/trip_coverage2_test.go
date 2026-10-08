@@ -331,28 +331,6 @@ func TestResolveDestinationCountry_KnownCodes(t *testing.T) {
 }
 
 // ============================================================
-// AssessTrip — validation edge cases
-// ============================================================
-
-func TestAssessTrip_DefaultGuests2(t *testing.T) {
-	// With guests=0, should default to 1 (not error).
-	// This actually hits the network, so we just check validation passes.
-	// The function sets guests=1 internally when <=0.
-	// We already have TestAssessTrip_DefaultGuests, but let's test -1.
-	_, err := AssessTrip(context.Background(), ViabilityInput{
-		Origin:      "HEL",
-		Destination: "BCN",
-		DepartDate:  "2026-07-01",
-		ReturnDate:  "2026-07-08",
-		Guests:      -1,
-	})
-	// Should not return a validation error (defaults to 1).
-	if err != nil {
-		t.Errorf("expected no validation error for negative guests (defaults to 1), got: %v", err)
-	}
-}
-
-// ============================================================
 // CalculateTripCost — additional validation edge cases
 // ============================================================
 
@@ -549,7 +527,9 @@ func TestFindWeekendGetaways_EmptyOrigin2(t *testing.T) {
 // ============================================================
 
 func TestOptimizeMultiCity_SingleCity2(t *testing.T) {
-	_, err := OptimizeMultiCity(context.Background(), "HEL", []string{"BCN"}, MultiCityOptions{DepartDate: "2026-07-01"})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // no provider dials out (MIK-8107)
+	_, err := OptimizeMultiCity(ctx, "HEL", []string{"BCN"}, MultiCityOptions{DepartDate: "2026-07-01"})
 	// Single city is valid.
 	if err != nil {
 		t.Errorf("unexpected error for single city: %v", err)

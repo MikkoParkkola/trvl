@@ -431,7 +431,7 @@ func TestConvertPlanHotels_WithTotal(t *testing.T) {
 		{PerNight: 100, Total: 300, Currency: "EUR"},
 	}
 	// Same currency, no conversion.
-	convertPlanHotels(context.Background(), hotels, "EUR")
+	convertPlanHotels(context.Background(), hotels, "EUR", fakeFX)
 	if hotels[0].PerNight != 100 || hotels[0].Total != 300 {
 		t.Error("same currency should not change values")
 	}

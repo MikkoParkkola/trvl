@@ -250,7 +250,7 @@ func TestConvertPlanFlights_SkipsZeroPrice(t *testing.T) {
 		{Price: 100, Currency: "EUR"},
 	}
 	// EUR -> EUR: no-op conversion. Zero-price entry should be skipped.
-	convertPlanFlights(context.Background(), flights, "EUR")
+	convertPlanFlights(context.Background(), flights, "EUR", fakeFX)
 	if flights[0].Price != 0 {
 		t.Errorf("zero-price flight should remain 0, got %v", flights[0].Price)
 	}
@@ -261,7 +261,7 @@ func TestConvertPlanFlights_SkipsSameCurrency(t *testing.T) {
 		{Price: 200, Currency: "EUR"},
 	}
 	// Already EUR, target EUR — no conversion needed.
-	convertPlanFlights(context.Background(), flights, "EUR")
+	convertPlanFlights(context.Background(), flights, "EUR", fakeFX)
 	if flights[0].Price != 200 {
 		t.Errorf("same-currency flight price changed: %v", flights[0].Price)
 	}
@@ -271,7 +271,7 @@ func TestConvertPlanFlights_SkipsEmptyCurrency(t *testing.T) {
 	flights := []PlanFlight{
 		{Price: 150, Currency: ""},
 	}
-	convertPlanFlights(context.Background(), flights, "USD")
+	convertPlanFlights(context.Background(), flights, "USD", fakeFX)
 	// Empty source currency — should be skipped (guard: Currency == "").
 	if flights[0].Currency != "" {
 		t.Errorf("empty-currency flight should not be modified, got %q", flights[0].Currency)
@@ -280,15 +280,15 @@ func TestConvertPlanFlights_SkipsEmptyCurrency(t *testing.T) {
 
 func TestConvertPlanFlights_Empty(t *testing.T) {
 	// Should not panic on nil/empty slice.
-	convertPlanFlights(context.Background(), nil, "EUR")
-	convertPlanFlights(context.Background(), []PlanFlight{}, "EUR")
+	convertPlanFlights(context.Background(), nil, "EUR", fakeFX)
+	convertPlanFlights(context.Background(), []PlanFlight{}, "EUR", fakeFX)
 }
 
 func TestConvertPlanHotels_SkipsSameCurrency(t *testing.T) {
 	hotels := []PlanHotel{
 		{PerNight: 80, Total: 240, Currency: "EUR"},
 	}
-	convertPlanHotels(context.Background(), hotels, "EUR")
+	convertPlanHotels(context.Background(), hotels, "EUR", fakeFX)
 	if hotels[0].PerNight != 80 {
 		t.Errorf("same-currency hotel per-night changed: %v", hotels[0].PerNight)
 	}
@@ -301,7 +301,7 @@ func TestConvertPlanHotels_SkipsEmptyCurrency(t *testing.T) {
 	hotels := []PlanHotel{
 		{PerNight: 80, Total: 240, Currency: ""},
 	}
-	convertPlanHotels(context.Background(), hotels, "USD")
+	convertPlanHotels(context.Background(), hotels, "USD", fakeFX)
 	// Empty source currency — skipped.
 	if hotels[0].Currency != "" {
 		t.Errorf("empty-currency hotel should not be modified, got %q", hotels[0].Currency)
@@ -314,15 +314,15 @@ func TestConvertPlanHotels_ZeroPerNight(t *testing.T) {
 	hotels := []PlanHotel{
 		{PerNight: 0, Total: 240, Currency: "USD"},
 	}
-	convertPlanHotels(context.Background(), hotels, "USD") // same currency — no-op
+	convertPlanHotels(context.Background(), hotels, "USD", fakeFX) // same currency — no-op
 	if hotels[0].Total != 240 {
 		t.Errorf("same-currency hotel total changed: %v", hotels[0].Total)
 	}
 }
 
 func TestConvertPlanHotels_Empty(t *testing.T) {
-	convertPlanHotels(context.Background(), nil, "EUR")
-	convertPlanHotels(context.Background(), []PlanHotel{}, "EUR")
+	convertPlanHotels(context.Background(), nil, "EUR", fakeFX)
+	convertPlanHotels(context.Background(), []PlanHotel{}, "EUR", fakeFX)
 }
 
 // ============================================================

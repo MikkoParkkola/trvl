@@ -90,24 +90,14 @@ func TestDiscover_FridayWindowsExceedUntil(t *testing.T) {
 // so we exercise the nil/error return path.
 // ============================================================
 
-func TestFindBreakfastNearHotel_ReturnsNilOnError(t *testing.T) {
-	// Providing coordinates that will fail to reach the live API (context
-	// with no network timeout). Result must be nil, not a panic.
-	ctx := context.Background()
-	spots := findBreakfastNearHotel(ctx, 0, 0)
-	// When GetNearbyPlaces errors (or returns empty), the function returns nil.
-	// We can't assert nil here because if the test machine can reach the API
-	// it might return results — but we can assert it does not panic.
-	_ = spots
-}
-
-func TestFindBreakfastNearHotel_InvalidCoords(t *testing.T) {
-	// lat=0, lon=0 is the Gulf of Guinea — no cafes there.
-	// Exercises the function body: POI loop, RatedPlaces loop, dedup, sort.
-	ctx := context.Background()
-	spots := findBreakfastNearHotel(ctx, 0.0, 0.0)
-	// Result is either nil (API error) or an empty/populated slice — either way no panic.
-	_ = spots
+func TestFindBreakfastNearHotel_EmptyWhenLookupCancelled(t *testing.T) {
+	// GetNearbyPlaces returns an empty result, not an error, when its sources
+	// fail, so the helper yields an empty list (MIK-8107: no live lookup).
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if spots := findBreakfastNearHotel(ctx, 0, 0); len(spots) != 0 {
+		t.Fatalf("spots = %v, want none when the lookup is cancelled", spots)
+	}
 }
 
 // ============================================================
@@ -149,7 +139,9 @@ func TestBuildViabilityChecks_BothFlightsZeroWarning(t *testing.T) {
 // ============================================================
 
 func TestAssessTrip_WithPassport(t *testing.T) {
-	result, err := AssessTrip(context.Background(), ViabilityInput{
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // no provider dials out (MIK-8107)
+	result, err := AssessTrip(ctx, ViabilityInput{
 		Origin:      "HEL",
 		Destination: "BCN",
 		DepartDate:  "2026-07-01",
@@ -180,7 +172,9 @@ func TestAssessTrip_WithPassportUnknownDest(t *testing.T) {
 	// call visa.Lookup — but buildViabilityChecks still adds a visa check
 	// because passport != "". The check will have status "warning" with
 	// "could not determine visa requirements" since visaResult.Success=false.
-	result, err := AssessTrip(context.Background(), ViabilityInput{
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // no provider dials out (MIK-8107)
+	result, err := AssessTrip(ctx, ViabilityInput{
 		Origin:      "HEL",
 		Destination: "ZZZ",
 		DepartDate:  "2026-07-01",
@@ -253,30 +247,22 @@ func TestAirportTransferDepartureMinutes_ShortStringFallback(t *testing.T) {
 // on line ~97 in smartdates.go.
 // ============================================================
 
-func TestSuggestDates_ValidInputNetworkFail(t *testing.T) {
-	// With valid inputs, SuggestDates calls SearchCalendar (live network).
-	// In unit test environment the call will fail or return empty, which hits
-	// the assembleDateResult(false) path or returns an error.
-	// Either way, no panic and the function exits cleanly.
-	result, err := SuggestDates(context.Background(), "HEL", "BCN", SmartDateOptions{
+func TestSuggestDates_NoPriceDataIsUnsuccessful(t *testing.T) {
+	// A cancelled context makes the calendar search return nothing without a
+	// network call (MIK-8107); SuggestDates reports that as an unsuccessful
+	// result, not an error.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result, err := SuggestDates(ctx, "HEL", "BCN", SmartDateOptions{
 		TargetDate: "2026-07-15",
 		FlexDays:   3,
 	})
-	// Either a network error is returned OR a result with Success=false.
-	// Both outcomes are acceptable — we just cover the function body.
 	if err != nil {
-		// Network error path (line ~97: "search calendar: %w")
-		if !strings.Contains(err.Error(), "search calendar") && !strings.Contains(err.Error(), "context") {
-			t.Logf("SuggestDates returned error: %v (acceptable in unit test)", err)
-		}
-		return
+		t.Fatalf("SuggestDates error = %v, want an unsuccessful result", err)
 	}
-	// Result returned: either success or failure from assembleDateResult.
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	if result == nil || result.Success {
+		t.Fatalf("result = %+v, want Success=false when no prices are found", result)
 	}
-	// Log result for visibility — both Success=true and false are acceptable.
-	t.Logf("SuggestDates result: success=%v, currency=%q, dates=%d", result.Success, result.Currency, len(result.CheapestDates))
 }
 
 // ============================================================
