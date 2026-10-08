@@ -469,10 +469,10 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 	enrichWg.Wait()
 
 	if input.Currency != "" {
-		convertPlanFlights(ctx, result.OutboundFlights, input.Currency)
-		convertPlanFlights(ctx, result.ReturnFlights, input.Currency)
-		convertPlanFlights(ctx, result.RoundTripFares, input.Currency)
-		convertPlanHotels(ctx, result.Hotels, input.Currency)
+		convertPlanFlights(ctx, result.OutboundFlights, input.Currency, destinations.ConvertCurrency)
+		convertPlanFlights(ctx, result.ReturnFlights, input.Currency, destinations.ConvertCurrency)
+		convertPlanFlights(ctx, result.RoundTripFares, input.Currency, destinations.ConvertCurrency)
+		convertPlanHotels(ctx, result.Hotels, input.Currency, destinations.ConvertCurrency)
 	}
 
 	// Build summary from cheapest options. Two parallel figures per leg: the

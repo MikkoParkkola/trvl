@@ -171,7 +171,7 @@ func TestConvertPlanFlights_NoCurrency(t *testing.T) {
 	flights := []PlanFlight{
 		{Price: 100, Currency: ""},
 	}
-	convertPlanFlights(context.Background(), flights, "EUR")
+	convertPlanFlights(context.Background(), flights, "EUR", fakeFX)
 	if flights[0].Price != 100 {
 		t.Errorf("price = %v, want 100 (no conversion when currency empty)", flights[0].Price)
 	}
@@ -181,7 +181,7 @@ func TestConvertPlanFlights_SameCurrency(t *testing.T) {
 	flights := []PlanFlight{
 		{Price: 100, Currency: "EUR"},
 	}
-	convertPlanFlights(context.Background(), flights, "EUR")
+	convertPlanFlights(context.Background(), flights, "EUR", fakeFX)
 	if flights[0].Price != 100 {
 		t.Errorf("price = %v, want 100 (no conversion for same currency)", flights[0].Price)
 	}
@@ -191,7 +191,7 @@ func TestConvertPlanFlights_ZeroPrice(t *testing.T) {
 	flights := []PlanFlight{
 		{Price: 0, Currency: "EUR"},
 	}
-	convertPlanFlights(context.Background(), flights, "USD")
+	convertPlanFlights(context.Background(), flights, "USD", fakeFX)
 	if flights[0].Price != 0 {
 		t.Errorf("price = %v, want 0 (no conversion for zero price)", flights[0].Price)
 	}
@@ -205,7 +205,7 @@ func TestConvertPlanHotels_NoCurrency(t *testing.T) {
 	hotels := []PlanHotel{
 		{PerNight: 50, Total: 100, Currency: ""},
 	}
-	convertPlanHotels(context.Background(), hotels, "EUR")
+	convertPlanHotels(context.Background(), hotels, "EUR", fakeFX)
 	if hotels[0].PerNight != 50 {
 		t.Errorf("per_night = %v, want 50 (no conversion when currency empty)", hotels[0].PerNight)
 	}
@@ -215,7 +215,7 @@ func TestConvertPlanHotels_SameCurrency(t *testing.T) {
 	hotels := []PlanHotel{
 		{PerNight: 50, Total: 100, Currency: "EUR"},
 	}
-	convertPlanHotels(context.Background(), hotels, "EUR")
+	convertPlanHotels(context.Background(), hotels, "EUR", fakeFX)
 	if hotels[0].PerNight != 50 {
 		t.Errorf("per_night = %v, want 50 (no conversion for same currency)", hotels[0].PerNight)
 	}
@@ -442,13 +442,9 @@ func TestConvertPlanHotels_DifferentCurrency(t *testing.T) {
 	hotels := []PlanHotel{
 		{PerNight: 50, Total: 200, Currency: "USD"},
 	}
-	// When ConvertCurrency is called, the actual conversion may or may not
-	// succeed depending on FX rate availability. We just verify no panic
-	// and that the function is exercised.
-	convertPlanHotels(context.Background(), hotels, "EUR")
-	// Currency should either remain USD (conversion failed) or change to EUR.
-	if hotels[0].Currency != "EUR" && hotels[0].Currency != "USD" {
-		t.Errorf("currency = %q, want EUR or USD", hotels[0].Currency)
+	convertPlanHotels(context.Background(), hotels, "EUR", fakeFX)
+	if h := hotels[0]; h.PerNight != 25 || h.Total != 100 || h.Currency != "EUR" {
+		t.Errorf("got perNight=%v total=%v currency=%q, want 25 / 100 / EUR", h.PerNight, h.Total, h.Currency)
 	}
 }
 
@@ -456,10 +452,9 @@ func TestConvertPlanHotels_ZeroPerNightSkipped(t *testing.T) {
 	hotels := []PlanHotel{
 		{PerNight: 0, Total: 200, Currency: "USD"},
 	}
-	convertPlanHotels(context.Background(), hotels, "EUR")
-	// PerNight stays 0 (skipped), Total may or may not convert.
-	if hotels[0].PerNight != 0 {
-		t.Errorf("PerNight = %v, want 0 (should not convert zero)", hotels[0].PerNight)
+	convertPlanHotels(context.Background(), hotels, "EUR", fakeFX)
+	if hotels[0].PerNight != 0 || hotels[0].Total != 100 {
+		t.Errorf("PerNight = %v, Total = %v, want 0 (zero skipped) and 100", hotels[0].PerNight, hotels[0].Total)
 	}
 }
 
@@ -467,7 +462,7 @@ func TestConvertPlanHotels_ZeroTotal(t *testing.T) {
 	hotels := []PlanHotel{
 		{PerNight: 50, Total: 0, Currency: "USD"},
 	}
-	convertPlanHotels(context.Background(), hotels, "EUR")
+	convertPlanHotels(context.Background(), hotels, "EUR", fakeFX)
 	// Total stays 0.
 	if hotels[0].Total != 0 {
 		t.Errorf("Total = %v, want 0 (should not convert zero)", hotels[0].Total)
@@ -482,10 +477,9 @@ func TestConvertPlanFlights_DifferentCurrency(t *testing.T) {
 	flights := []PlanFlight{
 		{Price: 200, Currency: "USD"},
 	}
-	convertPlanFlights(context.Background(), flights, "EUR")
-	// Price and currency may or may not change depending on FX availability.
-	if flights[0].Price <= 0 {
-		t.Errorf("price = %v, should be > 0 after conversion attempt", flights[0].Price)
+	convertPlanFlights(context.Background(), flights, "EUR", fakeFX)
+	if flights[0].Price != 100 || flights[0].Currency != "EUR" {
+		t.Errorf("got price=%v currency=%q, want 100 / EUR", flights[0].Price, flights[0].Currency)
 	}
 }
 
