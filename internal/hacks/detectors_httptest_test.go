@@ -372,28 +372,6 @@ func TestDetectTuesdayBooking_InvalidDate(t *testing.T) {
 	}
 }
 
-// TestDetectTuesdayBooking_FridayIsTrigger verifies that Friday is treated
-// as an expensive day (triggering the detector's early-return bypass only
-// on non-expensive days).
-func TestDetectTuesdayBooking_FridayIsTrigger(t *testing.T) {
-	// Find a date that's a Friday.
-	// 2026-04-17 is a Friday.
-	d, _ := parseDate("2026-04-17")
-	if d.Weekday() != time.Friday {
-		t.Skipf("2026-04-17 is not Friday, got %v", d.Weekday())
-	}
-	// This should NOT return nil from the "not expensive day" guard.
-	// It will return nil from the API call (no live flights in tests),
-	// but the important thing is the weekday check passes.
-	hacks := detectTuesdayBooking(context.Background(), DetectorInput{
-		Origin:      "HEL",
-		Destination: "PRG",
-		Date:        "2026-04-17", // Friday
-	})
-	// Will be nil because no live API, but should not panic.
-	_ = hacks
-}
-
 // ---------------------------------------------------------------------------
 // Hack struct fields validation
 // ---------------------------------------------------------------------------

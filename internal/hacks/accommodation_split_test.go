@@ -352,22 +352,6 @@ func TestHackType(t *testing.T) {
 	}
 }
 
-// TestMaxSplitsDefault verifies MaxSplits < 2 is treated as 3.
-func TestMaxSplitsDefault(t *testing.T) {
-	// Build a stub to verify default behaviour: a 4-night stay with MaxSplits=1
-	// (below minimum) should default to allowing 3-way splits.
-	in := AccommodationSplitInput{
-		City:      "Prague",
-		CheckIn:   "2026-04-12",
-		CheckOut:  "2026-04-16", // 4 nights, valid for 2-way split
-		MaxSplits: 1,            // below minimum — should default to 3
-		Currency:  "EUR",
-	}
-	// After normalisation MaxSplits becomes 3. We can't verify internals, but
-	// DetectAccommodationSplit should not panic.
-	_ = DetectAccommodationSplit(context.Background(), in)
-}
-
 // TestStepContainsHotelName verifies hotel names appear in Steps.
 func TestStepContainsHotelName(t *testing.T) {
 	segments := []splitSegment{

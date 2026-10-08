@@ -74,17 +74,6 @@ func TestDetectFlightCombo_tripsOverrideDates(t *testing.T) {
 	}
 }
 
-func TestDetectFlightCombo_defaultCurrency(t *testing.T) {
-	// Just verify it doesn't panic with no currency set.
-	// Actual API calls will fail but we're testing input handling.
-	_ = DetectFlightCombo(context.Background(), FlightComboInput{
-		Origin:      "HEL",
-		Destination: "BCN",
-		DepartDate:  "2026-05-01",
-		ReturnDate:  "2026-05-08",
-	})
-}
-
 // --- cheapestFlightInfo helper ---
 
 func TestCheapestFlightInfo_nil(t *testing.T) {

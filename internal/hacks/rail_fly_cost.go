@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -26,7 +25,7 @@ func convertRailLeg(ctx context.Context, leg railLegCost, target string) (railLe
 		}
 		return leg, true
 	}
-	c, got := destinations.ConvertCurrency(ctx, leg.Cost, cur, target)
+	c, got := currentCurrencyConverter()(ctx, leg.Cost, cur, target)
 	if got != target {
 		return leg, false // inconvertible: caller must drop; mixing denominations would lie
 	}
