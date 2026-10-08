@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
@@ -231,16 +230,19 @@ func TestOverlapsAny_SingleDayInterval(t *testing.T) {
 }
 
 // ============================================================
-// cheapestFlightWithBudget — negative budget path
+// cheapestFlightWithBudget — failed search
 // ============================================================
 
-func TestCheapestFlightWithBudget_NegativeBudget(t *testing.T) {
+func TestCheapestFlightWithBudget_NothingWhenSearchCancelled(t *testing.T) {
 	t.Parallel()
-	// Negative budget effectively means no budget filter.
-	price, curr := cheapestFlightWithBudget(context.Background(), "HEL", "PRG", "2026-05-01", "2026-05-05", -100)
-	// Will return 0 because there are no real search results.
-	_ = price
-	_ = curr
+	// A cancelled context fails the flight search without a network call
+	// (MIK-8107); the helper must then report no price and no currency.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	price, curr := cheapestFlightWithBudget(ctx, "HEL", "PRG", "2026-05-01", "2026-05-05", 0)
+	if price != 0 || curr != "" {
+		t.Fatalf("got price=%v currency=%q, want 0 and empty when the search fails", price, curr)
+	}
 }
 
 // ============================================================
@@ -299,10 +301,12 @@ func TestInterval_WithReason(t *testing.T) {
 
 func TestFind_CancelledContextSafe(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
-	defer cancel()
+	// Already cancelled, not a short timeout: net/http finishes a dial after its
+	// request is cancelled, so a deadline that expires mid-search still reaches
+	// providers (MIK-8107).
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
-	// Very brief timeout — should not panic.
 	_, _ = Find(ctx, Input{
 		Origin:      "HEL",
 		Destination: "PRG",
