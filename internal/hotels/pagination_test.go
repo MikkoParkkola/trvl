@@ -19,6 +19,10 @@ func defaultOpts() HotelSearchOptions {
 		CheckOut: "2026-06-18",
 		Guests:   2,
 		Currency: "USD",
+		// A set center skips the ResolveLocation geocode, which would call
+		// Nominatim (MIK-8107).
+		CenterLat: 60.1699,
+		CenterLon: 24.9384,
 	}
 }
 

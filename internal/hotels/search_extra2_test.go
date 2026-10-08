@@ -69,17 +69,6 @@ func TestGetHotelPrices_BadDate(t *testing.T) {
 	}
 }
 
-func TestGetHotelPrices_DefaultCurrency(t *testing.T) {
-	// Can't easily test the full flow without a real server,
-	// but verify it doesn't panic with empty currency.
-	// The function will fail at the HTTP request level, which is fine.
-	_, err := GetHotelPrices(context.Background(), "/g/123", "2026-06-15", "2026-06-18", "")
-	// Will fail because it tries to hit google.com — that's expected.
-	if err == nil {
-		t.Log("Unexpectedly succeeded (maybe network is available)")
-	}
-}
-
 // --- parseHotelsFromPage ---
 
 func TestParseHotelsFromPage_NoCallbacks(t *testing.T) {
@@ -306,33 +295,6 @@ func TestBuildHotelBookingURL_DifferentLocations(t *testing.T) {
 		if !strings.Contains(url, tt.checkOut) {
 			t.Errorf("URL for %s missing check-out: %s", tt.location, url)
 		}
-	}
-}
-
-// --- SearchHotels defaults ---
-
-func TestSearchHotels_DefaultGuests(t *testing.T) {
-	// Verify defaults by calling SearchHotels with 0 guests.
-	// It will fail at the HTTP layer, but we can confirm defaults don't panic.
-	_, err := SearchHotels(context.Background(), "Helsinki", HotelSearchOptions{
-		CheckIn:  "2026-06-15",
-		CheckOut: "2026-06-18",
-		Guests:   0, // should default to 2
-	})
-	// Will fail because it tries to contact google.com — expected.
-	if err == nil {
-		t.Log("Unexpectedly succeeded")
-	}
-}
-
-func TestSearchHotels_DefaultCurrency(t *testing.T) {
-	_, err := SearchHotels(context.Background(), "Helsinki", HotelSearchOptions{
-		CheckIn:  "2026-06-15",
-		CheckOut: "2026-06-18",
-		Currency: "", // should default to "USD"
-	})
-	if err == nil {
-		t.Log("Unexpectedly succeeded")
 	}
 }
 

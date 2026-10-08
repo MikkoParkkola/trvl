@@ -502,6 +502,12 @@ func TestNormalizeHotelCityIdempotent(t *testing.T) {
 }
 
 func TestSearchHotels_IncludesBookingResults(t *testing.T) {
+	origFetch := fetchHotelPageFullFn
+	fetchHotelPageFullFn = func(_ context.Context, _ *batchexec.Client, _ string, _ HotelSearchOptions, _ int, _ string) (parseResult, error) {
+		return parseResult{Hotels: []models.HotelResult{{Name: "Google Test Hotel", Price: 120, Currency: "EUR"}}}, nil
+	}
+	defer func() { fetchHotelPageFullFn = origFetch }()
+
 	origSearch := SearchBooking
 	SearchBooking = func(ctx context.Context, location string, opts HotelSearchOptions) ([]models.HotelResult, error) {
 		return []models.HotelResult{{
@@ -515,20 +521,21 @@ func TestSearchHotels_IncludesBookingResults(t *testing.T) {
 
 	results, err := SearchHotels(context.Background(), "Corfu", HotelSearchOptions{
 		CheckIn: "2026-08-10", CheckOut: "2026-08-17", Currency: "EUR", MaxPages: 1,
+		CenterLat: 39.62, CenterLon: 19.92,
 	})
 	if err != nil {
 		t.Fatalf("SearchHotels failed: %v", err)
 	}
 
-	found := false
+	found := map[string]bool{}
 	for _, h := range results.Hotels {
-		if h.Name == "Booking Test Hotel" {
-			found = true
-			break
-		}
+		found[h.Name] = true
 	}
-	if !found {
+	if !found["Booking Test Hotel"] {
 		t.Error("expected Booking Test Hotel in merged results")
+	}
+	if !found["Google Test Hotel"] {
+		t.Error("expected Google Test Hotel to survive the merge alongside Booking")
 	}
 }
 
@@ -557,6 +564,7 @@ func TestSearchHotels_GoogleBlockedDegradesGracefully(t *testing.T) {
 
 	results, err := SearchHotels(context.Background(), "Corfu", HotelSearchOptions{
 		CheckIn: "2026-08-10", CheckOut: "2026-08-17", Currency: "EUR", MaxPages: 1,
+		CenterLat: 39.62, CenterLon: 19.92,
 	})
 	if err != nil {
 		t.Fatalf("SearchHotels returned error despite a working auxiliary provider: %v", err)
@@ -601,6 +609,7 @@ func TestSearchHotels_GoogleRateLimitedMarksMissingCoverage(t *testing.T) {
 
 	results, err := SearchHotels(context.Background(), "Corfu", HotelSearchOptions{
 		CheckIn: "2026-08-10", CheckOut: "2026-08-17", Currency: "EUR", MaxPages: 1,
+		CenterLat: 39.62, CenterLon: 19.92,
 	})
 	if err != nil {
 		t.Fatalf("SearchHotels returned error despite a working auxiliary provider: %v", err)
