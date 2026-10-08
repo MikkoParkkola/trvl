@@ -150,6 +150,25 @@ jobs:
           chart: true
           amend: true
 
+  # The default suite must not reach outside hosts (MIK-8100). Every package
+  # not listed in scripts/ci/offline-exempt.txt runs under strace; any TCP
+  # connect or datagram to a non-loopback address fails the job.
+  offline-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.6"
+      - name: Install strace
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends strace
+      - name: Download modules
+        run: go mod download
+      - name: Test the guard
+        run: go test -count=1 ./scripts/ci/offline-guard/
+      - name: Tests stay offline
+        run: go run ./scripts/ci/offline-guard
+
   secrets-scan:
     runs-on: ubuntu-latest
     steps:

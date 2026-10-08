@@ -342,31 +342,6 @@ func TestSearchCalendarFallback_Delegates(t *testing.T) {
 	}
 }
 
-func TestSearchCalendarFallback_OneWay(t *testing.T) {
-	// Verify fallback with one-way options.
-	opts := CalendarOptions{
-		FromDate:   "2026-07-01",
-		ToDate:     "2026-07-15",
-		TripLength: 0,
-		RoundTrip:  false,
-		Adults:     1,
-	}
-
-	// searchCalendarFallback delegates to SearchDates which makes network calls.
-	// We can at least verify it doesn't panic and returns an error/result.
-	ctx := t.Context()
-	result, err := searchCalendarFallback(ctx, "HEL", "NRT", opts)
-	// Network call may fail, but the function should not panic.
-	if err != nil {
-		// Expected — network not available in unit tests.
-		t.Logf("Expected network error: %v", err)
-		return
-	}
-	if result == nil {
-		t.Error("expected non-nil result")
-	}
-}
-
 // --- SearchCalendar additional validation ---
 
 func TestSearchCalendar_BothEmpty(t *testing.T) {
