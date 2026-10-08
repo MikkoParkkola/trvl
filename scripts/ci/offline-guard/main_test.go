@@ -28,6 +28,14 @@ func TestOutsideTargets(t *testing.T) {
 		`connect(4<UDP:[640032802]>, {sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("142.251.156.119")}, 16) = 0`,
 		// A UDP send with an explicit outside destination counts.
 		`sendto(6<UDPv6:[[::]:39832]>, "x", 1, 0, {sa_family=AF_INET6, sin6_port=htons(9), sin6_flowinfo=htonl(0), inet_pton(AF_INET6, "::ffff:192.0.2.2", &sin6_addr), sin6_scope_id=0}, 28) = 1`,
+		// A batch counts every outside destination, even behind a loopback one.
+		`sendmmsg(8<UDP:[6]>, [{msg_hdr={msg_name={sa_family=AF_INET, sin_port=htons(53), sin_addr=inet_addr("127.0.0.53")}, msg_namelen=16}, msg_len=1}, {msg_hdr={msg_name={sa_family=AF_INET, sin_port=htons(123), sin_addr=inet_addr("192.0.2.3")}, msg_namelen=16}, msg_len=1}], 2, 0) = 2`,
+		// A write on a connected UDP socket counts by its peer (an outside DNS query).
+		`write(9<UDP:[10.1.0.4:40000->192.0.2.4:53]>, "\x12\x34", 2) = 2`,
+		`writev(9<UDPv6:[[2001:db8::5]:40000->[2001:db8::6]:53]>, [{iov_base="\x12", iov_len=1}], 1) = 1`,
+		// Writes on loopback UDP and on TCP sockets are not sends to count here.
+		`write(9<UDP:[127.0.0.1:40000->127.0.0.53:53]>, "\x12\x34", 2) = 2`,
+		`write(1<TCP:[10.1.0.4:40000->192.0.2.5:443]>, "x", 1) = 1`,
 		// Loopback in every spelling stays local.
 		`connect(7<TCP:[640032810]>, {sa_family=AF_INET, sin_port=htons(35165), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)`,
 		`connect(7<TCP:[1]>, {sa_family=AF_INET, sin_port=htons(80), sin_addr=inet_addr("127.1.2.3")}, 16) = 0`,
@@ -39,7 +47,7 @@ func TestOutsideTargets(t *testing.T) {
 		`+++ exited with 0 +++`,
 	}, "\n")
 	got := outsideTargets(trace)
-	want := []string{"142.251.156.119:443", "[2001:4860:4802:32::78]:53", "[::ffff:192.0.2.2]:9"}
+	want := []string{"142.251.156.119:443", "[2001:4860:4802:32::78]:53", "[::ffff:192.0.2.2]:9", "192.0.2.3:123", "192.0.2.4:53", "[2001:db8::6]:53"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("outsideTargets =\n  %v\nwant\n  %v", got, want)
 	}

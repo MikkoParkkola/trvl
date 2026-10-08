@@ -7,10 +7,10 @@
 // honour HTTPS_PROXY; the Google client (internal/batchexec) and the fhttp
 // provider transport dial directly.
 //
-// Counted: a TCP connect to a non-loopback address, and a datagram sent to an
-// explicit non-loopback destination. A UDP connect alone sends nothing (Go's
-// resolver uses it to rank addresses) and is ignored.
-// Limit: a datagram written on a connected UDP socket is not seen.
+// Counted: a TCP connect to a non-loopback address, a datagram sent to an
+// explicit non-loopback destination, and a write on a UDP socket connected to
+// one. A UDP connect alone sends nothing (Go's resolver uses it to rank
+// addresses) and is ignored.
 //
 // Linux only. Packages run one at a time so each hit names its package.
 //
@@ -136,8 +136,8 @@ func checkPackage(pkg, dir string) ([]string, error) {
 	}
 	// #nosec G204 -- fixed strace and go executables; pkg is an import path
 	// from go list or the CI workflow.
-	cmd := exec.Command("strace", "-f", "-ff", "-yy", "--seccomp-bpf",
-		"-e", "trace=connect,sendto,sendmsg,sendmmsg", "-o", filepath.Join(dir, "t"),
+	cmd := exec.Command("strace", "-f", "-ff", "-yy", "-v", "--seccomp-bpf",
+		"-e", "trace=connect,sendto,sendmsg,sendmmsg,write,writev", "-o", filepath.Join(dir, "t"),
 		"go", "test", "-short", "-count=1", pkg)
 	// Dependencies are downloaded before the run; module fetches must not
 	// count as test traffic.
@@ -167,13 +167,32 @@ var (
 	callRe = regexp.MustCompile(`^(connect|sendto|sendmsg|sendmmsg)\(\d+<([A-Za-z0-9]+):`)
 	in4Re  = regexp.MustCompile(`sin_port=htons\((\d+)\), sin_addr=inet_addr\("([^"]+)"\)`)
 	in6Re  = regexp.MustCompile(`sin6_port=htons\((\d+)\).*?inet_pton\(AF_INET6, "([^"]+)"`)
+	// -yy prints a connected socket as <UDP:[local->peer]>.
+	udpWriteRe = regexp.MustCompile(`^writev?\(\d+<UDP(?:v6)?:\[.*?->(\[[^\]]+\]:\d+|[^\]>]+)\]>`)
 )
 
-// outsideTargets returns "addr:port" for each TCP connect, and each datagram
-// send with an explicit destination, that targets a non-loopback address.
+// outsideTargets returns "addr:port" for each TCP connect, each datagram sent
+// to an explicit destination (every message of a batch), and each write on a
+// connected UDP socket, that targets a non-loopback address.
 func outsideTargets(trace string) []string {
 	var out []string
+	add := func(addr, port string) {
+		ip, err := netip.ParseAddr(addr)
+		if err != nil {
+			return
+		}
+		if u := ip.Unmap(); u.IsLoopback() || u.IsUnspecified() {
+			return
+		}
+		out = append(out, net.JoinHostPort(ip.String(), port))
+	}
 	for _, line := range strings.Split(trace, "\n") {
+		if w := udpWriteRe.FindStringSubmatch(line); w != nil {
+			if ap, err := netip.ParseAddrPort(w[1]); err == nil {
+				add(ap.Addr().String(), strconv.Itoa(int(ap.Port())))
+			}
+			continue
+		}
 		m := callRe.FindStringSubmatch(line)
 		if m == nil {
 			continue
@@ -181,21 +200,12 @@ func outsideTargets(trace string) []string {
 		if m[1] == "connect" && !strings.HasPrefix(m[2], "TCP") {
 			continue
 		}
-		a := in4Re.FindStringSubmatch(line)
-		if a == nil {
-			a = in6Re.FindStringSubmatch(line)
+		for _, a := range in4Re.FindAllStringSubmatch(line, -1) {
+			add(a[2], a[1])
 		}
-		if a == nil {
-			continue
+		for _, a := range in6Re.FindAllStringSubmatch(line, -1) {
+			add(a[2], a[1])
 		}
-		ip, err := netip.ParseAddr(a[2])
-		if err != nil {
-			continue
-		}
-		if u := ip.Unmap(); u.IsLoopback() || u.IsUnspecified() {
-			continue
-		}
-		out = append(out, net.JoinHostPort(ip.String(), a[1]))
 	}
 	return out
 }
