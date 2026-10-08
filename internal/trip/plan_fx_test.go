@@ -38,8 +38,9 @@ func TestConvertPlanHotels_ConvertsPerNightAndTotal(t *testing.T) {
 	}
 }
 
-// Pins current behaviour: when the rate is unavailable the converter returns
-// the amount unchanged, and the hotel is still stamped with the target currency.
+// Pins current behaviour, which is a known defect (MIK-8138): when the rate is
+// unavailable the amount stays unconverted yet is stamped with the target
+// currency. Change this test together with the fix.
 func TestConvertPlanHotels_FailedConversionKeepsAmountAndStampsTarget(t *testing.T) {
 	hotels := []PlanHotel{{PerNight: 50, Total: 200, Currency: "GBP"}}
 	convertPlanHotels(context.Background(), hotels, "EUR", fakeFX)
