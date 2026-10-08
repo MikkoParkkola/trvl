@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -156,11 +155,11 @@ func detectRailFlyArb(ctx context.Context, origin, destination, departDate, retu
 	if target == "" {
 		target = "EUR"
 	}
-	basePrice, baseCur := destinations.ConvertCurrency(ctx, basePrice, baseCurrency, target)
+	basePrice, baseCur := currentCurrencyConverter()(ctx, basePrice, baseCurrency, target)
 	if baseCur != target {
 		return nil
 	}
-	bestPrice, bestCur := destinations.ConvertCurrency(ctx, bestPrice, bestCurrency, target)
+	bestPrice, bestCur := currentCurrencyConverter()(ctx, bestPrice, bestCurrency, target)
 	if bestCur != target {
 		return nil
 	}

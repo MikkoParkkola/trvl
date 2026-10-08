@@ -559,9 +559,9 @@ func TestRailFlyDetectSavingsBelowThreshold(t *testing.T) {
 
 // TestRailFlyDetect_nonEURTarget_neverMislabelsEUR is the cross-currency honesty
 // gate: EUR provider fares under a GBP display target must never surface a hack
-// labelled EUR. Offline FX cannot convert EUR->GBP, so the honest outcome is
-// suppression; if FX is reachable the hack (and its bundle) must be relabelled
-// GBP. Either way a GBP request never receives an EUR-labelled number.
+// labelled EUR. A fixed fake EUR->GBP rate pins the converted hack and bundle;
+// TestRailFlyDetect_nonEURTarget_suppressedWhenInconvertible covers the case
+// where no rate exists and the hack must be dropped.
 func TestRailFlyDetect_nonEURTarget_neverMislabelsEUR(t *testing.T) {
 	withRailFlyFlightSearcher(t, func(_ context.Context, _ *batchexec.Client, origin, _, _ string, _ flights.SearchOptions) (*models.FlightSearchResult, error) {
 		switch origin {
@@ -579,17 +579,53 @@ func TestRailFlyDetect_nonEURTarget_neverMislabelsEUR(t *testing.T) {
 		}}, nil
 	})
 
-	for _, h := range detectRailFlyArb(context.Background(), "ams", "bcn", "2026-05-01", "", "GBP") {
-		if h.Currency != "GBP" {
-			t.Fatalf("GBP request produced a %q-labelled hack (want GBP or suppressed): %+v", h.Currency, h)
+	// Fixed EUR->GBP rate through the currency seam keeps this offline (MIK-8107).
+	swapCurrencyConverter(t, func(_ context.Context, amount float64, from, to string) (float64, string) {
+		switch {
+		case from == to:
+			return amount, to
+		case from == "EUR" && to == "GBP":
+			return amount * 0.5, to
 		}
-		if h.Bundle != nil && h.Bundle.Currency != "GBP" {
-			t.Fatalf("bundle currency = %q, want GBP", h.Bundle.Currency)
-		}
+		return amount, from
+	})
+	gbp := detectRailFlyArb(context.Background(), "ams", "bcn", "2026-05-01", "", "GBP")
+	if len(gbp) != 1 {
+		t.Fatalf("GBP target: expected one hack, got %+v", gbp)
+	}
+	if h := gbp[0]; h.Currency != "GBP" || h.Savings != 80 || h.Bundle == nil || h.Bundle.Currency != "GBP" || h.Bundle.TotalCost != 130 {
+		t.Fatalf("GBP hack: got currency=%q savings=%v bundle=%+v, want GBP / 80 (210-130) / 130 GBP", h.Currency, h.Savings, h.Bundle)
 	}
 
 	// EUR target preserves the historical passthrough behaviour.
 	if eur := detectRailFlyArb(context.Background(), "ams", "bcn", "2026-05-01", "", "EUR"); len(eur) != 1 || eur[0].Currency != "EUR" {
 		t.Fatalf("EUR target: expected one EUR-labelled hack, got %+v", eur)
+	}
+}
+
+func TestRailFlyDetect_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
+	withRailFlyFlightSearcher(t, func(_ context.Context, _ *batchexec.Client, origin, _, _ string, _ flights.SearchOptions) (*models.FlightSearchResult, error) {
+		switch origin {
+		case "AMS":
+			return railFlyFlight(420, "EUR"), nil
+		case "ZWE", "ZYR":
+			return railFlyFlight(260, "EUR"), nil
+		default:
+			return railFlyFlight(0, "EUR"), nil
+		}
+	})
+	withRailGroundSearcher(t, func(_ context.Context, _, _, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
+		return &models.GroundSearchResult{Success: true, Count: 1, Routes: []models.GroundRoute{
+			{Provider: "eurostar", Type: "train", Price: 39, Currency: "EUR"},
+		}}, nil
+	})
+	swapCurrencyConverter(t, func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == to {
+			return amount, to
+		}
+		return amount, from // no rate: the hack must be dropped, never mislabelled
+	})
+	if gbp := detectRailFlyArb(context.Background(), "ams", "bcn", "2026-05-01", "", "GBP"); len(gbp) != 0 {
+		t.Fatalf("inconvertible GBP target: expected no hack, got %+v", gbp)
 	}
 }

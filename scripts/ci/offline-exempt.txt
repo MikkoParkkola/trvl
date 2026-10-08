@@ -4,7 +4,6 @@
 github.com/MikkoParkkola/trvl/cmd/trvl
 github.com/MikkoParkkola/trvl/internal/destinations
 github.com/MikkoParkkola/trvl/internal/ground
-github.com/MikkoParkkola/trvl/internal/hacks
 github.com/MikkoParkkola/trvl/internal/providers
 github.com/MikkoParkkola/trvl/internal/tripwindow
 github.com/MikkoParkkola/trvl/internal/waf

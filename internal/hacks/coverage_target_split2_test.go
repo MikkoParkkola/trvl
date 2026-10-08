@@ -312,30 +312,6 @@ func TestNearbyAirports_groundMinsPositive(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// DetectRailFlyArbitrage — known AMS hub path (exercises body past guard)
-// ---------------------------------------------------------------------------
-
-func TestDetectRailFlyArbitrage_knownAMSHubPath(t *testing.T) {
-	// AMS IS a hub in railFlyStations (KLM stations ZWE, ZYR).
-	// Exercises lines past the stations guard: client creation, baseResult search.
-	// Will return nil (no live API) but exercises the code path.
-	h := DetectRailFlyArbitrage(context.Background(), "AMS", "JFK", "2026-06-01", "")
-	_ = h
-}
-
-func TestDetectRailFlyArbitrage_knownFRAHubPath(t *testing.T) {
-	// FRA IS a hub (Lufthansa AIRail stations).
-	h := DetectRailFlyArbitrage(context.Background(), "FRA", "JFK", "2026-06-01", "2026-06-15")
-	_ = h
-}
-
-func TestDetectRailFlyArbitrage_knownCDGHub(t *testing.T) {
-	// CDG is a hub (Air France TGV station ZYR).
-	h := DetectRailFlyArbitrage(context.Background(), "CDG", "JFK", "2026-06-01", "")
-	_ = h
-}
-
-// ---------------------------------------------------------------------------
 // detectLowCostCarrier — valid input exercises the main body
 // ---------------------------------------------------------------------------
 

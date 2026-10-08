@@ -62,9 +62,9 @@ func convertCurrency(ctx context.Context, amount float64, from, target string) (
 // into target are skipped rather than shown unconverted or mislabelled.
 // Returns (0, false) when nothing is convertible.
 //
-// This is the currency.go counterpart of positioning.go's cheapestFlightPriceIn
-// and flight_combo.go's cheapestFlightPriceInCurrency (both of which call
-// destinations.ConvertCurrency directly and predate this seam); new detectors
+// This is the currency.go counterpart of positioning.go's cheapestFlightPriceIn.
+// positioning.go, helpers.go and open_jaw.go still call
+// destinations.ConvertCurrency directly and predate this seam; new detectors
 // route through here instead so their currency-conversion behaviour is
 // injectable in tests via the currency seam.
 func cheapestFlightPriceInTarget(ctx context.Context, r *models.FlightSearchResult, target string) (float64, bool) {

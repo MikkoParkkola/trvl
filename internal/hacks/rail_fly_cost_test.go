@@ -273,7 +273,23 @@ func TestBuildRailFlyHack_hubOriginUnchangedBundledText(t *testing.T) {
 // cross-currency conversion is "unavailable", which is the exact failed-rail
 // -conversion path the codex review flagged as a BLOCKER.
 func TestConvertRailLeg_honestyContract(t *testing.T) {
+	// Fixed fake rates through the currency seam keep this offline (MIK-8107):
+	// USD->EUR doubles, any other pair is refused like the live converter does.
+	swapCurrencyConverter(t, func(_ context.Context, amount float64, from, to string) (float64, string) {
+		switch {
+		case from == to:
+			return amount, to
+		case from == "USD" && to == "EUR":
+			return amount * 2, to
+		}
+		return amount, from
+	})
 	ctx := context.Background()
+	// A convertible leg takes the seam's rate; a direct call to the live
+	// converter could not produce 78.
+	if g, ok := convertRailLeg(ctx, railLegCost{Cost: 39, Currency: "USD"}, "EUR"); !ok || g.Cost != 78 || g.Currency != "EUR" {
+		t.Fatalf("convertible leg: got %+v ok=%v, want 78 EUR ok=true", g, ok)
+	}
 	// Non-zero foreign cost, inconvertible offline -> ok=false, leg unchanged.
 	got, ok := convertRailLeg(ctx, railLegCost{Cost: 39, Currency: "XXX"}, "EUR")
 	if ok {

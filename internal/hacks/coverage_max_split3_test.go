@@ -3,7 +3,6 @@ package hacks
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
@@ -328,17 +327,17 @@ func TestDetectStopover_cancelledContext(t *testing.T) {
 	}
 }
 
-func TestDetectNightTransport_unknownRoute(t *testing.T) {
-	// Unknown city pair with no ground routes — should return nil gracefully.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	h := detectNightTransport(ctx, DetectorInput{
+func TestDetectNightTransport_ReturnsNothingWhenCancelled(t *testing.T) {
+	// A cancelled context stops every ground search before it dials out
+	// (MIK-8107); the detector must then report no hack.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if h := detectNightTransport(ctx, DetectorInput{
 		Date:        "2026-06-15",
-		Origin:      "XXX",
-		Destination: "YYY",
-	})
-	if h != nil {
-		t.Error("expected nil for unknown route")
+		Origin:      "AMS",
+		Destination: "BCN",
+	}); len(h) != 0 {
+		t.Errorf("expected no hack when cancelled, got %v", h)
 	}
 }
 
