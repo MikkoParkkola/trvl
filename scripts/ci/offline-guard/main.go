@@ -39,7 +39,7 @@ func main() {
 	exemptPath := flag.String("exempt", "scripts/ci/offline-exempt.txt", "packages allowed to reach the network until fixed")
 	flag.Parse()
 
-	if err := exec.Command("strace", "-f", "--seccomp-bpf", "-e", "trace=connect", "-o", os.DevNull, "true").Run(); err != nil {
+	if err := exec.Command("strace", "-f", "--seccomp-bpf", "-e", "trace=connect", "-o", "/dev/null", "true").Run(); err != nil {
 		fail(2, "strace with --seccomp-bpf is required: %v", err)
 	}
 
@@ -87,6 +87,8 @@ func fail(code int, format string, args ...any) {
 // defaultPackages lists the module's packages minus the exempt ones. A go list
 // that fails or finds nothing is an error, never a vacuous pass.
 func defaultPackages(exemptPath string) ([]string, error) {
+	// #nosec G304 -- the exempt list path comes from the -exempt flag set by
+	// the CI workflow.
 	f, err := os.Open(exemptPath)
 	if err != nil {
 		return nil, err
