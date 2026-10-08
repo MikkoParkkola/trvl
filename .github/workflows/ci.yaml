@@ -150,6 +150,21 @@ jobs:
           chart: true
           amend: true
 
+  # The default suite must not reach outside hosts (MIK-8100). Every package
+  # not listed in scripts/ci/offline-exempt.txt runs behind a refusing proxy;
+  # any recorded attempt fails the job.
+  offline-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.6"
+      - name: Download modules
+        run: go mod download
+      - name: Tests stay offline
+        run: go run ./scripts/ci/offline-guard
+
   secrets-scan:
     runs-on: ubuntu-latest
     steps:

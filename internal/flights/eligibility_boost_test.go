@@ -92,11 +92,8 @@ func TestRunProviderEligibilitySkips(t *testing.T) {
 		t.Errorf("skiplagged skip: %+v", out.status)
 	}
 
+	// With a key set, a wrong airline filter must still skip before any request.
 	t.Setenv("TRANSAVIA_API_KEY", "k")
-	out = runTransaviaProvider(context.Background(), shared, "HEL", "LHR", "2026-07-01", "EUR", SearchOptions{})
-	// even with key, if we wanted to test bad opts for transavia eligible
-	// (transavia allows no rt but allows no bags req)
-	// use airline filter wrong
 	out = runTransaviaProvider(context.Background(), shared, "HEL", "LHR", "2026-07-01", "EUR", SearchOptions{Airlines: []string{"BA"}})
 	if out.status.Status != "skipped" {
 		t.Errorf("transavia wrong airline skip: got %s", out.status.Status)

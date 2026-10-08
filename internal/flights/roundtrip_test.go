@@ -494,9 +494,11 @@ func TestSearchMultiAirport_Spread_AFKLMAtMostOnePerLogicalSearch(t *testing.T) 
 
 	// RT + multiple origins exercises the spread + primary AFKLM restriction.
 	// Other providers fan normally; AFKLM must not.
-	// Use short ctx so parallel sub-searches (google etc) fail fast instead of hanging on net.
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-	defer cancel()
+	// An already-cancelled ctx keeps every provider off the network (a short
+	// timeout still let Kiwi, Wizz Air and Ryanair dial, MIK-8100) while the
+	// AFKLM seam is still reached.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 	opts := SearchOptions{
 		ReturnDate: "2026-07-10",
 		afklmNewProvider: func() (*afklm.AFKLMProvider, error) {
@@ -506,11 +508,11 @@ func TestSearchMultiAirport_Spread_AFKLMAtMostOnePerLogicalSearch(t *testing.T) 
 			return nil, fmt.Errorf("afklm test: no real call")
 		},
 	}
-	// The short deadline makes every sub-search fail, which SearchMultiAirport
-	// now reports as an error (MIK-8041); this test only counts AFKLM calls.
+	// The cancelled ctx makes every sub-search fail, which SearchMultiAirport
+	// reports as an error (MIK-8041); this test only counts AFKLM calls.
 	_, _ = SearchMultiAirport(ctx, []string{"HEL", "AMS"}, []string{"BCN"}, "2026-07-01", opts)
-	if calls > 1 {
-		t.Errorf("AFKLM seam called %d times on spread RT search; want <=1 (primary only)", calls)
+	if calls != 1 {
+		t.Errorf("AFKLM seam called %d times on spread RT search; want exactly 1 (primary only)", calls)
 	}
 }
 
@@ -529,8 +531,9 @@ func TestSearchMultiAirport_Spread_AFKLMAtMostOnePerLogicalSearch(t *testing.T) 
 func TestSearchMultiAirport_ConcurrentRoundTrips_NoDataRace(t *testing.T) {
 	var seamCalls int32
 
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-	defer cancel()
+	// Already cancelled so no provider dials out (MIK-8100).
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 	opts := SearchOptions{
 		ReturnDate: "2026-07-10",
 		// Non-network stub so the primary AFKLM read resolves without credentials/net.
@@ -546,7 +549,7 @@ func TestSearchMultiAirport_ConcurrentRoundTrips_NoDataRace(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			// Fanout subs fail fast offline; the point is concurrent entry into
+			// Fanout subs fail at once on the cancelled ctx; the point is concurrent entry into
 			// the AFKLM-suppression path, which must touch no shared mutable state.
 			_, _ = SearchMultiAirport(ctx, []string{"HEL", "AMS"}, []string{"BCN"}, "2026-07-01", opts)
 		}()

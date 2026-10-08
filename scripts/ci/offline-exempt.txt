@@ -1,0 +1,13 @@
+# Packages whose default tests still reach outside hosts. The offline guard
+# (scripts/ci/offline-guard) skips them; every other package must stay offline.
+# Remove a line in the PR that fixes the package. Census and plan: MIK-8107.
+github.com/MikkoParkkola/trvl/cmd/trvl
+github.com/MikkoParkkola/trvl/internal/destinations
+github.com/MikkoParkkola/trvl/internal/ground
+github.com/MikkoParkkola/trvl/internal/hacks
+github.com/MikkoParkkola/trvl/internal/hotels
+github.com/MikkoParkkola/trvl/internal/providers
+github.com/MikkoParkkola/trvl/internal/trip
+github.com/MikkoParkkola/trvl/internal/tripwindow
+github.com/MikkoParkkola/trvl/internal/waf
+github.com/MikkoParkkola/trvl/mcp
