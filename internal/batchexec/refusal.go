@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/logredact"
@@ -207,6 +208,13 @@ func (c *Client) armGoogleRefusal(wait time.Duration) {
 }
 
 func defaultRefusalDir() string {
+	// Under go test the cooldown stays in memory. Packages run in parallel on
+	// one machine with one home folder, so a shared file let one test's
+	// refusal fail unrelated tests and wrote into the developer's real cache
+	// (MIK-8095). Tests that exercise the file set refusalDir explicitly.
+	if testing.Testing() {
+		return ""
+	}
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return ""
