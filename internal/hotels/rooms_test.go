@@ -3,6 +3,7 @@ package hotels
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -83,6 +84,8 @@ func TestHasVerifiedRoom(t *testing.T) {
 }
 
 func TestGetRoomAvailability_ParallelBookingFetch(t *testing.T) {
+	// Google's room paths answer 404 locally instead of calling Google.
+	useTestDefaultClient(t, http.NotFoundHandler())
 	origFetch := FetchBookingRooms
 	FetchBookingRooms = func(ctx context.Context, url, checkIn, checkOut, currency string) ([]RoomType, error) {
 		return []RoomType{{
@@ -120,6 +123,8 @@ func TestGetRoomAvailability_ParallelBookingFetch(t *testing.T) {
 }
 
 func TestGetRoomAvailability_SkipsBookingWhenNoURL(t *testing.T) {
+	// Google's room paths answer 404 locally instead of calling Google.
+	useTestDefaultClient(t, http.NotFoundHandler())
 	origFetch := FetchBookingRooms
 	callCount := 0
 	FetchBookingRooms = func(ctx context.Context, url, checkIn, checkOut, currency string) ([]RoomType, error) {

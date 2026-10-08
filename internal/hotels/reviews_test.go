@@ -17,16 +17,6 @@ func TestGetHotelReviews_EmptyID(t *testing.T) {
 	}
 }
 
-func TestGetHotelReviews_DefaultOptions(t *testing.T) {
-	// Verify defaults are applied. Can't test full flow without network,
-	// but we can verify the function doesn't panic on defaults.
-	_, err := GetHotelReviews(context.Background(), "fake-id", ReviewOptions{})
-	// Error expected (network), but not a panic.
-	if err == nil {
-		t.Log("surprisingly succeeded with fake hotel ID")
-	}
-}
-
 // --- Sort tests ---
 
 func TestSortReviews_Highest(t *testing.T) {
