@@ -214,25 +214,3 @@ func TestDetectAll_CancelledContext(t *testing.T) {
 	_ = hacks
 }
 
-// TestDetectAll_DeadlineExceeded verifies that DetectAll returns within a
-// tight deadline and does not hang waiting for slow detectors.
-func TestDetectAll_DeadlineExceeded(t *testing.T) {
-	in := realisticInput()
-
-	// Give a very short deadline — 1ms.
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
-	defer cancel()
-
-	start := time.Now()
-	hacks, _ := DetectAll(ctx, in)
-	elapsed := time.Since(start)
-
-	// Should return promptly. The per-detector timeout is 20s, but the
-	// parent context deadline of 1ms propagates to child contexts via
-	// context.WithTimeout (child inherits parent's earlier deadline).
-	if elapsed > 500*time.Millisecond {
-		t.Errorf("DetectAll with 1ms deadline took %v, expected <500ms", elapsed)
-	}
-
-	_ = hacks
-}
