@@ -288,16 +288,18 @@ func TestSolver_ChallengeScriptFetchError(t *testing.T) {
 		`<script src="https://broken.awswaf.com/challenge.js"></script>`
 	offline := &http.Client{Transport: refuseTransport{}}
 	_, err := SolveAWSWAF(context.Background(), offline, "https://example.com/", body, nil)
-	if err == nil || errors.Is(err, ErrNoChallenge) {
-		t.Fatalf("expected fetch error, got %v", err)
+	if !errors.Is(err, errOfflineTransport) {
+		t.Fatalf("expected the transport's fetch error to propagate, got %v", err)
 	}
 }
+
+var errOfflineTransport = errors.New("offline test transport")
 
 // refuseTransport fails every request without touching the network.
 type refuseTransport struct{}
 
 func (refuseTransport) RoundTrip(*http.Request) (*http.Response, error) {
-	return nil, errors.New("offline test transport")
+	return nil, errOfflineTransport
 }
 
 func TestParseChallengePage_ExtractsURL(t *testing.T) {
