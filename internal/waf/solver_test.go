@@ -282,31 +282,24 @@ func TestSolver_NilClientRejected(t *testing.T) {
 }
 
 func TestSolver_ChallengeScriptFetchError(t *testing.T) {
-	// Feed a page that references awswaf.com but the fetch itself will 404.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-	// Point the regex-detected URL at the test server by rewriting the host.
-	body := `<script src="https://cdn.awswaf.com/challenge.js"></script>`
-	// Replace challenge URL host with our httptest server so the fetch fails
-	// with a 404, not a real DNS lookup.
-	// strings.Replace result intentionally discarded; body is overridden below
-	// with an unroutable host so the fetch itself fails fast.
-	_ = srv.URL + body
-	// The regex requires the *.awswaf.com pattern, so keep a fake reference
-	// and do the host swap only for the real fetch via Options.Origin. The
-	// cleanest approach: use an Origin override to anchor relative URL, but
-	// the regex still runs on the untouched body. So we include BOTH the
-	// awswaf.com marker and expect a real fetch failure from httptest.
-	body = `<script>window.gokuProps={};</script>` +
+	// The page references an awswaf.com challenge script; the client refuses
+	// every request, so the fetch fails without a DNS lookup or dial (MIK-8107).
+	body := `<script>window.gokuProps={};</script>` +
 		`<script src="https://broken.awswaf.com/challenge.js"></script>`
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	_, err := SolveAWSWAF(ctx, &http.Client{Timeout: 1 * time.Second}, "https://example.com/", body, nil)
-	if err == nil || errors.Is(err, ErrNoChallenge) {
-		t.Fatalf("expected fetch error, got %v", err)
+	offline := &http.Client{Transport: refuseTransport{}}
+	_, err := SolveAWSWAF(context.Background(), offline, "https://example.com/", body, nil)
+	if !errors.Is(err, errOfflineTransport) {
+		t.Fatalf("expected the transport's fetch error to propagate, got %v", err)
 	}
+}
+
+var errOfflineTransport = errors.New("offline test transport")
+
+// refuseTransport fails every request without touching the network.
+type refuseTransport struct{}
+
+func (refuseTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errOfflineTransport
 }
 
 func TestParseChallengePage_ExtractsURL(t *testing.T) {
