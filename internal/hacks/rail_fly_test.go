@@ -559,9 +559,9 @@ func TestRailFlyDetectSavingsBelowThreshold(t *testing.T) {
 
 // TestRailFlyDetect_nonEURTarget_neverMislabelsEUR is the cross-currency honesty
 // gate: EUR provider fares under a GBP display target must never surface a hack
-// labelled EUR. Offline FX cannot convert EUR->GBP, so the honest outcome is
-// suppression; if FX is reachable the hack (and its bundle) must be relabelled
-// GBP. Either way a GBP request never receives an EUR-labelled number.
+// labelled EUR. A fixed fake EUR->GBP rate pins the converted hack and bundle;
+// TestRailFlyDetect_nonEURTarget_suppressedWhenInconvertible covers the case
+// where no rate exists and the hack must be dropped.
 func TestRailFlyDetect_nonEURTarget_neverMislabelsEUR(t *testing.T) {
 	withRailFlyFlightSearcher(t, func(_ context.Context, _ *batchexec.Client, origin, _, _ string, _ flights.SearchOptions) (*models.FlightSearchResult, error) {
 		switch origin {

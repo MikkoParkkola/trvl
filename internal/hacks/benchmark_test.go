@@ -59,7 +59,7 @@ func noMatchInput() DetectorInput {
 //     for all sub-calls. However, for the MCP server response path, the caller
 //     should impose its own context deadline (e.g., 30s) to cap total latency.
 //     The child context.WithTimeout correctly inherits the parent's earlier
-//     deadline, as verified by TestDetectAll_DeadlineExceeded.
+//     deadline, as verified by TestDetectAll_ReturnsAtDeadlineWithPartialFlag.
 //
 //  2. ALLOCATION ANALYSIS: ~1.67M allocs/op is high but is dominated by
 //     network I/O (HTTP response parsing, JSON decoding, TLS handshakes).
