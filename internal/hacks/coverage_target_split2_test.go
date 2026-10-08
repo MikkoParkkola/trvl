@@ -312,10 +312,6 @@ func TestNearbyAirports_groundMinsPositive(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// DetectRailFlyArbitrage — known AMS hub path (exercises body past guard)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // detectLowCostCarrier — valid input exercises the main body
 // ---------------------------------------------------------------------------
 
