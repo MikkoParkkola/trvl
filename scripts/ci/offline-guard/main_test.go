@@ -71,8 +71,10 @@ func TestCheckPackageFlagsALeak(t *testing.T) {
 	if err != nil {
 		t.Fatalf("checkPackage: %v (the fixture test itself passes)", err)
 	}
-	if !slices.Contains(hits, "192.0.2.1:443") {
-		t.Fatalf("hits = %v, want 192.0.2.1:443", hits)
+	for _, want := range []string{"192.0.2.1:443", "192.0.2.1:53", "192.0.2.3:123"} {
+		if !slices.Contains(hits, want) {
+			t.Errorf("hits = %v, want %s", hits, want)
+		}
 	}
 }
 
