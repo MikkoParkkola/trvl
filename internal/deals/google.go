@@ -10,6 +10,10 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
 
+// fetchGoogleExploreFunc is the live Google source, swappable so tests stay
+// offline (MIK-8095).
+var fetchGoogleExploreFunc = fetchGoogleExplore
+
 // fetchGoogleExplore queries Google Flights Explore for the cheapest
 // destinations from the user's home airport and converts them to Deal
 // structs so they appear alongside RSS deals in trvl deals output.

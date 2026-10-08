@@ -61,7 +61,7 @@ func FetchDeals(ctx context.Context, sources []string, filter DealFilter) (*Deal
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
-				deals, err := fetchGoogleExplore(ctx, filter.Origins)
+				deals, err := fetchGoogleExploreFunc(ctx, filter.Origins)
 				results[idx] = feedResult{deals: deals, err: err}
 			}(i)
 			continue

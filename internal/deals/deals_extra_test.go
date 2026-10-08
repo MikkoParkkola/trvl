@@ -197,8 +197,21 @@ func TestFetchDeals_EmptySourcesDefaultsToAll(t *testing.T) {
 		}
 	}()
 
+	// The default source list includes "google", which is not an RSS feed and
+	// would otherwise call live Google Flights Explore (MIK-8095).
+	googleCalled := false
+	origGoogle := fetchGoogleExploreFunc
+	fetchGoogleExploreFunc = func(context.Context, []string) ([]Deal, error) {
+		googleCalled = true
+		return nil, nil
+	}
+	defer func() { fetchGoogleExploreFunc = origGoogle }()
+
 	ctx := context.Background()
 	result, err := FetchDeals(ctx, nil, DealFilter{HoursAgo: 999999})
+	if !googleCalled {
+		t.Error("the default sources must include google, served here by the stub")
+	}
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
