@@ -365,6 +365,10 @@ func TestEnrichHotelFromOSM_StarsVariants(t *testing.T) {
 // --- GetNearbyPlaces (0% -> covered via httptest) ---
 
 func TestGetNearbyPlaces_DefaultRadius(t *testing.T) {
+	// A developer's own provider keys must not route this test to live APIs.
+	for _, k := range []string{"FOURSQUARE_API_KEY", "GEOAPIFY_API_KEY", "OPENTRIPMAP_API_KEY", "TICKETMASTER_API_KEY"} {
+		t.Setenv(k, "")
+	}
 	// OSM server.
 	osmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := overpassResponse{
