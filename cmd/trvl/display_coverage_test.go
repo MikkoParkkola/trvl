@@ -105,7 +105,7 @@ func TestPrintFlightsTable_Success(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		err := printFlightsTable(context.Background(), "HEL", "AMS", "", result, false)
+		err := printFlightsTable(cancelledTestContext(t), "HEL", "AMS", "", result, false)
 		if err != nil {
 			t.Errorf("printFlightsTable returned error: %v", err)
 		}
@@ -193,7 +193,7 @@ func TestPrintFlightsTable_WithSelfConnect(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		_ = printFlightsTable(context.Background(), "HEL", "BCN", "", result, false)
+		_ = printFlightsTable(cancelledTestContext(t), "HEL", "BCN", "", result, false)
 	})
 
 	if !strings.Contains(out, "self-connect") {
@@ -228,7 +228,7 @@ func TestPrintFlightsTable_WithProvider(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		_ = printFlightsTable(context.Background(), "HEL", "AMS", "", result, false)
+		_ = printFlightsTable(cancelledTestContext(t), "HEL", "AMS", "", result, false)
 	})
 
 	if !strings.Contains(out, "Kiwi") {
@@ -628,10 +628,9 @@ func TestPrintExploreTable_Success(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		// Pass empty targetCurrency to skip conversion. The function calls
-		// flights.DetectSourceCurrency which would need network; however for
-		// the test we just let it fall back to EUR.
-		err := printExploreTable(context.Background(), "", result, "HEL")
+		// The cancelled context makes flights.DetectSourceCurrency fail before
+		// dialing, so the table renders with the fallback currency.
+		err := printExploreTable(cancelledTestContext(t), "", result, "HEL")
 		if err != nil {
 			t.Errorf("printExploreTable returned error: %v", err)
 		}

@@ -46,7 +46,7 @@ func runNearby(cmd *cobra.Command, args []string) error {
 	radius, _ := cmd.Flags().GetInt("radius")
 	format, _ := cmd.Flags().GetString("format")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(cmd.Context(), 20*time.Second)
 	defer cancel()
 
 	result, err := destinations.GetNearbyPlaces(ctx, lat, lon, radius, category)

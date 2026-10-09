@@ -205,7 +205,7 @@ func TestPrintExploreTable_SuccessMinimal(t *testing.T) {
 			},
 		},
 	}
-	err := printExploreTable(context.Background(), "", result, "HEL")
+	err := printExploreTable(cancelledTestContext(t), "", result, "HEL")
 	_ = w.Close()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -231,7 +231,7 @@ func TestPrintExploreTable_NoCityName(t *testing.T) {
 			{AirportCode: "TLL", Price: 50, Stops: 2},
 		},
 	}
-	err := printExploreTable(context.Background(), "", result, "HEL")
+	err := printExploreTable(cancelledTestContext(t), "", result, "HEL")
 	_ = w.Close()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)

@@ -280,6 +280,7 @@ func TestOfflineDeterministicCommandRunPaths(t *testing.T) {
 	statusCmd.SetOut(&statusOut)
 	statusCmd.SilenceUsage = true
 	statusCmd.SilenceErrors = true
+	statusCmd.SetArgs([]string{})
 	if err := statusCmd.Execute(); err != nil {
 		t.Fatalf("rate-status Execute: %v", err)
 	}

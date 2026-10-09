@@ -62,6 +62,7 @@ func TestProviders_StatusEmpty(t *testing.T) {
 	os.Stdout = w
 
 	cmd := providersStatusCmd()
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	_ = w.Close()
 	os.Stdout = old
@@ -111,6 +112,7 @@ func TestTrips_StatusWithTrip(t *testing.T) {
 	r, w, _ = os.Pipe()
 	os.Stdout = w
 	statusCmd := tripsStatusCmd()
+	statusCmd.SetArgs([]string{})
 	_ = statusCmd.Execute()
 	_ = w.Close()
 	os.Stdout = old
@@ -261,6 +263,7 @@ func TestRunProvidersList_ShowsShippedDefinitionsWithTempHome(t *testing.T) {
 	os.Stdout = w
 
 	cmd := providersListCmd()
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	_ = w.Close()
 	os.Stdout = old
@@ -287,6 +290,7 @@ func TestRunProvidersStatus_Empty(t *testing.T) {
 	os.Stdout = w
 
 	cmd := providersStatusCmd()
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	_ = w.Close()
 	os.Stdout = old
@@ -311,6 +315,7 @@ func TestWatch_CheckEmpty(t *testing.T) {
 	os.Stdout = w
 
 	cmd := watchCheckCmd()
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	_ = w.Close()
 	os.Stdout = old
@@ -496,49 +501,55 @@ func TestBaggageCmd_SingleAirline(t *testing.T) {
 
 func TestWeatherCmd_RequiresArg(t *testing.T) {
 	cmd := weatherCmd()
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil {
-		t.Error("expected error for missing arg")
+	if err == nil || err.Error() != "accepts 1 arg(s), received 0" {
+		t.Errorf("err = %v, want %q", err, "accepts 1 arg(s), received 0")
 	}
 }
 
 func TestLoungesCmd_RequiresArg(t *testing.T) {
 	cmd := loungesCmd()
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil {
-		t.Error("expected error for missing arg")
+	if err == nil || err.Error() != "accepts 1 arg(s), received 0" {
+		t.Errorf("err = %v, want %q", err, "accepts 1 arg(s), received 0")
 	}
 }
 
 func TestHacksCmd_RequiresOriginDest(t *testing.T) {
 	cmd := hacksCmd()
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil {
-		t.Error("expected error for missing args")
+	if err == nil || err.Error() != "accepts 3 arg(s), received 0" {
+		t.Errorf("err = %v, want %q", err, "accepts 3 arg(s), received 0")
 	}
 }
 
 func TestGridCmd_NoArgsFails(t *testing.T) {
 	cmd := gridCmd()
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil {
-		t.Error("expected error for missing args")
+	if err == nil || err.Error() != "accepts between 1 and 2 arg(s), received 0" {
+		t.Errorf("err = %v, want %q", err, "accepts between 1 and 2 arg(s), received 0")
 	}
 }
 
 func TestCalendarCmd_RequiresArgs(t *testing.T) {
 	cmd := calendarCmd()
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil {
-		t.Error("expected error for missing args")
+	if err == nil || err.Error() != "provide a trip_id argument, --trip-id flag, or --last flag" {
+		t.Errorf("err = %v, want %q", err, "provide a trip_id argument, --trip-id flag, or --last flag")
 	}
 }
 
 func TestAccomHackCmd_RequiresArg(t *testing.T) {
 	cmd := accomHackCmd()
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil {
-		t.Error("expected error for missing arg")
+	if err == nil || err.Error() != "accepts 1 arg(s), received 0" {
+		t.Errorf("err = %v, want %q", err, "accepts 1 arg(s), received 0")
 	}
 }
 

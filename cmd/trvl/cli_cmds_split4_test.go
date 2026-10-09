@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -328,39 +329,43 @@ func TestCancelledContextTests_Timing_V27(t *testing.T) {
 }
 
 func TestDestinationCmd_CancelledCtx_V28(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx := cancelledTestContext(t)
 
 	cmd := destinationCmd()
 	cmd.SetArgs([]string{"Tokyo"})
-	_ = cmd.ExecuteContext(ctx)
+	if err := cmd.ExecuteContext(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
 }
 
 func TestDestinationCmd_WithDates_CancelledCtx_V28(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx := cancelledTestContext(t)
 
 	cmd := destinationCmd()
 	cmd.SetArgs([]string{"Barcelona", "--dates", "2026-08-01,2026-08-08"})
-	_ = cmd.ExecuteContext(ctx)
+	if err := cmd.ExecuteContext(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
 }
 
 func TestDestinationCmd_SingleDate_V28(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx := cancelledTestContext(t)
 
 	cmd := destinationCmd()
 	cmd.SetArgs([]string{"Paris", "--dates", "2026-08-01"})
-	_ = cmd.ExecuteContext(ctx)
+	if err := cmd.ExecuteContext(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
 }
 
 func TestGuideCmd_CancelledCtx_V28(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx := cancelledTestContext(t)
 
 	cmd := guideCmd()
 	cmd.SetArgs([]string{"Rome"})
-	_ = cmd.ExecuteContext(ctx)
+	if err := cmd.ExecuteContext(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
 }
 
 func TestEventsCmd_NoAPIKey_V28(t *testing.T) {

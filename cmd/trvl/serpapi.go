@@ -129,7 +129,7 @@ func runSerpapi(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("SERPAPI_KEY environment variable not set.\nGet a free key at https://serpapi.com (250 searches/month free)\nThen: export SERPAPI_KEY=your_key_here")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), serpapiTimeout(maxDetails, listOnly))
+	ctx, cancel := context.WithTimeout(cmd.Context(), serpapiTimeout(maxDetails, listOnly))
 	defer cancel()
 
 	opts := serpapi.SearchOptions{

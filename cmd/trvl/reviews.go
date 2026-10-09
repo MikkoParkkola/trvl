@@ -35,7 +35,7 @@ func init() {
 func runReviews(cmd *cobra.Command, args []string) error {
 	hotelID := args[0]
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 	defer cancel()
 
 	result, err := hotels.GetHotelReviews(ctx, hotelID, hotels.ReviewOptions{

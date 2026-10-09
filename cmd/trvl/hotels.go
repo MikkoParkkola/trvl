@@ -124,7 +124,7 @@ func runHotels(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(cmd.Context(), 60*time.Second)
 	defer cancel()
 	ctx = providers.WithInteractive(ctx) // allow browser escape hatch for WAF challenges
 

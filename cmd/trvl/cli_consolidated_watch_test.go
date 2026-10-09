@@ -221,6 +221,7 @@ func TestWatchHistoryCmd_WatchExistsNoHistory(t *testing.T) {
 	}
 
 	listCmd := watchListCmd()
+	listCmd.SetArgs([]string{})
 	_ = listCmd.Execute()
 }
 
