@@ -339,7 +339,7 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 
 	var unconverted []string
 	var cheapOut, cheapRet, cheapHotel float64
-	outOK, retOK, hotelOK := true, true, true
+	outOK, retOK := true, true
 	if len(result.OutboundFlights) > 0 {
 		f := result.OutboundFlights[0]
 		cheapOut, outOK = toCur(f.Price, f.Currency)
@@ -350,6 +350,7 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 	}
 	if len(result.Hotels) > 0 {
 		h := result.Hotels[0]
+		var hotelOK bool
 		if cheapHotel, hotelOK = toCur(h.Total, h.Currency); !hotelOK {
 			unconverted = append(unconverted, "hotel")
 		}
