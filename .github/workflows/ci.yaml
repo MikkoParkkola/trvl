@@ -58,6 +58,9 @@ jobs:
         run: node --test npm/bin/install.test.js
 
   test:
+    # Name without the Go version so a toolchain bump does not rename the
+    # checks that branch protection requires.
+    name: test (${{ matrix.os }})
     permissions:
       contents: write
     strategy:
