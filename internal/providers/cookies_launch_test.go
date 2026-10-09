@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -219,5 +221,77 @@ func TestDefaultOpenURL_ReportsAPlainLauncherThatStartsThenFails(t *testing.T) {
 	// `open -a` attempt that already had its own fallback.
 	if err := defaultOpenURL(runtime.GOOS, "", "https://example.invalid/challenge"); err == nil {
 		t.Fatal("a launcher that started and exited non-zero was reported as success; the caller would tell the user a browser opened when none did")
+	}
+}
+
+// fakeLaunchers puts recording stand-ins for every platform launcher first on
+// PATH, so defaultOpenURL never starts a real browser (MIK-8107). Each call
+// appends one line, "<launcher> <args...>", to the returned file. A fake
+// `open -a` exits non-zero, like macOS does for a browser that does not resolve.
+func fakeLaunchers(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script fixtures are POSIX")
+	}
+	withLauncherWindows(t, 20*time.Millisecond, 2*time.Second)
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args")
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$(basename \"$0\") $*\" >> '" + argsFile + "'\n" +
+		"if [ \"$1\" = \"-a\" ]; then exit 1; fi\n"
+	for _, name := range []string{"xdg-open", "open", "rundll32"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
+			t.Fatalf("write fake %s: %v", name, err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return argsFile
+}
+
+// launcherCalls waits until the fake launchers have recorded n calls and
+// returns them, one line per call; launchers are started, not waited on.
+func launcherCalls(t *testing.T, argsFile string, n int) []string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, err := os.ReadFile(argsFile); err == nil {
+			if lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n"); len(b) > 0 && len(lines) >= n {
+				return lines
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("the fake launchers did not record %d call(s)", n)
+	return nil
+}
+
+func TestDefaultOpenURL_LinuxRunsXdgOpen(t *testing.T) {
+	args := fakeLaunchers(t)
+	if err := defaultOpenURL("linux", "", "https://example.invalid/challenge"); err != nil {
+		t.Fatalf("defaultOpenURL: %v", err)
+	}
+	if got, want := launcherCalls(t, args, 1), []string{"xdg-open https://example.invalid/challenge"}; !slices.Equal(got, want) {
+		t.Fatalf("launcher call = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultOpenURL_WindowsRunsRundll32(t *testing.T) {
+	args := fakeLaunchers(t)
+	if err := defaultOpenURL("windows", "", "https://example.invalid/challenge"); err != nil {
+		t.Fatalf("defaultOpenURL: %v", err)
+	}
+	if got, want := launcherCalls(t, args, 1), []string{"rundll32 url.dll,FileProtocolHandler https://example.invalid/challenge"}; !slices.Equal(got, want) {
+		t.Fatalf("launcher call = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultOpenURL_DarwinFallsBackWhenPreferredBrowserFails(t *testing.T) {
+	args := fakeLaunchers(t)
+	if err := defaultOpenURL("darwin", "NonExistentBrowser12345", "https://example.invalid/challenge"); err != nil {
+		t.Fatalf("defaultOpenURL: %v", err)
+	}
+	want := []string{"open -a NonExistentBrowser12345 https://example.invalid/challenge", "open https://example.invalid/challenge"}
+	if got := launcherCalls(t, args, 2); !slices.Equal(got, want) {
+		t.Fatalf("launcher calls = %q, want the preferred browser tried, then the plain open fallback %q", got, want)
 	}
 }
