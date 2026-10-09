@@ -329,8 +329,7 @@ func TestCancelledContextTests_Timing_V27(t *testing.T) {
 }
 
 func TestDestinationCmd_CancelledCtx_V28(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx := cancelledTestContext(t)
 
 	cmd := destinationCmd()
 	cmd.SetArgs([]string{"Tokyo"})
@@ -340,8 +339,7 @@ func TestDestinationCmd_CancelledCtx_V28(t *testing.T) {
 }
 
 func TestDestinationCmd_WithDates_CancelledCtx_V28(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx := cancelledTestContext(t)
 
 	cmd := destinationCmd()
 	cmd.SetArgs([]string{"Barcelona", "--dates", "2026-08-01,2026-08-08"})
@@ -351,8 +349,7 @@ func TestDestinationCmd_WithDates_CancelledCtx_V28(t *testing.T) {
 }
 
 func TestDestinationCmd_SingleDate_V28(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx := cancelledTestContext(t)
 
 	cmd := destinationCmd()
 	cmd.SetArgs([]string{"Paris", "--dates", "2026-08-01"})
@@ -362,8 +359,7 @@ func TestDestinationCmd_SingleDate_V28(t *testing.T) {
 }
 
 func TestGuideCmd_CancelledCtx_V28(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx := cancelledTestContext(t)
 
 	cmd := guideCmd()
 	cmd.SetArgs([]string{"Rome"})

@@ -503,7 +503,7 @@ func TestWeatherCmd_RequiresArg(t *testing.T) {
 	cmd := weatherCmd()
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "accepts 1 arg(s), received 0") {
+	if err == nil || err.Error() != "accepts 1 arg(s), received 0" {
 		t.Errorf("err = %v, want %q", err, "accepts 1 arg(s), received 0")
 	}
 }
@@ -512,7 +512,7 @@ func TestLoungesCmd_RequiresArg(t *testing.T) {
 	cmd := loungesCmd()
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "accepts 1 arg(s), received 0") {
+	if err == nil || err.Error() != "accepts 1 arg(s), received 0" {
 		t.Errorf("err = %v, want %q", err, "accepts 1 arg(s), received 0")
 	}
 }
@@ -521,7 +521,7 @@ func TestHacksCmd_RequiresOriginDest(t *testing.T) {
 	cmd := hacksCmd()
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "accepts 3 arg(s), received 0") {
+	if err == nil || err.Error() != "accepts 3 arg(s), received 0" {
 		t.Errorf("err = %v, want %q", err, "accepts 3 arg(s), received 0")
 	}
 }
@@ -530,7 +530,7 @@ func TestGridCmd_NoArgsFails(t *testing.T) {
 	cmd := gridCmd()
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "accepts between 1 and 2 arg(s), received 0") {
+	if err == nil || err.Error() != "accepts between 1 and 2 arg(s), received 0" {
 		t.Errorf("err = %v, want %q", err, "accepts between 1 and 2 arg(s), received 0")
 	}
 }
@@ -539,8 +539,8 @@ func TestCalendarCmd_RequiresArgs(t *testing.T) {
 	cmd := calendarCmd()
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "provide a trip_id argument") {
-		t.Errorf("err = %v, want %q", err, "provide a trip_id argument")
+	if err == nil || err.Error() != "provide a trip_id argument, --trip-id flag, or --last flag" {
+		t.Errorf("err = %v, want %q", err, "provide a trip_id argument, --trip-id flag, or --last flag")
 	}
 }
 
@@ -548,7 +548,7 @@ func TestAccomHackCmd_RequiresArg(t *testing.T) {
 	cmd := accomHackCmd()
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "accepts 1 arg(s), received 0") {
+	if err == nil || err.Error() != "accepts 1 arg(s), received 0" {
 		t.Errorf("err = %v, want %q", err, "accepts 1 arg(s), received 0")
 	}
 }
