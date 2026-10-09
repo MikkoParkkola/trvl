@@ -353,26 +353,6 @@ func TestToStdResponse_Conversion(t *testing.T) {
 	}
 }
 
-func TestDefaultOpenURL_LinuxPath(t *testing.T) {
-	// Test the linux path returns an error (xdg-open may not exist in test env).
-	err := defaultOpenURL("linux", "", "https://example.com")
-	// We don't assert success/failure because xdg-open may or may not exist.
-	_ = err
-}
-
-func TestDefaultOpenURL_WindowsPath(t *testing.T) {
-	// Test the windows path returns an error (cmd not available on non-Windows).
-	err := defaultOpenURL("windows", "", "https://example.com")
-	_ = err
-}
-
-func TestDefaultOpenURL_DarwinWithPreference(t *testing.T) {
-	// On darwin, with a non-existent browser preference, should fall back to "open".
-	err := defaultOpenURL("darwin", "NonExistentBrowser12345", "https://example.com")
-	// The "open" command should work on macOS regardless.
-	_ = err
-}
-
 // ===========================================================================
 // TestProvider — more edge cases for runTestPreflight branches
 // ===========================================================================

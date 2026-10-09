@@ -7,6 +7,7 @@ import "testing"
 // because fx.go ships hardcoded fallback rates, so this stays deterministic
 // whether or not the live Frankfurter endpoint is reachable from CI.
 func TestConvertRate(t *testing.T) {
+	withOfflineFX(t)
 	if r, ok := ConvertRate("EUR", "EUR"); !ok || r != 1 {
 		t.Fatalf("identity: got (%v,%v), want (1,true)", r, ok)
 	}

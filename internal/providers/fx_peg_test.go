@@ -9,6 +9,7 @@ import (
 // no longer carries still converts via its fixed peg, so a HRK-quoted offer is
 // not dropped for an unconvertible currency.
 func TestConvertRatePeggedHRK(t *testing.T) {
+	withOfflineFX(t)
 	r, ok := ConvertRate("HRK", "EUR")
 	if !ok {
 		t.Fatal("HRK->EUR must convert via the fixed euro peg")
@@ -27,4 +28,15 @@ func TestConvertRatePeggedHRK(t *testing.T) {
 	if _, ok := ConvertRate("XYZ", "EUR"); ok {
 		t.Error("unrecognized currency must not convert")
 	}
+}
+
+// withOfflineFX points the package FX cache at an address the destination
+// policy refuses, so rates come from the built-in fallback table and no test
+// reaches the live rates API (MIK-8107). Restored on cleanup; not for t.Parallel.
+func withOfflineFX(t *testing.T) {
+	t.Helper()
+	old := defaultFXCache
+	t.Cleanup(func() { defaultFXCache = old })
+	defaultFXCache = newFXCache()
+	defaultFXCache.baseURL = "http://127.0.0.1:1"
 }

@@ -614,6 +614,7 @@ func TestSearchProvider_CircuitBreakerHalfOpenProbe(t *testing.T) {
 // path that skips preflight when browser cookies are applied and no extractions.
 
 func TestSearchProvider_BrowserCookiesSource(t *testing.T) {
+	withOfflineFX(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"hotels": []any{
 			map[string]any{"id": "b1", "name": "Browser Hotel", "price": 200.0, "currency": "EUR"},

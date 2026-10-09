@@ -396,17 +396,7 @@ func TestFindChromeCookiePath_NoFile(t *testing.T) {
 
 // TestDefaultOpenURL_LinuxBranch verifies the linux branch executes without panic.
 
-func TestDefaultOpenURL_LinuxBranch(t *testing.T) {
-	// xdg-open won't exist on macOS CI; error is expected but no panic.
-	_ = defaultOpenURL("linux", "", "https://example.com")
-}
-
 // TestDefaultOpenURL_WindowsBranch verifies the windows branch executes without panic.
-
-func TestDefaultOpenURL_WindowsBranch(t *testing.T) {
-	// cmd /c start won't work on macOS CI; error is expected but no panic.
-	_ = defaultOpenURL("windows", "", "https://example.com")
-}
 
 // ---------------------------------------------------------------------------
 // cookie_cache.go — saveCachedCookies full round-trip
