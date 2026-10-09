@@ -76,3 +76,20 @@ func TestConvertPlanHotels_PartialConversionLeavesItemUntouched(t *testing.T) {
 		t.Fatalf("got perNight=%v total=%v currency=%q, want 50 / 200 / USD", h.PerNight, h.Total, h.Currency)
 	}
 }
+
+func TestConvertPlanFlights_PartialConversionLeavesItemUntouched(t *testing.T) {
+	calls := 0
+	firstOnly := func(_ context.Context, amount float64, from, to string) (float64, string) {
+		calls++
+		if calls == 1 {
+			return amount * 0.5, to
+		}
+		return amount, from
+	}
+	flights := []PlanFlight{{Price: 100, ComparablePrice: 120, Currency: "USD"}}
+	convertPlanFlights(context.Background(), flights, "EUR", firstOnly)
+	f := flights[0]
+	if f.Price != 100 || f.ComparablePrice != 120 || f.Currency != "USD" {
+		t.Fatalf("got price=%v comparable=%v currency=%q, want 100 / 120 / USD", f.Price, f.ComparablePrice, f.Currency)
+	}
+}

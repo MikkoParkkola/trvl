@@ -106,3 +106,39 @@ func TestBuildPlanSummary_NoRequestedCurrencyUsesFirstFlight(t *testing.T) {
 		t.Fatalf("summary = %+v, want a complete USD summary of 800", s)
 	}
 }
+
+func TestBuildPlanSummary_ReturnOnlyFlightCounts(t *testing.T) {
+	result, input := planFixture()
+	result.OutboundFlights = nil
+	s := buildPlanSummary(context.Background(), result, input, 0, fakeFX)
+	// Return 40 per person, two guests, hotel 200.
+	if s.Incomplete || s.FlightsTotal != 80 || s.GrandTotal != 280 {
+		t.Fatalf("summary = %+v, want a complete summary with flights 80 and grand 280", s)
+	}
+}
+
+func TestBuildPlanSummary_ReturnOnlyUnconverted(t *testing.T) {
+	result, input := planFixture()
+	result.OutboundFlights = nil
+	result.ReturnFlights[0].Currency = "GBP"
+	s := buildPlanSummary(context.Background(), result, input, 0, fakeFX)
+	if !s.Incomplete || !reflect.DeepEqual(s.Unconverted, []string{"flights"}) || s.GrandTotal != 0 {
+		t.Fatalf("summary = %+v, want incomplete with [flights] and no grand total", s)
+	}
+}
+
+func TestBuildPlanSummary_LandedCostsWithNights(t *testing.T) {
+	result, input := planFixture()
+	input.Destination = "Paris"
+	s := buildPlanSummary(context.Background(), result, input, 2, fakeFX)
+	if s.Incomplete {
+		t.Fatalf("unconverted=%v, want EUR meals, transfers and tax to need no conversion", s.Unconverted)
+	}
+	if s.MealsTotal <= 0 || !s.TransfersEstimated || !s.TaxesEstimated {
+		t.Fatalf("summary = %+v, want meals, transfers and tax for Paris", s)
+	}
+	want := s.FlightsTotal + s.BaggageTotal + s.HotelTotal + s.MealsTotal + s.TransfersTotal + s.TaxesTotal
+	if s.GrandTotal != want || s.PerDay != want/2 {
+		t.Fatalf("grand=%v perDay=%v, want %v and %v", s.GrandTotal, s.PerDay, want, want/2)
+	}
+}

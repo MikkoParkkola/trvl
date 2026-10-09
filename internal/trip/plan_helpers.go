@@ -551,8 +551,8 @@ func buildPlanSummary(ctx context.Context, result *PlanResult, input PlanInput, 
 	// fare (ComparablePrice, incl. bags). The one-way pair counts only when
 	// every leg it needs converted.
 	var cheapOut, cheapRet, cheapOutHl, cheapRetHl float64
-	oneWayOK := len(result.OutboundFlights) > 0
-	if oneWayOK {
+	oneWayOK := len(result.OutboundFlights) > 0 || len(result.ReturnFlights) > 0
+	if oneWayOK && len(result.OutboundFlights) > 0 {
 		cheapOut, cheapOutHl, oneWayOK = leg(result.OutboundFlights[0])
 	}
 	if oneWayOK && len(result.ReturnFlights) > 0 {
@@ -578,7 +578,7 @@ func buildPlanSummary(ctx context.Context, result *PlanResult, input PlanInput, 
 		perPersonAllIn, perPersonHeadline = cheapOut+cheapRet, cheapOutHl+cheapRetHl
 	case rtOK:
 		perPersonAllIn, perPersonHeadline = cheapRT, cheapRTHl
-	case len(result.OutboundFlights) > 0 || len(result.RoundTripFares) > 0:
+	case len(result.OutboundFlights) > 0 || len(result.ReturnFlights) > 0 || len(result.RoundTripFares) > 0:
 		unconverted = append(unconverted, "flights")
 	}
 

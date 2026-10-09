@@ -84,6 +84,21 @@ Examples:
 // tripPlanConvert is a seam so tests can price a plan without the live FX API.
 var tripPlanConvert = destinations.ConvertCurrency
 
+// displayInTarget converts a table amount into target for display. It falls
+// back to the source amount and currency when no target was requested, the
+// source currency is blank, or the rate is unavailable, so a price is never
+// shown under a currency it is not in (MIK-8138).
+func displayInTarget(ctx context.Context, amount float64, from, target string) (float64, string) {
+	if target == "" || from == "" || from == target || amount <= 0 {
+		return amount, from
+	}
+	converted, c := tripPlanConvert(ctx, amount, from, target)
+	if c != target {
+		return amount, from
+	}
+	return math.Round(converted), target
+}
+
 func printTripPlan(ctx context.Context, targetCurrency string, result *trip.PlanResult) error {
 	if !result.Success && len(result.OutboundFlights) == 0 && len(result.ReturnFlights) == 0 && len(result.Hotels) == 0 {
 		_, _ = fmt.Fprintf(os.Stderr, "Trip planning failed: %s\n", result.Error)
@@ -123,13 +138,7 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 			prices = prices.With(f.Price)
 		}
 		for _, f := range result.OutboundFlights {
-			p := f.Price
-			cur := f.Currency
-			if targetCurrency != "" && cur != targetCurrency && p > 0 {
-				converted, c := tripPlanConvert(ctx, p, cur, targetCurrency)
-				p = math.Round(converted)
-				cur = c
-			}
+			p, cur := displayInTarget(ctx, f.Price, f.Currency, targetCurrency)
 			rows = append(rows, []string{
 				prices.Apply(p, formatPrice(p, cur)),
 				f.Airline,
@@ -154,13 +163,7 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 			prices = prices.With(f.Price)
 		}
 		for _, f := range result.ReturnFlights {
-			p := f.Price
-			cur := f.Currency
-			if targetCurrency != "" && cur != targetCurrency && p > 0 {
-				converted, c := tripPlanConvert(ctx, p, cur, targetCurrency)
-				p = math.Round(converted)
-				cur = c
-			}
+			p, cur := displayInTarget(ctx, f.Price, f.Currency, targetCurrency)
 			rows = append(rows, []string{
 				prices.Apply(p, formatPrice(p, cur)),
 				f.Airline,
@@ -206,14 +209,15 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 			prices = prices.With(h.PerNight)
 		}
 		for _, h := range result.Hotels {
-			pn := h.PerNight
-			total := h.Total
-			cur := h.Currency
-			if targetCurrency != "" && cur != targetCurrency && pn > 0 {
-				converted, c := tripPlanConvert(ctx, pn, cur, targetCurrency)
-				pn = math.Round(converted)
-				cur = c
-				total = pn * float64(result.Nights)
+			pn, total, cur := h.PerNight, h.Total, h.Currency
+			// Both figures convert or neither does, so a failed rate never
+			// mixes a converted nightly price with a source total.
+			if targetCurrency != "" && cur != "" && cur != targetCurrency && (pn > 0 || total > 0) {
+				cpn, c1 := displayInTarget(ctx, pn, cur, targetCurrency)
+				ctotal, c2 := displayInTarget(ctx, total, cur, targetCurrency)
+				if (pn <= 0 || c1 == targetCurrency) && (total <= 0 || c2 == targetCurrency) {
+					pn, total, cur = cpn, ctotal, targetCurrency
+				}
 			}
 			rows = append(rows, []string{
 				prices.Apply(pn, formatPrice(pn, cur)),

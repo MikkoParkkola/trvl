@@ -233,7 +233,13 @@ func TestBuildAirportTransferOriginQuery_CaseInsensitive(t *testing.T) {
 func TestConvertPlanAmount_BlankSourceIsNotConverted(t *testing.T) {
 	// destinations.ConvertCurrency echoes the target back for a blank source,
 	// so a blank source must never count as converted.
-	got, ok := convertPlanAmount(context.Background(), fakeFX, 100, "", "EUR")
+	echoesTarget := func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == "" {
+			return amount, to // what destinations.ConvertCurrency does
+		}
+		return fakeFX(context.Background(), amount, from, to)
+	}
+	got, ok := convertPlanAmount(context.Background(), echoesTarget, 100, "", "EUR")
 	if ok || got != 100 {
 		t.Errorf("got (%v, %v), want (100, false)", got, ok)
 	}

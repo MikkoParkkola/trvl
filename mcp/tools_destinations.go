@@ -477,7 +477,7 @@ func planTripTool() ToolDef {
 	return ToolDef{
 		Name:        "plan_trip",
 		Title:       "Plan Complete Trip",
-		Description: "Plan a complete trip with outbound flights, return flights, and hotel options in one search. Returns top 5 options for each plus a total cost summary. Omit return_date for a one-way trip.",
+		Description: "Plan a complete trip with outbound flights, return flights, and hotel options in one search. Returns top 5 options for each plus a total cost summary; when a cost cannot be converted into the requested currency the summary sets incomplete, lists it in unconverted and withholds grand_total. Omit return_date for a one-way trip.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{

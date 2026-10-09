@@ -16,6 +16,9 @@ func stubTripPlanFX(t *testing.T) {
 	prev := tripPlanConvert
 	t.Cleanup(func() { tripPlanConvert = prev })
 	tripPlanConvert = func(_ context.Context, amount float64, from, to string) (float64, string) {
+		if from == "" {
+			return amount, to // what destinations.ConvertCurrency does
+		}
 		if from == "USD" && to == "EUR" {
 			return amount * 0.5, to
 		}
@@ -77,5 +80,76 @@ func TestSaveTripPlanLastSearch_IncompleteCachesNoTotal(t *testing.T) {
 	}
 	if ls.HotelPrice != 400 || ls.HotelCurrency != "GBP" {
 		t.Errorf("cached hotel = %v %q, want 400 GBP", ls.HotelPrice, ls.HotelCurrency)
+	}
+}
+
+func printPlan(t *testing.T, target string, r *trip.PlanResult) string {
+	t.Helper()
+	return captureStdout(t, func() {
+		if err := printTripPlan(cancelledTestContext(t), target, r); err != nil {
+			t.Errorf("printTripPlan: %v", err)
+		}
+	})
+}
+
+func TestPrintTripPlan_UnconvertedFlightWithholdsTotal(t *testing.T) {
+	models.UseColor = false
+	stubTripPlanFX(t)
+	r := fxPlan("USD")
+	r.ReturnFlights[0].Currency = "GBP"
+	out := printPlan(t, "EUR", r)
+	if !strings.Contains(out, "Total unavailable: could not convert flights to EUR") {
+		t.Errorf("output does not withhold the total:\n%s", out)
+	}
+}
+
+func TestPrintTripPlan_RoundTripFareStandsInForFailedLeg(t *testing.T) {
+	models.UseColor = false
+	stubTripPlanFX(t)
+	r := fxPlan("USD")
+	r.ReturnFlights[0].Currency = "GBP"
+	r.RoundTripFares = []trip.PlanFlight{{Price: 300, Currency: "USD", Airline: "Finnair", Route: "HEL-BCN-HEL"}}
+	out := printPlan(t, "EUR", r)
+	// Round trip 150 x 2 guests, hotel 200, total 500.
+	if !strings.Contains(out, "Flights: EUR 300 + Hotel: EUR 200") || !strings.Contains(out, "EUR 500") {
+		t.Errorf("output lacks the round-trip total:\n%s", out)
+	}
+}
+
+func TestPrintTripPlan_FailedHotelKeepsSourceTotal(t *testing.T) {
+	models.UseColor = false
+	stubTripPlanFX(t)
+	r := fxPlan("GBP")
+	r.Nights = 7
+	r.Hotels[0].PerNight, r.Hotels[0].Total = 100.49, 703.43
+	out := printPlan(t, "EUR", r)
+	if !strings.Contains(out, formatPrice(703.43, "GBP")) || strings.Contains(out, formatPrice(700, "GBP")) {
+		t.Errorf("hotel row must show the source total %s:\n%s", formatPrice(703.43, "GBP"), out)
+	}
+}
+
+func TestPrintTripPlan_BlankSourceCurrencyIsNotRelabelled(t *testing.T) {
+	models.UseColor = false
+	stubTripPlanFX(t)
+	r := fxPlan("USD")
+	r.OutboundFlights[0].Currency = ""
+	r.OutboundFlights[0].Price = 123
+	out := printPlan(t, "EUR", r)
+	if strings.Contains(out, formatPrice(123, "EUR")) {
+		t.Errorf("a price with no currency was labelled EUR:\n%s", out)
+	}
+	if !strings.Contains(out, "Total unavailable") {
+		t.Errorf("a price with no currency must not be summed:\n%s", out)
+	}
+}
+
+func TestPrintTripPlan_NoTargetMixedCurrenciesWithholdsTotal(t *testing.T) {
+	models.UseColor = false
+	stubTripPlanFX(t)
+	r := fxPlan("GBP")
+	r.Summary.Currency = "USD"
+	out := printPlan(t, "", r)
+	if !strings.Contains(out, "Total unavailable: could not convert hotel to USD") {
+		t.Errorf("mixed currencies without a target must not be summed:\n%s", out)
 	}
 }
