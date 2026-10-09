@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
 	"golang.org/x/time/rate"
 )
@@ -102,32 +101,15 @@ func TestSearchTrainline_Tier1FallbackOn403(t *testing.T) {
 // attempted when no live cookies are available (the JA3 alone won't pass without
 // the clearance cookie), so it falls through to the lower tiers and an honest 403.
 func TestSearchTrainline_Tier1SkippedWithoutCookies(t *testing.T) {
-	origDo := trainlineDo
-	origLimiter := trainlineLimiter
-	origTier1Cookies := trainlineTier1Cookies
+	resetTrainlineSeams(t)
 	origNewTier1 := trainlineNewTier1
-	origFetchViaNab := trainlineFetchViaNab
-	origBrowserCookies := trainlineBrowserCookies
-	t.Cleanup(func() {
-		trainlineDo = origDo
-		trainlineLimiter = origLimiter
-		trainlineTier1Cookies = origTier1Cookies
-		trainlineNewTier1 = origNewTier1
-		trainlineFetchViaNab = origFetchViaNab
-		trainlineBrowserCookies = origBrowserCookies
-	})
-	trainlineLimiter = rate.NewLimiter(rate.Inf, 1)
+	t.Cleanup(func() { trainlineNewTier1 = origNewTier1 })
 	trainlineDo = func(*http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusForbidden,
 			Body:       io.NopCloser(strings.NewReader("blocked")),
 			Header:     make(http.Header),
 		}, nil
-	}
-	trainlineTier1Cookies = func(string) []*http.Cookie { return nil }
-	trainlineBrowserCookies = func(_ context.Context, _ string) string { return "" }
-	trainlineFetchViaNab = func(context.Context, []byte, string, string, string, string) ([]models.GroundRoute, error) {
-		return nil, nil
 	}
 	trainlineNewTier1 = func() (providers.Fetcher, error) {
 		t.Fatal("tier1 must not be constructed when no live cookies are present")

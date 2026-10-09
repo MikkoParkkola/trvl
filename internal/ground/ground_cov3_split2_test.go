@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -54,6 +55,12 @@ func TestParseEurostarSearchResponse_HappyPath(t *testing.T) {
 		}
 	}`
 
+	origClient := eurostarClient
+	t.Cleanup(func() { eurostarClient = origClient })
+	eurostarClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("offline: timetable request refused")
+	})}
+
 	fromStation, _ := LookupEurostarStation("London")
 	toStation, _ := LookupEurostarStation("Paris")
 
@@ -66,16 +73,19 @@ func TestParseEurostarSearchResponse_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseEurostarSearchResponse: %v", err)
 	}
-	if len(routes) == 0 {
-		t.Fatal("expected at least 1 route")
+	// Without timetable data each fare becomes one daily-cheapest route.
+	want := []struct {
+		price float64
+		day   string
+	}{{39, "Jul 01"}, {49, "Jul 02"}}
+	if len(routes) != len(want) {
+		t.Fatalf("got %d routes, want %d", len(routes), len(want))
 	}
-	// Check first route.
-	r := routes[0]
-	if r.Provider != "eurostar" {
-		t.Errorf("provider = %q, want eurostar", r.Provider)
-	}
-	if r.Currency != "GBP" {
-		t.Errorf("currency = %q, want GBP", r.Currency)
+	for i, w := range want {
+		r := routes[i]
+		if r.Provider != "eurostar" || r.Currency != "GBP" || r.Price != w.price || r.Departure.Time != w.day {
+			t.Errorf("route %d = {%s %s %v %q}, want {eurostar GBP %v %q}", i, r.Provider, r.Currency, r.Price, r.Departure.Time, w.price, w.day)
+		}
 	}
 }
 

@@ -1,6 +1,8 @@
 package ground
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -274,14 +276,31 @@ func TestSearchResultBufferCapacity(t *testing.T) {
 // DefaultProvider.SearchGround (just verifies delegation)
 // ============================================================
 
+// TestDefaultProvider_SearchGround_EmptyInputs filters to a provider that does
+// not exist, so empty inputs run the whole search path with nothing to call.
 func TestDefaultProvider_SearchGround_EmptyInputs(t *testing.T) {
 	p := &DefaultProvider{}
-	// Empty from/to will return empty results but should not panic.
-	result, err := p.SearchGround(t.Context(), "", "", "2026-07-01", models.GroundSearchOptions{})
+	result, err := p.SearchGround(t.Context(), "", "", "2026-07-01", models.GroundSearchOptions{Providers: []string{"no-such-provider"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	if result == nil || len(result.Routes) != 0 {
+		t.Fatalf("result = %+v, want a non-nil result with no routes", result)
+	}
+}
+
+// TestDefaultProvider_SearchGround_CancelledContext pins that a caller whose
+// context is already cancelled gets context.Canceled back before any provider
+// is contacted (doGroundSearchSingleflight checks ctx before the fan-out).
+func TestDefaultProvider_SearchGround_CancelledContext(t *testing.T) {
+	p := &DefaultProvider{}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	result, err := p.SearchGround(ctx, "", "", "2026-07-01", models.GroundSearchOptions{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if result != nil {
+		t.Errorf("result = %+v, want nil", result)
 	}
 }

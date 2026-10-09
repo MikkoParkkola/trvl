@@ -70,7 +70,7 @@ func EstimateTaxiTransfer(ctx context.Context, input TaxiEstimateInput) (models.
 	roadDistanceKm := estimateTaxiRoadDistanceKm(crowFlightKm)
 	durationMinutes := estimateTaxiDurationMinutes(roadDistanceKm)
 	lowEUR, highEUR := estimateTaxiFareEUR(roadDistanceKm, durationMinutes, input.CountryCode)
-	low, high, currency := convertTaxiFare(ctx, lowEUR, highEUR, input.Currency)
+	low, high, currency := convertTaxiFare(ctx, lowEUR, highEUR, input.Currency, destinations.ConvertCurrency)
 
 	return models.GroundRoute{
 		Provider:  "taxi",
@@ -139,14 +139,16 @@ func taxiFareMultiplier(countryCode string) float64 {
 	return 1.0
 }
 
-func convertTaxiFare(ctx context.Context, lowEUR, highEUR float64, targetCurrency string) (float64, float64, string) {
+// convertTaxiFare takes the converter as a parameter (production passes
+// destinations.ConvertCurrency) so tests convert without the live rates API.
+func convertTaxiFare(ctx context.Context, lowEUR, highEUR float64, targetCurrency string, convert func(ctx context.Context, amount float64, from, to string) (float64, string)) (float64, float64, string) {
 	currency := strings.ToUpper(strings.TrimSpace(targetCurrency))
 	if currency == "" || currency == "EUR" {
 		return roundTaxiMoney(lowEUR), roundTaxiMoney(highEUR), "EUR"
 	}
 
-	low, lowCurrency := destinations.ConvertCurrency(ctx, lowEUR, "EUR", currency)
-	high, highCurrency := destinations.ConvertCurrency(ctx, highEUR, "EUR", currency)
+	low, lowCurrency := convert(ctx, lowEUR, "EUR", currency)
+	high, highCurrency := convert(ctx, highEUR, "EUR", currency)
 	if lowCurrency != currency || highCurrency != currency {
 		return roundTaxiMoney(lowEUR), roundTaxiMoney(highEUR), "EUR"
 	}
