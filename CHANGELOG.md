@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Go toolchain pinned to 1.26.9 (was 1.26.6) and the release Docker image builds with Go 1.27.2 (was 1.27.1), for standard-library advisories in `net/http`, `html/template`, `crypto/tls`, `net/textproto` and `os`.
+  ([#709](https://github.com/MikkoParkkola/trvl/pull/709))
+- `golang.org/x/net` updated to v0.60.0 for GO-2026-6603, GO-2026-6610, GO-2026-6611, GO-2026-6612 and GO-2026-6617.
+  ([#709](https://github.com/MikkoParkkola/trvl/pull/709))
+
 ## [1.26.0] - 2026-10-06
 
 ### Added
