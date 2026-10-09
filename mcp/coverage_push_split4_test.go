@@ -214,6 +214,17 @@ func stubLounges(t *testing.T) {
 	}
 }
 
+// contentText joins every content block so assertions see the summary and
+// the structured payload alike.
+func contentText(blocks []ContentBlock) string {
+	var b strings.Builder
+	for _, c := range blocks {
+		b.WriteString(c.Text)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 func TestHandleSearchLounges_ValidAirport(t *testing.T) {
 	stubLounges(t)
 	content, structured, err := handleSearchLounges(context.Background(),
@@ -222,7 +233,7 @@ func TestHandleSearchLounges_ValidAirport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(content) == 0 || !strings.Contains(content[0].Text, "Stub Lounge HEL") {
+	if !strings.Contains(contentText(content), "Stub Lounge HEL") {
 		t.Errorf("content = %+v, want the stub lounge", content)
 	}
 	if r, ok := structured.(*lounges.SearchResult); !ok || r.Count != 1 || r.Airport != "HEL" {
@@ -238,7 +249,7 @@ func TestHandleSearchLounges_JFK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(content) == 0 || !strings.Contains(content[0].Text, "Stub Lounge JFK") {
+	if !strings.Contains(contentText(content), "Stub Lounge JFK") {
 		t.Errorf("content = %+v, want the stub lounge for the upper-cased airport", content)
 	}
 }

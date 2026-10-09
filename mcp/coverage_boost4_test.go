@@ -346,7 +346,7 @@ func TestHandleCheckWatches_WithWatches(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	raw, _ := json.Marshal(structured)
-	for _, want := range []string{`"checked":1`, `"triggered":1`, `"current_price":250`} {
+	for _, want := range []string{`"checked":1`, `"triggered":[{`, `"current_price":250`} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("structured = %s, want %s from the injected checker", raw, want)
 		}
