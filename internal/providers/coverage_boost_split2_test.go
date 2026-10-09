@@ -391,14 +391,6 @@ func TestFindChromeCookiePath_NoFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// cookies.go — defaultOpenURL OS branches
-// ---------------------------------------------------------------------------
-
-// TestDefaultOpenURL_LinuxBranch verifies the linux branch executes without panic.
-
-// TestDefaultOpenURL_WindowsBranch verifies the windows branch executes without panic.
-
-// ---------------------------------------------------------------------------
 // cookie_cache.go — saveCachedCookies full round-trip
 // ---------------------------------------------------------------------------
 

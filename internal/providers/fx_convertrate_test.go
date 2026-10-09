@@ -20,8 +20,8 @@ func TestConvertRate(t *testing.T) {
 	if r, ok := ConvertRate("USD", ""); ok || r != 0 {
 		t.Fatalf("empty to: got (%v,%v), want (0,false)", r, ok)
 	}
-	// USD->EUR resolves to a positive rate (live ECB or hardcoded fallback).
-	if r, ok := ConvertRate("USD", "EUR"); !ok || r <= 0 {
-		t.Fatalf("USD->EUR: got (%v,%v), want a positive rate", r, ok)
+	// withOfflineFX forces the built-in fallback table.
+	if r, ok := ConvertRate("USD", "EUR"); !ok || r != fallbackRates["USD"]["EUR"] {
+		t.Fatalf("USD->EUR: got (%v,%v), want the fallback rate %v", r, ok, fallbackRates["USD"]["EUR"])
 	}
 }
