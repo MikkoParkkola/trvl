@@ -170,6 +170,9 @@ func relaxAndRetry(ctx context.Context, req tripsearch.Request, original *tripse
 
 	msg := fmt.Sprintf("Zero profile-compliant bundles found (pre-filter: %d). Which filter should we relax?",
 		original.PreFilterCount)
+	if note := original.PartialNote(); note != "" {
+		msg += "\nPartial coverage: " + note
+	}
 
 	reply, err := elicit(msg, schema)
 	if err != nil {
@@ -295,13 +298,20 @@ func formatFindSummary(r *tripsearch.Result) string {
 		if r != nil {
 			impact = filterImpactText(r.FiltersApplied)
 		}
-		return fmt.Sprintf("Found 0 bundles (pre-filter: %d). Filters: %s", pre, impact)
+		summary := fmt.Sprintf("Found 0 bundles (pre-filter: %d). Filters: %s", pre, impact)
+		if note := r.PartialNote(); note != "" {
+			summary += "\nPartial coverage: " + note
+		}
+		return summary
 	}
 	var b strings.Builder
-	_, _ = fmt.Fprintf(&b, "Found %d bundle(s) across origins %v. Cheapest: €%.0f (%s).\n",
+	_, _ = fmt.Fprintf(&b, "Found %d bundle(s) across origins %v. Cheapest found: €%.0f (%s).\n",
 		r.Count, r.Origins, r.Flights[0].Price, tripsearch.RouteSummary(r.Flights[0]))
 	if r.PreFilterCount > r.Count {
 		_, _ = fmt.Fprintf(&b, "Filter impact: %s\n", filterImpactText(r.FiltersApplied))
+	}
+	if note := r.PartialNote(); note != "" {
+		_, _ = fmt.Fprintf(&b, "Partial coverage: %s\n", note)
 	}
 	return b.String()
 }
@@ -354,6 +364,21 @@ func findOutputSchema() interface{} {
 			"trip_type":        schemaString(),
 			"origins":          schemaStringArray(),
 			"pre_filter_count": schemaInt(),
+			"provider_statuses": map[string]interface{}{
+				"type":        "array",
+				"description": "Per-provider outcome of the flight search; failed entries carry error and reason.",
+				"items":       map[string]interface{}{"type": "object"},
+			},
+			"completeness": map[string]interface{}{
+				"type":        "object",
+				"description": "complete, partial or blocked. Anything but complete means the bundles are not the full market.",
+				"properties": map[string]interface{}{
+					"state":     schemaString(),
+					"queried":   schemaInt(),
+					"succeeded": schemaInt(),
+					"missing":   schemaStringArray(),
+				},
+			},
 			"filters_applied": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{

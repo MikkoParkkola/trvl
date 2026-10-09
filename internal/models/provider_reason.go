@@ -115,3 +115,19 @@ func ProviderFailureLines(statuses []ProviderStatus) string {
 	}
 	return "Provider status:\n" + strings.Join(lines, "\n")
 }
+
+// PartialCoverageNote returns the caveat for a search where some providers
+// did not answer: the completeness note plus one failure line per provider.
+// It is "" when every attempted provider answered (or nothing was assessed),
+// so callers can print it unconditionally.
+func PartialCoverageNote(statuses []ProviderStatus) string {
+	c := ComputeCompleteness(statuses)
+	if c.MayClaimExhaustive() {
+		return ""
+	}
+	note := c.IncompleteNote()
+	if lines := ProviderFailureLines(statuses); lines != "" {
+		note += "\n" + lines
+	}
+	return note
+}
