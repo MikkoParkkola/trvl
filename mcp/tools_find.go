@@ -305,8 +305,12 @@ func formatFindSummary(r *tripsearch.Result) string {
 		return summary
 	}
 	var b strings.Builder
-	_, _ = fmt.Fprintf(&b, "Found %d bundle(s) across origins %v. Cheapest found: €%.0f (%s).\n",
-		r.Count, r.Origins, r.Flights[0].Price, tripsearch.RouteSummary(r.Flights[0]))
+	cheapest := "Cheapest"
+	if r.PartialNote() != "" {
+		cheapest = "Cheapest found" // not the whole market: some providers failed
+	}
+	_, _ = fmt.Fprintf(&b, "Found %d bundle(s) across origins %v. %s: €%.0f (%s).\n",
+		r.Count, r.Origins, cheapest, r.Flights[0].Price, tripsearch.RouteSummary(r.Flights[0]))
 	if r.PreFilterCount > r.Count {
 		_, _ = fmt.Fprintf(&b, "Filter impact: %s\n", filterImpactText(r.FiltersApplied))
 	}
@@ -364,11 +368,7 @@ func findOutputSchema() interface{} {
 			"trip_type":        schemaString(),
 			"origins":          schemaStringArray(),
 			"pre_filter_count": schemaInt(),
-			"provider_statuses": map[string]interface{}{
-				"type":        "array",
-				"description": "Per-provider outcome of the flight search; failed entries carry error and reason.",
-				"items":       map[string]interface{}{"type": "object"},
-			},
+			"provider_statuses": schemaArrayDesc("Per-provider outcome of the flight search; failed entries carry error and reason.", flightProviderStatusSchema()),
 			"completeness": map[string]interface{}{
 				"type":        "object",
 				"description": "complete, partial or blocked. Anything but complete means the bundles are not the full market.",

@@ -28,7 +28,7 @@ func TestFormatFindSummary_PartialCoverage(t *testing.T) {
 		t.Errorf("summary = %q, want \"Cheapest found\" rather than an unqualified cheapest", got)
 	}
 	complete := &tripsearch.Result{Count: 1, ProviderStatuses: statuses[1:], Flights: withBundles.Flights}
-	if got := formatFindSummary(complete); strings.Contains(got, "Partial coverage") {
-		t.Errorf("complete summary = %q, want no partial note", got)
+	if got := formatFindSummary(complete); strings.Contains(got, "Partial coverage") || !strings.Contains(got, "Cheapest:") {
+		t.Errorf("complete summary = %q, want an unqualified cheapest and no partial note", got)
 	}
 }

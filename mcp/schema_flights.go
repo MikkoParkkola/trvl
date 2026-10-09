@@ -78,19 +78,7 @@ func flightSearchOutputSchema() interface{} {
 					"steps":       schemaStringArray(),
 				},
 			}),
-			"provider_statuses": schemaArrayDesc("Per-provider outcome (Google Flights / Kiwi / Skiplagged / configured providers). Status: 'ok'|'error'|'skipped'|'circuit_broken'. Surfaces why a provider was skipped or which ones failed so callers can recover.", map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"id":            schemaString(),
-					"name":          schemaString(),
-					"status":        schemaString(),
-					"results":       schemaInt(),
-					"error":         schemaString(),
-					"fix_hint":      schemaString(),
-					"fix_hint_code": schemaString(),
-					"reason":        schemaString(),
-				},
-			}),
+			"provider_statuses": schemaArrayDesc("Per-provider outcome (Google Flights / Kiwi / Skiplagged / configured providers). Status: 'ok'|'error'|'skipped'|'circuit_broken'. Surfaces why a provider was skipped or which ones failed so callers can recover.", flightProviderStatusSchema()),
 			"price_position": map[string]interface{}{
 				"type":        "object",
 				"description": "Where today's cheapest fare sits in this route's own price history (MIK-6229). Only assert a verdict when confident=true; otherwise tell the user there is not enough history yet.",
@@ -145,5 +133,23 @@ func dateSearchOutputSchema() interface{} {
 			"error": schemaString(),
 		},
 		"required": []string{"success", "count"},
+	}
+}
+
+// flightProviderStatusSchema describes one models.ProviderStatus entry of a
+// flight search; shared by search_flights and the find tools.
+func flightProviderStatusSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"id":            schemaString(),
+			"name":          schemaString(),
+			"status":        schemaString(),
+			"results":       schemaInt(),
+			"error":         schemaString(),
+			"fix_hint":      schemaString(),
+			"fix_hint_code": schemaString(),
+			"reason":        schemaString(),
+		},
 	}
 }

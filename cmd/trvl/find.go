@@ -342,9 +342,18 @@ func runFindSweep(ctx context.Context, base tripsearch.Request, format string, w
 		if err != nil || res == nil {
 			// A failed date still says which providers failed.
 			var serr *tripsearch.SearchError
-			if errors.As(err, &serr) {
+			if errors.As(err, &serr) && len(serr.ProviderStatuses) > 0 {
 				merged.ProviderStatuses = append(merged.ProviderStatuses, tripsearch.LabelStatusesWithDate(serr.ProviderStatuses, d)...)
+				continue
 			}
+			// No provider evidence (e.g. preferences failed to load): the date
+			// itself is the failure, so the sweep cannot claim full coverage.
+			msg := "no result"
+			if err != nil {
+				msg = err.Error()
+			}
+			merged.ProviderStatuses = append(merged.ProviderStatuses, tripsearch.LabelStatusesWithDate(
+				[]models.ProviderStatus{{ID: "search", Name: "Search", Status: models.StatusError, Error: msg}}, d)...)
 			continue
 		}
 		merged.ProviderStatuses = append(merged.ProviderStatuses, tripsearch.LabelStatusesWithDate(res.ProviderStatuses, d)...)
@@ -369,7 +378,9 @@ func runFindSweep(ctx context.Context, base tripsearch.Request, format string, w
 			ProviderStatuses: merged.ProviderStatuses, Completeness: merged.Completeness,
 		})
 	}
-	printPartialNote(merged.PartialNote())
+	if note := merged.PartialNote(); note != "" {
+		printPartialNote(fmt.Sprintf("counts are provider checks across %d dates. %s", len(dates), note))
+	}
 	if merged.Count == 0 {
 		fmt.Println("Swept 0 profile-compliant bundles across all dates.")
 		return nil
