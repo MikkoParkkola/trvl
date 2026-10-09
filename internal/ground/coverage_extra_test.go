@@ -494,6 +494,22 @@ func TestConvertTaxiFare_NonEURCurrency(t *testing.T) {
 	}
 }
 
+func TestConvertTaxiFare_PartialConversionFallsBackToEUR(t *testing.T) {
+	ctx := context.Background()
+	calls := 0
+	convertFirstOnly := func(_ context.Context, amount float64, from, to string) (float64, string) {
+		calls++
+		if calls == 1 {
+			return amount * 11.456, to
+		}
+		return amount, from
+	}
+	low, high, cur := convertTaxiFare(ctx, 10.0, 20.0, "SEK", convertFirstOnly)
+	if cur != "EUR" || low != 10 || high != 20 {
+		t.Errorf("got (%v, %v, %q), want (10, 20, EUR)", low, high, cur)
+	}
+}
+
 func TestConvertTaxiFare_UnconvertibleFallsBackToEUR(t *testing.T) {
 	ctx := context.Background()
 	low, high, cur := convertTaxiFare(ctx, 10.0, 20.0, "XYZ", fixedRateConvert("SEK", 11.456))

@@ -276,6 +276,19 @@ func TestSearchResultBufferCapacity(t *testing.T) {
 // DefaultProvider.SearchGround (just verifies delegation)
 // ============================================================
 
+// TestDefaultProvider_SearchGround_EmptyInputs filters to a provider that does
+// not exist, so empty inputs run the whole search path with nothing to call.
+func TestDefaultProvider_SearchGround_EmptyInputs(t *testing.T) {
+	p := &DefaultProvider{}
+	result, err := p.SearchGround(t.Context(), "", "", "2026-07-01", models.GroundSearchOptions{Providers: []string{"no-such-provider"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil || len(result.Routes) != 0 {
+		t.Fatalf("result = %+v, want a non-nil result with no routes", result)
+	}
+}
+
 // TestDefaultProvider_SearchGround_CancelledContext pins that a caller whose
 // context is already cancelled gets context.Canceled back before any provider
 // is contacted (doGroundSearchSingleflight checks ctx before the fan-out).

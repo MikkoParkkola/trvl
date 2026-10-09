@@ -355,6 +355,10 @@ func TestSearchDigitransit_MockHappyPath2(t *testing.T) {
 	if routes[0].Provider != "vr" {
 		t.Errorf("provider = %q, want vr", routes[0].Provider)
 	}
+	// The train name comes only from the mock, so a live response cannot pass.
+	if len(routes[0].Legs) != 1 || routes[0].Legs[0].Provider != "IC 123" {
+		t.Errorf("legs = %+v, want one IC 123 leg from the mock", routes[0].Legs)
+	}
 }
 
 // ============================================================
