@@ -1,4 +1,3 @@
 # Packages whose default tests still reach outside hosts. The offline guard
 # (scripts/ci/offline-guard) skips them; every other package must stay offline.
 # Remove a line in the PR that fixes the package. Census and plan: MIK-8107.
-github.com/MikkoParkkola/trvl/mcp

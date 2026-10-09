@@ -9,7 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/hacks"
 )
 
 // TestDetectTravelHacks_ReportsPartialSweep pins the honesty half of the
@@ -20,8 +21,10 @@ import (
 // was the answer or merely as far as it got, and an agent presents a truncated
 // list as complete. The response has to say which.
 func TestDetectTravelHacks_ReportsPartialSweep(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-	defer cancel()
+	// Already cancelled: hacks.DetectAll takes its fast path and launches no
+	// detector, so the sweep is truncated without touching the network.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
 	_, result, err := handleDetectTravelHacks(ctx, map[string]any{
 		"origin":      "HEL",
@@ -56,41 +59,58 @@ func TestDetectTravelHacks_ReportsPartialSweep(t *testing.T) {
 	}
 }
 
-// TestDetectTravelHacks_FlagAndNoteAgree pins the contract that is actually
-// environment-independent: whatever `complete` says, the note must agree with it.
-//
-// An earlier version asserted complete=true for an ordinary search. That premise
-// was wrong once a detector cut short by its own allowance began counting against
-// completeness — against live providers, one reliably does, so `false` is the
-// honest answer and the test was asserting a fiction. What must always hold is
-// that the two fields cannot contradict each other.
+// TestDetectTravelHacks_FlagAndNoteAgree drives the sweep through the
+// detectAllHacksFunc seam so both outcomes are checked offline: a complete
+// sweep carries no note, and a partial one says so even when it found hacks.
+// Not parallel: it swaps a package var.
 func TestDetectTravelHacks_FlagAndNoteAgree(t *testing.T) {
-	_, result, err := handleDetectTravelHacks(context.Background(), map[string]any{
-		"origin":      "HEL",
-		"destination": "BCN",
-		"date":        "2026-09-01",
-	}, nil, nil, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	found := []hacks.Hack{{Type: "throwaway", Title: "Stub hack", Savings: 40, Currency: "EUR"}}
+	cases := []struct {
+		name     string
+		hacks    []hacks.Hack
+		complete bool
+	}{
+		{"complete", found, true},
+		{"partial with hacks", found, false},
+		{"partial empty", nil, false},
 	}
-
-	raw, _ := json.Marshal(result)
-	var payload struct {
-		Complete *bool  `json:"complete"`
-		Note     string `json:"note"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		t.Fatalf("unmarshal result: %v", err)
-	}
-
-	if payload.Complete == nil {
-		t.Fatal("the response omits `complete`; an agent cannot tell a full sweep from a truncated one")
-	}
-	if *payload.Complete && payload.Note != "" {
-		t.Fatalf("a complete sweep carried a truncation note: %q", payload.Note)
-	}
-	if !*payload.Complete && !strings.Contains(payload.Note, "partial") {
-		t.Fatalf("an incomplete sweep carried no explanation, note was %q", payload.Note)
+	prev := detectAllHacksFunc
+	t.Cleanup(func() { detectAllHacksFunc = prev })
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			detectAllHacksFunc = func(context.Context, hacks.DetectorInput) ([]hacks.Hack, bool) {
+				return tc.hacks, tc.complete
+			}
+			_, result, err := handleDetectTravelHacks(context.Background(), map[string]any{
+				"origin":      "HEL",
+				"destination": "BCN",
+				"date":        "2026-09-01",
+			}, nil, nil, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			raw, _ := json.Marshal(result)
+			var payload struct {
+				Complete *bool  `json:"complete"`
+				Note     string `json:"note"`
+				Count    int    `json:"count"`
+			}
+			if err := json.Unmarshal(raw, &payload); err != nil {
+				t.Fatalf("unmarshal result: %v", err)
+			}
+			if payload.Complete == nil || *payload.Complete != tc.complete {
+				t.Fatalf("complete = %v, want %v", payload.Complete, tc.complete)
+			}
+			if payload.Count != len(tc.hacks) {
+				t.Errorf("count = %d, want %d", payload.Count, len(tc.hacks))
+			}
+			if tc.complete && payload.Note != "" {
+				t.Errorf("a complete sweep carried a truncation note: %q", payload.Note)
+			}
+			if !tc.complete && !strings.Contains(payload.Note, "partial") {
+				t.Errorf("an incomplete sweep carried no explanation, note was %q", payload.Note)
+			}
+		})
 	}
 }
 

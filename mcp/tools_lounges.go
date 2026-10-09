@@ -71,6 +71,9 @@ func searchLoungesTool() ToolDef {
 
 // --- Handler ---
 
+// searchLoungesFunc is a package seam so tests can avoid the live Priority Pass API.
+var searchLoungesFunc = lounges.SearchLounges
+
 func handleSearchLounges(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
 	airport := strings.ToUpper(strings.TrimSpace(argString(args, "airport")))
 
@@ -81,7 +84,7 @@ func handleSearchLounges(ctx context.Context, args map[string]any, elicit Elicit
 		return nil, nil, fmt.Errorf("invalid airport: %w", err)
 	}
 
-	result, err := lounges.SearchLounges(ctx, airport)
+	result, err := searchLoungesFunc(ctx, airport)
 	if err != nil {
 		return nil, nil, fmt.Errorf("lounge search: %w", err)
 	}

@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/watch"
@@ -335,9 +337,19 @@ func TestHandleCheckWatches_WithWatches(t *testing.T) {
 		t.Fatalf("setup watch: %v", err)
 	}
 
+	prev := checkWatchesChecker
+	t.Cleanup(func() { checkWatchesChecker = prev })
+	checkWatchesChecker = fixedChecker{price: 250, currency: "EUR"}
+
 	content, structured, err := handleCheckWatches(context.Background(), nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	raw, _ := json.Marshal(structured)
+	for _, want := range []string{`"checked":1`, `"triggered":1`, `"current_price":250`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("structured = %s, want %s from the injected checker", raw, want)
+		}
 	}
 	if len(content) == 0 {
 		t.Fatal("expected content blocks")
