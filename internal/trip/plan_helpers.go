@@ -3,10 +3,10 @@ package trip
 import (
 	"context"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 
+	"github.com/MikkoParkkola/trvl/internal/dailyspend"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -367,42 +367,66 @@ func choosePlanSummaryCurrency(requested string, result *PlanResult) string {
 	return "EUR"
 }
 
-func convertedPlanAmount(ctx context.Context, amount float64, from, to string) float64 {
-	return roundedPlanAmount(ctx, destinations.ConvertCurrency, amount, from, to)
-}
-
-func roundedPlanAmount(ctx context.Context, conv tripCostCurrencyConverter, amount float64, from, to string) float64 {
-	converted, _ := conv(ctx, amount, from, to)
-	return math.Round(converted*100) / 100
-}
-
+// convertPlanFlights converts each flight's Price and ComparablePrice into
+// currency. An item is relabelled only when every one of its conversions came
+// back in the target currency; otherwise it keeps its source amounts and
+// currency, so a failed rate never shows a foreign price under the target label
+// (MIK-8138).
 func convertPlanFlights(ctx context.Context, flights []PlanFlight, currency string, conv tripCostCurrencyConverter) {
 	for i := range flights {
-		if flights[i].Price <= 0 || flights[i].Currency == "" || flights[i].Currency == currency {
+		f := &flights[i]
+		if f.Price <= 0 || f.Currency == "" || f.Currency == currency {
 			continue
 		}
-		from := flights[i].Currency
-		flights[i].Price = roundedPlanAmount(ctx, conv, flights[i].Price, from, currency)
-		if flights[i].ComparablePrice > 0 {
-			flights[i].ComparablePrice = roundedPlanAmount(ctx, conv, flights[i].ComparablePrice, from, currency)
+		price, ok := convertPlanAmount(ctx, conv, f.Price, f.Currency, currency)
+		if !ok {
+			continue
 		}
-		flights[i].Currency = currency
+		comparable := f.ComparablePrice
+		if comparable > 0 {
+			if comparable, ok = convertPlanAmount(ctx, conv, comparable, f.Currency, currency); !ok {
+				continue
+			}
+		}
+		f.Price, f.ComparablePrice, f.Currency = price, comparable, currency
 	}
 }
 
+// convertPlanHotels converts PerNight and Total with the same all-or-nothing
+// rule as convertPlanFlights.
 func convertPlanHotels(ctx context.Context, hotels []PlanHotel, currency string, conv tripCostCurrencyConverter) {
 	for i := range hotels {
-		if hotels[i].Currency == "" || hotels[i].Currency == currency {
+		h := &hotels[i]
+		if h.Currency == "" || h.Currency == currency {
 			continue
 		}
-		if hotels[i].PerNight > 0 {
-			hotels[i].PerNight = roundedPlanAmount(ctx, conv, hotels[i].PerNight, hotels[i].Currency, currency)
+		perNight, total := h.PerNight, h.Total
+		ok := true
+		if perNight > 0 {
+			perNight, ok = convertPlanAmount(ctx, conv, perNight, h.Currency, currency)
 		}
-		if hotels[i].Total > 0 {
-			hotels[i].Total = roundedPlanAmount(ctx, conv, hotels[i].Total, hotels[i].Currency, currency)
+		if ok && total > 0 {
+			total, ok = convertPlanAmount(ctx, conv, total, h.Currency, currency)
 		}
-		hotels[i].Currency = currency
+		if !ok {
+			continue
+		}
+		h.PerNight, h.Total, h.Currency = perNight, total, currency
 	}
+}
+
+// convertPlanAmount converts amount from -> to, rounded to cents, and reports
+// whether the result is really in to. A blank source currency never counts as
+// converted: destinations.ConvertCurrency echoes the target back for it.
+func convertPlanAmount(ctx context.Context, conv tripCostCurrencyConverter, amount float64, from, to string) (float64, bool) {
+	if amount == 0 || from == to {
+		return amount, from == to || amount == 0
+	}
+	if from == "" || to == "" {
+		return amount, false
+	}
+	converted, cur := convertedTripCostAmount(ctx, amount, from, to, conv)
+	return converted, cur == to
 }
 
 // buildReviewSnippets converts raw hotel reviews into plan review snippets.
@@ -500,4 +524,131 @@ func mergeFlightProviders(legs ...*models.FlightSearchResult) []models.ProviderS
 		out = append(out, worst[id])
 	}
 	return out
+}
+
+// buildPlanSummary prices the cheapest plan in cur. Every component converts
+// through conv; one that cannot be expressed in cur is left out of the sums and
+// named in Unconverted, and an incomplete summary withholds the grand total
+// rather than adding amounts in different currencies (MIK-8138).
+func buildPlanSummary(ctx context.Context, result *PlanResult, input PlanInput, nights int, conv tripCostCurrencyConverter) PlanSummary {
+	cur := choosePlanSummaryCurrency(input.Currency, result)
+	var unconverted []string
+	amount := func(name string, v float64, from string) (float64, bool) {
+		out, ok := convertPlanAmount(ctx, conv, v, from, cur)
+		if !ok {
+			unconverted = append(unconverted, name)
+		}
+		return out, ok
+	}
+	// leg returns a flight's all-in and headline fares in cur.
+	leg := func(f PlanFlight) (allIn, headline float64, ok bool) {
+		allIn, ok1 := convertPlanAmount(ctx, conv, comparableOrPrice(f), f.Currency, cur)
+		headline, ok2 := convertPlanAmount(ctx, conv, f.Price, f.Currency, cur)
+		return allIn, headline, ok1 && ok2
+	}
+
+	// Two parallel figures per leg: the headline fare (Price) and the all-in
+	// fare (ComparablePrice, incl. bags). The one-way pair counts only when
+	// every leg it needs converted.
+	var cheapOut, cheapRet, cheapOutHl, cheapRetHl float64
+	oneWayOK := len(result.OutboundFlights) > 0 || len(result.ReturnFlights) > 0
+	if oneWayOK && len(result.OutboundFlights) > 0 {
+		cheapOut, cheapOutHl, oneWayOK = leg(result.OutboundFlights[0])
+	}
+	if oneWayOK && len(result.ReturnFlights) > 0 {
+		cheapRet, cheapRetHl, oneWayOK = leg(result.ReturnFlights[0])
+	}
+
+	// Prefer the cheaper of {two one-ways, native single-ticket round-trip}. The
+	// native RT price is ALREADY a full round-trip per person, so it competes
+	// directly against cheapOut+cheapRet -- no doubling. The cheaper-of decision
+	// is made on the all-in cost, and the matching headline figure is tracked so
+	// the baggage delta is consistent with the branch actually chosen.
+	var cheapRT, cheapRTHl float64
+	rtOK := false
+	if len(result.RoundTripFares) > 0 {
+		cheapRT, cheapRTHl, rtOK = leg(result.RoundTripFares[0])
+	}
+
+	var perPersonAllIn, perPersonHeadline float64
+	switch {
+	case oneWayOK && rtOK && cheapRT > 0 && cheapRT < cheapOut+cheapRet:
+		perPersonAllIn, perPersonHeadline = cheapRT, cheapRTHl
+	case oneWayOK:
+		perPersonAllIn, perPersonHeadline = cheapOut+cheapRet, cheapOutHl+cheapRetHl
+	case rtOK:
+		perPersonAllIn, perPersonHeadline = cheapRT, cheapRTHl
+	case len(result.OutboundFlights) > 0 || len(result.ReturnFlights) > 0 || len(result.RoundTripFares) > 0:
+		unconverted = append(unconverted, "flights")
+	}
+
+	flightsHeadline := perPersonHeadline * float64(input.Guests)
+	flightsAllIn := perPersonAllIn * float64(input.Guests)
+	baggageTotal := flightsAllIn - flightsHeadline
+	if baggageTotal < 0 {
+		baggageTotal = 0 // never let a stale comparable under-report fares
+	}
+
+	var cheapHotel float64
+	if len(result.Hotels) > 0 {
+		if v, ok := amount("hotel", result.Hotels[0].Total, result.Hotels[0].Currency); ok {
+			cheapHotel = v
+		}
+	}
+
+	// On-the-ground daily spend (meals, local transport, incidentals): a coarse
+	// offline estimate, never a live quote, so it is always tagged via
+	// MealsEstimated. Folding it in makes GrandTotal a no-surprise landed cost.
+	meals := dailyspend.Lookup(models.ResolveLocationName(input.Destination))
+	var mealsTotal float64
+	if v, ok := amount("meals", meals.Total(input.Guests, nights), meals.Currency); ok {
+		mealsTotal = v
+	}
+	// Airport<->city transfer and tourist/city tax from bundled offline EUR
+	// tables. A city not in the table degrades to a typed not-found status (zero
+	// + Estimated=false) rather than a fabricated figure (MIK-6530 PLANCOMP.1).
+	var transfersTotal, taxesTotal float64
+	transfersKnown, taxesKnown := false, false
+	if eur, known := transferCost(input.Destination, input.Guests); known {
+		if v, ok := amount("transfers", eur, "EUR"); ok {
+			transfersTotal, transfersKnown = v, true
+		}
+	}
+	if eur, known := cityTax(input.Destination, input.Guests, nights); known {
+		if v, ok := amount("city tax", eur, "EUR"); ok {
+			taxesTotal, taxesKnown = v, true
+		}
+	}
+
+	summary := PlanSummary{
+		FlightsTotal:       flightsHeadline,
+		BaggageTotal:       baggageTotal,
+		HotelTotal:         cheapHotel,
+		MealsTotal:         mealsTotal,
+		MealsEstimated:     mealsTotal > 0,
+		TransfersTotal:     transfersTotal,
+		TransfersEstimated: transfersKnown,
+		TaxesTotal:         taxesTotal,
+		TaxesEstimated:     taxesKnown,
+		Currency:           cur,
+		Budget:             input.Budget,
+	}
+	if len(unconverted) > 0 {
+		summary.Incomplete = true
+		summary.Unconverted = unconverted
+		return summary
+	}
+
+	grandTotal := flightsAllIn + cheapHotel + mealsTotal + transfersTotal + taxesTotal
+	summary.GrandTotal = grandTotal
+	// PLANCOMP.2: if a budget was set and nothing fits under it, say so plainly,
+	// carrying the cheapest total and the overage.
+	summary.OverBudget, summary.Overage, summary.BudgetMessage = budgetVerdict(grandTotal, input.Budget, cur)
+	if input.Guests > 0 {
+		summary.PerPerson = grandTotal / float64(input.Guests)
+	}
+	if nights > 0 {
+		summary.PerDay = grandTotal / float64(nights)
+	}
+	return summary
 }

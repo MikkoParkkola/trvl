@@ -1,7 +1,6 @@
 package trip
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -117,24 +116,6 @@ func cityTax(dest string, guests, nights int) (float64, bool) {
 		taxed = cityTaxNightCap
 	}
 	return per * float64(guests) * float64(taxed), true
-}
-
-// transferCostConverted / cityTaxConverted are the caller-facing wrappers that
-// convert the EUR table figure into the summary currency.
-func transferCostConverted(ctx context.Context, dest string, guests int, cur string) (float64, bool) {
-	eur, known := transferCost(dest, guests)
-	if !known {
-		return 0, false
-	}
-	return convertedPlanAmount(ctx, eur, "EUR", cur), true
-}
-
-func cityTaxConverted(ctx context.Context, dest string, guests, nights int, cur string) (float64, bool) {
-	eur, known := cityTax(dest, guests, nights)
-	if !known {
-		return 0, false
-	}
-	return convertedPlanAmount(ctx, eur, "EUR", cur), true
 }
 
 // budgetVerdict implements PLANCOMP.2: when a budget is set and the cheapest

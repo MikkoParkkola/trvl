@@ -456,6 +456,15 @@ func planTripOutputSchema() interface{} {
 					"per_person":    schemaNum(),
 					"per_day":       schemaNum(),
 					"currency":      schemaString(),
+					"incomplete": map[string]interface{}{
+						"type":        "boolean",
+						"description": "True when a cost could not be converted into currency; grand_total, per_person and per_day are then 0 because they are withheld, not free.",
+					},
+					"unconverted": map[string]interface{}{
+						"type":        "array",
+						"items":       schemaString(),
+						"description": "Cost components that could not be converted into currency (flights, hotel, meals, transfers, city tax).",
+					},
 				},
 			},
 			"error": schemaString(),
@@ -468,7 +477,7 @@ func planTripTool() ToolDef {
 	return ToolDef{
 		Name:        "plan_trip",
 		Title:       "Plan Complete Trip",
-		Description: "Plan a complete trip with outbound flights, return flights, and hotel options in one search. Returns top 5 options for each plus a total cost summary. Omit return_date for a one-way trip.",
+		Description: "Plan a complete trip with outbound flights, return flights, and hotel options in one search. Returns top 5 options for each plus a total cost summary; when a cost cannot be converted into the requested currency the summary sets incomplete, lists it in unconverted and withholds grand_total. Omit return_date for a one-way trip.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
