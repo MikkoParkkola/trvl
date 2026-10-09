@@ -36,5 +36,5 @@
 
 [[IgnoredVulns]]
 id = "GO-2026-5932"
-ignoreUntil = 2026-10-09
-reason = "golang.org/x/crypto/openpgp: unmaintained/unsafe-by-design, no upstream fix (introduced:0, fixed:none). VERIFIED UNREACHABLE: `go mod why golang.org/x/crypto` reports 'main module does not need package golang.org/x/crypto', and `rg x/crypto/openpgp` finds zero imports in trvl. Indirect-only, unused. Re-review 2026-10-09 (bump/drop the transitive dep if a maintained replacement lands)."
+ignoreUntil = 2026-11-08
+reason = "golang.org/x/crypto/openpgp: unmaintained/unsafe-by-design, no upstream fix (introduced:0, fixed:none; v0.57.0 is the latest x/crypto). VERIFIED UNREACHABLE 2026-10-09: `go mod why golang.org/x/crypto/openpgp` reports 'main module does not need package golang.org/x/crypto/openpgp' and `rg x/crypto/openpgp` finds zero imports. x/crypto itself is used (utls -> chacha20poly1305), not the vulnerable package. Re-review 2026-11-08."
