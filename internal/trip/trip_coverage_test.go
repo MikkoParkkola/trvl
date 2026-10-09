@@ -227,20 +227,15 @@ func TestBuildAirportTransferOriginQuery_CaseInsensitive(t *testing.T) {
 }
 
 // ============================================================
-// convertPlanFlights / convertPlanHotels / convertedPlanAmount
+// convertPlanFlights / convertPlanHotels / convertPlanAmount
 // ============================================================
 
-func TestConvertedPlanAmount_SameCurrency(t *testing.T) {
-	// When from == to, ConvertCurrency should return amount unchanged.
-	// We test via a context that never makes live HTTP calls.
-	ctx := context.Background()
-	// convertedPlanAmount calls destinations.ConvertCurrency; for same currency it
-	// should return the same value (no conversion needed).
-	// We can't assert the exact value without a live call, but we can verify
-	// the function doesn't panic and returns a non-negative number.
-	result := convertedPlanAmount(ctx, 100.0, "EUR", "EUR")
-	if result < 0 {
-		t.Errorf("convertedPlanAmount returned negative: %v", result)
+func TestConvertPlanAmount_BlankSourceIsNotConverted(t *testing.T) {
+	// destinations.ConvertCurrency echoes the target back for a blank source,
+	// so a blank source must never count as converted.
+	got, ok := convertPlanAmount(context.Background(), fakeFX, 100, "", "EUR")
+	if ok || got != 100 {
+		t.Errorf("got (%v, %v), want (100, false)", got, ok)
 	}
 }
 

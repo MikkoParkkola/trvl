@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikkoParkkola/trvl/internal/dailyspend"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
@@ -136,6 +135,13 @@ type PlanSummary struct {
 	PerPerson      float64 `json:"per_person"`
 	PerDay         float64 `json:"per_day"`
 	Currency       string  `json:"currency"`
+	// Incomplete is true when a cost component could not be converted into
+	// Currency; Unconverted names those components. An incomplete summary never
+	// adds amounts across currencies: GrandTotal, PerPerson and PerDay stay 0
+	// (withheld, not "free") and no budget verdict is given, while the
+	// component totals that did convert are still filled (MIK-8138).
+	Incomplete  bool     `json:"incomplete,omitempty"`
+	Unconverted []string `json:"unconverted,omitempty"`
 	// Budget echoes the requested ceiling (PlanInput.Budget). OverBudget is true
 	// when no package fits under it; Overage is how much the cheapest total
 	// exceeds it, and BudgetMessage carries the explicit "no package fits"
@@ -475,89 +481,7 @@ func PlanTrip(ctx context.Context, input PlanInput) (*PlanResult, error) {
 		convertPlanHotels(ctx, result.Hotels, input.Currency, destinations.ConvertCurrency)
 	}
 
-	// Build summary from cheapest options. Two parallel figures per leg: the
-	// headline fare (Price) and the all-in fare (ComparablePrice, incl. bags).
-	var cheapOut, cheapRet float64     // all-in (baggage-inclusive)
-	var cheapOutHl, cheapRetHl float64 // headline fares
-	var cheapHotel float64
-	cur := choosePlanSummaryCurrency(input.Currency, result)
-
-	if len(result.OutboundFlights) > 0 {
-		cheapOut = convertedPlanAmount(ctx, comparableOrPrice(result.OutboundFlights[0]), result.OutboundFlights[0].Currency, cur)
-		cheapOutHl = convertedPlanAmount(ctx, result.OutboundFlights[0].Price, result.OutboundFlights[0].Currency, cur)
-	}
-	if len(result.ReturnFlights) > 0 {
-		cheapRet = convertedPlanAmount(ctx, comparableOrPrice(result.ReturnFlights[0]), result.ReturnFlights[0].Currency, cur)
-		cheapRetHl = convertedPlanAmount(ctx, result.ReturnFlights[0].Price, result.ReturnFlights[0].Currency, cur)
-	}
-	if len(result.Hotels) > 0 {
-		cheapHotel = convertedPlanAmount(ctx, result.Hotels[0].Total, result.Hotels[0].Currency, cur)
-	}
-
-	// Prefer the cheaper of {two one-ways, native single-ticket round-trip}. The
-	// native RT price is ALREADY a full round-trip per person, so it competes
-	// directly against cheapOut+cheapRet -- no doubling. When no native fare was
-	// found (or it is pricier), this is byte-identical to the two-one-way total.
-	// The cheaper-of decision is made on the all-in cost (what a traveller really
-	// pays), and the matching headline figure is tracked so the baggage delta is
-	// consistent with the branch we actually chose.
-	var cheapRT, cheapRTHl float64
-	if len(result.RoundTripFares) > 0 {
-		cheapRT = convertedPlanAmount(ctx, comparableOrPrice(result.RoundTripFares[0]), result.RoundTripFares[0].Currency, cur)
-		cheapRTHl = convertedPlanAmount(ctx, result.RoundTripFares[0].Price, result.RoundTripFares[0].Currency, cur)
-	}
-
-	oneWayAllIn := cheapOut + cheapRet
-	perPersonAllIn := oneWayAllIn
-	perPersonHeadline := cheapOutHl + cheapRetHl
-	if cheapRT > 0 && cheapRT < oneWayAllIn {
-		perPersonAllIn = cheapRT
-		perPersonHeadline = cheapRTHl
-	}
-
-	flightsHeadline := perPersonHeadline * float64(input.Guests)
-	flightsAllIn := perPersonAllIn * float64(input.Guests)
-	baggageTotal := flightsAllIn - flightsHeadline
-	if baggageTotal < 0 {
-		baggageTotal = 0 // never let a stale comparable under-report fares
-	}
-	// On-the-ground daily spend (meals, local transport, incidentals). This is a
-	// coarse offline estimate, never a live quote, so it is always tagged via
-	// MealsEstimated. Folding it in makes GrandTotal a no-surprise landed cost
-	// rather than just flights + hotel.
-	meals := dailyspend.Lookup(models.ResolveLocationName(input.Destination))
-	mealsTotal := convertedPlanAmount(ctx, meals.Total(input.Guests, nights), meals.Currency, cur)
-	// Airport<->city transfer and tourist/city tax: real money a flight+hotel
-	// quote hides. Both from bundled offline tables; a city not in the table
-	// degrades to a typed not-found status (zero + Estimated=false) rather than a
-	// fabricated figure (MIK-6530 PLANCOMP.1).
-	transfersTotal, transfersKnown := transferCostConverted(ctx, input.Destination, input.Guests, cur)
-	taxesTotal, taxesKnown := cityTaxConverted(ctx, input.Destination, input.Guests, nights, cur)
-	grandTotal := flightsAllIn + cheapHotel + mealsTotal + transfersTotal + taxesTotal
-
-	result.Summary = PlanSummary{
-		FlightsTotal:       flightsHeadline,
-		BaggageTotal:       baggageTotal,
-		HotelTotal:         cheapHotel,
-		MealsTotal:         mealsTotal,
-		MealsEstimated:     mealsTotal > 0,
-		TransfersTotal:     transfersTotal,
-		TransfersEstimated: transfersKnown,
-		TaxesTotal:         taxesTotal,
-		TaxesEstimated:     taxesKnown,
-		GrandTotal:         grandTotal,
-		Currency:           cur,
-	}
-	// PLANCOMP.2: if a budget was set and nothing fits under it, say so plainly,
-	// carrying the cheapest total and the overage.
-	result.Summary.Budget = input.Budget
-	result.Summary.OverBudget, result.Summary.Overage, result.Summary.BudgetMessage = budgetVerdict(grandTotal, input.Budget, cur)
-	if input.Guests > 0 {
-		result.Summary.PerPerson = grandTotal / float64(input.Guests)
-	}
-	if nights > 0 {
-		result.Summary.PerDay = grandTotal / float64(nights)
-	}
+	result.Summary = buildPlanSummary(ctx, result, input, nights, destinations.ConvertCurrency)
 
 	// A one-way plan is complete with outbound flights + hotels; a round trip
 	// additionally needs the return leg. The return-flights view stays empty for

@@ -484,13 +484,13 @@ func TestConvertPlanFlights_DifferentCurrency(t *testing.T) {
 }
 
 // ============================================================
-// convertedPlanAmount
+// convertPlanAmount
 // ============================================================
 
-func TestConvertedPlanAmount_SameCurrencyNoOp(t *testing.T) {
-	got := convertedPlanAmount(context.Background(), 100.0, "EUR", "EUR")
-	if got != 100.0 {
-		t.Errorf("got %v, want 100.0", got)
+func TestConvertPlanAmount_SameCurrencyNoOp(t *testing.T) {
+	got, ok := convertPlanAmount(context.Background(), fakeFX, 100.0, "EUR", "EUR")
+	if !ok || got != 100.0 {
+		t.Errorf("got (%v, %v), want (100, true)", got, ok)
 	}
 }
 

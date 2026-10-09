@@ -456,6 +456,15 @@ func planTripOutputSchema() interface{} {
 					"per_person":    schemaNum(),
 					"per_day":       schemaNum(),
 					"currency":      schemaString(),
+					"incomplete": map[string]interface{}{
+						"type":        "boolean",
+						"description": "True when a cost could not be converted into currency; grand_total, per_person and per_day are then 0 because they are withheld, not free.",
+					},
+					"unconverted": map[string]interface{}{
+						"type":        "array",
+						"items":       schemaString(),
+						"description": "Cost components that could not be converted into currency (flights, hotel, meals, transfers, city tax).",
+					},
 				},
 			},
 			"error": schemaString(),

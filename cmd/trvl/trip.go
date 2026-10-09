@@ -81,6 +81,9 @@ Examples:
 	return cmd
 }
 
+// tripPlanConvert is a seam so tests can price a plan without the live FX API.
+var tripPlanConvert = destinations.ConvertCurrency
+
 func printTripPlan(ctx context.Context, targetCurrency string, result *trip.PlanResult) error {
 	if !result.Success && len(result.OutboundFlights) == 0 && len(result.ReturnFlights) == 0 && len(result.Hotels) == 0 {
 		_, _ = fmt.Fprintf(os.Stderr, "Trip planning failed: %s\n", result.Error)
@@ -123,7 +126,7 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 			p := f.Price
 			cur := f.Currency
 			if targetCurrency != "" && cur != targetCurrency && p > 0 {
-				converted, c := destinations.ConvertCurrency(ctx, p, cur, targetCurrency)
+				converted, c := tripPlanConvert(ctx, p, cur, targetCurrency)
 				p = math.Round(converted)
 				cur = c
 			}
@@ -154,7 +157,7 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 			p := f.Price
 			cur := f.Currency
 			if targetCurrency != "" && cur != targetCurrency && p > 0 {
-				converted, c := destinations.ConvertCurrency(ctx, p, cur, targetCurrency)
+				converted, c := tripPlanConvert(ctx, p, cur, targetCurrency)
 				p = math.Round(converted)
 				cur = c
 			}
@@ -207,7 +210,7 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 			total := h.Total
 			cur := h.Currency
 			if targetCurrency != "" && cur != targetCurrency && pn > 0 {
-				converted, c := destinations.ConvertCurrency(ctx, pn, cur, targetCurrency)
+				converted, c := tripPlanConvert(ctx, pn, cur, targetCurrency)
 				pn = math.Round(converted)
 				cur = c
 				total = pn * float64(result.Nights)
@@ -317,52 +320,65 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 		cur = result.Summary.Currency
 	}
 
+	// toCur expresses an amount in cur and reports whether it really is in cur;
+	// a failed rate is reported, never summed as if converted (MIK-8138).
+	toCur := func(amount float64, from string) (float64, bool) {
+		if amount <= 0 || from == cur {
+			return amount, true
+		}
+		if targetCurrency == "" || from == "" {
+			return amount, false
+		}
+		converted, c := tripPlanConvert(ctx, amount, from, cur)
+		return math.Round(converted), c == cur
+	}
+
+	var unconverted []string
 	var cheapOut, cheapRet, cheapHotel float64
+	outOK, retOK, hotelOK := true, true, true
 	if len(result.OutboundFlights) > 0 {
 		f := result.OutboundFlights[0]
-		cheapOut = f.Price
-		if targetCurrency != "" && f.Currency != targetCurrency && cheapOut > 0 {
-			converted, _ := destinations.ConvertCurrency(ctx, cheapOut, f.Currency, targetCurrency)
-			cheapOut = math.Round(converted)
-		}
+		cheapOut, outOK = toCur(f.Price, f.Currency)
 	}
 	if len(result.ReturnFlights) > 0 {
 		f := result.ReturnFlights[0]
-		cheapRet = f.Price
-		if targetCurrency != "" && f.Currency != targetCurrency && cheapRet > 0 {
-			converted, _ := destinations.ConvertCurrency(ctx, cheapRet, f.Currency, targetCurrency)
-			cheapRet = math.Round(converted)
-		}
+		cheapRet, retOK = toCur(f.Price, f.Currency)
 	}
 	if len(result.Hotels) > 0 {
 		h := result.Hotels[0]
-		cheapHotel = h.Total
-		if targetCurrency != "" && h.Currency != targetCurrency && cheapHotel > 0 {
-			converted, _ := destinations.ConvertCurrency(ctx, cheapHotel, h.Currency, targetCurrency)
-			cheapHotel = math.Round(converted)
+		if cheapHotel, hotelOK = toCur(h.Total, h.Currency); !hotelOK {
+			unconverted = append(unconverted, "hotel")
 		}
 	}
 
+	oneWayOK := outOK && retOK
 	fTotal := (cheapOut + cheapRet) * float64(result.Guests)
 	hTotal := cheapHotel
 
 	// Prefer the cheaper of {two one-ways, native single-ticket round-trip}. A
 	// native round-trip fare is one bookable ticket whose price is already the
 	// full round-trip per person, so it competes directly against cheapOut+cheapRet.
-	// Surface it (and use it in the total) only when it is genuinely cheaper, so
-	// the existing split display stays the headline whenever it wins.
+	// Surface it (and use it in the total) only when it is genuinely cheaper, or
+	// when a one-way leg could not be converted, so the existing split display
+	// stays the headline whenever it wins.
 	if len(result.RoundTripFares) > 0 {
 		rt := result.RoundTripFares[0]
-		cheapRT := rt.Price
-		if targetCurrency != "" && rt.Currency != targetCurrency && cheapRT > 0 {
-			converted, _ := destinations.ConvertCurrency(ctx, cheapRT, rt.Currency, targetCurrency)
-			cheapRT = math.Round(converted)
-		}
-		if cheapRT > 0 && cheapRT < cheapOut+cheapRet {
+		if cheapRT, rtOK := toCur(rt.Price, rt.Currency); rtOK && cheapRT > 0 && (!oneWayOK || cheapRT < cheapOut+cheapRet) {
 			fmt.Printf("  %s Round-trip fare (1 ticket): %s — %s — %s\n\n",
 				models.Bold("🎫"), formatPrice(cheapRT, cur), rt.Airline, rt.Route)
 			fTotal = cheapRT * float64(result.Guests)
+			oneWayOK = true
 		}
+	}
+	if !oneWayOK {
+		unconverted = append([]string{"flights"}, unconverted...)
+	}
+
+	if len(unconverted) > 0 {
+		models.Summary(os.Stdout, fmt.Sprintf("Total unavailable: could not convert %s to %s",
+			strings.Join(unconverted, " and "), cur))
+		models.BookingHint(os.Stdout)
+		return nil
 	}
 
 	gTotal := fTotal + hTotal
@@ -443,7 +459,10 @@ func saveTripPlanLastSearch(r *trip.PlanResult) {
 		ls.HotelCurrency = h.Currency
 		ls.HotelName = h.Name
 	}
-	ls.TotalCurrency = r.Summary.Currency
-	ls.TotalPrice = r.Summary.GrandTotal
+	// An incomplete summary withholds its total; cache none rather than 0.
+	if !r.Summary.Incomplete {
+		ls.TotalCurrency = r.Summary.Currency
+		ls.TotalPrice = r.Summary.GrandTotal
+	}
 	saveLastSearch(ls)
 }
