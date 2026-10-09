@@ -57,6 +57,10 @@ func TestMain(m *testing.M) {
 	destinationEnricher = func(context.Context, string, models.DateRange) (*models.DestinationInfo, error) {
 		return nil, nil
 	}
+	// ServeStdio would otherwise start the background scheduler, which re-prices
+	// any watch another test left in the shared test HOME against live providers
+	// and runs the Tier-1 probe. Which tests ran first decided whether it dialed.
+	startBackgroundScheduler = false
 	code := m.Run()
 	cleanup()
 	os.Exit(code)

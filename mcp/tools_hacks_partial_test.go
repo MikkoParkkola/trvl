@@ -52,7 +52,7 @@ func TestDetectTravelHacks_ReportsPartialSweep(t *testing.T) {
 		t.Fatal("the response omits `complete`; an agent cannot tell a full sweep from a truncated one")
 	}
 	if *payload.Complete {
-		t.Fatal("`complete` was true after a 1ms deadline; a truncated sweep must not be reported as the whole answer")
+		t.Fatal("`complete` was true for an already-cancelled sweep; a truncated sweep must not be reported as the whole answer")
 	}
 	if !strings.Contains(payload.Note, "partial") {
 		t.Fatalf("expected a note explaining the truncation, got %q", payload.Note)
@@ -91,9 +91,10 @@ func TestDetectTravelHacks_FlagAndNoteAgree(t *testing.T) {
 			}
 			raw, _ := json.Marshal(result)
 			var payload struct {
-				Complete *bool  `json:"complete"`
-				Note     string `json:"note"`
-				Count    int    `json:"count"`
+				Complete *bool        `json:"complete"`
+				Note     string       `json:"note"`
+				Count    int          `json:"count"`
+				Hacks    []hacks.Hack `json:"hacks"`
 			}
 			if err := json.Unmarshal(raw, &payload); err != nil {
 				t.Fatalf("unmarshal result: %v", err)
@@ -101,8 +102,11 @@ func TestDetectTravelHacks_FlagAndNoteAgree(t *testing.T) {
 			if payload.Complete == nil || *payload.Complete != tc.complete {
 				t.Fatalf("complete = %v, want %v", payload.Complete, tc.complete)
 			}
-			if payload.Count != len(tc.hacks) {
-				t.Errorf("count = %d, want %d", payload.Count, len(tc.hacks))
+			if payload.Count != len(tc.hacks) || len(payload.Hacks) != len(tc.hacks) {
+				t.Errorf("count = %d, hacks = %d, want %d", payload.Count, len(payload.Hacks), len(tc.hacks))
+			}
+			if len(tc.hacks) > 0 && payload.Hacks[0].Title != "Stub hack" {
+				t.Errorf("hacks = %+v, want the stub hack passed through", payload.Hacks)
 			}
 			if tc.complete && payload.Note != "" {
 				t.Errorf("a complete sweep carried a truncation note: %q", payload.Note)

@@ -167,11 +167,16 @@ func (s *Server) Shutdown() {
 	}
 }
 
+// startBackgroundScheduler gates the price-check scheduler ServeStdio starts.
+// The scheduler re-prices saved watches with live providers, so the package
+// tests switch it off in TestMain to stay offline.
+var startBackgroundScheduler = true
+
 // ServeStdio runs the MCP server over stdin/stdout.
 // Each line of input is a JSON-RPC request; each response is written as a single JSON line.
 func (s *Server) ServeStdio(in io.Reader, out io.Writer) error {
 	// Start the background scheduler now that we are in a real server session.
-	if s.scheduler != nil {
+	if s.scheduler != nil && startBackgroundScheduler {
 		s.scheduler.Start()
 	}
 	defer s.Shutdown()

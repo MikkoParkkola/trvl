@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/hacks"
 	"github.com/MikkoParkkola/trvl/internal/lounges"
 	"github.com/MikkoParkkola/trvl/internal/watch"
 )
@@ -473,6 +474,9 @@ func TestHandleRequest_ToolsCall_CalculatePointsValue(t *testing.T) {
 }
 
 func TestHandleRequest_ToolsCall_DetectTravelHacks(t *testing.T) {
+	prev := detectAllHacksFunc
+	t.Cleanup(func() { detectAllHacksFunc = prev })
+	detectAllHacksFunc = func(context.Context, hacks.DetectorInput) ([]hacks.Hack, bool) { return nil, true }
 	s := NewServer()
 	s.HandleRequest(&Request{
 		JSONRPC: "2.0", ID: "init", Method: "initialize",
