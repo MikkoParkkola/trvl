@@ -213,10 +213,10 @@ func TestReadWatchResource_InvalidLegacyURI(t *testing.T) {
 	s := NewServer()
 	s.watchStore = newWatchStore(t)
 
-	// Incomplete legacy format → error.
-	_, err := s.readWatchResource("trvl://watch/only-one-part")
-	if err == nil {
-		t.Fatal("expected error for malformed watch URI")
+	// No dashes, so not ORIGIN-DEST-DATE: rejected before any search runs.
+	_, err := s.readWatchResource("trvl://watch/onlyonepart")
+	if err == nil || !strings.Contains(err.Error(), "invalid watch URI") {
+		t.Fatalf("err = %v, want an invalid watch URI error", err)
 	}
 }
 

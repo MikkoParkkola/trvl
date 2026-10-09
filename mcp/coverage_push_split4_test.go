@@ -2,9 +2,13 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/hacks"
+	"github.com/MikkoParkkola/trvl/internal/lounges"
 	"github.com/MikkoParkkola/trvl/internal/watch"
 )
 
@@ -197,29 +201,57 @@ func TestHandleSearchFlights_WithSortBy(t *testing.T) {
 // We already test the logic via loungeSummaryFromFields mirror. Let's test via handleSearchLounges
 // with a valid airport (but cancelled context won't help since SearchLounges reads static data).
 
+// stubLounges replaces the live Priority Pass lookup with one fixed lounge per
+// airport. Not for parallel tests: it swaps a package var.
+func stubLounges(t *testing.T) {
+	t.Helper()
+	prev := searchLoungesFunc
+	t.Cleanup(func() { searchLoungesFunc = prev })
+	searchLoungesFunc = func(_ context.Context, airport string) (*lounges.SearchResult, error) {
+		return &lounges.SearchResult{
+			Success: true, Airport: airport, Count: 1, Source: "stub",
+			Lounges: []lounges.Lounge{{Name: "Stub Lounge " + airport, Airport: airport}},
+		}, nil
+	}
+}
+
+// contentText joins every content block so assertions see the summary and
+// the structured payload alike.
+func contentText(blocks []ContentBlock) string {
+	var b strings.Builder
+	for _, c := range blocks {
+		b.WriteString(c.Text)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 func TestHandleSearchLounges_ValidAirport(t *testing.T) {
-	// SearchLounges uses static data, no network needed.
+	stubLounges(t)
 	content, structured, err := handleSearchLounges(context.Background(),
 		map[string]any{"airport": "HEL"},
 		nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(content) == 0 {
-		t.Error("expected content blocks")
+	if !strings.Contains(contentText(content), "Stub Lounge HEL") {
+		t.Errorf("content = %+v, want the stub lounge", content)
 	}
-	_ = structured
+	if r, ok := structured.(*lounges.SearchResult); !ok || r.Count != 1 || r.Airport != "HEL" {
+		t.Errorf("structured = %+v, want the stub result for HEL", structured)
+	}
 }
 
 func TestHandleSearchLounges_JFK(t *testing.T) {
+	stubLounges(t)
 	content, _, err := handleSearchLounges(context.Background(),
-		map[string]any{"airport": "JFK"},
+		map[string]any{"airport": "jfk"},
 		nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(content) == 0 {
-		t.Error("expected content blocks")
+	if !strings.Contains(contentText(content), "Stub Lounge JFK") {
+		t.Errorf("content = %+v, want the stub lounge for the upper-cased airport", content)
 	}
 }
 
@@ -442,6 +474,9 @@ func TestHandleRequest_ToolsCall_CalculatePointsValue(t *testing.T) {
 }
 
 func TestHandleRequest_ToolsCall_DetectTravelHacks(t *testing.T) {
+	prev := detectAllHacksFunc
+	t.Cleanup(func() { detectAllHacksFunc = prev })
+	detectAllHacksFunc = func(context.Context, hacks.DetectorInput) ([]hacks.Hack, bool) { return nil, true }
 	s := NewServer()
 	s.HandleRequest(&Request{
 		JSONRPC: "2.0", ID: "init", Method: "initialize",
@@ -483,6 +518,7 @@ func TestHandleRequest_ToolsCall_DetectAccomHacks(t *testing.T) {
 }
 
 func TestHandleRequest_ToolsCall_SearchLounges(t *testing.T) {
+	stubLounges(t)
 	s := NewServer()
 	s.HandleRequest(&Request{
 		JSONRPC: "2.0", ID: "init", Method: "initialize",
@@ -493,7 +529,11 @@ func TestHandleRequest_ToolsCall_SearchLounges(t *testing.T) {
 		Params: mustMarshal(map[string]any{"name": "search_lounges", "arguments": map[string]any{"airport": "HEL"}}),
 	})
 	if resp.Error != nil {
-		t.Errorf("unexpected error: %v", resp.Error)
+		t.Fatalf("unexpected error: %v", resp.Error)
+	}
+	raw, _ := json.Marshal(resp.Result)
+	if !strings.Contains(string(raw), "Stub Lounge HEL") {
+		t.Errorf("result = %s, want the stub lounge routed through tools/call", raw)
 	}
 }
 

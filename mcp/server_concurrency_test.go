@@ -7,6 +7,8 @@ import (
 	"io"
 	"testing"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/watch"
 )
 
 // TestServeStdio_PingNotBlockedBySlowToolCall proves the stdio server handles
@@ -15,9 +17,11 @@ import (
 // pings while a 15-30s travel search is in flight; if the read loop were serial
 // the ping would queue behind the search and the probe would time out.
 func TestServeStdio_PingNotBlockedBySlowToolCall(t *testing.T) {
-	// Isolate HOME/USERPROFILE so the scheduler ServeStdio starts writes to a
+	// Isolate HOME/USERPROFILE so the server's watch store lives in a
 	// throwaway ~/.trvl, not the shared one — on Windows the real watches.json
-	// is exclusively locked and collides with other tests.
+	// is exclusively locked and collides with other tests. (TestMain keeps the
+	// background scheduler off; TestServeStdio_StartsSchedulerWhenEnabled
+	// covers it.)
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	t.Setenv("USERPROFILE", tmp)
@@ -98,5 +102,51 @@ func waitID(t *testing.T, ch <-chan int) int {
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for a response")
 		return 0
+	}
+}
+
+// TestServeStdio_StartsSchedulerWhenEnabled pins the production default that
+// TestMain switches off: with startBackgroundScheduler on, ServeStdio starts
+// the scheduler and it runs a check round. The scheduler is swapped for one
+// with a NoopChecker over a temp store, so the round stays offline. Not
+// parallel: it flips a package var.
+func TestServeStdio_StartsSchedulerWhenEnabled(t *testing.T) {
+	dir := t.TempDir()
+	store := watch.NewStore(dir)
+	if _, _, err := store.Add(watch.Watch{
+		Type: "flight", Origin: "HEL", Destination: "CDG",
+		DepartDate: time.Now().AddDate(0, 2, 0).Format("2006-01-02"),
+		Currency:   "EUR", BelowPrice: 100,
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	prev := startBackgroundScheduler
+	startBackgroundScheduler = true
+	t.Cleanup(func() { startBackgroundScheduler = prev })
+
+	s := NewServer()
+	sched := watch.NewScheduler(dir, time.Hour, watch.NoopChecker{})
+	ran := make(chan struct{}, 1)
+	sched.SetProbeHook(func(context.Context, []watch.Watch) {
+		select {
+		case ran <- struct{}{}:
+		default:
+		}
+	})
+	s.scheduler = sched
+
+	inR, inW := io.Pipe()
+	done := make(chan error, 1)
+	go func() { done <- s.ServeStdio(inR, io.Discard) }()
+
+	select {
+	case <-ran:
+	case <-time.After(10 * time.Second):
+		t.Fatal("ServeStdio did not start the scheduler: no check round ran")
+	}
+	_ = inW.Close()
+	if err := <-done; err != nil {
+		t.Fatalf("ServeStdio: %v", err)
 	}
 }

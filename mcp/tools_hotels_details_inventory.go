@@ -62,6 +62,9 @@ func accommodationOffersFromRooms(hotel models.HotelResult, rooms []hotels.RoomT
 	return offers
 }
 
+// convertRateFunc is a package seam so tests can avoid the live FX feed.
+var convertRateFunc = providers.ConvertRate
+
 // normalizeOfferCurrency converts an offer's price fields into the requested
 // currency using live FX rates (ECB via Frankfurter, with hardcoded
 // fallbacks). Providers such as HousingAnywhere occasionally return a foreign
@@ -76,7 +79,7 @@ func normalizeOfferCurrency(offer models.AccommodationOffer, want string) models
 	if want == "" || have == "" || have == want {
 		return offer
 	}
-	rate, ok := providers.ConvertRate(have, want)
+	rate, ok := convertRateFunc(have, want)
 	if !ok {
 		return offer
 	}

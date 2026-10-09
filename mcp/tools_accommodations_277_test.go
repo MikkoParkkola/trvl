@@ -22,18 +22,23 @@ func TestNormalizeOfferCurrency(t *testing.T) {
 	if out := normalizeOfferCurrency(in, ""); out.Currency != "EUR" || out.NightlyPrice != 100 {
 		t.Fatalf("empty want must be untouched: %+v", out)
 	}
-	// USD -> EUR: converted, relabeled, warned. USD/EUR always resolves via
-	// fx.go fallback rates, so this is deterministic offline.
+	// USD -> EUR at a fixed test rate: converted, relabeled, warned.
+	prev := convertRateFunc
+	t.Cleanup(func() { convertRateFunc = prev })
+	convertRateFunc = func(from, to string) (float64, bool) {
+		if from == "USD" && to == "EUR" {
+			return 0.5, true
+		}
+		return 0, false
+	}
 	usd := models.AccommodationOffer{Currency: "USD", NightlyPrice: 109, TotalPrice: 218, TaxesAndFees: 20}
 	out := normalizeOfferCurrency(usd, "EUR")
-	if out.Currency != "EUR" {
-		t.Fatalf("currency should be relabeled to EUR, got %q", out.Currency)
+	if out.Currency != "EUR" || out.NightlyPrice != 54.5 || out.TotalPrice != 109 || out.TaxesAndFees != 10 {
+		t.Fatalf("got %+v, want EUR 54.5 nightly, 109 total, 10 taxes", out)
 	}
-	if out.NightlyPrice <= 0 || out.NightlyPrice >= 109 {
-		t.Fatalf("USD->EUR nightly should be positive and below the USD nominal, got %v", out.NightlyPrice)
-	}
-	if out.TotalPrice <= 0 || out.TotalPrice >= 218 {
-		t.Fatalf("USD->EUR total should be positive and below the USD nominal, got %v", out.TotalPrice)
+	// No rate for the pair: the offer is left as it was.
+	if out := normalizeOfferCurrency(models.AccommodationOffer{Currency: "JPY", NightlyPrice: 9000}, "EUR"); out.Currency != "JPY" || out.NightlyPrice != 9000 {
+		t.Fatalf("a pair without a rate must leave the offer untouched: %+v", out)
 	}
 	found := false
 	for _, w := range out.Warnings {

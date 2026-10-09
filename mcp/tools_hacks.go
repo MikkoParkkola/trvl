@@ -168,6 +168,10 @@ var detectorNames = []string{
 	"advance purchase", "group split",
 }
 
+// detectAllHacksFunc is a package seam so tests can drive complete and partial
+// sweeps without running the live detectors.
+var detectAllHacksFunc = hacks.DetectAll
+
 func handleDetectTravelHacks(ctx context.Context, args map[string]any, _ ElicitFunc, _ SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
 	origin := strings.ToUpper(argString(args, "origin"))
 	destination := strings.ToUpper(argString(args, "destination"))
@@ -208,7 +212,7 @@ func handleDetectTravelHacks(ctx context.Context, args map[string]any, _ ElicitF
 		sendProgress(progress, float64(i+1)/n*80, 100, fmt.Sprintf("Checking %s...", name))
 	}
 
-	detected, complete := hacks.DetectAll(ctx, input)
+	detected, complete := detectAllHacksFunc(ctx, input)
 
 	if !complete {
 		sendProgress(progress, 90, 100, "Not every detector was confirmed to finish; scoring the ones that delivered...")
