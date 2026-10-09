@@ -47,7 +47,7 @@ func runRestaurants(cmd *cobra.Command, args []string) error {
 		restaurantLimit = 20
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(cmd.Context(), 20*time.Second)
 	defer cancel()
 
 	places, err := destinations.SearchGoogleMapsPlaces(ctx, lat, lon, restaurantQuery, restaurantLimit)

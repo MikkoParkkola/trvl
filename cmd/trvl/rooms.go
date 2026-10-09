@@ -53,7 +53,7 @@ func runRooms(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(cmd.Context(), 90*time.Second)
 	defer cancel()
 
 	result, err := resolveRoomAvailability(ctx, hotelQuery, checkIn, checkOut, currency, location)

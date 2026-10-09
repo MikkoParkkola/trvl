@@ -35,7 +35,7 @@ func runGuide(cmd *cobra.Command, args []string) error {
 	location := args[0]
 	format, _ := cmd.Flags().GetString("format")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
 	defer cancel()
 
 	guide, err := destinations.GetWikivoyageGuide(ctx, location)

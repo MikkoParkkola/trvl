@@ -467,7 +467,7 @@ func runProvidersStatus(cmd *cobra.Command, _ []string, probe bool) error {
 		fmt.Println()
 		fmt.Println(models.Bold("Running live probes..."))
 		fmt.Println()
-		runStatusProbes(configs)
+		runStatusProbes(cmd.Context(), configs)
 	}
 
 	return nil

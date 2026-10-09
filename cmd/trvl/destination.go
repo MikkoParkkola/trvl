@@ -50,7 +50,7 @@ func runDestination(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
 	defer cancel()
 
 	info, err := destinations.GetDestinationInfo(ctx, location, dates)

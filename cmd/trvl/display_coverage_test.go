@@ -52,6 +52,16 @@ func captureStderr(t *testing.T, fn func()) string {
 // printFlightsTable
 // ---------------------------------------------------------------------------
 
+// cancelledContext keeps the print paths' network side lookups (deal feeds,
+// source-currency detection) from leaving the machine: an already-cancelled
+// context fails those requests before any connection is opened.
+func cancelledContext(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	return ctx
+}
+
 func TestPrintFlightsTable_Success(t *testing.T) {
 	models.UseColor = false
 	defer func() { models.UseColor = false }()
@@ -105,7 +115,7 @@ func TestPrintFlightsTable_Success(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		err := printFlightsTable(context.Background(), "HEL", "AMS", "", result, false)
+		err := printFlightsTable(cancelledContext(t), "HEL", "AMS", "", result, false)
 		if err != nil {
 			t.Errorf("printFlightsTable returned error: %v", err)
 		}
@@ -193,7 +203,7 @@ func TestPrintFlightsTable_WithSelfConnect(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		_ = printFlightsTable(context.Background(), "HEL", "BCN", "", result, false)
+		_ = printFlightsTable(cancelledContext(t), "HEL", "BCN", "", result, false)
 	})
 
 	if !strings.Contains(out, "self-connect") {
@@ -228,7 +238,7 @@ func TestPrintFlightsTable_WithProvider(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		_ = printFlightsTable(context.Background(), "HEL", "AMS", "", result, false)
+		_ = printFlightsTable(cancelledContext(t), "HEL", "AMS", "", result, false)
 	})
 
 	if !strings.Contains(out, "Kiwi") {
@@ -631,7 +641,7 @@ func TestPrintExploreTable_Success(t *testing.T) {
 		// Pass empty targetCurrency to skip conversion. The function calls
 		// flights.DetectSourceCurrency which would need network; however for
 		// the test we just let it fall back to EUR.
-		err := printExploreTable(context.Background(), "", result, "HEL")
+		err := printExploreTable(cancelledContext(t), "", result, "HEL")
 		if err != nil {
 			t.Errorf("printExploreTable returned error: %v", err)
 		}

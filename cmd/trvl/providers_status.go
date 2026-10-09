@@ -86,7 +86,7 @@ func truncateStr(s string, maxLen int) string {
 
 // runStatusProbes executes TestProvider against each configured provider and
 // prints a results table. Uses Helsinki as a default test location.
-func runStatusProbes(configs []*providers.ProviderConfig) {
+func runStatusProbes(parent context.Context, configs []*providers.ProviderConfig) {
 	location := "Helsinki"
 	lat, lon := 60.1699, 24.9384
 	checkin := time.Now().AddDate(0, 0, 14).Format("2006-01-02")
@@ -94,7 +94,7 @@ func runStatusProbes(configs []*providers.ProviderConfig) {
 	currency := "EUR"
 	guests := 2
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
 	defer cancel()
 
 	headers := []string{"Name", "Probe", "Results", "Detail"}

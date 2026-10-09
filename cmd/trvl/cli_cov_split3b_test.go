@@ -60,6 +60,7 @@ func TestTrips_StatusEmpty(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 	statusCmd := tripsStatusCmd()
+	statusCmd.SetArgs([]string{})
 	err := statusCmd.Execute()
 	_ = w.Close()
 	os.Stdout = old
@@ -80,6 +81,7 @@ func TestTrips_AlertsEmpty(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 	alertsCmd := tripsAlertsCmd()
+	alertsCmd.SetArgs([]string{})
 	err := alertsCmd.Execute()
 	_ = w.Close()
 	os.Stdout = old
@@ -170,6 +172,7 @@ func TestProviders_ListShowsShippedDefinitions(t *testing.T) {
 	os.Stdout = w
 
 	cmd := providersListCmd()
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	_ = w.Close()
 	os.Stdout = old
@@ -259,6 +262,7 @@ func TestWatch_ListEmpty(t *testing.T) {
 	os.Stdout = w
 
 	cmd := watchListCmd()
+	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	_ = w.Close()
 	os.Stdout = old
@@ -320,6 +324,7 @@ func TestWatch_AddListRemoveFlow(t *testing.T) {
 	r, w, _ = os.Pipe()
 	os.Stdout = w
 	listCmd := watchListCmd()
+	listCmd.SetArgs([]string{})
 	err = listCmd.Execute()
 	_ = w.Close()
 	os.Stdout = old

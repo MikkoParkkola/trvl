@@ -55,7 +55,7 @@ func runPrices(cmd *cobra.Command, args []string) error {
 	location, _ := cmd.Flags().GetString("location")
 	format, _ := cmd.Flags().GetString("format")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(cmd.Context(), 45*time.Second)
 	defer cancel()
 
 	result, err := hotels.GetHotelPricesWithOpts(ctx, hotels.HotelPriceOpts{

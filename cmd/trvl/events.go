@@ -43,7 +43,7 @@ func runEvents(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("TICKETMASTER_API_KEY is required for event search (free at https://developer.ticketmaster.com)")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
 	defer cancel()
 
 	events, err := destinations.GetEvents(ctx, location, fromDate, toDate)
