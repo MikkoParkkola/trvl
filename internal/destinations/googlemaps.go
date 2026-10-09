@@ -100,7 +100,9 @@ func fetchMapsPlaces(ctx context.Context, lat, lon float64, query string, limit 
 		return fetchMapsPlacesDirect(ctx, c, lat, lon, query, limit)
 	}
 
-	pbURL := "https://www.google.com" + strings.ReplaceAll(pbMatch[1], "&amp;", "&")
+	// The pb= path is site-relative; resolve it against the search host so a
+	// test that points googleSearchAPIURL at a local server reaches it too.
+	pbURL := strings.TrimSuffix(googleSearchAPIURL, "/search") + strings.ReplaceAll(pbMatch[1], "&amp;", "&")
 
 	// Step 3: Fetch the pb= URL for JSON data.
 	status2, body2, err := c.Get(ctx, pbURL)

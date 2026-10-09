@@ -2,6 +2,5 @@
 # (scripts/ci/offline-guard) skips them; every other package must stay offline.
 # Remove a line in the PR that fixes the package. Census and plan: MIK-8107.
 github.com/MikkoParkkola/trvl/cmd/trvl
-github.com/MikkoParkkola/trvl/internal/destinations
 github.com/MikkoParkkola/trvl/internal/ground
 github.com/MikkoParkkola/trvl/mcp

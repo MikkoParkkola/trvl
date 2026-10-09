@@ -178,8 +178,9 @@ func TestGetDestinationInfo(t *testing.T) {
 	if info.Currency.LocalCurrency != "JPY" {
 		t.Errorf("Currency.LocalCurrency = %q, want 'JPY'", info.Currency.LocalCurrency)
 	}
-	if info.Currency.ExchangeRate < 100 || info.Currency.ExchangeRate > 250 {
-		t.Errorf("Currency.ExchangeRate = %.1f, expected between 100-250 JPY/EUR", info.Currency.ExchangeRate)
+	// The mocked rates table, not a live one (MIK-8107).
+	if info.Currency.ExchangeRate != 162.5 {
+		t.Errorf("Currency.ExchangeRate = %.1f, want the mocked 162.5 JPY/EUR", info.Currency.ExchangeRate)
 	}
 
 	// Verify timezone.
