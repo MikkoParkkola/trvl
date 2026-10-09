@@ -1,7 +1,9 @@
 package providers
 
 import (
+	"errors"
 	"math"
+	"net/http"
 	"testing"
 )
 
@@ -30,13 +32,19 @@ func TestConvertRatePeggedHRK(t *testing.T) {
 	}
 }
 
-// withOfflineFX points the package FX cache at an address the destination
-// policy refuses, so rates come from the built-in fallback table and no test
-// reaches the live rates API (MIK-8107). Restored on cleanup; not for t.Parallel.
+// withOfflineFX gives the package FX cache a client that fails every request,
+// so rates come from the built-in fallback table and no test reaches the live
+// rates API (MIK-8107). Restored on cleanup; not for t.Parallel.
 func withOfflineFX(t *testing.T) {
 	t.Helper()
 	old := defaultFXCache
 	t.Cleanup(func() { defaultFXCache = old })
 	defaultFXCache = newFXCache()
-	defaultFXCache.baseURL = "http://127.0.0.1:1"
+	defaultFXCache.client = &http.Client{Transport: failingFXTransport{}}
+}
+
+type failingFXTransport struct{}
+
+func (failingFXTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("offline FX transport")
 }
