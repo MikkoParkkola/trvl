@@ -102,11 +102,15 @@ func TestDetectTravelHacks_FlagAndNoteAgree(t *testing.T) {
 			if payload.Complete == nil || *payload.Complete != tc.complete {
 				t.Fatalf("complete = %v, want %v", payload.Complete, tc.complete)
 			}
-			if payload.Count != len(tc.hacks) || len(payload.Hacks) != len(tc.hacks) {
-				t.Errorf("count = %d, hacks = %d, want %d", payload.Count, len(payload.Hacks), len(tc.hacks))
+			if payload.Count != len(tc.hacks) {
+				t.Errorf("count = %d, want %d", payload.Count, len(tc.hacks))
 			}
-			if len(tc.hacks) > 0 && payload.Hacks[0].Title != "Stub hack" {
-				t.Errorf("hacks = %+v, want the stub hack passed through", payload.Hacks)
+			want := tc.hacks
+			if want == nil {
+				want = []hacks.Hack{}
+			}
+			if !reflect.DeepEqual(payload.Hacks, want) {
+				t.Fatalf("hacks = %+v, want %+v", payload.Hacks, want)
 			}
 			if tc.complete && payload.Note != "" {
 				t.Errorf("a complete sweep carried a truncation note: %q", payload.Note)
