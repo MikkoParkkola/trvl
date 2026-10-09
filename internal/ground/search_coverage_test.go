@@ -1,6 +1,7 @@
 package ground
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -276,12 +277,18 @@ func TestSearchResultBufferCapacity(t *testing.T) {
 
 func TestDefaultProvider_SearchGround_EmptyInputs(t *testing.T) {
 	p := &DefaultProvider{}
-	// Empty from/to will return empty results but should not panic.
-	result, err := p.SearchGround(t.Context(), "", "", "2026-07-01", models.GroundSearchOptions{})
+	// Empty from/to fans out to every provider; a cancelled context keeps the
+	// fan-out offline while the call still has to return without panicking.
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	result, err := p.SearchGround(ctx, "", "", "2026-07-01", models.GroundSearchOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
+	}
+	if len(result.Routes) != 0 {
+		t.Errorf("got %d routes for empty inputs, want 0", len(result.Routes))
 	}
 }

@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,6 +54,12 @@ func TestParseEurostarSearchResponse_HappyPath(t *testing.T) {
 			}]
 		}
 	}`
+
+	origClient := eurostarClient
+	t.Cleanup(func() { eurostarClient = origClient })
+	eurostarClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("offline: timetable request refused")
+	})}
 
 	fromStation, _ := LookupEurostarStation("London")
 	toStation, _ := LookupEurostarStation("Paris")

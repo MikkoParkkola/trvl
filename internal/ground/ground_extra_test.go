@@ -49,7 +49,7 @@ func TestGenerateCorrelationID_Hex(t *testing.T) {
 
 func TestConvertTaxiFare_EURPassthrough(t *testing.T) {
 	ctx := context.Background()
-	low, high, cur := convertTaxiFare(ctx, 10.0, 20.0, "EUR")
+	low, high, cur := convertTaxiFare(ctx, 10.0, 20.0, "EUR", failConvert(t))
 	if cur != "EUR" {
 		t.Errorf("expected EUR, got %q", cur)
 	}
@@ -60,7 +60,7 @@ func TestConvertTaxiFare_EURPassthrough(t *testing.T) {
 
 func TestConvertTaxiFare_EmptyCurrencyDefaultsToEUR(t *testing.T) {
 	ctx := context.Background()
-	low, high, cur := convertTaxiFare(ctx, 15.0, 25.0, "")
+	low, high, cur := convertTaxiFare(ctx, 15.0, 25.0, "", failConvert(t))
 	if cur != "EUR" {
 		t.Errorf("expected EUR for empty currency, got %q", cur)
 	}
@@ -71,7 +71,7 @@ func TestConvertTaxiFare_EmptyCurrencyDefaultsToEUR(t *testing.T) {
 
 func TestConvertTaxiFare_WhitespaceCurrency(t *testing.T) {
 	ctx := context.Background()
-	low, high, cur := convertTaxiFare(ctx, 10.0, 20.0, "  EUR  ")
+	low, high, cur := convertTaxiFare(ctx, 10.0, 20.0, "  EUR  ", failConvert(t))
 	if cur != "EUR" {
 		t.Errorf("expected EUR with trimmed whitespace, got %q", cur)
 	}
@@ -83,7 +83,7 @@ func TestConvertTaxiFare_WhitespaceCurrency(t *testing.T) {
 func TestConvertTaxiFare_LowNotGreaterThanHigh(t *testing.T) {
 	ctx := context.Background()
 	// When conversion fails (unknown currency), falls back to EUR values.
-	low, high, _ := convertTaxiFare(ctx, 10.0, 20.0, "EUR")
+	low, high, _ := convertTaxiFare(ctx, 10.0, 20.0, "EUR", failConvert(t))
 	if low > high {
 		t.Errorf("low (%.2f) > high (%.2f)", low, high)
 	}

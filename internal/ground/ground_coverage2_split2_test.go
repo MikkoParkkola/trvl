@@ -299,10 +299,10 @@ func TestSearchDigitransit_MockHappyPath2(t *testing.T) {
 	// the future or they get filtered as past. Was hard-coded to 2026-07-01,
 	// which broke once that date passed.
 	day := time.Now().AddDate(0, 1, 0)
-	origClient := httpClient
+	origClient := digitransitClient
 	origLimiter := digitransitLimiter
 	t.Cleanup(func() {
-		httpClient = origClient
+		digitransitClient = origClient
 		digitransitLimiter = origLimiter
 	})
 	digitransitLimiter = rate.NewLimiter(rate.Limit(1000), 1)
@@ -340,7 +340,7 @@ func TestSearchDigitransit_MockHappyPath2(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	httpClient = &http.Client{
+	digitransitClient = &http.Client{
 		Transport: &redirectTransport{target: srv.URL},
 		Timeout:   5 * time.Second,
 	}

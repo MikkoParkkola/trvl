@@ -385,16 +385,14 @@ func TestFetchDFDSAvailability_OfferDate(t *testing.T) {
 		_, _ = fmt.Fprint(w, `{"route":"DOVC","dates":{"fromDate":"2026-01-01","toDate":"2027-12-31"},"disabledDates":[],"offerDates":["2026-08-15"]}`)
 	}))
 	defer srv.Close()
-	dfdsClient = srv.Client()
+	dfdsClient = &http.Client{Transport: &redirectTransport{target: srv.URL}}
 
 	routeInfo := dfdsRouteInfo{RouteCode: "DOVC", SalesOwner: 19}
 	ctx := context.Background()
 	avail, isOffer, err := fetchDFDSAvailability(ctx, routeInfo, "2026-08-15")
-	// With our mock client and const base URL, the HTTP request will fail (wrong host).
-	// Network error path → returns true, false, nil.
-	_ = avail
-	_ = isOffer
-	_ = err
+	if err != nil || !avail || !isOffer {
+		t.Errorf("got (avail=%v, offer=%v, err=%v), want (true, true, nil)", avail, isOffer, err)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -412,26 +410,18 @@ func TestSearchEurostarTimetable_HappyPath(t *testing.T) {
 	defer srv.Close()
 
 	origClient := eurostarClient
-	eurostarClient = srv.Client()
+	eurostarClient = &http.Client{Transport: &redirectTransport{target: srv.URL}}
 	defer func() { eurostarClient = origClient }()
 
 	from, _ := LookupEurostarStation("london")
 	to, _ := LookupEurostarStation("paris")
 	ctx := context.Background()
 	entries, err := searchEurostarTimetable(ctx, from, to, "2026-08-15")
-	// The request goes to the real eurostarGateway URL, not our test server, so
-	// it will fail with a network error → returns nil, error.
-	// We verify the function doesn't panic and returns gracefully.
 	if err != nil {
-		// Connection refused to real URL — that's fine, verifies the error path.
-		t.Logf("searchEurostarTimetable error (expected in test env): %v", err)
-		return
+		t.Fatalf("searchEurostarTimetable: %v", err)
 	}
-	// If somehow we got entries, verify basic structure.
-	for i, e := range entries {
-		if e.TrainNumber == "" {
-			t.Errorf("entry %d has empty TrainNumber", i)
-		}
+	if len(entries) != 2 || entries[0].TrainNumber != "9001" || entries[1].TrainNumber != "9003" {
+		t.Errorf("entries = %+v, want trains 9001 and 9003", entries)
 	}
 }
 

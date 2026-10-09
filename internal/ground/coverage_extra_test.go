@@ -464,17 +464,41 @@ func TestNormaliseFinCity_AllBranches(t *testing.T) {
 // convertTaxiFare — non-EUR currency path (was 37%)
 // ============================================================
 
+// failConvert fails the test if convertTaxiFare reaches for a converter on a
+// path that must not convert.
+func failConvert(t *testing.T) func(context.Context, float64, string, string) (float64, string) {
+	t.Helper()
+	return func(context.Context, float64, string, string) (float64, string) {
+		t.Fatal("converter called on a path that must not convert")
+		return 0, ""
+	}
+}
+
+// fixedRateConvert converts EUR to "to" at rate, and returns the amount
+// unconverted in "from" for any other target, as destinations.ConvertCurrency
+// does when it has no rate.
+func fixedRateConvert(to string, rate float64) func(context.Context, float64, string, string) (float64, string) {
+	return func(_ context.Context, amount float64, from, target string) (float64, string) {
+		if from == "EUR" && target == to {
+			return amount * rate, to
+		}
+		return amount, from
+	}
+}
+
 func TestConvertTaxiFare_NonEURCurrency(t *testing.T) {
 	ctx := context.Background()
-	// When requesting a non-EUR currency that can't be converted (no live rates),
-	// it should fall back to EUR.
-	low, high, cur := convertTaxiFare(ctx, 10.0, 20.0, "XYZ")
-	// Either falls back to EUR or converts — both are valid.
-	if cur == "" {
-		t.Error("currency should not be empty")
+	low, high, cur := convertTaxiFare(ctx, 10.0, 20.0, "sek", fixedRateConvert("SEK", 11.456))
+	if cur != "SEK" || low != 114.56 || high != 229.12 {
+		t.Errorf("got (%v, %v, %q), want (114.56, 229.12, SEK)", low, high, cur)
 	}
-	if low <= 0 || high <= 0 {
-		t.Errorf("low=%v high=%v, both should be > 0", low, high)
+}
+
+func TestConvertTaxiFare_UnconvertibleFallsBackToEUR(t *testing.T) {
+	ctx := context.Background()
+	low, high, cur := convertTaxiFare(ctx, 10.0, 20.0, "XYZ", fixedRateConvert("SEK", 11.456))
+	if cur != "EUR" || low != 10 || high != 20 {
+		t.Errorf("got (%v, %v, %q), want (10, 20, EUR)", low, high, cur)
 	}
 }
 
