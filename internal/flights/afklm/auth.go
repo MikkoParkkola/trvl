@@ -34,7 +34,7 @@ const (
 	// EnvKeychainService overrides the macOS Keychain service name. Unlike the
 	// 1Password reference this has a default, because the two are not the same
 	// kind of thing: a service name is a convention any user can create
-	// (`security add-generic-password -s afklm-api-key -w <key>`), whereas the
+	// (`security add-generic-password -a "$USER" -s afklm-api-key -w <key>`), whereas the
 	// old hardcoded op:// reference named one specific item in one specific
 	// vault that only its author possessed. The override exists so a user who
 	// files the key elsewhere is not forced to adopt trvl's naming.

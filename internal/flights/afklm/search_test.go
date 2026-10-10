@@ -2,6 +2,7 @@ package afklm
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -368,5 +369,60 @@ func TestDaysUntilDepartureWrapper(t *testing.T) {
 	}
 	if got := daysUntilDeparture(req, now); got != 10 {
 		t.Errorf("daysUntilDeparture(first=2026-05-01): got %d, want 10", got)
+	}
+}
+
+// TestMapRecommendationsRoundTripPrice pins the ticket price of a two-bound
+// offer to the flight product's total. The per-connection prices are each
+// bound's share (MIK-8337: 105.53 out + 123.53 back = 229.06 on a live
+// AMS-PRG offer); reporting the outbound share halved the round-trip fare.
+func TestMapRecommendationsRoundTripPrice(t *testing.T) {
+	bound := func(id int, from, to string) []BoundConnection {
+		return []BoundConnection{{ID: id, Duration: 85, Segments: []Segment{{
+			Origin:            SegmentPlace{Code: from},
+			Destination:       SegmentPlace{Code: to},
+			MarketingFlight:   MarketingFlight{Number: "1353", Carrier: MarketingCarrier{Code: "KL", Name: "KLM"}},
+			DepartureDateTime: "2026-10-24T09:05:00",
+			ArrivalDateTime:   "2026-10-24T10:30:00",
+			Duration:          85,
+		}}}}
+	}
+	product := func(total float64, shares ...float64) FlightProduct {
+		fp := FlightProduct{Price: Price{DisplayPrice: total, Currency: "EUR"}}
+		for i, s := range shares {
+			fp.Connections = append(fp.Connections, PricingConnection{ConnectionID: i, Price: Price{DisplayPrice: s, Currency: "EUR"}})
+		}
+		return fp
+	}
+	cases := []struct {
+		name   string
+		fp     FlightProduct
+		bounds [][]BoundConnection
+		want   float64
+	}{
+		{"round trip uses the product total", product(229.06, 105.53, 123.53),
+			[][]BoundConnection{bound(0, "AMS", "PRG"), bound(1, "PRG", "AMS")}, 229.06},
+		{"round trip without a total sums the bounds", product(0, 105.53, 123.53),
+			[][]BoundConnection{bound(0, "AMS", "PRG"), bound(1, "PRG", "AMS")}, 229.06},
+		{"one way is unchanged", product(286.48, 286.48),
+			[][]BoundConnection{bound(0, "AMS", "PRG")}, 286.48},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &AvailableOffersResponse{
+				Recommendations: []Recommendation{{FlightProducts: []FlightProduct{tc.fp}}},
+				Connections:     tc.bounds,
+			}
+			results := mapRecommendations(resp, "AMS", "PRG")
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+			if got := results[0].Price; math.Abs(got-tc.want) > 0.005 {
+				t.Errorf("price: want %.2f, got %.2f", tc.want, got)
+			}
+			if results[0].Currency != "EUR" {
+				t.Errorf("currency: want EUR, got %q", results[0].Currency)
+			}
+		})
 	}
 }
