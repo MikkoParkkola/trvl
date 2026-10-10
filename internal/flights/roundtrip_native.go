@@ -309,8 +309,10 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 		return nil, nil // silent, zero latency, zero user signal
 	}
 	if err != nil {
+		// Credentials are present but the provider could not be set up: the
+		// user expects AF-KLM fares, so say why they are missing (MIK-8088).
 		slog.Debug("afklm: NewProvider error (non-ErrNoCredential); skipping default merge inclusion", "err", logredact.Err(err))
-		return nil, nil
+		return nil, []models.ProviderStatus{afklmFailureStatus(err, "setup: "+err.Error())}
 	}
 
 	res, err := p.SearchFlights(ctx, origin, destination, date, models.FlightSearchOptions{
@@ -324,22 +326,25 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 	})
 	if errors.Is(err, afklm.ErrDailyQuota) {
 		slog.Debug("afklm: daily quota reached; skipping default merge inclusion")
-		return nil, nil
+		st := afklmFailureStatus(nil, "daily request budget exhausted")
+		st.Status = models.StatusRateLimited
+		st.FixHint = "retry after the daily reset"
+		return nil, []models.ProviderStatus{st}
 	}
 	if err != nil {
 		slog.Debug("afklm: search error in default merge (best-effort; does not fail search)", "err", logredact.Err(err))
-		return nil, []models.ProviderStatus{{
-			ID:     "native_roundtrip:afklm",
-			Name:   "AFKLM (native round-trip)",
-			Status: models.ClassifyProviderError(err),
-			Error:  err.Error(),
-		}}
+		return nil, []models.ProviderStatus{afklmFailureStatus(err, err.Error())}
 	}
-	if res == nil || !res.Success || len(res.Flights) == 0 {
-		if res != nil && res.Error != "" {
-			slog.Debug("afklm: soft error from provider", "afklm_error", logredact.Text(res.Error))
-		}
+	if res == nil {
 		return nil, nil
+	}
+	if !res.Success {
+		msg := res.Error
+		if msg == "" {
+			msg = "search did not succeed"
+		}
+		slog.Debug("afklm: soft error from provider", "afklm_error", logredact.Text(msg))
+		return nil, []models.ProviderStatus{afklmFailureStatus(errors.New(msg), msg)}
 	}
 
 	native := append([]models.FlightResult(nil), res.Flights...)
@@ -353,6 +358,21 @@ func searchAFKLMNativeRoundTrip(ctx context.Context, origin, destination, date, 
 		Results: len(native),
 	}
 	return native, []models.ProviderStatus{st}
+}
+
+// afklmFailureStatus is the default-merge AFKLM status for a failure; err (when
+// non-nil) picks the status class, msg is the user-facing error.
+func afklmFailureStatus(err error, msg string) models.ProviderStatus {
+	status := models.StatusError
+	if err != nil {
+		status = models.ClassifyProviderError(err)
+	}
+	return models.ProviderStatus{
+		ID:     "native_roundtrip:afklm",
+		Name:   "AFKLM (native round-trip)",
+		Status: status,
+		Error:  msg,
+	}
 }
 
 // retainCompliantNativeRoundTrip truncates a merged round-trip candidate list

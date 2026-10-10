@@ -362,7 +362,7 @@ func TestComposeRoundTrips_BoundsAndReportsTruncation(t *testing.T) {
 }
 
 func TestRoundTripComposerStatus_TruncationVisible(t *testing.T) {
-	s := roundTripComposerStatus(8, 8, roundTripMaxResults, true)
+	s := roundTripComposerStatus(8, 8, roundTripMaxResults, true, true)
 	if s.Status != models.StatusOK {
 		t.Errorf("status: got %q, want ok", s.Status)
 	}
@@ -372,7 +372,7 @@ func TestRoundTripComposerStatus_TruncationVisible(t *testing.T) {
 }
 
 func TestRoundTripComposerStatus_NoHit(t *testing.T) {
-	s := roundTripComposerStatus(0, 0, 0, false)
+	s := roundTripComposerStatus(0, 0, 0, false, true)
 	if s.Status != models.StatusCheckedNoHit {
 		t.Errorf("status: got %q, want checked_no_hit", s.Status)
 	}
@@ -449,7 +449,7 @@ func TestSearchRoundTrip_DefaultMerge_SilentSkipNoCredential(t *testing.T) {
 	}
 }
 
-func TestSearchRoundTrip_DefaultMerge_SilentSkipDailyQuota(t *testing.T) {
+func TestSearchRoundTrip_DefaultMerge_DailyQuotaIsReported(t *testing.T) {
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
 	d := t.TempDir()
 
@@ -480,8 +480,11 @@ func TestSearchRoundTrip_DefaultMerge_SilentSkipDailyQuota(t *testing.T) {
 	flights, statuses := searchAFKLMNativeRoundTrip(context.Background(), "AMS", "PRG", "2026-08-01", "2026-08-08", SearchOptions{
 		afklmNewProvider: func() (*afklm.AFKLMProvider, error) { return p, nil },
 	})
-	if flights != nil || statuses != nil {
-		t.Errorf("searchAFKLMNativeRoundTrip must return nil,nil on daily quota (like ErrNoCredential); got %d/%d", len(flights), len(statuses))
+	// MIK-8088: an exhausted daily budget is a provider that did not answer,
+	// reported with its reason -- not a silent skip like a missing credential.
+	if flights != nil || len(statuses) != 1 || statuses[0].Status != models.StatusRateLimited ||
+		statuses[0].Error != "daily request budget exhausted" || statuses[0].FixHint != "retry after the daily reset" {
+		t.Errorf("got flights=%d statuses=%+v, want one rate_limited AFKLM status with the quota reason", len(flights), statuses)
 	}
 }
 
