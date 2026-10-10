@@ -394,6 +394,9 @@ func TestMapRecommendationsRoundTripPrice(t *testing.T) {
 		}
 		return fp
 	}
+	// noTotal drops the product-level price entirely, currency included, so
+	// the fallback must take its currency from the bound shares.
+	noTotal := func(fp FlightProduct) FlightProduct { fp.Price = Price{}; return fp }
 	cases := []struct {
 		name   string
 		fp     FlightProduct
@@ -402,7 +405,9 @@ func TestMapRecommendationsRoundTripPrice(t *testing.T) {
 	}{
 		{"round trip uses the product total", product(229.06, 105.53, 123.53),
 			[][]BoundConnection{bound(0, "AMS", "PRG"), bound(1, "PRG", "AMS")}, 229.06},
-		{"round trip without a total sums the bounds", product(0, 105.53, 123.53),
+		{"round trip prefers the total over the bound sum", product(240, 105.53, 123.53),
+			[][]BoundConnection{bound(0, "AMS", "PRG"), bound(1, "PRG", "AMS")}, 240},
+		{"round trip without a total sums the bounds", noTotal(product(0, 105.53, 123.53)),
 			[][]BoundConnection{bound(0, "AMS", "PRG"), bound(1, "PRG", "AMS")}, 229.06},
 		{"one way is unchanged", product(286.48, 286.48),
 			[][]BoundConnection{bound(0, "AMS", "PRG")}, 286.48},
