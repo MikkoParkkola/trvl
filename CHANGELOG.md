@@ -7,12 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.27.0] - 2026-10-10
+
 ### Security
 
 - Go toolchain pinned to 1.26.9 (was 1.26.6) and the release Docker image builds with Go 1.27.2 (was 1.27.1), for standard-library advisories in `net/http`, `html/template`, `crypto/tls`, `net/textproto` and `os`.
   ([#709](https://github.com/MikkoParkkola/trvl/pull/709))
 - `golang.org/x/net` updated to v0.60.0 for GO-2026-6603, GO-2026-6610, GO-2026-6611, GO-2026-6612 and GO-2026-6617.
   ([#709](https://github.com/MikkoParkkola/trvl/pull/709))
+- The `trvl-mcp` npm installer checks the downloaded archive's SHA-256 against the checksums shipped in the package, refuses to install on a mismatch, and only follows https redirects to GitHub's release hosts.
+  ([#697](https://github.com/MikkoParkkola/trvl/pull/697))
+
+### Changed
+
+- Partial flight results name the providers that failed instead of reading as the whole market: `trvl find` (CLI, JSON and MCP), including results the filters reduce to zero, failed searches and each date of a `--within` sweep; the `trvl flights` table, which says "Cheapest found" when coverage is partial; and the cabin comparison.
+  ([#714](https://github.com/MikkoParkkola/trvl/pull/714), [#716](https://github.com/MikkoParkkola/trvl/pull/716))
+- A multi-airport flight search keeps each failed origin/destination pair as a provider status labelled with its route, and `--provider` searches and the cabin comparison report the failed provider in JSON.
+  ([#695](https://github.com/MikkoParkkola/trvl/pull/695), [#696](https://github.com/MikkoParkkola/trvl/pull/696))
+- `trvl flights --format json` prints `provider_statuses` even when every provider failed, and `trvl hotels` reports partial coverage instead of "No hotels found." when a provider was blocked.
+  ([#694](https://github.com/MikkoParkkola/trvl/pull/694))
+- On the default round-trip path, AFKLM setup failures, an exhausted daily request budget and failed answers appear in `provider_statuses` with a reason; the round-trip composer no longer counts as an answer when every upstream provider failed, so such a search reads as blocked.
+  ([#715](https://github.com/MikkoParkkola/trvl/pull/715))
+- A Google refusal (HTTP 429 or a quota refusal) is no longer retried: trvl waits out a cooldown shared by every trvl process on the machine, using Google's own wait hint when given.
+  ([#693](https://github.com/MikkoParkkola/trvl/pull/693))
+
+### Fixed
+
+- Trip plans keep a price in its own currency when an exchange rate is unavailable, instead of labelling it with the requested currency; a summary that would add amounts in different currencies is marked `incomplete`, names the unconverted parts in `unconverted` and withholds the total.
+  ([#713](https://github.com/MikkoParkkola/trvl/pull/713))
+- Eleven CLI commands (`destination`, `guide`, `hotels`, `rooms` and others) now honour the caller's cancellation instead of always running their full timeout.
+  ([#711](https://github.com/MikkoParkkola/trvl/pull/711))
+- Wizz Air API version rotated from 29.19.0 to 29.20.0.
+  ([#706](https://github.com/MikkoParkkola/trvl/pull/706))
+
+### Internal
+
+- The default `go test -short` suite no longer contacts outside hosts; an `offline-tests` CI job traces every package and fails on any outside connection.
+  ([#700](https://github.com/MikkoParkkola/trvl/pull/700)–[#712](https://github.com/MikkoParkkola/trvl/pull/712), [#698](https://github.com/MikkoParkkola/trvl/pull/698), [#699](https://github.com/MikkoParkkola/trvl/pull/699))
 
 ## [1.26.0] - 2026-10-06
 
@@ -1353,7 +1384,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.26.0...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.27.0...HEAD
+[1.27.0]: https://github.com/MikkoParkkola/trvl/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/MikkoParkkola/trvl/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/MikkoParkkola/trvl/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/MikkoParkkola/trvl/compare/v1.23.0...v1.24.0
