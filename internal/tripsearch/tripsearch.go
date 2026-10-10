@@ -107,6 +107,56 @@ type Result struct {
 	// HiddenCityCandidates lists detected savings opportunities when
 	// Request.HiddenCity was set. Empty slice otherwise.
 	HiddenCityCandidates []flights.HiddenCityCandidate `json:"hidden_city_candidates,omitempty"`
+
+	// ProviderStatuses and Completeness carry the flight search's provider
+	// evidence through filtering, so a partial answer -- including one the
+	// filters reduce to zero -- is never presented as complete (MIK-8088).
+	ProviderStatuses []models.ProviderStatus `json:"provider_statuses,omitempty"`
+	Completeness     models.Completeness     `json:"completeness,omitempty"`
+}
+
+// PartialNote is the caveat to show with this result: which providers did not
+// answer and why, or "" when every provider answered.
+func (r *Result) PartialNote() string {
+	if r == nil {
+		return ""
+	}
+	return models.PartialCoverageNote(r.ProviderStatuses)
+}
+
+// SearchError is returned when the flight search fails outright. It keeps the
+// providers' statuses so callers -- a multi-date sweep, say -- can still report
+// which providers failed, and its message names them.
+type SearchError struct {
+	Msg              string
+	ProviderStatuses []models.ProviderStatus
+	Err              error
+}
+
+func (e *SearchError) Error() string { return e.Msg }
+func (e *SearchError) Unwrap() error { return e.Err }
+
+// newSearchError formats msg with the providers' partial-coverage note.
+func newSearchError(msg string, err error, statuses []models.ProviderStatus) *SearchError {
+	if note := models.PartialCoverageNote(statuses); note != "" {
+		msg += "\n" + note
+	}
+	return &SearchError{Msg: msg, ProviderStatuses: statuses, Err: err}
+}
+
+// LabelStatusesWithDate copies statuses with the search date added to each ID
+// and name, so statuses merged across a date sweep say which date failed.
+func LabelStatusesWithDate(statuses []models.ProviderStatus, date string) []models.ProviderStatus {
+	out := make([]models.ProviderStatus, len(statuses))
+	for i, st := range statuses {
+		if st.Name == "" {
+			st.Name = st.ID
+		}
+		st.ID += "@" + date
+		st.Name += " (" + date + ")"
+		out[i] = st
+	}
+	return out
 }
 
 // FilterLog records which filters executed and how many flights each
@@ -186,16 +236,23 @@ func Search(ctx context.Context, req Request, search SearchFunc, progress Progre
 		Adults:     1,
 	}
 	result, err := search(ctx, origins, destinations, req.Date, opts)
+	var statuses []models.ProviderStatus
+	if result != nil {
+		statuses = result.ProviderStatuses
+	}
 	if err != nil {
-		return nil, fmt.Errorf("flight search: %w", err)
+		return nil, newSearchError(fmt.Sprintf("flight search: %v", err), err, statuses)
 	}
 	if result == nil || !result.Success {
-		return nil, fmt.Errorf("flight search returned no results")
+		return nil, newSearchError("flight search returned no results", nil, statuses)
 	}
+	// Completeness is recomputed from the statuses: not every search path
+	// fills it in, and the statuses are what the note is built from.
+	completeness := models.ComputeCompleteness(statuses)
 	// An empty answer with failed providers is not "no flights": report the
 	// failures instead of an ordinary empty result (MIK-8041).
-	if len(result.Flights) == 0 && !result.Completeness.MayClaimExhaustive() {
-		return nil, fmt.Errorf("flight search incomplete: %s\n%s", result.Completeness.IncompleteNote(), models.ProviderFailureLines(result.ProviderStatuses))
+	if len(result.Flights) == 0 && !completeness.MayClaimExhaustive() {
+		return nil, newSearchError("flight search incomplete", nil, statuses)
 	}
 
 	preFilterCount := len(result.Flights)
@@ -242,6 +299,8 @@ func Search(ctx context.Context, req Request, search SearchFunc, progress Progre
 		FiltersApplied:       log,
 		PreFilterCount:       preFilterCount,
 		HiddenCityCandidates: hcCandidates,
+		ProviderStatuses:     statuses,
+		Completeness:         completeness,
 	}, nil
 }
 

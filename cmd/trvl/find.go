@@ -19,6 +19,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -143,7 +144,7 @@ func runFind(ctx context.Context, req tripsearch.Request, format string, calenda
 		}
 	}
 
-	result, err := tripsearch.Search(ctx, req, nil, nil)
+	result, err := tripsearch.Search(ctx, req, findSearch, nil)
 	if err != nil {
 		return err
 	}
@@ -165,14 +166,17 @@ func runFind(ctx context.Context, req tripsearch.Request, format string, calenda
 		// Reassemble the classic FlightSearchResult shape so downstream
 		// tooling and tests consuming the old schema keep working.
 		fsr := &models.FlightSearchResult{
-			Success:  true,
-			TripType: result.TripType,
-			Flights:  result.Flights,
-			Count:    result.Count,
+			Success:          true,
+			TripType:         result.TripType,
+			Flights:          result.Flights,
+			Count:            result.Count,
+			ProviderStatuses: result.ProviderStatuses,
+			Completeness:     result.Completeness,
 		}
 		return models.FormatJSON(os.Stdout, fsr)
 	}
 
+	printPartialNote(result.PartialNote())
 	if len(result.Flights) == 0 {
 		fmt.Println("No profile-compliant flights found. Loosen filters or extend search window.")
 		if result.PreFilterCount > 0 {
@@ -312,6 +316,10 @@ func applyRelax(req *tripsearch.Request, relax []string) {
 	}
 }
 
+// findSearch is the flight search behind trvl find; nil means the live
+// tripsearch.DefaultSearch. Tests swap in a fake.
+var findSearch tripsearch.SearchFunc
+
 // runFindSweep iterates over the next N Saturdays starting from req.Date,
 // runs tripsearch.Search for each, merges the bundles, re-ranks by price,
 // and presents the combined top-N. Capped at 4 probes to avoid runaway
@@ -330,10 +338,25 @@ func runFindSweep(ctx context.Context, base tripsearch.Request, format string, w
 	for _, d := range dates {
 		req := base
 		req.Date = d
-		res, err := tripsearch.Search(ctx, req, nil, nil)
+		res, err := tripsearch.Search(ctx, req, findSearch, nil)
 		if err != nil || res == nil {
+			// A failed date still says which providers failed.
+			var serr *tripsearch.SearchError
+			if errors.As(err, &serr) && len(serr.ProviderStatuses) > 0 {
+				merged.ProviderStatuses = append(merged.ProviderStatuses, tripsearch.LabelStatusesWithDate(serr.ProviderStatuses, d)...)
+				continue
+			}
+			// No provider evidence (e.g. preferences failed to load): the date
+			// itself is the failure, so the sweep cannot claim full coverage.
+			msg := "no result"
+			if err != nil {
+				msg = err.Error()
+			}
+			merged.ProviderStatuses = append(merged.ProviderStatuses, tripsearch.LabelStatusesWithDate(
+				[]models.ProviderStatus{{ID: "search", Name: "Search", Status: models.StatusError, Error: msg}}, d)...)
 			continue
 		}
+		merged.ProviderStatuses = append(merged.ProviderStatuses, tripsearch.LabelStatusesWithDate(res.ProviderStatuses, d)...)
 		merged.Flights = append(merged.Flights, res.Flights...)
 		merged.Origins = res.Origins
 		merged.TripType = res.TripType
@@ -346,12 +369,17 @@ func runFindSweep(ctx context.Context, base tripsearch.Request, format string, w
 		merged.Flights = merged.Flights[:topN]
 	}
 	merged.Count = len(merged.Flights)
+	merged.Completeness = models.ComputeCompleteness(merged.ProviderStatuses)
 
 	if format == "json" {
 		return models.FormatJSON(os.Stdout, &models.FlightSearchResult{
 			Success: true, TripType: merged.TripType,
 			Flights: merged.Flights, Count: merged.Count,
+			ProviderStatuses: merged.ProviderStatuses, Completeness: merged.Completeness,
 		})
+	}
+	if note := merged.PartialNote(); note != "" {
+		printPartialNote(fmt.Sprintf("counts are provider checks across %d dates. %s", len(dates), note))
 	}
 	if merged.Count == 0 {
 		fmt.Println("Swept 0 profile-compliant bundles across all dates.")
@@ -459,4 +487,13 @@ func runFindWithSource(ctx context.Context, req tripsearch.Request, format strin
 		fmt.Printf("(date picked by calendar-aware search: first Saturday >= 14d out with no conflicts)\n")
 	}
 	return runFind(ctx, req, format, calendarInsert, argCount)
+}
+
+// printPartialNote prints the partial-coverage caveat above find output, so a
+// ranked list or an empty answer is never read as the full market (MIK-8088).
+func printPartialNote(note string) {
+	if note == "" {
+		return
+	}
+	fmt.Printf("Partial coverage: %s\n\n", note)
 }

@@ -101,7 +101,9 @@ func (p ProviderStatus) MarshalJSON() ([]byte, error) {
 func ProviderFailureLines(statuses []ProviderStatus) string {
 	var lines []string
 	for _, st := range statuses {
-		if st.Error == "" {
+		// Skipped/disabled/unconfigured providers were never attempted; their
+		// Error is an explanation, not a failure (matches ComputeCompleteness).
+		if st.Error == "" || !statusAttempted(st.Status) {
 			continue
 		}
 		name := st.Name
@@ -114,4 +116,20 @@ func ProviderFailureLines(statuses []ProviderStatus) string {
 		return ""
 	}
 	return "Provider status:\n" + strings.Join(lines, "\n")
+}
+
+// PartialCoverageNote returns the caveat for a search where some providers
+// did not answer: the completeness note plus one failure line per provider.
+// It is "" when every attempted provider answered (or nothing was assessed),
+// so callers can print it unconditionally.
+func PartialCoverageNote(statuses []ProviderStatus) string {
+	c := ComputeCompleteness(statuses)
+	if c.MayClaimExhaustive() {
+		return ""
+	}
+	note := c.IncompleteNote()
+	if lines := ProviderFailureLines(statuses); lines != "" {
+		note += "\n" + lines
+	}
+	return note
 }
