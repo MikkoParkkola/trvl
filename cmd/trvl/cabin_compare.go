@@ -108,16 +108,48 @@ func runCabinComparison(ctx context.Context, origins, destinations []string, dat
 		return failure
 	}
 
-	route := fmt.Sprintf("%s → %s", strings.Join(origins, ","), strings.Join(destinations, ","))
+	printCabinTable(fmt.Sprintf("%s → %s", strings.Join(origins, ","), strings.Join(destinations, ",")), date, results)
+	return failure
+}
+
+func withFailureLines(err error, statuses []models.ProviderStatus) error {
+	if lines := models.ProviderFailureLines(statuses); lines != "" {
+		return fmt.Errorf("%w\n%s", err, lines)
+	}
+	return err
+}
+
+// allCabinsFailed returns the joined errors when no cabin search succeeded.
+func allCabinsFailed(errs []error) error {
+	for _, err := range errs {
+		if err == nil {
+			return nil
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// printCabinTable renders the cabin comparison, marking cabins whose search
+// was partial and naming the providers that failed.
+func printCabinTable(route, date string, results []cabinResult) {
 	models.Banner(os.Stdout, "✈️", fmt.Sprintf("Cabin Comparison · %s · %s", route, date), "All cabin classes searched in parallel")
 	fmt.Println()
 
 	headers := []string{"Cabin", "Best Price", "Airline", "Stops", "Duration"}
 	var rows [][]string
 
+	var partial []string
 	for _, r := range results {
+		note := models.PartialCoverageNote(r.ProviderStatuses)
+		if note != "" {
+			partial = append(partial, fmt.Sprintf("Partial coverage (%s): %s", r.Cabin, note))
+		}
 		if r.Error != "" {
-			rows = append(rows, []string{r.Cabin, "—", "—", "—", r.Error})
+			msg := r.Error
+			if msg == "no flights" && note != "" {
+				msg = "no flights (partial coverage)" // absence is not known
+			}
+			rows = append(rows, []string{r.Cabin, "—", "—", "—", msg})
 			continue
 		}
 		stopLabel := "nonstop"
@@ -140,22 +172,9 @@ func runCabinComparison(ctx context.Context, origins, destinations []string, dat
 	}
 
 	models.FormatTable(os.Stdout, headers, rows)
-	return failure
-}
-
-func withFailureLines(err error, statuses []models.ProviderStatus) error {
-	if lines := models.ProviderFailureLines(statuses); lines != "" {
-		return fmt.Errorf("%w\n%s", err, lines)
+	// Name failed providers per cabin, so a priced row or "no flights" from a
+	// partial search is not read as the whole market (MIK-8088).
+	for _, line := range partial {
+		fmt.Printf("\n%s\n", line)
 	}
-	return err
-}
-
-// allCabinsFailed returns the joined errors when no cabin search succeeded.
-func allCabinsFailed(errs []error) error {
-	for _, err := range errs {
-		if err == nil {
-			return nil
-		}
-	}
-	return errors.Join(errs...)
 }
