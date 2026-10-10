@@ -159,7 +159,8 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 		composed = merged
 	}
 
-	statuses = append(statuses, roundTripComposerStatus(len(outFlights), len(inFlights), len(composed), truncated))
+	upstreamAnswered := models.ComputeCompleteness(statuses).Succeeded > 0
+	statuses = append(statuses, roundTripComposerStatus(len(outFlights), len(inFlights), len(composed), truncated, upstreamAnswered))
 
 	// If neither leg produced any priced option, surface the underlying errors
 	// rather than an empty "success".
@@ -332,12 +333,20 @@ func prefixLegStatuses(direction string, statuses []models.ProviderStatus) []mod
 
 // roundTripComposerStatus reports the composition step itself so callers can see
 // how many one-way options fed the pairing and whether the output was bounded.
-func roundTripComposerStatus(outCount, inCount, composedCount int, truncated bool) models.ProviderStatus {
+// The composer is not a provider: when no upstream provider answered it is
+// "skipped", so it neither counts as an answer nor as a failure (MIK-8088) and
+// an all-failed search reads as blocked rather than partial.
+func roundTripComposerStatus(outCount, inCount, composedCount int, truncated, upstreamAnswered bool) models.ProviderStatus {
 	status := models.ProviderStatus{
 		ID:      "roundtrip_composer",
 		Name:    "Round-trip composer",
 		Status:  models.StatusOK,
 		Results: composedCount,
+	}
+	if !upstreamAnswered {
+		status.Status = models.StatusSkipped
+		status.Error = "skipped: no upstream provider answered"
+		return status
 	}
 	if composedCount == 0 {
 		status.Status = models.StatusCheckedNoHit
