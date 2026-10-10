@@ -384,9 +384,7 @@ func printFlightsTable(ctx context.Context, origin, destination, targetCurrency 
 	// Some providers failed: say so above the table, so the list and the
 	// cheapest line below are not read as the whole market (MIK-8088).
 	partialNote := models.PartialCoverageNote(result.ProviderStatuses)
-	if partialNote != "" {
-		fmt.Printf("Partial coverage: %s\n\n", partialNote)
-	}
+	printPartialNote(partialNote)
 
 	// Convert prices if --currency specified and differs from API currency.
 	if targetCurrency != "" && len(result.Flights) > 0 && result.Flights[0].Currency != targetCurrency {

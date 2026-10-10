@@ -49,6 +49,8 @@ func TestPrintCabinTable_PartialCoverage(t *testing.T) {
 	results := []cabinResult{
 		{Cabin: "Economy", Price: 120, Currency: "EUR", Airline: "Finnair", ProviderStatuses: tablePartialStatuses[1:]},
 		{Cabin: "Business", Error: "no flights", ProviderStatuses: tablePartialStatuses},
+		{Cabin: "Premium Economy", Price: 300, Currency: "EUR", Airline: "KLM", ProviderStatuses: tablePartialStatuses},
+		{Cabin: "First", Error: "search failed: every provider timed out"},
 	}
 	out := captureStdout(t, func() { printCabinTable("HEL → AMS", "2026-11-01", results) })
 	if !strings.Contains(out, "no flights (partial coverage)") {
@@ -56,6 +58,12 @@ func TestPrintCabinTable_PartialCoverage(t *testing.T) {
 	}
 	if !strings.Contains(out, "Partial coverage (Business):") || !strings.Contains(out, "- Kiwi: ") {
 		t.Errorf("cabin table must name the provider that failed for Business:\n%s", out)
+	}
+	if !strings.Contains(out, "Partial coverage (Premium Economy):") || !strings.Contains(out, "EUR 300") {
+		t.Errorf("a priced cabin from a partial search must keep its price and carry a note:\n%s", out)
+	}
+	if !strings.Contains(out, "search failed: every provider timed out") {
+		t.Errorf("an outright failure keeps its error:\n%s", out)
 	}
 	if strings.Contains(out, "Partial coverage (Economy)") {
 		t.Errorf("a complete cabin must not carry a note:\n%s", out)
