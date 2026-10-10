@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/flights/afklm"
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // MIK-8088: credentials present but the provider cannot be set up -- the user
