@@ -207,12 +207,16 @@ func mapRecommendations(resp *AvailableOffersResponse, origin, dest string) []mo
 				}
 			}
 
-			// Pricing: prefer the outbound pricing connection's display price.
-			price := fp.Connections[0].Price.DisplayPrice
-			currency := fp.Connections[0].Price.Currency
+			// Pricing: the flight product's price is the ticket total. Each
+			// pricing connection carries only its own bound's share, so a
+			// round trip priced from connection 0 shows the outbound half.
+			price := fp.Price.DisplayPrice
+			currency := fp.Price.Currency
 			if price == 0 {
-				price = fp.Price.DisplayPrice
-				currency = fp.Price.Currency
+				for _, pc := range fp.Connections {
+					price += pc.Price.DisplayPrice
+				}
+				currency = fp.Connections[0].Price.Currency
 			}
 
 			// A real return offer (outbound + inbound bound) is a genuine
