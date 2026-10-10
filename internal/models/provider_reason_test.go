@@ -85,3 +85,22 @@ func TestEffectiveReasonMatchesJSON(t *testing.T) {
 		t.Fatalf("EffectiveReason = %q, want dns", s.EffectiveReason())
 	}
 }
+
+func TestPartialCoverageNoteExcludesIntentionalSkips(t *testing.T) {
+	statuses := []ProviderStatus{
+		{ID: "google", Name: "Google", Status: StatusOK},
+		{ID: "kiwi", Name: "Kiwi", Status: StatusTimeout, Error: "context deadline exceeded"},
+		{ID: "transavia", Name: "Transavia", Status: StatusSkipped, Error: "not configured"},
+		{ID: "easyjet", Name: "easyJet", Status: StatusNotConfigured, Error: "no credentials"},
+		{ID: "vueling", Name: "Vueling", Status: StatusDisabled, Error: "disabled"},
+	}
+	note := PartialCoverageNote(statuses)
+	if !strings.Contains(note, "Kiwi") {
+		t.Fatalf("failed provider missing from note: %q", note)
+	}
+	for _, skipped := range []string{"Transavia", "easyJet", "Vueling"} {
+		if strings.Contains(note, skipped) {
+			t.Errorf("intentionally skipped %s listed as failure: %q", skipped, note)
+		}
+	}
+}

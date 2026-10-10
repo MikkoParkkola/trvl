@@ -101,7 +101,9 @@ func (p ProviderStatus) MarshalJSON() ([]byte, error) {
 func ProviderFailureLines(statuses []ProviderStatus) string {
 	var lines []string
 	for _, st := range statuses {
-		if st.Error == "" {
+		// Skipped/disabled/unconfigured providers were never attempted; their
+		// Error is an explanation, not a failure (matches ComputeCompleteness).
+		if st.Error == "" || !statusAttempted(st.Status) {
 			continue
 		}
 		name := st.Name
