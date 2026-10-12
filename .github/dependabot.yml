@@ -23,3 +23,11 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "UTC"
+
+  - package-ecosystem: "npm"
+    directory: "/npm"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"

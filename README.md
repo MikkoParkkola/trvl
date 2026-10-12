@@ -2,6 +2,8 @@
 [![CI](https://github.com/MikkoParkkola/trvl/actions/workflows/ci.yaml/badge.svg)](https://github.com/MikkoParkkola/trvl/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/v/release/MikkoParkkola/trvl)](https://github.com/MikkoParkkola/trvl/releases)
 [![Downloads](https://img.shields.io/github/downloads/MikkoParkkola/trvl/total)](https://github.com/MikkoParkkola/trvl/releases)
+[![govulncheck](https://github.com/MikkoParkkola/trvl/actions/workflows/govulncheck.yml/badge.svg)](https://github.com/MikkoParkkola/trvl/actions/workflows/govulncheck.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/MikkoParkkola/trvl/badge)](https://scorecard.dev/viewer/?uri=github.com/MikkoParkkola/trvl)
 [![License](https://img.shields.io/badge/license-PolyForm%20NC%201.0-blue)](LICENSE)
 [![Go Reference](https://pkg.go.dev/badge/github.com/MikkoParkkola/trvl.svg)](https://pkg.go.dev/github.com/MikkoParkkola/trvl)
 [![MCP](https://img.shields.io/badge/MCP-2026--07--28-blue)](https://modelcontextprotocol.io/specification/2026-07-28)
@@ -273,7 +275,7 @@ export TRVL_STEALTH_ALLOWLIST=".google.com"
 trvl flights HEL NRT 2027-09-01 --stealth
 ```
 
-Licensed under [PolyForm Noncommercial 1.0](LICENSE) — free for personal and noncommercial use. Commercial use (company-internal, hosted service, embedding in paid platforms) requires a separate license: EUR 500/month per named project via [GitHub Sponsors](https://github.com/sponsors/MikkoParkkola), see [COMMERCIAL.md](COMMERCIAL.md).
+Licensed under [PolyForm Noncommercial 1.0](LICENSE) — free for personal and noncommercial use. Commercial use (company-internal, hosted service, embedding in paid platforms) requires a separate license: EUR 500/month per named project via [GitHub Sponsors](https://github.com/sponsors/MikkoParkkola), see [COMMERCIAL.md](COMMERCIAL.md) and [LICENSING.md](LICENSING.md).
 
 Built on [fli](https://github.com/punitarani/fli), [utls](https://github.com/refraction-networking/utls), and [SerpAPI](https://serpapi.com/google-hotels-api)'s parameter reference.
 
