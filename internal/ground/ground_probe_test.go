@@ -27,6 +27,7 @@ func TestGroundProbe(t *testing.T) {
 	result, err := SearchByName(ctx, "Helsinki", "Tallinn", date, SearchOptions{
 		NoCache: true,
 	})
+	testutil.SkipIfTransient(t, err)
 	if err != nil {
 		t.Fatalf("SearchByName: %v", err)
 	}

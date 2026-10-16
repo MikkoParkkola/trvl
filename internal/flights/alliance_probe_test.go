@@ -2,13 +2,11 @@ package flights
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
-	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
@@ -49,9 +47,7 @@ func TestAllianceProbe(t *testing.T) {
 		defer cancel()
 		res, err := SearchFlightsWithClient(ctx, client, "HEL", "LHR", searchDate, baseOpts)
 		if err != nil {
-			if errors.Is(err, models.ErrRateLimited) {
-				t.Skipf("baseline rate-limited/challenged upstream (not a wire-format drift): %v", err)
-			}
+			testutil.SkipIfTransient(t, err)
 			t.Fatalf("baseline search failed: %v", err)
 		}
 		baseline = res.Count
