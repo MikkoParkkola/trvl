@@ -1,4 +1,4 @@
-FROM golang:1.27.2-alpine AS build
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -15,7 +15,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
     -ldflags="-s -w -X main.Version=${VERSION} -X github.com/MikkoParkkola/trvl/mcp.serverVersion=${VERSION}" \
     -o /out/trvl ./cmd/trvl
 
-FROM alpine:3.24
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="trvl" \
       org.opencontainers.image.description="AI travel agent MCP server for flights, hotels, ground transport, price alerts, and award travel" \
