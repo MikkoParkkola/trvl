@@ -17,7 +17,6 @@ on:
 permissions:
   contents: read
   issues: write
-  actions: read
 
 jobs:
   live-probes:
@@ -147,22 +146,3 @@ jobs:
         run: |
           echo "::error::${{ steps.classify.outputs.title }}"
           exit 1
-      - name: Auto-close drift alert after 3 green scheduled runs
-        # This run passed. If the two previous completed scheduled runs also
-        # succeeded, close the open provider-drift issue with a comment.
-        if: success() && github.event_name == 'schedule'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          prev=$(gh run list --workflow live-probes.yml --event schedule --status completed \
-            --limit 2 --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')
-          if [ "$prev" != "2" ]; then
-            echo "Only $prev of the last 2 completed scheduled runs succeeded; leaving alerts open."
-            exit 0
-          fi
-          for n in $(gh issue list --label provider-drift --state open --json number --jq '.[].number'); do
-            gh issue comment "$n" --body "Auto-closing: the last 3 scheduled Live Probes runs passed (latest: $RUN_URL). Reopens as a new issue on the next real failure."
-            gh issue close "$n" --reason completed
-          done
