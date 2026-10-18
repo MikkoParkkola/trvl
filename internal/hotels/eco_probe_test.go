@@ -148,6 +148,7 @@ func TestProbeEcoCertification(t *testing.T) {
 	}
 	baseURL := buildTravelURL(location, baseOpts)
 	_, baseBody, err := client.Get(ctx, baseURL)
+	testutil.SkipIfTransient(t, err)
 	if err != nil {
 		t.Fatalf("base fetch failed: %v", err)
 	}
@@ -162,6 +163,7 @@ func TestProbeEcoCertification(t *testing.T) {
 		t.Fatalf("eco URL missing ecof=1: %s", ecoURL)
 	}
 	_, ecoBody, err := client.Get(ctx, ecoURL)
+	testutil.SkipIfTransient(t, err)
 	if err != nil {
 		t.Fatalf("eco fetch failed: %v", err)
 	}

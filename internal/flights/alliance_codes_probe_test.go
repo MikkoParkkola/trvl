@@ -42,6 +42,7 @@ func TestAllianceCodes(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		res, err := SearchFlightsWithClient(ctx, client, origin, dest, date, baseOpts)
+		testutil.SkipIfTransient(t, err)
 		if err != nil {
 			t.Fatalf("baseline search failed: %v", err)
 		}

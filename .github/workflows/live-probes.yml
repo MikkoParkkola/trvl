@@ -9,8 +9,9 @@ name: Live Probes
 
 on:
   schedule:
-    # 05:17 UTC daily (off the hour to avoid Actions congestion).
-    - cron: "17 5 * * *"
+    # 03:43 UTC daily: an odd, quiet slot. The old :17 slot is a busy one for
+    # Actions, and Google throttles bursts from shared runner IPs (trvl#720).
+    - cron: "43 3 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -27,23 +28,102 @@ jobs:
         with:
           go-version: "1.26.9"
       - name: Live provider probes
+        id: probes
         # -run Probe selects every *_probe_test.go test across the module; the
-        # env gate flips them from skipped to live.
-        run: TRVL_TEST_LIVE_PROBES=1 go test -count=1 -run Probe ./...
-      - name: Open drift alert on failure
-        # A scheduled red run nobody watches is not visibility. On a probe
-        # failure (only on the scheduled run, not manual dispatch), open or
-        # refresh a single tracking issue so provider drift surfaces actively.
-        if: failure() && github.event_name == 'schedule'
+        # env gate flips them from skipped to live. Output is JSON so the next
+        # step can tell real failures from throttled skips. The exit code is
+        # recorded rather than failing here, so the classification always runs.
+        run: |
+          set +e
+          TRVL_TEST_LIVE_PROBES=1 go test -count=1 -json -run Probe ./... > probes.json
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+      - name: Classify probe results
+        id: classify
+        env:
+          EXIT_CODE: ${{ steps.probes.outputs.exit_code }}
+        run: |
+          python3 - <<'PY'
+          import json, os, collections
+          fails, skips, passes = [], [], 0
+          failed_pkgs, pkgs_with_test_fail = set(), set()
+          out = collections.defaultdict(list)
+          with open("probes.json") as f:
+              for line in f:
+                  try:
+                      ev = json.loads(line)
+                  except ValueError:
+                      continue
+                  pkg, test, act = ev.get("Package", ""), ev.get("Test"), ev.get("Action")
+                  key = (pkg, test)
+                  if act == "output":
+                      out[key].append(ev.get("Output", ""))
+                  elif act == "fail":
+                      if test:
+                          fails.append(key)
+                          pkgs_with_test_fail.add(pkg)
+                      else:
+                          failed_pkgs.add(pkg)
+                  elif act == "skip" and test:
+                      skips.append(key)
+                  elif act == "pass" and test:
+                      passes += 1
+          # Package failures with no failing test are build errors or panics.
+          for pkg in sorted(failed_pkgs - pkgs_with_test_fail):
+              fails.append((pkg, None))
+          # Report only leaf failures: a parent test fails whenever a subtest does.
+          names = {(p, t) for p, t in fails}
+          leaf = [(p, t) for p, t in fails
+                  if not t or not any(q == p and u and u.startswith(t + "/") for q, u in names)]
+          if os.environ.get("EXIT_CODE", "0") != "0" and not leaf:
+              leaf = [("(unknown)", "go test exited %s without a parsed failure" % os.environ.get("EXIT_CODE"))]
+          throttled = [(p, t) for p, t in skips
+                       if any("transient provider noise" in l or "throttled" in l for l in out[(p, t)])]
+          def short(p): return p.rsplit("/", 1)[-1]
+          providers = sorted({short(p) for p, _ in leaf})
+          lines = ["## Live probe results", "",
+                   f"- passed: {passes}", f"- skipped: {len(skips)} (throttled/transient: {len(throttled)})",
+                   f"- failed: {len(leaf)}", ""]
+          body = []
+          for p, t in leaf:
+              tail = "".join(out[(p, t)][-15:]).strip()[-1500:]
+              body += [f"### `{short(p)}` {t or '(package build/panic)'}", "", "```", tail, "```", ""]
+          if throttled:
+              body += ["Throttled/transient skips (not failures): " +
+                       ", ".join(f"`{short(p)}.{t}`" for p, t in throttled[:20]), ""]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("\n".join(lines + body) + "\n")
+          with open("alert_body.md", "w") as f:
+              f.write("\n".join(body))
+          tests = sorted({t.split("/")[0] for _, t in leaf if t})
+          title = "Live probe failure: " + ", ".join(providers)
+          if tests:
+              title += " (" + ", ".join(tests[:4]) + (", ..." if len(tests) > 4 else "") + ")"
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"failed={'true' if leaf else 'false'}\n")
+              f.write(f"title={title[:240]}\n")
+          PY
+      - name: Open or update probe alert
+        # Only real failures alert. A night where every Google call was
+        # throttled skips (yellow), not fails, so it no longer files a
+        # "wire-format drift" issue (trvl#720).
+        if: steps.classify.outputs.failed == 'true' && github.event_name == 'schedule'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ALERT_TITLE: ${{ steps.classify.outputs.title }}
         with:
           script: |
-            const title = 'Live provider probe failure (wire-format drift)';
+            const fs = require('fs');
+            const title = process.env.ALERT_TITLE;
             const body = [
-              'A scheduled live provider probe failed. This usually means a provider',
-              'rotated its wire format (the MIK-6531 class) and a production-shaped',
-              'request now returns an error or stopped filtering.',
+              `**${title}**`,
               '',
+              'A scheduled live provider probe failed with a non-transient error.',
+              'Throttling (429, Google quota refusal / cooldown, edge blocks) is',
+              'classified as a skip and does not open this issue, so this is more',
+              'likely a real change: rotated API path, new response shape, or a',
+              're-stubbed checker.',
+              '',
+              fs.readFileSync('alert_body.md', 'utf8'),
               `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             ].join('\n');
             const existing = await github.rest.issues.listForRepo({
@@ -61,3 +141,8 @@ jobs:
                 title, body, labels: ['provider-drift'],
               });
             }
+      - name: Fail on real probe failures
+        if: steps.classify.outputs.failed == 'true'
+        run: |
+          echo "::error::${{ steps.classify.outputs.title }}"
+          exit 1

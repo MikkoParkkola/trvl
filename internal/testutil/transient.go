@@ -2,8 +2,15 @@
 package testutil
 
 import (
+	"errors"
+	"math/rand/v2"
+	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // transientMarkers are substrings that identify an error as transient network
@@ -25,6 +32,11 @@ import (
 var transientMarkers = []string{
 	"429",
 	"rate limited",
+	"rate-limited",
+	"quota refusal",
+	"cooling down",
+	"cooldown",
+	"temporarily unavailable",
 	"too many requests",
 	"unexpected status 429",
 	"bad gateway",
@@ -41,9 +53,18 @@ var transientMarkers = []string{
 // IsTransientProbeErr reports whether err looks like transient network noise
 // (provider throttling or a transient gateway/timeout) rather than a real
 // provider regression.
+//
+// Typed sentinels are checked first so classification survives a reworded
+// error message: models.ErrRateLimited (wrapped by every Google Flights
+// quota-refusal / cooldown error, see internal/flights/google_errors.go) and
+// batchexec.ErrRefused (raw client call skipped during a cooldown). The text
+// markers remain as a fallback for providers that only surface strings.
 func IsTransientProbeErr(err error) bool {
 	if err == nil {
 		return false
+	}
+	if errors.Is(err, models.ErrRateLimited) || errors.Is(err, batchexec.ErrRefused) {
+		return true
 	}
 	return IsTransientMsg(err.Error())
 }
@@ -76,4 +97,34 @@ func SkipIfTransient(t *testing.T, err error) {
 	if IsTransientProbeErr(err) {
 		t.Skipf("skipping: transient provider noise (not a regression): %v", err)
 	}
+}
+
+// ProbeRetryDelay returns the jittered wait before the single retry that
+// RetryTransient performs. It defaults to 20-60s, which outlasts a short
+// throttle burst without hammering the provider. TRVL_PROBE_RETRY_DELAY (a Go
+// duration such as "0s" or "5s") overrides it with a fixed delay. It is a
+// variable so unit tests can make it instant.
+var ProbeRetryDelay = func() time.Duration {
+	if v := os.Getenv("TRVL_PROBE_RETRY_DELAY"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return 20*time.Second + rand.N(40*time.Second) // #nosec G404 -- retry jitter for live probes, not a security value
+}
+
+// RetryTransient runs fn and, when it fails with transient provider noise,
+// waits ProbeRetryDelay() and runs it exactly once more. It returns the last
+// error. A non-transient error is returned immediately without a retry, so
+// real drift still surfaces on the first attempt.
+func RetryTransient(t testing.TB, fn func() error) error {
+	t.Helper()
+	err := fn()
+	if !IsTransientProbeErr(err) {
+		return err
+	}
+	d := ProbeRetryDelay()
+	t.Logf("transient provider error, retrying once in %s: %v", d.Round(time.Second), err)
+	time.Sleep(d)
+	return fn()
 }

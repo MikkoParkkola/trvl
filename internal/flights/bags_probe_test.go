@@ -69,24 +69,16 @@ func TestBagsProbe(t *testing.T) {
 	baseOpts := SearchOptions{Adults: 1}
 	baseOpts.defaults()
 
-	// Sanity check: the baseline search must return flights.
-	{
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		res, err := SearchFlightsWithClient(ctx, client, "HEL", "NRT", searchDate, baseOpts)
-		if err != nil {
-			t.Fatalf("baseline search failed: %v", err)
-		}
-		t.Logf("Baseline (via SearchFlightsWithClient): %d flights", res.Count)
-		if res.Count == 0 {
-			t.Fatalf("baseline returned 0 flights -- route/date unusable")
-		}
-	}
+	// Sanity check: the baseline search must return flights (one jittered
+	// retry on throttling; skips if Google is still throttling the runner).
+	throttle := &probeThrottle{}
+	throttle.probeBaseline(t, client, "HEL", "NRT", searchDate, baseOpts)
 
 	results := make([]result, len(probes))
 
 	for i, p := range probes {
 		t.Run(p.name, func(t *testing.T) {
+			throttle.skipIfThrottled(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
@@ -99,6 +91,7 @@ func TestBagsProbe(t *testing.T) {
 			}
 
 			status, body, err := client.SearchFlights(ctx, encoded)
+			throttle.check(t, err)
 			if err != nil {
 				t.Logf("FAILED bags=%s: %v", p.name, err)
 				results[i] = result{name: p.name, err: err}
