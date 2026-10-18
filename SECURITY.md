@@ -1,10 +1,24 @@
 # Security Policy
 
+## Supported Versions
+
+Security fixes are released for the latest minor release line only. Please upgrade to the newest release before reporting.
+
+| Version | Supported |
+| ------- | --------- |
+| 1.27.x  | Yes       |
+| < 1.27  | No        |
+
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability, please report it via [GitHub Security Advisories](https://github.com/MikkoParkkola/trvl/security/advisories/new).
+Please report vulnerabilities privately, using either:
 
-Do NOT open a public issue for security vulnerabilities.
+- **GitHub private vulnerability reporting (preferred):** <https://github.com/MikkoParkkola/trvl/security/advisories/new>
+- **Email:** mikko.parkkola@iki.fi
+
+Do NOT open a public issue, discussion, or pull request for security vulnerabilities.
+
+Please include affected version(s), reproduction steps, and the potential impact. trvl is maintained by a single maintainer, so responses are best effort: reports are acknowledged and triaged as soon as practical, and fixes are coordinated with the reporter before public disclosure.
 
 ## Scope
 
