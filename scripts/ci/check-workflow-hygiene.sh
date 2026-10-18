@@ -75,7 +75,7 @@ gitnexus_docs_use_sha_pinned_cache_example() {
 
 release_goreleaser_action_uses_node24_pin() {
   ! grep -qF 'goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a' .github/workflows/release.yml &&
-    [ "$(grep -cF 'goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3' .github/workflows/release.yml)" -eq 1 ] &&
+    [ "$(grep -cF 'goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0' .github/workflows/release.yml)" -eq 1 ] &&
     grep -qF 'install-only: true' .github/workflows/release.yml &&
     grep -qF 'run: goreleaser check' .github/workflows/release.yml &&
     grep -qF 'run: goreleaser build --single-target --snapshot --clean' .github/workflows/release.yml &&
