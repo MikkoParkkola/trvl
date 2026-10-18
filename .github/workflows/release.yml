@@ -26,9 +26,7 @@ env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write  # cosign keyless signing via Sigstore needs OIDC token
+  contents: read
 
 jobs:
   # Release backstop for the dependency-vulnerability gate. ci.yaml scans on
@@ -62,6 +60,9 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     needs: security-gate
     runs-on: macos-14
+    permissions:
+      contents: write  # create the GitHub release and upload assets
+      id-token: write  # cosign keyless signing via Sigstore needs OIDC token
     env:
       HAS_HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
     steps:
