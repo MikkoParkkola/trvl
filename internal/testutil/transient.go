@@ -110,7 +110,7 @@ var ProbeRetryDelay = func() time.Duration {
 			return d
 		}
 	}
-	return 20*time.Second + rand.N(40*time.Second)
+	return 20*time.Second + rand.N(40*time.Second) // #nosec G404 -- retry jitter for live probes, not a security value
 }
 
 // RetryTransient runs fn and, when it fails with transient provider noise,
