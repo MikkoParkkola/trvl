@@ -503,6 +503,10 @@ return false;
 // header seen on the target. The returned stop ends the subscription and waits
 // for the reader goroutine, so no event handler runs after it returns.
 func watchRequestHeader(ctx context.Context, name string, set func(string)) (stop func()) {
+	// The first chromedp call on a context ties the browser's lifetime to that
+	// call's context. Start it on ctx here, so cancelling evCtx in stop ends
+	// only the subscription and never the browser.
+	_ = chromedp.Do(ctx)
 	evCtx, cancel := context.WithCancel(ctx)
 	events := chromedp.Events(evCtx, network.RequestWillBeSent)
 	done := make(chan struct{})
