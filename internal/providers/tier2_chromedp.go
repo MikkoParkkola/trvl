@@ -38,6 +38,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 
@@ -289,16 +290,19 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 	defer cancelTask()
 
 	var cookies []*network.Cookie
-	err = chromedp.Run(taskCtx,
-		network.Enable(),
+	err = chromedp.Do(taskCtx,
+		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+			_, err := cdp.Call(ctx, t, network.Enable, network.EnableParams{})
+			return err
+		}),
 		chromedp.Navigate(targetURL),
 		chromedp.Sleep(challengeWait),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			c, err := network.GetCookies().Do(ctx)
+		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+			res, err := cdp.Call(ctx, t, network.GetCookies, network.GetCookiesParams{})
 			if err != nil {
 				return err
 			}
-			cookies = c
+			cookies = res.Cookies
 			return nil
 		}),
 	)
