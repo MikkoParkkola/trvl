@@ -392,8 +392,8 @@ if (response.status !== 200) {
 return text;
 })()`, jsString(endpoint), string(headersJSON), jsString(body))
 
-	// No EvalAwaitPromise: v0.16 never awaited the async IIFE either, so the
-	// result keeps failing to decode into a string exactly as before.
+	// Matches v0.16, which never awaited this async IIFE either; awaiting the
+	// promise is tracked in #739 so the dependency move changes no results.
 	return chromedp.Evaluate[string](js)(ctx, t)
 }
 
