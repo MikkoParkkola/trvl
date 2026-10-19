@@ -8,8 +8,8 @@ require (
 	github.com/bogdanfinn/tls-client v1.16.0
 	github.com/bogdanfinn/utls v1.7.8-barnius
 	github.com/browserutils/kooky v0.2.10
-	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
-	github.com/chromedp/chromedp v0.16.0
+	github.com/chromedp/cdproto v0.158.2
+	github.com/chromedp/chromedp v0.21.0
 	github.com/cloudflare/circl v1.6.5
 	github.com/google/uuid v1.6.0
 	github.com/grafana/sobek v0.0.0-20261005111419-f56574604191
@@ -38,15 +38,11 @@ require (
 	github.com/browserutils/sqlite3 v0.0.2 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/dlclark/regexp2/v2 v2.8.4 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
-	github.com/gobwas/httphead v0.1.0 // indirect
-	github.com/gobwas/pool v0.2.1 // indirect
-	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.3 // indirect
 	github.com/gonuts/binary v0.2.0 // indirect
 	github.com/google/pprof v0.0.0-20261008003335-7bae8d8c4c9e // indirect

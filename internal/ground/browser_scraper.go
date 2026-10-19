@@ -17,6 +17,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	cdppage "github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -261,18 +262,16 @@ func chromedpNavigateText(ctx context.Context, targetURL string, dwell time.Dura
 	}
 	defer cancel()
 
-	var bodyText string
 	actions := browserBaseActions()
 	actions = append(actions,
 		chromedp.Navigate(targetURL),
 		dismissCookieBanners(),
 		chromedp.Sleep(dwell),
-		chromedp.Text("body", &bodyText, chromedp.ByQuery),
 	)
-	if err := chromedp.Run(taskCtx, actions...); err != nil {
+	if err := chromedp.Do(taskCtx, actions...); err != nil {
 		return "", err
 	}
-	return bodyText, nil
+	return chromedp.Run(taskCtx, chromedp.Text(chromedp.CSS("body")))
 }
 
 func chromedpCaptureHeader(ctx context.Context, targetURLs []string, headerName string, dwell time.Duration) (string, error) {
@@ -286,18 +285,12 @@ func chromedpCaptureHeader(ctx context.Context, targetURLs []string, headerName 
 		mu    sync.Mutex
 		value string
 	)
-	chromedp.ListenTarget(taskCtx, func(ev any) {
-		req, ok := ev.(*network.EventRequestWillBeSent)
-		if !ok {
-			return
+	stopWatch := watchRequestHeader(taskCtx, headerName, func(got string) {
+		mu.Lock()
+		if value == "" {
+			value = got
 		}
-		if got := networkHeaderValue(req.Request.Headers, headerName); got != "" {
-			mu.Lock()
-			if value == "" {
-				value = got
-			}
-			mu.Unlock()
-		}
+		mu.Unlock()
 	})
 
 	actions := browserBaseActions()
@@ -310,7 +303,9 @@ func chromedpCaptureHeader(ctx context.Context, targetURLs []string, headerName 
 			chromedp.Sleep(dwell),
 		)
 	}
-	if err := chromedp.Run(taskCtx, actions...); err != nil {
+	err = chromedp.Do(taskCtx, actions...)
+	stopWatch()
+	if err != nil {
 		return "", err
 	}
 
@@ -331,18 +326,12 @@ func chromedpSNCFResponses(ctx context.Context, bookingURL string, fromStation, 
 		bffKey string
 		raws   []string
 	)
-	chromedp.ListenTarget(taskCtx, func(ev any) {
-		req, ok := ev.(*network.EventRequestWillBeSent)
-		if !ok {
-			return
+	stopWatch := watchRequestHeader(taskCtx, "x-bff-key", func(got string) {
+		mu.Lock()
+		if bffKey == "" {
+			bffKey = got
 		}
-		if got := networkHeaderValue(req.Request.Headers, "x-bff-key"); got != "" {
-			mu.Lock()
-			if bffKey == "" {
-				bffKey = got
-			}
-			mu.Unlock()
-		}
+		mu.Unlock()
 	})
 
 	actions := browserBaseActions()
@@ -352,12 +341,12 @@ func chromedpSNCFResponses(ctx context.Context, bookingURL string, fromStation, 
 		dismissCookieBanners(),
 		chromedp.Navigate(bookingURL),
 		chromedp.Sleep(4*time.Second),
-		chromedp.ActionFunc(func(ctx context.Context) error {
+		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
 			mu.Lock()
 			key := bffKey
 			mu.Unlock()
 			for _, bffPath := range sncfBFFPaths {
-				raw, err := evaluateSNCFFetch(ctx, bffPath.path, bffPath.bodyFn(fromStation.Code, toStation.Code, date), key)
+				raw, err := evaluateSNCFFetch(ctx, t, bffPath.path, bffPath.bodyFn(fromStation.Code, toStation.Code, date), key)
 				if err != nil {
 					slog.Debug("browser scraper sncf fetch failed", "path", bffPath.path, "err", logredact.Err(err))
 					continue
@@ -370,7 +359,9 @@ func chromedpSNCFResponses(ctx context.Context, bookingURL string, fromStation, 
 		}),
 	)
 
-	if err := chromedp.Run(taskCtx, actions...); err != nil {
+	err = chromedp.Do(taskCtx, actions...)
+	stopWatch()
+	if err != nil {
 		return nil, "", err
 	}
 
@@ -379,7 +370,7 @@ func chromedpSNCFResponses(ctx context.Context, bookingURL string, fromStation, 
 	return decodeBrowserJSONBodies(raws), bffKey, nil
 }
 
-func evaluateSNCFFetch(ctx context.Context, endpoint, body, bffKey string) (string, error) {
+func evaluateSNCFFetch(ctx context.Context, t *chromedp.Target, endpoint, body, bffKey string) (string, error) {
 	headers := map[string]string{
 		"Content-Type": "application/json",
 		"Accept":       "application/json",
@@ -401,11 +392,9 @@ if (response.status !== 200) {
 return text;
 })()`, jsString(endpoint), string(headersJSON), jsString(body))
 
-	var raw string
-	if err := chromedp.Evaluate(js, &raw).Do(ctx); err != nil {
-		return "", err
-	}
-	return raw, nil
+	// No EvalAwaitPromise: v0.16 never awaited the async IIFE either, so the
+	// result keeps failing to decode into a string exactly as before.
+	return chromedp.Evaluate[string](js)(ctx, t)
 }
 
 func decodeBrowserJSONBodies(raws []string) []map[string]any {
@@ -463,24 +452,33 @@ func newBrowserScraperContext(ctx context.Context) (context.Context, context.Can
 	}, nil
 }
 
-func browserBaseActions() []chromedp.Action {
-	return []chromedp.Action{
-		network.Enable(),
-		network.SetExtraHTTPHeaders(network.Headers{
-			"Accept-Language":    "en-GB,en;q=0.9",
-			"sec-ch-ua":          trainlineChromeSecCHUA,
-			"sec-ch-ua-mobile":   "?0",
-			"sec-ch-ua-platform": `"macOS"`,
+func browserBaseActions() []chromedp.Action[chromedp.Void] {
+	return []chromedp.Action[chromedp.Void]{
+		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+			_, err := cdp.Call(ctx, t, network.Enable, network.EnableParams{})
+			return err
 		}),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			_, err := cdppage.AddScriptToEvaluateOnNewDocument(browserStealthScript).Do(ctx)
+		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+			_, err := cdp.Call(ctx, t, network.SetExtraHTTPHeaders, network.SetExtraHTTPHeadersParams{
+				Headers: network.Headers{
+					"Accept-Language":    "en-GB,en;q=0.9",
+					"sec-ch-ua":          trainlineChromeSecCHUA,
+					"sec-ch-ua-mobile":   "?0",
+					"sec-ch-ua-platform": `"macOS"`,
+				},
+			})
+			return err
+		}),
+		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+			_, err := cdp.Call(ctx, t, cdppage.AddScriptToEvaluateOnNewDocument,
+				cdppage.AddScriptToEvaluateOnNewDocumentParams{Source: browserStealthScript})
 			return err
 		}),
 		chromedp.EmulateViewport(1280, 800),
 	}
 }
 
-func dismissCookieBanners() chromedp.Action {
+func dismissCookieBanners() chromedp.Action[chromedp.Void] {
 	const script = `(function () {
 const selectors = [
   '#onetrust-accept-btn-handler',
@@ -495,11 +493,34 @@ for (const selector of selectors) {
 }
 return false;
 })()`
-	return chromedp.ActionFunc(func(ctx context.Context) error {
-		var clicked bool
-		_ = chromedp.Evaluate(script, &clicked).Do(ctx)
+	return chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+		_, _ = chromedp.Evaluate[bool](script)(ctx, t)
 		return nil
 	})
+}
+
+// watchRequestHeader reports the first non-empty value of the named request
+// header seen on the target. The returned stop ends the subscription and waits
+// for the reader goroutine, so no event handler runs after it returns.
+func watchRequestHeader(ctx context.Context, name string, set func(string)) (stop func()) {
+	evCtx, cancel := context.WithCancel(ctx)
+	events := chromedp.Events(evCtx, network.RequestWillBeSent)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for ev, err := range events {
+			if err != nil {
+				return
+			}
+			if got := networkHeaderValue(ev.Request.Headers, name); got != "" {
+				set(got)
+			}
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
 }
 
 func networkHeaderValue(headers network.Headers, name string) string {
