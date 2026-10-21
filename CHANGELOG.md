@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Go toolchain pinned to 1.26.10 (was 1.26.9) and the release Docker image builds with Go 1.27.3 (was 1.27.2), for GO-2026-6809 (`crypto/x509` trusted certificates from compromised intermediates).
+
 ## [1.27.0] - 2026-10-10
 
 ### Security
