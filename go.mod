@@ -8,7 +8,7 @@ require (
 	github.com/bogdanfinn/tls-client v1.16.0
 	github.com/bogdanfinn/utls v1.7.8-barnius
 	github.com/browserutils/kooky v0.2.10
-	github.com/chromedp/cdproto v0.158.2
+	github.com/chromedp/cdproto v0.158.4
 	github.com/chromedp/chromedp v0.21.0
 	github.com/cloudflare/circl v1.6.5
 	github.com/google/uuid v1.6.0
