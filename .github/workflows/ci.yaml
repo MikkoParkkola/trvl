@@ -66,7 +66,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ["1.26.10"]
+        go-version: ["1.27.3"]
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -86,19 +86,19 @@ jobs:
       # bump them deliberately (Dependabot tracks the Go modules separately).
       - name: Install staticcheck
         if: runner.os != 'Windows'
-        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
       - name: Staticcheck
         if: runner.os != 'Windows'
         run: staticcheck ./...
       - name: Install golangci-lint
         if: runner.os != 'Windows'
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
       - name: Golangci-lint
         if: runner.os != 'Windows'
         run: golangci-lint run ./...
       - name: Install govulncheck
         if: runner.os != 'Windows'
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.4.0
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
       - name: Vulnerability check
         if: runner.os != 'Windows'
         run: govulncheck ./...
@@ -162,7 +162,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.10"
+          go-version: "1.27.3"
       - name: Install strace
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends strace
       - name: Download modules
@@ -228,7 +228,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.10"
+          go-version: "1.27.3"
       - name: Self-test the gate
         run: .github/scripts/gosec-gate_test.sh
       - name: Install gosec
@@ -282,7 +282,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.10"
+          go-version: "1.27.3"
       # Register QEMU user-static interpreters so buildx can emit
       # linux/arm64 images on the amd64 GitHub-hosted runner.
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -299,10 +299,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # goreleaser-action defaults GOTOOLCHAIN=local, which blocks the Go
           # toolchain auto-download in the before-hooks. go.mod requires
-          # >= 1.26.10 (stdlib patches for GO-2026-6218, GO-2026-6809 and related advisories)
-          # but GitHub runners may still ship an older 1.26.x, so pin the
-          # toolchain so go fetches 1.26.10 for the hooks and the release build.
-          GOTOOLCHAIN: "go1.26.10"
+          # >= 1.27.3 (stdlib patches for GO-2026-6218, GO-2026-6809 and related advisories)
+          # but GitHub runners may still ship an older Go, so pin the
+          # toolchain so go fetches 1.27.3 for the hooks and the release build.
+          GOTOOLCHAIN: "go1.27.3"
 
   npm-publish:
     needs: release

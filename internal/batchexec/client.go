@@ -625,7 +625,8 @@ func ChromeHTTPClient() *http.Client {
 	// protocol errors, not a quiet downgrade. Revisit when a conn wrapper
 	// exposing crypto/tls.ConnectionState is verified against this dialer.
 	h2Transport := &http2.Transport{ //nolint:staticcheck // golangci-lint's staticcheck ignores //lint:ignore directives
-		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+		//lint:ignore SA1019 same reason as above; staticcheck 0.8 reports the field, not the literal
+		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) { //nolint:staticcheck // see above
 			return dialTLS(ctx, network, addr)
 		},
 	}
