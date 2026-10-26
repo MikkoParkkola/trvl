@@ -1,12 +1,12 @@
 module github.com/MikkoParkkola/trvl
 
-go 1.26.10
+go 1.27
 
 require (
 	github.com/andybalholm/brotli v1.2.6
 	github.com/bogdanfinn/fhttp v0.6.9
 	github.com/bogdanfinn/tls-client v1.16.0
-	github.com/bogdanfinn/utls v1.7.8-barnius
+	github.com/bogdanfinn/utls v1.8.2-barnius
 	github.com/browserutils/kooky v0.2.10
 	github.com/chromedp/cdproto v0.158.4
 	github.com/chromedp/chromedp v0.21.0
@@ -49,6 +49,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/keybase/go-keychain v0.0.1 // indirect
+	github.com/molecule-man/go-brrr v1.2.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
