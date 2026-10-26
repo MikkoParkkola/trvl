@@ -146,7 +146,7 @@ jobs:
         if: runner.os != 'Windows' && github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.coverage_wiki.outputs.exists == 'true'
         continue-on-error: true
         # v0
-        uses: ncruces/go-coverage-report@dfc237255099f2d25066babde51253992175e365
+        uses: ncruces/go-coverage-report@69fd9ab687d384cc6c78c31967e204abdfa21271
         with:
           coverage-file: coverage.out
           report: true
