@@ -3,7 +3,7 @@ GO ?= go
 GO_RUN = GOTOOLCHAIN=$(GOTOOLCHAIN) $(GO)
 GO_TOOLS_BIN ?= $(shell $(GO_RUN) env GOPATH)/bin
 TEST_TIMEOUT ?= 10m
-GOLANGCI_LINT_VERSION ?= v2.12.2
+GOLANGCI_LINT_VERSION ?= v2.15.0
 GOSEC_VERSION ?= v2.28.0
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -64,12 +64,12 @@ lint: repo-hygiene
 	fi
 	GOTOOLCHAIN=$(GOTOOLCHAIN) golangci-lint run ./...
 	@if ! command -v staticcheck >/dev/null 2>&1; then \
-		echo "staticcheck not installed. Install with: GOTOOLCHAIN=$(GOTOOLCHAIN) go install honnef.co/go/tools/cmd/staticcheck@v0.7.0" >&2; \
+		echo "staticcheck not installed. Install with: GOTOOLCHAIN=$(GOTOOLCHAIN) go install honnef.co/go/tools/cmd/staticcheck@v0.8.2" >&2; \
 		exit 1; \
 	fi
 	GOTOOLCHAIN=$(GOTOOLCHAIN) staticcheck ./...
 	@if ! command -v govulncheck >/dev/null 2>&1; then \
-		echo "govulncheck not installed. Install with: GOTOOLCHAIN=$(GOTOOLCHAIN) go install golang.org/x/vuln/cmd/govulncheck@v1.4.0" >&2; \
+		echo "govulncheck not installed. Install with: GOTOOLCHAIN=$(GOTOOLCHAIN) go install golang.org/x/vuln/cmd/govulncheck@v1.9.0" >&2; \
 		exit 1; \
 	fi
 	GOTOOLCHAIN=$(GOTOOLCHAIN) govulncheck ./...

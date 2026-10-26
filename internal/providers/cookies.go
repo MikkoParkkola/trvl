@@ -704,7 +704,7 @@ func startAndReapWithin(cmd *exec.Cmd, window time.Duration) error {
 		return err
 	case <-time.After(window):
 		// Still alive, so it launched. Keep waiting off to the side purely to reap.
-		go func() { <-done }()
+		go func() { _ = <-done }()
 		return nil
 	}
 }

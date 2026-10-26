@@ -88,7 +88,8 @@ func TestServeStdio_PingNotBlockedBySlowToolCall(t *testing.T) {
 
 	_ = inW.Close()
 	select {
-	case <-serveDone:
+	case err := <-serveDone:
+		_ = err // only that ServeStdio returns is under test, not its exit error
 	case <-time.After(5 * time.Second):
 		t.Fatal("ServeStdio did not return after input closed")
 	}
