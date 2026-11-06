@@ -37,4 +37,16 @@ Add to `claude_desktop_config.json`:
 
 ## License
 
-PolyForm Noncommercial 1.0.0
+[PolyForm Noncommercial 1.0.0](https://github.com/MikkoParkkola/trvl/blob/main/LICENSE).
+Nonprofit and noncommercial use remains free; sponsorship is optional.
+
+Internal commercial licenses through [GitHub Sponsors](https://github.com/sponsors/MikkoParkkola?metadata_project=trvl)
+are **USD 100/month** for one organization with up to five people total or
+**USD 500/month** for one organization without a headcount limit. Each license
+covers one named product (`trvl`), not each customer app or repository. Published
+features are included without per-tool, server, agent, or call charges.
+
+See the [commercial terms](https://github.com/MikkoParkkola/trvl/blob/main/COMMERCIAL.md)
+for eligibility, registration, separate EUR invoice offers, optional support,
+custom-payment rules, and exclusions. Paid support, resale, and customer-facing
+hosting are separate arrangements.

@@ -275,7 +275,23 @@ export TRVL_STEALTH_ALLOWLIST=".google.com"
 trvl flights HEL NRT 2027-09-01 --stealth
 ```
 
-Licensed under [PolyForm Noncommercial 1.0](LICENSE) — free for personal and noncommercial use. Commercial use (company-internal, hosted service, embedding in paid platforms) requires a separate license: EUR 500/month per named project via [GitHub Sponsors](https://github.com/sponsors/MikkoParkkola), see [COMMERCIAL.md](COMMERCIAL.md) and [LICENSING.md](LICENSING.md).
+Licensed under [PolyForm Noncommercial 1.0](LICENSE). Nonprofit and noncommercial
+use remains free; no sponsorship is required. See [LICENSING.md](LICENSING.md)
+and the additional nonprofit permission in [COMMERCIAL.md](COMMERCIAL.md).
+
+For internal commercial use, [GitHub Sponsors](https://github.com/sponsors/MikkoParkkola?metadata_project=trvl)
+offers **USD 100/month** for one organization with up to five people total, or
+**USD 500/month** for one organization without a headcount limit. Each license
+covers **one named product of Mikko's (`trvl`)**, not each of your own apps or
+repositories. Both include the same published features without per-tool,
+server, agent, or call charges. Direct-invoice offers are separately priced at
+**EUR 100/month** and **EUR 500/month**; they are not currency conversions.
+
+Coffee (**USD 5 one-time**), Supporter (**USD 5/month**), and Sustainer
+(**USD 25/month**) are optional maintenance contributions, not commercial
+licenses or paid support. See [COMMERCIAL.md](COMMERCIAL.md) for eligibility,
+registration, custom-payment rules, and exclusions. Customer-facing hosted
+services, resale, multiple products, and support require separate terms.
 
 Built on [fli](https://github.com/punitarani/fli), [utls](https://github.com/refraction-networking/utls), and [SerpAPI](https://serpapi.com/google-hotels-api)'s parameter reference.
 
