@@ -290,8 +290,9 @@ server, agent, or call charges. Direct-invoice offers are separately priced at
 Coffee (**USD 5 one-time**), Supporter (**USD 5/month**), and Sustainer
 (**USD 25/month**) are optional maintenance contributions, not commercial
 licenses or paid support. See [COMMERCIAL.md](COMMERCIAL.md) for eligibility,
-registration, custom-payment rules, and exclusions. Customer-facing hosted
-services, resale, multiple products, and support require separate terms.
+registration, custom-payment rules, and exclusions. For commercial use outside
+the free permissions, customer-facing hosted services, resale, and multiple
+products require separate terms. Paid support is arranged separately.
 
 Built on [fli](https://github.com/punitarani/fli), [utls](https://github.com/refraction-networking/utls), and [SerpAPI](https://serpapi.com/google-hotels-api)'s parameter reference.
 

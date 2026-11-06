@@ -2,7 +2,8 @@
 
 `trvl` is free for personal, research, educational, and noncommercial use under the PolyForm Noncommercial 1.0.0 license.
 
-Commercial use requires a separate commercial license.
+Commercial use outside the permissions below or in [LICENSE](LICENSE) requires
+a separate commercial license.
 
 Examples that require a commercial license:
 

@@ -48,5 +48,6 @@ features are included without per-tool, server, agent, or call charges.
 
 See the [commercial terms](https://github.com/MikkoParkkola/trvl/blob/main/COMMERCIAL.md)
 for eligibility, registration, separate EUR invoice offers, optional support,
-custom-payment rules, and exclusions. Paid support, resale, and customer-facing
-hosting are separate arrangements.
+custom-payment rules, and exclusions. For commercial use outside the free
+permissions, resale and customer-facing hosting require separate terms. Paid
+support is arranged separately.
