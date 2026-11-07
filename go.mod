@@ -4,8 +4,8 @@ go 1.27.3
 
 require (
 	github.com/andybalholm/brotli v1.2.7
-	github.com/bogdanfinn/fhttp v0.7.1
-	github.com/bogdanfinn/tls-client v1.17.1
+	github.com/bogdanfinn/fhttp v0.7.3
+	github.com/bogdanfinn/tls-client v1.18.0
 	github.com/bogdanfinn/utls v1.8.2-barnius
 	github.com/browserutils/kooky v0.2.10
 	github.com/chromedp/cdproto v0.158.4
@@ -32,8 +32,8 @@ require (
 require (
 	github.com/bdandy/go-errors v1.2.2 // indirect
 	github.com/bdandy/go-socks4 v1.2.3 // indirect
-	github.com/bogdanfinn/quic-go-utls v1.0.12-utls // indirect
-	github.com/bogdanfinn/websocket v1.5.8-barnius // indirect
+	github.com/bogdanfinn/quic-go-utls v1.0.13-utls // indirect
+	github.com/bogdanfinn/websocket v1.5.9-barnius // indirect
 	github.com/browserutils/ese v0.0.0-20260314233042-37b6a03a93ce // indirect
 	github.com/browserutils/sqlite3 v0.0.2 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
