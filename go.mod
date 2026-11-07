@@ -3,7 +3,7 @@ module github.com/MikkoParkkola/trvl
 go 1.27.3
 
 require (
-	github.com/andybalholm/brotli v1.2.6
+	github.com/andybalholm/brotli v1.2.7
 	github.com/bogdanfinn/fhttp v0.7.1
 	github.com/bogdanfinn/tls-client v1.17.1
 	github.com/bogdanfinn/utls v1.8.2-barnius
