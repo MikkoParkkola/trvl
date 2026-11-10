@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createSign, generateKeyPairSync } from "node:crypto";
 import test from "node:test";
+import { DASHBOARD_QUERIES } from "./dashboard.js";
 import { locate } from "./geo.js";
 import worker, { QUERIES, loadReport, render } from "./index.js";
 import { frame, heatRadius, mapSvg, project } from "./map.js";
@@ -58,6 +59,15 @@ function sqlResult(rows) {
   });
 }
 
+function pageModel(html) {
+  const marker = "const DATA = ";
+  const start = html.indexOf(marker);
+  const end = html.indexOf(";\nconst state");
+  assert.equal(start > 0, true);
+  assert.equal(end > start, true);
+  return JSON.parse(html.slice(start + marker.length, end));
+}
+
 test("the queries count installs and do not select ids", () => {
   for (const sql of Object.values(QUERIES)) {
     assert.equal(sql.includes("count(DISTINCT index1)"), true);
@@ -80,6 +90,22 @@ test("the queries count installs and do not select ids", () => {
     "byPlace",
     "byProduct",
   ]);
+  const aliased = [];
+  for (const [name, sql] of Object.entries(DASHBOARD_QUERIES)) {
+    assert.equal(sql.includes("probe-city-20261001"), true, name);
+    assert.equal(sql.includes("blob3 NOT IN"), true, name);
+    assert.equal(sql.includes("blob5"), false, name);
+    assert.equal(sql.includes("SELECT index1"), false, name);
+    assert.equal(sql.includes("blob1 = 'trvl'"), false, name);
+    assert.match(sql, /blob1 AS product/);
+    if (sql.includes("index1 AS")) aliased.push(name);
+  }
+  assert.deepEqual(aliased, ["retention"]);
+  assert.match(DASHBOARD_QUERIES.hour22, /count\(DISTINCT toDate\(timestamp\)\) AS days/);
+  assert.match(DASHBOARD_QUERIES.hour22, /GROUP BY product, index1/);
+  assert.equal(DASHBOARD_QUERIES.hour22.includes("index1 AS"), false);
+  assert.match(DASHBOARD_QUERIES.latestPlace, /argMax\(blob6, timestamp\)/);
+  assert.match(DASHBOARD_QUERIES.latestVersion, /argMax\(blob3, timestamp\)/);
 });
 
 test("the page splits installs by product and does not add them together", () => {
@@ -98,22 +124,26 @@ test("the page splits installs by product and does not add them together", () =>
       { product: "nab", country: "NL", city: "Amsterdam", installs: "2" },
     ],
   });
-  const trvl = html.split('data-product="nab"')[0];
-  const nab = html.split('data-product="nab"')[1].split('data-product="')[0];
-  assert.match(trvl, /data-product="trvl"/);
-  assert.match(trvl, /4 installs in the last 90 days/);
-  assert.match(trvl, /Paris, FR/);
-  assert.match(trvl, /2026-10-01/);
-  assert.equal(trvl.includes("Amsterdam"), false);
-  assert.equal(trvl.includes("2026-10-02"), false);
-  assert.match(nab, /2 installs in the last 90 days/);
-  assert.match(nab, /Amsterdam, NL/);
-  assert.match(nab, /2026-10-02/);
-  assert.equal(nab.includes("Paris"), false);
+  const data = pageModel(html);
+  assert.deepEqual(data.order, ["trvl", "nab", "<mcp-gateway>"]);
+  assert.equal(data.by.trvl.window, 4);
+  assert.equal(data.by.nab.window, 2);
+  assert.equal(data.by["<mcp-gateway>"].window, 1);
+  assert.equal(data.by.trvl.places.some((row) => row.name === "Paris" && row.code === "FR"), true);
+  assert.equal(data.by.trvl.places.some((row) => row.name === "Amsterdam"), false);
+  assert.equal(data.by.nab.places.some((row) => row.name === "Amsterdam" && row.code === "NL"), true);
+  assert.equal(data.by.nab.places.some((row) => row.name === "Paris"), false);
+  assert.deepEqual(data.by.trvl.days, [["2026-10-01", 4]]);
+  assert.deepEqual(data.by.nab.days, [["2026-10-02", 2]]);
   assert.equal(html.includes("6 installs"), false);
   assert.equal(html.includes("7 installs"), false);
-  assert.match(html, /&lt;mcp-gateway&gt;/);
   assert.equal(html.includes("<mcp-gateway>"), false);
+  assert.match(html, /\\u003cmcp-gateway\\u003e/);
+  assert.match(html, /data-act="product"/);
+  assert.match(html, /act === "country"/);
+  assert.match(html, /data-act="week"/);
+  assert.match(html, /data-act="hour"/);
+  assert.match(html, /Show /);
 });
 
 test("cohorts stay inside one product and a shared machine is counted without its id", () => {
@@ -138,15 +168,10 @@ test("cohorts stay inside one product and a shared machine is counted without it
       { product: "nab", machine: other, installs: "1" },
     ],
   });
-  const trvl = html.split('data-product="nab"')[0];
-  const nab = html.split('data-product="nab"')[1];
-  assert.match(trvl, /Using it for 30 to 89 days: 3/);
-  assert.match(trvl, /Using it for under 7 days: 1/);
-  assert.match(trvl, /Installed 2026-09: 3/);
-  assert.equal(trvl.includes("a year or more"), false);
-  assert.match(nab, /Using it for a year or more: 2/);
-  assert.equal(nab.includes("30 to 89 days"), false);
-  assert.match(html, /1 machine runs nab and trvl/);
+  const data = pageModel(html);
+  assert.deepEqual(data.by.trvl.installed, [["2026-09-01", 3], ["2026-10-01", 1]]);
+  assert.deepEqual(data.by.nab.installed, [["2025-01-01", 2]]);
+  assert.equal(JSON.stringify(data).includes(machine), false);
   assert.equal(html.includes(machine), false);
   assert.equal(html.includes(other), false);
 });
@@ -156,11 +181,13 @@ test("the page shows the total, the day, and the city, and not an id", () => {
     ...report,
     places: [...report.places, { country: "NL", city: "<Utrecht>", installs: "1", install_id: "deadbeef" }],
   });
-  assert.match(html, /4 installs in the last 90 days/);
-  assert.match(html, /2026-10-01/);
-  assert.match(html, /Paris, FR/);
-  assert.match(html, /no city stored/);
-  assert.match(html, /&lt;Utrecht&gt;, NL/);
+  const data = pageModel(html);
+  assert.equal(data.by.trvl.window, 4);
+  assert.deepEqual(data.by.trvl.days, [["2026-10-01", 4]]);
+  assert.equal(data.by.trvl.places.some((row) => row.name === "Paris" && row.code === "FR"), true);
+  assert.equal(data.by.trvl.places.some((row) => row.name === "No city" && row.lat == null), true);
+  assert.equal(data.by.trvl.places.some((row) => row.name === "<Utrecht>" && row.code === "NL"), true);
+  assert.equal(html.includes("<Utrecht>"), false);
   assert.equal(html.includes("deadbeef"), false);
   assert.equal(html.includes("install_id"), false);
 });
@@ -203,10 +230,11 @@ test("an authorised request renders the sql rows", async () => {
     );
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.match(html, /Paris, FR/);
+    const data = pageModel(html);
+    assert.equal(data.by.trvl.places.some((row) => row.name === "Paris" && row.code === "FR"), true);
     assert.equal(html.includes("deadbeef"), false);
     assert.equal(html.includes("sekret"), false);
-    assert.equal(seen.length, 5);
+    assert.equal(seen.length, Object.keys(QUERIES).length + Object.keys(DASHBOARD_QUERIES).length);
   } finally {
     globalThis.fetch = previous;
   }
@@ -275,15 +303,42 @@ function inside(box, lat, lon) {
   return x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
 }
 
-test("the map frames every located city and leaves a blank place off it", () => {
+test("the map locates a known city and leaves a blank place off it", () => {
   const html = render(report);
-  const box = viewBox(html);
-  assert.equal(html.includes('class="heat"'), true);
-  assert.equal((html.match(/class="heat"/g) || []).length, 1);
-  assert.equal(inside(box, 48.85, 2.35), true);
-  assert.equal(box.w < 250, true);
-  assert.equal(box.w > 40, true);
+  const data = pageModel(html);
+  const paris = data.by.trvl.places.find((row) => row.name === "Paris");
+  const blank = data.by.trvl.places.find((row) => row.name === "No city");
+  assert.equal(Math.abs(paris.lat - 48.85) < 0.2, true);
+  assert.equal(Math.abs(paris.lon - 2.35) < 0.2, true);
+  assert.equal(paris.precision, "city");
+  assert.equal(blank.lat, undefined);
+  assert.equal(html.includes("https://tile.openstreetmap.org/{z}/{x}/{y}.png"), true);
+  assert.equal(html.includes("maxZoom: 8"), true);
+  assert.equal(html.includes("basemaps.cartocdn.com"), false);
   assert.equal(html.includes("No city stored yet"), false);
+});
+
+test("a retention id is counted and then dropped", () => {
+  const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const html = render({
+    products: [{ product: "trvl", installs: "1" }],
+    retention: [
+      { product: "trvl", week: "2026-09-27", install: id },
+      { product: "trvl", week: "2026-10-04", install: id },
+    ],
+    hour22: [
+      { product: "trvl", points: "24", days: "24" },
+      { product: "trvl", points: "1", days: "1" },
+    ],
+  }, "2026-10-12");
+  const data = pageModel(html);
+  assert.equal(html.includes(id), false);
+  assert.equal(data.by.trvl.back.length, 1);
+  assert.equal(data.by.trvl.back[0][1], 1);
+  assert.equal(data.by.trvl.back[0][2], 1);
+  assert.equal(data.by.trvl.hour22.points, 25);
+  assert.equal(data.by.trvl.hour22.installs, 2);
+  assert.deepEqual(data.by.trvl.hour22.repeat, [[1, 1], [24, 1]]);
 });
 
 test("a spread of cities stays inside one frame", () => {
