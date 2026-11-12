@@ -37,7 +37,7 @@ func TestHeartbeat_DailyCap(t *testing.T) {
 // TestHeartbeat_PayloadFields locks the wire contract: exactly the documented
 // fields, with no surprise additions that could carry identity.
 func TestHeartbeat_PayloadFields(t *testing.T) {
-	p := buildPayload("1.2.3", "abc123")
+	p := buildPayload("1.2.3", "abc123", "2026-10-02", "0123456789abcdef0123456789abcdef")
 	if p.Project != "trvl" || p.Event != "heartbeat" || p.Version != "1.2.3" {
 		t.Fatalf("unexpected payload: %+v", p)
 	}
@@ -53,7 +53,13 @@ func TestHeartbeat_PayloadFields(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	allowed := map[string]bool{"project": true, "event": true, "version": true, "runtime": true, "install_id": true}
+	allowed := map[string]bool{
+		"project": true, "event": true, "version": true, "runtime": true,
+		"install_id": true, "install_date": true, "machine_id": true,
+	}
+	if m["install_date"] != "2026-10-02" || m["machine_id"] != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("cohort fields missing: %+v", m)
+	}
 	for k := range m {
 		if !allowed[k] {
 			t.Fatalf("unexpected field %q in payload (possible identity leak)", k)
@@ -110,7 +116,7 @@ func TestHeartbeat_Timeout(t *testing.T) {
 
 	client := &http.Client{Timeout: 50 * time.Millisecond}
 	start := time.Now()
-	err := sendWithClient(context.Background(), srv.URL, client, buildPayload("1.0.0", "id"))
+	err := sendWithClient(context.Background(), srv.URL, client, buildPayload("1.0.0", "id", "", ""))
 	if err == nil {
 		t.Fatal("hanging collector must surface a timeout error to the caller")
 	}
@@ -122,7 +128,7 @@ func TestHeartbeat_Timeout(t *testing.T) {
 // TestHeartbeat_PayloadSize proves the real payload is well under the 2KB cap
 // and that an oversize payload is rejected rather than sent.
 func TestHeartbeat_PayloadSize(t *testing.T) {
-	raw, err := json.Marshal(buildPayload("1.2.3", "0123456789abcdef0123456789abcdef"))
+	raw, err := json.Marshal(buildPayload("1.2.3", "0123456789abcdef0123456789abcdef", "", ""))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -130,7 +136,7 @@ func TestHeartbeat_PayloadSize(t *testing.T) {
 		t.Fatalf("payload %d bytes exceeds cap %d", len(raw), maxPayloadSize)
 	}
 
-	huge := buildPayload(string(make([]byte, maxPayloadSize+1)), "id")
+	huge := buildPayload(string(make([]byte, maxPayloadSize+1)), "id", "", "")
 	if err := sendWithClient(context.Background(), "http://127.0.0.1:0", http.DefaultClient, huge); err != errPayloadTooLarge {
 		t.Fatalf("oversize payload: want errPayloadTooLarge, got %v", err)
 	}
@@ -144,7 +150,7 @@ func TestHeartbeat_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := sendWithClient(context.Background(), srv.URL, http.DefaultClient, buildPayload("1.0.0", "id")); err != nil {
+	if err := sendWithClient(context.Background(), srv.URL, http.DefaultClient, buildPayload("1.0.0", "id", "", "")); err != nil {
 		t.Fatalf("5xx must be swallowed (failure-open), got %v", err)
 	}
 }
@@ -167,7 +173,7 @@ func TestHeartbeat_SendPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := sendWithClient(context.Background(), srv.URL, http.DefaultClient, buildPayload("9.9.9", "deadbeef")); err != nil {
+	if err := sendWithClient(context.Background(), srv.URL, http.DefaultClient, buildPayload("9.9.9", "deadbeef", "", "")); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 	select {
