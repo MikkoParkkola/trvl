@@ -115,6 +115,8 @@ for (const tc of cases) {
         version: "1.2.3",
         runtime: "linux/amd64/go1.26.4",
         install_id: "deadbeef",
+        install_date: "",
+        machine_id: "",
       });
     } else {
       assert.equal(got.record, undefined);
@@ -178,7 +180,7 @@ test("an accepted request writes the body fields and an empty place when geoloca
   assert.equal(points.length, 1);
   assert.deepEqual(points[0], {
     indexes: ["deadbeef"],
-    blobs: ["trvl", "heartbeat", "1.2.3", "linux/amd64/go1.26.4", "deadbeef", "", ""],
+    blobs: ["trvl", "heartbeat", "1.2.3", "linux/amd64/go1.26.4", "deadbeef", "", "", "", ""],
   });
   assert.equal(JSON.stringify(points[0]).includes("203.0.113"), false);
 });
@@ -215,6 +217,8 @@ test("geolocation stores the city and country and drops coordinates and the call
     "deadbeef",
     "Prague",
     "CZ",
+    "",
+    "",
   ]);
   const stored = JSON.stringify(points[0]);
   assert.equal(stored.includes("203.0.113"), false);
@@ -235,7 +239,8 @@ test("a non-string city or country is stored empty", async () => {
     capturingEnv(points),
   );
   assert.equal(res.status, 204);
-  assert.deepEqual(points[0].blobs.slice(5), ["", ""]);
+  assert.deepEqual(points[0].blobs.slice(5, 7), ["", ""]);
+  assert.deepEqual(points[0].blobs.slice(7), ["", ""]);
   assert.equal(JSON.stringify(points[0]).includes("50.0755"), false);
 });
 
@@ -292,6 +297,41 @@ test("an install id longer than the index limit still stores the id as a blob", 
   assert.equal(res.status, 204);
   assert.deepEqual(points[0].indexes, ["trvl"]);
   assert.equal(points[0].blobs[4], id);
+});
+
+test("install date and machine id are stored, and a bad value is rejected", async () => {
+  const points = [];
+  const machine = "0123456789abcdef0123456789abcdef";
+  const ok = await worker.fetch(
+    request("POST", "https://telemetry.revaluator.ai/v1/heartbeat", {
+      body: JSON.stringify({
+        project: "nab",
+        event: "heartbeat",
+        version: "0.12.3",
+        runtime: "darwin/arm64/v22.0.0",
+        install_id: machine,
+        install_date: "2024-02-29",
+        machine_id: machine,
+      }),
+    }),
+    capturingEnv(points),
+  );
+  assert.equal(ok.status, 204);
+  assert.equal(points[0].blobs[7], "2024-02-29");
+  assert.equal(points[0].blobs[8], machine);
+  for (const body of [
+    '{"project":"nab","event":"heartbeat","install_date":"2026-02-31"}',
+    '{"project":"nab","event":"heartbeat","machine_id":"not-a-machine"}',
+    '{"project":"nab","event":"heartbeat","hostname":"laptop"}',
+  ]) {
+    const rejected = [];
+    const res = await worker.fetch(
+      request("POST", "https://telemetry.revaluator.ai/v1/heartbeat", { body }),
+      capturingEnv(rejected),
+    );
+    assert.equal(res.status, 400);
+    assert.equal(rejected.length, 0);
+  }
 });
 
 test("a storage failure returns 500 and does not echo the payload", async () => {

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The daily heartbeat also carries the UTC day the install id was created and a random machine id shared by products on the same machine. Neither holds an IP, hostname, or username. The receiver accepts both as optional fields.
+
 ### Security
 
 - Go toolchain pinned to 1.26.10 (was 1.26.9) and the release Docker image builds with Go 1.27.3 (was 1.27.2), for GO-2026-6809 (`crypto/x509` trusted certificates from compromised intermediates).
