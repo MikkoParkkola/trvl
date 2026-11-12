@@ -47,8 +47,8 @@ type heartbeat struct {
 	Version   string `json:"version"`
 	Runtime   string `json:"runtime"`
 	InstallID string `json:"install_id,omitempty"`
-	// Optional. An older client omits both; a value that is present must be
-	// valid, exactly as the Worker checks it.
+	// Optional. Missing, null, or empty means not sent, as in the Worker; any
+	// other value must be valid.
 	InstallDate string `json:"install_date,omitempty"`
 	MachineID   string `json:"machine_id,omitempty"`
 }
