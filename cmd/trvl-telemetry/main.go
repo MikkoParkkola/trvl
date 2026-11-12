@@ -17,6 +17,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -29,11 +30,13 @@ const maxPayloadSize = 2048
 // internal/telemetry/heartbeat_test.go. Any key outside this set is rejected as
 // a possible identity leak — the collector persists only these fields.
 var allowedFields = map[string]bool{
-	"project":    true,
-	"event":      true,
-	"version":    true,
-	"runtime":    true,
-	"install_id": true,
+	"project":      true,
+	"event":        true,
+	"version":      true,
+	"runtime":      true,
+	"install_id":   true,
+	"install_date": true,
+	"machine_id":   true,
 }
 
 // heartbeat is the only shape the collector accepts or stores. It carries no
@@ -44,6 +47,18 @@ type heartbeat struct {
 	Version   string `json:"version"`
 	Runtime   string `json:"runtime"`
 	InstallID string `json:"install_id,omitempty"`
+	// Optional. An older client omits both; a value that is present must be
+	// valid, exactly as the Worker checks it.
+	InstallDate string `json:"install_date,omitempty"`
+	MachineID   string `json:"machine_id,omitempty"`
+}
+
+var machineIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// validDay accepts a real calendar day in the 2006-01-02 layout, nothing else.
+func validDay(value string) bool {
+	parsed, err := time.Parse("2006-01-02", value)
+	return err == nil && parsed.Format("2006-01-02") == value
 }
 
 // collector accepts heartbeats and appends accepted ones to out.
@@ -110,6 +125,10 @@ func (c *collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if hb.Project == "" || hb.Event == "" {
 		http.Error(w, "missing required field", http.StatusBadRequest)
+		return
+	}
+	if (hb.InstallDate != "" && !validDay(hb.InstallDate)) || (hb.MachineID != "" && !machineIDPattern.MatchString(hb.MachineID)) {
+		http.Error(w, "malformed json", http.StatusBadRequest)
 		return
 	}
 

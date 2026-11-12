@@ -287,10 +287,33 @@ func machineID(home string) string {
 		return ""
 	}
 	id := hex.EncodeToString(buf[:])
-	if err := os.MkdirAll(dir, 0o700); err == nil {
-		if err := os.WriteFile(path, []byte(id), 0o600); err == nil {
-			return id
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return ""
+	}
+	// Products can start together on a fresh machine. Write the id to a private
+	// temp file, then hard-link it into place: the link succeeds for exactly one
+	// writer, and every other one reads that winner's complete id back.
+	tmp, err := os.CreateTemp(dir, "machine-id-*")
+	if err != nil {
+		return ""
+	}
+	defer os.Remove(tmp.Name())
+	_, werr := tmp.WriteString(id)
+	if cerr := tmp.Close(); werr != nil || cerr != nil {
+		return ""
+	}
+	if err := os.Link(tmp.Name(), path); err == nil {
+		return id
+	}
+	// #nosec G304 -- path is the fixed machine-id file under the user's home.
+	if data, err := os.ReadFile(path); err == nil {
+		if winner := strings.TrimSpace(string(data)); machineIDOK(winner) {
+			return winner
 		}
+	}
+	// The existing file is corrupt: replace it in one atomic step.
+	if err := os.Rename(tmp.Name(), path); err == nil {
+		return id
 	}
 	return ""
 }
