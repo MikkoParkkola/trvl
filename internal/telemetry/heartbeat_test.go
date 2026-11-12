@@ -372,7 +372,8 @@ func TestInstallDate_OldIDFileGivesItsDay(t *testing.T) {
 	if got := installDate(dir); got != "2026-09-30" {
 		t.Fatalf("install date for an existing install = %q, want 2026-09-30", got)
 	}
-	if got := installDate(dir); got != "2026-09-30" {
-		t.Fatalf("install date not persisted: %q", got)
+	stored, err := os.ReadFile(filepath.Join(dir, "install-date"))
+	if err != nil || strings.TrimSpace(string(stored)) != "2026-09-30" {
+		t.Fatalf("install date not persisted: %q, %v", stored, err)
 	}
 }

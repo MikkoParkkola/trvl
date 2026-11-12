@@ -311,7 +311,10 @@ func machineID(home string) string {
 			return winner
 		}
 	}
-	// The existing file is corrupt: replace it in one atomic step.
+	// The existing file is corrupt, or this filesystem has no hard links: replace it.
+	// ponytail: two first runs repairing a corrupt file at the same moment can each
+	// return their own id once; the next run reads the survivor. A lock file would
+	// close it, and is not worth it for a once-per-machine repair.
 	if err := os.Rename(tmp.Name(), path); err == nil {
 		return id
 	}
