@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -291,5 +292,87 @@ func clearEnv(t *testing.T) {
 		"TRVL_DISABLE_UPDATE_CHECK", "DO_NOT_TRACK", "NO_TELEMETRY", "TRVL_NO_TELEMETRY",
 	} {
 		t.Setenv(k, "")
+	}
+}
+
+func TestMachineID_StableAndPersisted(t *testing.T) {
+	home := t.TempDir()
+	first := machineID(home)
+	if !machineIDOK(first) {
+		t.Fatalf("machine id %q is not 32 lowercase hex characters", first)
+	}
+	if second := machineID(home); second != first {
+		t.Fatalf("machine id not stable: %q != %q", first, second)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".revaluator", "machine-id"))
+	if err != nil || strings.TrimSpace(string(data)) != first {
+		t.Fatalf("machine id not persisted: %q, %v", data, err)
+	}
+}
+
+func TestMachineID_CorruptFileIsReplaced(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".revaluator")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "machine-id"), []byte("not-an-id"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id := machineID(home)
+	if !machineIDOK(id) {
+		t.Fatalf("corrupt file not replaced, got %q", id)
+	}
+	if again := machineID(home); again != id {
+		t.Fatalf("replacement not persisted: %q != %q", again, id)
+	}
+}
+
+// Two products starting at once on a fresh machine must agree on one id.
+func TestMachineID_ConcurrentFirstRunsAgree(t *testing.T) {
+	for round := 0; round < 20; round++ {
+		home := t.TempDir()
+		const n = 8
+		ids := make(chan string, n)
+		start := make(chan struct{})
+		for i := 0; i < n; i++ {
+			go func() {
+				<-start
+				ids <- machineID(home)
+			}()
+		}
+		close(start)
+		want := ""
+		for i := 0; i < n; i++ {
+			got := <-ids
+			if want == "" {
+				want = got
+			}
+			if got != want || !machineIDOK(got) {
+				t.Fatalf("round %d: concurrent first runs disagree: %q vs %q", round, got, want)
+			}
+		}
+		data, _ := os.ReadFile(filepath.Join(home, ".revaluator", "machine-id"))
+		if strings.TrimSpace(string(data)) != want {
+			t.Fatalf("round %d: returned %q but stored %q", round, want, data)
+		}
+	}
+}
+
+func TestInstallDate_OldIDFileGivesItsDay(t *testing.T) {
+	dir := t.TempDir()
+	idPath := filepath.Join(dir, installIDFile)
+	if err := os.WriteFile(idPath, []byte("abc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(idPath, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if got := installDate(dir); got != "2026-09-30" {
+		t.Fatalf("install date for an existing install = %q, want 2026-09-30", got)
+	}
+	if got := installDate(dir); got != "2026-09-30" {
+		t.Fatalf("install date not persisted: %q", got)
 	}
 }

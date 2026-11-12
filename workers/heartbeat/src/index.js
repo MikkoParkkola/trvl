@@ -1,5 +1,5 @@
-// Receiver for the daily heartbeat. POST /v1/heartbeat, application/json,
-// at most 2048 bytes. The original five fields stay required in shape.
+// Receiver for the daily heartbeat. Same accept/reject rules as
+// cmd/trvl-telemetry: POST /v1/heartbeat, application/json, at most 2048 bytes. The original five fields stay required in shape.
 // install_date and machine_id are optional, so an older client still
 // gets a 204. Any other field is rejected. Accepted points go to Analytics
 // Engine. The connection IP is not copied into the point. Cloudflare's
