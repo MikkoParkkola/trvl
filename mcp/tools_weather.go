@@ -21,11 +21,11 @@ func getWeatherTool() ToolDef {
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
-				"city":      {Type: "string", Description: "City name (e.g. Prague, Helsinki, Tokyo)"},
+				"city":      {Type: "string", Description: "City name (e.g. Prague, Helsinki, Tokyo). Pass city or location."},
+				"location":  {Type: "string", Description: "Alias of city. Pass city or location; both only if they name the same place."},
 				"from_date": {Type: "string", Description: "Start date (YYYY-MM-DD, default: today)"},
 				"to_date":   {Type: "string", Description: "End date (YYYY-MM-DD, default: today+6)"},
 			},
-			Required: []string{"city"},
 		},
 		OutputSchema: weatherOutputSchema(),
 		Annotations: &ToolAnnotations{
@@ -61,7 +61,10 @@ func weatherOutputSchema() interface{} {
 }
 
 func handleGetWeather(ctx context.Context, args map[string]any, _ ElicitFunc, _ SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
-	city := argString(args, "city")
+	city, err := weatherCity(args)
+	if err != nil {
+		return nil, nil, err
+	}
 	fromDate := argString(args, "from_date")
 	toDate := argString(args, "to_date")
 
@@ -78,7 +81,10 @@ func handleGetWeather(ctx context.Context, args map[string]any, _ ElicitFunc, _ 
 
 	result, err := getForecastFunc(ctx, city, fromDate, toDate)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, toolExecutionError("Weather forecast", err)
+	}
+	if !result.Success {
+		return nil, nil, toolResultError("Weather forecast for "+city, result.Error)
 	}
 
 	sendProgress(progress, 100, 100, fmt.Sprintf("Got %d day forecast", len(result.Forecasts)))
@@ -89,6 +95,23 @@ func handleGetWeather(ctx context.Context, args map[string]any, _ ElicitFunc, _ 
 		return nil, nil, err
 	}
 	return content, result, nil
+}
+
+// weatherCity resolves the place from city or its alias location. Agents send
+// location, so either is accepted; both are accepted only when they agree.
+func weatherCity(args map[string]any) (string, error) {
+	city := strings.TrimSpace(argString(args, "city"))
+	location := strings.TrimSpace(argString(args, "location"))
+	switch {
+	case city == "":
+		city = location
+	case location != "" && !strings.EqualFold(city, location):
+		return "", fmt.Errorf("city %q and location %q differ; pass only one of them", city, location)
+	}
+	if city == "" {
+		return "", fmt.Errorf("city is required (location is accepted as an alias)")
+	}
+	return city, nil
 }
 
 func buildWeatherSummary(result *weather.WeatherResult) string {
