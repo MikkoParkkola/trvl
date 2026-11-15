@@ -427,11 +427,12 @@ func SearchDistribusion(ctx context.Context, from, to, date, currency string) ([
 		}
 
 		route := models.GroundRoute{
-			Provider: "distribusion",
-			Type:     transportType,
-			Price:    priceFloat,
-			Currency: strings.ToUpper(a.Currency),
-			Duration: a.DurationInMinutes,
+			Provider:        "distribusion",
+			Type:            transportType,
+			Price:           priceFloat,
+			PriceProvenance: livePrice(priceFloat), // quoted per connection
+			Currency:        strings.ToUpper(a.Currency),
+			Duration:        a.DurationInMinutes,
 			Departure: models.GroundStop{
 				City: depCity,
 				Time: a.DepartureTime,

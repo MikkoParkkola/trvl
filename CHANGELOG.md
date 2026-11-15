@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ground "no service" is cached per exact date and search scope, and only when every queried provider says it never serves the pair.
 - Transitous routes found by city name carry the requested city names instead of START and END.
 - Estimated ground fares are left unrated in the bookability confidence, and transfer options mark an unknown fare with `price_unavailable`.
+- A valid Eckerö Line live answer is final: an empty list means no sailing that date, and a departure without a price shows no fare instead of the reference price. Distribusion's per-connection prices count as live fares.
+- Excluding `vr` or `digitransit` suppresses VR, cached ground results are keyed by the exclusion list, and provider names are matched in canonical form, so status rows and cache keys agree whatever spelling was used.
+- `trvl ground` prints a provider's fix hint under the table when it answered with a caveat, and only live fares corroborate a ground price.
 - MCP tool results send their assistant text copy as compact JSON instead of indented JSON, which shrinks the duplicate copy of every result (by about a third on the test fixtures).
   ([#774](https://github.com/MikkoParkkola/trvl/pull/774))
 - `get_weather` accepts `location` as an alias of `city`, rejects a missing or conflicting place before any lookup, and reports a failed forecast lookup as an error instead of a normal result.

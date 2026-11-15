@@ -260,12 +260,12 @@ func SearchEckeroLine(ctx context.Context, from, to, date, currency string) ([]m
 	slog.Debug("eckeroline search", "from", fromCity, "to", toCity, "date", date)
 	bookingURL := fmt.Sprintf("https://www.eckeroline.fi/booking?from=%s&to=%s&date=%s&adults=1", fromCode, toCode, date)
 
-	// Try live departures from Magento AJAX API.
+	// Try live departures from Magento AJAX API. A valid live answer is
+	// authoritative: an empty list means no sailing that date, a priced
+	// departure is a live fare, and a departure without a price has no fare
+	// (never the reference price).
 	liveDeps, liveErr := tryEckeroLineLive(ctx, fromCode, toCode, date)
-	if liveErr != nil {
-		slog.Debug("eckeroline live API error", "err", logredact.Err(liveErr))
-	}
-	if len(liveDeps) > 0 {
+	if liveErr == nil {
 		var routes []models.GroundRoute
 		for _, dep := range liveDeps {
 			if dep.Time == "" {
@@ -274,36 +274,33 @@ func SearchEckeroLine(ctx context.Context, from, to, date, currency string) ([]m
 			depTime := date + "T" + dep.Time + ":00"
 			// Estimate arrival: ~2h15m crossing.
 			depT, _ := time.Parse("2006-01-02T15:04:05", depTime)
-			arrT := depT.Add(135 * time.Minute)
-			arrTime := arrT.Format("2006-01-02T15:04:05")
+			arrTime := depT.Add(135 * time.Minute).Format("2006-01-02T15:04:05")
 
 			ship := dep.Ship
 			if ship == "" {
 				ship = "M/S Finlandia"
 			}
-			price := dep.Price
-			if price <= 0 {
-				price = eckerolineBasePrice
-			}
-
-			routes = append(routes, models.GroundRoute{
+			route := models.GroundRoute{
 				Provider:   "eckeroline",
 				Type:       "ferry",
-				Price:      price,
-				Currency:   "EUR", // Eckerö fares and the reference price are euros
+				Currency:   "EUR", // Eckerö fares are euros
 				Duration:   135,
 				Departure:  models.GroundStop{City: fromCity, Station: fromName + " (" + ship + ")", Time: depTime},
 				Arrival:    models.GroundStop{City: toCity, Station: toName, Time: arrTime},
 				Transfers:  0,
-				Amenities:  []string{"Live"},
 				BookingURL: bookingURL,
-			})
+			}
+			if dep.Price > 0 {
+				route.Price = dep.Price
+				route.PriceProvenance = models.PriceLive
+				route.Amenities = []string{"Live"}
+			}
+			routes = append(routes, route)
 		}
-		if len(routes) > 0 {
-			slog.Debug("eckeroline live results", "routes", len(routes))
-			return routes, nil
-		}
+		slog.Debug("eckeroline live results", "routes", len(routes))
+		return routes, nil
 	}
+	slog.Debug("eckeroline live API error", "err", logredact.Err(liveErr))
 
 	// Fallback: published timetable with reference prices.
 	entries := eckerolineSchedules[key]

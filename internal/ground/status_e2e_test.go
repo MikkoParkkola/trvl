@@ -168,3 +168,39 @@ func TestSearchByNameCore_EurostarLaunchesGatedByOwnName(t *testing.T) {
 		})
 	}
 }
+
+// TestSearchByNameCore_EveryAliasLaunches pins that the non-marketed names the
+// filter accepts really launch: each breaker is tripped, so a launch shows up
+// as a circuit_broken row without touching the network.
+func TestSearchByNameCore_EveryAliasLaunches(t *testing.T) {
+	for _, name := range []string{"rome2rio"} {
+		t.Run(name, func(t *testing.T) {
+			swapGroundBreaker(t)
+			groundBreaker.RecordFailure(name)
+			res := runCore(t, context.Background(), "London", "Paris", name)
+			if st := statusByID(res.ProviderStatuses)[name]; st.Status != models.StatusCircuitBroken {
+				t.Errorf("%s row = %+v, want circuit_broken (launched)", name, st)
+			}
+		})
+	}
+}
+
+// TestSearchByNameCore_VRAliasExclusion pins that excluding either VR name
+// (vr or its API name digitransit) suppresses the launch, whichever name was
+// asked for. The breaker is tripped so a launch shows up without the network.
+func TestSearchByNameCore_VRAliasExclusion(t *testing.T) {
+	for _, c := range []struct{ include, exclude string }{{"digitransit", "vr"}, {"vr", "digitransit"}} {
+		t.Run(c.include+" minus "+c.exclude, func(t *testing.T) {
+			swapGroundBreaker(t)
+			groundBreaker.RecordFailure("vr")
+			opts := SearchOptions{Currency: "EUR", Providers: []string{c.include}, ExcludeProviders: []string{c.exclude}, NoCache: true, NoHacks: true}
+			res, err := searchByNameCore(context.Background(), "Helsinki", "Tampere", "2026-07-15", opts, "vr-alias", false)
+			if err != nil {
+				t.Fatalf("searchByNameCore: %v", err)
+			}
+			if st, ok := statusByID(res.ProviderStatuses)["vr"]; ok && st.Status != models.StatusSkipped {
+				t.Errorf("vr launched (row %+v) although %q was excluded", st, c.exclude)
+			}
+		})
+	}
+}

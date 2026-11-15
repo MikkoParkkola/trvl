@@ -392,8 +392,8 @@ func normalizeGroundCurrencies(ctx context.Context, routes []models.GroundRoute,
 // sortGroundRoutes performs the stable cross-currency comparable-price sort
 // (used by search and directly by unit tests for determinism verification).
 // The comparable group ranks first, live fares before estimates inside it;
-// unconvertible priced routes follow by currency, and routes without a fare
-// sink last.
+// unconvertible priced routes follow by currency, live first within each
+// currency, and routes without a fare sink last.
 func sortGroundRoutes(routes []models.GroundRoute) {
 	liveTier := func(r models.GroundRoute) int {
 		if r.PriceProvenance == models.PriceLive {
@@ -429,6 +429,9 @@ func sortGroundRoutes(routes []models.GroundRoute) {
 			au, bu := strings.ToUpper(strings.TrimSpace(a.Currency)), strings.ToUpper(strings.TrimSpace(b.Currency))
 			if au != bu {
 				return au < bu
+			}
+			if ta, tb := liveTier(a), liveTier(b); ra && ta != tb {
+				return ta < tb
 			}
 			if ra && pa != pb {
 				return pa < pb

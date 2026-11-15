@@ -178,3 +178,16 @@ func TestNormalizeGroundCurrencies_ConvertsPriceMax(t *testing.T) {
 		t.Errorf("PriceMax = %v, want 28 (700 CZK converted)", r.PriceMax)
 	}
 }
+
+// TestSortGroundRoutes_LiveFirstInsideUnconvertibleCurrency pins that the live
+// tier also orders routes that share one unconvertible currency.
+func TestSortGroundRoutes_LiveFirstInsideUnconvertibleCurrency(t *testing.T) {
+	routes := []models.GroundRoute{
+		{Provider: "czk-estimate", Price: 300, Currency: "CZK", PriceProvenance: models.PriceEstimated},
+		{Provider: "czk-live", Price: 400, Currency: "CZK", PriceProvenance: models.PriceLive},
+	}
+	sortGroundRoutes(routes)
+	if routes[0].Provider != "czk-live" {
+		t.Errorf("order = [%s %s], want the live CZK fare first", routes[0].Provider, routes[1].Provider)
+	}
+}

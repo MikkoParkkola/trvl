@@ -554,7 +554,7 @@ func TestSearchByName_CacheHit(t *testing.T) {
 	// Build the same cache key SearchByName would use (cache.Key hashes).
 	from, to, date := "CacheTestFrom", "CacheTestTo", "2099-12-31"
 	opts := SearchOptions{Currency: "EUR"}
-	cacheKey := cache.Key("ground", from+"|"+to+"|"+date+"|EUR|all|0.00||false")
+	cacheKey := cache.Key("ground", from+"|"+to+"|"+date+"|EUR|all|0.00||false|x=")
 
 	groundCache.Set(cacheKey, data, 5*time.Minute)
 	// Cache entries expire naturally; no manual cleanup needed.
@@ -593,7 +593,7 @@ func TestSearchByName_NoCache(t *testing.T) {
 	}
 	data, _ := json.Marshal(testResult)
 
-	cacheKey := cache.Key("ground", from+"|"+to+"|"+date+"|EUR|dfds|0.00||false")
+	cacheKey := cache.Key("ground", from+"|"+to+"|"+date+"|EUR|dfds|0.00||false|x=")
 	groundCache.Set(cacheKey, data, 5*time.Minute)
 
 	// With NoCache=true, should NOT use the cache.

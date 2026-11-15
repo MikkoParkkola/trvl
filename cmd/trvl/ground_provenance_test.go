@@ -31,3 +31,25 @@ func TestPrepareGroundRows_ProvenanceMarkers(t *testing.T) {
 		t.Errorf("unavailable price cell = %q, want it to contain \"—\"", cell)
 	}
 }
+
+// TestPrintGroundTable_ShowsNoticeFixHint pins that a provider which answered
+// with a caveat (a ProviderNotice) has its fix hint printed under the table.
+func TestPrintGroundTable_ShowsNoticeFixHint(t *testing.T) {
+	result := &models.GroundSearchResult{
+		Success: true,
+		Count:   1,
+		Routes:  []models.GroundRoute{{Provider: "eckeroline", Type: "ferry", Price: 19, Currency: "EUR", PriceProvenance: models.PriceEstimated}},
+		ProviderStatuses: []models.ProviderStatus{{
+			ID: "eckeroline", Name: "eckeroline", Status: models.StatusOK, Results: 1,
+			Reason: models.ReasonRateLimited, FixHint: "live prices failed; fares shown are the published reference price",
+		}},
+	}
+	out := captureStdout(t, func() {
+		if err := printGroundTable(context.Background(), "", result); err != nil {
+			t.Fatalf("printGroundTable: %v", err)
+		}
+	})
+	if !strings.Contains(out, "eckeroline: live prices failed; fares shown are the published reference price") {
+		t.Errorf("table output lacks the notice fix hint:\n%s", out)
+	}
+}

@@ -250,3 +250,23 @@ func TestNegCache_NotMarkedOnMixedOutcomes(t *testing.T) {
 		})
 	}
 }
+
+// TestSearchByName_ResultCacheKeyIncludesExclusions pins that a cached answer
+// is never served to a search that excludes the provider that produced it.
+func TestSearchByName_ResultCacheKeyIncludesExclusions(t *testing.T) {
+	t.Setenv("TRVL_PREFETCH", "0")
+	isolateGroundBreaker(t)
+	withFerryhopperServer(t, ferryhopperFrame(goldenFerryhopperFrame))
+	date := "2026-07-21" // distinct from other tests' cache keys
+	first, err := SearchByName(context.Background(), "Piraeus", "Santorini", date, SearchOptions{Currency: "EUR", Providers: []string{"ferryhopper"}, NoHacks: true})
+	if err != nil || first == nil || len(first.Routes) == 0 {
+		t.Fatalf("first search: %d routes, err %v; want the ferryhopper route cached", len(first.Routes), err)
+	}
+	second, err := SearchByName(context.Background(), "Piraeus", "Santorini", date, SearchOptions{Currency: "EUR", Providers: []string{"ferryhopper"}, ExcludeProviders: []string{"ferryhopper"}, NoHacks: true})
+	if err != nil {
+		t.Fatalf("second search: %v", err)
+	}
+	if len(second.Routes) != 0 {
+		t.Errorf("search excluding ferryhopper got %d cached ferryhopper route(s)", len(second.Routes))
+	}
+}
