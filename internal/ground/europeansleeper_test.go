@@ -328,6 +328,7 @@ func TestEuropeanSleeperSearch_ErrorClasses(t *testing.T) {
 		{"404 html", esReply{http.StatusNotFound, []byte(`<html>not found</html>`)}, models.ErrParseFailed},
 		{"400 domestic", esReply{http.StatusBadRequest, esFixture(t, "europeansleeper_search_domestic_400.json")}, models.ErrParseFailed},
 		{"200 not json", esReply{http.StatusOK, []byte(`<html>ok</html>`)}, models.ErrParseFailed},
+		{"200 shape changed", esReply{http.StatusOK, []byte(`{}`)}, models.ErrParseFailed},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			useEuropeanSleeperFake(t, tc.reply, esReply{http.StatusOK, []byte(`{}`)})
