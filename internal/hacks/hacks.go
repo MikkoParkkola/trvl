@@ -287,6 +287,18 @@ func (in *DetectorInput) valid() bool {
 	return in.Origin != "" && in.Destination != ""
 }
 
+// groundScope is the base of every ground.SearchOptions a detector builds: the
+// caller's provider filter, exclusions and no-cache flag, plus the per-call
+// test override.
+func (in *DetectorInput) groundScope() ground.SearchOptions {
+	return ground.SearchOptions{
+		Providers:        in.GroundProviders,
+		ExcludeProviders: in.GroundExcludeProviders,
+		NoCache:          in.NoCache,
+		SearchOverride:   in.GroundSearchOverride,
+	}
+}
+
 // StopoverProgram describes an airline's free stopover offer.
 type StopoverProgram struct {
 	Airline      string

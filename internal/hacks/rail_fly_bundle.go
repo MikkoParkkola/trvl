@@ -3,6 +3,8 @@ package hacks
 import (
 	"context"
 	"fmt"
+
+	"github.com/MikkoParkkola/trvl/internal/ground"
 )
 
 // Bundle leg transport modes.
@@ -67,12 +69,12 @@ func (b *RailFlyBundle) legCostSum() float64 {
 // fallback (resolveRailLegCost), so the bundle never makes the saving dishonest
 // and never requires a live call to succeed. baseline is the comparison fare
 // (e.g. the direct airport price) used to derive the single Savings figure.
-func composeRailFlyBundle(ctx context.Context, origin, destination, departDate, returnDate string, st railFlyStation, flightCost, baseline float64, flightCurrency string) Hack {
+func composeRailFlyBundle(ctx context.Context, origin, destination, departDate, returnDate string, st railFlyStation, flightCost, baseline float64, flightCurrency string, scope ground.SearchOptions) Hack {
 	if flightCurrency == "" {
 		flightCurrency = "EUR"
 	}
 
-	railLeg, railOK := convertRailLeg(ctx, resolveRailLegCost(ctx, origin, st, departDate), flightCurrency)
+	railLeg, railOK := convertRailLeg(ctx, resolveRailLegCost(ctx, origin, st, departDate, scope), flightCurrency)
 	if !railOK {
 		// Rail leg inconvertible to the bundle currency: a single honest total is
 		// impossible, so emit no bundle rather than a mixed-denomination one.
@@ -183,12 +185,12 @@ func composeRailFlyBundle(ctx context.Context, origin, destination, departDate, 
 // The return rail leg is priced via internal/ground with a deterministic
 // groundCostBetween fallback (openJawRailReturnQuote), so the hack is fully
 // offline-deterministic and the total stays a single, honest number.
-func composeOpenJawRailReturn(ctx context.Context, origin, flyInto, trainOutOf string, flightCost, baseline float64, currency, departDate, returnDate string) Hack {
+func composeOpenJawRailReturn(ctx context.Context, origin, flyInto, trainOutOf string, flightCost, baseline float64, currency, departDate, returnDate string, scope ground.SearchOptions) Hack {
 	if currency == "" {
 		currency = "EUR"
 	}
 
-	railReturn, railOK := convertRailLeg(ctx, openJawRailReturnQuote(ctx, trainOutOf, origin, returnDate), currency)
+	railReturn, railOK := convertRailLeg(ctx, openJawRailReturnQuote(ctx, trainOutOf, origin, returnDate, scope), currency)
 	if !railOK {
 		// Return rail leg inconvertible to the display currency: drop the open-jaw
 		// variant rather than report a mixed-denomination total. Zero Savings keeps
@@ -257,6 +259,6 @@ func composeOpenJawRailReturn(ctx context.Context, origin, flyInto, trainOutOf s
 // openJawRailReturnQuote prices the rail return leg for an open-jaw itinerary,
 // degrading to a deterministic, explicitly-labelled estimate on any ground
 // provider failure so the hack never needs a live call to be produced.
-func openJawRailReturnQuote(ctx context.Context, fromCity, toCity, date string) railLegCost {
-	return railQuoteOrEstimate(ctx, fromCity, toCity, date, fromCity, toCity)
+func openJawRailReturnQuote(ctx context.Context, fromCity, toCity, date string, scope ground.SearchOptions) railLegCost {
+	return railQuoteOrEstimate(ctx, fromCity, toCity, date, fromCity, toCity, scope)
 }

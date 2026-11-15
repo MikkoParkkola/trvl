@@ -35,18 +35,21 @@ func init() {
 // detector, and tests pass a capturing one.
 func groundHackComposer(detect DetectFunc) func(context.Context, ground.HackComposeRequest) *models.HackSaving {
 	return func(ctx context.Context, req ground.HackComposeRequest) *models.HackSaving {
-		return BestSaving(ctx, DetectorInput{
-			Origin:      req.Origin,
-			Destination: req.Destination,
-			Date:        req.Date,
-			Currency:    req.Currency,
-			NaivePrice:  req.NaivePrice,
-		}, detect)
+		return BestSaving(ctx, detectorInputFromGround(req), detect)
 	}
 }
 
 // detectorInputFromGround maps a ground compose request onto the detector
 // input, carrying the caller's ground search scope.
 func detectorInputFromGround(req ground.HackComposeRequest) DetectorInput {
-	return DetectorInput{}
+	return DetectorInput{
+		Origin:                 req.Origin,
+		Destination:            req.Destination,
+		Date:                   req.Date,
+		Currency:               req.Currency,
+		NaivePrice:             req.NaivePrice,
+		GroundProviders:        req.Providers,
+		GroundExcludeProviders: req.ExcludeProviders,
+		NoCache:                req.NoCache,
+	}
 }

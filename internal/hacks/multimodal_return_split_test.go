@@ -109,9 +109,9 @@ func returnSplitMakeGround(price float64, currency, routeType, depCity, arrCity,
 	return &models.GroundSearchResult{
 		Success: true,
 		Routes: []models.GroundRoute{{
-			Provider:   "flixbus",
-			Type:       routeType,
-			Price:      price,
+			Provider: "flixbus",
+			Type:     routeType,
+			Price:    price, PriceProvenance: models.PriceLive,
 			Currency:   currency,
 			Departure:  models.GroundStop{City: depCity, Time: depTime},
 			Arrival:    models.GroundStop{City: arrCity, Time: arrTime},
@@ -483,10 +483,10 @@ func TestDetectMultiModalReturnSplit_eachNilGuardPinned(t *testing.T) {
 // the cheapest ELIGIBLE route rather than the cheapest overall.
 func twoRouteGround(cheapCur string, cheapPrice float64, eligiblePrice float64, depCity, arrCity string) *models.GroundSearchResult {
 	return &models.GroundSearchResult{Success: true, Routes: []models.GroundRoute{
-		{Provider: "x", Type: "bus", Price: cheapPrice, Currency: cheapCur,
+		{Provider: "x", Type: "bus", Price: cheapPrice, PriceProvenance: models.PriceLive, Currency: cheapCur,
 			Departure: models.GroundStop{City: depCity, Time: "2026-07-01T10:00"},
 			Arrival:   models.GroundStop{City: arrCity, Time: "2026-07-01T20:00"}, BookingURL: "u1"},
-		{Provider: "y", Type: "bus", Price: eligiblePrice, Currency: "EUR",
+		{Provider: "y", Type: "bus", Price: eligiblePrice, PriceProvenance: models.PriceLive, Currency: "EUR",
 			Departure: models.GroundStop{City: depCity, Time: "2026-07-01T10:00"},
 			Arrival:   models.GroundStop{City: arrCity, Time: "2026-07-01T20:00"}, BookingURL: "u2"},
 	}}
