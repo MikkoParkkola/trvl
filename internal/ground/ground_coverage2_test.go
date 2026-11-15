@@ -3,12 +3,14 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/models"
 	"golang.org/x/time/rate"
 )
 
@@ -401,13 +403,13 @@ func TestFetchDFDSAvailability_MockDecodeError(t *testing.T) {
 	}
 
 	routeInfo := dfdsRouteInfo{RouteCode: "CPHO-OSFO", SalesOwner: 19}
+	// D2: an undecodable answer is a parse failure, never an assumed sailing.
 	avail, _, err := fetchDFDSAvailability(context.Background(), routeInfo, "2026-07-01")
-	if err != nil {
-		t.Fatalf("expected nil error (non-fatal), got: %v", err)
+	if !errors.Is(err, models.ErrParseFailed) {
+		t.Fatalf("err = %v, want it to wrap models.ErrParseFailed", err)
 	}
-	// Decode error is non-fatal; returns available=true.
-	if !avail {
-		t.Error("expected available=true on decode error (non-fatal)")
+	if avail {
+		t.Error("an undecodable availability answer reported the date available")
 	}
 }
 
