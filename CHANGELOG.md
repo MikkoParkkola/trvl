@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Go toolchain pinned to 1.26.10 (was 1.26.9) and the release Docker image builds with Go 1.27.3 (was 1.27.2), for GO-2026-6809 (`crypto/x509` trusted certificates from compromised intermediates).
 - Go toolchain pinned to 1.27.4 (was 1.27.3) and the release Docker image builds with Go 1.27.4 (was 1.27.3), for GO-2026-6859 (`net/http` HTTP/1 servers using `MaxBytesReader` could panic on a data race over the `Connection: close` header).
 
+### Fixed
+
+- MCP tool results send their assistant text copy as compact JSON instead of indented JSON, which shrinks the duplicate copy of every result (by about a third on the test fixtures).
+  ([#774](https://github.com/MikkoParkkola/trvl/pull/774))
+- `get_weather` accepts `location` as an alias of `city`, rejects a missing or conflicting place before any lookup, and reports a failed forecast lookup as an error instead of a normal result.
+  ([#774](https://github.com/MikkoParkkola/trvl/pull/774))
+
 ## [1.27.0] - 2026-10-10
 
 ### Security

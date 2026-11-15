@@ -33,7 +33,7 @@ Dates in the compact examples are illustrative; use future dates for live provid
 | **search_deals** | Travel deals from 4 RSS feeds (error fares, flash sales) | Deals from HEL under EUR 400 |
 | **plan_trip** | Plan a complete trip — flights + hotel in one parallel search | AMS→PRG, Jun 15–18, EUR |
 | **search_route** | Multi-modal routing combining flights, trains, buses and ferries | Helsinki → Dubrovnik, arrive by 2026-04-10 |
-| **get_weather** | Get a weather forecast for any city (Open-Meteo, up to 14 days) | Prague, weekend forecast |
+| **get_weather** | Get a weather forecast for any city (Open-Meteo, up to 14 days). Pass `city` or its alias `location`, plus optional `from_date` and `to_date` | Prague, weekend forecast |
 | **get_preferences** | Read user travel preferences (FF status, bag rules, seat preferences) | — |
 | **provider_health** | Diagnose configured providers with success rate, freshness, result counts, error class, circuit state, next retry, and fix hints | "why is Booking.com failing?" |
 | **detect_travel_hacks** | Run 36 parallel detectors for flight and ground savings opportunities | HEL → AMS, Apr 13, carry-on only |
