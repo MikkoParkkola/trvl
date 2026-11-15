@@ -164,3 +164,112 @@ func TestSearchHotelsWithClient_EnrichedRoomHeadlineStaysInRequestedCurrency(t *
 		t.Errorf("headline = %v %s/%s, want 120 EUR verified (the 3000 CZK room converted)", h.Price, h.Currency, h.PriceConfidence)
 	}
 }
+
+// stubNoFX makes every cross-currency conversion fail.
+func stubNoFX(t *testing.T) {
+	t.Helper()
+	orig := convertCurrencyFn
+	convertCurrencyFn = func(_ context.Context, amount float64, from, _ string) (float64, string) {
+		return amount, from
+	}
+	t.Cleanup(func() { convertCurrencyFn = orig })
+}
+
+func requireNotConverted(t *testing.T, h models.HotelResult) {
+	t.Helper()
+	if h.Price != 6000 || h.Currency != "CZK" {
+		t.Errorf("headline = %v %s, want 6000 CZK left as quoted", h.Price, h.Currency)
+	}
+	if !containsWarning(h, models.PriceWarningCurrencyNotConverted) {
+		t.Errorf("warnings = %v, want %s", h.PriceWarnings, models.PriceWarningCurrencyNotConverted)
+	}
+}
+
+func containsWarning(h models.HotelResult, w string) bool {
+	for _, got := range h.PriceWarnings {
+		if got == w {
+			return true
+		}
+	}
+	return false
+}
+
+// TestSearchHotelsWithClient_FailedConversionFlagsHeadline: with no exchange
+// rate the CZK headline stays CZK and says it was not converted.
+func TestSearchHotelsWithClient_FailedConversionFlagsHeadline(t *testing.T) {
+	stubNoFX(t)
+	freshRateManager(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(fakeHotelPageInCurrency("CZK", hotelWithPrice{"Hotel Paris Praha", 6000}))
+	}))
+	defer srv.Close()
+	client := newTestClient(srv.URL)
+	client.SetNoCache(true)
+	opts := defaultOpts()
+	opts.Currency = "EUR"
+	opts.MaxPages = 1
+
+	res, err := SearchHotelsWithClient(context.Background(), client, "Prague", opts)
+	if err != nil || len(res.Hotels) != 1 {
+		t.Fatalf("search: %v (%d hotels), want 1 hotel", err, len(res.Hotels))
+	}
+	requireNotConverted(t, res.Hotels[0])
+}
+
+// TestSearchHotelsByName_FailedConversionFlagsHeadline: same on the by-name
+// path, whose extra merge must not drop the warning.
+func TestSearchHotelsByName_FailedConversionFlagsHeadline(t *testing.T) {
+	stubNoFX(t)
+	freshRateManager(t)
+	useTestDefaultClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(fakeHotelPageInCurrency("CZK", hotelWithPrice{"Hotel Paris Praha", 6000}))
+	}))
+	seedGeo(t, "Hotel Paris Praha, Prague")
+
+	got, err := SearchHotelsByName(context.Background(), "Hotel Paris Praha", "Prague", "2026-06-15", "2026-06-18", "EUR")
+	if err != nil || len(got) != 1 {
+		t.Fatalf("search by name: %v (%d hotels), want 1 hotel", err, len(got))
+	}
+	requireNotConverted(t, got[0])
+}
+
+// TestSearchHotelsWithClient_WarningClearedWhenLaterPassWinsInTarget: the
+// first finalize leaves a CZK headline (no rate); enrichment then adds a
+// verified EUR room and the second pass picks it. The final headline is in
+// the requested currency, so no stale currency_not_converted may remain.
+func TestSearchHotelsWithClient_WarningClearedWhenLaterPassWinsInTarget(t *testing.T) {
+	stubNoFX(t)
+	freshRateManager(t)
+	orig := fetchRoomAvailability
+	t.Cleanup(func() { fetchRoomAvailability = orig })
+	taxIncluded := true
+	fetchRoomAvailability = func(context.Context, RoomSearchOptions) (*RoomAvailability, error) {
+		return &RoomAvailability{Success: true, Rooms: []RoomType{{
+			Name: "Double Room", Price: 150, NightlyPrice: 150, TotalPrice: 450,
+			Currency: "EUR", TaxesFeesIncluded: &taxIncluded,
+		}}}, nil
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(fakeHotelPageInCurrency("CZK", hotelWithPrice{"Hotel Paris Praha", 6000}))
+	}))
+	defer srv.Close()
+	client := newTestClient(srv.URL)
+	client.SetNoCache(true)
+	opts := defaultOpts()
+	opts.Currency = "EUR"
+	opts.MaxPages = 1
+	opts.EnrichRooms = true
+	opts.EnrichLimit = 1
+
+	res, err := SearchHotelsWithClient(context.Background(), client, "Prague", opts)
+	if err != nil || len(res.Hotels) != 1 {
+		t.Fatalf("search: %v (%d hotels), want 1 hotel", err, len(res.Hotels))
+	}
+	h := res.Hotels[0]
+	if h.Price != 150 || h.Currency != "EUR" {
+		t.Fatalf("headline = %v %s, want the verified 150 EUR room", h.Price, h.Currency)
+	}
+	if containsWarning(h, models.PriceWarningCurrencyNotConverted) {
+		t.Errorf("warnings = %v, stale %s after the EUR room won", h.PriceWarnings, models.PriceWarningCurrencyNotConverted)
+	}
+}

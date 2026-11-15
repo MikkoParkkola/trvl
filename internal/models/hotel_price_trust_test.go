@@ -191,3 +191,46 @@ func TestFinalizeSkipsUnconvertibleTopTierSource(t *testing.T) {
 		t.Fatalf("warnings = %v, the headline was converted", h.PriceWarnings)
 	}
 }
+
+// TestFinalizeNoWarningWhenWinnerAlreadyInRequestedCurrency: nothing needed
+// converting, so a nil or failing converter must not add the warning.
+func TestFinalizeNoWarningWhenWinnerAlreadyInRequestedCurrency(t *testing.T) {
+	for name, conv := range map[string]func(float64, string, string) (float64, bool){
+		"failing converter": failingFX,
+		"nil converter":     nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := HotelResult{Sources: []PriceSource{
+				{Provider: "a", Price: 100, Currency: "EUR"},
+				{Provider: "b", Price: 2000, Currency: "CZK"},
+			}}
+			FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, conv)
+			if h.Price != 100 || h.Currency != "EUR" {
+				t.Fatalf("headline = %v %s, want 100 EUR", h.Price, h.Currency)
+			}
+			if containsString(h.PriceWarnings, PriceWarningCurrencyNotConverted) {
+				t.Fatalf("warnings = %v, the winner needed no conversion", h.PriceWarnings)
+			}
+		})
+	}
+}
+
+// TestFinalizeClearsStaleConversionWarning: a first pass flags a CZK
+// headline; a verified EUR source then arrives (room enrichment) and the
+// second pass picks it. The flag described the old headline and must go.
+func TestFinalizeClearsStaleConversionWarning(t *testing.T) {
+	h := HotelResult{Sources: []PriceSource{{Provider: "google_hotels", Price: 6000, Currency: "CZK"}}}
+	FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, failingFX)
+	if !containsString(h.PriceWarnings, PriceWarningCurrencyNotConverted) {
+		t.Fatalf("precondition: first pass warnings = %v, want %s", h.PriceWarnings, PriceWarningCurrencyNotConverted)
+	}
+
+	h.Sources = append(h.Sources, PriceSource{Provider: "agoda", Price: 150, Currency: "EUR", PriceConfidence: PriceConfidenceVerified})
+	FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, failingFX)
+	if h.Price != 150 || h.Currency != "EUR" {
+		t.Fatalf("second pass headline = %v %s, want 150 EUR", h.Price, h.Currency)
+	}
+	if containsString(h.PriceWarnings, PriceWarningCurrencyNotConverted) {
+		t.Fatalf("warnings = %v, stale flag from the first pass", h.PriceWarnings)
+	}
+}
