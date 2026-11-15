@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -213,6 +214,13 @@ func handleSearchHotelByName(ctx context.Context, args map[string]any, elicit El
 	}
 
 	results, err := searchHotelsByNameFunc(ctx, name, location, checkIn, checkOut, currency)
+	// "No hotel by that name" is an answer: an empty success whose notice
+	// names the property and any provider failure that came with the miss.
+	var notice string
+	if errors.Is(err, hotels.ErrNoNameMatch) {
+		notice = strings.ReplaceAll(err.Error(), "\n", "; ")
+		results, err = nil, nil
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -228,14 +236,19 @@ func handleSearchHotelByName(ctx context.Context, args map[string]any, elicit El
 		displayLoc = name + " in " + location
 	}
 	summary := hotelSummary(result, displayLoc)
+	if notice != "" {
+		summary = notice
+	}
 
 	type byNameResponse struct {
 		*models.HotelSearchResult
 		SearchName string `json:"search_name"`
+		Notice     string `json:"notice,omitempty"`
 	}
 	resp := byNameResponse{
 		HotelSearchResult: result,
 		SearchName:        name,
+		Notice:            notice,
 	}
 
 	content, err := buildAnnotatedContentBlocks(summary, resp)
