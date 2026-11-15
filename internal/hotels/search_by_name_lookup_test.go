@@ -215,3 +215,37 @@ func TestSearchHotelByName_TwoWordsNeedLocation(t *testing.T) {
 		t.Fatalf("matched %q from a two-word stripped name without a location", got.Name)
 	}
 }
+
+// TestSearchHotelsByName_StripsOnlyAfterAMiss: the full name is tried first.
+// "Hotel Sacher Vienna" exists under that exact name, so the lookup must not
+// strip "Vienna" up front and also return the different "Hotel Sacher".
+func TestSearchHotelsByName_StripsOnlyAfterAMiss(t *testing.T) {
+	serveGooglePage(t, hotelWithPrice{"Hotel Sacher Vienna", 300}, hotelWithPrice{"Hotel Sacher", 280})
+	seedGeo(t, "Hotel Sacher Vienna")
+
+	got, err := SearchHotelsByName(context.Background(), "Hotel Sacher Vienna", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if names := hotelNames(got); len(names) != 1 || names[0] != "Hotel Sacher Vienna" {
+		t.Fatalf("matches = %v, want only the exact Hotel Sacher Vienna", names)
+	}
+}
+
+// TestSearchHotelsByName_StripsWordFoundInAddress: "Neubau" is not the
+// location argument, but the candidate's address contains it, so the plural
+// lookup may retry without it.
+func TestSearchHotelsByName_StripsWordFoundInAddress(t *testing.T) {
+	serveGooglePage(t, hotelWithPrice{"Hotel Sacher", 300})
+	withBookingResult(t, bookingArtist("Kirchengasse 41, Neubau, 1070 Vienna"))
+	seedGeo(t, "ARTIST Boutique Hotel Neubau, Vienna")
+	requireCandidate(t, "ARTIST Boutique Hotel Neubau, Vienna", "ARTIST Boutique Hotel")
+
+	got, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel Neubau", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if names := hotelNames(got); len(names) != 1 || names[0] != "ARTIST Boutique Hotel" {
+		t.Fatalf("matches = %v, want only ARTIST Boutique Hotel", names)
+	}
+}
