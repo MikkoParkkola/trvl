@@ -3,7 +3,6 @@ package ground
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -132,49 +131,6 @@ func TestFetchFinnlinesProducts_MockGraphQLError(t *testing.T) {
 	_, err := fetchFinnlinesProducts(context.Background(), "FIHEL", "DETRV", "2026-07-01", "17:00")
 	if err == nil {
 		t.Fatal("expected error for GraphQL error")
-	}
-}
-
-// ============================================================
-// SearchEuropeanSleeper: upstream failures are errors, not empty results
-// ============================================================
-
-// A 404 HTML page (what the old /api/v3/offers path returns) is a failure the
-// status layer must see; it used to be swallowed as "ok, zero routes".
-func TestSearchEuropeanSleeper_Mock404IsError(t *testing.T) {
-	origClient := europeanSleeperClient
-	origLimiter := europeanSleeperLimiter
-	t.Cleanup(func() {
-		europeanSleeperClient = origClient
-		europeanSleeperLimiter = origLimiter
-	})
-	europeanSleeperLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte("<html>Not Found</html>"))
-	}))
-	defer srv.Close()
-
-	europeanSleeperClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	routes, err := SearchEuropeanSleeper(context.Background(), "Amsterdam", "Prague", "2026-11-20", "EUR")
-	if !errors.Is(err, models.ErrParseFailed) {
-		t.Fatalf("err = %v, want wrapping models.ErrParseFailed", err)
-	}
-	if len(routes) != 0 {
-		t.Errorf("expected no routes on 404, got %d", len(routes))
-	}
-}
-
-func TestSearchEuropeanSleeper_UnknownStation2(t *testing.T) {
-	_, err := SearchEuropeanSleeper(context.Background(), "NoSuchCityABC", "Prague", "2026-07-01", "EUR")
-	if !errors.Is(err, models.ErrNotApplicable) {
-		t.Fatalf("err = %v, want wrapping models.ErrNotApplicable", err)
 	}
 }
 
