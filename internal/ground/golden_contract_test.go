@@ -29,6 +29,12 @@ const goldenGroundSearchResult = `{
   "count": 1,
   "provider_statuses": [
     {
+      "id": "dfds",
+      "name": "dfds",
+      "reason": "route_not_served",
+      "status": "skipped"
+    },
+    {
       "id": "ferryhopper",
       "name": "ferryhopper",
       "results": 1,
@@ -65,13 +71,16 @@ const goldenGroundSearchResult = `{
       "duration_minutes": 675,
       "legs": null,
       "price": 48,
+      "price_provenance": "live",
       "provider": "fast ferries",
       "sources": [
         {
           "booking_url": "https://www.ferryhopper.com/en/booking/results?golden=1",
+          "comparable_price": 48,
           "currency": "EUR",
           "freshness": "live",
           "price": 48,
+          "price_provenance": "live",
           "provider": "fast ferries",
           "retrieved_at": "RETRIEVED_AT"
         }
@@ -102,10 +111,11 @@ func maskGoldenVolatile(v any) any {
 	return v
 }
 
-// TestGoldenGroundSearchResultContract pins today's JSON field names and status
-// values for one ground search result produced end to end by searchByNameCore.
-// dfds is requested but its route gate is false for this pair, so today it has
-// no status row at all.
+// TestGoldenGroundSearchResultContract pins the JSON field names and status
+// values for one ground search result produced end to end by searchByNameCore:
+// price_provenance on the route and its source, comparable_price on the
+// source, and a skipped route_not_served row for dfds, which is requested but
+// whose route gate is false for this pair.
 func TestGoldenGroundSearchResultContract(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
