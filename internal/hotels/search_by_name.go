@@ -9,7 +9,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -145,13 +144,7 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 		}
 	}
 	if normTarget != "" {
-		conv := func(ctx context.Context, amount float64, from, to string) (float64, bool) {
-			amt, status := destinations.ConvertCurrency(ctx, amount, from, to)
-			if amt > 0 && strings.EqualFold(strings.TrimSpace(status), strings.TrimSpace(to)) {
-				return amt, true
-			}
-			return amt, false
-		}
+		conv := hotelCurrencyConverter()
 		for _, b := range batches {
 			normalizeHotelCurrencies(ctx, b, normTarget, conv)
 		}

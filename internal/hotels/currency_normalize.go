@@ -8,12 +8,16 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
+// convertCurrencyFn is the exchange-rate lookup behind every hotel conversion.
+// A variable so tests can stub it: the real one fetches live rates.
+var convertCurrencyFn = destinations.ConvertCurrency
+
 // hotelCurrencyConverter returns the shared converter used by the hotel search
 // paths. Success convention mirrors ground: the conversion is trusted only when
 // the returned status echoes the requested to-currency.
 func hotelCurrencyConverter() currencyConverter {
 	return func(ctx context.Context, amount float64, from, to string) (float64, bool) {
-		amt, status := destinations.ConvertCurrency(ctx, amount, from, to)
+		amt, status := convertCurrencyFn(ctx, amount, from, to)
 		if amt > 0 && strings.EqualFold(strings.TrimSpace(status), strings.TrimSpace(to)) {
 			return amt, true
 		}

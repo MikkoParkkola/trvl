@@ -16,25 +16,32 @@ const (
 	PriceConfidenceVerified   = "verified"
 
 	PriceWarningMixedSourceCurrencies = "mixed_source_currencies"
+	// PriceWarningCurrencyNotConverted marks a headline left in its source
+	// currency because conversion into the requested currency failed.
+	PriceWarningCurrencyNotConverted = "currency_not_converted"
 )
 
 // FinalizeHotelPriceTrust fills source-level trust metadata, chooses a primary
 // price from comparable currencies, and mirrors that source's trust fields onto
 // the hotel. Search results should call this after all providers have merged.
-func FinalizeHotelPriceTrust(hotels []HotelResult, preferredCurrency string, now time.Time) {
+//
+// convert turns amount from one currency into another and reports success. It
+// is injected because models cannot import the package that holds exchange
+// rates; nil means no conversion is available.
+func FinalizeHotelPriceTrust(hotels []HotelResult, preferredCurrency string, now time.Time, convert func(amount float64, from, to string) (float64, bool)) {
 	if now.IsZero() {
 		now = time.Now()
 	}
 	preferredCurrency = strings.ToUpper(strings.TrimSpace(preferredCurrency))
 
 	for i := range hotels {
-		FinalizeHotelResultPriceTrust(&hotels[i], preferredCurrency, now)
+		FinalizeHotelResultPriceTrust(&hotels[i], preferredCurrency, now, convert)
 	}
 }
 
 // FinalizeHotelResultPriceTrust is the single-result form used by tests and
 // detail handlers.
-func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now time.Time) {
+func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now time.Time, convert func(amount float64, from, to string) (float64, bool)) {
 	if h == nil {
 		return
 	}
