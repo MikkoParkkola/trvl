@@ -132,9 +132,6 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 	for pr := range resultCh {
 		batches = append(batches, pr.hotels)
 	}
-	if len(batches) == 0 {
-		return nil, errors.Join(fmt.Errorf("no results from any provider for %q", name), googleErr)
-	}
 
 	// Normalize before merge so headline adoption is cross-currency safe.
 	// Use provided currency (already defaulted to USD by caller) or first observed.
@@ -163,6 +160,11 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 	// The merge finalizes without a requested currency; finalize again so the
 	// headline is the selected quote converted into the caller's currency.
 	models.FinalizeHotelPriceTrust(merged, currency, time.Now(), trustConverter(ctx))
+	// Zero candidates is a failed or empty search, not a name miss: nothing
+	// was matched against, so report the provider outcome instead.
+	if len(merged) == 0 {
+		return nil, errors.Join(fmt.Errorf("no results from any provider for %q", name), googleErr)
+	}
 
 	// Filter to keep only hotels whose name fuzzy-matches the search name; on a
 	// miss, retry once without a trailing location word.

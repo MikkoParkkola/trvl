@@ -139,11 +139,33 @@ func TestSearchHotelsByName_GoogleErrorSurfaced(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("matches = %v, want none", hotelNames(got))
 	}
-	if !errors.Is(err, ErrNoNameMatch) {
-		t.Fatalf("err = %v, want ErrNoNameMatch", err)
+	// No provider produced a candidate, so this is a failed search, not a
+	// name miss: the Google error is the answer.
+	if errors.Is(err, ErrNoNameMatch) {
+		t.Fatalf("err = %q is ErrNoNameMatch; with zero candidates nothing was matched against", err)
 	}
 	if !errors.Is(err, batchexec.ErrBlocked) || !strings.Contains(err.Error(), "403") {
-		t.Fatalf("err = %q, want the Google 403 error carried along", err)
+		t.Fatalf("err = %q, want the Google 403 error", err)
+	}
+}
+
+// TestSearchHotelsByName_NoCandidatesIsNotANameMiss: every provider answered
+// with zero hotels. That is "no results", which the MCP layer must not show
+// as an empty success for a missing name.
+func TestSearchHotelsByName_NoCandidatesIsNotANameMiss(t *testing.T) {
+	freshRateManager(t)
+	page := fakeHotelPageMulti()
+	useTestDefaultClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(page)
+	}))
+	seedGeo(t, "ARTIST Boutique Hotel, Vienna")
+
+	got, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if len(got) != 0 {
+		t.Fatalf("matches = %v, want none", hotelNames(got))
+	}
+	if err == nil || errors.Is(err, ErrNoNameMatch) {
+		t.Fatalf("err = %v, want a no-results error that is not ErrNoNameMatch", err)
 	}
 }
 
