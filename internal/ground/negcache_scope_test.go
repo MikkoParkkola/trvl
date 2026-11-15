@@ -231,6 +231,7 @@ func TestNegCache_NotMarkedOnMixedOutcomes(t *testing.T) {
 		timeout   bool
 	}{
 		{"not served + checked_no_hit", []string{"flixbus", "ferryhopper"}, false},
+		{"not served + timeout", []string{"flixbus", "finnlines"}, true},
 		{"not served + checked_no_hit + timeout", []string{"flixbus", "ferryhopper", "finnlines"}, true},
 	}
 	for _, c := range cases {
