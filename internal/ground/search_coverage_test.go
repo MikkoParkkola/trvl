@@ -131,7 +131,7 @@ func TestShouldKeepGroundRoute(t *testing.T) {
 		want bool
 	}{
 		{"positive price any provider", models.GroundRoute{Provider: "flixbus", Price: 10}, true},
-		{"zero price regiojet kept as unavailable", models.GroundRoute{Provider: "regiojet", Price: 0}, true},
+		{"zero price regiojet is sold out, dropped", models.GroundRoute{Provider: "regiojet", Price: 0}, false},
 		{"zero price transitous (schedule-only)", models.GroundRoute{Provider: "transitous", Price: 0}, true},
 		{"zero price db (schedule-only)", models.GroundRoute{Provider: "db", Price: 0}, true},
 		{"zero price ns (schedule-only)", models.GroundRoute{Provider: "ns", Price: 0}, true},

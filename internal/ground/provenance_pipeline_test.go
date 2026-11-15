@@ -123,12 +123,18 @@ func TestFilterGroundRoutes_BudgetDropsUnavailableAndUnconverted(t *testing.T) {
 }
 
 // TestShouldKeepGroundRoute_ZeroPriceKeptAsUnavailable pins that the
-// schedule-only allowlist is gone: a Price 0 route from any provider is kept
-// and shown as unavailable instead of silently dropped.
+// schedule-only allowlist is gone: a Price 0 route from a provider outside
+// the old list is kept and shown as unavailable, not silently dropped. A
+// RegioJet Price 0 row means sold out and is still dropped.
 func TestShouldKeepGroundRoute_ZeroPriceKeptAsUnavailable(t *testing.T) {
-	r := models.GroundRoute{Provider: "regiojet", Price: 0, PriceProvenance: models.PriceUnavailable}
-	if !shouldKeepGroundRoute(r) {
-		t.Error("zero-price regiojet route dropped; want it kept as unavailable")
+	for _, p := range []string{"flixbus", "trainline", "rome2rio"} {
+		r := models.GroundRoute{Provider: p, Price: 0, PriceProvenance: models.PriceUnavailable}
+		if !shouldKeepGroundRoute(r) {
+			t.Errorf("zero-price %s route dropped; want it kept as unavailable", p)
+		}
+	}
+	if shouldKeepGroundRoute(models.GroundRoute{Provider: "regiojet", Price: 0}) {
+		t.Error("zero-price regiojet route kept; a RegioJet zero price is sold out")
 	}
 }
 
