@@ -427,35 +427,6 @@ func TestSearchSnalltaget_MockDefaultCurrency(t *testing.T) {
 	_ = routes
 }
 
-func TestSearchSnalltaget_MockNon200(t *testing.T) {
-	origClient := snalltagetClient
-	origLimiter := snalltagetLimiter
-	t.Cleanup(func() {
-		snalltagetClient = origClient
-		snalltagetLimiter = origLimiter
-	})
-	snalltagetLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	defer srv.Close()
-
-	snalltagetClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	// Non-200 returns nil routes, no error (graceful degradation).
-	routes, err := SearchSnalltaget(context.Background(), "Stockholm", "Malmö", "2026-07-01", "SEK")
-	if err != nil {
-		t.Fatalf("SearchSnalltaget: %v", err)
-	}
-	if len(routes) != 0 {
-		t.Errorf("expected 0 routes for 403, got %d", len(routes))
-	}
-}
-
 func TestSearchSnalltaget_MockDataKey(t *testing.T) {
 	origClient := snalltagetClient
 	origLimiter := snalltagetLimiter

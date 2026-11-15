@@ -3,11 +3,16 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
+	"golang.org/x/time/rate"
 )
 
 func TestSnalltagetStations(t *testing.T) {
@@ -304,6 +309,169 @@ func TestSnalltagetSwedishAliases(t *testing.T) {
 		}
 		if s1.UIC != s2.UIC {
 			t.Errorf("%q UIC=%q != %q UIC=%q", p[0], s1.UIC, p[1], s2.UIC)
+		}
+	}
+}
+
+// useSnalltagetMux serves the guest-token and journey-search endpoints from
+// one test server; redirectTransport keeps each request's path.
+func useSnalltagetMux(t *testing.T, mux *http.ServeMux) {
+	t.Helper()
+	srv := httptest.NewServer(mux)
+	origClient, origLimiter := snalltagetClient, snalltagetLimiter
+	t.Cleanup(func() {
+		srv.Close()
+		snalltagetClient, snalltagetLimiter = origClient, origLimiter
+	})
+	snalltagetLimiter = rate.NewLimiter(rate.Limit(1000), 1)
+	snalltagetClient = &http.Client{Transport: &redirectTransport{target: srv.URL}, Timeout: 5 * time.Second}
+}
+
+func snalltagetTokenOK(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"access_token":"test-token","expires_in":900}`))
+}
+
+// TestSearchSnalltaget_LiveSearchJourneyFixture replays the apiv2 journey
+// search captured 2026-11-15 (Stockholm C -> Malmö C, one adult). The booking
+// app at www.snalltaget.se fetches a guest token from /token/v2 and POSTs the
+// search to apiv2.snalltaget.se; each route carries its own bundle fares.
+func TestSearchSnalltaget_LiveSearchJourneyFixture(t *testing.T) {
+	fixture := loadGroundFixture(t, "snalltaget_stockholm_malmo_searchjourney.json")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/token/v2", snalltagetTokenOK)
+	mux.HandleFunc("/orientation/searchjourney", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Errorf("Authorization = %q, want the guest token", got)
+		}
+		var body struct {
+			Origin      string `json:"origin"`
+			Destination string `json:"destination"`
+			Departure   string `json:"departure"`
+			Passengers  []struct {
+				Type string `json:"type"`
+			} `json:"passengers"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
+		if body.Origin != "740000001" || body.Destination != "Malmö C" || body.Departure != "2026-11-20" {
+			t.Errorf("request = %+v, want origin 740000001, destination Malmö C, departure 2026-11-20", body)
+		}
+		if len(body.Passengers) != 1 || body.Passengers[0].Type != "AD" {
+			t.Errorf("passengers = %+v, want one AD (adult)", body.Passengers)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fixture))
+	})
+	useSnalltagetMux(t, mux)
+
+	routes, err := SearchSnalltaget(context.Background(), "Stockholm", "Malmö", "2026-11-20", "EUR")
+	if err != nil {
+		t.Fatalf("SearchSnalltaget: %v", err)
+	}
+	if len(routes) != 2 {
+		t.Fatalf("routes = %d, want 2 departures", len(routes))
+	}
+	want := []struct {
+		dep, arr string
+		dur      int
+	}{
+		{"2026-11-20T10:43:00", "2026-11-20T15:41:00", 298},
+		{"2026-11-20T16:25:00", "2026-11-20T21:30:00", 305},
+	}
+	for i, w := range want {
+		r := routes[i]
+		if r.Departure.Time != w.dep || r.Arrival.Time != w.arr {
+			t.Errorf("route %d = %s -> %s, want %s -> %s", i, r.Departure.Time, r.Arrival.Time, w.dep, w.arr)
+		}
+		if r.Duration != w.dur {
+			t.Errorf("route %d duration = %d, want %d", i, r.Duration, w.dur)
+		}
+		// The cheapest bundle; the booking app charges SEK.
+		if r.Price != 849 || r.Currency != "SEK" {
+			t.Errorf("route %d fare = %v %s, want 849 SEK", i, r.Price, r.Currency)
+		}
+		if r.PriceProvenance != models.PriceLive {
+			t.Errorf("route %d provenance = %q, want %q", i, r.PriceProvenance, models.PriceLive)
+		}
+	}
+}
+
+// TestSearchSnalltaget_TypedErrors pins that a refusal or a changed answer is
+// an error the status layer can classify, never an empty success.
+func TestSearchSnalltaget_TypedErrors(t *testing.T) {
+	status := func(code int) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(code) }
+	}
+	body := func(s string) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(s)) }
+	}
+	cases := []struct {
+		name          string
+		token, search http.HandlerFunc
+		want          error
+	}{
+		{"token refused", status(http.StatusServiceUnavailable), body(`{}`), models.ErrRateLimited},
+		{"bot wall on token", status(http.StatusForbidden), body(`{}`), models.ErrRateLimited},
+		{"token without access_token", body(`{}`), body(`{}`), models.ErrParseFailed},
+		{"search refused", snalltagetTokenOK, status(http.StatusServiceUnavailable), models.ErrRateLimited},
+		{"search moved", snalltagetTokenOK, status(http.StatusNotFound), models.ErrParseFailed},
+		{"search not JSON", snalltagetTokenOK, body(`<html>maintenance</html>`), models.ErrParseFailed},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/token/v2", c.token)
+			mux.HandleFunc("/orientation/searchjourney", c.search)
+			useSnalltagetMux(t, mux)
+			routes, err := SearchSnalltaget(context.Background(), "Stockholm", "Malmö", "2026-11-20", "SEK")
+			if !errors.Is(err, c.want) {
+				t.Errorf("err = %v, want it to wrap %v", err, c.want)
+			}
+			if len(routes) != 0 {
+				t.Errorf("routes = %d, want none alongside an error", len(routes))
+			}
+		})
+	}
+}
+
+// TestSnalltagetStationCodesMatchLiveStops checks every station code against
+// the apiv2 /navigation/stops list captured 2026-11-15, so a code the search
+// endpoint would reject cannot ship.
+func TestSnalltagetStationCodesMatchLiveStops(t *testing.T) {
+	var stops struct {
+		Items []struct {
+			Code string `json:"code"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(loadGroundFixture(t, "snalltaget_stops.json")), &stops); err != nil {
+		t.Fatalf("decode stops fixture: %v", err)
+	}
+	known := map[string]bool{}
+	for _, s := range stops.Items {
+		known[s.Code] = true
+	}
+	aliases := make([]string, 0, len(snalltagetStations))
+	for alias := range snalltagetStations {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	for _, alias := range aliases {
+		if code := snalltagetStations[alias].UIC; !known[code] {
+			t.Errorf("station %q code %q is not in the live stops list", alias, code)
+		}
+	}
+}
+
+func TestSearchSnalltaget_NotApplicableWrapsSentinel(t *testing.T) {
+	for _, pair := range [][2]string{{"Narnia", "Malmö"}, {"Stockholm", "Narnia"}} {
+		_, err := SearchSnalltaget(context.Background(), pair[0], pair[1], "2026-11-20", "SEK")
+		if !errors.Is(err, models.ErrNotApplicable) {
+			t.Errorf("%s -> %s: error %v does not wrap models.ErrNotApplicable", pair[0], pair[1], err)
 		}
 	}
 }
