@@ -318,6 +318,16 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 	return cookies, nil
 }
 
+// cdpBrowserRun drives the headless browser through the policy proxy at
+// proxyAddr and returns the cookies, plus the page HTML when withHTML is set.
+// A variable so tests can drive runCDPCollect and runCDPChallenge without a
+// browser.
+var cdpBrowserRun func(ctx context.Context, execPath, targetURL, proxyAddr string, challengeWait time.Duration, withHTML bool) ([]*network.Cookie, string, error)
+
+// harvestDecision is the post-run decision both runners apply; a variable so
+// tests can see what the call sites pass in.
+var harvestDecision = harvestOutcome
+
 // harvestOutcome is the post-run decision for a headless harvest, kept pure so
 // it can be tested without a browser. targetHost is the hostname the harvest
 // navigated to; refusals are the hosts the policy proxy refused during the run.
