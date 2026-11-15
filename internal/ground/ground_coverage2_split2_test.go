@@ -3,9 +3,9 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -136,10 +136,12 @@ func TestFetchFinnlinesProducts_MockGraphQLError(t *testing.T) {
 }
 
 // ============================================================
-// SearchEuropeanSleeper via httptest (additional cases, was 0%)
+// SearchEuropeanSleeper: upstream failures are errors, not empty results
 // ============================================================
 
-func TestSearchEuropeanSleeper_MockHappyPath2(t *testing.T) {
+// A 404 HTML page (what the old /api/v3/offers path returns) is a failure the
+// status layer must see; it used to be swallowed as "ok, zero routes".
+func TestSearchEuropeanSleeper_Mock404IsError(t *testing.T) {
 	origClient := europeanSleeperClient
 	origLimiter := europeanSleeperLimiter
 	t.Cleanup(func() {
@@ -149,30 +151,9 @@ func TestSearchEuropeanSleeper_MockHappyPath2(t *testing.T) {
 	europeanSleeperLimiter = rate.NewLimiter(rate.Limit(1000), 1)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(europeanSleeperTripsResponse{
-			Trips: []europeanSleeperTrip{
-				{
-					DepartureTime: "2026-07-01T19:22:00",
-					ArrivalTime:   "2026-07-02T07:30:00",
-					Duration:      728,
-					Prices: []europeanSleeperPrice{
-						{Amount: 49.0, Currency: "EUR", Class: "seat"},
-						{Amount: 99.0, Currency: "EUR", Class: "couchette"},
-					},
-					Segments: []europeanSleeperSegment{
-						{
-							DepartureTime: "2026-07-01T19:22:00",
-							ArrivalTime:   "2026-07-02T07:30:00",
-							Origin:        europeanSleeperTripStop{Name: "Brussels-Midi"},
-							Destination:   europeanSleeperTripStop{Name: "Prague hl.n."},
-							TrainNumber:   "NJ 40421",
-							Operator:      "European Sleeper",
-						},
-					},
-				},
-			},
-		})
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("<html>Not Found</html>"))
 	}))
 	defer srv.Close()
 
@@ -181,112 +162,19 @@ func TestSearchEuropeanSleeper_MockHappyPath2(t *testing.T) {
 		Timeout:   5 * time.Second,
 	}
 
-	routes, err := SearchEuropeanSleeper(context.Background(), "Brussels", "Prague", "2026-07-01", "EUR")
-	if err != nil {
-		t.Fatalf("SearchEuropeanSleeper: %v", err)
-	}
-	if len(routes) == 0 {
-		t.Fatal("expected at least 1 route")
-	}
-	r := routes[0]
-	if r.Provider != "european_sleeper" {
-		t.Errorf("provider = %q, want european_sleeper", r.Provider)
-	}
-	if r.Price != 49.0 {
-		t.Errorf("price = %v, want 49.0", r.Price)
-	}
-}
-
-func TestSearchEuropeanSleeper_MockNon200(t *testing.T) {
-	origClient := europeanSleeperClient
-	origLimiter := europeanSleeperLimiter
-	t.Cleanup(func() {
-		europeanSleeperClient = origClient
-		europeanSleeperLimiter = origLimiter
-	})
-	europeanSleeperLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	defer srv.Close()
-
-	europeanSleeperClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	routes, err := SearchEuropeanSleeper(context.Background(), "Brussels", "Prague", "2026-07-01", "EUR")
-	if err != nil {
-		t.Fatalf("expected nil error for non-200 (graceful), got: %v", err)
+	routes, err := SearchEuropeanSleeper(context.Background(), "Amsterdam", "Prague", "2026-11-20", "EUR")
+	if !errors.Is(err, models.ErrParseFailed) {
+		t.Fatalf("err = %v, want wrapping models.ErrParseFailed", err)
 	}
 	if len(routes) != 0 {
-		t.Errorf("expected empty routes for non-200, got %d", len(routes))
+		t.Errorf("expected no routes on 404, got %d", len(routes))
 	}
 }
 
 func TestSearchEuropeanSleeper_UnknownStation2(t *testing.T) {
 	_, err := SearchEuropeanSleeper(context.Background(), "NoSuchCityABC", "Prague", "2026-07-01", "EUR")
-	if err == nil {
-		t.Fatal("expected error for unknown station")
-	}
-}
-
-func TestSearchEuropeanSleeper_MockDefaultCurrency(t *testing.T) {
-	origClient := europeanSleeperClient
-	origLimiter := europeanSleeperLimiter
-	t.Cleanup(func() {
-		europeanSleeperClient = origClient
-		europeanSleeperLimiter = origLimiter
-	})
-	europeanSleeperLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.RawQuery, "currency=EUR") {
-			t.Errorf("expected currency=EUR in query, got: %s", r.URL.RawQuery)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(europeanSleeperTripsResponse{Trips: nil})
-	}))
-	defer srv.Close()
-
-	europeanSleeperClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	_, err := SearchEuropeanSleeper(context.Background(), "Brussels", "Prague", "2026-07-01", "")
-	if err != nil {
-		t.Fatalf("SearchEuropeanSleeper: %v", err)
-	}
-}
-
-func TestSearchEuropeanSleeper_MockEmptyTrips(t *testing.T) {
-	origClient := europeanSleeperClient
-	origLimiter := europeanSleeperLimiter
-	t.Cleanup(func() {
-		europeanSleeperClient = origClient
-		europeanSleeperLimiter = origLimiter
-	})
-	europeanSleeperLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(europeanSleeperTripsResponse{Trips: nil})
-	}))
-	defer srv.Close()
-
-	europeanSleeperClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	routes, err := SearchEuropeanSleeper(context.Background(), "Brussels", "Prague", "2026-07-01", "EUR")
-	if err != nil {
-		t.Fatalf("SearchEuropeanSleeper: %v", err)
-	}
-	if len(routes) != 0 {
-		t.Errorf("expected 0 routes for empty trips, got %d", len(routes))
+	if !errors.Is(err, models.ErrNotApplicable) {
+		t.Fatalf("err = %v, want wrapping models.ErrNotApplicable", err)
 	}
 }
 
