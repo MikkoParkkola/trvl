@@ -339,6 +339,15 @@ func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions
 		return opts.SearchOverride(ctx, from, to, date, opts)
 	}
 
+	// A misspelled provider name is an error, not a search that runs nothing.
+	var err error
+	if opts.Providers, err = ValidateProviderNames(opts.Providers); err != nil {
+		return nil, err
+	}
+	if opts.ExcludeProviders, err = ValidateProviderNames(opts.ExcludeProviders); err != nil {
+		return nil, err
+	}
+
 	if opts.Currency == "" {
 		opts.Currency = "EUR"
 	}
