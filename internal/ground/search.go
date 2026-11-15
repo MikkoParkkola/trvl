@@ -3,7 +3,6 @@ package ground
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,10 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikkoParkkola/trvl/internal/breaker"
 	"github.com/MikkoParkkola/trvl/internal/cache"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
-	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/searchctx"
 	"golang.org/x/sync/singleflight"
@@ -53,113 +50,6 @@ func rateLimitedDo(ctx context.Context, limiter *rate.Limiter, req *http.Request
 		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
 	return httpClient.Do(req)
-}
-
-// providerResult holds the outcome of a single provider search goroutine.
-type providerResult struct {
-	routes []models.GroundRoute
-	err    error
-	name   string
-}
-
-// groundBreaker protects the provider fan-out: a provider that fails (network
-// error, timeout, rate-limit) DefaultThreshold times in a row is skipped for
-// the cooldown instead of being retried on every search, then probed again once
-// the cooldown elapses. It is keyed by provider name and shared across searches
-// by design — a provider's recent health carries between requests. A
-// "not applicable for this route" answer is healthy, not a failure, so it never
-// trips the breaker.
-var groundBreaker = breaker.New()
-
-// errCircuitBroken marks a provider call skipped because its breaker is open.
-// It is a deliberate skip, not a fresh failure, so the result aggregator
-// reports it as a circuit_broken status without counting it as an error.
-var errCircuitBroken = errors.New("skipped: recent failures tripped the circuit breaker")
-
-// launchProvider starts a provider search in a new goroutine, sending the
-// result to the results channel when done. The shared groundBreaker gates the
-// call: a tripped provider is skipped without touching the network, and each
-// real outcome feeds the breaker (a genuine failure advances it toward
-// tripping; a healthy or not-applicable response closes it).
-func launchProvider(wg *sync.WaitGroup, results chan<- providerResult, name string, fn func() ([]models.GroundRoute, error)) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if groundBreaker.Tripped(name) {
-			results <- providerResult{name: name, err: errCircuitBroken}
-			return
-		}
-		routes, err := fn()
-		// A not-applicable answer is a healthy "nothing to sell", and a notice
-		// that still carries routes is an answer; neither pushes the breaker
-		// toward tripping. Timeouts and every other error do.
-		var notice *models.ProviderNotice
-		healthy := err == nil || isProviderNotApplicable(err) ||
-			(errors.As(err, &notice) && len(routes) > 0)
-		if healthy {
-			groundBreaker.RecordSuccess(name)
-		} else {
-			groundBreaker.RecordFailure(name)
-		}
-		results <- providerResult{routes: routes, err: err, name: name}
-	}()
-}
-
-// collectGroundResults drains the provider fan-out into the merged routes, the
-// error messages of providers that failed, and one status row per provider.
-func collectGroundResults(results <-chan providerResult) ([]models.GroundRoute, []string, []models.ProviderStatus) {
-	var routes []models.GroundRoute
-	var failures []string
-	var statuses []models.ProviderStatus
-	fail := func(r providerResult, st models.ProviderStatus) {
-		slog.Warn("ground provider error", "provider", r.name, "error", logredact.Err(r.err))
-		failures = append(failures, fmt.Sprintf("%s: %v", r.name, r.err))
-		statuses = append(statuses, st)
-	}
-	for r := range results {
-		row := models.ProviderStatus{ID: r.name, Name: r.name}
-		var notice *models.ProviderNotice
-		switch {
-		case r.err == nil && len(r.routes) == 0:
-			// A valid answer with nothing on this date: checked, no hit.
-			row.Status = models.StatusCheckedNoHit
-			statuses = append(statuses, row)
-		case r.err == nil:
-			row.Status, row.Results = models.StatusOK, len(r.routes)
-			routes = append(routes, r.routes...)
-			statuses = append(statuses, row)
-		case errors.Is(r.err, errCircuitBroken):
-			// Deliberately skipped while the breaker is open: reported, but not
-			// a fresh failure.
-			row.Status = models.StatusCircuitBroken
-			row.Error = errCircuitBroken.Error()
-			row.FixHint = "wait for the cooldown to elapse, then it retries automatically"
-			statuses = append(statuses, row)
-		case errors.As(r.err, &notice) && len(r.routes) > 0:
-			// Routes with a caveat: an answer, with the reason and the fix.
-			row.Status, row.Results = models.StatusOK, len(r.routes)
-			row.Reason, row.FixHint, row.Error = notice.Reason, notice.FixHint, r.err.Error()
-			routes = append(routes, r.routes...)
-			statuses = append(statuses, row)
-		case errors.As(r.err, &notice):
-			row.Status = models.ClassifyProviderError(r.err)
-			row.Reason, row.FixHint, row.Error = notice.Reason, notice.FixHint, r.err.Error()
-			fail(r, row)
-		case isProviderNotApplicable(r.err):
-			slog.Debug("ground provider not applicable", "provider", r.name, "reason", logredact.Err(r.err))
-			row.Status, row.Reason = models.StatusSkipped, models.ReasonRouteNotServed
-			statuses = append(statuses, row)
-		case isProviderTimeout(r.err):
-			row.Status, row.Reason, row.Error = models.StatusTimeout, models.ReasonTimeout, r.err.Error()
-			fail(r, row)
-		default:
-			row.Status, row.Error = models.ClassifyProviderError(r.err), r.err.Error()
-			fail(r, row)
-		}
-	}
-	// Deterministic order: the channel drains concurrently.
-	sort.Slice(statuses, func(i, j int) bool { return statuses[i].ID < statuses[j].ID })
-	return routes, failures, statuses
 }
 
 // SearchOptions configures a ground transport search.
@@ -216,117 +106,6 @@ func providerEnabled(name string, include, exclude []string) bool {
 		}
 	}
 	return false
-}
-
-// currencyConverter converts amount from->to, returning the converted amount
-// and a non-empty status/ok signal. Injected so unit tests never hit the network.
-type currencyConverter func(ctx context.Context, amount float64, from, to string) (converted float64, ok bool)
-
-// normalizeGroundCurrencies best-effort converts every route's price into the
-// target currency for comparable ranking. On success it mutates Price+Currency
-// to the target AND sets ComparablePrice. On failure it leaves the route in its
-// original currency and ComparablePrice stays 0 (=> incomparable).
-func normalizeGroundCurrencies(ctx context.Context, routes []models.GroundRoute, target string, conv currencyConverter) {
-	tU := strings.ToUpper(strings.TrimSpace(target))
-	if tU == "" || conv == nil {
-		return
-	}
-	for i := range routes {
-		r := &routes[i]
-		if r.Price <= 0 {
-			continue
-		}
-		cU := strings.ToUpper(strings.TrimSpace(r.Currency))
-		if cU == tU {
-			r.ComparablePrice = r.Price // already in target
-			continue
-		}
-		if converted, ok := conv(ctx, r.Price, r.Currency, target); ok && converted > 0 {
-			// The top of a range moves with its bottom so a range never mixes
-			// two currencies; if it cannot be converted, it is dropped.
-			if r.PriceMax > 0 {
-				if top, ok := conv(ctx, r.PriceMax, r.Currency, target); ok && top > 0 {
-					r.PriceMax = top
-				} else {
-					r.PriceMax = 0
-				}
-			}
-			r.Price = converted
-			r.Currency = target
-			r.ComparablePrice = converted
-		}
-		// else: leave as-is, ComparablePrice=0 => incomparable tail
-	}
-}
-
-// sortGroundRoutes performs the stable cross-currency comparable-price sort
-// (used by search and directly by unit tests for determinism verification).
-// The comparable group ranks first, live fares before estimates inside it;
-// unconvertible priced routes follow by currency, and routes without a fare
-// sink last.
-func sortGroundRoutes(routes []models.GroundRoute) {
-	liveTier := func(r models.GroundRoute) int {
-		if r.PriceProvenance == models.PriceLive {
-			return 0
-		}
-		return 1
-	}
-	sort.SliceStable(routes, func(i, j int) bool {
-		a, b := routes[i], routes[j]
-		ac, bc := a.ComparablePrice > 0, b.ComparablePrice > 0
-		if ac != bc {
-			return ac
-		}
-		if ac && bc {
-			if ta, tb := liveTier(a), liveTier(b); ta != tb {
-				return ta < tb
-			}
-			pa := a.PriceForRanking()
-			pb := b.PriceForRanking()
-			ra, rb := pa > 0, pb > 0
-			if ra != rb {
-				return ra
-			}
-			if ra && pa != pb {
-				return pa < pb
-			}
-		} else {
-			pa, pb := a.Price, b.Price
-			ra, rb := pa > 0, pb > 0
-			if ra != rb {
-				return ra
-			}
-			au, bu := strings.ToUpper(strings.TrimSpace(a.Currency)), strings.ToUpper(strings.TrimSpace(b.Currency))
-			if au != bu {
-				return au < bu
-			}
-			if ra && pa != pb {
-				return pa < pb
-			}
-		}
-		if a.Duration != b.Duration {
-			return a.Duration < b.Duration
-		}
-		if a.Departure.Time != b.Departure.Time {
-			return a.Departure.Time < b.Departure.Time
-		}
-		if a.Arrival.Time != b.Arrival.Time {
-			return a.Arrival.Time < b.Arrival.Time
-		}
-		if a.Provider != b.Provider {
-			return a.Provider < b.Provider
-		}
-		if a.BookingURL != b.BookingURL {
-			return a.BookingURL < b.BookingURL
-		}
-		if a.Transfers != b.Transfers {
-			return a.Transfers < b.Transfers
-		}
-		if a.Type != b.Type {
-			return a.Type < b.Type
-		}
-		return false
-	})
 }
 
 // SearchByName searches all providers for ground transport between two cities
@@ -922,17 +701,6 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	}
 
 	return result, nil
-}
-
-// allNotServed reports whether every status row says the provider does not
-// serve the pair.
-func allNotServed(statuses []models.ProviderStatus) bool {
-	for _, st := range statuses {
-		if st.Status != models.StatusSkipped || st.Reason != models.ReasonRouteNotServed {
-			return false
-		}
-	}
-	return true
 }
 
 func browserFallbacksEnabled(opts SearchOptions) bool {

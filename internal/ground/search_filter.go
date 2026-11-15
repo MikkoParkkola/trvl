@@ -347,3 +347,114 @@ func geocodeCity(ctx context.Context, city string) (geoCoord, error) {
 
 	return coord, nil
 }
+
+// currencyConverter converts amount from->to, returning the converted amount
+// and a non-empty status/ok signal. Injected so unit tests never hit the network.
+type currencyConverter func(ctx context.Context, amount float64, from, to string) (converted float64, ok bool)
+
+// normalizeGroundCurrencies best-effort converts every route's price into the
+// target currency for comparable ranking. On success it mutates Price+Currency
+// to the target AND sets ComparablePrice. On failure it leaves the route in its
+// original currency and ComparablePrice stays 0 (=> incomparable).
+func normalizeGroundCurrencies(ctx context.Context, routes []models.GroundRoute, target string, conv currencyConverter) {
+	tU := strings.ToUpper(strings.TrimSpace(target))
+	if tU == "" || conv == nil {
+		return
+	}
+	for i := range routes {
+		r := &routes[i]
+		if r.Price <= 0 {
+			continue
+		}
+		cU := strings.ToUpper(strings.TrimSpace(r.Currency))
+		if cU == tU {
+			r.ComparablePrice = r.Price // already in target
+			continue
+		}
+		if converted, ok := conv(ctx, r.Price, r.Currency, target); ok && converted > 0 {
+			// The top of a range moves with its bottom so a range never mixes
+			// two currencies; if it cannot be converted, it is dropped.
+			if r.PriceMax > 0 {
+				if top, ok := conv(ctx, r.PriceMax, r.Currency, target); ok && top > 0 {
+					r.PriceMax = top
+				} else {
+					r.PriceMax = 0
+				}
+			}
+			r.Price = converted
+			r.Currency = target
+			r.ComparablePrice = converted
+		}
+		// else: leave as-is, ComparablePrice=0 => incomparable tail
+	}
+}
+
+// sortGroundRoutes performs the stable cross-currency comparable-price sort
+// (used by search and directly by unit tests for determinism verification).
+// The comparable group ranks first, live fares before estimates inside it;
+// unconvertible priced routes follow by currency, and routes without a fare
+// sink last.
+func sortGroundRoutes(routes []models.GroundRoute) {
+	liveTier := func(r models.GroundRoute) int {
+		if r.PriceProvenance == models.PriceLive {
+			return 0
+		}
+		return 1
+	}
+	sort.SliceStable(routes, func(i, j int) bool {
+		a, b := routes[i], routes[j]
+		ac, bc := a.ComparablePrice > 0, b.ComparablePrice > 0
+		if ac != bc {
+			return ac
+		}
+		if ac && bc {
+			if ta, tb := liveTier(a), liveTier(b); ta != tb {
+				return ta < tb
+			}
+			pa := a.PriceForRanking()
+			pb := b.PriceForRanking()
+			ra, rb := pa > 0, pb > 0
+			if ra != rb {
+				return ra
+			}
+			if ra && pa != pb {
+				return pa < pb
+			}
+		} else {
+			pa, pb := a.Price, b.Price
+			ra, rb := pa > 0, pb > 0
+			if ra != rb {
+				return ra
+			}
+			au, bu := strings.ToUpper(strings.TrimSpace(a.Currency)), strings.ToUpper(strings.TrimSpace(b.Currency))
+			if au != bu {
+				return au < bu
+			}
+			if ra && pa != pb {
+				return pa < pb
+			}
+		}
+		if a.Duration != b.Duration {
+			return a.Duration < b.Duration
+		}
+		if a.Departure.Time != b.Departure.Time {
+			return a.Departure.Time < b.Departure.Time
+		}
+		if a.Arrival.Time != b.Arrival.Time {
+			return a.Arrival.Time < b.Arrival.Time
+		}
+		if a.Provider != b.Provider {
+			return a.Provider < b.Provider
+		}
+		if a.BookingURL != b.BookingURL {
+			return a.BookingURL < b.BookingURL
+		}
+		if a.Transfers != b.Transfers {
+			return a.Transfers < b.Transfers
+		}
+		if a.Type != b.Type {
+			return a.Type < b.Type
+		}
+		return false
+	})
+}
