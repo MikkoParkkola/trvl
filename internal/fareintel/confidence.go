@@ -62,6 +62,9 @@ type ConfidenceInput struct {
 	// SeparateTickets marks a synthetic book-direct / self-connect itinerary whose
 	// legs are booked on separate tickets — inherently less certain to hold.
 	SeparateTickets bool
+	// PriceProvenance classifies a ground price (live|estimated|unavailable);
+	// "" for flights and hotels.
+	PriceProvenance models.PriceProvenance
 
 	// Optional historical price context. Provide DealSamples (dealquality) and/or
 	// FareHistory (fareintel.Analyze) to add a price-position signal. Omit both

@@ -36,6 +36,11 @@ type HackComposeRequest struct {
 	Date        string
 	Currency    string
 	NaivePrice  float64
+	// Providers, ExcludeProviders and NoCache carry the caller's ground search
+	// scope into the detectors' own ground searches.
+	Providers        []string
+	ExcludeProviders []string
+	NoCache          bool
 }
 
 // composeHackSaving is the savings-engine seam. It is nil until the hacks package

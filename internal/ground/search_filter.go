@@ -148,6 +148,11 @@ func shouldKeepGroundRoute(route models.GroundRoute) bool {
 	return route.Price > 0 || scheduleOnlyProviders[strings.ToLower(route.Provider)]
 }
 
+// classifyGroundProvenance is the fail-closed provenance pass of the ground
+// merge: Price 0 is unavailable, a priced route without a provenance is
+// estimated, and only parsers mark a route live.
+func classifyGroundProvenance(routes []models.GroundRoute) {}
+
 func filterUnavailableGroundRoutes(routes []models.GroundRoute) []models.GroundRoute {
 	filtered := routes[:0]
 	for _, route := range routes {

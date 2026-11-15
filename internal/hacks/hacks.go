@@ -261,6 +261,12 @@ type DetectorInput struct {
 	// real ground.SearchByName. Mirrors SearchOverride above for the ground
 	// package. See ground.SearchOptions.SearchOverride.
 	GroundSearchOverride ground.SearchFunc
+
+	// GroundProviders, GroundExcludeProviders and NoCache carry the caller's
+	// ground search scope into every ground.SearchOptions a detector builds.
+	GroundProviders        []string
+	GroundExcludeProviders []string
+	NoCache                bool
 }
 
 // currency returns the display currency for this search: the explicit request

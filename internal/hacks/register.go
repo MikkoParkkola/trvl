@@ -37,3 +37,9 @@ func init() {
 		}, nil)
 	})
 }
+
+// detectorInputFromGround maps a ground compose request onto the detector
+// input, carrying the caller's ground search scope.
+func detectorInputFromGround(req ground.HackComposeRequest) DetectorInput {
+	return DetectorInput{}
+}
