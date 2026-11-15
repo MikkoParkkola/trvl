@@ -17,10 +17,10 @@ import (
 )
 
 // Snälltåget's booking app (www.snalltaget.se) fetches an anonymous guest
-// token from snalltagetTokenURL and searches journeys on snalltagetAPIBase,
+// token from the site's /token/v2 and searches journeys on snalltagetAPIBase,
 // the apiUrl in the page's #booking-app data-settings. No account is involved.
 const (
-	snalltagetTokenURL = "https://www.snalltaget.se/token/v2"
+	snalltagetSiteBase = "https://www.snalltaget.se"
 	snalltagetAPIBase  = "https://apiv2.snalltaget.se"
 	// The token endpoint answers 403 to Go's default User-Agent.
 	snalltagetUserAgent = "trvl/1.0 (travel agent; github.com/MikkoParkkola/trvl)"
@@ -245,7 +245,7 @@ func snalltagetGuestToken(ctx context.Context) (string, error) {
 		return c.token, nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, snalltagetTokenURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, snalltagetSiteBase+"/token/v2", nil)
 	if err != nil {
 		return "", err
 	}
@@ -361,5 +361,5 @@ func snalltagetLegType(modality string) string {
 // exact stop code, and treats single as one-way.
 func buildSnalltagetBookingURL(from, to SnalltagetStation, date string) string {
 	q := url.Values{"from": {from.UIC}, "to": {to.UIC}, "date": {date}, "single": {"1"}}
-	return "https://www.snalltaget.se/en?" + q.Encode()
+	return snalltagetSiteBase + "/en?" + q.Encode()
 }
