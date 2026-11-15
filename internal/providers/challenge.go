@@ -209,6 +209,7 @@ func runCDPChallenge(ctx context.Context, execPath, targetURL string, challengeW
 		return nil, "", err
 	}
 	defer func() { _ = policyProxy.Close() }()
+	policyProxy.keepHost(parsed.Hostname())
 
 	cookies, html, runErr := cdpBrowserRun(ctx, execPath, targetURL, policyProxy.Address(), challengeWait, captureCookiesAndHTML)
 	cookies, err = harvestDecision(parsed.Hostname(), cookies, runErr, policyProxy.Refusals())

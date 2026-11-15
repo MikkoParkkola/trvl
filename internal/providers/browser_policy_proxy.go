@@ -28,6 +28,7 @@ type browserPolicyProxy struct {
 
 	mu       sync.Mutex
 	refusals []proxyRefusal
+	keep     string // host recorded even past maxProxyRefusals
 }
 
 func startBrowserPolicyProxy(lookup lookupIPsFunc, dial browserProxyDialFunc) (*browserPolicyProxy, error) {
@@ -77,6 +78,13 @@ func (p *browserPolicyProxy) Refusals() []proxyRefusal {
 	return append([]proxyRefusal(nil), p.refusals...)
 }
 
+// keepHost names a host whose refusal is recorded even past the cap.
+func (p *browserPolicyProxy) keepHost(host string) {
+	p.mu.Lock()
+	p.keep = normalizeRefusedHost(host)
+	p.mu.Unlock()
+}
+
 // recordRefusal keeps the first refusal per host and stops at
 // maxProxyRefusals, so the earliest refusals (usually the page's own
 // requests) survive a page that fans out to many blocked trackers.
@@ -87,7 +95,7 @@ func (p *browserPolicyProxy) recordRefusal(host string, err error) {
 	host = normalizeRefusedHost(host)
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if len(p.refusals) >= maxProxyRefusals {
+	if len(p.refusals) >= maxProxyRefusals && host != p.keep {
 		return
 	}
 	for _, r := range p.refusals {

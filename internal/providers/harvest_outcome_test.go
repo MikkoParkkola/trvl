@@ -210,3 +210,36 @@ func TestHarvestOutcome_TargetRefusalWinsOverRunError(t *testing.T) {
 		t.Errorf("err = %q still suggests %s", err, AllowLocalEnv)
 	}
 }
+
+// TestBrowserPolicyProxyAlwaysKeepsTargetRefusal: a page can fill the cap
+// with refused trackers before the target itself is refused. The target's
+// refusal decides the harvest, so it is kept past the cap.
+func TestBrowserPolicyProxyAlwaysKeepsTargetRefusal(t *testing.T) {
+	t.Setenv(AllowLocalEnv, "")
+	policyProxy, err := startBrowserPolicyProxy(sinkholeLookup, func(context.Context, string, string) (net.Conn, error) {
+		return nil, errors.New("dial disabled in test")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = policyProxy.Close() }()
+	policyProxy.keepHost("www.booking.com")
+	proxyURL, _ := url.Parse("http://" + policyProxy.Address())
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	for i := range maxProxyRefusals + 4 {
+		if resp, err := client.Get(fmt.Sprintf("http://t%d.example/", i)); err == nil {
+			_ = resp.Body.Close()
+		}
+	}
+	if resp, err := client.Get("http://www.booking.com/searchresults"); err == nil {
+		_ = resp.Body.Close()
+	}
+
+	var kept bool
+	for _, r := range policyProxy.Refusals() {
+		kept = kept || r.Host == "www.booking.com"
+	}
+	if !kept {
+		t.Fatalf("target refusal dropped by the cap; refusals = %d", len(policyProxy.Refusals()))
+	}
+}
