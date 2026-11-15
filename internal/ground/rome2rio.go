@@ -276,7 +276,7 @@ func rome2rioParseFailure(decoded, matched int, from, to string) error {
 	if matched > 0 {
 		return fmt.Errorf("rome2rio: matched %d route anchors but decoded 0: %w", matched, models.ErrParseFailed)
 	}
-	return fmt.Errorf("rome2rio: no route for %s to %s", from, to)
+	return fmt.Errorf("rome2rio: no route for %s to %s: %w", from, to, models.ErrNotApplicable)
 }
 
 // buildRome2RioRoute turns one route anchor (its encoded name + visible text)

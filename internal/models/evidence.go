@@ -49,6 +49,29 @@ var ErrRateLimited = errors.New("upstream provider rate-limited or temporarily u
 // toward the circuit breaker, whereas an honest empty result must not.
 var ErrParseFailed = errors.New("provider response could not be parsed (response shape changed)")
 
+// ErrNotApplicable marks a provider that does not serve the requested pair
+// (no station, port or route for it). It is returned before any network call
+// and maps to a skipped status, never to a failure.
+var ErrNotApplicable = errors.New("provider does not serve this route")
+
+// ProviderNotice is a non-fatal provider caveat: routes may still be present,
+// and FixHint tells the caller what would improve the answer. Reason is one of
+// the Reason* constants; Err is the underlying cause.
+type ProviderNotice struct {
+	Reason  string
+	FixHint string
+	Err     error
+}
+
+func (n *ProviderNotice) Error() string {
+	if n.Err != nil {
+		return n.Err.Error()
+	}
+	return n.Reason
+}
+
+func (n *ProviderNotice) Unwrap() error { return n.Err }
+
 // ClassifyProviderError maps an error to a provider status. A typed rate-limit
 // (ErrRateLimited) wins first so a 429/challenge never renders as a hard parse
 // failure; deadlines map to StatusTimeout; retryable upstream signatures (rate

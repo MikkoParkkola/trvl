@@ -19,6 +19,11 @@ func TestFilterGroundRoutes_MaxPrice(t *testing.T) {
 		{Provider: "regiojet", Price: 50, Currency: "EUR", Departure: models.GroundStop{Time: "2026-07-01T09:00"}, Arrival: models.GroundStop{Time: "2026-07-01T13:00"}},
 		{Provider: "flixbus", Price: 25, Currency: "EUR", Departure: models.GroundStop{Time: "2026-07-01T10:00"}, Arrival: models.GroundStop{Time: "2026-07-01T14:00"}},
 	}
+	// State after the normalise pass, which sets ComparablePrice for every
+	// priced route in the target currency; the budget is checked against it.
+	for i := range routes {
+		routes[i].ComparablePrice = routes[i].Price
+	}
 	opts := SearchOptions{MaxPrice: 30}
 	filtered := filterGroundRoutes(routes, opts)
 	for _, r := range filtered {
@@ -76,6 +81,11 @@ func TestFilterGroundRoutes_CombinedMaxPriceAndType(t *testing.T) {
 		{Provider: "db", Type: "train", Price: 50, Currency: "EUR", Departure: models.GroundStop{Time: "T09:00"}, Arrival: models.GroundStop{Time: "T13:00"}},
 		{Provider: "db", Type: "train", Price: 20, Currency: "EUR", Departure: models.GroundStop{Time: "T10:00"}, Arrival: models.GroundStop{Time: "T14:00"}},
 	}
+	// State after the normalise pass, which sets ComparablePrice for every
+	// priced route in the target currency; the budget is checked against it.
+	for i := range routes {
+		routes[i].ComparablePrice = routes[i].Price
+	}
 	opts := SearchOptions{MaxPrice: 30, Type: "train"}
 	filtered := filterGroundRoutes(routes, opts)
 	if len(filtered) != 1 {
@@ -105,8 +115,9 @@ func TestIsProviderNotApplicable(t *testing.T) {
 		{"no Eurostar route", fmt.Errorf("no Eurostar route"), true},
 		{"no DFDS route", fmt.Errorf("no DFDS route"), true},
 		{"no Stena Line route", fmt.Errorf("no Stena Line route"), true},
-		{"rate limiter", fmt.Errorf("rate limiter: rate: Wait something"), true},
-		{"deadline", fmt.Errorf("context deadline exceeded"), true},
+		// D3: limiter waits and deadlines are timeouts, not "not served".
+		{"rate limiter", fmt.Errorf("rate limiter: rate: Wait something"), false},
+		{"deadline", fmt.Errorf("context deadline exceeded"), false},
 		{"real error", fmt.Errorf("HTTP 500 internal server error"), false},
 	}
 	for _, tt := range tests {
@@ -130,7 +141,7 @@ func TestShouldKeepGroundRoute(t *testing.T) {
 		want bool
 	}{
 		{"positive price any provider", models.GroundRoute{Provider: "flixbus", Price: 10}, true},
-		{"zero price regiojet", models.GroundRoute{Provider: "regiojet", Price: 0}, false},
+		{"zero price regiojet is sold out, dropped", models.GroundRoute{Provider: "regiojet", Price: 0}, false},
 		{"zero price transitous (schedule-only)", models.GroundRoute{Provider: "transitous", Price: 0}, true},
 		{"zero price db (schedule-only)", models.GroundRoute{Provider: "db", Price: 0}, true},
 		{"zero price ns (schedule-only)", models.GroundRoute{Provider: "ns", Price: 0}, true},
@@ -141,7 +152,7 @@ func TestShouldKeepGroundRoute(t *testing.T) {
 		{"zero price vikingline (schedule-only)", models.GroundRoute{Provider: "vikingline", Price: 0}, true},
 		{"zero price eckeroline (schedule-only)", models.GroundRoute{Provider: "eckeroline", Price: 0}, true},
 		{"zero price finnlines (schedule-only)", models.GroundRoute{Provider: "finnlines", Price: 0}, true},
-		{"zero price unknown", models.GroundRoute{Provider: "unknown", Price: 0}, false},
+		{"zero price other provider kept as unavailable", models.GroundRoute{Provider: "unknown", Price: 0}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -280,7 +291,7 @@ func TestSearchResultBufferCapacity(t *testing.T) {
 // not exist, so empty inputs run the whole search path with nothing to call.
 func TestDefaultProvider_SearchGround_EmptyInputs(t *testing.T) {
 	p := &DefaultProvider{}
-	result, err := p.SearchGround(t.Context(), "", "", "2026-07-01", models.GroundSearchOptions{Providers: []string{"no-such-provider"}})
+	result, err := p.SearchGround(t.Context(), "", "", "2026-07-01", models.GroundSearchOptions{Providers: []string{"dfds"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

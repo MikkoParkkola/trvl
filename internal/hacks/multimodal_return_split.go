@@ -7,6 +7,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // returnSplitFlightSearch is the flight search seam (overridable in tests).
@@ -73,9 +74,9 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 
 	// Ground return: destination → origin. The request stays EUR; the guard
 	// checks the route's own reported Currency, never the requested one.
-	groundResult, err := returnSplitGroundSearch(ctx, destCity, originCity, in.ReturnDate, ground.SearchOptions{
-		Currency: "EUR",
-	})
+	groundOpts := in.groundScope()
+	groundOpts.Currency = "EUR"
+	groundResult, err := returnSplitGroundSearch(ctx, destCity, originCity, in.ReturnDate, groundOpts)
 
 	var hacks []Hack
 
@@ -86,7 +87,8 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 
 		for i := range groundResult.Routes {
 			r := &groundResult.Routes[i]
-			if r.Price <= 0 {
+			// Only a live fare backs a saving; an estimate is not a quote.
+			if r.Price <= 0 || r.PriceProvenance != models.PriceLive {
 				continue
 			}
 			// Only consider routes in the baseline currency. Selecting the
@@ -164,16 +166,15 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 
 	// Direction 2: take ground out, fly back.
 	// Only viable when there is a known ground route origin→destination.
-	groundOutResult, gerr := returnSplitGroundSearch(ctx, originCity, destCity, in.Date, ground.SearchOptions{
-		Currency: "EUR",
-	})
+	groundOutResult, gerr := returnSplitGroundSearch(ctx, originCity, destCity, in.Date, groundOpts)
 	if gerr == nil && groundOutResult != nil && groundOutResult.Success && len(groundOutResult.Routes) > 0 {
 		var bestGroundPrice float64
 		var bestRoute *groundRoute
 
 		for i := range groundOutResult.Routes {
 			r := &groundOutResult.Routes[i]
-			if r.Price <= 0 {
+			// Only a live fare backs a saving; an estimate is not a quote.
+			if r.Price <= 0 || r.PriceProvenance != models.PriceLive {
 				continue
 			}
 			// Only consider routes in the baseline currency (see dir1).

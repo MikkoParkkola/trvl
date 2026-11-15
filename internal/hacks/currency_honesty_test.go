@@ -283,9 +283,9 @@ func chOvernightGroundResult(price float64, currency string) *models.GroundSearc
 	return &models.GroundSearchResult{
 		Success: true,
 		Routes: []models.GroundRoute{{
-			Provider:   "flixbus",
-			Type:       "bus",
-			Price:      price,
+			Provider: "flixbus",
+			Type:     "bus",
+			Price:    price, PriceProvenance: models.PriceLive,
 			Currency:   currency,
 			Departure:  models.GroundStop{City: "Helsinki", Time: "2026-06-01T22:00"},
 			Arrival:    models.GroundStop{City: "Barcelona", Time: "2026-06-02T06:00"},

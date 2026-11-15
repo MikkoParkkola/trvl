@@ -365,9 +365,10 @@ func TestSearchDigitransit_MockHappyPath2(t *testing.T) {
 // Additional edge case coverage
 // ============================================================
 
+// D3: a deadline is a timeout, never "provider does not serve this route".
 func TestIsProviderNotApplicable_ContextDeadline(t *testing.T) {
-	if !isProviderNotApplicable(context.DeadlineExceeded) {
-		t.Error("expected true for context.DeadlineExceeded")
+	if isProviderNotApplicable(context.DeadlineExceeded) {
+		t.Error("context.DeadlineExceeded must not be not-applicable (it is a timeout)")
 	}
 }
 
@@ -395,8 +396,8 @@ func TestFilterUnavailableGroundRoutes_MixedProviders(t *testing.T) {
 		{Provider: "db", Price: 25},
 	}
 	result := filterUnavailableGroundRoutes(routes)
-	if len(result) != 2 {
-		t.Errorf("expected 2 routes, got %d", len(result))
+	if len(result) != 3 {
+		t.Errorf("expected 3 routes (zero price kept as unavailable), got %d", len(result))
 	}
 }
 

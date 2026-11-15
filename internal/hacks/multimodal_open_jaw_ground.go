@@ -158,7 +158,7 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 		go func() {
 			defer wg.Done()
 
-			groundPrice, ok, estimated := groundLegPriceInTarget(ctx, h.HubCity, h.DestCity, in.Date, "", h.StaticGroundEUR, target, in.GroundSearchOverride)
+			groundPrice, ok, estimated := groundLegPriceInTarget(ctx, &in, h.HubCity, h.DestCity, "", h.StaticGroundEUR, target)
 			if !ok {
 				ch <- openJawGroundCandidate{}
 				return

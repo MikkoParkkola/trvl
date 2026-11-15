@@ -2,10 +2,12 @@ package ground
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/cookies"
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 func init() {
@@ -284,9 +286,10 @@ func TestSearchVikingLine_StockholmMariehamn(t *testing.T) {
 func TestSearchVikingLine_NoRoute(t *testing.T) {
 	ctx := context.Background()
 	// No Viking Line route from Helsinki to Turku.
+	// D3: an unscheduled pair is "not served", not an empty answer.
 	routes, err := SearchVikingLine(ctx, "Helsinki", "Turku", "2026-04-10", "EUR")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, models.ErrNotApplicable) {
+		t.Fatalf("err = %v, want it to wrap models.ErrNotApplicable", err)
 	}
 	if routes != nil {
 		t.Errorf("expected nil routes for unknown route, got %d", len(routes))

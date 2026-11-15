@@ -82,17 +82,11 @@ func TestFilterUnavailableGroundRoutes(t *testing.T) {
 	}
 
 	filtered := filterUnavailableGroundRoutes(routes)
-	if len(filtered) != 3 {
-		t.Fatalf("expected 3 routes after filtering, got %d", len(filtered))
+	if len(filtered) != 4 {
+		t.Fatalf("expected all 4 routes kept (zero price = unavailable), got %d", len(filtered))
 	}
-	if filtered[0].Provider != "transitous" {
-		t.Fatalf("expected schedule-only transitous route to be kept, got %q", filtered[0].Provider)
-	}
-	if filtered[1].Provider != "db" {
-		t.Fatalf("expected schedule-only db route to be kept, got %q", filtered[1].Provider)
-	}
-	if filtered[2].Provider != "trainline" {
-		t.Fatalf("expected priced route to be kept, got %q", filtered[2].Provider)
+	if filtered[0].Provider != "flixbus" {
+		t.Fatalf("expected zero-price flixbus route kept as unavailable, got %q", filtered[0].Provider)
 	}
 }
 
@@ -149,6 +143,11 @@ func TestFilterGroundRoutes(t *testing.T) {
 		},
 	}
 
+	// State after the normalise pass, which sets ComparablePrice for every
+	// priced route in the target currency; the budget is checked against it.
+	for i := range routes {
+		routes[i].ComparablePrice = routes[i].Price
+	}
 	filtered := filterGroundRoutes(routes, SearchOptions{
 		MaxPrice: 25,
 		Type:     "bus",

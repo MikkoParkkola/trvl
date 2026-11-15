@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -237,9 +238,10 @@ func TestSearchStenaLine_NoSailingsForRoute(t *testing.T) {
 	defer cancel()
 
 	// GOT-GDY: ports exist but no schedule defined.
+	// D3: an unscheduled pair is "not served", not an empty answer.
 	routes, err := SearchStenaLine(ctx, "Gothenburg", "Gdynia", "2026-06-15", "EUR")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, models.ErrNotApplicable) {
+		t.Fatalf("err = %v, want it to wrap models.ErrNotApplicable", err)
 	}
 	if len(routes) != 0 {
 		t.Errorf("expected 0 routes for GOT-GDY, got %d", len(routes))

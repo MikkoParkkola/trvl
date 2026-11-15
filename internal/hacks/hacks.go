@@ -261,6 +261,12 @@ type DetectorInput struct {
 	// real ground.SearchByName. Mirrors SearchOverride above for the ground
 	// package. See ground.SearchOptions.SearchOverride.
 	GroundSearchOverride ground.SearchFunc
+
+	// GroundProviders, GroundExcludeProviders and NoCache carry the caller's
+	// ground search scope into every ground.SearchOptions a detector builds.
+	GroundProviders        []string
+	GroundExcludeProviders []string
+	NoCache                bool
 }
 
 // currency returns the display currency for this search: the explicit request
@@ -279,6 +285,18 @@ func (in *DetectorInput) currency() string {
 // valid returns true when Origin and Destination are both non-empty.
 func (in *DetectorInput) valid() bool {
 	return in.Origin != "" && in.Destination != ""
+}
+
+// groundScope is the base of every ground.SearchOptions a detector builds: the
+// caller's provider filter, exclusions and no-cache flag, plus the per-call
+// test override.
+func (in *DetectorInput) groundScope() ground.SearchOptions {
+	return ground.SearchOptions{
+		Providers:        in.GroundProviders,
+		ExcludeProviders: in.GroundExcludeProviders,
+		NoCache:          in.NoCache,
+		SearchOverride:   in.GroundSearchOverride,
+	}
 }
 
 // StopoverProgram describes an airline's free stopover offer.

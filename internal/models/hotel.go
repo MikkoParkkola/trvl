@@ -33,10 +33,15 @@ func IsAdultsOnly(name, description string) bool {
 // When multiple providers return the same hotel, all sources are preserved
 // and the lowest price becomes the primary HotelResult.Price.
 type PriceSource struct {
-	Provider        string  `json:"provider"` // "google_hotels", "trivago", "airbnb", "booking"
-	Price           float64 `json:"price"`
-	MaxPrice        float64 `json:"max_price,omitempty"` // highest room/block price (when available)
-	Currency        string  `json:"currency"`
+	Provider string  `json:"provider"` // "google_hotels", "trivago", "airbnb", "booking"
+	Price    float64 `json:"price"`
+	MaxPrice float64 `json:"max_price,omitempty"` // highest room/block price (when available)
+	Currency string  `json:"currency"`
+	// Provenance classifies Price for ground sources (live|estimated|unavailable).
+	Provenance PriceProvenance `json:"price_provenance,omitempty"`
+	// ComparablePrice is Price converted to the search's comparison currency
+	// (ground sources); 0 when it could not be converted.
+	ComparablePrice float64 `json:"comparable_price,omitempty"`
 	RoomCount       int     `json:"room_count,omitempty"` // distinct room types (when available)
 	BookingURL      string  `json:"booking_url,omitempty"`
 	PriceBasis      string  `json:"price_basis,omitempty"`      // lead_in|room_nightly|room_total|tax_inclusive_total

@@ -44,6 +44,8 @@ type GroundRoute struct {
 	Price     float64 `json:"price"`
 	PriceMax  float64 `json:"price_max,omitempty"` // RegioJet gives price ranges
 	Currency  string  `json:"currency"`
+	// PriceProvenance classifies Price: live, estimated or unavailable.
+	PriceProvenance PriceProvenance `json:"price_provenance,omitempty"`
 	// ComparablePrice is the price converted to a common target currency for
 	// cross-currency ranking and MaxPrice filtering (and for PriceForRanking).
 	// Set by the normalize pass in ground search when conversion succeeds.

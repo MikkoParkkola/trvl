@@ -8,6 +8,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/flights"
+	"github.com/MikkoParkkola/trvl/internal/ground"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -58,14 +59,14 @@ func DetectRailFlyArbitrage(ctx context.Context, origin, destination, departDate
 	// Exported entry defaults to EUR — the historical provider denomination — so
 	// existing callers and tests keep their behaviour. The DetectAll adapter
 	// routes through detectRailFlyArb with the traveller's requested currency.
-	return detectRailFlyArb(ctx, origin, destination, departDate, returnDate, "EUR")
+	return detectRailFlyArb(ctx, origin, destination, departDate, returnDate, "EUR", ground.SearchOptions{})
 }
 
 // detectRailFlyArb is the currency-aware worker. target is the traveller's
 // requested display currency; every fare and rail-leg cost is FX-converted into
 // it so the surfaced saving is honest in one denomination. The hack is dropped
 // when the baseline fare cannot be converted into target (no honest baseline).
-func detectRailFlyArb(ctx context.Context, origin, destination, departDate, returnDate, target string) []Hack {
+func detectRailFlyArb(ctx context.Context, origin, destination, departDate, returnDate, target string, scope ground.SearchOptions) []Hack {
 	if origin == "" || destination == "" || departDate == "" {
 		return nil
 	}
@@ -173,7 +174,7 @@ func detectRailFlyArb(ctx context.Context, origin, destination, departDate, retu
 	// is a different airport, so the rail leg is a real out-of-pocket cost that
 	// must be subtracted from net savings. A ground-provider error degrades
 	// gracefully to a conservative estimate; it never aborts the search.
-	railLeg, railOK := convertRailLeg(ctx, resolveRailLegCost(ctx, origin, *bestStation, departDate), target)
+	railLeg, railOK := convertRailLeg(ctx, resolveRailLegCost(ctx, origin, *bestStation, departDate, scope), target)
 	if !railOK {
 		// The rail leg is priced in a currency that cannot be expressed in the
 		// traveller's display currency, so no honest single-denomination saving can
@@ -196,7 +197,7 @@ func detectRailFlyArb(ctx context.Context, origin, destination, departDate, retu
 	// Attach the single-total rail+fly bundle (rail leg + flight leg + return)
 	// so the hack carries an auditable, one-number itinerary with per-leg timing
 	// and the connection-guarantee status.
-	bundle := composeRailFlyBundle(ctx, origin, destination, departDate, returnDate, *bestStation, bestPrice, basePrice, bestCurrency)
+	bundle := composeRailFlyBundle(ctx, origin, destination, departDate, returnDate, *bestStation, bestPrice, basePrice, bestCurrency, scope)
 	hack.Bundle = bundle.Bundle
 
 	// Capture the real flight result from the rail-station search as a
@@ -216,7 +217,7 @@ func detectRailFlyArb(ctx context.Context, origin, destination, departDate, retu
 	// open-jaw rail-return variant (fly in, train out) when it still nets a
 	// saving over the direct round-trip fare.
 	if returnDate != "" {
-		oj := composeOpenJawRailReturn(ctx, origin, destination, destination, bestPrice, basePrice, bestCurrency, departDate, returnDate)
+		oj := composeOpenJawRailReturn(ctx, origin, destination, destination, bestPrice, basePrice, bestCurrency, departDate, returnDate, scope)
 		if oj.Savings > 0 {
 			out = append(out, oj)
 		}
@@ -227,7 +228,7 @@ func detectRailFlyArb(ctx context.Context, origin, destination, departDate, retu
 // detectRailFlyArbitrage adapts DetectRailFlyArbitrage to the detectFn signature
 // used by DetectAll.
 func detectRailFlyArbitrage(ctx context.Context, in DetectorInput) []Hack {
-	return detectRailFlyArb(ctx, in.Origin, in.Destination, in.Date, in.ReturnDate, in.currency())
+	return detectRailFlyArb(ctx, in.Origin, in.Destination, in.Date, in.ReturnDate, in.currency(), in.groundScope())
 }
 
 // railFlyOriginAlias maps a real departure airport (the IATA the traveller
