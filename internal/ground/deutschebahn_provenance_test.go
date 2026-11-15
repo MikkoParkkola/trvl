@@ -112,3 +112,26 @@ func TestSearchDeutscheBahn_UnservedCityNotApplicable(t *testing.T) {
 		}
 	}
 }
+
+// DB's bot wall answers HTTP 452 {"code":"OPS_BLOCKED"} (seen live from a
+// plain client on 2026-11-15). It is a retryable refusal, typed as such.
+func TestSearchDeutscheBahn_OpsBlockedIsRateLimited(t *testing.T) {
+	origClient, origLimiter := dbClient, dbLimiter
+	dbLimiter = rate.NewLimiter(rate.Limit(1000), 1)
+	t.Cleanup(func() { dbClient, dbLimiter = origClient, origLimiter })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(452)
+		_, _ = w.Write([]byte(`{"status":"ERROR","code":"OPS_BLOCKED","errorRefId": "0.fd72c17.1794780601.4051813"}`))
+	}))
+	t.Cleanup(srv.Close)
+	dbClient = &http.Client{Transport: &redirectTransport{target: srv.URL}, Timeout: 5 * time.Second}
+
+	_, err := SearchDeutscheBahn(context.Background(), "Prague", "Vienna", "2026-11-17", "EUR")
+	if !errors.Is(err, models.ErrRateLimited) {
+		t.Fatalf("err = %v, want it to wrap ErrRateLimited", err)
+	}
+	if got := models.ClassifyProviderReason(err.Error()); got != models.ReasonBlocked {
+		t.Errorf("reason = %q, want %q", got, models.ReasonBlocked)
+	}
+}

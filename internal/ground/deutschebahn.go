@@ -438,6 +438,11 @@ func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		if bytes.Contains(respBody, []byte("OPS_BLOCKED")) {
+			// DB's bot wall (HTTP 452 {"code":"OPS_BLOCKED"}) refused this
+			// client: retryable, not a broken endpoint.
+			return nil, fmt.Errorf("db search: HTTP %d OPS_BLOCKED: %w", resp.StatusCode, models.ErrRateLimited)
+		}
 		return nil, fmt.Errorf("db search: HTTP %d: %s", resp.StatusCode, respBody)
 	}
 
