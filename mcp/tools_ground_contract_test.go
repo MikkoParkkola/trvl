@@ -26,7 +26,12 @@ type groundCall struct {
 
 func callSearchGround(t *testing.T, args map[string]any) groundCall {
 	t.Helper()
-	resp := NewServer().HandleRequest(jsonRequest(t, "tools/call", 1, map[string]any{"name": "search_ground", "arguments": args}))
+	return callGroundTool(t, "search_ground", args)
+}
+
+func callGroundTool(t *testing.T, name string, args map[string]any) groundCall {
+	t.Helper()
+	resp := NewServer().HandleRequest(jsonRequest(t, "tools/call", 1, map[string]any{"name": name, "arguments": args}))
 	if resp == nil {
 		t.Fatal("nil response")
 	}
@@ -494,6 +499,16 @@ func TestSearchGroundResultBudget(t *testing.T) {
 	t.Logf("search_ground result for 53 routes: %d bytes", got.size)
 	if got.size >= 50000 {
 		t.Errorf("tools/call result = %d bytes, want under 50000", got.size)
+	}
+	// The trims, not the size guard, must make 20 realistic rows fit.
+	if n := len(structuredRoutes(t, got)); n != 20 || strings.Contains(got.userText, "50 KB") {
+		t.Errorf("routes = %d with summary:\n%s\nwant 20 rows and no budget trim", n, got.userText)
+	}
+	// Clients reach search_ground through the travel router by default.
+	viaTravel := callGroundTool(t, "travel", map[string]any{"intent": "search_ground", "params": groundContractArgs})
+	t.Logf("travel(search_ground) result for 53 routes: %d bytes", viaTravel.size)
+	if viaTravel.isError || viaTravel.size >= 50000 {
+		t.Errorf("travel result = %d bytes (isError %v: %s), want under 50000", viaTravel.size, viaTravel.isError, viaTravel.errText)
 	}
 }
 
