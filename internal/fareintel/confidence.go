@@ -78,6 +78,11 @@ func ScoreConfidence(in ConfidenceInput) models.Confidence {
 	if in.Price <= 0 {
 		return models.UnratedConfidence("no price to assess")
 	}
+	// An estimated ground price (static table, day-best, range low) is not a
+	// quote for the shown departure, so its bookability is never rated.
+	if in.PriceProvenance == models.PriceEstimated {
+		return models.UnratedConfidence("estimated fare")
+	}
 
 	now := in.Now
 	if now.IsZero() {
