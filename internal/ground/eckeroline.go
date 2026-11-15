@@ -246,9 +246,6 @@ func SearchEckeroLine(ctx context.Context, from, to, date, currency string) ([]m
 	if !ok {
 		return nil, fmt.Errorf("eckeroline: no port for %q", to)
 	}
-	if currency == "" {
-		currency = "EUR"
-	}
 	if _, err := models.ParseDate(date); err != nil {
 		return nil, fmt.Errorf("eckeroline: invalid date %q: %w", date, err)
 	}
@@ -292,7 +289,7 @@ func SearchEckeroLine(ctx context.Context, from, to, date, currency string) ([]m
 				Provider:   "eckeroline",
 				Type:       "ferry",
 				Price:      price,
-				Currency:   currency,
+				Currency:   "EUR", // Eckerö fares and the reference price are euros
 				Duration:   135,
 				Departure:  models.GroundStop{City: fromCity, Station: fromName + " (" + ship + ")", Time: depTime},
 				Arrival:    models.GroundStop{City: toCity, Station: toName, Time: arrTime},
@@ -324,7 +321,7 @@ func SearchEckeroLine(ctx context.Context, from, to, date, currency string) ([]m
 			Provider:   "eckeroline",
 			Type:       "ferry",
 			Price:      eckerolineBasePrice,
-			Currency:   currency,
+			Currency:   "EUR", // Eckerö fares and the reference price are euros
 			Duration:   e.Duration,
 			Departure:  models.GroundStop{City: fromCity, Station: fromName + " (M/S Finlandia)", Time: depTime},
 			Arrival:    models.GroundStop{City: toCity, Station: toName, Time: arrTime},

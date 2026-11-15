@@ -234,10 +234,6 @@ func SearchStenaLine(ctx context.Context, from, to, date, currency string) ([]mo
 		return nil, fmt.Errorf("stenaline: no port for %q", to)
 	}
 
-	if currency == "" {
-		currency = "EUR"
-	}
-
 	if _, err := models.ParseDate(date); err != nil {
 		return nil, fmt.Errorf("stenaline: invalid date %q: %w", date, err)
 	}
@@ -266,7 +262,7 @@ func SearchStenaLine(ctx context.Context, from, to, date, currency string) ([]mo
 			Provider: "stenaline",
 			Type:     "ferry",
 			Price:    s.BasePrice,
-			Currency: strings.ToUpper(currency),
+			Currency: "EUR", // the reference table is in euros
 			Duration: s.DurationMin,
 			Departure: models.GroundStop{
 				City:    fromPort.City,

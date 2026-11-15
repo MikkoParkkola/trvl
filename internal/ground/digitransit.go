@@ -309,7 +309,7 @@ func parseDigitransitItineraries(
 			Provider: "vr",
 			Type:     "train",
 			Price:    price,
-			Currency: strings.ToUpper(currency),
+			Currency: "EUR", // the VR fare table is in euros
 			Duration: durationMin,
 			Departure: models.GroundStop{
 				City:    fromStation.Name,

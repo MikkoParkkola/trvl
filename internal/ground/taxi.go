@@ -73,16 +73,17 @@ func EstimateTaxiTransfer(ctx context.Context, input TaxiEstimateInput) (models.
 	low, high, currency := convertTaxiFare(ctx, lowEUR, highEUR, input.Currency, destinations.ConvertCurrency)
 
 	return models.GroundRoute{
-		Provider:  "taxi",
-		Type:      "taxi",
-		Price:     low,
-		PriceMax:  high,
-		Currency:  currency,
-		Duration:  durationMinutes,
-		Departure: models.GroundStop{City: fromName},
-		Arrival:   models.GroundStop{City: toName},
-		Transfers: 0,
-		Amenities: []string{"door-to-door", "estimated fare"},
+		Provider:        "taxi",
+		Type:            "taxi",
+		Price:           low,
+		PriceMax:        high,
+		Currency:        currency,
+		PriceProvenance: models.PriceEstimated, // a distance-based estimate, never a quote
+		Duration:        durationMinutes,
+		Departure:       models.GroundStop{City: fromName},
+		Arrival:         models.GroundStop{City: toName},
+		Transfers:       0,
+		Amenities:       []string{"door-to-door", "estimated fare"},
 		BookingURL: buildTaxiDirectionsURL(
 			input.FromLat,
 			input.FromLon,
