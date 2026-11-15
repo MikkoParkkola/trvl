@@ -71,7 +71,7 @@ func TestSearchByNameCore_DeadlineIsTimeout(t *testing.T) {
 		case <-time.After(3 * time.Second):
 		}
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 	res := runCore(t, ctx, "Piraeus", "Santorini", "ferryhopper")
 	st := statusByID(res.ProviderStatuses)["ferryhopper"]
@@ -143,9 +143,10 @@ func TestSearchByNameCore_DistribusionWithoutKeyIsNotConfigured(t *testing.T) {
 }
 
 // TestSearchByNameCore_EurostarLaunchesGatedByOwnName pins that asking for
-// "eurostar snap" does not launch regular Eurostar, and the reverse. Both
-// breakers are tripped so a launch shows up as a circuit_broken row without
-// touching the network.
+// "eurostar snap" does not launch regular Eurostar, and the reverse. London to
+// Paris is a Snap route, so both names could launch. Both breakers are
+// tripped, so the asked-for launch shows up as a circuit_broken row without
+// touching the network, and the other name has no row at all.
 func TestSearchByNameCore_EurostarLaunchesGatedByOwnName(t *testing.T) {
 	cases := []struct{ asked, notLaunched string }{
 		{"eurostar snap", "eurostar"},
@@ -158,11 +159,11 @@ func TestSearchByNameCore_EurostarLaunchesGatedByOwnName(t *testing.T) {
 			groundBreaker.RecordFailure("eurostar snap")
 			res := runCore(t, context.Background(), "London", "Paris", c.asked)
 			rows := statusByID(res.ProviderStatuses)
-			if _, ok := rows[c.asked]; !ok {
-				t.Errorf("asked-for %q has no row; rows = %+v", c.asked, res.ProviderStatuses)
+			if st := rows[c.asked]; st.Status != models.StatusCircuitBroken {
+				t.Errorf("asked-for %q row = %+v, want circuit_broken; rows = %+v", c.asked, st, res.ProviderStatuses)
 			}
-			if st, ok := rows[c.notLaunched]; ok && st.Status != models.StatusSkipped {
-				t.Errorf("%q was launched (status %q) although only %q was asked for", c.notLaunched, st.Status, c.asked)
+			if st, ok := rows[c.notLaunched]; ok {
+				t.Errorf("%q was launched (row %+v) although only %q was asked for", c.notLaunched, st, c.asked)
 			}
 		})
 	}

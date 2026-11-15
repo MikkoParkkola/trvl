@@ -26,25 +26,27 @@ func oneRoute(provider string) []models.GroundRoute {
 
 // TestCollectGroundResults_StatusMapping pins D3's aggregator mapping: a
 // deadline or a limiter wait past it is a timeout; a valid empty answer is
-// checked_no_hit; not-served is skipped; a ProviderNotice keeps routes with a
-// fix hint, and without routes it is a failure carrying its Reason.
+// checked_no_hit; not-served is skipped; a breaker skip is circuit_broken and
+// not a failure; a ProviderNotice, even wrapped, keeps routes with a fix hint,
+// and without routes it is a failure carrying its Reason.
 func TestCollectGroundResults_StatusMapping(t *testing.T) {
-	results := make(chan providerResult, 8)
+	results := make(chan providerResult, 9)
 	results <- providerResult{name: "ferryhopper", err: fmt.Errorf("ferryhopper: request: %w", context.DeadlineExceeded)}
 	results <- providerResult{name: "dfds", err: errors.New("dfds: rate limiter: rate: Wait(n=1) would exceed context deadline")}
 	results <- providerResult{name: "vikingline"}
 	results <- providerResult{name: "flixbus", routes: oneRoute("flixbus")}
 	results <- providerResult{name: "eckeroline", routes: oneRoute("eckeroline"),
-		err: &models.ProviderNotice{Reason: models.ReasonRateLimited, FixHint: "fares are from the timetable; retry later", Err: models.ErrRateLimited}}
+		err: fmt.Errorf("eckeroline: %w", &models.ProviderNotice{Reason: models.ReasonRateLimited, FixHint: "fares are from the timetable; retry later", Err: models.ErrRateLimited})}
 	results <- providerResult{name: "stenaline",
-		err: &models.ProviderNotice{Reason: models.ReasonBlocked, FixHint: "try again later", Err: errors.New("stenaline: blocked")}}
+		err: fmt.Errorf("stenaline: %w", &models.ProviderNotice{Reason: models.ReasonBlocked, FixHint: "try again later", Err: errors.New("blocked")})}
 	results <- providerResult{name: "regiojet", err: fmt.Errorf("regiojet: %w", models.ErrNotApplicable)}
+	results <- providerResult{name: "tallink", err: errCircuitBroken}
 	close(results)
 
 	routes, errMsgs, statuses := collectGroundResults(results)
 	got := statusByID(statuses)
-	if len(got) != 7 {
-		t.Fatalf("want 7 status rows, got %d: %+v", len(got), statuses)
+	if len(got) != 8 {
+		t.Fatalf("want 8 status rows, got %d: %+v", len(got), statuses)
 	}
 	for id, want := range map[string]string{
 		"ferryhopper": models.StatusTimeout,
@@ -53,6 +55,7 @@ func TestCollectGroundResults_StatusMapping(t *testing.T) {
 		"flixbus":     models.StatusOK,
 		"eckeroline":  models.StatusOK,
 		"regiojet":    models.StatusSkipped,
+		"tallink":     models.StatusCircuitBroken,
 	} {
 		if got[id].Status != want {
 			t.Errorf("%s status = %q, want %q", id, got[id].Status, want)
@@ -113,10 +116,10 @@ func TestLaunchProvider_BreakerOutcomes(t *testing.T) {
 			return nil, errors.New("x: rate limiter: rate: Wait(n=1) would exceed context deadline")
 		}, true},
 		{"notice with routes", func() ([]models.GroundRoute, error) {
-			return oneRoute("p"), &models.ProviderNotice{Reason: models.ReasonRateLimited, FixHint: "h", Err: models.ErrRateLimited}
+			return oneRoute("p"), fmt.Errorf("p: %w", &models.ProviderNotice{Reason: models.ReasonRateLimited, FixHint: "h", Err: models.ErrRateLimited})
 		}, false},
 		{"notice without routes", func() ([]models.GroundRoute, error) {
-			return nil, &models.ProviderNotice{Reason: models.ReasonBlocked, FixHint: "h", Err: errors.New("blocked")}
+			return nil, fmt.Errorf("p: %w", &models.ProviderNotice{Reason: models.ReasonBlocked, FixHint: "h", Err: errors.New("blocked")})
 		}, true},
 	}
 	for _, c := range cases {
