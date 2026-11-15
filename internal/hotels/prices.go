@@ -15,6 +15,10 @@ import (
 // caller can name, not a successful empty result.
 var ErrPriceNoData = errors.New("price service returned no data")
 
+// priceFallback resolves a payload-less price answer (SerpAPI, then the search
+// page); a variable so tests can count and stub it.
+var priceFallback = tryPriceFallback
+
 // isNoProviderPricesError reports whether err is the routine "Google's
 // payload contained no booking partner prices" outcome we want to surface
 // gracefully. We match on the substring rather than a typed error so the

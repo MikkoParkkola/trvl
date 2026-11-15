@@ -88,13 +88,10 @@ func TestGetHotelPrices_Status429IsRateLimited(t *testing.T) {
 	requireRateLimited(t, "HTTP 429", err)
 }
 
-// TestGetHotelPrices_Status3NoFallbackIsTypedFailure: Google's price call
-// returning no payload (status 3, the captured fixture) still goes through
-// the fallback chain; when that also yields nothing the lookup fails with
-// ErrPriceNoData. It must not claim success, and it is not a rate limit:
-// status 3 starts no cooldown, so labelling it rate-limited would tell the
-// caller to wait for something that is not coming.
-func TestGetHotelPrices_Status3NoFallbackIsTypedFailure(t *testing.T) {
+// serveStatus3 answers the price RPC with the captured payload-less status 3
+// response and replaces the fallback chain with fallback, counting calls.
+func serveStatus3(t *testing.T, fallback *models.HotelPriceResult) *atomic.Int64 {
+	t.Helper()
 	noSerpAPIKey(t)
 	body, err := os.ReadFile("testdata/price_empty_payload.txt")
 	if err != nil {
@@ -103,8 +100,46 @@ func TestGetHotelPrices_Status3NoFallbackIsTypedFailure(t *testing.T) {
 	useTestDefaultClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(body)
 	}))
+	var calls atomic.Int64
+	orig := priceFallback
+	priceFallback = func(context.Context, HotelPriceOpts) *models.HotelPriceResult {
+		calls.Add(1)
+		return fallback
+	}
+	t.Cleanup(func() { priceFallback = orig })
+	return &calls
+}
+
+// TestGetHotelPrices_Status3UsesFallbackPrices: a payload-less answer goes to
+// the fallback chain first, and the fallback's prices are the result.
+func TestGetHotelPrices_Status3UsesFallbackPrices(t *testing.T) {
+	calls := serveStatus3(t, &models.HotelPriceResult{
+		Success: true, HotelID: "/g/11b6d4_v_4",
+		Providers: []models.ProviderPrice{{Provider: "SerpAPI", Price: 150, Currency: "EUR"}},
+	})
 
 	res, err := GetHotelPricesWithOpts(context.Background(), priceOpts())
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("fallback called %d times, want 1", n)
+	}
+	if err != nil || res == nil || len(res.Providers) != 1 || res.Providers[0].Price != 150 {
+		t.Fatalf("result = %+v, err %v; want the fallback's single 150 EUR price", res, err)
+	}
+}
+
+// TestGetHotelPrices_Status3NoFallbackIsTypedFailure: Google's price call
+// returning no payload (status 3, the captured fixture) still goes through
+// the fallback chain; when that also yields nothing the lookup fails with
+// ErrPriceNoData. It must not claim success, and it is not a rate limit:
+// status 3 starts no cooldown, so labelling it rate-limited would tell the
+// caller to wait for something that is not coming.
+func TestGetHotelPrices_Status3NoFallbackIsTypedFailure(t *testing.T) {
+	calls := serveStatus3(t, nil)
+
+	res, err := GetHotelPricesWithOpts(context.Background(), priceOpts())
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("fallback called %d times, want 1 before giving up", n)
+	}
 	if err == nil {
 		t.Fatalf("status 3 with no fallback: got success %+v, want ErrPriceNoData", res)
 	}
