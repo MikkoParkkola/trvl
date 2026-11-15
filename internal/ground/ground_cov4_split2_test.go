@@ -314,13 +314,13 @@ func TestGeocodeCity_NonOKStatus(t *testing.T) {
 func TestFilterUnavailableGroundRoutes_v2(t *testing.T) {
 	routes := []models.GroundRoute{
 		{Provider: "flixbus", Price: 15.0}, // kept (price > 0)
-		{Provider: "flixbus", Price: 0},    // dropped (non-schedule, zero price)
+		{Provider: "flixbus", Price: 0},    // kept as unavailable (D1)
 		{Provider: "db", Price: 0},         // kept (schedule-only)
 		{Provider: "transitous", Price: 0}, // kept (schedule-only)
 	}
 	got := filterUnavailableGroundRoutes(routes)
-	if len(got) != 3 {
-		t.Errorf("expected 3 routes, got %d", len(got))
+	if len(got) != 4 {
+		t.Errorf("expected 4 routes (zero price kept as unavailable), got %d", len(got))
 	}
 }
 

@@ -21,13 +21,10 @@ func TestFilterZeroPriceRoutes(t *testing.T) {
 
 	filtered := filterUnavailableGroundRoutes(routes)
 
-	if len(filtered) != 4 {
-		t.Fatalf("expected 4 routes after filtering, got %d", len(filtered))
-	}
-	for _, r := range filtered {
-		if r.Price == 0 && r.Provider != "transitous" {
-			t.Error("zero-price non-transitous route should have been filtered out")
-		}
+	// D1: a zero-price route is kept and shown as unavailable, whatever the
+	// provider; nothing is silently dropped.
+	if len(filtered) != 6 {
+		t.Fatalf("expected all 6 routes kept (zero price = unavailable), got %d", len(filtered))
 	}
 }
 
@@ -39,8 +36,8 @@ func TestFilterZeroPriceRoutes_AllZero(t *testing.T) {
 
 	filtered := filterUnavailableGroundRoutes(routes)
 
-	if len(filtered) != 0 {
-		t.Fatalf("expected 0 routes after filtering, got %d", len(filtered))
+	if len(filtered) != 2 {
+		t.Fatalf("expected both zero-price routes kept as unavailable, got %d", len(filtered))
 	}
 }
 
