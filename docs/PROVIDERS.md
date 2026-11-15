@@ -108,13 +108,13 @@ trvl searches 22 ground transport providers in parallel, covering most of Europe
 | **ÖBB** | REST (shop + HAFAS) | Austrian Railjet + cross-border (AT/DE/HU/IT) | EUR 38+ | None |
 | **VR (via Digitransit)** | GraphQL | Finnish rail network | EUR 14+ | Public API key (embedded) |
 | **NS** | REST | Dutch rail network | EUR 5+ | Public subscription key (embedded) |
-| **Renfe** | REST | Spanish AVE high-speed + regional | EUR 36+ | None |
+| **Renfe** | REST price calendar | Spanish AVE high-speed + regional; one estimated day-minimum fare per date, no train times | EUR 32+ | None |
 | **Trenitalia** | REST/BFF JSON | Italian high-speed + regional rail (Frecciarossa, Frecciargento, Intercity) | EUR 19+ | None |
 | **Italo (NTV)** | REST/BFF JSON | Italian high-speed rail (AGV/EVO; Milano/Torino/Venezia ↔ Roma/Napoli ↔ Salerno) | EUR 20+ | None (anonymous session token) |
 | **SNCF** | REST | French TGV, TER, Intercity | Varies | None by default; optional browser/curl fallback |
 | **Trainline** | REST | Aggregated: SNCF, DB, Eurostar, Trenitalia, … | Varies | None by default; optional browser/curl fallback |
 | **European Sleeper** | Reference schedule | Night trains (Brussels ↔ Amsterdam ↔ Berlin ↔ Prague) | EUR 49+ | None |
-| **Snälltåget** | Reference schedule | Swedish night trains (Stockholm ↔ Malmö ↔ Berlin) | EUR 40+ | None |
+| **Snälltåget** | Booking app API (`apiv2.snalltaget.se`) | Stockholm ↔ Malmö ↔ Copenhagen ↔ Hamburg ↔ Berlin, Stockholm ↔ Åre night train; live per-departure fares in SEK | SEK 499+ | Anonymous guest token (auto) |
 | **FlixBus** | REST | Pan-European buses (40+ countries) | EUR 5+ | None |
 | **RegioJet** | REST | CZ/SK/AT/HU/DE/PL buses + trains | EUR 5+ | None |
 | **Transitous** | MOTIS2 REST | Pan-European transit (schedule-based fallback) | — | None |
@@ -149,7 +149,7 @@ Google's travel frontend uses an internal gRPC-over-HTTP protocol called **batch
 14. **Trains (SNCF)** — SNCF Connect API for French TGV, TER, and Intercity routes; optional browser/curl fallback for protected sessions
 15. **Trains (Trainline)** — Trainline aggregated rail API across major European operators; optional browser/curl fallback for protected sessions
 16. **Transit (Transitous)** — `routing.spicebus.org` MOTIS2 API for pan-European transit routing
-17. **Trains (Renfe)** — Spanish AVE high-speed and regional rail via REST API; fares EUR 36+
+17. **Trains (Renfe)** — Spanish AVE high-speed and regional rail via the REST price calendar; one estimated day-minimum fare per date, without train times
 18. **Rate limiting** — per-provider token buckets (10 req/s FlixBus/RegioJet; 1 req/2s DB; 1 req/6s SNCF/Transitous; 1 req/20s Eurostar) with exponential backoff on 429/5xx
 
 Most providers use pure HTTP/JSON APIs. Optional browser/curl-assisted fallbacks exist only for protected providers that sometimes require live cookies or verification (currently SNCF and Trainline); the default path stays API-first.
