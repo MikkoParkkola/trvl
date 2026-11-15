@@ -12,7 +12,9 @@ import (
 // result: the command hands the search result to models.FormatJSON. The
 // command itself has no offline seam for the search, so this pins the
 // serializer output for a representative result (live-priced route with one
-// source, ok / rate_limited / skipped status rows), not the command end to end.
+// source, price_provenance on route and source, comparable_price on the source,
+// and ok / timeout / rate_limited / checked_no_hit / route_not_served status
+// rows), not the command end to end.
 const goldenGroundCLIJSON = `{
   "success": true,
   "count": 1,
@@ -22,6 +24,7 @@ const goldenGroundCLIJSON = `{
       "type": "ferry",
       "price": 48,
       "currency": "EUR",
+      "price_provenance": "live",
       "comparable_price": 48,
       "duration_minutes": 675,
       "departure": {
@@ -42,6 +45,8 @@ const goldenGroundCLIJSON = `{
           "provider": "fast ferries",
           "price": 48,
           "currency": "EUR",
+          "price_provenance": "live",
+          "comparable_price": 48,
           "booking_url": "https://www.ferryhopper.com/en/booking/results?golden=1",
           "retrieved_at": "2026-07-01T12:00:00Z",
           "freshness": "live"
@@ -63,6 +68,13 @@ const goldenGroundCLIJSON = `{
   ],
   "provider_statuses": [
     {
+      "id": "eckeroline",
+      "name": "eckeroline",
+      "status": "timeout",
+      "error": "eckeroline homepage: context deadline exceeded",
+      "reason": "timeout"
+    },
+    {
       "id": "ferryhopper",
       "name": "ferryhopper",
       "status": "ok",
@@ -76,16 +88,23 @@ const goldenGroundCLIJSON = `{
       "reason": "rate_limited"
     },
     {
+      "id": "stenaline",
+      "name": "stenaline",
+      "status": "checked_no_hit"
+    },
+    {
       "id": "vr",
       "name": "vr",
-      "status": "skipped"
+      "status": "skipped",
+      "reason": "route_not_served"
     }
   ],
   "completeness": {
     "state": "partial",
-    "queried": 2,
-    "succeeded": 1,
+    "queried": 4,
+    "succeeded": 2,
     "missing": [
+      "eckeroline",
       "rome2rio"
     ]
   }
@@ -94,9 +113,11 @@ const goldenGroundCLIJSON = `{
 
 func goldenGroundCLIResult() *models.GroundSearchResult {
 	statuses := []models.ProviderStatus{
+		{ID: "eckeroline", Name: "eckeroline", Status: models.StatusTimeout, Reason: models.ReasonTimeout, Error: "eckeroline homepage: context deadline exceeded"},
 		{ID: "ferryhopper", Name: "ferryhopper", Status: models.StatusOK, Results: 1},
 		{ID: "rome2rio", Name: "rome2rio", Status: models.StatusRateLimited, Error: "rome2rio: HTTP 429: " + models.ErrRateLimited.Error()},
-		{ID: "vr", Name: "vr", Status: models.StatusSkipped},
+		{ID: "stenaline", Name: "stenaline", Status: models.StatusCheckedNoHit},
+		{ID: "vr", Name: "vr", Status: models.StatusSkipped, Reason: models.ReasonRouteNotServed},
 	}
 	url := "https://www.ferryhopper.com/en/booking/results?golden=1"
 	return &models.GroundSearchResult{
@@ -107,18 +128,21 @@ func goldenGroundCLIResult() *models.GroundSearchResult {
 			Type:            "ferry",
 			Price:           48,
 			Currency:        "EUR",
+			PriceProvenance: models.PriceLive,
 			ComparablePrice: 48,
 			Duration:        675,
 			Departure:       models.GroundStop{City: "Piraeus, Athens", Station: "Piraeus, Athens", Time: "2026-07-15T07:00:00+03:00"},
 			Arrival:         models.GroundStop{City: "Santorini (Thira)", Station: "Santorini (Thira)", Time: "2026-07-15T18:15:00+03:00"},
 			BookingURL:      url,
 			Sources: []models.PriceSource{{
-				Provider:    "fast ferries",
-				Price:       48,
-				Currency:    "EUR",
-				BookingURL:  url,
-				RetrievedAt: time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC),
-				Freshness:   models.FreshnessLive,
+				Provider:        "fast ferries",
+				Price:           48,
+				Currency:        "EUR",
+				Provenance:      models.PriceLive,
+				ComparablePrice: 48,
+				BookingURL:      url,
+				RetrievedAt:     time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC),
+				Freshness:       models.FreshnessLive,
 			}},
 			CheapestSource: "fast ferries",
 			Confidence: &models.Confidence{
