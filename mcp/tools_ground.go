@@ -449,7 +449,17 @@ func buildGroundRouteSummary(header string, routes []models.GroundRoute, maxRows
 	sb.WriteString(":\n\n")
 
 	limit := min(len(routes), maxRows)
+	// A round trip lists outbound then inbound rows; a header before each
+	// direction keeps inbound rows from reading as more outbound options.
+	prevDir := ""
 	for i, r := range routes[:limit] {
+		if r.Direction != "" && r.Direction != prevDir {
+			if i > 0 {
+				sb.WriteString("\n")
+			}
+			sb.WriteString(strings.ToUpper(r.Direction[:1]) + r.Direction[1:] + ":\n")
+		}
+		prevDir = r.Direction
 		price := groundPriceLabel(r)
 		dur := fmt.Sprintf("%dh%02dm", r.Duration/60, r.Duration%60)
 		transfers := "direct"
