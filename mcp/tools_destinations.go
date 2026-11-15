@@ -532,7 +532,7 @@ func handlePlanTrip(ctx context.Context, args map[string]any, elicit ElicitFunc,
 		return nil, nil, toolExecutionError("Trip planning", err)
 	}
 
-	data, _ := json.MarshalIndent(result, "", "  ")
+	data, _ := json.Marshal(result)
 	if !result.Success && (len(result.OutboundFlights) > 0 || len(result.ReturnFlights) > 0 || len(result.Hotels) > 0) {
 		return []ContentBlock{
 			{Type: "text", Text: fmt.Sprintf("Partial trip plan: %s", result.Error)},
