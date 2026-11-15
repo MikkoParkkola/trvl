@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -12,6 +13,11 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
+
+// ErrNoNameMatch means the providers answered but no candidate's name matched
+// the requested property. Callers show an empty result with a notice instead
+// of presenting unrelated hotels as matches.
+var ErrNoNameMatch = errors.New("no hotel matched the requested name")
 
 // SearchHotelsByName searches for hotels matching a specific property name across
 // all providers (Google Hotels, Trivago, and any configured external providers).

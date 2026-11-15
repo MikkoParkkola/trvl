@@ -191,6 +191,9 @@ func searchHotelByNameTool() ToolDef {
 	}
 }
 
+// searchHotelsByNameFunc is the by-name lookup; a variable so tests can stub it.
+var searchHotelsByNameFunc = hotels.SearchHotelsByName
+
 func handleSearchHotelByName(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
 	name := argString(args, "name")
 	location := models.ResolveLocationName(argString(args, "location"))
@@ -209,7 +212,7 @@ func handleSearchHotelByName(ctx context.Context, args map[string]any, elicit El
 		return nil, nil, err
 	}
 
-	results, err := hotels.SearchHotelsByName(ctx, name, location, checkIn, checkOut, currency)
+	results, err := searchHotelsByNameFunc(ctx, name, location, checkIn, checkOut, currency)
 	if err != nil {
 		return nil, nil, err
 	}
