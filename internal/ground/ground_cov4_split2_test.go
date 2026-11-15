@@ -28,17 +28,19 @@ func TestIsProviderNotApplicable_StenaLineRoute(t *testing.T) {
 	}
 }
 
+// D3: a limiter wait that would pass the deadline is a timeout, not a
+// "provider does not serve this route" answer.
 func TestIsProviderNotApplicable_RateLimiterExceed_v2(t *testing.T) {
 	err := fmt.Errorf("rate limiter: rate: Wait(n=1) would exceed context deadline")
-	if !isProviderNotApplicable(err) {
-		t.Errorf("rate limiter exceed error should be not-applicable")
+	if isProviderNotApplicable(err) {
+		t.Errorf("rate limiter exceed error must not be not-applicable (it is a timeout)")
 	}
 }
 
 func TestIsProviderNotApplicable_ContextDeadline_v2(t *testing.T) {
 	err := fmt.Errorf("context deadline exceeded")
-	if !isProviderNotApplicable(err) {
-		t.Errorf("context deadline should be not-applicable")
+	if isProviderNotApplicable(err) {
+		t.Errorf("context deadline must not be not-applicable (it is a timeout)")
 	}
 }
 

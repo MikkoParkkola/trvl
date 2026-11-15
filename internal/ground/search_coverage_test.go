@@ -105,8 +105,9 @@ func TestIsProviderNotApplicable(t *testing.T) {
 		{"no Eurostar route", fmt.Errorf("no Eurostar route"), true},
 		{"no DFDS route", fmt.Errorf("no DFDS route"), true},
 		{"no Stena Line route", fmt.Errorf("no Stena Line route"), true},
-		{"rate limiter", fmt.Errorf("rate limiter: rate: Wait something"), true},
-		{"deadline", fmt.Errorf("context deadline exceeded"), true},
+		// D3: limiter waits and deadlines are timeouts, not "not served".
+		{"rate limiter", fmt.Errorf("rate limiter: rate: Wait something"), false},
+		{"deadline", fmt.Errorf("context deadline exceeded"), false},
 		{"real error", fmt.Errorf("HTTP 500 internal server error"), false},
 	}
 	for _, tt := range tests {

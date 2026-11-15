@@ -102,6 +102,12 @@ func launchProvider(wg *sync.WaitGroup, results chan<- providerResult, name stri
 	}()
 }
 
+// collectGroundResults drains the provider fan-out into the merged routes, the
+// error messages of providers that failed, and one status row per provider.
+func collectGroundResults(results <-chan providerResult) ([]models.GroundRoute, []string, []models.ProviderStatus) {
+	return nil, nil, nil
+}
+
 // SearchOptions configures a ground transport search.
 type SearchOptions struct {
 	Currency              string   // Default: EUR

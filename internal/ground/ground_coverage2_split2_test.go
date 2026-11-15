@@ -365,9 +365,10 @@ func TestSearchDigitransit_MockHappyPath2(t *testing.T) {
 // Additional edge case coverage
 // ============================================================
 
+// D3: a deadline is a timeout, never "provider does not serve this route".
 func TestIsProviderNotApplicable_ContextDeadline(t *testing.T) {
-	if !isProviderNotApplicable(context.DeadlineExceeded) {
-		t.Error("expected true for context.DeadlineExceeded")
+	if isProviderNotApplicable(context.DeadlineExceeded) {
+		t.Error("context.DeadlineExceeded must not be not-applicable (it is a timeout)")
 	}
 }
 
