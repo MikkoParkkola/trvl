@@ -38,13 +38,18 @@ func trustConverter(ctx context.Context) func(amount float64, from, to string) (
 	}
 	rates := map[[2]string]rate{}
 	return func(amount float64, from, to string) (float64, bool) {
+		// A non-positive amount has no price to convert and says nothing
+		// about the rate, so it is neither answered from nor stored in memo.
+		if amount <= 0 {
+			return 0, false
+		}
 		key := [2]string{strings.ToUpper(from), strings.ToUpper(to)}
 		if r, seen := rates[key]; seen {
 			return amount * r.perUnit, r.ok
 		}
 		converted, ok := conv(ctx, amount, from, to)
-		r := rate{ok: ok && amount > 0}
-		if r.ok {
+		r := rate{ok: ok}
+		if ok {
 			r.perUnit = converted / amount
 		}
 		rates[key] = r

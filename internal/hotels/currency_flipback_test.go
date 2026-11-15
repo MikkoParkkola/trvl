@@ -304,3 +304,15 @@ func TestTrustConverter_LooksUpEachPairOnce(t *testing.T) {
 		t.Fatalf("rate lookups = %d, want 2 (one per currency pair)", calls)
 	}
 }
+
+// TestTrustConverter_ZeroAmountDoesNotPoisonPair: a zero or negative amount
+// says nothing about the rate, so it must not be remembered as a failure.
+func TestTrustConverter_ZeroAmountDoesNotPoisonPair(t *testing.T) {
+	stubCZKToEUR(t)
+	conv := trustConverter(context.Background())
+	_, _ = conv(0, "CZK", "EUR")
+	_, _ = conv(-5, "CZK", "EUR")
+	if got, ok := conv(6000, "CZK", "EUR"); !ok || got != 240 {
+		t.Fatalf("conv(6000 CZK) after zero probes = %v, %v; want 240, true", got, ok)
+	}
+}
