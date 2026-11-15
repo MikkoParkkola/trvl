@@ -463,7 +463,9 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	}
 
 	// Digitransit (VR Finnish Railways) — only if at least one city has a Finnish station.
-	if useProvider("digitransit") || useProvider("vr") {
+	// vr and digitransit name the same provider: excluding either suppresses it.
+	vrExcluded := !providerEnabled("vr", nil, opts.ExcludeProviders) || !providerEnabled("digitransit", nil, opts.ExcludeProviders)
+	if !vrExcluded && (useProvider("digitransit") || useProvider("vr")) {
 		if HasDigitransitStation(from) || HasDigitransitStation(to) {
 			launchProvider(&wg, results, "vr", func() ([]models.GroundRoute, error) {
 				return SearchDigitransit(ctx, from, to, date, opts.Currency)
