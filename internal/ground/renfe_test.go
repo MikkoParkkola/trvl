@@ -240,7 +240,14 @@ func TestSearchRenfe_CalendarMinimumIsEstimated(t *testing.T) {
 	t.Cleanup(func() { renfeClient, renfeLimiter = origClient, origLimiter })
 	renfeLimiter = rate.NewLimiter(rate.Limit(1000), 1)
 	fixture := loadGroundFixture(t, "renfe_madrid_barcelona_calendar.json")
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req renfePriceCalendarRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		if req.OriginID != "60000" || req.DestinyID != "71801" || req.InitDate != "2026-11-20" || req.EndDate != "2026-11-20" {
+			t.Errorf("request = %+v, want 60000 -> 71801 for 2026-11-20 only", req)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(fixture))
 	}))
@@ -282,5 +289,42 @@ func TestSearchRenfe_NotApplicableWrapsSentinel(t *testing.T) {
 		if !errors.Is(err, models.ErrNotApplicable) {
 			t.Errorf("%s -> %s: error %v does not wrap models.ErrNotApplicable", pair[0], pair[1], err)
 		}
+	}
+}
+
+// TestSearchRenfe_TypedErrors pins that a refused or reshaped calendar answer
+// is a classifiable error rather than a bare string.
+func TestSearchRenfe_TypedErrors(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   error
+	}{
+		{"refused", http.StatusInternalServerError, "server error", models.ErrRateLimited},
+		{"rate limited", http.StatusTooManyRequests, "", models.ErrRateLimited},
+		{"moved", http.StatusNotFound, "", models.ErrParseFailed},
+		{"reshaped", http.StatusOK, `{"journeysPriceCalendar":"none"}`, models.ErrParseFailed},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			origClient, origLimiter := renfeClient, renfeLimiter
+			t.Cleanup(func() { renfeClient, renfeLimiter = origClient, origLimiter })
+			renfeLimiter = rate.NewLimiter(rate.Limit(1000), 1)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(c.status)
+				_, _ = w.Write([]byte(c.body))
+			}))
+			t.Cleanup(srv.Close)
+			renfeClient = &http.Client{Transport: &redirectTransport{target: srv.URL}, Timeout: 5 * time.Second}
+
+			routes, err := SearchRenfe(context.Background(), "Madrid", "Barcelona", "2026-11-20", "EUR")
+			if !errors.Is(err, c.want) {
+				t.Errorf("err = %v, want it to wrap %v", err, c.want)
+			}
+			if len(routes) != 0 {
+				t.Errorf("routes = %d, want none alongside an error", len(routes))
+			}
+		})
 	}
 }

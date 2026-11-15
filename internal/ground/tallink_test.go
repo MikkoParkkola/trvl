@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -458,5 +459,47 @@ func TestSearchTallink_NotApplicableWrapsSentinel(t *testing.T) {
 		if !errors.Is(err, models.ErrNotApplicable) {
 			t.Errorf("%s -> %s: error %v does not wrap models.ErrNotApplicable", pair[0], pair[1], err)
 		}
+	}
+}
+
+// TestSearchTallink_TypedErrors pins that a refused or reshaped timetable is a
+// classifiable error: refusals wrap ErrRateLimited, a moved endpoint or an
+// undecodable body wraps ErrParseFailed.
+func TestSearchTallink_TypedErrors(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   error
+	}{
+		{"refused", http.StatusServiceUnavailable, "", models.ErrRateLimited},
+		{"rate limited", http.StatusTooManyRequests, "", models.ErrRateLimited},
+		{"moved", http.StatusNotFound, "", models.ErrParseFailed},
+		{"reshaped", http.StatusOK, `{"trips":{"2026-11-20":{"outwards":"soon"}}}`, models.ErrParseFailed},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			origClient, origLimiter := tallinkClient, tallinkLimiter
+			t.Cleanup(func() { tallinkClient, tallinkLimiter = origClient, origLimiter })
+			tallinkLimiter = rate.NewLimiter(rate.Limit(1000), 1)
+			tallinkClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				rec := httptest.NewRecorder()
+				if strings.Contains(r.URL.Path, "/api/timetables") {
+					rec.WriteHeader(c.status)
+					_, _ = rec.WriteString(c.body)
+					return rec.Result(), nil
+				}
+				rec.Header().Set("Set-Cookie", "JSESSIONID=mock-sess; Path=/")
+				_, _ = rec.WriteString(`<script>window.Env = { sessionGuid: 'MOCK-GUID' };</script>`)
+				return rec.Result(), nil
+			})}
+			routes, err := SearchTallink(context.Background(), "Helsinki", "Tallinn", "2026-11-20", "EUR")
+			if !errors.Is(err, c.want) {
+				t.Errorf("err = %v, want it to wrap %v", err, c.want)
+			}
+			if len(routes) != 0 {
+				t.Errorf("routes = %d, want none alongside an error", len(routes))
+			}
+		})
 	}
 }
