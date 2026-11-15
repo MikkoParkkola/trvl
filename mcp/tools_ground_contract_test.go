@@ -325,34 +325,28 @@ func TestSearchGroundDefaultCapsBothCopiesAt20(t *testing.T) {
 	assertCompactJSONOf(t, got.assistant, got.structured)
 }
 
-// TestSearchGroundLimitRaisesCap pins the limit argument (contested: see the
-// operator's no-knob rule; delete this test if the knob is dropped).
-func TestSearchGroundLimitRaisesCap(t *testing.T) {
-	stubGroundRoutes(t, groundContractFixture(53))
-	for _, tc := range []struct {
-		limit        float64
-		wantReturned int
-	}{{30, 30}, {100, 53}} {
-		got := callSearchGround(t, withArgs(map[string]any{"limit": tc.limit}))
-		if n := len(structuredRoutes(t, got)); n != tc.wantReturned {
-			t.Errorf("limit %v: routes = %d, want %d", tc.limit, n, tc.wantReturned)
-		}
-		if c, _ := got.structured["count"].(float64); int(c) != tc.wantReturned {
-			t.Errorf("limit %v: count = %v, want %d", tc.limit, got.structured["count"], tc.wantReturned)
-		}
-		if total, _ := got.structured["total_count"].(float64); total != 53 {
-			t.Errorf("limit %v: total_count = %v, want 53", tc.limit, got.structured["total_count"])
-		}
+// TestSearchGroundCapIsAutomatic pins the operator rule that trvl sizes the
+// result itself: there is no limit argument, and the summary says how many
+// more routes exist and which filters narrow them.
+func TestSearchGroundCapIsAutomatic(t *testing.T) {
+	if p, ok := searchGroundTool().InputSchema.Properties["limit"]; ok {
+		t.Errorf("input schema declares limit %+v; the cap is automatic", p)
 	}
-	tool := searchGroundTool()
-	if p, ok := tool.InputSchema.Properties["limit"]; !ok || p.Type != "integer" {
-		t.Errorf("input schema limit = %+v, want an integer property", p)
+	stubGroundRoutes(t, groundContractFixture(53))
+	got := callSearchGround(t, groundContractArgs)
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	for _, want := range []string{"20 of 53", "type", "provider", "max_price"} {
+		if !strings.Contains(got.userText, want) {
+			t.Errorf("summary lacks %q:\n%s", want, got.userText)
+		}
 	}
 }
 
 // TestSearchGroundRoundTripCapKeepsInbound pins the cap per direction: ground
 // search appends every outbound row before any inbound row, so a single cap
-// would drop the whole return leg (contested: per-direction rule).
+// would drop the whole return leg.
 func TestSearchGroundRoundTripCapKeepsInbound(t *testing.T) {
 	out, in := groundContractFixture(25), groundContractFixture(25)
 	for i := range out {
@@ -372,6 +366,11 @@ func TestSearchGroundRoundTripCapKeepsInbound(t *testing.T) {
 	}
 	if total, _ := got.structured["total_count"].(float64); total != 50 {
 		t.Errorf("total_count = %v, want 50", got.structured["total_count"])
+	}
+	for _, want := range []string{"20 of 25 outbound", "20 of 25 inbound"} {
+		if !strings.Contains(got.userText, want) {
+			t.Errorf("summary lacks %q:\n%s", want, got.userText)
+		}
 	}
 }
 
@@ -400,7 +399,7 @@ func TestSearchGroundDropsSingleSourceArrays(t *testing.T) {
 
 // TestSearchGroundDropsLegCityRepeats pins leg stops to new information: a
 // city already known from the route or the previous leg is dropped, a
-// transfer city and every station stay (contested: exact rule).
+// transfer city and every station stay.
 func TestSearchGroundDropsLegCityRepeats(t *testing.T) {
 	routes := groundContractFixture(1) // row 0 has a Brno transfer
 	stubGroundRoutes(t, routes)
