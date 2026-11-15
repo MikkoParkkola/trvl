@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -374,15 +375,30 @@ func TestBuildAnnotatedContentBlocks_TextCopyIsCompactJSON(t *testing.T) {
 	if len(blocks) != 2 {
 		t.Fatalf("len = %d, want 2", len(blocks))
 	}
-	want, err := json.Marshal(data)
+	assertCompactJSONOf(t, blocks[1].Text, data)
+}
+
+// assertCompactJSONOf checks that text parses to the same JSON as payload and
+// carries no indentation. Comparing parsed values keeps the check independent
+// of how the encoder escapes characters such as & in URLs. The whitespace
+// check assumes payload strings hold no newlines, tabs or double spaces.
+func assertCompactJSONOf(t *testing.T, text string, payload any) {
+	t.Helper()
+	if strings.ContainsAny(text, "\n\t") || strings.Contains(text, "  ") {
+		t.Errorf("text copy is indented, want compact JSON: %d bytes, %d newlines", len(text), strings.Count(text, "\n"))
+	}
+	raw, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := blocks[1].Text; got != string(want) {
-		t.Fatalf("assistant text copy is not compact JSON of the structured payload:\ngot  %d bytes, %d newlines\nwant %d bytes, 0 newlines", len(got), strings.Count(got, "\n"), len(want))
+	var got, want any
+	if err := json.Unmarshal([]byte(text), &got); err != nil {
+		t.Fatalf("text copy is not JSON: %v", err)
 	}
-	var round models.GroundSearchResult
-	if err := json.Unmarshal([]byte(blocks[1].Text), &round); err != nil || len(round.Routes) != 2 {
-		t.Fatalf("text copy must still unmarshal: err=%v routes=%d", err, len(round.Routes))
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("text copy does not match the structured payload:\ngot  %s\nwant %s", text, raw)
 	}
 }

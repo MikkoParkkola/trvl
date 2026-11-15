@@ -2,8 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/trip"
@@ -45,13 +43,7 @@ func TestHandlePlanTrip_TextCopyIsCompactJSON(t *testing.T) {
 			if len(content) <= tc.textBlock {
 				t.Fatalf("content has %d blocks, want JSON at index %d", len(content), tc.textBlock)
 			}
-			want, err := json.Marshal(tc.result)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := content[tc.textBlock].Text; got != string(want) {
-				t.Fatalf("plan_trip text copy is not compact JSON:\ngot  %d bytes, %d newlines\nwant %d bytes, 0 newlines", len(got), strings.Count(got, "\n"), len(want))
-			}
+			assertCompactJSONOf(t, content[tc.textBlock].Text, tc.result)
 		})
 	}
 }
