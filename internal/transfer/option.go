@@ -36,8 +36,14 @@ func BuildOptions(routes []models.GroundRoute, airportCode, from, to string) mod
 			Changes:       r.Transfers,
 			BookURL:       r.BookingURL,
 		}
-		// Taxi/private fares are estimates, not booked quotes.
-		if opt.Mode == "taxi" || opt.Mode == "private_transfer" {
+		// An unavailable price is no price at all; TotalPrice stays as given
+		// (a walk can honestly cost 0) and the flag tells renderers to show no
+		// total. Estimated ground prices and taxi/private fares are estimates,
+		// not booked quotes.
+		switch {
+		case r.PriceProvenance == models.PriceUnavailable:
+			opt.PriceUnavailable = true
+		case r.PriceProvenance == models.PriceEstimated, opt.Mode == "taxi", opt.Mode == "private_transfer":
 			opt.PriceIsEstimate = true
 		}
 		opt.Steps = AssembleSteps(r, opt.Mode, profPtr)
