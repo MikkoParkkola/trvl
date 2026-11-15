@@ -60,13 +60,20 @@ func groundNegKey(from, to, date string, opts SearchOptions, providerKey string)
 	if opts.MaxPrice > 0 || opts.Type != "" {
 		return "", false
 	}
+	scope := "ground|" + providerKey + "|x=" + groundExcludeKey(opts) + "|b=" + strconv.FormatBool(browserFallbacksEnabled(opts))
+	return cache.NegativeKey(scope, from, to, date) + "|" + strings.TrimSpace(date), true
+}
+
+// groundExcludeKey is the canonical exclusion component of the cache keys
+// (sorted, lower-case), so a cached answer never reaches a search that
+// excludes the provider that produced it.
+func groundExcludeKey(opts SearchOptions) string {
 	excl := make([]string, 0, len(opts.ExcludeProviders))
 	for _, p := range opts.ExcludeProviders {
 		excl = append(excl, strings.ToLower(strings.TrimSpace(p)))
 	}
 	sort.Strings(excl)
-	scope := "ground|" + providerKey + "|x=" + strings.Join(excl, ",") + "|b=" + strconv.FormatBool(browserFallbacksEnabled(opts))
-	return cache.NegativeKey(scope, from, to, date) + "|" + strings.TrimSpace(date), true
+	return strings.Join(excl, ",")
 }
 
 // negCacheHitResult answers a search the negative cache already knows has no

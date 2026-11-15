@@ -143,7 +143,7 @@ func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions
 
 	// Build cache key from search parameters.
 	providerKey := groundProviderKey(opts)
-	cacheKey := cache.Key("ground", fmt.Sprintf("%s|%s|%s|%s|%s|%.2f|%s|%t", from, to, date, opts.Currency, providerKey, opts.MaxPrice, opts.Type, allowBrowserFallbacks))
+	cacheKey := cache.Key("ground", fmt.Sprintf("%s|%s|%s|%s|%s|%.2f|%s|%t|x=%s", from, to, date, opts.Currency, providerKey, opts.MaxPrice, opts.Type, allowBrowserFallbacks, groundExcludeKey(opts)))
 
 	negKey, negEligible := groundNegKey(from, to, date, opts, providerKey)
 
