@@ -95,6 +95,7 @@ func TestGetWeather_AcceptsCityOrLocation(t *testing.T) {
 		{"city only", map[string]any{"city": "Vienna"}},
 		{"location only", map[string]any{"location": "Vienna"}},
 		{"empty city counts as absent", map[string]any{"city": "", "location": "Vienna"}},
+		{"whitespace city counts as absent", map[string]any{"city": "   ", "location": "Vienna"}},
 		{"empty location counts as absent", map[string]any{"city": "Vienna", "location": ""}},
 		// Design decision: lenient when both are present and equal.
 		{"city and location agree", map[string]any{"city": "Vienna", "location": "Vienna"}},

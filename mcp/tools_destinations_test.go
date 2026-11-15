@@ -34,7 +34,7 @@ func TestHandlePlanTrip_TextCopyIsCompactJSON(t *testing.T) {
 			planTripFunc = func(context.Context, trip.PlanInput) (*trip.PlanResult, error) { return tc.result, nil }
 			t.Cleanup(func() { planTripFunc = orig })
 
-			content, _, err := handlePlanTrip(context.Background(), map[string]any{
+			content, structured, err := handlePlanTrip(context.Background(), map[string]any{
 				"origin": "HEL", "destination": "BCN", "depart_date": "2026-12-01", "return_date": "2026-12-05",
 			}, nil, nil, nil)
 			if err != nil {
@@ -43,7 +43,7 @@ func TestHandlePlanTrip_TextCopyIsCompactJSON(t *testing.T) {
 			if len(content) <= tc.textBlock {
 				t.Fatalf("content has %d blocks, want JSON at index %d", len(content), tc.textBlock)
 			}
-			assertCompactJSONOf(t, content[tc.textBlock].Text, tc.result)
+			assertCompactJSONOf(t, content[tc.textBlock].Text, structured)
 		})
 	}
 }

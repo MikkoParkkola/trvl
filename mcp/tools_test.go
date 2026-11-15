@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"reflect"
@@ -378,13 +379,17 @@ func TestBuildAnnotatedContentBlocks_TextCopyIsCompactJSON(t *testing.T) {
 }
 
 // assertCompactJSONOf checks that text parses to the same JSON as payload and
-// carries no indentation. Comparing parsed values keeps the check independent
-// of how the encoder escapes characters such as & in URLs. The whitespace
-// check assumes payload strings hold no newlines, tabs or double spaces.
+// is already compact (json.Compact leaves it unchanged). Comparing parsed
+// values keeps the check independent of how the encoder escapes characters
+// such as & in URLs.
 func assertCompactJSONOf(t *testing.T, text string, payload any) {
 	t.Helper()
-	if strings.ContainsAny(text, "\n\t") || strings.Contains(text, "  ") {
-		t.Errorf("text copy is indented, want compact JSON: %d bytes, %d newlines", len(text), strings.Count(text, "\n"))
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(text)); err != nil {
+		t.Fatalf("text copy is not JSON: %v", err)
+	}
+	if compact.String() != text {
+		t.Errorf("text copy is indented, want compact JSON: %d bytes, %d compact", len(text), compact.Len())
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
