@@ -270,3 +270,14 @@ func TestSearchByName_ResultCacheKeyIncludesExclusions(t *testing.T) {
 		t.Errorf("search excluding ferryhopper got %d cached ferryhopper route(s)", len(second.Routes))
 	}
 }
+
+// TestGroundExcludeKey_Canonical pins that the exclusion part of the cache
+// keys is canonical on its own: aliases resolve, empties and duplicates drop,
+// and case does not matter, so every caller lands on the same key.
+func TestGroundExcludeKey_Canonical(t *testing.T) {
+	want := groundExcludeKey(SearchOptions{ExcludeProviders: []string{"vr", "flixbus"}})
+	got := groundExcludeKey(SearchOptions{ExcludeProviders: []string{" Digitransit", "", "VR", "FlixBus", "flixbus"}})
+	if got != want {
+		t.Errorf("exclusion key = %q, want %q", got, want)
+	}
+}

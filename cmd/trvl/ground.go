@@ -120,6 +120,7 @@ func printGroundTable(ctx context.Context, targetCurrency string, result *models
 		} else {
 			_, _ = fmt.Fprintln(os.Stderr, "No routes found.")
 		}
+		printGroundNotes(result.ProviderStatuses)
 		return nil
 	}
 
@@ -131,9 +132,14 @@ func printGroundTable(ctx context.Context, targetCurrency string, result *models
 	headers := []string{"Price", "Duration", "Type", "Provider", "Transfers", "Departs", "Arrives", "Seats"}
 	models.FormatTable(os.Stdout, headers, rows)
 
-	// A provider that answered with a caveat (a ProviderNotice) says what
-	// its routes are and what would improve them.
-	for _, st := range result.ProviderStatuses {
+	printGroundNotes(result.ProviderStatuses)
+	return nil
+}
+
+// printGroundNotes prints the fix hint of every provider that answered with a
+// caveat (a ProviderNotice), also when filters left no route to show.
+func printGroundNotes(statuses []models.ProviderStatus) {
+	for _, st := range statuses {
 		if st.Status != models.StatusOK || st.FixHint == "" {
 			continue
 		}
@@ -143,7 +149,6 @@ func printGroundTable(ctx context.Context, targetCurrency string, result *models
 		}
 		fmt.Printf("Note: %s: %s\n", name, st.FixHint)
 	}
-	return nil
 }
 
 func prepareGroundRows(ctx context.Context, targetCurrency string, routes []models.GroundRoute) (int, []string, [][]string) {
