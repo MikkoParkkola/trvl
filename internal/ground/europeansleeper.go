@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -272,7 +273,7 @@ func europeanSleeperRoute(ctx context.Context, routeID string, trip europeanSlee
 			"connectingTrainSelection": nil,
 		}, &avail)
 		if err != nil {
-			slog.Debug("european sleeper availability failed", "train", trip.TrainNumber, "date", trip.TravelDate, "err", err)
+			slog.Debug("european sleeper availability failed", "train", trip.TrainNumber, "date", trip.TravelDate, "err", logredact.Err(err))
 		} else {
 			a := avail.AvailabilityResult.Availability
 			// A detour moves the stop; only the availability answer names it.
