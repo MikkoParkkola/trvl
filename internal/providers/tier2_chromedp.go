@@ -318,6 +318,19 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 	return cookies, nil
 }
 
+// harvestOutcome is the post-run decision for a headless harvest, kept pure so
+// it can be tested without a browser. targetHost is the hostname the harvest
+// navigated to; refusals are the hosts the policy proxy refused during the run.
+func harvestOutcome(targetHost string, cookies []*network.Cookie, runErr error, refusals []proxyRefusal) ([]*network.Cookie, error) {
+	if len(refusals) > 0 {
+		return nil, refusals[0].Err
+	}
+	if runErr != nil {
+		return nil, runErr
+	}
+	return cookies, nil
+}
+
 // convertNetworkCookies maps CDP network.Cookie values to net/http cookies.
 func convertNetworkCookies(in []*network.Cookie) []*http.Cookie {
 	out := make([]*http.Cookie, 0, len(in))

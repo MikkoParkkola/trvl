@@ -66,6 +66,26 @@ func (p *browserPolicyProxy) Refusal() error {
 	return p.refusal
 }
 
+// maxProxyRefusals caps how many distinct refused hosts one browser run keeps.
+const maxProxyRefusals = 16
+
+// proxyRefusal is one destination the policy proxy refused: the hostname
+// (no port) and the policy error behind it.
+type proxyRefusal struct {
+	Host string
+	Err  error
+}
+
+// Refusals returns every host the proxy refused, deduplicated and capped.
+func (p *browserPolicyProxy) Refusals() []proxyRefusal {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.refusal == nil {
+		return nil
+	}
+	return []proxyRefusal{{Err: p.refusal}}
+}
+
 func (p *browserPolicyProxy) recordRefusal(err error) {
 	if err == nil {
 		return
