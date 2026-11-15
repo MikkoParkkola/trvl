@@ -13,8 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Go toolchain pinned to 1.26.10 (was 1.26.9) and the release Docker image builds with Go 1.27.3 (was 1.27.2), for GO-2026-6809 (`crypto/x509` trusted certificates from compromised intermediates).
 - Go toolchain pinned to 1.27.4 (was 1.27.3) and the release Docker image builds with Go 1.27.4 (was 1.27.3), for GO-2026-6859 (`net/http` HTTP/1 servers using `MaxBytesReader` could panic on a data race over the `Connection: close` header).
 
+### Changed
+
+- Ground routes and each of their price sources carry `price_provenance` (`live`, `estimated` or `unavailable`), and sources also carry `comparable_price`. A static table, a day-best or a range low is `estimated` and never outranks a live fare for the same connection; within the comparable group, live fares rank first.
+- A ground search lists a status row for every provider asked for by name: `checked_no_hit` for a valid empty answer, `timeout` when the deadline cuts a provider off, and `skipped` with reason `route_not_served` when the provider does not serve the pair.
+- `trvl ground` shows estimated fares as `~€22 (est.)` and routes without a fare as `—`, and its `--provider` help lists every valid name.
+
 ### Fixed
 
+- Ground search keeps unpriced routes and shows them as unavailable; only a RegioJet row priced 0 (sold out) is dropped. A `--max-price` budget compares the converted price and drops routes it cannot check.
+- A misspelled ground provider name in `--provider` or in an include or exclude list is an error that lists the valid names, instead of a search that runs nothing.
+- DFDS no longer shows a reference sailing when its availability check fails, and Eckerö Line returns its timetable with a notice that live prices failed instead of hiding the failure.
+- Travel hacks price ground legs, rail quotes and the naive baseline from live fares only, and their own ground searches keep the caller's provider filter and no-cache flag.
+- Ground "no service" is cached per exact date and search scope, and only when every queried provider says it never serves the pair.
+- Transitous routes found by city name carry the requested city names instead of START and END.
+- Estimated ground fares are left unrated in the bookability confidence, and transfer options mark an unknown fare with `price_unavailable`.
 - MCP tool results send their assistant text copy as compact JSON instead of indented JSON, which shrinks the duplicate copy of every result (by about a third on the test fixtures).
   ([#774](https://github.com/MikkoParkkola/trvl/pull/774))
 - `get_weather` accepts `location` as an alias of `city`, rejects a missing or conflicting place before any lookup, and reports a failed forecast lookup as an error instead of a normal result.
