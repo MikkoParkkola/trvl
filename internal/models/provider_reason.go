@@ -19,7 +19,6 @@ const (
 	ReasonOther       = "other"
 
 	ReasonRouteNotServed = "route_not_served" // the provider does not serve this pair; not queried
-	ReasonDisabled       = "disabled"         // switched off for this search (e.g. browser fallbacks off)
 )
 
 var (

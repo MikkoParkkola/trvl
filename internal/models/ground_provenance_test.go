@@ -1,6 +1,9 @@
 package models
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 // groundRouteFixture returns one physical connection as a provider reports it.
 func groundRouteFixture(provider string, price float64, prov PriceProvenance, url string) GroundRoute {
@@ -112,5 +115,92 @@ func TestFoldGroundSource_FreshnessByProvenance(t *testing.T) {
 		if f := got[0].Sources[0].Freshness; f != c.want {
 			t.Errorf("%s source freshness = %q, want %q", c.prov, f, c.want)
 		}
+	}
+}
+
+// TestGroundProvenance_WireNames pins the JSON field names consumers read:
+// price_provenance on the route and on each source, comparable_price on each
+// source.
+func TestGroundProvenance_WireNames(t *testing.T) {
+	r := GroundRoute{
+		Provider: "flixbus", Price: 20, Currency: "EUR", PriceProvenance: PriceLive,
+		Sources: []PriceSource{{Provider: "rome2rio", Price: 19, Currency: "EUR", Provenance: PriceEstimated, ComparablePrice: 19.5}},
+	}
+	raw, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got struct {
+		PriceProvenance string `json:"price_provenance"`
+		Sources         []struct {
+			PriceProvenance string  `json:"price_provenance"`
+			ComparablePrice float64 `json:"comparable_price"`
+		} `json:"sources"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.PriceProvenance != "live" {
+		t.Errorf("route price_provenance = %q, want live; JSON %s", got.PriceProvenance, raw)
+	}
+	if len(got.Sources) != 1 || got.Sources[0].PriceProvenance != "estimated" || got.Sources[0].ComparablePrice != 19.5 {
+		t.Errorf("source wire fields = %+v, want price_provenance estimated and comparable_price 19.5; JSON %s", got.Sources, raw)
+	}
+}
+
+// TestResolveGroundSources_HeadlineFromComparableGroup shapes the sources the
+// way the normalise pass leaves them: converted sources are in the target
+// currency with ComparablePrice set, unconvertible ones keep their own
+// currency with ComparablePrice 0. Two unconvertible CZK sources must not make
+// CZK the headline currency over a comparable EUR fare, and every headline
+// field comes from that fare.
+func TestResolveGroundSources_HeadlineFromComparableGroup(t *testing.T) {
+	czkA := groundRouteFixture("regiojet", 450, PriceLive, "https://czk.example/a")
+	czkA.Currency, czkA.ComparablePrice = "CZK", 0
+	czkB := groundRouteFixture("regiojet-b", 500, PriceLive, "https://czk.example/b")
+	czkB.Currency, czkB.ComparablePrice = "CZK", 0
+	eur := groundRouteFixture("flixbus", 22, PriceLive, "https://eur.example/f")
+	eur.PriceMax = 30
+	got := ResolveGroundSources([]GroundRoute{czkA, czkB, eur})
+	if len(got) != 1 {
+		t.Fatalf("want 1 resolved route, got %d", len(got))
+	}
+	r := got[0]
+	if r.Provider != "flixbus" || r.Price != 22 || r.Currency != "EUR" || r.CheapestSource != "flixbus" {
+		t.Errorf("headline = %s %v %s (cheapest_source %s), want flixbus 22 EUR", r.Provider, r.Price, r.Currency, r.CheapestSource)
+	}
+	if r.BookingURL != "https://eur.example/f" || r.ComparablePrice != 22 || r.PriceMax != 30 || r.PriceProvenance != PriceLive {
+		t.Errorf("headline fields = url %q comparable %v max %v provenance %q, want the EUR fare's", r.BookingURL, r.ComparablePrice, r.PriceMax, r.PriceProvenance)
+	}
+}
+
+// TestResolveGroundSources_AllFieldsFromWinnerNotLastFold pins that the
+// headline's fare-risk fields come from the winning source even when a
+// cheaper estimate is folded after it, and that no field leaks from the
+// sources folded before or after.
+func TestResolveGroundSources_AllFieldsFromWinnerNotLastFold(t *testing.T) {
+	seats := func(n int) *int { return &n }
+	first := groundRouteFixture("db", 40, PriceLive, "https://live.example/db")
+	first.PriceMax, first.Amenities, first.SeatsLeft = 50, []string{"first"}, seats(1)
+	winner := groundRouteFixture("flixbus", 25, PriceLive, "https://live.example/f")
+	winner.PriceMax, winner.Amenities, winner.SeatsLeft = 35, []string{"winner"}, seats(9)
+	last := groundRouteFixture("rome2rio", 10, PriceEstimated, "https://estimate.example/r")
+	last.PriceMax, last.Amenities, last.SeatsLeft = 12, []string{"last"}, seats(2)
+	got := ResolveGroundSources([]GroundRoute{first, winner, last})
+	if len(got) != 1 {
+		t.Fatalf("want 1 resolved route, got %d", len(got))
+	}
+	r := got[0]
+	if r.Provider != "flixbus" || r.CheapestSource != "flixbus" || r.Price != 25 || r.BookingURL != "https://live.example/f" {
+		t.Errorf("headline = %s (cheapest_source %s) %v %q, want flixbus 25 and its booking url", r.Provider, r.CheapestSource, r.Price, r.BookingURL)
+	}
+	if r.PriceMax != 35 || r.ComparablePrice != 25 || r.PriceProvenance != PriceLive {
+		t.Errorf("price_max %v comparable %v provenance %q, want 35 25 live", r.PriceMax, r.ComparablePrice, r.PriceProvenance)
+	}
+	if len(r.Amenities) != 1 || r.Amenities[0] != "winner" || r.SeatsLeft == nil || *r.SeatsLeft != 9 {
+		t.Errorf("amenities %v seats %v, want the winner's [winner] and 9", r.Amenities, r.SeatsLeft)
+	}
+	if r.Savings != 15 {
+		t.Errorf("savings = %v, want 15 (40-25 inside the live tier)", r.Savings)
 	}
 }
