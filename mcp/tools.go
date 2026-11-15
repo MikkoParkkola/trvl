@@ -624,7 +624,7 @@ func extractBestHotelPrice(m map[string]interface{}) (float64, string) {
 // buildAnnotatedContentBlocks creates a text summary block (for user) and a
 // structured JSON block (for assistant), with content annotations per the
 // 2025-11-25 spec. The JSON block repeats structuredContent, so it is compact:
-// indentation made up most of a large search result's bytes.
+// indented, it was ~121 KB of a ~197 KB 53-route search_ground response.
 func buildAnnotatedContentBlocks(summary string, data any) ([]ContentBlock, error) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {

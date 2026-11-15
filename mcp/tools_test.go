@@ -344,8 +344,7 @@ func TestFlightSummary_NonstopOption(t *testing.T) {
 }
 
 // The assistant text copy duplicates structuredContent, so it must be compact:
-// a 53-route search_ground result spent ~121 KB of a ~197 KB response on
-// indentation alone.
+// indented, a 53-route search_ground copy was ~121 KB of a ~197 KB response.
 func TestBuildAnnotatedContentBlocks_TextCopyIsCompactJSON(t *testing.T) {
 	t.Parallel()
 	stop := func(city, at string) models.GroundStop {
