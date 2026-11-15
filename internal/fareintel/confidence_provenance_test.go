@@ -1,6 +1,7 @@
 package fareintel
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -65,10 +66,8 @@ func TestScoreConfidence_CorroborationCountsLiveSourcesOnly(t *testing.T) {
 			{Provider: "transitous", Currency: "EUR", RetrievedAt: now, Provenance: models.PriceUnavailable},
 		},
 	})
-	for _, s := range c.Signals {
-		if s == "sources:2" || s == "sources:3" {
-			t.Errorf("signals = %v, want sources:1 (only the live source corroborates)", c.Signals)
-		}
+	if !slices.Contains(c.Signals, "sources:1") {
+		t.Errorf("signals = %v, want sources:1 (only the live source corroborates)", c.Signals)
 	}
 	flight := ScoreConfidence(ConfidenceInput{
 		Price: 120, Currency: "EUR", Provider: "google_flights", RetrievedAt: now, Now: now,

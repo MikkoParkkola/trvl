@@ -53,3 +53,23 @@ func TestPrintGroundTable_ShowsNoticeFixHint(t *testing.T) {
 		t.Errorf("table output lacks the notice fix hint:\n%s", out)
 	}
 }
+
+// TestPrintGroundTable_NotesSurviveAnEmptyResult pins that a provider's fix
+// hint is still printed when filters left no route to show.
+func TestPrintGroundTable_NotesSurviveAnEmptyResult(t *testing.T) {
+	result := &models.GroundSearchResult{
+		Success: false,
+		ProviderStatuses: []models.ProviderStatus{{
+			ID: "eckeroline", Name: "eckeroline", Status: models.StatusOK, Results: 2,
+			Reason: models.ReasonRateLimited, FixHint: "live prices failed; fares shown are the published reference price",
+		}},
+	}
+	out := captureStdout(t, func() {
+		if err := printGroundTable(context.Background(), "", result); err != nil {
+			t.Fatalf("printGroundTable: %v", err)
+		}
+	})
+	if !strings.Contains(out, "eckeroline: live prices failed") {
+		t.Errorf("empty-result output lacks the notice fix hint:\n%s", out)
+	}
+}
