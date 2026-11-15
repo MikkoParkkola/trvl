@@ -273,3 +273,34 @@ func TestSearchHotelsWithClient_WarningClearedWhenLaterPassWinsInTarget(t *testi
 		t.Errorf("warnings = %v, stale %s after the EUR room won", h.PriceWarnings, models.PriceWarningCurrencyNotConverted)
 	}
 }
+
+// TestTrustConverter_LooksUpEachPairOnce: one search finalizes many hotels.
+// The rate for a currency pair, including a failed lookup, is fetched once
+// per converter, so an unreachable rate service is not retried per hotel.
+func TestTrustConverter_LooksUpEachPairOnce(t *testing.T) {
+	var calls int
+	orig := convertCurrencyFn
+	convertCurrencyFn = func(_ context.Context, amount float64, from, to string) (float64, string) {
+		calls++
+		if from == "CZK" && to == "EUR" {
+			return amount / 25, "EUR"
+		}
+		return amount, from // no rate
+	}
+	t.Cleanup(func() { convertCurrencyFn = orig })
+
+	conv := trustConverter(context.Background())
+	for _, amount := range []float64{6000, 2500, 3000} {
+		if got, ok := conv(amount, "CZK", "EUR"); !ok || got != amount/25 {
+			t.Fatalf("conv(%v CZK) = %v, %v; want %v EUR", amount, got, ok, amount/25)
+		}
+	}
+	for range 3 {
+		if _, ok := conv(10, "GBP", "EUR"); ok {
+			t.Fatal("GBP conversion succeeded with no rate")
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("rate lookups = %d, want 2 (one per currency pair)", calls)
+	}
+}

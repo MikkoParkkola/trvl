@@ -26,11 +26,29 @@ func hotelCurrencyConverter() currencyConverter {
 }
 
 // trustConverter adapts hotelCurrencyConverter to the context-free shape
-// models.FinalizeHotelPriceTrust takes.
+// models.FinalizeHotelPriceTrust takes. It remembers each currency pair's
+// rate, and a failed lookup, so finalizing a whole result list asks the rate
+// service once per pair rather than once per price. Not safe for concurrent
+// use; finalization is sequential.
 func trustConverter(ctx context.Context) func(amount float64, from, to string) (float64, bool) {
 	conv := hotelCurrencyConverter()
+	type rate struct {
+		perUnit float64
+		ok      bool
+	}
+	rates := map[[2]string]rate{}
 	return func(amount float64, from, to string) (float64, bool) {
-		return conv(ctx, amount, from, to)
+		key := [2]string{strings.ToUpper(from), strings.ToUpper(to)}
+		if r, seen := rates[key]; seen {
+			return amount * r.perUnit, r.ok
+		}
+		converted, ok := conv(ctx, amount, from, to)
+		r := rate{ok: ok && amount > 0}
+		if r.ok {
+			r.perUnit = converted / amount
+		}
+		rates[key] = r
+		return converted, ok
 	}
 }
 
