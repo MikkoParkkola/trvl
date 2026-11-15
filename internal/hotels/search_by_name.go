@@ -82,6 +82,13 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 			googleErr = fmt.Errorf("google hotels: %w", err)
 			return
 		}
+		// When another provider returned hotels, SearchHotels succeeds and
+		// keeps a Google failure only as a provider status.
+		for _, ps := range res.ProviderStatuses {
+			if ps.ID == "google_hotels" && ps.Error != "" {
+				googleErr = fmt.Errorf("google hotels: %s", ps.Error)
+			}
+		}
 		resultCh <- providerResult{hotels: res.Hotels, source: "google_hotels"}
 	}()
 

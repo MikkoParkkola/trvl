@@ -278,3 +278,32 @@ func TestSearchHotelsByName_StripsWordFoundInAddress(t *testing.T) {
 		t.Fatalf("matches = %v, want only ARTIST Boutique Hotel", names)
 	}
 }
+
+// TestSearchHotelsByName_MaskedGoogleErrorSurfaced: Google refused, but
+// Booking returned an unrelated hotel, so SearchHotels succeeds and records
+// the Google failure only as a provider status. A name miss must still carry
+// that Google error.
+func TestSearchHotelsByName_MaskedGoogleErrorSurfaced(t *testing.T) {
+	freshRateManager(t)
+	useTestDefaultClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	withBookingResult(t, models.HotelResult{
+		Name: "Hotel Sacher", Address: "Philharmoniker Str. 4, 1010 Vienna", HotelID: "booking-sacher",
+		Price: 300, Currency: "USD", Lat: 60.1699, Lon: 24.9384,
+	})
+	seedGeo(t, "ARTIST Boutique Hotel, Vienna")
+	if res, err := SearchHotels(context.Background(), "ARTIST Boutique Hotel, Vienna", HotelSearchOptions{
+		CheckIn: lookupCheckIn, CheckOut: lookupCheckOut, Guests: 2, Currency: "USD", MaxPages: 1,
+	}); err != nil || len(res.Hotels) == 0 {
+		t.Fatalf("precondition: search = %v, %v; want Booking's hotel with the Google error masked", res, err)
+	}
+
+	_, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if !errors.Is(err, ErrNoNameMatch) {
+		t.Fatalf("err = %v, want ErrNoNameMatch", err)
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Fatalf("err = %q, want the masked Google 403 carried along", err)
+	}
+}
