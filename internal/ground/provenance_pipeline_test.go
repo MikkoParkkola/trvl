@@ -88,6 +88,30 @@ func TestSortGroundRoutes_ProvenanceFirstInComparableGroup(t *testing.T) {
 	}
 }
 
+// TestSortGroundRoutes_ProvenanceOnlyInsideComparableGroup pins that
+// provenance orders routes inside the comparable group and never lifts an
+// unconvertible live fare above a comparable estimate: the comparable group
+// still ranks first, and an unavailable route sinks last.
+func TestSortGroundRoutes_ProvenanceOnlyInsideComparableGroup(t *testing.T) {
+	routes := []models.GroundRoute{
+		{Provider: "d-unavailable", Price: 0, PriceProvenance: models.PriceUnavailable},
+		{Provider: "c-czk-live", Price: 400, Currency: "CZK", PriceProvenance: models.PriceLive},
+		{Provider: "b-estimate", Price: 10, ComparablePrice: 10, Currency: "EUR", PriceProvenance: models.PriceEstimated},
+		{Provider: "a-live", Price: 30, ComparablePrice: 30, Currency: "EUR", PriceProvenance: models.PriceLive},
+	}
+	sortGroundRoutes(routes)
+	want := []string{"a-live", "b-estimate", "c-czk-live", "d-unavailable"}
+	for i := range want {
+		if routes[i].Provider != want[i] {
+			got := make([]string, len(routes))
+			for k, r := range routes {
+				got[k] = r.Provider
+			}
+			t.Fatalf("order = %v, want %v", got, want)
+		}
+	}
+}
+
 // TestFilterGroundRoutes_MaxPriceComparesComparablePrice pins that the budget
 // is checked against the converted price, not the raw amount in a foreign
 // currency.
