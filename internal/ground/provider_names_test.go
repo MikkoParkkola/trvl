@@ -86,3 +86,46 @@ func TestAttachGroundHackSaving_PassesSearchScope(t *testing.T) {
 		t.Errorf("compose request scope = providers %v exclude %v nocache %v; want [flixbus] [rome2rio] true", got.Providers, got.ExcludeProviders, got.NoCache)
 	}
 }
+
+// TestSearchByName_RejectsUnknownProviderNames pins D4 at the search entry: a
+// misspelled include or exclude name is an error naming the valid choices,
+// not a search that silently runs nothing or ignores the exclusion. The
+// include list is route-gated for Prague to Vienna, so nothing dials out.
+func TestSearchByName_RejectsUnknownProviderNames(t *testing.T) {
+	cases := []struct {
+		name string
+		opts SearchOptions
+	}{
+		{"misspelled include", SearchOptions{Providers: []string{"flixbuss"}}},
+		{"misspelled exclude", SearchOptions{Providers: []string{"dfds"}, ExcludeProviders: []string{"flixbuss"}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.opts.NoCache, c.opts.NoHacks = true, true
+			_, err := SearchByName(context.Background(), "Prague", "Vienna", "2026-07-15", c.opts)
+			if err == nil {
+				t.Fatal("misspelled provider name accepted")
+			}
+			for _, s := range []string{"flixbuss", "regiojet"} {
+				if !strings.Contains(err.Error(), s) {
+					t.Errorf("error %q does not mention %q", err, s)
+				}
+			}
+		})
+	}
+}
+
+// TestSearchByName_ProviderNamesMatchCaseInsensitively guards the existing
+// behaviour: provider names match whatever their case.
+func TestSearchByName_ProviderNamesMatchCaseInsensitively(t *testing.T) {
+	isolateGroundBreaker(t)
+	withFerryhopperServer(t, ferryhopperFrame(goldenFerryhopperFrame))
+	opts := SearchOptions{Currency: "EUR", Providers: []string{"FerryHopper"}, ExcludeProviders: []string{"ROME2RIO"}, NoCache: true, NoHacks: true}
+	res, err := SearchByName(context.Background(), "Piraeus", "Santorini", "2026-07-15", opts)
+	if err != nil {
+		t.Fatalf("SearchByName: %v", err)
+	}
+	if st := statusByID(res.ProviderStatuses)["ferryhopper"]; st.Status != models.StatusOK || st.Results != 1 {
+		t.Errorf("ferryhopper row = %+v, want ok with 1 result", st)
+	}
+}
