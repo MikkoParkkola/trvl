@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -127,5 +128,43 @@ func TestSearchByName_ProviderNamesMatchCaseInsensitively(t *testing.T) {
 	}
 	if st := statusByID(res.ProviderStatuses)["ferryhopper"]; st.Status != models.StatusOK || st.Results != 1 {
 		t.Errorf("ferryhopper row = %+v, want ok with 1 result", st)
+	}
+}
+
+// TestValidateProviderNames_Canonicalises pins that names come back as the
+// canonical launch ids (lower case, alias resolved, no duplicates), so status
+// rows and cache keys agree whatever spelling the caller used.
+func TestValidateProviderNames_Canonicalises(t *testing.T) {
+	got, err := ValidateProviderNames([]string{"FlixBus", " digitransit ", "VR"})
+	if err != nil {
+		t.Fatalf("ValidateProviderNames: %v", err)
+	}
+	if strings.Join(got, "|") != "flixbus|vr" {
+		t.Errorf("names = %q, want [flixbus vr]", got)
+	}
+}
+
+// TestNegCacheHitResult_CanonicalRows pins the rows a negative-cache hit
+// synthesises: canonical ids, sorted, without excluded providers, and a row
+// set even for an unfiltered search.
+func TestNegCacheHitResult_CanonicalRows(t *testing.T) {
+	ids := func(res *models.GroundSearchResult) []string {
+		var out []string
+		for _, st := range res.ProviderStatuses {
+			if st.Status != models.StatusSkipped || st.Reason != models.ReasonRouteNotServed {
+				t.Errorf("row %+v, want skipped route_not_served", st)
+			}
+			out = append(out, st.ID)
+		}
+		return out
+	}
+	named := ids(negCacheHitResult(SearchOptions{Providers: []string{"vr", "flixbus", "regiojet"}, ExcludeProviders: []string{"regiojet"}}))
+	if strings.Join(named, "|") != "flixbus|vr" {
+		t.Errorf("named hit rows = %v, want [flixbus vr]", named)
+	}
+	all := ids(negCacheHitResult(SearchOptions{ExcludeProviders: []string{"flixbus"}}))
+	joined := "|" + strings.Join(all, "|") + "|"
+	if len(all) == 0 || !strings.Contains(joined, "|regiojet|") || strings.Contains(joined, "|flixbus|") || !sort.StringsAreSorted(all) {
+		t.Errorf("unfiltered hit rows = %v, want a sorted set with regiojet and without flixbus", all)
 	}
 }

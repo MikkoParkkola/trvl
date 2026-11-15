@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -77,10 +78,22 @@ func groundExcludeKey(opts SearchOptions) string {
 }
 
 // negCacheHitResult answers a search the negative cache already knows has no
-// service: one skipped, route_not_served row per provider asked for by name.
+// service: one skipped, route_not_served row per provider in scope (the named
+// ones, or every launchable one for an unfiltered search), minus exclusions,
+// by canonical id and sorted. Distribusion without its key is never in scope.
 func negCacheHitResult(opts SearchOptions) *models.GroundSearchResult {
 	res := &models.GroundSearchResult{Success: false, Count: 0}
-	for _, p := range opts.Providers {
+	names, err := ValidateProviderNames(opts.Providers)
+	if err != nil || len(names) == 0 {
+		names = launchProviderIDs()
+		if !HasDistribusionKey() {
+			names = slices.DeleteFunc(names, func(n string) bool { return n == "distribusion" })
+		}
+	}
+	excluded, _ := ValidateProviderNames(opts.ExcludeProviders)
+	names = slices.DeleteFunc(slices.Clone(names), func(n string) bool { return slices.Contains(excluded, n) })
+	sort.Strings(names)
+	for _, p := range names {
 		res.ProviderStatuses = append(res.ProviderStatuses, models.ProviderStatus{
 			ID: p, Name: p, Status: models.StatusSkipped, Reason: models.ReasonRouteNotServed,
 		})
