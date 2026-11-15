@@ -11,6 +11,9 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/trip"
 )
 
+// planTripFunc is the trip planner; tests swap it to stay offline.
+var planTripFunc = trip.PlanTrip
+
 // --- Tool definition ---
 
 func destinationInfoTool() ToolDef {
@@ -524,7 +527,7 @@ func handlePlanTrip(ctx context.Context, args map[string]any, elicit ElicitFunc,
 		Currency:    argString(args, "currency"),
 	}
 
-	result, err := trip.PlanTrip(ctx, input)
+	result, err := planTripFunc(ctx, input)
 	if err != nil {
 		return nil, nil, toolExecutionError("Trip planning", err)
 	}
