@@ -41,9 +41,10 @@ type EuropeanSleeperStation struct {
 
 // europeanSleeperStations maps lowercase city name to station info. Ids come
 // from the booking site's constants (__NEXT_DATA__ props.pageProps.constants)
-// and each one was confirmed by a live search on 2026-11-15. Stops the site
-// maps onto another station (Zürich onto Aarau, Amsterdam onto Eindhoven on
-// the Milan line) are left out until a search confirms them as stops.
+// and each one was confirmed by a live search on 2026-11-15 or 2026-11-16.
+// Stops the site maps onto another station (Zürich onto Aarau, Amsterdam onto
+// Eindhoven on the Milan line) and Chiasso (no trip in a live search) are left
+// out until a search confirms them as stops.
 var europeanSleeperStations = map[string]EuropeanSleeperStation{
 	"brussels":  {LocationID: "8800104", Name: "Bruxelles Midi/Brussel Zuid", City: "Brussels", Country: "BE"},
 	"antwerp":   {LocationID: "8800210", Name: "Antwerpen Centraal", City: "Antwerp", Country: "BE"},
@@ -58,22 +59,58 @@ var europeanSleeperStations = map[string]EuropeanSleeperStation{
 	"prague":    {LocationID: "5457076", Name: "Praha hl.n.", City: "Prague", Country: "CZ"},
 	"paris":     {LocationID: "8700015", Name: "Paris-Nord", City: "Paris", Country: "FR"},
 	"milan":     {LocationID: "8300112", Name: "Milano Porta Garibaldi", City: "Milan", Country: "IT"},
+
+	"roosendaal":        {LocationID: "8400526", Name: "Roosendaal", City: "Roosendaal", Country: "NL"},
+	"den haag":          {LocationID: "8400280", Name: "Den Haag HS", City: "Den Haag", Country: "NL"},
+	"amersfoort":        {LocationID: "8400055", Name: "Amersfoort Centraal", City: "Amersfoort", Country: "NL"},
+	"deventer":          {LocationID: "8400173", Name: "Deventer", City: "Deventer", Country: "NL"},
+	"berlin ostbahnhof": {LocationID: "8010110", Name: "Berlin Ostbahnhof", City: "Berlin", Country: "DE"},
+	"bad schandau":      {LocationID: "8001311", Name: "Bad Schandau", City: "Bad Schandau", Country: "DE"},
+	"děčín":             {LocationID: "5455659", Name: "Děčín hl.n.", City: "Děčín", Country: "CZ"},
+	"ústí nad labem":    {LocationID: "5453179", Name: "Ústí nad Labem hl.n.", City: "Ústí nad Labem", Country: "CZ"},
+	"verviers":          {LocationID: "8800440", Name: "Verviers-Central", City: "Verviers", Country: "BE"},
+	"aachen":            {LocationID: "8052101", Name: "Aachen Hbf", City: "Aachen", Country: "DE"},
+	"aarau":             {LocationID: "8500375", Name: "Aarau", City: "Aarau", Country: "CH"},
+	"arth-goldau":       {LocationID: "8500004", Name: "Arth-Goldau", City: "Arth-Goldau", Country: "CH"},
+	"göschenen":         {LocationID: "8500689", Name: "Göschenen", City: "Göschenen", Country: "CH"},
+	"bellinzona":        {LocationID: "8500521", Name: "Bellinzona", City: "Bellinzona", Country: "CH"},
+	"lugano":            {LocationID: "8500011", Name: "Lugano", City: "Lugano", Country: "CH"},
+	"como":              {LocationID: "8300133", Name: "Como San Giovanni", City: "Como", Country: "IT"},
+	"saint-quentin":     {LocationID: "8700433", Name: "Saint-Quentin", City: "Saint-Quentin", Country: "FR"},
+	"aulnoye-aymeries":  {LocationID: "8700021", Name: "Aulnoye-Aymeries", City: "Aulnoye-Aymeries", Country: "FR"},
+	"mons":              {LocationID: "8800810", Name: "Mons", City: "Mons", Country: "BE"},
+	"liège":             {LocationID: "8800410", Name: "Liège-Guillemins", City: "Liège", Country: "BE"},
 }
 
 // europeanSleeperAliases maps alternative city spellings to table keys.
 var europeanSleeperAliases = map[string]string{
-	"praha":   "prague",
-	"cologne": "köln",
-	"milano":  "milan",
+	"praha":          "prague",
+	"prag":           "prague",
+	"bruxelles":      "brussels",
+	"brussel":        "brussels",
+	"antwerpen":      "antwerp",
+	"cologne":        "köln",
+	"koln":           "köln",
+	"koeln":          "köln",
+	"milano":         "milan",
+	"the hague":      "den haag",
+	"decin":          "děčín",
+	"usti nad labem": "ústí nad labem",
+	"goschenen":      "göschenen",
+	"liege":          "liège",
+	"st-quentin":     "saint-quentin",
 }
 
 // europeanSleeperLines lists each line's confirmed stops in outbound order.
 // Every line also runs the reverse direction, so any two stops on one line
 // form a served pair (subject to the domestic rule below).
 var europeanSleeperLines = [][]string{
-	{"brussels", "antwerp", "rotterdam", "amsterdam", "berlin", "dresden", "prague"}, // ES453/452
-	{"paris", "brussels", "hamburg", "berlin"},                                       // ES475/474
-	{"brussels", "antwerp", "breda", "eindhoven", "köln", "milan"},                   // ES401/400
+	{"brussels", "antwerp", "roosendaal", "rotterdam", "den haag", "amsterdam", "amersfoort", "deventer",
+		"berlin", "berlin ostbahnhof", "dresden", "bad schandau", "děčín", "ústí nad labem", "prague"}, // ES453/452
+	{"paris", "saint-quentin", "aulnoye-aymeries", "mons", "brussels", "liège", "hamburg",
+		"berlin ostbahnhof", "berlin"}, // ES475/474
+	{"brussels", "verviers", "antwerp", "breda", "eindhoven", "aachen", "köln",
+		"aarau", "arth-goldau", "göschenen", "bellinzona", "lugano", "como", "milan"}, // ES401/400
 }
 
 // europeanSleeperNoDomestic holds the countries where the booking site refuses
