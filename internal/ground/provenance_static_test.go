@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,10 +25,10 @@ func eckeroDefaultHome(w http.ResponseWriter, _ *http.Request) {
 func withEckeroServer(t *testing.T, home, dep http.HandlerFunc) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/":
+		switch r.URL.Path {
+		case "/":
 			home(w, r)
-		case r.URL.Path == "/checkout/bookingBar/getdepartures":
+		case "/checkout/bookingBar/getdepartures":
 			dep(w, r)
 		default:
 			http.NotFound(w, r)
@@ -73,10 +74,11 @@ func TestSearchStenaLine_StaticFareKeepsEUR(t *testing.T) {
 	assertNotLiveAndEUR(t, "stenaline", routes)
 }
 
-// TestSearchEckeroLine_FetchedFareKeepsEUR pins that fares fetched from
-// Eckerö (euros) are not relabelled, and that Eckerö is not upgraded to live
-// (it is not on PR A's live list and substitutes a base price for a 0 fare).
-func TestSearchEckeroLine_FetchedFareKeepsEUR(t *testing.T) {
+// TestSearchEckeroLine_LiveAnswerIsAuthoritative pins the fetched path: a
+// priced live departure is a live euro fare, a live departure without a price
+// is unavailable (no reference fare, no "Live" tag), and a valid empty list
+// means no sailing that date, not the timetable.
+func TestSearchEckeroLine_LiveAnswerIsAuthoritative(t *testing.T) {
 	withEckeroServer(t, eckeroDefaultHome, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode([]eckerolineDeparture{{Time: "09:00", Price: 22.5, Ship: "M/S Finlandia"}, {Time: "15:15", Price: 0}})
@@ -85,19 +87,43 @@ func TestSearchEckeroLine_FetchedFareKeepsEUR(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SearchEckeroLine: %v", err)
 	}
-	assertNotLiveAndEUR(t, "eckeroline fetched", routes)
-}
+	if len(routes) != 2 {
+		t.Fatalf("want 2 live departures, got %d", len(routes))
+	}
+	hasLiveTag := func(r models.GroundRoute) bool {
+		for _, a := range r.Amenities {
+			if a == "Live" {
+				return true
+			}
+		}
+		return false
+	}
+	if r := routes[0]; r.Price != 22.5 || r.Currency != "EUR" || r.PriceProvenance != models.PriceLive || !hasLiveTag(r) {
+		t.Errorf("priced departure = %v %s %q live-tag %v, want 22.5 EUR live with the Live tag", r.Price, r.Currency, r.PriceProvenance, hasLiveTag(r))
+	}
+	if r := routes[1]; r.Price != 0 || r.PriceProvenance == models.PriceLive || hasLiveTag(r) {
+		t.Errorf("unpriced departure = %v %q live-tag %v, want price 0, not live, no Live tag", r.Price, r.PriceProvenance, hasLiveTag(r))
+	}
 
-// TestSearchEckeroLine_TimetableFareKeepsEUR pins the same for the published
-// timetable path, reached when Eckerö validly answers with no departures.
-func TestSearchEckeroLine_TimetableFareKeepsEUR(t *testing.T) {
 	withEckeroServer(t, eckeroDefaultHome, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[]`))
 	})
+	routes, err = SearchEckeroLine(context.Background(), "Helsinki", "Tallinn", "2026-07-15", "EUR")
+	if err != nil || len(routes) != 0 {
+		t.Errorf("valid empty live answer: got %d routes, err %v; want none and nil (checked, no sailing)", len(routes), err)
+	}
+}
+
+// TestSearchEckeroLine_TimetableFareKeepsEUR pins that the published
+// timetable, reached when the live fetch fails, keeps its euro reference
+// price and is never live.
+func TestSearchEckeroLine_TimetableFareKeepsEUR(t *testing.T) {
+	withEckeroServer(t, eckeroStatus(http.StatusServiceUnavailable), eckeroBody(`[]`))
 	routes, err := SearchEckeroLine(context.Background(), "Helsinki", "Tallinn", "2026-07-15", "SEK")
-	if err != nil {
-		t.Fatalf("SearchEckeroLine: %v", err)
+	var notice *models.ProviderNotice
+	if !errors.As(err, &notice) {
+		t.Fatalf("err = %v, want the live failure as a *models.ProviderNotice", err)
 	}
 	assertNotLiveAndEUR(t, "eckeroline timetable", routes)
 }

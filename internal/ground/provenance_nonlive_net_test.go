@@ -12,15 +12,11 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// TestNonLiveProducer_EckeroLineTimetable: the timetable is reached only when
+// the live fetch fails; its reference fares are never live.
 func TestNonLiveProducer_EckeroLineTimetable(t *testing.T) {
-	withEckeroServer(t, eckeroDefaultHome, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[]`))
-	})
-	routes, err := SearchEckeroLine(context.Background(), "Helsinki", "Tallinn", "2026-07-15", "EUR")
-	if err != nil {
-		t.Fatalf("SearchEckeroLine: %v", err)
-	}
+	withEckeroServer(t, eckeroStatus(http.StatusServiceUnavailable), eckeroBody(`[]`))
+	routes, _ := SearchEckeroLine(context.Background(), "Helsinki", "Tallinn", "2026-07-15", "EUR")
 	assertNeverLiveThenClassified(t, "eckeroline timetable", routes)
 }
 
@@ -122,9 +118,9 @@ func TestNonLiveProducer_TransitousSchedule(t *testing.T) {
 	assertNeverLiveThenClassified(t, "transitous", routes)
 }
 
-// TestNonLiveProducer_DistribusionLowestPrice: Distribusion reports the
-// connection's lowest price, a range low.
-func TestNonLiveProducer_DistribusionLowestPrice(t *testing.T) {
+// TestLiveProducer_Distribusion: Distribusion's lowest price is quoted per
+// connection, so it is a fare for that departure.
+func TestLiveProducer_Distribusion(t *testing.T) {
 	payload, err := json.Marshal(distribusionJSONAPI{
 		Data: []distribusionData{{
 			ID: "conn-1", Type: "connection",
@@ -153,5 +149,5 @@ func TestNonLiveProducer_DistribusionLowestPrice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SearchDistribusion: %v", err)
 	}
-	assertNeverLiveThenClassified(t, "distribusion", routes)
+	assertAllLive(t, "distribusion", routes)
 }

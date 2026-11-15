@@ -143,7 +143,7 @@ func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions
 
 	// Build cache key from search parameters.
 	providerKey := groundProviderKey(opts)
-	cacheKey := cache.Key("ground", fmt.Sprintf("%s|%s|%s|%s|%s|%.2f|%s|%t", from, to, date, opts.Currency, providerKey, opts.MaxPrice, opts.Type, allowBrowserFallbacks))
+	cacheKey := cache.Key("ground", fmt.Sprintf("%s|%s|%s|%s|%s|%.2f|%s|%t|x=%s", from, to, date, opts.Currency, providerKey, opts.MaxPrice, opts.Type, allowBrowserFallbacks, groundExcludeKey(opts)))
 
 	negKey, negEligible := groundNegKey(from, to, date, opts, providerKey)
 
@@ -463,7 +463,9 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	}
 
 	// Digitransit (VR Finnish Railways) — only if at least one city has a Finnish station.
-	if useProvider("digitransit") || useProvider("vr") {
+	// vr and digitransit name the same provider: excluding either suppresses it.
+	vrExcluded := !providerEnabled("vr", nil, opts.ExcludeProviders) || !providerEnabled("digitransit", nil, opts.ExcludeProviders)
+	if !vrExcluded && (useProvider("digitransit") || useProvider("vr")) {
 		if HasDigitransitStation(from) || HasDigitransitStation(to) {
 			launchProvider(&wg, results, "vr", func() ([]models.GroundRoute, error) {
 				return SearchDigitransit(ctx, from, to, date, opts.Currency)

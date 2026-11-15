@@ -302,6 +302,11 @@ func basisFor(c models.Confidence) string {
 func distinctSourceCount(sources []models.PriceSource, headline string) int {
 	seen := map[string]struct{}{}
 	for _, s := range sources {
+		// An estimated or unavailable ground source is not a quote, so it never
+		// corroborates; sources without a provenance (flights, hotels) count.
+		if s.Provenance != "" && s.Provenance != models.PriceLive {
+			continue
+		}
 		id := strings.ToLower(strings.TrimSpace(s.Provider))
 		if id == "" {
 			continue

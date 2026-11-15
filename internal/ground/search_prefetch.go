@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -60,20 +61,39 @@ func groundNegKey(from, to, date string, opts SearchOptions, providerKey string)
 	if opts.MaxPrice > 0 || opts.Type != "" {
 		return "", false
 	}
+	scope := "ground|" + providerKey + "|x=" + groundExcludeKey(opts) + "|b=" + strconv.FormatBool(browserFallbacksEnabled(opts))
+	return cache.NegativeKey(scope, from, to, date) + "|" + strings.TrimSpace(date), true
+}
+
+// groundExcludeKey is the canonical exclusion component of the cache keys
+// (sorted, lower-case), so a cached answer never reaches a search that
+// excludes the provider that produced it.
+func groundExcludeKey(opts SearchOptions) string {
 	excl := make([]string, 0, len(opts.ExcludeProviders))
 	for _, p := range opts.ExcludeProviders {
 		excl = append(excl, strings.ToLower(strings.TrimSpace(p)))
 	}
 	sort.Strings(excl)
-	scope := "ground|" + providerKey + "|x=" + strings.Join(excl, ",") + "|b=" + strconv.FormatBool(browserFallbacksEnabled(opts))
-	return cache.NegativeKey(scope, from, to, date) + "|" + strings.TrimSpace(date), true
+	return strings.Join(excl, ",")
 }
 
 // negCacheHitResult answers a search the negative cache already knows has no
-// service: one skipped, route_not_served row per provider asked for by name.
+// service: one skipped, route_not_served row per provider in scope (the named
+// ones, or every launchable one for an unfiltered search), minus exclusions,
+// by canonical id and sorted. Distribusion without its key is never in scope.
 func negCacheHitResult(opts SearchOptions) *models.GroundSearchResult {
 	res := &models.GroundSearchResult{Success: false, Count: 0}
-	for _, p := range opts.Providers {
+	names, err := ValidateProviderNames(opts.Providers)
+	if err != nil || len(names) == 0 {
+		names = launchProviderIDs()
+		if !HasDistribusionKey() {
+			names = slices.DeleteFunc(names, func(n string) bool { return n == "distribusion" })
+		}
+	}
+	excluded, _ := ValidateProviderNames(opts.ExcludeProviders)
+	names = slices.DeleteFunc(slices.Clone(names), func(n string) bool { return slices.Contains(excluded, n) })
+	sort.Strings(names)
+	for _, p := range names {
 		res.ProviderStatuses = append(res.ProviderStatuses, models.ProviderStatus{
 			ID: p, Name: p, Status: models.StatusSkipped, Reason: models.ReasonRouteNotServed,
 		})
