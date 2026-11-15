@@ -237,14 +237,7 @@ func filterByNameMatch(hotels []models.HotelResult, searchName string) []models.
 // collapse to a single generic word.
 func retryWithoutTrailingWord(name, location string, candidates []models.HotelResult) (string, []models.HotelResult, bool) {
 	words := strings.Fields(name)
-	if len(words) == 0 {
-		return "", nil, false
-	}
-	minRemaining := 3
-	if strings.TrimSpace(location) != "" {
-		minRemaining = 2
-	}
-	if len(words)-1 < minRemaining {
+	if len(words) < 2 {
 		return "", nil, false
 	}
 	last := hotelNameWords(words[len(words)-1])
@@ -252,6 +245,15 @@ func retryWithoutTrailingWord(name, location string, candidates []models.HotelRe
 		return "", nil, false
 	}
 	stripped := strings.Join(words[:len(words)-1], " ")
+	// Count the words the matcher compares, and require one that identifies
+	// the property: "a&o Hotel" or "Hotel -" would otherwise match any hotel.
+	minRemaining := 3
+	if strings.TrimSpace(location) != "" {
+		minRemaining = 2
+	}
+	if len(normalizeWords(stripped)) < minRemaining || len(meaningfulHotelNameWords(stripped)) == 0 {
+		return "", nil, false
+	}
 	if strings.EqualFold(last[0], strings.TrimSpace(location)) {
 		return stripped, candidates, true
 	}
@@ -267,17 +269,11 @@ func retryWithoutTrailingWord(name, location string, candidates []models.HotelRe
 	return stripped, eligible, len(eligible) > 0
 }
 
-// normalizeWords lowercases, strips punctuation, and returns words of length >= 3.
+// normalizeWords returns the hotelNameWords tokens of at least three letters.
 func normalizeWords(s string) []string {
-	s = strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == ' ' {
-			return unicode.ToLower(r)
-		}
-		return ' '
-	}, s)
 	var words []string
-	for _, w := range strings.Fields(s) {
-		if len(w) >= 3 {
+	for _, w := range hotelNameWords(s) {
+		if len([]rune(w)) >= 3 {
 			words = append(words, w)
 		}
 	}

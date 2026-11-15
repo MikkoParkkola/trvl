@@ -307,3 +307,27 @@ func TestSearchHotelsByName_MaskedGoogleErrorSurfaced(t *testing.T) {
 		t.Fatalf("err = %q, want the masked Google 403 carried along", err)
 	}
 }
+
+// TestRetryWithoutTrailingWord_CountsNormalizedWords: the word floor counts
+// the words the matcher actually compares, and at least one must identify
+// the property. Punctuation and short fragments must not let a name strip
+// down to the generic "hotel".
+func TestRetryWithoutTrailingWord_CountsNormalizedWords(t *testing.T) {
+	cases := []struct {
+		name, location string
+		wantOK         bool
+		want           string
+	}{
+		{"a&o Hotel Vienna", "Vienna", false, ""},
+		{"Hotel - Vienna", "Vienna", false, ""},
+		{"The Hotel Vienna", "Vienna", false, ""},
+		{"Hotel Sacher Vienna", "Vienna", true, "Hotel Sacher"},
+		{"ARTIST Boutique Hotel Vienna", "Vienna", true, "ARTIST Boutique Hotel"},
+	}
+	for _, tc := range cases {
+		got, _, ok := retryWithoutTrailingWord(tc.name, tc.location, nil)
+		if ok != tc.wantOK || got != tc.want {
+			t.Errorf("retryWithoutTrailingWord(%q, %q) = %q, %v; want %q, %v", tc.name, tc.location, got, ok, tc.want, tc.wantOK)
+		}
+	}
+}
