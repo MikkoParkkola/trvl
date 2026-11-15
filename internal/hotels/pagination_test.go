@@ -110,6 +110,12 @@ type hotelWithPrice struct {
 // Padded to exceed the 1000-byte minimum response check.
 
 func fakeHotelPageWithPrices(hotels ...hotelWithPrice) []byte {
+	return fakeHotelPageInCurrency("USD", hotels...)
+}
+
+// fakeHotelPageInCurrency is fakeHotelPageWithPrices with the page currency
+// (the [6][1][3] search param) chosen by the caller.
+func fakeHotelPageInCurrency(currency string, hotels ...hotelWithPrice) []byte {
 	var entries []any
 	for _, hp := range hotels {
 		offset := nameOffset(hp.name)
@@ -118,10 +124,10 @@ func fakeHotelPageWithPrices(hotels ...hotelWithPrice) []byte {
 		hotel[1] = hp.name
 		hotel[2] = []any{[]any{60.168 + offset, 24.941 + offset}}
 		hotel[3] = []any{"4-star hotel", 4.0}
-		// Price block: [null, [params..., "USD"], [null, [formatted, null, exact, null, rounded]]]
+		// Price block: [null, [params..., currency], [null, [formatted, null, exact, null, rounded]]]
 		hotel[6] = []any{
 			nil,
-			[]any{nil, nil, nil, "USD"},
+			[]any{nil, nil, nil, currency},
 			[]any{nil, []any{fmt.Sprintf("$%.0f", hp.price), nil, hp.price, nil, hp.price}},
 		}
 		hotel[9] = fmt.Sprintf("/g/hotel_%s", strings.ReplaceAll(strings.ToLower(hp.name), " ", "_"))

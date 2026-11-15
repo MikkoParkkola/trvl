@@ -257,7 +257,7 @@ func parseOrganicHotel(entry []any, currency string) models.HotelResult {
 		}
 	}
 
-	// [6] = price block: [null, [[price, 0], null, null, "currency", ...]]
+	// [6] = price block; only [6][2][1] prices this hotel (see extractOrganicPrice)
 	if len(entry) > 6 {
 		price, cur := extractOrganicPrice(entry[6])
 		if price > 0 {
@@ -369,24 +369,9 @@ func extractOrganicPrice(raw any) (float64, string) {
 		}
 	}
 
-	// Legacy fallback: look for [[price, 0], null, null, "currency", ...] in [6][1].
-	for _, item := range arr {
-		innerArr, ok := item.([]any)
-		if !ok || len(innerArr) < 4 {
-			continue
-		}
-		if priceArr, ok := innerArr[0].([]any); ok && len(priceArr) >= 1 {
-			if price, ok := priceArr[0].(float64); ok && price > 0 {
-				if len(innerArr) > 3 {
-					if cur := jsonutil.StringValue(innerArr[3]); cur != "" {
-						currency = cur
-					}
-				}
-				return price, currency
-			}
-		}
-	}
-
+	// No usable per-hotel price. [6][1] still carries the search-wide params
+	// ([[maxPrice, 0], null, null, "cur"], the same for every hotel); reading a
+	// price from it would give every unpriced hotel the search's ceiling.
 	return 0, ""
 }
 

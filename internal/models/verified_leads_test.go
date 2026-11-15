@@ -16,7 +16,7 @@ func TestVerifiedSourceLeadsHeadline(t *testing.T) {
 			{Provider: "agoda", Price: 142, Currency: "EUR", PriceBasis: PriceBasisTaxInclusiveTotal, PriceConfidence: PriceConfidenceVerified},
 		},
 	}
-	FinalizeHotelResultPriceTrust(h, "EUR", time.Now())
+	FinalizeHotelResultPriceTrust(h, "EUR", time.Now(), nil)
 	if h.PriceConfidence != PriceConfidenceVerified {
 		t.Fatalf("headline confidence = %q, want verified (verified must lead over cheaper teaser)", h.PriceConfidence)
 	}
@@ -38,7 +38,7 @@ func TestWithinTierCheapestWins(t *testing.T) {
 			{Provider: "b", Price: 99, Currency: "EUR", PriceConfidence: PriceConfidenceVerified},
 		},
 	}
-	FinalizeHotelResultPriceTrust(h, "EUR", time.Now())
+	FinalizeHotelResultPriceTrust(h, "EUR", time.Now(), nil)
 	if h.Price != 99 {
 		t.Errorf("headline price = %v, want 99 (cheapest within the same confidence tier)", h.Price)
 	}
@@ -55,7 +55,7 @@ func TestRoomLevelBeatsUnverifiedButLosesToVerified(t *testing.T) {
 			{Provider: "agoda", Price: 130, Currency: "EUR", PriceConfidence: PriceConfidenceVerified},
 		},
 	}
-	FinalizeHotelResultPriceTrust(h, "EUR", time.Now())
+	FinalizeHotelResultPriceTrust(h, "EUR", time.Now(), nil)
 	if h.Price != 130 || h.PriceConfidence != PriceConfidenceVerified {
 		t.Errorf("headline = %v/%q, want 130/verified (top tier leads)", h.Price, h.PriceConfidence)
 	}

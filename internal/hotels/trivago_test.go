@@ -162,9 +162,10 @@ func TestParseTrivagoAccommodationsNewFormat(t *testing.T) {
 	if h.Currency != "EUR" {
 		t.Errorf("currency: got %q, want EUR", h.Currency)
 	}
-	// Rating 8.6 on 10-scale -> 4.3 on 5-scale.
-	if h.Rating != 4.3 {
-		t.Errorf("rating: got %.1f, want 4.3", h.Rating)
+	// Trivago review_rating is 0-10, the same scale as Google ratings,
+	// the summary and min_rating, so it passes through unchanged.
+	if h.Rating != 8.6 {
+		t.Errorf("rating: got %.1f, want 8.6 (0-10 scale, not halved)", h.Rating)
 	}
 	if h.Stars != 4 {
 		t.Errorf("stars: got %d, want 4", h.Stars)
@@ -337,10 +338,10 @@ func TestParseRatingString(t *testing.T) {
 		input string
 		want  float64
 	}{
-		{"8.4", 4.2},
-		{"8.6", 4.3},
-		{"10.0", 5.0},
-		{"4.5", 4.5}, // Already on 5-scale, no division.
+		{"8.4", 8.4},
+		{"8.6", 8.6},
+		{"10.0", 10.0},
+		{"4.5", 4.5}, // A low 0-10 score, not a 5-scale value.
 		{"", 0},
 	}
 	for _, tt := range tests {
@@ -348,6 +349,32 @@ func TestParseRatingString(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("parseRatingString(%q) = %v, want %v", tt.input, got, tt.want)
 		}
+	}
+}
+
+// TestTrivagoRatingSurvivesMinRatingFilter is the user-visible half of the
+// scale bug: a Trivago-only hotel rated 8.6/10 must survive min_rating 8,
+// which is expressed on the same 0-10 scale as Google ratings.
+func TestTrivagoRatingSurvivesMinRatingFilter(t *testing.T) {
+	raw := json.RawMessage(`{"accommodations": [{
+		"accommodation_name": "Hotel Roma",
+		"review_rating": "8.6",
+		"currency": "EUR",
+		"price_per_night": "€149",
+		"latitude": 41.9028,
+		"longitude": 12.4964
+	}]}`)
+	results, err := parseTrivagoAccommodations(raw, "EUR")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	tagged := tagHotelSource(results, "trivago")
+	if n := len(filterHotels(tagged, HotelSearchOptions{Currency: "EUR"})); n != 1 {
+		t.Fatalf("precondition: %d hotels survive with no rating filter, want 1", n)
+	}
+	kept := filterHotels(tagged, HotelSearchOptions{Currency: "EUR", MinRating: 8})
+	if len(kept) != 1 {
+		t.Fatalf("min_rating 8 kept %d hotels, want 1 (rating = %v, Trivago 8.6/10 was rescaled)", len(kept), tagged[0].Rating)
 	}
 }
 

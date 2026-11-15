@@ -31,11 +31,13 @@ package providers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
@@ -269,7 +271,17 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 		return nil, err
 	}
 	defer func() { _ = policyProxy.Close() }()
+	policyProxy.keepHost(parsed.Hostname())
 
+	cookies, _, runErr := cdpBrowserRun(ctx, execPath, targetURL, policyProxy.Address(), challengeWait, captureCookies)
+	return harvestDecision(parsed.Hostname(), cookies, runErr, policyProxy.Refusals())
+}
+
+// runChromedp is the production cdpBrowserRun: a headless, profile-less
+// browser whose every request goes through the policy proxy at proxyAddr. It
+// navigates, waits challengeWait, and returns the cookies, plus the outer
+// HTML for captureCookiesAndHTML (best effort: a failed capture is tolerated).
+func runChromedp(ctx context.Context, execPath, targetURL, proxyAddr string, challengeWait time.Duration, capture pageCapture) ([]*network.Cookie, string, error) {
 	allocOpts := append([]chromedp.ExecAllocatorOption{},
 		chromedp.DefaultExecAllocatorOptions[:]...)
 	allocOpts = append(allocOpts,
@@ -279,7 +291,7 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 		chromedp.NoDefaultBrowserCheck,
 		chromedp.Flag("disable-background-networking", true),
 		chromedp.Flag("disable-extensions", true),
-		chromedp.Flag("proxy-server", "http://"+policyProxy.Address()),
+		chromedp.Flag("proxy-server", "http://"+proxyAddr),
 		chromedp.Flag("proxy-bypass-list", "<-loopback>"),
 	)
 
@@ -290,7 +302,8 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 	defer cancelTask()
 
 	var cookies []*network.Cookie
-	err = chromedp.Do(taskCtx,
+	var html string
+	actions := []chromedp.Action[chromedp.Void]{
 		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
 			_, err := cdp.Call(ctx, t, network.Enable, network.EnableParams{})
 			return err
@@ -305,17 +318,69 @@ func runCDPCollect(ctx context.Context, execPath, targetURL string, challengeWai
 			cookies = res.Cookies
 			return nil
 		}),
-	)
-	if err != nil {
-		if refusal := policyProxy.Refusal(); refusal != nil {
-			return nil, refusal
-		}
-		return nil, err
 	}
-	if refusal := policyProxy.Refusal(); refusal != nil {
-		return nil, refusal
+	if capture == captureCookiesAndHTML {
+		actions = append(actions, chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+			html, _ = chromedp.OuterHTML(chromedp.CSS("html"))(ctx, t)
+			return nil
+		}))
+	}
+	err := chromedp.Do(taskCtx, actions...)
+	return cookies, html, err
+}
+
+// pageCapture selects what a browser run returns besides its cookies.
+type pageCapture int
+
+const (
+	captureCookies        pageCapture = iota // cookies only (cookie refresh)
+	captureCookiesAndHTML                    // cookies plus page HTML (challenge check)
+)
+
+// cdpBrowserRun drives the headless browser through the policy proxy at
+// proxyAddr and returns the cookies, plus the page HTML for
+// captureCookiesAndHTML. A variable so tests can drive runCDPCollect and
+// runCDPChallenge without a browser.
+var cdpBrowserRun = runChromedp
+
+// harvestDecision is the post-run decision both runners apply; a variable so
+// tests can see what the call sites pass in.
+var harvestDecision = harvestOutcome
+
+// harvestOutcome is the post-run decision for a headless harvest, kept pure so
+// it can be tested without a browser. targetHost is the hostname the harvest
+// navigated to; refusals are the hosts the policy proxy refused during the run.
+func harvestOutcome(targetHost string, cookies []*network.Cookie, runErr error, refusals []proxyRefusal) ([]*network.Cookie, error) {
+	// Only the target itself decides the harvest. A page pulls scripts from
+	// third-party hosts (consent, analytics) that a DNS blocker may sinkhole
+	// to 0.0.0.0; refusing those is the policy working, not a failed harvest.
+	// A refused target is checked first: it usually breaks the page load too,
+	// and it is the cause, so it wins over the run error.
+	target := normalizeRefusedHost(targetHost)
+	for _, r := range refusals {
+		if normalizeRefusedHost(r.Host) == target {
+			err := fmt.Errorf("%w: harvest target %s resolved to an address the destination policy refuses", ErrDestinationRefused, target)
+			if runErr != nil {
+				err = fmt.Errorf("%w (browser: %w)", err, runErr)
+			}
+			return nil, err
+		}
+	}
+	if runErr != nil {
+		if len(refusals) == 0 {
+			return nil, runErr
+		}
+		return nil, fmt.Errorf("%w (destination policy refused: %s)", runErr, refusedHostList(refusals))
 	}
 	return cookies, nil
+}
+
+func refusedHostList(refusals []proxyRefusal) string {
+	hosts := make([]string, 0, len(refusals))
+	for _, r := range refusals {
+		hosts = append(hosts, r.Host)
+	}
+	return strings.Join(hosts, ", ")
 }
 
 // convertNetworkCookies maps CDP network.Cookie values to net/http cookies.

@@ -173,7 +173,7 @@ func MergeHotelResults(sources ...[]HotelResult) []HotelResult {
 	for _, k := range order {
 		result = append(result, *merged[k])
 	}
-	FinalizeHotelPriceTrust(result, "", time.Now())
+	FinalizeHotelPriceTrust(result, "", time.Now(), nil)
 	ComputeSavings(result)
 	return result
 }

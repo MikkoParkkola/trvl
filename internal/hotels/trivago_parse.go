@@ -138,9 +138,10 @@ func trivagoParsePrice(s string) float64 {
 	return amount
 }
 
-// parseRatingString converts a rating string like "8.4" to a float on a
-// 0-10 scale, then normalizes to 0-5 (dividing by 2) for consistency with
-// the HotelResult model.
+// parseRatingString converts a Trivago rating string like "8.4" to a float.
+// Trivago scores are 0-10, the same scale as Google ratings (normalized in
+// parseOrganicHotel), the result summary and min_rating, so the value passes
+// through unchanged.
 func parseRatingString(s string) float64 {
 	if s == "" {
 		return 0
@@ -148,10 +149,6 @@ func parseRatingString(s string) float64 {
 	v, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return 0
-	}
-	// Trivago ratings are on a 0-10 scale; normalize to 0-5.
-	if v > 5 {
-		v = v / 2
 	}
 	return v
 }
