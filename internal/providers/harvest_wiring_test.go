@@ -34,7 +34,7 @@ func stubHarvest(t *testing.T, runErr error, html string, decide func(decisionCa
 	origRun, origDecision := cdpBrowserRun, harvestDecision
 	t.Cleanup(func() { cdpBrowserRun, harvestDecision = origRun, origDecision })
 
-	cdpBrowserRun = func(_ context.Context, _, _, proxyAddr string, _ time.Duration, _ bool) ([]*network.Cookie, string, error) {
+	cdpBrowserRun = func(_ context.Context, _, _, proxyAddr string, _ time.Duration, _ pageCapture) ([]*network.Cookie, string, error) {
 		proxyURL, _ := url.Parse("http://" + proxyAddr)
 		client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
 		if resp, err := client.Get("http://0.0.0.0/consent.js"); err == nil {

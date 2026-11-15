@@ -19,9 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/chromedp"
 )
 
 // ChallengeStatus is the outcome of a headless-first challenge resolution.
@@ -212,57 +210,10 @@ func runCDPChallenge(ctx context.Context, execPath, targetURL string, challengeW
 	}
 	defer func() { _ = policyProxy.Close() }()
 
-	allocOpts := append([]chromedp.ExecAllocatorOption{},
-		chromedp.DefaultExecAllocatorOptions[:]...)
-	allocOpts = append(allocOpts,
-		chromedp.ExecPath(execPath),
-		chromedp.Headless,
-		chromedp.NoFirstRun,
-		chromedp.NoDefaultBrowserCheck,
-		chromedp.Flag("disable-background-networking", true),
-		chromedp.Flag("disable-extensions", true),
-		chromedp.Flag("proxy-server", "http://"+policyProxy.Address()),
-		chromedp.Flag("proxy-bypass-list", "<-loopback>"),
-	)
-
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(ctx, allocOpts...)
-	defer cancelAlloc()
-
-	taskCtx, cancelTask := chromedp.NewContext(allocCtx)
-	defer cancelTask()
-
-	var cookies []*network.Cookie
-	var html string
-	err = chromedp.Do(taskCtx,
-		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
-			_, err := cdp.Call(ctx, t, network.Enable, network.EnableParams{})
-			return err
-		}),
-		chromedp.Navigate(targetURL),
-		chromedp.Sleep(challengeWait),
-		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
-			res, err := cdp.Call(ctx, t, network.GetCookies, network.GetCookiesParams{})
-			if err != nil {
-				return err
-			}
-			cookies = res.Cookies
-			return nil
-		}),
-		// Best-effort outer HTML capture for captcha-marker detection. A failure
-		// here must not abort the harvest, so it is tolerated.
-		chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
-			html, _ = chromedp.OuterHTML(chromedp.CSS("html"))(ctx, t)
-			return nil
-		}),
-	)
+	cookies, html, runErr := cdpBrowserRun(ctx, execPath, targetURL, policyProxy.Address(), challengeWait, captureCookiesAndHTML)
+	cookies, err = harvestDecision(parsed.Hostname(), cookies, runErr, policyProxy.Refusals())
 	if err != nil {
-		if refusal := policyProxy.Refusal(); refusal != nil {
-			return nil, "", refusal
-		}
 		return nil, "", err
-	}
-	if refusal := policyProxy.Refusal(); refusal != nil {
-		return nil, "", refusal
 	}
 	return cookies, html, nil
 }

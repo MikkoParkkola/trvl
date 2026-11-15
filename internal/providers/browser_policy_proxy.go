@@ -26,8 +26,8 @@ type browserPolicyProxy struct {
 	lookup   lookupIPsFunc
 	dial     browserProxyDialFunc
 
-	mu      sync.Mutex
-	refusal error
+	mu       sync.Mutex
+	refusals []proxyRefusal
 }
 
 func startBrowserPolicyProxy(lookup lookupIPsFunc, dial browserProxyDialFunc) (*browserPolicyProxy, error) {
@@ -60,12 +60,6 @@ func (p *browserPolicyProxy) Close() error {
 	return p.server.Shutdown(ctx)
 }
 
-func (p *browserPolicyProxy) Refusal() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.refusal
-}
-
 // maxProxyRefusals caps how many distinct refused hosts one browser run keeps.
 const maxProxyRefusals = 16
 
@@ -80,21 +74,36 @@ type proxyRefusal struct {
 func (p *browserPolicyProxy) Refusals() []proxyRefusal {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.refusal == nil {
-		return nil
-	}
-	return []proxyRefusal{{Err: p.refusal}}
+	return append([]proxyRefusal(nil), p.refusals...)
 }
 
-func (p *browserPolicyProxy) recordRefusal(err error) {
+// recordRefusal keeps the first refusal per host and stops at
+// maxProxyRefusals, so the earliest refusals (usually the page's own
+// requests) survive a page that fans out to many blocked trackers.
+func (p *browserPolicyProxy) recordRefusal(host string, err error) {
 	if err == nil {
 		return
 	}
+	host = normalizeRefusedHost(host)
 	p.mu.Lock()
-	if p.refusal == nil {
-		p.refusal = err
+	defer p.mu.Unlock()
+	if len(p.refusals) >= maxProxyRefusals {
+		return
 	}
-	p.mu.Unlock()
+	for _, r := range p.refusals {
+		if r.Host == host {
+			return
+		}
+	}
+	p.refusals = append(p.refusals, proxyRefusal{Host: host, Err: err})
+}
+
+// normalizeRefusedHost lowercases a host and drops any port and trailing dot.
+func normalizeRefusedHost(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
 }
 
 func (p *browserPolicyProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -108,7 +117,7 @@ func (p *browserPolicyProxy) ServeHTTP(w http.ResponseWriter, req *http.Request)
 func (p *browserPolicyProxy) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	pinned, _, err := pinHTTPURL(req.Context(), req.URL, p.lookup)
 	if err != nil {
-		p.recordRefusal(err)
+		p.recordRefusal(req.URL.Hostname(), err)
 		http.Error(w, "destination refused by policy", http.StatusForbidden)
 		return
 	}
@@ -126,7 +135,7 @@ func (p *browserPolicyProxy) serveHTTP(w http.ResponseWriter, req *http.Request)
 	resp, err := transport.RoundTrip(out)
 	if err != nil {
 		if errors.Is(err, ErrDestinationRefused) {
-			p.recordRefusal(err)
+			p.recordRefusal(req.URL.Hostname(), err)
 		}
 		http.Error(w, "upstream request failed", http.StatusBadGateway)
 		return
@@ -150,7 +159,7 @@ func (p *browserPolicyProxy) serveConnect(w http.ResponseWriter, req *http.Reque
 	target := &url.URL{Scheme: "https", Host: host}
 	pinned, _, err := pinHTTPURL(req.Context(), target, p.lookup)
 	if err != nil {
-		p.recordRefusal(err)
+		p.recordRefusal(target.Hostname(), err)
 		http.Error(w, "destination refused by policy", http.StatusForbidden)
 		return
 	}
@@ -158,7 +167,7 @@ func (p *browserPolicyProxy) serveConnect(w http.ResponseWriter, req *http.Reque
 	upstream, err := p.dial(req.Context(), "tcp", pinned.Host)
 	if err != nil {
 		if errors.Is(err, ErrDestinationRefused) {
-			p.recordRefusal(err)
+			p.recordRefusal(target.Hostname(), err)
 		}
 		http.Error(w, "upstream connection failed", http.StatusBadGateway)
 		return
