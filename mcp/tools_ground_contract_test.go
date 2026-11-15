@@ -344,25 +344,46 @@ func TestSearchGroundCapIsAutomatic(t *testing.T) {
 	}
 }
 
-// TestSearchGroundRoundTripCapKeepsInbound pins the cap per direction: ground
-// search appends every outbound row before any inbound row, so a single cap
-// would drop the whole return leg.
-func TestSearchGroundRoundTripCapKeepsInbound(t *testing.T) {
-	out, in := groundContractFixture(25), groundContractFixture(25)
+func roundTripFixture(n int, lean bool) []models.GroundRoute {
+	out, in := groundContractFixture(n), groundContractFixture(n)
 	for i := range out {
-		out[i].Direction = "outbound"
-		in[i].Direction = "inbound"
+		out[i].Direction, in[i].Direction = "outbound", "inbound"
 		in[i].BookingURL += "&inbound"
 	}
-	stubGroundRoutes(t, append(out, in...))
-	got := callSearchGround(t, withArgs(map[string]any{"return_date": "2027-03-15"}))
-	dirs := map[string]int{}
-	for _, r := range structuredRoutes(t, got) {
-		d, _ := r["direction"].(string)
-		dirs[d]++
+	routes := append(out, in...)
+	if lean {
+		for i, r := range routes {
+			routes[i] = models.GroundRoute{
+				Provider: r.Provider, Type: r.Type, Direction: r.Direction, Price: r.Price,
+				Currency: r.Currency, PriceProvenance: r.PriceProvenance, Duration: r.Duration,
+				Departure:  models.GroundStop{City: r.Departure.City, Time: r.Departure.Time},
+				Arrival:    models.GroundStop{City: r.Arrival.City, Time: r.Arrival.Time},
+				BookingURL: fmt.Sprintf("https://b.example/%s/%d", r.Direction, i),
+			}
+		}
 	}
-	if dirs["outbound"] != 20 || dirs["inbound"] != 20 {
-		t.Errorf("directions = %v, want 20 outbound and 20 inbound", dirs)
+	return routes
+}
+
+// TestSearchGroundRoundTripCapKeepsInbound pins the cap per direction: ground
+// search appends every outbound row before any inbound row, so a single cap
+// would drop the whole return leg. Lean rows fit 20 per direction; rich rows
+// overflow the budget and the guard trims both directions evenly.
+func TestSearchGroundRoundTripCapKeepsInbound(t *testing.T) {
+	args := withArgs(map[string]any{"return_date": "2027-03-15"})
+	dirCounts := func(c groundCall) map[string]int {
+		dirs := map[string]int{}
+		for _, r := range structuredRoutes(t, c) {
+			d, _ := r["direction"].(string)
+			dirs[d]++
+		}
+		return dirs
+	}
+
+	stubGroundRoutes(t, roundTripFixture(25, true))
+	got := callSearchGround(t, args)
+	if dirs := dirCounts(got); dirs["outbound"] != 20 || dirs["inbound"] != 20 {
+		t.Errorf("lean directions = %v, want 20 outbound and 20 inbound", dirs)
 	}
 	if total, _ := got.structured["total_count"].(float64); total != 50 {
 		t.Errorf("total_count = %v, want 50", got.structured["total_count"])
@@ -370,6 +391,21 @@ func TestSearchGroundRoundTripCapKeepsInbound(t *testing.T) {
 	for _, want := range []string{"20 of 25 outbound", "20 of 25 inbound"} {
 		if !strings.Contains(got.userText, want) {
 			t.Errorf("summary lacks %q:\n%s", want, got.userText)
+		}
+	}
+
+	stubGroundRoutes(t, roundTripFixture(25, false))
+	got = callSearchGround(t, args)
+	dirs := dirCounts(got)
+	if dirs["outbound"] == 0 || dirs["inbound"] == 0 || dirs["outbound"]-dirs["inbound"] > 1 || dirs["inbound"]-dirs["outbound"] > 1 {
+		t.Errorf("rich directions = %v, want both kept and within one row of each other", dirs)
+	}
+	if got.size >= 50000 {
+		t.Errorf("rich round trip = %d bytes, want under 50000", got.size)
+	}
+	for _, want := range []string{"of 25 outbound", "of 25 inbound", "50 KB"} {
+		if !strings.Contains(got.userText, want) {
+			t.Errorf("rich summary lacks %q:\n%s", want, got.userText)
 		}
 	}
 }
@@ -476,5 +512,60 @@ func TestSearchGroundBadProviderIsError(t *testing.T) {
 		if !strings.Contains(got.errText, want) {
 			t.Errorf("error %q lacks %q", got.errText, want)
 		}
+	}
+}
+
+// TestSearchGroundDropsSingleRepeatLeg pins the leg trim: a lone leg with the
+// route's own type, provider, stops and times says nothing new, so legs goes;
+// a lone leg that differs, and every multi-leg route, keep their legs.
+func TestSearchGroundDropsSingleRepeatLeg(t *testing.T) {
+	routes := groundContractFixture(3) // row 0: Brno transfer; rows 1, 2: one leg
+	routes[2].Legs[0].Provider = "cd"
+	stubGroundRoutes(t, routes)
+	got := structuredRoutes(t, callSearchGround(t, groundContractArgs))
+	if legs, _ := got[0]["legs"].([]any); len(legs) != 2 {
+		t.Errorf("two-leg route legs = %v, want both kept", got[0]["legs"])
+	}
+	if legs, ok := got[1]["legs"]; ok {
+		t.Errorf("single repeat leg kept: %v", legs)
+	}
+	if legs, _ := got[2]["legs"].([]any); len(legs) != 1 {
+		t.Errorf("single leg with another provider = %v, want it kept", got[2]["legs"])
+	}
+}
+
+// TestSearchGroundOversizeGuardKeepsBudget pins the size guard: when 20 rows
+// still overflow the budget, the lowest-ranked rows go until the result fits,
+// and the summary says the result was trimmed to fit.
+func TestSearchGroundOversizeGuardKeepsBudget(t *testing.T) {
+	fixture := groundContractFixture(53)
+	for i := range fixture {
+		fixture[i].BookingURL += "&ctx=" + strings.Repeat("x", 2000)
+	}
+	stubGroundRoutes(t, fixture)
+	got := callSearchGround(t, groundContractArgs)
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	if got.size >= 50000 {
+		t.Errorf("tools/call result = %d bytes, want under 50000", got.size)
+	}
+	routes := structuredRoutes(t, got)
+	if len(routes) == 0 || len(routes) >= 20 {
+		t.Fatalf("routes = %d, want the guard to keep between 1 and 19", len(routes))
+	}
+	for i, u := range routeURLs(routes) {
+		if u != fixture[i].BookingURL {
+			t.Errorf("route %d is not fixture row %d; the guard must drop from the bottom", i, i)
+		}
+	}
+	if c, _ := got.structured["count"].(float64); int(c) != len(routes) {
+		t.Errorf("count = %v, want %d", got.structured["count"], len(routes))
+	}
+	if tc, _ := got.structured["total_count"].(float64); tc != 53 {
+		t.Errorf("total_count = %v, want 53", got.structured["total_count"])
+	}
+	if !strings.Contains(got.userText, fmt.Sprintf("%d of 53", len(routes))) || !strings.Contains(got.userText, "50 KB") {
+		t.Errorf("summary should report %d of 53 and the 50 KB trim:\n%s", len(routes), got.userText)
 	}
 }
