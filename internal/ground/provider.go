@@ -2,6 +2,8 @@ package ground
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -29,4 +31,14 @@ func livePrice(price float64) models.PriceProvenance {
 		return models.PriceLive
 	}
 	return ""
+}
+
+// httpStatusError types a non-200 provider answer: 429, 403 (a bot wall) and
+// 5xx are refusals that should be retried later (ErrRateLimited); any other
+// status means the endpoint moved or changed (ErrParseFailed).
+func httpStatusError(provider, stage string, code int) error {
+	if code == http.StatusTooManyRequests || code == http.StatusForbidden || code >= 500 {
+		return fmt.Errorf("%s %s: HTTP %d: %w", provider, stage, code, models.ErrRateLimited)
+	}
+	return fmt.Errorf("%s %s: HTTP %d: %w", provider, stage, code, models.ErrParseFailed)
 }

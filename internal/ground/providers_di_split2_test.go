@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/models"
 	"golang.org/x/time/rate"
 )
 
@@ -320,9 +322,12 @@ func TestSearchEckeroLine_DI_FallbackToSchedule(t *testing.T) {
 	}
 
 	// Use a Wednesday (2026-07-15 is a Wednesday) — all "daily" sailings match.
+	// Q1: the schedule still answers, and the live failure travels with it as
+	// a ProviderNotice rather than being swallowed.
 	routes, err := SearchEckeroLine(context.Background(), "Helsinki", "Tallinn", "2026-07-15", "EUR")
-	if err != nil {
-		t.Fatalf("SearchEckeroLine fallback: %v", err)
+	var notice *models.ProviderNotice
+	if !errors.As(err, &notice) {
+		t.Fatalf("SearchEckeroLine fallback err = %v, want a *models.ProviderNotice", err)
 	}
 	if len(routes) == 0 {
 		t.Fatal("expected fallback schedule routes, got 0")

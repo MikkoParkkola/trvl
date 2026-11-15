@@ -126,7 +126,9 @@ type eckerolineDeparture struct {
 
 // tryEckeroLineLive calls Eckerö Line's Magento AJAX API for live departure prices.
 // Flow: GET homepage → extract form_key + session cookie → POST getdepartures.
-// Returns 0 when the API is unavailable (caller falls back to published schedule).
+// Every failure is an error: a refusal (429, 403, 5xx) wraps ErrRateLimited and
+// an answer of the wrong shape wraps ErrParseFailed. Only a valid departure
+// list, possibly empty, returns a nil error.
 func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]eckerolineDeparture, error) {
 	if err := eckerolineLimiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("eckeroline rate limiter: %w", err)
@@ -135,47 +137,39 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 	// Step 1: GET homepage to obtain form_key + Magento session cookie.
 	homeReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.eckeroline.fi/", nil)
 	if err != nil {
-		slog.Debug("eckeroline homepage request build failed", "err", logredact.Err(err))
-		return nil, nil
+		return nil, fmt.Errorf("eckeroline homepage request: %w", err)
 	}
 	homeReq.Header.Set("Accept", "text/html")
 	homeReq.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
 
 	homeResp, err := eckerolineClient.Do(homeReq)
 	if err != nil {
-		slog.Debug("eckeroline homepage fetch failed", "err", logredact.Err(err))
-		return nil, nil
+		return nil, fmt.Errorf("eckeroline homepage: %w", err)
 	}
 	defer func() { _ = homeResp.Body.Close() }()
 
 	if homeResp.StatusCode != http.StatusOK {
-		slog.Debug("eckeroline homepage non-200", "status", homeResp.StatusCode)
-		return nil, nil
+		return nil, httpStatusError("eckeroline", "homepage", homeResp.StatusCode)
 	}
 
 	homeBody, err := io.ReadAll(io.LimitReader(homeResp.Body, 512*1024))
 	if err != nil {
-		slog.Debug("eckeroline homepage body read failed", "err", logredact.Err(err))
-		return nil, nil
+		return nil, fmt.Errorf("eckeroline homepage read: %w", err)
 	}
 
-	// Extract form_key from HTML.
 	formKeyMatch := eckerolineFormKeyRegex.FindSubmatch(homeBody)
 	if len(formKeyMatch) < 2 {
-		slog.Debug("eckeroline form_key not found in homepage")
-		return nil, nil
+		return nil, fmt.Errorf("eckeroline homepage: no form_key: %w", models.ErrParseFailed)
 	}
 	formKey := string(formKeyMatch[1])
 
-	// Collect session cookies from the homepage response.
 	var cookieParts []string
 	for _, c := range homeResp.Cookies() {
 		cookieParts = append(cookieParts, c.Name+"="+c.Value)
 	}
 	sessionCookies := strings.Join(cookieParts, "; ")
 	if sessionCookies == "" {
-		slog.Debug("eckeroline no session cookies from homepage")
-		return nil, nil
+		return nil, fmt.Errorf("eckeroline homepage: no session cookie: %w", models.ErrParseFailed)
 	}
 
 	// Step 2: POST /checkout/bookingBar/getdepartures with form_key + session.
@@ -192,8 +186,7 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 	depReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		"https://www.eckeroline.fi/checkout/bookingBar/getdepartures", strings.NewReader(payload))
 	if err != nil {
-		slog.Debug("eckeroline getdepartures request build failed", "err", logredact.Err(err))
-		return nil, nil
+		return nil, fmt.Errorf("eckeroline getdepartures request: %w", err)
 	}
 	depReq.Header.Set("Content-Type", "application/json")
 	depReq.Header.Set("Accept", "application/json")
@@ -203,35 +196,44 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 
 	depResp, err := eckerolineClient.Do(depReq)
 	if err != nil {
-		slog.Debug("eckeroline getdepartures failed", "err", logredact.Err(err))
-		return nil, nil
+		return nil, fmt.Errorf("eckeroline getdepartures: %w", err)
 	}
 	defer func() { _ = depResp.Body.Close() }()
 
 	if depResp.StatusCode != http.StatusOK {
-		slog.Debug("eckeroline getdepartures non-200", "status", depResp.StatusCode)
-		return nil, nil
+		return nil, httpStatusError("eckeroline", "getdepartures", depResp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(depResp.Body, 64*1024))
 	if err != nil {
-		slog.Debug("eckeroline getdepartures body read failed", "err", logredact.Err(err))
-		return nil, nil
+		return nil, fmt.Errorf("eckeroline getdepartures read: %w", err)
 	}
 
-	// Try parsing as array directly or as object with departures field.
-	var departures []eckerolineDeparture
-	if err := json.Unmarshal(body, &departures); err != nil {
-		var wrapped eckerolineDepartureResponse
-		if err2 := json.Unmarshal(body, &wrapped); err2 != nil {
-			slog.Debug("eckeroline getdepartures parse failed", "err", logredact.Err(err), "body", string(body[:min(len(body), 200)]))
-			return nil, nil
-		}
-		departures = wrapped.Departures
+	departures, err := parseEckeroDepartures(body)
+	if err != nil {
+		slog.Debug("eckeroline getdepartures parse failed", "body", string(body[:min(len(body), 200)]))
+		return nil, err
 	}
-
 	slog.Debug("eckeroline live departures", "count", len(departures))
 	return departures, nil
+}
+
+// parseEckeroDepartures accepts a bare departure list or {"departures": [...]}.
+// Any other shape (an error object, a maintenance page) is a parse failure,
+// never an empty answer.
+func parseEckeroDepartures(body []byte) ([]eckerolineDeparture, error) {
+	var list []eckerolineDeparture
+	if err := json.Unmarshal(body, &list); err == nil {
+		return list, nil
+	}
+	var wrapped map[string]json.RawMessage
+	if err := json.Unmarshal(body, &wrapped); err != nil || wrapped["departures"] == nil {
+		return nil, fmt.Errorf("eckeroline getdepartures: unexpected answer: %w", models.ErrParseFailed)
+	}
+	if err := json.Unmarshal(wrapped["departures"], &list); err != nil {
+		return nil, fmt.Errorf("eckeroline getdepartures: departures: %w", models.ErrParseFailed)
+	}
+	return list, nil
 }
 
 // SearchEckeroLine returns Eckerö Line ferry departures for the given route and date.
@@ -240,11 +242,11 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 func SearchEckeroLine(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromCode, fromName, fromCity, ok := LookupEckeroLinePort(from)
 	if !ok {
-		return nil, fmt.Errorf("eckeroline: no port for %q", from)
+		return nil, fmt.Errorf("eckeroline: no port for %q: %w", from, models.ErrNotApplicable)
 	}
 	toCode, toName, toCity, ok := LookupEckeroLinePort(to)
 	if !ok {
-		return nil, fmt.Errorf("eckeroline: no port for %q", to)
+		return nil, fmt.Errorf("eckeroline: no port for %q: %w", to, models.ErrNotApplicable)
 	}
 	if _, err := models.ParseDate(date); err != nil {
 		return nil, fmt.Errorf("eckeroline: invalid date %q: %w", date, err)
@@ -252,8 +254,7 @@ func SearchEckeroLine(ctx context.Context, from, to, date, currency string) ([]m
 
 	key := fromCode + "-" + toCode
 	if _, ok := eckerolineSchedules[key]; !ok {
-		slog.Debug("eckeroline no schedule for route", "key", key)
-		return nil, nil
+		return nil, fmt.Errorf("eckeroline: no sailing %s: %w", key, models.ErrNotApplicable)
 	}
 
 	slog.Debug("eckeroline search", "from", fromCity, "to", toCity, "date", date)
@@ -332,5 +333,14 @@ func SearchEckeroLine(ctx context.Context, from, to, date, currency string) ([]m
 	}
 
 	slog.Debug("eckeroline reference results", "routes", len(routes))
+	if liveErr != nil {
+		// The live fetch really failed: the timetable still answers, as
+		// reference (estimated) fares, and the caller learns why.
+		return routes, &models.ProviderNotice{
+			Reason:  models.ClassifyProviderReason(liveErr.Error()),
+			FixHint: "live prices failed; fares shown are the published reference price",
+			Err:     liveErr,
+		}
+	}
 	return routes, nil
 }
