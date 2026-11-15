@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/models"
 	"golang.org/x/time/rate"
 )
 
@@ -51,16 +52,22 @@ func TestNonLiveProducer_DFDSTable(t *testing.T) {
 	assertNeverLiveThenClassified(t, "dfds", routes)
 }
 
-func TestNonLiveProducer_Finnlines(t *testing.T) {
+// TestLiveProducer_Finnlines pins Q4: Finnlines reads a per-sailing charge
+// from its API answer, so a charged sailing is live; a sailing without a
+// charge has no fare and is never marked live.
+func TestLiveProducer_Finnlines(t *testing.T) {
 	charge := 4500
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var resp finnlinesGraphQLResponse
-		resp.Data.ListTimeTableAvailability = []finnlinesTimetableEntry{{
-			SailingCode: "FI001", DepartureDate: "2026-07-01", DepartureTime: "17:00",
-			ArrivalDate: "2026-07-02", ArrivalTime: "09:30", DeparturePort: "FIHEL", ArrivalPort: "DETRV",
-			IsAvailable: true, ShipName: "FINNSTAR", CrossingTime: "29:30", ChargeTotal: &charge,
-		}}
+		resp.Data.ListTimeTableAvailability = []finnlinesTimetableEntry{
+			{SailingCode: "FI001", DepartureDate: "2026-07-01", DepartureTime: "17:00",
+				ArrivalDate: "2026-07-02", ArrivalTime: "09:30", DeparturePort: "FIHEL", ArrivalPort: "DETRV",
+				IsAvailable: true, ShipName: "FINNSTAR", CrossingTime: "29:30", ChargeTotal: &charge},
+			{SailingCode: "FI002", DepartureDate: "2026-07-01", DepartureTime: "21:00",
+				ArrivalDate: "2026-07-02", ArrivalTime: "13:30", DeparturePort: "FIHEL", ArrivalPort: "DETRV",
+				IsAvailable: true, ShipName: "FINNLADY", CrossingTime: "29:30"},
+		}
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
@@ -72,7 +79,15 @@ func TestNonLiveProducer_Finnlines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SearchFinnlines: %v", err)
 	}
-	assertNeverLiveThenClassified(t, "finnlines", routes)
+	if len(routes) != 2 {
+		t.Fatalf("want 2 sailings, got %d", len(routes))
+	}
+	assertAllLive(t, "finnlines", routes)
+	for i, r := range routes {
+		if r.Price == 0 && r.PriceProvenance == models.PriceLive {
+			t.Errorf("finnlines route %d has no charge but is marked live", i)
+		}
+	}
 }
 
 // TestNonLiveProducer_TransitousSchedule: Transitous has schedules but no

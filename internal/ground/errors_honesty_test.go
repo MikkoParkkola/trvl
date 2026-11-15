@@ -43,6 +43,10 @@ func TestTryEckeroLineLive_ErrorsAreErrors(t *testing.T) {
 		{"departures 500", eckeroDefaultHome, eckeroStatus(http.StatusInternalServerError), models.ErrRateLimited},
 		{"departures 429", eckeroDefaultHome, eckeroStatus(http.StatusTooManyRequests), models.ErrRateLimited},
 		{"departures undecodable", eckeroDefaultHome, eckeroBody(`<html>maintenance</html>`), models.ErrParseFailed},
+		{"homepage without session cookies", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`<html><input name="form_key" type="hidden" value="k"/></html>`))
+		}, eckeroBody(`[]`), models.ErrParseFailed},
+		{"departures JSON error object", eckeroDefaultHome, eckeroBody(`{"error":true,"message":"Session expired"}`), models.ErrParseFailed},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -73,14 +77,33 @@ func TestTryEckeroLineLive_TransportFailureIsError(t *testing.T) {
 	}
 }
 
-// TestTryEckeroLineLive_ValidEmptyIsNotError: a valid empty departure list is
-// an answer, not a failure.
+// TestTryEckeroLineLive_ValidEmptyIsNotError: a valid empty departure list,
+// bare or wrapped, is an answer, not a failure.
 func TestTryEckeroLineLive_ValidEmptyIsNotError(t *testing.T) {
-	withEckeroServer(t, eckeroDefaultHome, eckeroBody(`[]`))
-	deps, err := tryEckeroLineLive(context.Background(), "HEL", "TLL", "2026-07-15")
-	if err != nil || len(deps) != 0 {
-		t.Fatalf("got %d departures, err %v; want 0 and nil", len(deps), err)
+	for _, body := range []string{`[]`, `{"departures":[]}`} {
+		withEckeroServer(t, eckeroDefaultHome, eckeroBody(body))
+		deps, err := tryEckeroLineLive(context.Background(), "HEL", "TLL", "2026-07-15")
+		if err != nil || len(deps) != 0 {
+			t.Errorf("%s: got %d departures, err %v; want 0 and nil", body, len(deps), err)
+		}
 	}
+}
+
+// TestSearchEckeroLine_LiveFailureFallsBackWithNotice pins Q1: when the live
+// fetch really fails, the published timetable is still returned, as
+// estimated fares, together with a ProviderNotice that wraps the live error
+// and says live prices failed.
+func TestSearchEckeroLine_LiveFailureFallsBackWithNotice(t *testing.T) {
+	withEckeroServer(t, eckeroStatus(http.StatusServiceUnavailable), eckeroBody(`[]`))
+	routes, err := SearchEckeroLine(context.Background(), "Helsinki", "Tallinn", "2026-07-15", "EUR")
+	var notice *models.ProviderNotice
+	if !errors.As(err, &notice) {
+		t.Fatalf("err = %v, want a *models.ProviderNotice", err)
+	}
+	if notice.FixHint == "" || !errors.Is(err, models.ErrRateLimited) {
+		t.Errorf("notice = %+v, want a fix hint and the live 503 wrapped as ErrRateLimited", notice)
+	}
+	assertNeverLiveThenClassified(t, "eckeroline fallback", routes)
 }
 
 // TestSearchDFDS_AvailabilityFailureIsError pins D2 for DFDS: a failed
