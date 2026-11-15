@@ -214,8 +214,12 @@ func TestSearchHotelByName_TwoWordsNeedLocation(t *testing.T) {
 	seedGeo(t, "Hotel Sacher Vienna")
 	requireCandidate(t, "Hotel Sacher Vienna", "Hotel Sacher")
 
-	if got, err := SearchHotelByName(context.Background(), "Hotel Sacher Vienna", lookupCheckIn, lookupCheckOut, "USD"); err == nil {
+	got, err := SearchHotelByName(context.Background(), "Hotel Sacher Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if err == nil {
 		t.Fatalf("matched %q from a two-word stripped name without a location", got.Name)
+	}
+	if !errors.Is(err, ErrNoNameMatch) {
+		t.Fatalf("err = %v, want ErrNoNameMatch", err)
 	}
 }
 
