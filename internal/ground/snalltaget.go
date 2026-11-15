@@ -1,6 +1,7 @@
 package ground
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,9 +15,15 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-// snalltagetBase is the base URL for the Snälltåget booking API
-// (Sqills S3 Passenger).
-const snalltagetBase = "https://bokning.snalltaget.se"
+// Snälltåget's booking app (www.snalltaget.se) fetches an anonymous guest
+// token from snalltagetTokenURL and searches journeys on snalltagetAPIBase,
+// the apiUrl in the page's #booking-app data-settings. No account is involved.
+const (
+	snalltagetTokenURL = "https://www.snalltaget.se/token/v2"
+	snalltagetAPIBase  = "https://apiv2.snalltaget.se"
+	// The token endpoint answers 403 to Go's default User-Agent.
+	snalltagetUserAgent = "trvl/1.0 (travel agent; github.com/MikkoParkkola/trvl)"
+)
 
 // snalltagetLimiter: conservative 1 req/6s.
 var snalltagetLimiter = newProviderLimiter(6 * time.Second)
@@ -26,38 +33,44 @@ var snalltagetClient = &http.Client{
 	Timeout: 30 * time.Second,
 }
 
-// SnalltagetStation holds metadata for a Snälltåget station.
+// SnalltagetStation holds metadata for a Snälltåget stop.
 type SnalltagetStation struct {
-	UIC     string // UIC station code
+	UIC     string // apiv2 stop code (its uicStationCode): a UIC number or a literal such as "Malmö C"
 	Name    string
 	City    string
 	Country string
 }
 
-// snalltagetStations maps lowercase city name to station info.
-// UIC codes verified against Snälltåget route documentation.
+// snalltagetStations maps lowercase city name to stop info. Codes match the
+// apiv2 /navigation/stops list (checked 2026-11-15).
 var snalltagetStations = map[string]SnalltagetStation{
-	// Sweden — year-round Stockholm–Malmö route
-	"stockholm":  {UIC: "7400001", Name: "Stockholm Central", City: "Stockholm", Country: "SE"},
-	"norrköping": {UIC: "7400120", Name: "Norrköping C", City: "Norrköping", Country: "SE"},
-	"norrkoping": {UIC: "7400120", Name: "Norrköping C", City: "Norrköping", Country: "SE"},
-	"linköping":  {UIC: "7400180", Name: "Linköping C", City: "Linköping", Country: "SE"},
-	"linkoping":  {UIC: "7400180", Name: "Linköping C", City: "Linköping", Country: "SE"},
-	"alvesta":    {UIC: "7400440", Name: "Alvesta", City: "Alvesta", Country: "SE"},
-	"hässleholm": {UIC: "7400490", Name: "Hässleholm C", City: "Hässleholm", Country: "SE"},
-	"hassleholm": {UIC: "7400490", Name: "Hässleholm C", City: "Hässleholm", Country: "SE"},
-	"lund":       {UIC: "7400500", Name: "Lund C", City: "Lund", Country: "SE"},
-	"malmö":      {UIC: "7400003", Name: "Malmö C", City: "Malmö", Country: "SE"},
-	"malmo":      {UIC: "7400003", Name: "Malmö C", City: "Malmö", Country: "SE"},
-	"malmö c":    {UIC: "7400003", Name: "Malmö C", City: "Malmö", Country: "SE"},
+	// Sweden — Stockholm–Malmö and onward to Copenhagen, Hamburg and Berlin
+	"stockholm":  {UIC: "740000001", Name: "Stockholm C", City: "Stockholm", Country: "SE"},
+	"norrköping": {UIC: "740000007", Name: "Norrköping C", City: "Norrköping", Country: "SE"},
+	"norrkoping": {UIC: "740000007", Name: "Norrköping C", City: "Norrköping", Country: "SE"},
+	"linköping":  {UIC: "740000009", Name: "Linköping C", City: "Linköping", Country: "SE"},
+	"linkoping":  {UIC: "740000009", Name: "Linköping C", City: "Linköping", Country: "SE"},
+	"alvesta":    {UIC: "740000004", Name: "Alvesta", City: "Alvesta", Country: "SE"},
+	"hässleholm": {UIC: "740000006", Name: "Hässleholm C", City: "Hässleholm", Country: "SE"},
+	"hassleholm": {UIC: "740000006", Name: "Hässleholm C", City: "Hässleholm", Country: "SE"},
+	"lund":       {UIC: "740000120", Name: "Lund C", City: "Lund", Country: "SE"},
+	"malmö":      {UIC: "Malmö C", Name: "Malmö C", City: "Malmö", Country: "SE"},
+	"malmo":      {UIC: "Malmö C", Name: "Malmö C", City: "Malmö", Country: "SE"},
+	"malmö c":    {UIC: "Malmö C", Name: "Malmö C", City: "Malmö", Country: "SE"},
 
-	// Sweden — winter ski train (Stockholm–Åre/Duved)
-	"åre":   {UIC: "7402200", Name: "Åre", City: "Åre", Country: "SE"},
-	"are":   {UIC: "7402200", Name: "Åre", City: "Åre", Country: "SE"},
-	"duved": {UIC: "7402210", Name: "Duved", City: "Duved", Country: "SE"},
+	// Sweden — winter night train (Stockholm–Åre/Duved)
+	"åre":   {UIC: "740000115", Name: "Åre", City: "Åre", Country: "SE"},
+	"are":   {UIC: "740000115", Name: "Åre", City: "Åre", Country: "SE"},
+	"duved": {UIC: "740000308", Name: "Duved", City: "Duved", Country: "SE"},
 
-	// Germany — summer seasonal (Stockholm–Berlin via ferry)
-	"berlin": {UIC: "8011160", Name: "Berlin Hbf", City: "Berlin", Country: "DE"},
+	// Denmark and Germany
+	"copenhagen": {UIC: "Köpenhamn", Name: "Copenhagen", City: "Copenhagen", Country: "DK"},
+	"københavn":  {UIC: "Köpenhamn", Name: "Copenhagen", City: "Copenhagen", Country: "DK"},
+	"kobenhavn":  {UIC: "Köpenhamn", Name: "Copenhagen", City: "Copenhagen", Country: "DK"},
+	"köpenhamn":  {UIC: "Köpenhamn", Name: "Copenhagen", City: "Copenhagen", Country: "DK"},
+	"kopenhamn":  {UIC: "Köpenhamn", Name: "Copenhagen", City: "Copenhagen", Country: "DK"},
+	"hamburg":    {UIC: "Hamburg", Name: "Hamburg Hbf", City: "Hamburg", Country: "DE"},
+	"berlin":     {UIC: "Berlin", Name: "Berlin Hbf", City: "Berlin", Country: "DE"},
 }
 
 // LookupSnalltagetStation resolves a city name to a Snälltåget station (case-insensitive).
@@ -79,200 +92,216 @@ func HasSnalltagetRoute(from, to string) bool {
 	return HasSnalltagetStation(from) || HasSnalltagetStation(to)
 }
 
-// snalltagetTripsResponse represents the API response from the Sqills S3
-// offers endpoint.
-type snalltagetTripsResponse struct {
-	Trips []snalltagetTrip `json:"trips"`
-	Data  []snalltagetTrip `json:"data"` // alternative key
+// snalltagetSearchResponse is the apiv2 /orientation/searchjourney answer.
+// Offer is a pointer so a body without one (a retired or foreign shape) is a
+// parse failure, while an offer with no routes is an honest empty day.
+type snalltagetSearchResponse struct {
+	Offer *struct {
+		Travels []struct {
+			Routes []snalltagetRoute `json:"routes"`
+		} `json:"travels"`
+	} `json:"offer"`
 }
 
-type snalltagetTrip struct {
-	DepartureTime string              `json:"departureTime"`
-	ArrivalTime   string              `json:"arrivalTime"`
-	Duration      int                 `json:"duration"` // minutes
-	Origin        snalltagetTripStop  `json:"origin"`
-	Destination   snalltagetTripStop  `json:"destination"`
-	Prices        []snalltagetPrice   `json:"prices"`
-	Fares         []snalltagetPrice   `json:"fares"` // alternative key
-	Segments      []snalltagetSegment `json:"segments"`
+type snalltagetRoute struct {
+	Legs    []snalltagetLeg `json:"legs"`
+	Bundles []struct {
+		Price float64 `json:"price"`
+	} `json:"bundles"`
 }
 
-type snalltagetTripStop struct {
-	Name    string `json:"name"`
-	Station string `json:"station"`
+type snalltagetLeg struct {
+	ServiceType struct {
+		Modality string `json:"modality"` // LONG_DISTANCE_TRAINS, SLEEPER_RAIL_SERVICE, BUS, ...
+		Name     string `json:"name"`
+	} `json:"serviceType"`
+	DepartureStation struct {
+		Name string `json:"name"`
+		Time string `json:"departureTimestamp"`
+	} `json:"departureStation"`
+	ArrivalStation struct {
+		Name string `json:"name"`
+		Time string `json:"arrivalTimestamp"`
+	} `json:"arrivalStation"`
 }
 
-type snalltagetPrice struct {
-	Amount   float64 `json:"amount"`
-	Currency string  `json:"currency"`
-	Class    string  `json:"class"`
-}
-
-type snalltagetSegment struct {
-	DepartureTime string             `json:"departureTime"`
-	ArrivalTime   string             `json:"arrivalTime"`
-	Origin        snalltagetTripStop `json:"origin"`
-	Destination   snalltagetTripStop `json:"destination"`
-	TrainNumber   string             `json:"trainNumber"`
-	Operator      string             `json:"operator"`
-}
-
-// SearchSnalltaget searches Snälltåget for night train journeys between two
-// cities. It uses the Sqills S3 Passenger API exposed by bokning.snalltaget.se.
+// SearchSnalltaget searches Snälltåget journeys for one adult. Fares are the
+// booking app's bundles for each departure, charged in SEK (the site's
+// checkout hard-codes SEK; the answer carries no currency), so currency is
+// ignored and the merge pass converts.
 func SearchSnalltaget(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromStation, ok := LookupSnalltagetStation(from)
 	if !ok {
-		return nil, fmt.Errorf("no Snälltåget station for %q", from)
+		return nil, fmt.Errorf("no Snälltåget station for %q: %w", from, models.ErrNotApplicable)
 	}
 	toStation, ok := LookupSnalltagetStation(to)
 	if !ok {
-		return nil, fmt.Errorf("no Snälltåget station for %q", to)
-	}
-
-	if currency == "" {
-		currency = "SEK"
+		return nil, fmt.Errorf("no Snälltåget station for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if err := snalltagetLimiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("snalltaget rate limiter: %w", err)
 	}
-
 	slog.Debug("snalltaget search", "from", fromStation.City, "to", toStation.City, "date", date)
 
-	apiURL := fmt.Sprintf("%s/api/v3/offers?origin=%s&destination=%s&date=%s&passengers=1&currency=%s",
-		snalltagetBase,
-		url.QueryEscape(fromStation.UIC),
-		url.QueryEscape(toStation.UIC),
-		url.QueryEscape(date),
-		url.QueryEscape(strings.ToUpper(currency)),
-	)
+	token, err := snalltagetGuestToken(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	payload, err := json.Marshal(map[string]any{
+		"origin":        fromStation.UIC,
+		"destination":   toStation.UIC,
+		"departure":     date,
+		"oppositedate":  nil,
+		"passengers":    []map[string]string{{"type": "AD"}},
+		"travelWithpet": false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("snalltaget marshal: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, snalltagetAPIBase+"/orientation/searchjourney", bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "trvl/1.0 (travel agent; github.com/MikkoParkkola/trvl)")
+	req.Header.Set("Accept-Language", "en")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", snalltagetUserAgent)
 
 	resp, err := snalltagetClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("snalltaget search: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-
 	if resp.StatusCode != http.StatusOK {
-		// The Sqills API may not be publicly accessible; fail gracefully.
-		// Snälltåget routes are also covered by Deutsche Bahn and SJ providers.
-		slog.Debug("snalltaget API unavailable", "status", resp.StatusCode)
-		return nil, nil
+		return nil, httpStatusError("snalltaget", "searchjourney", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
-	if err != nil {
-		return nil, fmt.Errorf("snalltaget read: %w", err)
+	var answer snalltagetSearchResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 2*1024*1024)).Decode(&answer); err != nil {
+		return nil, fmt.Errorf("snalltaget searchjourney decode: %v: %w", err, models.ErrParseFailed)
+	}
+	if answer.Offer == nil {
+		return nil, fmt.Errorf("snalltaget searchjourney: no offer in the answer: %w", models.ErrParseFailed)
 	}
 
-	var tripsResp snalltagetTripsResponse
-	if err := json.Unmarshal(body, &tripsResp); err != nil {
-		return nil, fmt.Errorf("snalltaget decode: %w", err)
-	}
-
-	trips := tripsResp.Trips
-	if len(trips) == 0 {
-		trips = tripsResp.Data
-	}
-
-	bookingURL := buildSnalltagetBookingURL(fromStation, toStation, date)
-	routes := parseSnalltagetTrips(trips, fromStation, toStation, date, currency, bookingURL)
-
+	routes := parseSnalltagetRoutes(answer, fromStation, toStation, buildSnalltagetBookingURL(fromStation, toStation, date))
 	slog.Debug("snalltaget results", "routes", len(routes))
 	return routes, nil
 }
 
-// parseSnalltagetTrips converts API trips into GroundRoute models.
-func parseSnalltagetTrips(trips []snalltagetTrip, fromStation, toStation SnalltagetStation, date, currency, bookingURL string) []models.GroundRoute {
+// snalltagetGuestToken fetches the anonymous bearer token the booking app uses.
+func snalltagetGuestToken(ctx context.Context) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, snalltagetTokenURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", snalltagetUserAgent)
+
+	resp, err := snalltagetClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("snalltaget token: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", httpStatusError("snalltaget", "token", resp.StatusCode)
+	}
+	var tok struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&tok); err != nil {
+		return "", fmt.Errorf("snalltaget token decode: %v: %w", err, models.ErrParseFailed)
+	}
+	if tok.AccessToken == "" {
+		return "", fmt.Errorf("snalltaget token: no access_token: %w", models.ErrParseFailed)
+	}
+	return tok.AccessToken, nil
+}
+
+// parseSnalltagetRoutes turns each route into a GroundRoute priced at its
+// cheapest priced bundle (what the booking app offers for that departure),
+// with station names taken from the legs: Copenhagen trains, for one, end at
+// København Syd.
+func parseSnalltagetRoutes(answer snalltagetSearchResponse, from, to SnalltagetStation, bookingURL string) []models.GroundRoute {
 	var routes []models.GroundRoute
+	for _, travel := range answer.Offer.Travels {
+		for _, r := range travel.Routes {
+			if len(r.Legs) == 0 {
+				continue
+			}
+			first, last := r.Legs[0], r.Legs[len(r.Legs)-1]
+			dep := normaliseTimeString(first.DepartureStation.Time)
+			arr := normaliseTimeString(last.ArrivalStation.Time)
 
-	for _, trip := range trips {
-		depTime := normaliseTimeString(trip.DepartureTime)
-		arrTime := normaliseTimeString(trip.ArrivalTime)
-
-		duration := trip.Duration
-		if duration <= 0 {
-			duration = computeDurationMinutes(depTime, arrTime)
-		}
-
-		// Find cheapest price.
-		price := 0.0
-		priceCurrency := strings.ToUpper(currency)
-		allPrices := trip.Prices
-		if len(allPrices) == 0 {
-			allPrices = trip.Fares
-		}
-		for _, p := range allPrices {
-			if p.Amount > 0 && (price == 0 || p.Amount < price) {
-				price = p.Amount
-				if p.Currency != "" {
-					priceCurrency = strings.ToUpper(p.Currency)
+			price := 0.0
+			for _, b := range r.Bundles {
+				if b.Price > 0 && (price == 0 || b.Price < price) {
+					price = b.Price
 				}
 			}
-		}
 
-		// Build legs from segments.
-		var legs []models.GroundLeg
-		for _, seg := range trip.Segments {
-			legs = append(legs, models.GroundLeg{
-				Type:     "train",
-				Provider: firstNonEmpty(seg.Operator, seg.TrainNumber),
+			legs := make([]models.GroundLeg, 0, len(r.Legs))
+			for i, l := range r.Legs {
+				legDep, legArr := normaliseTimeString(l.DepartureStation.Time), normaliseTimeString(l.ArrivalStation.Time)
+				// Only the route's ends have a known city; a change station has just its name.
+				depCity, arrCity := "", ""
+				if i == 0 {
+					depCity = from.City
+				}
+				if i == len(r.Legs)-1 {
+					arrCity = to.City
+				}
+				legs = append(legs, models.GroundLeg{
+					Type:      snalltagetLegType(l.ServiceType.Modality),
+					Provider:  firstNonEmpty(l.ServiceType.Name, "Snälltåget"),
+					Departure: models.GroundStop{City: depCity, Station: l.DepartureStation.Name, Time: legDep},
+					Arrival:   models.GroundStop{City: arrCity, Station: l.ArrivalStation.Name, Time: legArr},
+					Duration:  computeDurationMinutes(legDep, legArr),
+				})
+			}
+
+			routes = append(routes, models.GroundRoute{
+				Provider:        "snalltaget",
+				Type:            "train",
+				Price:           price,
+				Currency:        "SEK",
+				PriceProvenance: livePrice(price),
+				Duration:        computeDurationMinutes(dep, arr),
 				Departure: models.GroundStop{
-					City:    firstNonEmpty(seg.Origin.Name, fromStation.City),
-					Station: seg.Origin.Station,
-					Time:    normaliseTimeString(seg.DepartureTime),
+					City:    from.City,
+					Station: firstNonEmpty(first.DepartureStation.Name, from.Name),
+					Time:    dep,
 				},
 				Arrival: models.GroundStop{
-					City:    firstNonEmpty(seg.Destination.Name, toStation.City),
-					Station: seg.Destination.Station,
-					Time:    normaliseTimeString(seg.ArrivalTime),
+					City:    to.City,
+					Station: firstNonEmpty(last.ArrivalStation.Name, to.Name),
+					Time:    arr,
 				},
-				Duration: computeDurationMinutes(normaliseTimeString(seg.DepartureTime), normaliseTimeString(seg.ArrivalTime)),
+				Transfers:  len(r.Legs) - 1,
+				Legs:       legs,
+				BookingURL: bookingURL,
 			})
 		}
-
-		transfers := 0
-		if len(legs) > 1 {
-			transfers = len(legs) - 1
-		}
-
-		routes = append(routes, models.GroundRoute{
-			Provider: "snalltaget",
-			Type:     "train",
-			Price:    price,
-			Currency: priceCurrency,
-			Duration: duration,
-			Departure: models.GroundStop{
-				City:    fromStation.City,
-				Station: fromStation.Name,
-				Time:    depTime,
-			},
-			Arrival: models.GroundStop{
-				City:    toStation.City,
-				Station: toStation.Name,
-				Time:    arrTime,
-			},
-			Transfers:  transfers,
-			Legs:       legs,
-			BookingURL: bookingURL,
-		})
 	}
-
 	return routes
 }
 
-// buildSnalltagetBookingURL constructs a booking URL for snalltaget.se.
+// snalltagetLegType maps an apiv2 modality to a leg type; replacement buses
+// are the only non-rail legs seen on these routes.
+func snalltagetLegType(modality string) string {
+	if modality == "BUS" {
+		return "bus"
+	}
+	return "train"
+}
+
+// buildSnalltagetBookingURL links to the booking app, which runs on any page
+// holding #booking-app: it reads from, to and date, matches from and to by
+// exact stop code, and treats single as one-way.
 func buildSnalltagetBookingURL(from, to SnalltagetStation, date string) string {
-	return fmt.Sprintf("https://www.snalltaget.se/en/booking?origin=%s&destination=%s&date=%s",
-		url.QueryEscape(from.UIC),
-		url.QueryEscape(to.UIC),
-		url.QueryEscape(date),
-	)
+	q := url.Values{"from": {from.UIC}, "to": {to.UIC}, "date": {date}, "single": {"1"}}
+	return "https://www.snalltaget.se/en?" + q.Encode()
 }
