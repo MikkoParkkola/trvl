@@ -273,9 +273,16 @@ func useSnalltagetServer(t *testing.T, token, search http.HandlerFunc) func() []
 	srv := httptest.NewServer(mux)
 	target, _ := url.Parse(srv.URL)
 	origClient, origLimiter := snalltagetClient, snalltagetLimiter
+	forgetCachedToken := func() {
+		snalltagetTokenCache.Lock()
+		snalltagetTokenCache.token = ""
+		snalltagetTokenCache.Unlock()
+	}
+	forgetCachedToken() // each test starts from the token endpoint
 	t.Cleanup(func() {
 		srv.Close()
 		snalltagetClient, snalltagetLimiter = origClient, origLimiter
+		forgetCachedToken()
 	})
 	snalltagetLimiter = rate.NewLimiter(rate.Limit(1000), 1)
 	snalltagetClient = &http.Client{Transport: snalltagetHostTransport{target: target}, Timeout: 5 * time.Second}

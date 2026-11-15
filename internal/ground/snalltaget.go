@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -104,7 +105,12 @@ type snalltagetSearchResponse struct {
 }
 
 type snalltagetRoute struct {
-	Legs    []snalltagetLeg `json:"legs"`
+	Legs []snalltagetLeg `json:"legs"`
+	// BundleAvailability is per route: the booking app disables a route
+	// whose availability is false, so none of its bundles can be booked.
+	BundleAvailability struct {
+		Availability bool `json:"availability"`
+	} `json:"bundleAvailability"`
 	Bundles []struct {
 		Price float64 `json:"price"`
 	} `json:"bundles"`
@@ -144,11 +150,6 @@ func SearchSnalltaget(ctx context.Context, from, to, date, currency string) ([]m
 	}
 	slog.Debug("snalltaget search", "from", fromStation.City, "to", toStation.City, "date", date)
 
-	token, err := snalltagetGuestToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	payload, err := json.Marshal(map[string]any{
 		"origin":        fromStation.UIC,
 		"destination":   toStation.UIC,
@@ -160,19 +161,9 @@ func SearchSnalltaget(ctx context.Context, from, to, date, currency string) ([]m
 	if err != nil {
 		return nil, fmt.Errorf("snalltaget marshal: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, snalltagetAPIBase+"/orientation/searchjourney", bytes.NewReader(payload))
+	resp, err := snalltagetSearchJourney(ctx, payload)
 	if err != nil {
 		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Accept-Language", "en")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", snalltagetUserAgent)
-
-	resp, err := snalltagetClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("snalltaget search: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -192,8 +183,68 @@ func SearchSnalltaget(ctx context.Context, from, to, date, currency string) ([]m
 	return routes, nil
 }
 
-// snalltagetGuestToken fetches the anonymous bearer token the booking app uses.
+// snalltagetSearchJourney posts the search with the cached guest token. A
+// 401 means the token expired or was revoked early: it is dropped and the
+// search retried once with a fresh one; a second 401 goes to the caller.
+func snalltagetSearchJourney(ctx context.Context, payload []byte) (*http.Response, error) {
+	for attempt := 1; ; attempt++ {
+		token, err := snalltagetGuestToken(ctx)
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, snalltagetAPIBase+"/orientation/searchjourney", bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Accept-Language", "en")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("User-Agent", snalltagetUserAgent)
+
+		resp, err := snalltagetClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("snalltaget search: %w", err)
+		}
+		if resp.StatusCode != http.StatusUnauthorized || attempt == 2 {
+			return resp, nil
+		}
+		_ = resp.Body.Close()
+		snalltagetForgetToken(token)
+	}
+}
+
+// snalltagetTokenCache keeps the guest token between searches until
+// snalltagetTokenMargin before its expires_in runs out.
+var snalltagetTokenCache struct {
+	sync.Mutex
+	token   string
+	expires time.Time
+}
+
+const snalltagetTokenMargin = time.Minute
+
+// snalltagetForgetToken drops token from the cache unless another search has
+// already replaced it.
+func snalltagetForgetToken(token string) {
+	snalltagetTokenCache.Lock()
+	defer snalltagetTokenCache.Unlock()
+	if snalltagetTokenCache.token == token {
+		snalltagetTokenCache.token = ""
+	}
+}
+
+// snalltagetGuestToken returns the cached anonymous bearer token the booking
+// app uses, fetching a new one when none is valid. The lock is held across
+// the fetch so concurrent searches share one token request.
 func snalltagetGuestToken(ctx context.Context) (string, error) {
+	c := &snalltagetTokenCache
+	c.Lock()
+	defer c.Unlock()
+	if c.token != "" && time.Now().Before(c.expires) {
+		return c.token, nil
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, snalltagetTokenURL, nil)
 	if err != nil {
 		return "", err
@@ -211,6 +262,7 @@ func snalltagetGuestToken(ctx context.Context) (string, error) {
 	}
 	var tok struct {
 		AccessToken string `json:"access_token"`
+		ExpiresIn   int    `json:"expires_in"` // seconds
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&tok); err != nil {
 		return "", fmt.Errorf("snalltaget token decode: %v: %w", err, models.ErrParseFailed)
@@ -218,11 +270,15 @@ func snalltagetGuestToken(ctx context.Context) (string, error) {
 	if tok.AccessToken == "" {
 		return "", fmt.Errorf("snalltaget token: no access_token: %w", models.ErrParseFailed)
 	}
-	return tok.AccessToken, nil
+	// A token with expires_in inside the margin serves this search only.
+	c.token = tok.AccessToken
+	c.expires = time.Now().Add(time.Duration(tok.ExpiresIn)*time.Second - snalltagetTokenMargin)
+	return c.token, nil
 }
 
 // parseSnalltagetRoutes turns each route into a GroundRoute priced at its
-// cheapest priced bundle (what the booking app offers for that departure),
+// cheapest priced bundle when the route is bookable (what the booking app
+// offers for that departure),
 // with station names taken from the legs: Copenhagen trains, for one, end at
 // København Syd.
 func parseSnalltagetRoutes(answer snalltagetSearchResponse, from, to SnalltagetStation, bookingURL string) []models.GroundRoute {
@@ -236,10 +292,12 @@ func parseSnalltagetRoutes(answer snalltagetSearchResponse, from, to SnalltagetS
 			dep := normaliseTimeString(first.DepartureStation.Time)
 			arr := normaliseTimeString(last.ArrivalStation.Time)
 
-			price := 0.0
-			for _, b := range r.Bundles {
-				if b.Price > 0 && (price == 0 || b.Price < price) {
-					price = b.Price
+			price := 0.0 // no bookable bundle: the merge pass shows it unavailable
+			if r.BundleAvailability.Availability {
+				for _, b := range r.Bundles {
+					if b.Price > 0 && (price == 0 || b.Price < price) {
+						price = b.Price
+					}
 				}
 			}
 
