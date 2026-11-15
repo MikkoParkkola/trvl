@@ -20,3 +20,13 @@ func (p *DefaultProvider) SearchGround(ctx context.Context, from, to, date strin
 		Type:      opts.Type,
 	})
 }
+
+// livePrice labels a fare parsed for this departure from the upstream answer:
+// live when priced. An unpriced route stays unlabelled and the merge pass
+// classifies it unavailable.
+func livePrice(price float64) models.PriceProvenance {
+	if price > 0 {
+		return models.PriceLive
+	}
+	return ""
+}

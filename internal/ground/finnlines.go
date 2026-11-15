@@ -547,11 +547,12 @@ func SearchFinnlines(ctx context.Context, from, to, date, currency string) ([]mo
 		}
 
 		routes = append(routes, models.GroundRoute{
-			Provider: "finnlines",
-			Type:     "ferry",
-			Price:    price,
-			Currency: "EUR",
-			Duration: duration,
+			Provider:        "finnlines",
+			Type:            "ferry",
+			Price:           price,
+			Currency:        "EUR",
+			PriceProvenance: livePrice(price), // a per-sailing charge from the API
+			Duration:        duration,
 			Departure: models.GroundStop{
 				City:    fromPort.City,
 				Station: fromPort.Name + finnlinesShipSuffix(e.ShipName),

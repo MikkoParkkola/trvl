@@ -630,12 +630,13 @@ func parseTrainlineResults(resp trainlineJourneySearchResponse, from, to, date, 
 		}
 
 		route := models.GroundRoute{
-			Provider:  "trainline",
-			Type:      routeType,
-			Price:     price,
-			Currency:  cur,
-			Duration:  duration,
-			Transfers: transfers,
+			Provider:        "trainline",
+			Type:            routeType,
+			Price:           price,
+			PriceProvenance: livePrice(price), // cheapest ticket of this journey
+			Currency:        cur,
+			Duration:        duration,
+			Transfers:       transfers,
 			Departure: models.GroundStop{
 				City: from,
 				Time: j.DepartureTime,

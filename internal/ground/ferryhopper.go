@@ -398,11 +398,12 @@ func ferryhopperBuildRoutes(itineraries []ferryhopperItinerary) []models.GroundR
 		}
 
 		route := models.GroundRoute{
-			Provider: provider,
-			Type:     "ferry",
-			Price:    totalPrice,
-			Currency: "EUR", // Ferryhopper always returns EUR
-			Duration: duration,
+			Provider:        provider,
+			Type:            "ferry",
+			Price:           totalPrice,
+			PriceProvenance: livePrice(totalPrice),
+			Currency:        "EUR", // Ferryhopper always returns EUR
+			Duration:        duration,
 			Departure: models.GroundStop{
 				City:    first.DeparturePort.Name,
 				Station: first.DeparturePort.Name,

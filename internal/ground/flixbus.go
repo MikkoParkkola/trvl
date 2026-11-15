@@ -305,12 +305,13 @@ func SearchFlixBus(ctx context.Context, fromCity, toCity, date string, opts Sear
 			}
 
 			route := models.GroundRoute{
-				Provider:  "flixbus",
-				Type:      routeType,
-				Price:     r.Price.Total,
-				Currency:  strings.ToUpper(currency),
-				Duration:  dur,
-				Transfers: transfers,
+				Provider:        "flixbus",
+				Type:            routeType,
+				Price:           r.Price.Total,
+				PriceProvenance: livePrice(r.Price.Total),
+				Currency:        strings.ToUpper(currency),
+				Duration:        dur,
+				Transfers:       transfers,
 				Departure: models.GroundStop{
 					City: cityNames[r.Departure.CityID],
 					Time: r.Departure.Date,

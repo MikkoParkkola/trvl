@@ -418,15 +418,16 @@ func extractSNCFBFFRoute(item map[string]any, bookingURL, date, currency string)
 	}
 
 	return &models.GroundRoute{
-		Provider:   "sncf",
-		Type:       "train",
-		Price:      price,
-		Currency:   strings.ToUpper(cur),
-		Duration:   duration,
-		Transfers:  transfers,
-		Departure:  models.GroundStop{Time: depTime},
-		Arrival:    models.GroundStop{Time: arrTime},
-		BookingURL: bookingURL,
+		Provider:        "sncf",
+		Type:            "train",
+		Price:           price,
+		PriceProvenance: models.PriceLive, // one fare per journey in the BFF answer
+		Currency:        strings.ToUpper(cur),
+		Duration:        duration,
+		Transfers:       transfers,
+		Departure:       models.GroundStop{Time: depTime},
+		Arrival:         models.GroundStop{Time: arrTime},
+		BookingURL:      bookingURL,
 	}
 }
 

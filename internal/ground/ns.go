@@ -224,8 +224,10 @@ func parseNSTrips(trips []nsTrip, fromStation, toStation nsStation, currency str
 		depTime := firstNonEmpty(first.Origin.PlannedDateTime, first.Origin.ActualDateTime, first.PlannedDepartureDateTime)
 		arrTime := firstNonEmpty(last.Destination.PlannedDateTime, last.Destination.ActualDateTime, last.PlannedArrivalDateTime)
 
-		// Price from optimalPrice; NS always prices in cents (EUR).
+		// Price from optimalPrice; NS always prices in cents (EUR). A fare in
+		// the answer is live; the fixed-fare fallback below is an estimate.
 		price := 0.0
+		var provenance models.PriceProvenance
 		if trip.OptimalPrice != nil {
 			cents := trip.OptimalPrice.TotalPriceInCents
 			if cents == 0 {
@@ -233,6 +235,7 @@ func parseNSTrips(trips []nsTrip, fromStation, toStation nsStation, currency str
 			}
 			if cents > 0 {
 				price = float64(cents) / 100.0
+				provenance = models.PriceLive
 			}
 		}
 		// Fall back to fixed fare lookup when the API returns no price.
@@ -268,11 +271,12 @@ func parseNSTrips(trips []nsTrip, fromStation, toStation nsStation, currency str
 		}
 
 		routes = append(routes, models.GroundRoute{
-			Provider: "ns",
-			Type:     "train",
-			Price:    price,
-			Currency: strings.ToUpper(currency),
-			Duration: duration,
+			Provider:        "ns",
+			Type:            "train",
+			Price:           price,
+			PriceProvenance: provenance,
+			Currency:        "EUR", // API fares and the fixed-fare table are both euros
+			Duration:        duration,
 			Departure: models.GroundStop{
 				City:    fromStation.City,
 				Station: first.Origin.Name,

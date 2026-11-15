@@ -458,11 +458,12 @@ func parseItaloSolutions(st *italoStatusResponse, from, to, bookingURL string) [
 					continue // no trustworthy schedule -> skip, never emit a 0-minute train
 				}
 				routes = append(routes, models.GroundRoute{
-					Provider: "italo",
-					Type:     "train",
-					Price:    price,
-					Currency: "EUR",
-					Duration: int(arr.Sub(dep).Minutes()),
+					Provider:        "italo",
+					Type:            "train",
+					Price:           price,
+					Currency:        "EUR",
+					PriceProvenance: livePrice(price),
+					Duration:        int(arr.Sub(dep).Minutes()),
 					Departure: models.GroundStop{
 						City:    from,
 						Station: italoStationLabel(seg.DepartureStation),
