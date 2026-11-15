@@ -371,12 +371,12 @@ func oebbShopInitUserData(ctx context.Context, token string) error {
 		return fmt.Errorf("oebb shop initUserData: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, resp.Body)
 
 	// 200 or 204 are both acceptable.
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("oebb shop initUserData: HTTP %d", resp.StatusCode)
+		return oebbShopStatusError("initUserData", resp)
 	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
 	return nil
 }
 
@@ -549,10 +549,10 @@ func searchOebbShop(ctx context.Context, fromStation, toStation oebbStation, dt 
 		return nil, err
 	}
 
-	// Step 2: Initialise user data (activates the session).
+	// Step 2: Initialise user data (activates the session). A refusal here is
+	// the same refusal as at any other step.
 	if err := oebbShopInitUserData(ctx, token); err != nil {
-		// Non-fatal: log and continue — some sessions work without this.
-		slog.Debug("oebb shop initUserData failed", "err", logredact.Err(err))
+		return nil, err
 	}
 
 	// Step 3: Search timetable.
@@ -824,9 +824,11 @@ func parseOebbConnections(res oebbTripRes, fromStation, toStation oebbStation, s
 	return routes
 }
 
-// oebbAllRail reports whether every vehicle leg of con is a train. A leg
-// whose product is missing or unclassified counts as not rail.
+// oebbAllRail reports whether con has at least one vehicle leg and every
+// vehicle leg is a train. A leg whose product is missing or unclassified
+// counts as not rail; a walk-only connection is not a train.
 func oebbAllRail(con oebbCon, prods []oebbProd) bool {
+	trains := 0
 	for _, sec := range con.SecL {
 		if sec.Type != "JNY" {
 			continue
@@ -835,8 +837,9 @@ func oebbAllRail(con oebbCon, prods []oebbProd) bool {
 			prods[sec.JnyL.ProdX].Cls&oebbRailClasses == 0 {
 			return false
 		}
+		trains++
 	}
-	return true
+	return trains > 0
 }
 
 // oebbParseDateTime converts HAFAS date (YYYYMMDD) + time (HHMMSS) to ISO 8601.
