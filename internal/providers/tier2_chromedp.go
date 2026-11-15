@@ -350,20 +350,26 @@ var harvestDecision = harvestOutcome
 // it can be tested without a browser. targetHost is the hostname the harvest
 // navigated to; refusals are the hosts the policy proxy refused during the run.
 func harvestOutcome(targetHost string, cookies []*network.Cookie, runErr error, refusals []proxyRefusal) ([]*network.Cookie, error) {
+	// Only the target itself decides the harvest. A page pulls scripts from
+	// third-party hosts (consent, analytics) that a DNS blocker may sinkhole
+	// to 0.0.0.0; refusing those is the policy working, not a failed harvest.
+	// A refused target is checked first: it usually breaks the page load too,
+	// and it is the cause, so it wins over the run error.
+	target := normalizeRefusedHost(targetHost)
+	for _, r := range refusals {
+		if normalizeRefusedHost(r.Host) == target {
+			err := fmt.Errorf("%w: harvest target %s resolved to an address the destination policy refuses", ErrDestinationRefused, target)
+			if runErr != nil {
+				err = fmt.Errorf("%w (browser: %w)", err, runErr)
+			}
+			return nil, err
+		}
+	}
 	if runErr != nil {
 		if len(refusals) == 0 {
 			return nil, runErr
 		}
 		return nil, fmt.Errorf("%w (destination policy refused: %s)", runErr, refusedHostList(refusals))
-	}
-	// Only the target itself decides the harvest. A page pulls scripts from
-	// third-party hosts (consent, analytics) that a DNS blocker may sinkhole
-	// to 0.0.0.0; refusing those is the policy working, not a failed harvest.
-	target := normalizeRefusedHost(targetHost)
-	for _, r := range refusals {
-		if normalizeRefusedHost(r.Host) == target {
-			return nil, fmt.Errorf("%w: harvest target %s resolved to an address the destination policy refuses", ErrDestinationRefused, target)
-		}
 	}
 	return cookies, nil
 }

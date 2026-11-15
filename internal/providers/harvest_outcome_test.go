@@ -191,3 +191,22 @@ func TestBrowserPolicyProxyRecordsEveryRefusedHost(t *testing.T) {
 		t.Errorf("cap kept the last host instead of the earliest ones")
 	}
 }
+
+// TestHarvestOutcome_TargetRefusalWinsOverRunError: a refused target usually
+// also breaks the page load. The target refusal is the cause, so it must be
+// the error (ErrDestinationRefused) with the run error kept as context.
+func TestHarvestOutcome_TargetRefusalWinsOverRunError(t *testing.T) {
+	runErr := errors.New("chromedp: net::ERR_TUNNEL_CONNECTION_FAILED")
+	refusals := []proxyRefusal{realRefusal(t, "cdn.cookielaw.org"), realRefusal(t, "www.booking.com")}
+
+	got, err := harvestOutcome("www.booking.com", bookingCookies(), runErr, refusals)
+	if got != nil || !errors.Is(err, ErrDestinationRefused) {
+		t.Fatalf("got %d cookies, err %v; want no cookies and ErrDestinationRefused", len(got), err)
+	}
+	if !errors.Is(err, runErr) || !strings.Contains(err.Error(), "www.booking.com") {
+		t.Errorf("err = %q, want the target host named and the run error kept", err)
+	}
+	if strings.Contains(err.Error(), AllowLocalEnv) {
+		t.Errorf("err = %q still suggests %s", err, AllowLocalEnv)
+	}
+}
