@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -203,6 +204,8 @@ func TestNegCache_HitSynthesisesStatusRows(t *testing.T) {
 func withHangingFinnlines(t *testing.T) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		// Drain the body so the server notices the client hanging up.
+		_, _ = io.Copy(io.Discard, r.Body)
 		select {
 		case <-r.Context().Done():
 		case <-time.After(2 * time.Second):
