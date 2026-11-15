@@ -3,6 +3,7 @@ package hotels
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -237,6 +238,12 @@ func fetchHotelPageFull(ctx context.Context, client *batchexec.Client, location 
 	if isGoogleConsentPage(body) {
 		slog.Info("google consent page detected, retrying with consent cookies")
 		status2, body2, err2 := client.GetWithCookie(ctx, travelURL, googleConsentCookie)
+		switch {
+		case err2 != nil && errors.Is(err2, batchexec.ErrRefused):
+			return parseResult{}, googleCallErr("hotel search consent retry", err2)
+		case status2 == 429:
+			return parseResult{}, fmt.Errorf("google hotel search refused the consent retry (HTTP 429): %w", models.ErrRateLimited)
+		}
 		if err2 == nil && status2 == 200 && len(body2) >= 1000 && !isGoogleConsentPage(body2) {
 			body = body2
 		} else {

@@ -179,3 +179,23 @@ func TestFetchHotelPageFull_Status429IsRateLimited(t *testing.T) {
 	_, err := fetchHotelPageFull(context.Background(), DefaultClient(), "Vienna", defaultOpts(), 0, "")
 	requireRateLimited(t, "HTTP 429", err)
 }
+
+// TestFetchHotelPageFull_ConsentRetryRefusalIsRateLimited: Google serves the
+// EU consent wall, and the cookie retry is then refused with 429. That is a
+// rate limit, not an unbypassable cookie wall.
+func TestFetchHotelPageFull_ConsentRetryRefusalIsRateLimited(t *testing.T) {
+	var calls atomic.Int64
+	consent := []byte(`<html><form action="https://consent.google.com/save">` + strings.Repeat("<!-- pad -->", 100) + `</form></html>`)
+	useTestDefaultClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			_, _ = w.Write(consent)
+			return
+		}
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	_, err := fetchHotelPageFull(context.Background(), DefaultClient(), "Vienna", defaultOpts(), 0, "")
+	if n := calls.Load(); n != 2 {
+		t.Fatalf("precondition: server saw %d requests, want the page and one consent retry", n)
+	}
+	requireRateLimited(t, "consent retry 429", err)
+}
