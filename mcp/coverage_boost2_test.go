@@ -77,7 +77,7 @@ func TestBuildGroundRouteSummary2_WithPriceRange(t *testing.T) {
 	t.Parallel()
 	routes := []models.GroundRoute{
 		{
-			Provider: "regiojet", Type: "bus", Price: 12.00, PriceMax: 18.00, Currency: "EUR",
+			Provider: "regiojet", Type: "bus", Price: 12.00, PriceMax: 18.00, Currency: "EUR", PriceProvenance: models.PriceLive,
 			Duration: 270, Transfers: 1,
 			Departure: models.GroundStop{Time: "2026-07-01T09:30:00"},
 			Arrival:   models.GroundStop{Time: "2026-07-01T14:00:00"},
