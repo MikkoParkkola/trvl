@@ -65,13 +65,20 @@ func groundNegKey(from, to, date string, opts SearchOptions, providerKey string)
 	return cache.NegativeKey(scope, from, to, date) + "|" + strings.TrimSpace(date), true
 }
 
-// groundExcludeKey is the canonical exclusion component of the cache keys
-// (sorted, lower-case), so a cached answer never reaches a search that
-// excludes the provider that produced it.
+// groundExcludeKey is the canonical exclusion component of the cache keys:
+// lower case, aliases resolved to their launch id, empties and duplicates
+// dropped, sorted. Every caller lands on the same key, and a cached answer
+// never reaches a search that excludes the provider that produced it.
 func groundExcludeKey(opts SearchOptions) string {
 	excl := make([]string, 0, len(opts.ExcludeProviders))
 	for _, p := range opts.ExcludeProviders {
-		excl = append(excl, strings.ToLower(strings.TrimSpace(p)))
+		p = strings.ToLower(strings.TrimSpace(p))
+		if canon, ok := providerCanonical[p]; ok {
+			p = canon
+		}
+		if p != "" && !slices.Contains(excl, p) {
+			excl = append(excl, p)
+		}
 	}
 	sort.Strings(excl)
 	return strings.Join(excl, ",")

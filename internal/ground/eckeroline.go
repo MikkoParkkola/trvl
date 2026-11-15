@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -219,19 +220,25 @@ func tryEckeroLineLive(ctx context.Context, fromCode, toCode, date string) ([]ec
 }
 
 // parseEckeroDepartures accepts a bare departure list or {"departures": [...]}.
-// Any other shape (an error object, a maintenance page) is a parse failure,
-// never an empty answer.
+// Any other shape (an error object, a maintenance page, null, or departures
+// that all lack a time) is a parse failure, never an empty answer: only an
+// explicit empty list means no sailings that date.
 func parseEckeroDepartures(body []byte) ([]eckerolineDeparture, error) {
 	var list []eckerolineDeparture
-	if err := json.Unmarshal(body, &list); err == nil {
-		return list, nil
+	if err := json.Unmarshal(body, &list); err != nil {
+		var wrapped map[string]json.RawMessage
+		if err := json.Unmarshal(body, &wrapped); err != nil || wrapped["departures"] == nil {
+			return nil, fmt.Errorf("eckeroline getdepartures: unexpected answer: %w", models.ErrParseFailed)
+		}
+		if err := json.Unmarshal(wrapped["departures"], &list); err != nil {
+			return nil, fmt.Errorf("eckeroline getdepartures: departures: %w", models.ErrParseFailed)
+		}
 	}
-	var wrapped map[string]json.RawMessage
-	if err := json.Unmarshal(body, &wrapped); err != nil || wrapped["departures"] == nil {
-		return nil, fmt.Errorf("eckeroline getdepartures: unexpected answer: %w", models.ErrParseFailed)
+	if list == nil {
+		return nil, fmt.Errorf("eckeroline getdepartures: null departures: %w", models.ErrParseFailed)
 	}
-	if err := json.Unmarshal(wrapped["departures"], &list); err != nil {
-		return nil, fmt.Errorf("eckeroline getdepartures: departures: %w", models.ErrParseFailed)
+	if len(list) > 0 && !slices.ContainsFunc(list, func(d eckerolineDeparture) bool { return d.Time != "" }) {
+		return nil, fmt.Errorf("eckeroline getdepartures: no departure has a time: %w", models.ErrParseFailed)
 	}
 	return list, nil
 }

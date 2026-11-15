@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A valid Eckerö Line live answer is final: an empty list means no sailing that date, and a departure without a price shows no fare instead of the reference price. Distribusion's per-connection prices count as live fares.
 - Excluding `vr` or `digitransit` suppresses VR, cached ground results are keyed by the exclusion list, and provider names are matched in canonical form, so status rows and cache keys agree whatever spelling was used.
 - `trvl ground` prints a provider's fix hint under the table when it answered with a caveat, and only live fares corroborate a ground price.
+- An Eckerö Line live answer of `null`, or one in which no departure has a time, counts as a failed fetch, so the timetable and its notice are shown instead of "no sailings". `trvl ground` prints provider notes even when filters remove every route.
 - MCP tool results send their assistant text copy as compact JSON instead of indented JSON, which shrinks the duplicate copy of every result (by about a third on the test fixtures).
   ([#774](https://github.com/MikkoParkkola/trvl/pull/774))
 - `get_weather` accepts `location` as an alias of `city`, rejects a missing or conflicting place before any lookup, and reports a failed forecast lookup as an error instead of a normal result.
