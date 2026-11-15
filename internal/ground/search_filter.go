@@ -261,7 +261,13 @@ func searchTransitousByName(ctx context.Context, from, to, date string) ([]model
 	if err != nil {
 		return nil, fmt.Errorf("geocode to city: %w", err)
 	}
-	return SearchTransitous(ctx, fromGeo.lat, fromGeo.lon, toGeo.lat, toGeo.lon, date)
+	routes, err := SearchTransitous(ctx, fromGeo.lat, fromGeo.lon, toGeo.lat, toGeo.lon, date)
+	// MOTIS names coordinate endpoints with placeholders (START/END), so the
+	// by-name search labels routes with the cities the caller asked for.
+	for i := range routes {
+		routes[i].Departure.City, routes[i].Arrival.City = from, to
+	}
+	return routes, err
 }
 
 // geoCoord holds a latitude/longitude pair from geocoding.
