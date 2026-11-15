@@ -341,3 +341,48 @@ func TestFlightSummary_NonstopOption(t *testing.T) {
 		t.Error("summary should mention nonstop options")
 	}
 }
+
+// The assistant text copy duplicates structuredContent, so it must be compact:
+// a 53-route search_ground result spent ~121 KB of a ~197 KB response on
+// indentation alone.
+func TestBuildAnnotatedContentBlocks_TextCopyIsCompactJSON(t *testing.T) {
+	t.Parallel()
+	stop := func(city, at string) models.GroundStop {
+		return models.GroundStop{City: city, Station: city + " Hbf", Time: at}
+	}
+	data := &models.GroundSearchResult{
+		Success: true,
+		Count:   2,
+		Routes: []models.GroundRoute{
+			{
+				Provider: "flixbus", Type: "bus", Price: 19.99, Currency: "EUR", Duration: 240,
+				Departure: stop("Vienna", "2026-12-01T08:00:00"), Arrival: stop("Prague", "2026-12-01T12:00:00"),
+				Legs:       []models.GroundLeg{{Type: "bus", Provider: "flixbus", Departure: stop("Vienna", "2026-12-01T08:00:00"), Arrival: stop("Prague", "2026-12-01T12:00:00"), Duration: 240}},
+				BookingURL: "https://example.test/book?route=1&seat=2",
+			},
+			{
+				Provider: "regiojet", Type: "train", Price: 24.5, Currency: "EUR", Duration: 255, Transfers: 1,
+				Departure: stop("Vienna", "2026-12-01T09:00:00"), Arrival: stop("Prague", "2026-12-01T13:15:00"),
+				Amenities: []string{"wifi", "power"},
+			},
+		},
+	}
+	blocks, err := buildAnnotatedContentBlocks("2 routes", data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("len = %d, want 2", len(blocks))
+	}
+	want, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := blocks[1].Text; got != string(want) {
+		t.Fatalf("assistant text copy is not compact JSON of the structured payload:\ngot  %d bytes, %d newlines\nwant %d bytes, 0 newlines", len(got), strings.Count(got, "\n"), len(want))
+	}
+	var round models.GroundSearchResult
+	if err := json.Unmarshal([]byte(blocks[1].Text), &round); err != nil || len(round.Routes) != 2 {
+		t.Fatalf("text copy must still unmarshal: err=%v routes=%d", err, len(round.Routes))
+	}
+}
