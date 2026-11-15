@@ -36,6 +36,11 @@ type HackComposeRequest struct {
 	Date        string
 	Currency    string
 	NaivePrice  float64
+	// Providers, ExcludeProviders and NoCache carry the caller's ground search
+	// scope into the detectors' own ground searches.
+	Providers        []string
+	ExcludeProviders []string
+	NoCache          bool
 }
 
 // composeHackSaving is the savings-engine seam. It is nil until the hacks package
@@ -49,15 +54,17 @@ func RegisterHackComposer(fn func(ctx context.Context, req HackComposeRequest) *
 	composeHackSaving = fn
 }
 
-// cheapestRoutePrice returns the lowest strictly-positive route price, or 0.
+// cheapestRoutePrice returns the lowest live fare in the comparison currency,
+// or 0. An estimate, or a fare that could not be converted, is never the
+// naive baseline a saving is measured against.
 func cheapestRoutePrice(routes []models.GroundRoute) float64 {
 	best := 0.0
 	for _, r := range routes {
-		if r.Price <= 0 {
+		if r.PriceProvenance != models.PriceLive || r.ComparablePrice <= 0 {
 			continue
 		}
-		if best == 0 || r.Price < best {
-			best = r.Price
+		if best == 0 || r.ComparablePrice < best {
+			best = r.ComparablePrice
 		}
 	}
 	return best
@@ -101,6 +108,10 @@ func attachGroundHackSaving(ctx context.Context, result *models.GroundSearchResu
 		Date:        date,
 		Currency:    groundHackCurrency(result.Routes, opts.Currency),
 		NaivePrice:  naive,
+		// The detectors' own ground searches keep the caller's scope.
+		Providers:        opts.Providers,
+		ExcludeProviders: opts.ExcludeProviders,
+		NoCache:          opts.NoCache,
 	}
 
 	hctx, cancel := context.WithTimeout(disableHacksCompose(ctx), hackComposeTimeout)

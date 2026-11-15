@@ -227,15 +227,11 @@ func stenalineFormatDateTime(date, timeStr string, dayOffset int) string {
 func SearchStenaLine(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromPort, ok := LookupStenaLinePort(from)
 	if !ok {
-		return nil, fmt.Errorf("stenaline: no port for %q", from)
+		return nil, fmt.Errorf("stenaline: no port for %q: %w", from, models.ErrNotApplicable)
 	}
 	toPort, ok := LookupStenaLinePort(to)
 	if !ok {
-		return nil, fmt.Errorf("stenaline: no port for %q", to)
-	}
-
-	if currency == "" {
-		currency = "EUR"
+		return nil, fmt.Errorf("stenaline: no port for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if _, err := models.ParseDate(date); err != nil {
@@ -249,8 +245,7 @@ func SearchStenaLine(ctx context.Context, from, to, date, currency string) ([]mo
 	key := stenalineRouteKey(fromPort.Code, toPort.Code)
 	sailings, ok := stenalineSchedules[key]
 	if !ok || len(sailings) == 0 {
-		slog.Debug("stenaline: no schedule for route", "key", key)
-		return nil, nil
+		return nil, fmt.Errorf("stenaline: no sailing %s: %w", key, models.ErrNotApplicable)
 	}
 
 	slog.Debug("stenaline search", "from", fromPort.City, "to", toPort.City, "date", date, "sailings", len(sailings))
@@ -266,7 +261,7 @@ func SearchStenaLine(ctx context.Context, from, to, date, currency string) ([]mo
 			Provider: "stenaline",
 			Type:     "ferry",
 			Price:    s.BasePrice,
-			Currency: strings.ToUpper(currency),
+			Currency: "EUR", // the reference table is in euros
 			Duration: s.DurationMin,
 			Departure: models.GroundStop{
 				City:    fromPort.City,

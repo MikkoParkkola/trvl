@@ -3,6 +3,8 @@ package ground
 import (
 	"context"
 	"os"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,13 +53,53 @@ func groundEnvBool(name string, def bool) bool {
 // groundNegKey returns the negative-cache key for a search and whether the search
 // is eligible for negative caching. Only unfiltered searches qualify: a MaxPrice
 // or Type filter can make a served route look empty, which is NOT a "no service"
-// fact and must never be negative-cached. The provider set is folded into the key
-// so restricting providers cannot poison the all-providers result.
+// fact and must never be negative-cached. Everything else that can change the
+// answer is folded into the key: the provider filter, the exclusions and the
+// browser-fallback mode. Ground "no service" is per exact date, because a ferry
+// that does not sail on the 15th may sail on the 16th.
 func groundNegKey(from, to, date string, opts SearchOptions, providerKey string) (string, bool) {
 	if opts.MaxPrice > 0 || opts.Type != "" {
 		return "", false
 	}
-	return cache.NegativeKey("ground|"+providerKey, from, to, date), true
+	scope := "ground|" + providerKey + "|x=" + groundExcludeKey(opts) + "|b=" + strconv.FormatBool(browserFallbacksEnabled(opts))
+	return cache.NegativeKey(scope, from, to, date) + "|" + strings.TrimSpace(date), true
+}
+
+// groundExcludeKey is the canonical exclusion component of the cache keys
+// (sorted, lower-case), so a cached answer never reaches a search that
+// excludes the provider that produced it.
+func groundExcludeKey(opts SearchOptions) string {
+	excl := make([]string, 0, len(opts.ExcludeProviders))
+	for _, p := range opts.ExcludeProviders {
+		excl = append(excl, strings.ToLower(strings.TrimSpace(p)))
+	}
+	sort.Strings(excl)
+	return strings.Join(excl, ",")
+}
+
+// negCacheHitResult answers a search the negative cache already knows has no
+// service: one skipped, route_not_served row per provider in scope (the named
+// ones, or every launchable one for an unfiltered search), minus exclusions,
+// by canonical id and sorted. Distribusion without its key is never in scope.
+func negCacheHitResult(opts SearchOptions) *models.GroundSearchResult {
+	res := &models.GroundSearchResult{Success: false, Count: 0}
+	names, err := ValidateProviderNames(opts.Providers)
+	if err != nil || len(names) == 0 {
+		names = launchProviderIDs()
+		if !HasDistribusionKey() {
+			names = slices.DeleteFunc(names, func(n string) bool { return n == "distribusion" })
+		}
+	}
+	excluded, _ := ValidateProviderNames(opts.ExcludeProviders)
+	names = slices.DeleteFunc(slices.Clone(names), func(n string) bool { return slices.Contains(excluded, n) })
+	sort.Strings(names)
+	for _, p := range names {
+		res.ProviderStatuses = append(res.ProviderStatuses, models.ProviderStatus{
+			ID: p, Name: p, Status: models.StatusSkipped, Reason: models.ReasonRouteNotServed,
+		})
+	}
+	res.Completeness = models.ComputeCompleteness(res.ProviderStatuses)
+	return res
 }
 
 // groundPrefetchCtxKey marks a context as a prefetch (or nested) search so

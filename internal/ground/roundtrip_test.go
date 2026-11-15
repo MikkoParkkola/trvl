@@ -19,7 +19,7 @@ func seedGroundCache(from, to, date, provider string, price float64) {
 		Routes:  []models.GroundRoute{{Provider: provider, Price: price, Currency: "EUR"}},
 	}
 	data, _ := json.Marshal(res)
-	key := cache.Key("ground", from+"|"+to+"|"+date+"|EUR|all|0.00||false")
+	key := cache.Key("ground", from+"|"+to+"|"+date+"|EUR|all|0.00||false|x=")
 	groundCache.Set(key, data, 5*time.Minute)
 }
 
@@ -70,7 +70,7 @@ func TestSearchRoundTripPartialDirection(t *testing.T) {
 	res, err := SearchByName(context.Background(), from, to, out, SearchOptions{
 		Currency:   "EUR",
 		ReturnDate: ret,
-		Providers:  []string{"nonexistent_xyz"}, // inbound finds nothing
+		Providers:  []string{"dfds"}, // route-gated for these cities: inbound finds nothing
 	})
 	if err != nil {
 		t.Fatalf("partial round-trip: %v", err)

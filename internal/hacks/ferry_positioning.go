@@ -138,7 +138,7 @@ func detectFerryPositioning(ctx context.Context, in DetectorInput) []Hack {
 	for _, r := range routes {
 		r := r
 		go func() {
-			ferryPrice, ok, estimated := groundLegPriceInTarget(ctx, r.FerryFrom, r.FerryTo, in.Date, "ferry", r.FerryEUR, target, in.GroundSearchOverride)
+			ferryPrice, ok, estimated := groundLegPriceInTarget(ctx, &in, r.FerryFrom, r.FerryTo, "ferry", r.FerryEUR, target)
 			if !ok {
 				ch <- ferryCandidate{}
 				return

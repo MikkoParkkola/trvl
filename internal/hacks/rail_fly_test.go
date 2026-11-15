@@ -446,7 +446,7 @@ func TestRailFlyDetectComposesPricedBundle(t *testing.T) {
 	})
 	withRailGroundSearcher(t, func(_ context.Context, _, _, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
 		return &models.GroundSearchResult{Success: true, Count: 1, Routes: []models.GroundRoute{
-			{Provider: "eurostar", Type: "train", Price: 39, Currency: "EUR"},
+			{Provider: "eurostar", Type: "train", Price: 39, PriceProvenance: models.PriceLive, Currency: "EUR"},
 		}}, nil
 	})
 
@@ -494,7 +494,7 @@ func TestRailFlyDetectRoundTripAddsOpenJawRailReturn(t *testing.T) {
 			price = 70
 		}
 		return &models.GroundSearchResult{Success: true, Count: 1, Routes: []models.GroundRoute{
-			{Provider: "train", Type: "train", Price: price, Currency: "EUR"},
+			{Provider: "train", Type: "train", Price: price, PriceProvenance: models.PriceLive, Currency: "EUR"},
 		}}, nil
 	})
 
@@ -548,7 +548,7 @@ func TestRailFlyDetectSavingsBelowThreshold(t *testing.T) {
 	})
 	withRailGroundSearcher(t, func(_ context.Context, _, _, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
 		return &models.GroundSearchResult{Success: true, Count: 1, Routes: []models.GroundRoute{
-			{Provider: "eurostar", Type: "train", Price: 20, Currency: "EUR"},
+			{Provider: "eurostar", Type: "train", Price: 20, PriceProvenance: models.PriceLive, Currency: "EUR"},
 		}}, nil
 	})
 
@@ -575,7 +575,7 @@ func TestRailFlyDetect_nonEURTarget_neverMislabelsEUR(t *testing.T) {
 	})
 	withRailGroundSearcher(t, func(_ context.Context, _, _, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
 		return &models.GroundSearchResult{Success: true, Count: 1, Routes: []models.GroundRoute{
-			{Provider: "eurostar", Type: "train", Price: 39, Currency: "EUR"},
+			{Provider: "eurostar", Type: "train", Price: 39, PriceProvenance: models.PriceLive, Currency: "EUR"},
 		}}, nil
 	})
 
@@ -589,7 +589,7 @@ func TestRailFlyDetect_nonEURTarget_neverMislabelsEUR(t *testing.T) {
 		}
 		return amount, from
 	})
-	gbp := detectRailFlyArb(context.Background(), "ams", "bcn", "2026-05-01", "", "GBP")
+	gbp := detectRailFlyArb(context.Background(), "ams", "bcn", "2026-05-01", "", "GBP", ground.SearchOptions{})
 	if len(gbp) != 1 {
 		t.Fatalf("GBP target: expected one hack, got %+v", gbp)
 	}
@@ -598,7 +598,7 @@ func TestRailFlyDetect_nonEURTarget_neverMislabelsEUR(t *testing.T) {
 	}
 
 	// EUR target preserves the historical passthrough behaviour.
-	if eur := detectRailFlyArb(context.Background(), "ams", "bcn", "2026-05-01", "", "EUR"); len(eur) != 1 || eur[0].Currency != "EUR" {
+	if eur := detectRailFlyArb(context.Background(), "ams", "bcn", "2026-05-01", "", "EUR", ground.SearchOptions{}); len(eur) != 1 || eur[0].Currency != "EUR" {
 		t.Fatalf("EUR target: expected one EUR-labelled hack, got %+v", eur)
 	}
 }
@@ -616,7 +616,7 @@ func TestRailFlyDetect_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
 	})
 	withRailGroundSearcher(t, func(_ context.Context, _, _, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
 		return &models.GroundSearchResult{Success: true, Count: 1, Routes: []models.GroundRoute{
-			{Provider: "eurostar", Type: "train", Price: 39, Currency: "EUR"},
+			{Provider: "eurostar", Type: "train", Price: 39, PriceProvenance: models.PriceLive, Currency: "EUR"},
 		}}, nil
 	})
 	swapCurrencyConverter(t, func(_ context.Context, amount float64, from, to string) (float64, string) {
@@ -625,7 +625,7 @@ func TestRailFlyDetect_nonEURTarget_suppressedWhenInconvertible(t *testing.T) {
 		}
 		return amount, from // no rate: the hack must be dropped, never mislabelled
 	})
-	if gbp := detectRailFlyArb(context.Background(), "ams", "bcn", "2026-05-01", "", "GBP"); len(gbp) != 0 {
+	if gbp := detectRailFlyArb(context.Background(), "ams", "bcn", "2026-05-01", "", "GBP", ground.SearchOptions{}); len(gbp) != 0 {
 		t.Fatalf("inconvertible GBP target: expected no hack, got %+v", gbp)
 	}
 }

@@ -503,11 +503,12 @@ func SearchTrenitalia(ctx context.Context, from, to, date, currency string) ([]m
 		}
 
 		routes = append(routes, models.GroundRoute{
-			Provider: "trenitalia",
-			Type:     "train",
-			Price:    sol.Price.Amount,
-			Currency: "EUR",
-			Duration: parseTrenitaliaDuration(sol.Duration),
+			Provider:        "trenitalia",
+			Type:            "train",
+			Price:           sol.Price.Amount,
+			PriceProvenance: livePrice(sol.Price.Amount),
+			Currency:        "EUR",
+			Duration:        parseTrenitaliaDuration(sol.Duration),
 			Departure: models.GroundStop{
 				City:    from,
 				Station: depStation,

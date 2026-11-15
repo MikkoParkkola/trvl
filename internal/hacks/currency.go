@@ -99,15 +99,20 @@ func cheapestFlightPriceInTarget(ctx context.Context, r *models.FlightSearchResu
 // multimodal_open_jaw_ground.go — each prices a ground leg by preferring a
 // live provider quote over a conservative static EUR estimate, and each must
 // suppress the candidate rather than mix currencies when neither converts.
-func groundLegPriceInTarget(ctx context.Context, from, to, date, groundType string, staticEUR float64, target string, override ground.SearchFunc) (price float64, ok bool, estimated bool) {
+//
+// Only a live fare counts as a live quote: estimated and unavailable routes are
+// ignored, so a leg priced by them falls back to the flagged static estimate.
+// The search carries the caller's ground scope (see DetectorInput.groundScope).
+func groundLegPriceInTarget(ctx context.Context, in *DetectorInput, from, to, groundType string, staticEUR float64, target string) (price float64, ok bool, estimated bool) {
 	best, found := 0.0, false
-	result, err := ground.SearchByName(ctx, from, to, date, ground.SearchOptions{
-		Currency:       target,
-		Type:           groundType,
-		SearchOverride: override,
-	})
+	opts := in.groundScope()
+	opts.Currency, opts.Type = target, groundType
+	result, err := ground.SearchByName(ctx, from, to, in.Date, opts)
 	if err == nil && result.Success {
 		for _, r := range result.Routes {
+			if r.PriceProvenance != models.PriceLive {
+				continue
+			}
 			conv, ok := convertCurrency(ctx, r.Price, r.Currency, target)
 			if !ok {
 				continue

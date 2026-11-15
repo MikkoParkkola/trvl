@@ -7,6 +7,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // detectMultiModalSkipFlight checks whether skipping the flight entirely and
@@ -43,10 +44,9 @@ func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 	// Ground search — any mode.
 	originCity := cityFromCode(in.Origin)
 	destCity := cityFromCode(in.Destination)
-	groundResult, err := ground.SearchByName(ctx, originCity, destCity, in.Date, ground.SearchOptions{
-		Currency:       target,
-		SearchOverride: in.GroundSearchOverride,
-	})
+	opts := in.groundScope()
+	opts.Currency = target
+	groundResult, err := ground.SearchByName(ctx, originCity, destCity, in.Date, opts)
 	if err != nil || !groundResult.Success || len(groundResult.Routes) == 0 {
 		return nil
 	}
@@ -56,7 +56,8 @@ func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 	var bestRoute *groundRoute
 	for i := range groundResult.Routes {
 		r := &groundResult.Routes[i]
-		if r.Price <= 0 {
+		// Only a live fare backs a saving; an estimate is not a quote.
+		if r.Price <= 0 || r.PriceProvenance != models.PriceLive {
 			continue
 		}
 		if !isOvernightRoute(r.Departure.Time, r.Arrival.Time) {

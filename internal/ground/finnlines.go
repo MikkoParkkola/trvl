@@ -411,11 +411,11 @@ func parseFinnlinesCrossingMinutes(s string) int {
 func SearchFinnlines(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromPort, ok := LookupFinnlinesPort(from)
 	if !ok {
-		return nil, fmt.Errorf("finnlines: no port for %q", from)
+		return nil, fmt.Errorf("finnlines: no port for %q: %w", from, models.ErrNotApplicable)
 	}
 	toPort, ok := LookupFinnlinesPort(to)
 	if !ok {
-		return nil, fmt.Errorf("finnlines: no port for %q", to)
+		return nil, fmt.Errorf("finnlines: no port for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if _, err := models.ParseDate(date); err != nil {
@@ -547,11 +547,12 @@ func SearchFinnlines(ctx context.Context, from, to, date, currency string) ([]mo
 		}
 
 		routes = append(routes, models.GroundRoute{
-			Provider: "finnlines",
-			Type:     "ferry",
-			Price:    price,
-			Currency: "EUR",
-			Duration: duration,
+			Provider:        "finnlines",
+			Type:            "ferry",
+			Price:           price,
+			Currency:        "EUR",
+			PriceProvenance: livePrice(price), // a per-sailing charge from the API
+			Duration:        duration,
 			Departure: models.GroundStop{
 				City:    fromPort.City,
 				Station: fromPort.Name + finnlinesShipSuffix(e.ShipName),

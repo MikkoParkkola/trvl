@@ -418,15 +418,16 @@ func extractSNCFBFFRoute(item map[string]any, bookingURL, date, currency string)
 	}
 
 	return &models.GroundRoute{
-		Provider:   "sncf",
-		Type:       "train",
-		Price:      price,
-		Currency:   strings.ToUpper(cur),
-		Duration:   duration,
-		Transfers:  transfers,
-		Departure:  models.GroundStop{Time: depTime},
-		Arrival:    models.GroundStop{Time: arrTime},
-		BookingURL: bookingURL,
+		Provider:        "sncf",
+		Type:            "train",
+		Price:           price,
+		PriceProvenance: livePrice(price), // one fare per journey in the BFF answer
+		Currency:        strings.ToUpper(cur),
+		Duration:        duration,
+		Transfers:       transfers,
+		Departure:       models.GroundStop{Time: depTime},
+		Arrival:         models.GroundStop{Time: arrTime},
+		BookingURL:      bookingURL,
 	}
 }
 
@@ -460,11 +461,11 @@ func firstString(m map[string]any, keys ...string) string {
 func SearchSNCF(ctx context.Context, from, to, date, currency string, allowBrowserFallbacks bool) ([]models.GroundRoute, error) {
 	fromStation, ok := LookupSNCFStation(from)
 	if !ok {
-		return nil, fmt.Errorf("no SNCF station for %q", from)
+		return nil, fmt.Errorf("no SNCF station for %q: %w", from, models.ErrNotApplicable)
 	}
 	toStation, ok := LookupSNCFStation(to)
 	if !ok {
-		return nil, fmt.Errorf("no SNCF station for %q", to)
+		return nil, fmt.Errorf("no SNCF station for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if currency == "" {

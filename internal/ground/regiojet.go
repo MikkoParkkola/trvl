@@ -273,13 +273,14 @@ func SearchRegioJet(ctx context.Context, fromCityID, toCityID int, date string, 
 		}
 
 		route := models.GroundRoute{
-			Provider:  "regiojet",
-			Type:      routeType,
-			Price:     r.PriceFrom,
-			PriceMax:  r.PriceTo,
-			Currency:  strings.ToUpper(currency),
-			Duration:  dur,
-			Transfers: r.TransfersCount,
+			Provider:        "regiojet",
+			Type:            routeType,
+			Price:           r.PriceFrom,
+			PriceProvenance: livePrice(r.PriceFrom),
+			PriceMax:        r.PriceTo,
+			Currency:        strings.ToUpper(currency),
+			Duration:        dur,
+			Transfers:       r.TransfersCount,
 			Departure: models.GroundStop{
 				City: fromName,
 				Time: r.DepartureTime,

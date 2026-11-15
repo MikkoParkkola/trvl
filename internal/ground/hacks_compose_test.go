@@ -19,8 +19,9 @@ func okGroundResult() *models.GroundSearchResult {
 		Success: true,
 		Count:   2,
 		Routes: []models.GroundRoute{
-			{Provider: "flixbus", Price: 39, Currency: "EUR"},
-			{Provider: "regiojet", Price: 55, Currency: "EUR"},
+			// Shaped as the merge leaves them: live fares in the target currency.
+			{Provider: "flixbus", Price: 39, Currency: "EUR", ComparablePrice: 39, PriceProvenance: models.PriceLive},
+			{Provider: "regiojet", Price: 55, Currency: "EUR", ComparablePrice: 55, PriceProvenance: models.PriceLive},
 		},
 	}
 }
@@ -98,5 +99,32 @@ func TestAttachGroundHackSaving_ReentrancyGuard(t *testing.T) {
 	attachGroundHackSaving(disableHacksCompose(context.Background()), res, "Helsinki", "Tallinn", "2026-09-01", SearchOptions{})
 	if called || res.HackSaving != nil {
 		t.Error("composer ran inside a nested (hacks-disabled) search — recursion not guarded")
+	}
+}
+
+// (f) Only a live fare is a naive baseline: an estimate (or a fare that could
+// not be converted) is never what a saving is measured against.
+func TestAttachGroundHackSaving_NaiveIsLiveOnly(t *testing.T) {
+	var gotNaive float64
+	called := false
+	withStubComposer(t, func(_ context.Context, req HackComposeRequest) *models.HackSaving {
+		called, gotNaive = true, req.NaivePrice
+		return nil
+	})
+	res := &models.GroundSearchResult{Success: true, Count: 3, Routes: []models.GroundRoute{
+		{Provider: "rome2rio", Price: 12, Currency: "EUR", ComparablePrice: 12, PriceProvenance: models.PriceEstimated},
+		{Provider: "regiojet", Price: 300, Currency: "CZK", PriceProvenance: models.PriceLive},
+		{Provider: "flixbus", Price: 39, Currency: "EUR", ComparablePrice: 39, PriceProvenance: models.PriceLive},
+	}}
+	attachGroundHackSaving(context.Background(), res, "Prague", "Vienna", "2026-09-01", SearchOptions{Currency: "EUR"})
+	if !called || gotNaive != 39 {
+		t.Errorf("composer called %v with NaivePrice %v, want 39 (the live EUR fare)", called, gotNaive)
+	}
+
+	called = false
+	estimatesOnly := &models.GroundSearchResult{Success: true, Count: 1, Routes: res.Routes[:1]}
+	attachGroundHackSaving(context.Background(), estimatesOnly, "Prague", "Vienna", "2026-09-01", SearchOptions{Currency: "EUR"})
+	if called {
+		t.Error("composer ran with only an estimated fare as the naive baseline")
 	}
 }
