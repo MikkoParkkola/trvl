@@ -214,11 +214,14 @@ func fetchHotelPageFull(ctx context.Context, client *batchexec.Client, location 
 
 	status, body, err := client.GetStealth(ctx, travelURL, opts.Stealth)
 	if err != nil {
-		return parseResult{}, fmt.Errorf("hotel search request: %w", err)
+		return parseResult{}, googleCallErr("hotel search request", err)
 	}
 
 	if status == 403 {
 		return parseResult{}, batchexec.ErrBlocked
+	}
+	if status == 429 {
+		return parseResult{}, fmt.Errorf("google hotel search refused (HTTP 429): %w", models.ErrRateLimited)
 	}
 	if status != 200 {
 		return parseResult{}, fmt.Errorf("hotel search returned status %d", status)
