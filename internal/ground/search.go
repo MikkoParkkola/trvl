@@ -188,6 +188,15 @@ func normalizeGroundCurrencies(ctx context.Context, routes []models.GroundRoute,
 			continue
 		}
 		if converted, ok := conv(ctx, r.Price, r.Currency, target); ok && converted > 0 {
+			// The top of a range moves with its bottom so a range never mixes
+			// two currencies; if it cannot be converted, it is dropped.
+			if r.PriceMax > 0 {
+				if top, ok := conv(ctx, r.PriceMax, r.Currency, target); ok && top > 0 {
+					r.PriceMax = top
+				} else {
+					r.PriceMax = 0
+				}
+			}
 			r.Price = converted
 			r.Currency = target
 			r.ComparablePrice = converted
@@ -198,7 +207,16 @@ func normalizeGroundCurrencies(ctx context.Context, routes []models.GroundRoute,
 
 // sortGroundRoutes performs the stable cross-currency comparable-price sort
 // (used by search and directly by unit tests for determinism verification).
+// The comparable group ranks first, live fares before estimates inside it;
+// unconvertible priced routes follow by currency, and routes without a fare
+// sink last.
 func sortGroundRoutes(routes []models.GroundRoute) {
+	liveTier := func(r models.GroundRoute) int {
+		if r.PriceProvenance == models.PriceLive {
+			return 0
+		}
+		return 1
+	}
 	sort.SliceStable(routes, func(i, j int) bool {
 		a, b := routes[i], routes[j]
 		ac, bc := a.ComparablePrice > 0, b.ComparablePrice > 0
@@ -206,6 +224,9 @@ func sortGroundRoutes(routes []models.GroundRoute) {
 			return ac
 		}
 		if ac && bc {
+			if ta, tb := liveTier(a), liveTier(b); ta != tb {
+				return ta < tb
+			}
 			pa := a.PriceForRanking()
 			pb := b.PriceForRanking()
 			ra, rb := pa > 0, pb > 0
@@ -216,14 +237,14 @@ func sortGroundRoutes(routes []models.GroundRoute) {
 				return pa < pb
 			}
 		} else {
-			au, bu := strings.ToUpper(strings.TrimSpace(a.Currency)), strings.ToUpper(strings.TrimSpace(b.Currency))
-			if au != bu {
-				return au < bu
-			}
 			pa, pb := a.Price, b.Price
 			ra, rb := pa > 0, pb > 0
 			if ra != rb {
 				return ra
+			}
+			au, bu := strings.ToUpper(strings.TrimSpace(a.Currency)), strings.ToUpper(strings.TrimSpace(b.Currency))
+			if au != bu {
+				return au < bu
 			}
 			if ra && pa != pb {
 				return pa < pb
@@ -731,9 +752,12 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		normalizeGroundCurrencies(ctx, allRoutes, target, conv)
 	}
 
-	// Filter/deduplicate in one pass while preserving the current semantics:
-	// unavailable routes are removed first, then duplicate routes are suppressed
-	// before MaxPrice and Type filters are applied.
+	// Fail-closed provenance: only parsers mark a fare live; a priced route
+	// without a provenance is estimated and Price 0 is unavailable.
+	classifyGroundProvenance(allRoutes)
+
+	// Filter/deduplicate in one pass: RegioJet sold-out rows are removed first,
+	// then duplicate routes are suppressed before MaxPrice and Type filters.
 	allRoutes = filterGroundRoutes(allRoutes, opts)
 
 	// Collapse the same physical connection returned by multiple providers into

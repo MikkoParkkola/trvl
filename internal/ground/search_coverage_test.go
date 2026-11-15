@@ -19,6 +19,11 @@ func TestFilterGroundRoutes_MaxPrice(t *testing.T) {
 		{Provider: "regiojet", Price: 50, Currency: "EUR", Departure: models.GroundStop{Time: "2026-07-01T09:00"}, Arrival: models.GroundStop{Time: "2026-07-01T13:00"}},
 		{Provider: "flixbus", Price: 25, Currency: "EUR", Departure: models.GroundStop{Time: "2026-07-01T10:00"}, Arrival: models.GroundStop{Time: "2026-07-01T14:00"}},
 	}
+	// State after the normalise pass, which sets ComparablePrice for every
+	// priced route in the target currency; the budget is checked against it.
+	for i := range routes {
+		routes[i].ComparablePrice = routes[i].Price
+	}
 	opts := SearchOptions{MaxPrice: 30}
 	filtered := filterGroundRoutes(routes, opts)
 	for _, r := range filtered {
@@ -75,6 +80,11 @@ func TestFilterGroundRoutes_CombinedMaxPriceAndType(t *testing.T) {
 		{Provider: "flixbus", Type: "bus", Price: 10, Currency: "EUR", Departure: models.GroundStop{Time: "T08:00"}, Arrival: models.GroundStop{Time: "T12:00"}},
 		{Provider: "db", Type: "train", Price: 50, Currency: "EUR", Departure: models.GroundStop{Time: "T09:00"}, Arrival: models.GroundStop{Time: "T13:00"}},
 		{Provider: "db", Type: "train", Price: 20, Currency: "EUR", Departure: models.GroundStop{Time: "T10:00"}, Arrival: models.GroundStop{Time: "T14:00"}},
+	}
+	// State after the normalise pass, which sets ComparablePrice for every
+	// priced route in the target currency; the budget is checked against it.
+	for i := range routes {
+		routes[i].ComparablePrice = routes[i].Price
 	}
 	opts := SearchOptions{MaxPrice: 30, Type: "train"}
 	filtered := filterGroundRoutes(routes, opts)

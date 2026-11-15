@@ -143,6 +143,11 @@ func TestFilterGroundRoutes(t *testing.T) {
 		},
 	}
 
+	// State after the normalise pass, which sets ComparablePrice for every
+	// priced route in the target currency; the budget is checked against it.
+	for i := range routes {
+		routes[i].ComparablePrice = routes[i].Price
+	}
 	filtered := filterGroundRoutes(routes, SearchOptions{
 		MaxPrice: 25,
 		Type:     "bus",

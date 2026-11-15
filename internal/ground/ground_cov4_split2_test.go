@@ -73,6 +73,11 @@ func TestFilterGroundRoutes_MaxPrice_v2(t *testing.T) {
 		{Provider: "tallink", Type: "ferry", Price: 30.0, Departure: models.GroundStop{Time: "T1"}, Arrival: models.GroundStop{Time: "T2"}},
 		{Provider: "tallink", Type: "ferry", Price: 50.0, Departure: models.GroundStop{Time: "T3"}, Arrival: models.GroundStop{Time: "T4"}},
 	}
+	// State after the normalise pass, which sets ComparablePrice for every
+	// priced route in the target currency; the budget is checked against it.
+	for i := range routes {
+		routes[i].ComparablePrice = routes[i].Price
+	}
 	opts := SearchOptions{MaxPrice: 40.0}
 	got := filterGroundRoutes(routes, opts)
 	if len(got) != 1 {
@@ -98,17 +103,18 @@ func TestFilterGroundRoutes_TypeFilter_v2(t *testing.T) {
 	}
 }
 
-func TestFilterGroundRoutes_ZeroPriceNonSchedule(t *testing.T) {
-	// Zero-price route from non-schedule-only provider should be dropped.
+func TestFilterGroundRoutes_RegioJetSoldOutDropped(t *testing.T) {
+	// A RegioJet Price 0 row is sold out and dropped; any other unpriced
+	// route is kept and shown as unavailable.
 	routes := []models.GroundRoute{
-		{Provider: "flixbus", Type: "bus", Price: 0, Departure: models.GroundStop{Time: "T1"}, Arrival: models.GroundStop{Time: "T2"}},
+		{Provider: "regiojet", Type: "bus", Price: 0, Departure: models.GroundStop{Time: "T1"}, Arrival: models.GroundStop{Time: "T2"}},
 		{Provider: "tallink", Type: "ferry", Price: 0, Departure: models.GroundStop{Time: "T3"}, Arrival: models.GroundStop{Time: "T4"}},
 	}
 	opts := SearchOptions{}
 	got := filterGroundRoutes(routes, opts)
-	// flixbus with price 0 → dropped; tallink with price 0 → kept (schedule-only)
+	// regiojet with price 0 → dropped; tallink with price 0 → kept as unavailable
 	if len(got) != 1 {
-		t.Errorf("expected 1 (schedule-only tallink), got %d", len(got))
+		t.Fatalf("expected 1 (tallink kept as unavailable), got %d", len(got))
 	}
 	if got[0].Provider != "tallink" {
 		t.Errorf("expected tallink, got %q", got[0].Provider)
@@ -153,10 +159,10 @@ func TestShouldKeepGroundRoute_ZeroPriceScheduleOnly(t *testing.T) {
 	}
 }
 
-func TestShouldKeepGroundRoute_ZeroPriceNonSchedule(t *testing.T) {
-	r := models.GroundRoute{Provider: "flixbus", Price: 0}
+func TestShouldKeepGroundRoute_RegioJetSoldOutDropped(t *testing.T) {
+	r := models.GroundRoute{Provider: "regiojet", Price: 0}
 	if shouldKeepGroundRoute(r) {
-		t.Error("non-schedule-only flixbus with price 0 should be dropped")
+		t.Error("regiojet with price 0 is sold out and should be dropped")
 	}
 }
 

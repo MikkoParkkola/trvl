@@ -48,6 +48,7 @@ func annotateGroundConfidence(routes []models.GroundRoute, now time.Time) {
 			Now:             now,
 			Sources:         r.Sources,
 			SeparateTickets: r.Transfers > 0 && r.Type == "mixed",
+			PriceProvenance: r.PriceProvenance,
 		})
 		r.Confidence = &c
 	}
@@ -95,7 +96,11 @@ func filterGroundRoutes(routes []models.GroundRoute, opts SearchOptions) []model
 		}
 		seen[key] = struct{}{}
 
-		if opts.MaxPrice > 0 && route.Price > opts.MaxPrice {
+		// A budget is checked in the comparison currency. A route the budget
+		// cannot be checked against (no fare, or a fare that could not be
+		// converted) is dropped rather than assumed to fit.
+		if opts.MaxPrice > 0 && (route.PriceProvenance == models.PriceUnavailable ||
+			route.ComparablePrice <= 0 || route.ComparablePrice > opts.MaxPrice) {
 			continue
 		}
 		if hasTypeFilter && !strings.EqualFold(route.Type, opts.Type) {
@@ -134,24 +139,27 @@ func deduplicateGroundRoutes(routes []models.GroundRoute) []models.GroundRoute {
 	return result
 }
 
-// scheduleOnlyProviders is the set of providers whose results are kept even
-// when price is 0 (they provide schedule data without live pricing).
-var scheduleOnlyProviders = map[string]bool{
-	"distribusion": true, "transitous": true, "db": true, "ns": true,
-	"oebb": true, "vr": true, "european_sleeper": true, "snalltaget": true,
-	"tallink": true, "stenaline": true,
-	"dfds": true, "vikingline": true, "eckeroline": true, "finnlines": true,
-	"ferryhopper": true,
-}
-
+// shouldKeepGroundRoute keeps every route, priced or not: a route without a
+// fare is shown as unavailable rather than silently dropped. The one
+// exception is RegioJet, whose Price 0 means the connection is sold out.
 func shouldKeepGroundRoute(route models.GroundRoute) bool {
-	return route.Price > 0 || scheduleOnlyProviders[strings.ToLower(route.Provider)]
+	return route.Price > 0 || !strings.EqualFold(route.Provider, "regiojet")
 }
 
 // classifyGroundProvenance is the fail-closed provenance pass of the ground
 // merge: Price 0 is unavailable, a priced route without a provenance is
 // estimated, and only parsers mark a route live.
-func classifyGroundProvenance(routes []models.GroundRoute) {}
+func classifyGroundProvenance(routes []models.GroundRoute) {
+	for i := range routes {
+		r := &routes[i]
+		switch {
+		case r.Price <= 0:
+			r.PriceProvenance = models.PriceUnavailable
+		case r.PriceProvenance == "":
+			r.PriceProvenance = models.PriceEstimated
+		}
+	}
+}
 
 func filterUnavailableGroundRoutes(routes []models.GroundRoute) []models.GroundRoute {
 	filtered := routes[:0]
