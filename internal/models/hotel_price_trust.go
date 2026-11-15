@@ -74,13 +74,14 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 		if preferredCurrency != "" && h.Currency != preferredCurrency {
 			if amount, ok := convertPrice(convert, h.Price, h.Currency, preferredCurrency); ok {
 				h.Price, h.Currency = amount, preferredCurrency
-				// Savings were computed among the quotes in their own
-				// currency and are displayed in the headline's; restate them.
-				h.Savings, h.CheapestSource = savingsIn(h.Sources, preferredCurrency, convert)
 			} else {
 				h.PriceWarnings = appendUniqueString(h.PriceWarnings, PriceWarningCurrencyNotConverted)
 			}
 		}
+		// Savings are displayed in the headline's currency ("saves EUR 20"),
+		// but merge computed them in whichever currency had the most quotes.
+		// Restate them in the headline currency, or drop them if they cannot be.
+		h.Savings, h.CheapestSource = savingsIn(h.Sources, h.Currency, convert)
 		if selected.BookingURL != "" {
 			h.BookingURL = selected.BookingURL
 		}
@@ -244,10 +245,11 @@ func savingsIn(sources []PriceSource, currency string, convert func(amount float
 			maxPrice = amount
 		}
 	}
-	if n < 2 || minPrice >= maxPrice {
+	spread := math.Round(maxPrice - minPrice)
+	if n < 2 || spread <= 0 {
 		return 0, ""
 	}
-	return math.Round(maxPrice - minPrice), cheapest
+	return spread, cheapest
 }
 
 // convertPrice treats a missing converter, a reported failure, and a

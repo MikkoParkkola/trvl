@@ -288,3 +288,57 @@ func TestFinalizeSavingsKeptInSourceCurrencyWhenNotConverted(t *testing.T) {
 		t.Fatalf("headline %s savings %v, want CZK headline with 500 CZK savings", h.Currency, h.Savings)
 	}
 }
+
+// TestFinalizeSavingsAlwaysInHeadlineCurrency: merge-era savings may come
+// from another currency group. Whatever path picks the headline, savings are
+// restated in its currency, or omitted when they cannot be.
+func TestFinalizeSavingsAlwaysInHeadlineCurrency(t *testing.T) {
+	t.Run("headline already requested, no converter: omitted", func(t *testing.T) {
+		h := HotelResult{Savings: 500, CheapestSource: "booking", Sources: []PriceSource{
+			{Provider: "google_hotels", Price: 100, Currency: "EUR"},
+			{Provider: "booking", Price: 2500, Currency: "CZK"},
+			{Provider: "agoda", Price: 3000, Currency: "CZK"},
+		}}
+		FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, nil)
+		if h.Currency != "EUR" || h.Savings != 0 || h.CheapestSource != "" {
+			t.Fatalf("headline %s, savings %v via %q; want EUR with no savings (one EUR quote)", h.Currency, h.Savings, h.CheapestSource)
+		}
+	})
+	t.Run("headline already requested, converter works", func(t *testing.T) {
+		h := HotelResult{Savings: 500, CheapestSource: "booking", Sources: []PriceSource{
+			{Provider: "google_hotels", Price: 100, Currency: "EUR"},
+			{Provider: "booking", Price: 2000, Currency: "CZK"}, // 80 EUR
+			{Provider: "agoda", Price: 3000, Currency: "CZK"},   // 120 EUR
+		}}
+		FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, stubFX)
+		if h.Price != 100 || h.Savings != 40 || h.CheapestSource != "booking" {
+			t.Fatalf("headline %v, savings %v via %q; want 100 EUR, 40 EUR via booking", h.Price, h.Savings, h.CheapestSource)
+		}
+	})
+	t.Run("conversion failed, headline stays CZK", func(t *testing.T) {
+		h := HotelResult{Currency: "CZK", Savings: 30, CheapestSource: "x", Sources: []PriceSource{
+			{Provider: "google_hotels", Price: 2500, Currency: "CZK"},
+			{Provider: "booking", Price: 3000, Currency: "CZK"},
+			{Provider: "x", Price: 100, Currency: "USD"},
+			{Provider: "y", Price: 130, Currency: "USD"},
+			{Provider: "z", Price: 120, Currency: "USD"},
+		}}
+		FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, failingFX)
+		if h.Currency != "CZK" || h.Savings != 500 || h.CheapestSource != "google_hotels" {
+			t.Fatalf("headline %s, savings %v via %q; want CZK, 500 CZK via google_hotels", h.Currency, h.Savings, h.CheapestSource)
+		}
+	})
+}
+
+// TestFinalizeNoCheapestSourceWithoutSavings: quotes that differ by less than
+// one unit round to zero savings, so no provider is named as cheapest.
+func TestFinalizeNoCheapestSourceWithoutSavings(t *testing.T) {
+	h := HotelResult{Sources: []PriceSource{
+		{Provider: "a", Price: 100.2, Currency: "EUR"},
+		{Provider: "b", Price: 100.4, Currency: "EUR"},
+	}}
+	FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, nil)
+	if h.Savings != 0 || h.CheapestSource != "" {
+		t.Fatalf("savings %v via %q, want none", h.Savings, h.CheapestSource)
+	}
+}
