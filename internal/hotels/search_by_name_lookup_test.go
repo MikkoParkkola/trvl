@@ -68,10 +68,13 @@ func TestSearchHotelsByName_TwoWordNameAllowedWithLocation(t *testing.T) {
 
 // TestSearchHotelsByName_TrailingWordMustBeLocation: "Graz" is neither the
 // location argument nor in any candidate's address, so it is not stripped;
-// the ARTIST hotel in Vienna is not a match for a Graz property.
+// the ARTIST hotel in Vienna is not a match for a Graz property. The Booking
+// candidate carries a real (Vienna) address, so the address check is live.
 func TestSearchHotelsByName_TrailingWordMustBeLocation(t *testing.T) {
 	serveGooglePage(t, viennaPage...)
+	withBookingResult(t, bookingArtist("Kirchengasse 41, 1070 Vienna, Austria"))
 	seedGeo(t, "ARTIST Boutique Hotel Graz, Vienna")
+	requireCandidate(t, "ARTIST Boutique Hotel Graz, Vienna", "ARTIST Boutique Hotel")
 
 	got, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel Graz", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
 	if !errors.Is(err, ErrNoNameMatch) {
