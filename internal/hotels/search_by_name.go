@@ -348,13 +348,14 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 
 		match := findBestNameMatch(result.Hotels, query)
 		if match == nil {
-			// No location argument here, so only a word found in a
-			// candidate's address may be dropped.
-			namePart := query
+			// The text after the last comma, when present, is the location;
+			// otherwise only a word found in a candidate's address may go.
+			namePart, suffix := query, ""
 			if idx := strings.LastIndex(query, ","); idx >= 0 {
 				namePart = strings.TrimSpace(query[:idx])
+				suffix = strings.TrimSpace(query[idx+1:])
 			}
-			if stripped, eligible, ok := retryWithoutTrailingWord(namePart, "", result.Hotels); ok {
+			if stripped, eligible, ok := retryWithoutTrailingWord(namePart, suffix, result.Hotels); ok {
 				match = findBestNameMatch(eligible, stripped)
 			}
 		}

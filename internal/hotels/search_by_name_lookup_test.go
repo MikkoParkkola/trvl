@@ -331,3 +331,21 @@ func TestRetryWithoutTrailingWord_CountsNormalizedWords(t *testing.T) {
 		}
 	}
 }
+
+// TestSearchHotelByName_CommaSuffixActsAsLocation: in "Hotel Sacher Vienna,
+// Vienna" the text after the comma is the location, so the trailing "Vienna"
+// may go and the two-word floor applies.
+func TestSearchHotelByName_CommaSuffixActsAsLocation(t *testing.T) {
+	serveGooglePage(t, hotelWithPrice{"Hotel Sacher", 300})
+	for _, q := range []string{"Wien", "Hotel Sacher Vienna Vienna", "Hotel Sacher Vienna, Vienna"} {
+		seedGeo(t, q)
+	}
+
+	got, err := SearchHotelByName(context.Background(), "Hotel Sacher Vienna, Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if got.Name != "Hotel Sacher" {
+		t.Fatalf("matched %q, want Hotel Sacher", got.Name)
+	}
+}
