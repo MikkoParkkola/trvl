@@ -1,6 +1,7 @@
 package models
 
 import (
+	"math"
 	"strings"
 	"time"
 )
@@ -73,6 +74,9 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 		if preferredCurrency != "" && h.Currency != preferredCurrency {
 			if amount, ok := convertPrice(convert, h.Price, h.Currency, preferredCurrency); ok {
 				h.Price, h.Currency = amount, preferredCurrency
+				// Savings were computed among the quotes in their own
+				// currency and are displayed in the headline's; restate them.
+				h.Savings, h.CheapestSource = savingsIn(h.Sources, preferredCurrency, convert)
 			} else {
 				h.PriceWarnings = appendUniqueString(h.PriceWarnings, PriceWarningCurrencyNotConverted)
 			}
@@ -216,6 +220,34 @@ func cheapestConverted(sources []PriceSource, currency string, convert func(amou
 		}
 	}
 	return selected, found
+}
+
+// savingsIn is the spread between the cheapest and dearest quotes once
+// converted into currency, and the cheapest provider. Quotes the converter
+// cannot handle are left out; fewer than two comparable quotes means none.
+func savingsIn(sources []PriceSource, currency string, convert func(amount float64, from, to string) (float64, bool)) (float64, string) {
+	minPrice, maxPrice := math.MaxFloat64, 0.0
+	cheapest, n := "", 0
+	for _, s := range sources {
+		if s.Price <= 0 {
+			continue
+		}
+		amount, ok := convertPrice(convert, s.Price, s.Currency, currency)
+		if !ok {
+			continue
+		}
+		n++
+		if amount < minPrice || (amount == minPrice && s.Provider < cheapest) {
+			minPrice, cheapest = amount, s.Provider
+		}
+		if amount > maxPrice {
+			maxPrice = amount
+		}
+	}
+	if n < 2 || minPrice >= maxPrice {
+		return 0, ""
+	}
+	return math.Round(maxPrice - minPrice), cheapest
 }
 
 // convertPrice treats a missing converter, a reported failure, and a

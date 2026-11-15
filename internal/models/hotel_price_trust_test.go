@@ -252,3 +252,39 @@ func TestFinalizeTreatsNonPositiveConversionAsFailure(t *testing.T) {
 		})
 	}
 }
+
+// TestFinalizeSavingsFollowHeadlineCurrency: merge computed savings among
+// the CZK quotes (500). Once the headline is converted to EUR, savings are
+// shown as "saves EUR <savings>", so they must be in EUR too: 500 CZK = 20 EUR.
+func TestFinalizeSavingsFollowHeadlineCurrency(t *testing.T) {
+	h := HotelResult{
+		Savings: 500, CheapestSource: "google_hotels",
+		Sources: []PriceSource{
+			{Provider: "google_hotels", Price: 2500, Currency: "CZK"},
+			{Provider: "booking", Price: 3000, Currency: "CZK"},
+		},
+	}
+	FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, stubFX)
+	if h.Price != 100 || h.Currency != "EUR" {
+		t.Fatalf("headline = %v %s, want 100 EUR", h.Price, h.Currency)
+	}
+	if h.Savings != 20 || h.CheapestSource != "google_hotels" {
+		t.Fatalf("savings = %v via %q, want 20 (EUR) via google_hotels", h.Savings, h.CheapestSource)
+	}
+}
+
+// TestFinalizeSavingsKeptInSourceCurrencyWhenNotConverted: with no exchange
+// rate the headline stays CZK, so the CZK savings remain truthful and stay.
+func TestFinalizeSavingsKeptInSourceCurrencyWhenNotConverted(t *testing.T) {
+	h := HotelResult{
+		Savings: 500, CheapestSource: "google_hotels",
+		Sources: []PriceSource{
+			{Provider: "google_hotels", Price: 2500, Currency: "CZK"},
+			{Provider: "booking", Price: 3000, Currency: "CZK"},
+		},
+	}
+	FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, failingFX)
+	if h.Currency != "CZK" || h.Savings != 500 {
+		t.Fatalf("headline %s savings %v, want CZK headline with 500 CZK savings", h.Currency, h.Savings)
+	}
+}

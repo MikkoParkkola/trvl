@@ -167,6 +167,7 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 	// The merge finalizes without a requested currency; finalize again so the
 	// headline is the selected quote converted into the caller's currency.
 	models.FinalizeHotelPriceTrust(merged, currency, time.Now(), trustConverter(ctx))
+	ensureComparableInTargetCurrency(merged, currency)
 	// Zero candidates is a failed or empty search, not a name miss: nothing
 	// was matched against, so report the provider outcome instead.
 	if len(merged) == 0 {
