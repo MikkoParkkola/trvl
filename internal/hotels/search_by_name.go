@@ -157,6 +157,9 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 	}
 
 	merged := models.MergeHotelResults(batches...)
+	// The merge finalizes without a requested currency; finalize again so the
+	// headline is the selected quote converted into the caller's currency.
+	models.FinalizeHotelPriceTrust(merged, currency, time.Now(), trustConverter(ctx))
 
 	// Filter to keep only hotels whose name fuzzy-matches the search name.
 	matched := filterByNameMatch(merged, name)

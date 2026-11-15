@@ -25,6 +25,15 @@ func hotelCurrencyConverter() currencyConverter {
 	}
 }
 
+// trustConverter adapts hotelCurrencyConverter to the context-free shape
+// models.FinalizeHotelPriceTrust takes.
+func trustConverter(ctx context.Context) func(amount float64, from, to string) (float64, bool) {
+	conv := hotelCurrencyConverter()
+	return func(amount float64, from, to string) (float64, bool) {
+		return conv(ctx, amount, from, to)
+	}
+}
+
 // normalizeBatchesToTarget converts every batch to a common target currency
 // before merge, so the merge headline compares within one currency and Min/Max
 // filters see comparable numbers. Target derivation mirrors ground: the opts

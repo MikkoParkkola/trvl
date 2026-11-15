@@ -598,7 +598,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		return nil, googlePrimaryErr
 	}
 
-	models.FinalizeHotelPriceTrust(hotels, opts.Currency, time.Now(), nil)
+	models.FinalizeHotelPriceTrust(hotels, opts.Currency, time.Now(), trustConverter(ctx))
 	// FinalizeHotelPriceTrust may refresh Price/Currency from a source, so
 	// re-assert ComparablePrice for any headline already in the target currency.
 	ensureComparableInTargetCurrency(hotels, opts.Currency)
@@ -669,7 +669,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		// Enrichment appends verified room prices as new sources after the
 		// initial finalize+sort, so re-run both: the verified room price wins
 		// the headline (verified leads) and re-ranks ahead of cheaper teasers.
-		models.FinalizeHotelPriceTrust(hotels, opts.Currency, time.Now(), nil)
+		models.FinalizeHotelPriceTrust(hotels, opts.Currency, time.Now(), trustConverter(ctx))
 		// Enrichment may have adopted a verified price in the target currency;
 		// re-assert ComparablePrice so ranking stays cross-currency honest.
 		ensureComparableInTargetCurrency(hotels, opts.Currency)
