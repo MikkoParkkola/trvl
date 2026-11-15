@@ -12,15 +12,11 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// TestNonLiveProducer_EckeroLineTimetable: the timetable is reached only when
+// the live fetch fails; its reference fares are never live.
 func TestNonLiveProducer_EckeroLineTimetable(t *testing.T) {
-	withEckeroServer(t, eckeroDefaultHome, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[]`))
-	})
-	routes, err := SearchEckeroLine(context.Background(), "Helsinki", "Tallinn", "2026-07-15", "EUR")
-	if err != nil {
-		t.Fatalf("SearchEckeroLine: %v", err)
-	}
+	withEckeroServer(t, eckeroStatus(http.StatusServiceUnavailable), eckeroBody(`[]`))
+	routes, _ := SearchEckeroLine(context.Background(), "Helsinki", "Tallinn", "2026-07-15", "EUR")
 	assertNeverLiveThenClassified(t, "eckeroline timetable", routes)
 }
 
