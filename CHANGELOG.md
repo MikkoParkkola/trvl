@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Go toolchain pinned to 1.26.10 (was 1.26.9) and the release Docker image builds with Go 1.27.3 (was 1.27.2), for GO-2026-6809 (`crypto/x509` trusted certificates from compromised intermediates).
+- Go toolchain pinned to 1.27.4 (was 1.27.3) and the release Docker image builds with Go 1.27.4 (was 1.27.3), for GO-2026-6859 (`net/http` HTTP/1 servers using `MaxBytesReader` could panic on a data race over the `Connection: close` header).
 
 ## [1.27.0] - 2026-10-10
 
