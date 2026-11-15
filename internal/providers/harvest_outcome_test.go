@@ -178,4 +178,16 @@ func TestBrowserPolicyProxyRecordsEveryRefusedHost(t *testing.T) {
 	if n := len(policyProxy.Refusals()); n != maxProxyRefusals {
 		t.Errorf("recorded %d refusals after %d distinct hosts, want the cap %d", n, maxProxyRefusals+10, maxProxyRefusals)
 	}
+	kept := map[string]bool{}
+	for _, r := range policyProxy.Refusals() {
+		kept[r.Host] = true
+	}
+	for _, host := range []string{"cdn.cookielaw.org", "tracker.example", "h0.example"} {
+		if !kept[host] {
+			t.Errorf("cap dropped early host %q; the first refusals must be kept", host)
+		}
+	}
+	if kept[fmt.Sprintf("h%d.example", maxProxyRefusals+7)] {
+		t.Errorf("cap kept the last host instead of the earliest ones")
+	}
 }
