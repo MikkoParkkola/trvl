@@ -2,12 +2,18 @@ package hotels
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
+
+// ErrPriceNoData means Google's price call answered without a payload and no
+// fallback (SerpAPI, search page) produced a price either. It is a failure the
+// caller can name, not a successful empty result.
+var ErrPriceNoData = errors.New("price service returned no data")
 
 // isNoProviderPricesError reports whether err is the routine "Google's
 // payload contained no booking partner prices" outcome we want to surface
