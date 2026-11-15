@@ -124,6 +124,7 @@ func TestGetWeather_RejectsBadCityArguments(t *testing.T) {
 		{"no city or location", map[string]any{}, "city"},
 		{"empty location", map[string]any{"location": ""}, "city"},
 		{"whitespace location", map[string]any{"location": "   "}, "city"},
+		{"whitespace city", map[string]any{"city": "   "}, "city"},
 		{"city and location differ", map[string]any{"city": "Vienna", "location": "Paris"}, "location"},
 	}
 	for _, tc := range cases {
