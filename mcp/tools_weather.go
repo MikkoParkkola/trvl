@@ -9,6 +9,9 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/weather"
 )
 
+// getForecastFunc is the weather lookup; tests swap it to stay offline.
+var getForecastFunc = weather.GetForecast
+
 // getWeatherTool returns the MCP tool definition for weather forecasts.
 func getWeatherTool() ToolDef {
 	return ToolDef{
@@ -73,7 +76,7 @@ func handleGetWeather(ctx context.Context, args map[string]any, _ ElicitFunc, _ 
 
 	sendProgress(progress, 40, 100, "Fetching forecast from Open-Meteo...")
 
-	result, err := weather.GetForecast(ctx, city, fromDate, toDate)
+	result, err := getForecastFunc(ctx, city, fromDate, toDate)
 	if err != nil {
 		return nil, nil, err
 	}
