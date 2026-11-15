@@ -136,7 +136,7 @@ These providers are part of trvl's source code and are active by default. trvl's
 | SNCF | Public API + SNCF Open Data | No API key required |
 | Transitous | Open-source MOTIS 2 transit router | Designed for programmatic access |
 | DigiTransit | Finnish Transport Agency open API | CC-BY licensed |
-| European Sleeper | Sqills S3 Passenger API (via booking.europeansleeper.eu) | Night trains Brussels↔Berlin↔Prague + Amsterdam/Rotterdam/Antwerp/Dresden |
+| European Sleeper | Booking site's public JSON API (europeansleeperprod-api.azurewebsites.net, used by booking.europeansleeper.eu) | Night trains Brussels↔Amsterdam↔Berlin↔Prague, Paris↔Berlin, Brussels↔Milan |
 | Snälltåget | Sqills S3 Passenger API (via bokning.snalltaget.se) | Swedish night trains Stockholm↔Malmö/Åre/Berlin |
 | Ferry operators | Various APIs (DFDS, Viking Line, Tallink, Stena, Eckerö, FerryHopper) | No API key required |
 | (Booking.com was moved to optional providers in v0.4.0) | — | — |
