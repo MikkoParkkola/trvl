@@ -118,9 +118,9 @@ func TestNonLiveProducer_TransitousSchedule(t *testing.T) {
 	assertNeverLiveThenClassified(t, "transitous", routes)
 }
 
-// TestNonLiveProducer_DistribusionLowestPrice: Distribusion reports the
-// connection's lowest price, a range low.
-func TestNonLiveProducer_DistribusionLowestPrice(t *testing.T) {
+// TestLiveProducer_Distribusion: Distribusion's lowest price is quoted per
+// connection, so it is a fare for that departure.
+func TestLiveProducer_Distribusion(t *testing.T) {
 	payload, err := json.Marshal(distribusionJSONAPI{
 		Data: []distribusionData{{
 			ID: "conn-1", Type: "connection",
@@ -149,5 +149,5 @@ func TestNonLiveProducer_DistribusionLowestPrice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SearchDistribusion: %v", err)
 	}
-	assertNeverLiveThenClassified(t, "distribusion", routes)
+	assertAllLive(t, "distribusion", routes)
 }
