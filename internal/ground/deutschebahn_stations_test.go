@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// dbFinalHalts returns the last halt of every journey in a raw DB fahrplan
-// body: the station DB actually routes the traveller to.
+// dbFinalHalts returns, for every journey in a raw DB fahrplan body, the stop
+// parseDBVerbindungen reports as its arrival station (dbFinalHalt).
 func dbFinalHalts(t *testing.T, body []byte) []dbOrt {
 	t.Helper()
 	var resp dbJourneysResponse
@@ -19,12 +19,8 @@ func dbFinalHalts(t *testing.T, body []byte) []dbOrt {
 		if v.Verbindung != nil && len(v.Verbindung.VerbindungsAbschnitte) > 0 {
 			abschnitte = v.Verbindung.VerbindungsAbschnitte
 		}
-		if len(abschnitte) == 0 {
-			continue
-		}
-		last := abschnitte[len(abschnitte)-1]
-		if n := len(last.Halte); n > 0 && last.Halte[n-1].Ort != nil {
-			out = append(out, *last.Halte[n-1].Ort)
+		if end := dbFinalHalt(abschnitte); end != nil {
+			out = append(out, *end)
 		}
 	}
 	return out

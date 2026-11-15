@@ -75,9 +75,10 @@ var dbStations = map[string]DBStation{
 	"essen":      {EVA: "8000098", Name: "Essen Hbf", City: "Essen", Country: "DE"},
 	"aachen":     {EVA: "8000001", Name: "Aachen Hbf", City: "Aachen", Country: "DE"},
 
-	// Austria
-	"vienna":    {EVA: "8101003", Name: "Wien Hbf", City: "Vienna", Country: "AT"},
-	"wien":      {EVA: "8101003", Name: "Wien Hbf", City: "Vienna", Country: "AT"},
+	// Austria. Wien Hbf is 8103000: DB resolves 8101003 (Wien Hbf's UIC code)
+	// to Wien Blumental, adding a local hop to every journey.
+	"vienna":    {EVA: "8103000", Name: "Wien Hbf", City: "Vienna", Country: "AT"},
+	"wien":      {EVA: "8103000", Name: "Wien Hbf", City: "Vienna", Country: "AT"},
 	"salzburg":  {EVA: "8100002", Name: "Salzburg Hbf", City: "Salzburg", Country: "AT"},
 	"innsbruck": {EVA: "8100108", Name: "Innsbruck Hbf", City: "Innsbruck", Country: "AT"},
 
@@ -98,8 +99,10 @@ var dbStations = map[string]DBStation{
 	"prague": {EVA: "5400014", Name: "Praha hl.n.", City: "Prague", Country: "CZ"},
 	"praha":  {EVA: "5400014", Name: "Praha hl.n.", City: "Prague", Country: "CZ"},
 
-	// Poland
-	"warsaw": {EVA: "5100028", Name: "Warszawa Centralna", City: "Warsaw", Country: "PL"},
+	// Poland (names as DB spells them)
+	"warsaw": {EVA: "5100065", Name: "Warszawa Centralna", City: "Warsaw", Country: "PL"},
+	"krakow": {EVA: "5100028", Name: "Krakow Glowny", City: "Krakow", Country: "PL"},
+	"kraków": {EVA: "5100028", Name: "Krakow Glowny", City: "Krakow", Country: "PL"},
 
 	// Hungary
 	"budapest": {EVA: "5500017", Name: "Budapest-Keleti", City: "Budapest", Country: "HU"},
@@ -385,11 +388,11 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromStation, ok := LookupDBStation(from)
 	if !ok {
-		return nil, fmt.Errorf("no DB station for %q", from)
+		return nil, fmt.Errorf("no DB station for %q: %w", from, models.ErrNotApplicable)
 	}
 	toStation, ok := LookupDBStation(to)
 	if !ok {
-		return nil, fmt.Errorf("no DB station for %q", to)
+		return nil, fmt.Errorf("no DB station for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if currency == "" {
@@ -459,7 +462,8 @@ func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([
 	slog.Debug("db routes", "count", len(routes))
 
 	// For cross-border routes the fahrplan endpoint often returns price=0.
-	// Try tagesbestpreis as a fallback for any route with missing price.
+	// Try tagesbestpreis as a fallback for any route with missing price. The
+	// day's best price is not this departure's fare, so it is an estimate.
 	needsBestPrice := false
 	for _, r := range routes {
 		if r.Price == 0 {
@@ -474,6 +478,7 @@ func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([
 			for i := range routes {
 				if routes[i].Price == 0 {
 					routes[i].Price = bp
+					routes[i].PriceProvenance = models.PriceEstimated
 					if bpCur != "" {
 						routes[i].Currency = bpCur
 					}
@@ -594,16 +599,17 @@ func parseDBVerbindungen(verbindungen []dbVerbindung, fromStation, toStation DBS
 		if len(abschnitte) > 0 && len(first.Halte) > 0 && first.Halte[0].Ort != nil {
 			depStation = first.Halte[0].Ort.Name
 		}
-		if len(abschnitte) > 0 && len(last.Halte) > 0 && last.Halte[len(last.Halte)-1].Ort != nil {
-			arrStation = last.Halte[len(last.Halte)-1].Ort.Name
+		if end := dbFinalHalt(abschnitte); end != nil {
+			arrStation = end.Name
 		}
 
 		route := models.GroundRoute{
-			Provider: "db",
-			Type:     "train",
-			Price:    price,
-			Currency: priceCurrency,
-			Duration: duration,
+			Provider:        "db",
+			Type:            "train",
+			Price:           price,
+			PriceProvenance: livePrice(price), // a fare DB quoted for this journey
+			Currency:        priceCurrency,
+			Duration:        duration,
 			Departure: models.GroundStop{
 				City:    fromStation.City,
 				Station: depStation,
@@ -622,6 +628,19 @@ func parseDBVerbindungen(verbindungen []dbVerbindung, fromStation, toStation DBS
 		routes = append(routes, route)
 	}
 	return routes
+}
+
+// dbFinalHalt is the last stop of a journey's last section: the station DB
+// actually routes the traveller to. Nil when the response carries no stop.
+func dbFinalHalt(abschnitte []dbAbschnitt) *dbOrt {
+	if len(abschnitte) == 0 {
+		return nil
+	}
+	halte := abschnitte[len(abschnitte)-1].Halte
+	if len(halte) == 0 {
+		return nil
+	}
+	return halte[len(halte)-1].Ort
 }
 
 // computeDurationMinutes computes the duration in minutes between two ISO 8601 time strings.

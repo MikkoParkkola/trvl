@@ -97,6 +97,7 @@ func TestLiveProbe_DBStationIDs(t *testing.T) {
 				printCapture(t, fmt.Sprintf("db_fahrplan_%s_%s.json", tc.slug, stamp), bodies[0])
 			}
 			if err != nil {
+				testutil.SkipIfTransient(t, err)
 				t.Fatalf("SearchDeutscheBahn(%s -> %s): %v", tc.from, tc.eva, err)
 			}
 			ends := map[string]int{}

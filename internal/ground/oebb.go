@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -42,9 +43,11 @@ type oebbStation struct {
 // ExtIDs are EVA numbers verified against fahrplan.oebb.at.
 // Numbers are the shop.oebbtickets.at numeric station IDs.
 var oebbStations = map[string]oebbStation{
-	// Austria — home network
-	"vienna":     {ExtID: "1190100", Number: 1290401, Name: "Wien Hbf", City: "Vienna"},
-	"wien":       {ExtID: "1190100", Number: 1290401, Name: "Wien Hbf", City: "Vienna"},
+	// Austria — home network. Vienna's ExtID is Wien Hbf itself (8103000), not
+	// the city-wide 1190100 under which HAFAS also ends trips at
+	// Franz-Josefs-Bahnhof; the shop's 1290401 already means Wien Hbf.
+	"vienna":     {ExtID: "8103000", Number: 1290401, Name: "Wien Hbf", City: "Vienna"},
+	"wien":       {ExtID: "8103000", Number: 1290401, Name: "Wien Hbf", City: "Vienna"},
 	"salzburg":   {ExtID: "8100002", Number: 8100002, Name: "Salzburg Hbf", City: "Salzburg"},
 	"innsbruck":  {ExtID: "8100108", Number: 8100108, Name: "Innsbruck Hbf", City: "Innsbruck"},
 	"graz":       {ExtID: "8100173", Number: 8100173, Name: "Graz Hbf", City: "Graz"},
@@ -92,10 +95,10 @@ var oebbStations = map[string]oebbStation{
 	// Croatia
 	"zagreb": {ExtID: "7800001", Number: 7800001, Name: "Zagreb Gl. kol.", City: "Zagreb"},
 
-	// Poland
-	"warsaw": {ExtID: "5100028", Number: 5100028, Name: "Warszawa Centralna", City: "Warsaw"},
-	"krakow": {ExtID: "5100066", Number: 5100066, Name: "Kraków Główny", City: "Krakow"},
-	"kraków": {ExtID: "5100066", Number: 5100066, Name: "Kraków Główny", City: "Krakow"},
+	// Poland (names as ÖBB spells them)
+	"warsaw": {ExtID: "5100065", Number: 5100065, Name: "Warszawa Centralna", City: "Warsaw"},
+	"krakow": {ExtID: "5100028", Number: 5100028, Name: "Krakow Glowny", City: "Krakow"},
+	"kraków": {ExtID: "5100028", Number: 5100028, Name: "Krakow Glowny", City: "Krakow"},
 }
 
 // LookupOebbStation resolves a city name to an ÖBB station (case-insensitive).
@@ -116,7 +119,30 @@ func HasOebbRoute(from, to string) bool {
 	return HasOebbStation(from) && HasOebbStation(to)
 }
 
-// oebbTripSearchRequest builds the HAFAS mgate JSON envelope for a trip search.
+// oebbMgateEndpoint is ÖBB's public HAFAS timetable API (fahrplan.oebb.at).
+const oebbMgateEndpoint = "https://fahrplan.oebb.at/bin/mgate.exe"
+
+// oebbRailClasses are the HAFAS product classes that are trains: RJ/RJX,
+// IC/EC, D, RGJ, R/REX/CJX, S-Bahn and 4096 (RGJ again). Buses (64, 1024),
+// ferries, U-Bahn (256) and trams (512) are left out so the timetable answers
+// the shop's trains-only question (classes checked live on 2026-11-15).
+const oebbRailClasses = 1 | 2 | 4 | 8 | 16 | 32 | 4096
+
+// oebbProductFilter renders a class mask as the HAFAS BIT filter, where
+// position i selects product class 2^i.
+func oebbProductFilter(mask int) string {
+	b := make([]byte, 16)
+	for i := range b {
+		b[i] = '0'
+		if mask&(1<<i) != 0 {
+			b[i] = '1'
+		}
+	}
+	return string(b)
+}
+
+// oebbTripSearchRequest builds the HAFAS mgate JSON envelope for a rail-only
+// trip search. HAFAS returns no fares for ÖBB, so none are requested.
 func oebbTripSearchRequest(fromExtID, toExtID, dateStr, timeStr string) map[string]any {
 	return map[string]any{
 		"auth": map[string]any{
@@ -149,14 +175,12 @@ func oebbTripSearchRequest(fromExtID, toExtID, dateStr, timeStr string) map[stri
 					"getPasslist": false,
 					"getPolyline": false,
 					"jnyFltrL": []map[string]any{
-						{"mode": "BIT", "type": "PROD", "value": "1111111111111111"},
+						{"mode": "BIT", "type": "PROD", "value": oebbProductFilter(oebbRailClasses)},
 					},
 					"numF":    5,
 					"outDate": dateStr,
 					"outTime": timeStr,
 					"outFrwd": true,
-					// trfReq omitted — causes "empty svcResL" error on ÖBB HAFAS.
-					// Fares need a separate query or different HAFAS method.
 				},
 			},
 		},
@@ -187,6 +211,7 @@ type oebbOp struct {
 type oebbProd struct {
 	Name  string `json:"name"`
 	OpIdx int    `json:"oprX,omitempty"`
+	Cls   int    `json:"cls,omitempty"` // product class bit (see oebbRailClasses)
 }
 
 type oebbCon struct {
@@ -217,19 +242,20 @@ type oebbJny struct {
 	ProdX int `json:"prodX"`
 }
 
+// oebbTrfRes is HAFAS's tariff block. ÖBB sends no fares in it, only a shop
+// deep link for some connections.
 type oebbTrfRes struct {
-	FareSetL []oebbFareSet `json:"fareSetL"`
+	Clickout string `json:"clickout"`
 }
 
-type oebbFareSet struct {
-	Desc  string     `json:"desc"`
-	FareL []oebbFare `json:"fareL"`
-}
-
-type oebbFare struct {
-	Name  string `json:"name"`
-	Price int    `json:"prc"` // cents — HAFAS uses "prc" not "price"
-	Cur   string `json:"cur"`
+// oebbMgateResponse is the mgate envelope. HAFAS reports failures with HTTP
+// 200 and a non-"OK" svcResL[0].err.
+type oebbMgateResponse struct {
+	SvcResL []struct {
+		Err    string      `json:"err"`
+		ErrTxt string      `json:"errTxt"`
+		Res    oebbTripRes `json:"res"`
+	} `json:"svcResL"`
 }
 
 // oebbShopAnonymousTokenResponse is the response from the ÖBB shop anonymous token endpoint.
@@ -266,13 +292,33 @@ type oebbShopPricesResponse struct {
 	Offers []oebbShopOffer `json:"offers"`
 }
 
+// oebbBrowserUA is sent on every shop call: the shop's bot rule refuses Go's
+// default User-Agent and accepts a browser one over the same TLS (live probe
+// TestLiveProbe_OebbShopClientSignature, 2026-11-15).
+const oebbBrowserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+var oebbHTMLTitle = regexp.MustCompile(`(?is)<title>\s*([^<]*?)\s*</title>`)
+
 // oebbShopSetHeaders sets the required headers for ÖBB shop API calls.
 func oebbShopSetHeaders(req *http.Request, token string) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Channel", "inet")
+	req.Header.Set("User-Agent", oebbBrowserUA)
 	if token != "" {
 		req.Header.Set("accesstoken", token)
 	}
+}
+
+// oebbShopStatusError types a non-200 shop answer (403/429/5xx wrap
+// ErrRateLimited). A refusal arrives as a whole HTML page; only its <title>
+// is kept, so no markup reaches statuses or logs.
+func oebbShopStatusError(stage string, resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	err := httpStatusError("oebb shop", stage, resp.StatusCode)
+	if m := oebbHTMLTitle.FindSubmatch(body); m != nil && len(m[1]) > 0 {
+		return fmt.Errorf("%w (%s)", err, m[1])
+	}
+	return err
 }
 
 // oebbShopGetToken fetches an anonymous access token from the ÖBB shop API.
@@ -291,8 +337,7 @@ func oebbShopGetToken(ctx context.Context) (string, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", fmt.Errorf("oebb shop token: HTTP %d: %s", resp.StatusCode, body)
+		return "", oebbShopStatusError("token", resp)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
@@ -385,8 +430,7 @@ func oebbShopSearchTimetable(ctx context.Context, token string, fromStation, toS
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("oebb shop timetable: HTTP %d: %s", resp.StatusCode, respBody)
+		return nil, oebbShopStatusError("timetable", resp)
 	}
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 5*1024*1024))
@@ -428,8 +472,7 @@ func oebbShopGetPrices(ctx context.Context, token string, connectionIDs []string
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("oebb shop prices: HTTP %d: %s", resp.StatusCode, respBody)
+		return nil, oebbShopStatusError("prices", resp)
 	}
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
@@ -444,20 +487,18 @@ func oebbShopGetPrices(ctx context.Context, token string, connectionIDs []string
 	return pricesResp.Offers, nil
 }
 
-// SearchOebb searches ÖBB (Austrian Federal Railways) for train journeys between two cities.
-// It uses the ÖBB shop REST API (shop.oebbtickets.at) with a 4-step flow:
-//  1. GET anonymousToken
-//  2. POST initUserData
-//  3. POST timetable search
-//  4. GET prices for all returned connection IDs
+// SearchOebb searches ÖBB (Austrian Federal Railways) for train journeys between
+// two cities. The shop (shop.oebbtickets.at) is the only source of fares; when
+// it refuses or fails, the HAFAS timetable still answers with the same
+// trains-only departures, unpriced, and a ProviderNotice says why.
 func SearchOebb(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromStation, ok := LookupOebbStation(from)
 	if !ok {
-		return nil, fmt.Errorf("no ÖBB station for %q", from)
+		return nil, fmt.Errorf("no ÖBB station for %q: %w", from, models.ErrNotApplicable)
 	}
 	toStation, ok := LookupOebbStation(to)
 	if !ok {
-		return nil, fmt.Errorf("no ÖBB station for %q", to)
+		return nil, fmt.Errorf("no ÖBB station for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if currency == "" {
@@ -468,8 +509,6 @@ func SearchOebb(ctx context.Context, from, to, date, currency string) ([]models.
 	if err != nil {
 		return nil, fmt.Errorf("invalid date %q: %w", date, err)
 	}
-	// ÖBB shop API uses ISO 8601 with milliseconds.
-	datetime := dt.Format("2006-01-02") + "T08:00:00.000"
 
 	if err := oebbLimiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("oebb rate limiter: %w", err)
@@ -477,10 +516,37 @@ func SearchOebb(ctx context.Context, from, to, date, currency string) ([]models.
 
 	slog.Debug("oebb search", "from", fromStation.City, "to", toStation.City, "date", date)
 
-	// Step 1: Obtain anonymous token.
+	routes, shopErr := searchOebbShop(ctx, fromStation, toStation, dt, date, currency)
+	// Shop departures, even unpriced ones with a notice, are the answer; the
+	// timetable stands in only when the shop produced none.
+	if shopErr == nil || len(routes) > 0 || ctx.Err() != nil {
+		return routes, shopErr
+	}
+
+	slog.Debug("oebb shop failed, using the timetable", "err", logredact.Err(shopErr))
+	routes, hafasErr := searchOebbTimetable(ctx, fromStation, toStation, dt, date, currency)
+	notice := oebbPricesNotice(shopErr)
+	if hafasErr != nil {
+		notice.FixHint = "shop refused and the timetable fallback failed: retry later"
+		notice.Err = fmt.Errorf("%w; timetable fallback: %w", shopErr, hafasErr)
+		return nil, notice
+	}
+	return routes, notice
+}
+
+// searchOebbShop runs the shop's 4-step flow:
+//  1. GET anonymousToken
+//  2. POST initUserData
+//  3. POST timetable search
+//  4. GET prices for all returned connection IDs
+func searchOebbShop(ctx context.Context, fromStation, toStation oebbStation, dt time.Time, date, currency string) ([]models.GroundRoute, error) {
+	// ÖBB shop API uses ISO 8601 with milliseconds.
+	datetime := dt.Format("2006-01-02") + "T08:00:00.000"
+
+	// Step 1: Obtain anonymous token. Errors below already name their stage.
 	token, err := oebbShopGetToken(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("oebb shop: %w", err)
+		return nil, err
 	}
 
 	// Step 2: Initialise user data (activates the session).
@@ -492,7 +558,7 @@ func SearchOebb(ctx context.Context, from, to, date, currency string) ([]models.
 	// Step 3: Search timetable.
 	connections, err := oebbShopSearchTimetable(ctx, token, fromStation, toStation, datetime)
 	if err != nil {
-		return nil, fmt.Errorf("oebb shop timetable: %w", err)
+		return nil, err
 	}
 	slog.Debug("oebb shop timetable", "connections", len(connections))
 
@@ -510,11 +576,12 @@ func SearchOebb(ctx context.Context, from, to, date, currency string) ([]models.
 	}
 
 	priceByID := make(map[string]float64, len(ids))
+	var pricesErr error
 	if len(ids) > 0 {
 		offers, err := oebbShopGetPrices(ctx, token, ids)
 		if err != nil {
-			// Non-fatal: return schedule without prices.
-			slog.Debug("oebb shop prices failed", "err", logredact.Err(err))
+			// The departures stand without fares; the caller learns why.
+			pricesErr = err
 		} else {
 			for _, o := range offers {
 				// Keep the cheapest (2nd-class) offer per connection.
@@ -545,11 +612,12 @@ func SearchOebb(ctx context.Context, from, to, date, currency string) ([]models.
 		price := priceByID[c.ID]
 
 		routes = append(routes, models.GroundRoute{
-			Provider: "oebb",
-			Type:     "train",
-			Price:    price,
-			Currency: strings.ToUpper(currency),
-			Duration: durationMin,
+			Provider:        "oebb",
+			Type:            "train",
+			Price:           price,
+			PriceProvenance: livePrice(price), // the shop's fare for this departure
+			Currency:        strings.ToUpper(currency),
+			Duration:        durationMin,
 			Departure: models.GroundStop{
 				City:    fromStation.City,
 				Station: fromStation.Name,
@@ -565,7 +633,20 @@ func SearchOebb(ctx context.Context, from, to, date, currency string) ([]models.
 	}
 
 	slog.Debug("oebb results", "routes", len(routes))
+	if pricesErr != nil {
+		return routes, oebbPricesNotice(pricesErr)
+	}
 	return routes, nil
+}
+
+// oebbPricesNotice explains departures served without fares because the
+// shop's price step (or the whole shop) failed.
+func oebbPricesNotice(err error) *models.ProviderNotice {
+	return &models.ProviderNotice{
+		Reason:  models.ClassifyProviderReason(err.Error()),
+		FixHint: "shop refused: prices unavailable",
+		Err:     err,
+	}
 }
 
 // oebbShopParseTime normalises an ISO 8601 datetime string from the shop API
@@ -592,11 +673,65 @@ func oebbShopParseTime(s string) string {
 	return s
 }
 
-// parseOebbConnections converts HAFAS connections to GroundRoute models.
+// searchOebbTimetable asks ÖBB's HAFAS timetable for the same trains-only
+// departures the shop would list. HAFAS has no fares, so every route is
+// unpriced; it answers errors with HTTP 200, so svcResL[0].err is checked.
+func searchOebbTimetable(ctx context.Context, fromStation, toStation oebbStation, dt time.Time, date, currency string) ([]models.GroundRoute, error) {
+	body, err := json.Marshal(oebbTripSearchRequest(fromStation.ExtID, toStation.ExtID, dt.Format("20060102"), "080000"))
+	if err != nil {
+		return nil, fmt.Errorf("oebb timetable marshal: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, oebbMgateEndpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := oebbClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("oebb timetable: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		return nil, httpStatusError("oebb", "timetable", resp.StatusCode)
+	}
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 5*1024*1024))
+	if err != nil {
+		return nil, fmt.Errorf("oebb timetable read: %w", err)
+	}
+
+	var env oebbMgateResponse
+	if err := json.Unmarshal(respBody, &env); err != nil {
+		return nil, fmt.Errorf("oebb timetable decode: %v: %w", err, models.ErrParseFailed)
+	}
+	if len(env.SvcResL) == 0 {
+		return nil, fmt.Errorf("oebb timetable: empty svcResL: %w", models.ErrParseFailed)
+	}
+	svc := env.SvcResL[0]
+	switch svc.Err {
+	case "OK":
+	case "H890": // HAFAS: no connections found for this search
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("oebb timetable: HAFAS %s: %s", svc.Err, svc.ErrTxt)
+	}
+	routes := parseOebbConnections(svc.Res, fromStation, toStation, date, currency)
+	slog.Debug("oebb timetable results", "routes", len(routes))
+	return routes, nil
+}
+
+// parseOebbConnections converts HAFAS connections to unpriced GroundRoutes
+// (HAFAS has no ÖBB fares). A connection with any non-rail leg (bus, U-Bahn,
+// tram) is dropped: the result answers the shop's trains-only question.
 func parseOebbConnections(res oebbTripRes, fromStation, toStation oebbStation, searchDate, currency string) []models.GroundRoute {
 	var routes []models.GroundRoute
 
 	for _, con := range res.OutConL {
+		if !oebbAllRail(con, res.Common.ProdL) {
+			continue
+		}
 		// Parse departure and arrival times.
 		// HAFAS puts the date on the connection (con.Date = "YYYYMMDD"),
 		// not on the individual stop. Arrival may be next-day when time wraps past 2359.
@@ -609,23 +744,9 @@ func parseOebbConnections(res oebbTripRes, fromStation, toStation oebbStation, s
 			duration = computeDurationMinutes(depTime, arrTime)
 		}
 
-		// Extract price from tariff result.
-		price := 0.0
-		priceCur := strings.ToUpper(currency)
-		if con.TrfRes != nil {
-			for _, fs := range con.TrfRes.FareSetL {
-				for _, fare := range fs.FareL {
-					if fare.Price > 0 {
-						p := float64(fare.Price) / 100.0
-						if price == 0 || p < price {
-							price = p
-							if fare.Cur != "" {
-								priceCur = strings.ToUpper(fare.Cur)
-							}
-						}
-					}
-				}
-			}
+		bookingURL := buildOebbBookingURL(fromStation, toStation, searchDate)
+		if con.TrfRes != nil && strings.HasPrefix(con.TrfRes.Clickout, oebbShopBase+"/") {
+			bookingURL = con.TrfRes.Clickout // shop deep link for this connection
 		}
 
 		// Count JNY (journey) sections to determine transfers.
@@ -679,11 +800,11 @@ func parseOebbConnections(res oebbTripRes, fromStation, toStation oebbStation, s
 		}
 
 		routes = append(routes, models.GroundRoute{
-			Provider: "oebb",
-			Type:     "train",
-			Price:    price,
-			Currency: priceCur,
-			Duration: duration,
+			Provider:        "oebb",
+			Type:            "train",
+			PriceProvenance: models.PriceUnavailable,
+			Currency:        strings.ToUpper(currency),
+			Duration:        duration,
 			Departure: models.GroundStop{
 				City:    fromStation.City,
 				Station: fromStation.Name,
@@ -696,11 +817,26 @@ func parseOebbConnections(res oebbTripRes, fromStation, toStation oebbStation, s
 			},
 			Transfers:  transfers,
 			Legs:       legs,
-			BookingURL: buildOebbBookingURL(fromStation, toStation, searchDate),
+			BookingURL: bookingURL,
 		})
 	}
 
 	return routes
+}
+
+// oebbAllRail reports whether every vehicle leg of con is a train. A leg
+// whose product is missing or unclassified counts as not rail.
+func oebbAllRail(con oebbCon, prods []oebbProd) bool {
+	for _, sec := range con.SecL {
+		if sec.Type != "JNY" {
+			continue
+		}
+		if sec.JnyL == nil || sec.JnyL.ProdX < 0 || sec.JnyL.ProdX >= len(prods) ||
+			prods[sec.JnyL.ProdX].Cls&oebbRailClasses == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // oebbParseDateTime converts HAFAS date (YYYYMMDD) + time (HHMMSS) to ISO 8601.

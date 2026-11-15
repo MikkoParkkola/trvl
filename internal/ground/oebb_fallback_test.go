@@ -128,8 +128,9 @@ func TestSearchOebb_UnservedCityNotApplicable(t *testing.T) {
 }
 
 // serveOebbShop answers the four shop calls of a successful search: two
-// connections, only c1 priced. It returns the User-Agent each call carried.
-func serveOebbShop(t *testing.T) func() map[string]string {
+// connections, only c1 priced. A non-nil prices handler replaces the price
+// answer. It returns the User-Agent each call carried.
+func serveOebbShop(t *testing.T, prices http.HandlerFunc) func() map[string]string {
 	t.Helper()
 	origClient, origLimiter := oebbClient, oebbLimiter
 	oebbLimiter = rate.NewLimiter(rate.Limit(1000), 1)
@@ -156,6 +157,10 @@ func serveOebbShop(t *testing.T) func() map[string]string {
 				conn("c2", "2026-11-17T09:37:00.000", "2026-11-17T13:49:00.000"),
 			}})
 		case "/api/offer/v1/prices":
+			if prices != nil {
+				prices(w, r)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(oebbShopPricesResponse{Offers: []oebbShopOffer{{ConnectionID: "c1", Price: 29.9}}})
 		default:
 			http.NotFound(w, r)
@@ -177,7 +182,7 @@ func serveOebbShop(t *testing.T) func() map[string]string {
 // A fare the shop quotes for a departure is live; a departure the shop did
 // not price stays at 0 and is never labelled live or estimated.
 func TestSearchOebb_ShopFaresAreLive(t *testing.T) {
-	serveOebbShop(t)
+	serveOebbShop(t, nil)
 	routes, err := SearchOebb(context.Background(), "Prague", "Vienna", "2026-11-17", "EUR")
 	if err != nil {
 		t.Fatalf("SearchOebb: %v", err)
@@ -200,7 +205,7 @@ func TestSearchOebb_ShopFaresAreLive(t *testing.T) {
 // The shop's bot rule refuses Go's default User-Agent and accepts a browser
 // one over the same TLS (live probe, 2026-11-15), so every shop call sends one.
 func TestSearchOebb_ShopCallsSendBrowserUserAgent(t *testing.T) {
-	uas := serveOebbShop(t)
+	uas := serveOebbShop(t, nil)
 	if _, err := SearchOebb(context.Background(), "Prague", "Vienna", "2026-11-17", "EUR"); err != nil {
 		t.Fatalf("SearchOebb: %v", err)
 	}
@@ -263,5 +268,24 @@ func TestSearchOebb_TimetableFallbackIsRailOnly(t *testing.T) {
 	// classes 1-32 and 4096 (verified live: no bus or U-Bahn rows returned).
 	if !strings.Contains(string(raw), `"value":"1111110000001000"`) {
 		t.Errorf("HAFAS product filter is not rail-only: %s", raw)
+	}
+}
+
+// When only the shop's price step refuses, its departures still answer,
+// unpriced, with the same typed notice as a full shop refusal.
+func TestSearchOebb_ShopPricesRefusedKeepsDepartures(t *testing.T) {
+	serveOebbShop(t, oebbShopRefuses)
+	routes, err := SearchOebb(context.Background(), "Prague", "Vienna", "2026-11-17", "EUR")
+	notice := assertOebbBlockedErr(t, err)
+	if notice.FixHint != "shop refused: prices unavailable" {
+		t.Errorf("FixHint = %q", notice.FixHint)
+	}
+	if len(routes) != 2 {
+		t.Fatalf("got %d routes, want the shop's 2 departures", len(routes))
+	}
+	for _, r := range routes {
+		if r.Price != 0 || (r.PriceProvenance != "" && r.PriceProvenance != models.PriceUnavailable) {
+			t.Errorf("%s: price %v provenance %q, want 0 and unavailable", r.Departure.Time, r.Price, r.PriceProvenance)
+		}
 	}
 }

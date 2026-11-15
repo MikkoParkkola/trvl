@@ -14,10 +14,6 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
-const oebbMgateURL = "https://fahrplan.oebb.at/bin/mgate.exe"
-
-const probeBrowserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-
 var probeTitle = regexp.MustCompile(`<title>([^<]*)</title>`)
 
 // TestLiveProbe_OebbShopClientSignature asks the shop token endpoint once per
@@ -36,9 +32,9 @@ func TestLiveProbe_OebbShopClientSignature(t *testing.T) {
 		ua   string
 	}{
 		{"go-default-ua", goClient.Do, ""},
-		{"go-browser-ua", goClient.Do, probeBrowserUA},
+		{"go-browser-ua", goClient.Do, oebbBrowserUA},
 		{"tls-client-no-ua", tier1.Do, ""},
-		{"tls-client-browser-ua", tier1.Do, probeBrowserUA},
+		{"tls-client-browser-ua", tier1.Do, oebbBrowserUA},
 	}
 	got := map[string]bool{} // arm -> obtained a token
 	for _, arm := range arms {
@@ -55,6 +51,7 @@ func TestLiveProbe_OebbShopClientSignature(t *testing.T) {
 		}
 		resp, err := arm.do(req)
 		if err != nil {
+			testutil.SkipIfTransient(t, err)
 			t.Logf("arm=%s at=%s error=%v", arm.name, time.Now().UTC().Format(time.TimeOnly), err)
 			continue
 		}
@@ -89,13 +86,14 @@ func oebbProbeMgate(t *testing.T, envelope map[string]any) []byte {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, oebbMgateURL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, oebbMgateEndpoint, bytes.NewReader(payload))
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := oebbClient.Do(req)
 	if err != nil {
+		testutil.SkipIfTransient(t, err)
 		t.Fatalf("mgate: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
