@@ -40,13 +40,16 @@ func TestLiveProbe_OebbShopClientSignature(t *testing.T) {
 		{"tls-client-no-ua", tier1.Do, ""},
 		{"tls-client-browser-ua", tier1.Do, probeBrowserUA},
 	}
-	passed := 0
+	got := map[string]bool{} // arm -> obtained a token
 	for _, arm := range arms {
 		req, err := http.NewRequest(http.MethodGet, oebbShopBase+"/api/domain/v1/anonymousToken", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		oebbShopSetHeaders(req, "")
+		// The arm alone decides the User-Agent: a control arm must send its
+		// client's own default, not whatever the production helper sets.
+		req.Header.Del("User-Agent")
 		if arm.ua != "" {
 			req.Header.Set("User-Agent", arm.ua)
 		}
@@ -63,13 +66,17 @@ func TestLiveProbe_OebbShopClientSignature(t *testing.T) {
 		}
 		hasToken := bytes.Contains(body, []byte(`"access_token"`))
 		t.Logf("arm=%s at=%s status=%d token=%v title=%q", arm.name, time.Now().UTC().Format(time.TimeOnly), resp.StatusCode, hasToken, title)
-		if resp.StatusCode == http.StatusOK && hasToken {
-			passed++
-		}
+		got[arm.name] = resp.StatusCode == http.StatusOK && hasToken
 		time.Sleep(2 * time.Second)
 	}
-	if passed == 0 {
-		t.Error("no client signature obtained a shop token")
+	// SearchOebb sends Go's TLS with a browser User-Agent: that arm must pass,
+	// and the Go-default control must be refused, or the run proves nothing
+	// about why the browser User-Agent is needed.
+	if !got["go-browser-ua"] {
+		t.Error("go-browser-ua (what SearchOebb sends) obtained no shop token")
+	}
+	if got["go-default-ua"] {
+		t.Error("go-default-ua control obtained a token: the shop no longer keys on User-Agent")
 	}
 }
 

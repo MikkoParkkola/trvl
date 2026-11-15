@@ -50,6 +50,29 @@ func serveDB(t *testing.T, bestPrice float64) {
 	dbClient = &http.Client{Transport: &redirectTransport{target: srv.URL}, Timeout: 5 * time.Second}
 }
 
+// assertProvenanceByFare matches routes to expectations by fare, so the test
+// does not depend on route order; every expected fare must appear once.
+// PriceUnavailable also accepts an unlabelled route, which the merge pass
+// labels unavailable.
+func assertProvenanceByFare(t *testing.T, routes []models.GroundRoute, want map[float64]models.PriceProvenance) {
+	t.Helper()
+	if len(routes) != len(want) {
+		t.Fatalf("got %d routes, want %d", len(routes), len(want))
+	}
+	seen := map[float64]bool{}
+	for _, r := range routes {
+		w, ok := want[r.Price]
+		if !ok || seen[r.Price] {
+			t.Errorf("unexpected fare %v (provenance %q)", r.Price, r.PriceProvenance)
+			continue
+		}
+		seen[r.Price] = true
+		if r.PriceProvenance != w && (w != models.PriceUnavailable || r.PriceProvenance != "") {
+			t.Errorf("fare %v: provenance %q, want %q", r.Price, r.PriceProvenance, w)
+		}
+	}
+}
+
 // A fare DB quotes for the journey is live; the day's best price copied onto
 // an unpriced journey is an estimate for that departure, never live.
 func TestSearchDeutscheBahn_PriceProvenance(t *testing.T) {
@@ -58,39 +81,26 @@ func TestSearchDeutscheBahn_PriceProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SearchDeutscheBahn: %v", err)
 	}
-	if len(routes) != 3 {
-		t.Fatalf("got %d routes, want 3", len(routes))
-	}
-	want := []struct {
-		price float64
-		prov  models.PriceProvenance
-	}{
-		{49.9, models.PriceLive},
-		{59.9, models.PriceLive},
-		{19.9, models.PriceEstimated},
-	}
-	for i, w := range want {
-		if routes[i].Price != w.price || routes[i].PriceProvenance != w.prov {
-			t.Errorf("route %d: price %v provenance %q, want %v %q", i, routes[i].Price, routes[i].PriceProvenance, w.price, w.prov)
-		}
-	}
+	assertProvenanceByFare(t, routes, map[float64]models.PriceProvenance{
+		49.9: models.PriceLive,
+		59.9: models.PriceLive,
+		19.9: models.PriceEstimated,
+	})
 }
 
-// Without any fare the journey stays unpriced and is never labelled live or
-// estimated.
+// With an empty day-best answer the quoted fares stay live and the unpriced
+// journey stays at 0, never labelled live or estimated.
 func TestSearchDeutscheBahn_NoFareIsUnavailable(t *testing.T) {
 	serveDB(t, 0)
 	routes, err := SearchDeutscheBahn(context.Background(), "Berlin", "Munich", "2026-07-01", "EUR")
 	if err != nil {
 		t.Fatalf("SearchDeutscheBahn: %v", err)
 	}
-	if len(routes) != 3 {
-		t.Fatalf("got %d routes, want 3", len(routes))
-	}
-	r := routes[2]
-	if r.Price != 0 || (r.PriceProvenance != "" && r.PriceProvenance != models.PriceUnavailable) {
-		t.Errorf("unpriced journey: price %v provenance %q, want 0 and unavailable", r.Price, r.PriceProvenance)
-	}
+	assertProvenanceByFare(t, routes, map[float64]models.PriceProvenance{
+		49.9: models.PriceLive,
+		59.9: models.PriceLive,
+		0:    models.PriceUnavailable,
+	})
 }
 
 // A city outside the DB table is not served: skipped before any network call.

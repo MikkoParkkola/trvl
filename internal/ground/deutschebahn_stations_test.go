@@ -2,8 +2,6 @@ package ground
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -49,11 +47,7 @@ func TestDBStationTableMatchesCaptures(t *testing.T) {
 			if !ok {
 				t.Fatalf("no DB station for %q", tc.city)
 			}
-			body, err := os.ReadFile(filepath.Join("testdata", tc.capture))
-			if err != nil {
-				t.Fatal(err)
-			}
-			halts := dbFinalHalts(t, body)
+			halts := dbFinalHalts(t, readFixture(t, tc.capture))
 			if len(halts) == 0 {
 				t.Fatal("capture has no journeys")
 			}
@@ -65,13 +59,13 @@ func TestDBStationTableMatchesCaptures(t *testing.T) {
 		})
 	}
 
-	body, err := os.ReadFile(filepath.Join("testdata", "db_fahrplan_praha_8101003_2026-11-15.json"))
-	if err != nil {
-		t.Fatal(err)
+	halts := dbFinalHalts(t, readFixture(t, "db_fahrplan_praha_8101003_2026-11-15.json"))
+	if len(halts) == 0 {
+		t.Fatal("8101003 capture has no journeys")
 	}
-	for _, h := range dbFinalHalts(t, body) {
-		if h.Name == "Wien Hbf" {
-			t.Errorf("8101003 capture ends at Wien Hbf; the reproduction no longer holds: %+v", h)
+	for _, h := range halts {
+		if h.Name != "Wien Blumental" || h.EvaNr != "8101003" {
+			t.Errorf("8101003 capture ends at %q (%s), want Wien Blumental: the reproduction no longer holds", h.Name, h.EvaNr)
 		}
 	}
 }

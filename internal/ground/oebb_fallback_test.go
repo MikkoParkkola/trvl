@@ -67,6 +67,9 @@ func TestSearchOebb_ShopBlockedFallsBackToTimetable(t *testing.T) {
 	if strings.Contains(string(raw), "trfReq") {
 		t.Errorf("HAFAS request asks for fares, which it never returns: %s", raw)
 	}
+	if !strings.Contains(string(raw), `"ver":"1.45"`) {
+		t.Errorf("HAFAS envelope is not mgate version 1.45: %s", raw)
+	}
 
 	// Two connections leave at 06:01, so departure and arrival key a route.
 	byTimes := map[string]models.GroundRoute{}
@@ -124,29 +127,35 @@ func TestSearchOebb_UnservedCityNotApplicable(t *testing.T) {
 	}
 }
 
-// A fare the shop quotes for a departure is live; a departure the shop did
-// not price stays at 0 and is never labelled live.
-func TestSearchOebb_ShopFaresAreLive(t *testing.T) {
+// serveOebbShop answers the four shop calls of a successful search: two
+// connections, only c1 priced. It returns the User-Agent each call carried.
+func serveOebbShop(t *testing.T) func() map[string]string {
+	t.Helper()
+	origClient, origLimiter := oebbClient, oebbLimiter
+	oebbLimiter = rate.NewLimiter(rate.Limit(1000), 1)
+	t.Cleanup(func() { oebbClient, oebbLimiter = origClient, origLimiter })
 	conn := func(id, dep, arr string) oebbShopConnection {
 		c := oebbShopConnection{ID: id, Duration: 4 * 3600 * 1000}
 		c.From.Departure, c.To.Arrival = dep, arr
 		return c
 	}
-	origClient, origLimiter := oebbClient, oebbLimiter
-	oebbLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-	t.Cleanup(func() { oebbClient, oebbLimiter = origClient, origLimiter })
+	var mu sync.Mutex
+	uas := map[string]string{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/anonymousToken"):
+		mu.Lock()
+		uas[r.URL.Path] = r.Header.Get("User-Agent")
+		mu.Unlock()
+		switch r.URL.Path {
+		case "/api/domain/v1/anonymousToken":
 			_ = json.NewEncoder(w).Encode(oebbShopAnonymousTokenResponse{AccessToken: "tok"})
-		case strings.HasSuffix(r.URL.Path, "/initUserData"):
+		case "/api/domain/v1/initUserData":
 			w.WriteHeader(http.StatusNoContent)
-		case strings.HasSuffix(r.URL.Path, "/timetable"):
+		case "/api/hafas/v4/timetable":
 			_ = json.NewEncoder(w).Encode(oebbShopTimetableResponse{Connections: []oebbShopConnection{
 				conn("c1", "2026-11-17T08:37:00.000", "2026-11-17T12:49:00.000"),
 				conn("c2", "2026-11-17T09:37:00.000", "2026-11-17T13:49:00.000"),
 			}})
-		case strings.HasSuffix(r.URL.Path, "/prices"):
+		case "/api/offer/v1/prices":
 			_ = json.NewEncoder(w).Encode(oebbShopPricesResponse{Offers: []oebbShopOffer{{ConnectionID: "c1", Price: 29.9}}})
 		default:
 			http.NotFound(w, r)
@@ -154,58 +163,94 @@ func TestSearchOebb_ShopFaresAreLive(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	oebbClient = &http.Client{Transport: &redirectTransport{target: srv.URL}, Timeout: 5 * time.Second}
+	return func() map[string]string {
+		mu.Lock()
+		defer mu.Unlock()
+		out := make(map[string]string, len(uas))
+		for k, v := range uas {
+			out[k] = v
+		}
+		return out
+	}
+}
 
+// A fare the shop quotes for a departure is live; a departure the shop did
+// not price stays at 0 and is never labelled live or estimated.
+func TestSearchOebb_ShopFaresAreLive(t *testing.T) {
+	serveOebbShop(t)
 	routes, err := SearchOebb(context.Background(), "Prague", "Vienna", "2026-11-17", "EUR")
 	if err != nil {
 		t.Fatalf("SearchOebb: %v", err)
 	}
-	if len(routes) != 2 {
-		t.Fatalf("got %d routes, want 2", len(routes))
+	byDep := map[string]models.GroundRoute{}
+	for _, r := range routes {
+		byDep[r.Departure.Time] = r
 	}
-	if routes[0].Price != 29.9 || routes[0].PriceProvenance != models.PriceLive {
-		t.Errorf("priced departure: %v %q, want 29.9 live", routes[0].Price, routes[0].PriceProvenance)
+	if len(routes) != 2 || len(byDep) != 2 {
+		t.Fatalf("got %d routes (%d departures), want 2", len(routes), len(byDep))
 	}
-	if routes[1].Price != 0 || routes[1].PriceProvenance == models.PriceLive || routes[1].PriceProvenance == models.PriceEstimated {
-		t.Errorf("unpriced departure: %v %q, want 0 and unavailable", routes[1].Price, routes[1].PriceProvenance)
+	if r := byDep["2026-11-17T08:37:00"]; r.Price != 29.9 || r.PriceProvenance != models.PriceLive {
+		t.Errorf("priced 08:37: %v %q, want 29.9 live", r.Price, r.PriceProvenance)
+	}
+	if r := byDep["2026-11-17T09:37:00"]; r.Price != 0 || (r.PriceProvenance != "" && r.PriceProvenance != models.PriceUnavailable) {
+		t.Errorf("unpriced 09:37: %v %q, want 0 and unavailable", r.Price, r.PriceProvenance)
 	}
 }
 
 // The shop's bot rule refuses Go's default User-Agent and accepts a browser
-// one over the same TLS (live probe, 2026-11-15), so shop calls must send one.
-func TestSearchOebb_ShopSendsBrowserUserAgent(t *testing.T) {
-	var mu sync.Mutex
-	var ua string
-	mock := &oebbMock{shopToken: func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		ua = r.Header.Get("User-Agent")
-		mu.Unlock()
-		oebbShopRefuses(w, r)
-	}, mgateFile: oebbTripFixture}
-	mock.install(t)
-
-	_, _ = SearchOebb(context.Background(), "Prague", "Vienna", "2026-11-17", "EUR")
-	mu.Lock()
-	defer mu.Unlock()
-	if !strings.HasPrefix(ua, "Mozilla/5.0") || strings.Contains(ua, "Go-http-client") {
-		t.Errorf("shop token request User-Agent = %q, want a browser User-Agent", ua)
+// one over the same TLS (live probe, 2026-11-15), so every shop call sends one.
+func TestSearchOebb_ShopCallsSendBrowserUserAgent(t *testing.T) {
+	uas := serveOebbShop(t)
+	if _, err := SearchOebb(context.Background(), "Prague", "Vienna", "2026-11-17", "EUR"); err != nil {
+		t.Fatalf("SearchOebb: %v", err)
+	}
+	got := uas()
+	for _, path := range []string{
+		"/api/domain/v1/anonymousToken",
+		"/api/domain/v1/initUserData",
+		"/api/hafas/v4/timetable",
+		"/api/offer/v1/prices",
+	} {
+		ua, called := got[path]
+		switch {
+		case !called:
+			t.Errorf("%s was not called", path)
+		case !strings.HasPrefix(ua, "Mozilla/5.0") || strings.Contains(ua, "Go-http-client"):
+			t.Errorf("%s User-Agent = %q, want a browser User-Agent", path, ua)
+		}
 	}
 }
 
 // The fallback answers the shop's question (trains only): it asks HAFAS for
-// rail products, and a bus or U-Bahn row that still arrives is not emitted.
+// rail products, and drops a bus or U-Bahn connection that arrives anyway.
+// The fixture was captured with the all-products mask, so it holds three rail
+// connections (one RGJ + REX change) and two bus/U-Bahn ones.
 func TestSearchOebb_TimetableFallbackIsRailOnly(t *testing.T) {
 	mock := &oebbMock{shopToken: oebbShopRefuses, mgateFile: oebbTripFixture}
 	mock.install(t)
 
 	routes, _ := SearchOebb(context.Background(), "Prague", "Vienna", "2026-11-17", "EUR")
-	if len(routes) == 0 {
-		t.Fatal("no routes from the timetable fallback")
-	}
+	got := map[string]string{} // "dep arr" -> leg providers
 	for _, r := range routes {
+		var names []string
 		for _, l := range r.Legs {
-			if strings.HasPrefix(l.Provider, "Bus") || l.Provider == "U3" || l.Provider == "C" {
-				t.Errorf("%s: non-rail leg %q emitted as a train", r.Departure.Time, l.Provider)
-			}
+			names = append(names, l.Provider)
+		}
+		got[r.Departure.Time+" "+r.Arrival.Time] = strings.Join(names, "+")
+	}
+	want := map[string]string{
+		"2026-11-17T06:01:00 2026-11-17T10:21:00": "RGJ 1031",
+		"2026-11-17T06:01:00 2026-11-17T10:51:00": "RGJ 1031+REX 1 (Train-No. 22327)",
+		"2026-11-17T06:37:00 2026-11-17T10:54:00": "RJ 53",
+	}
+	for k, legs := range want {
+		if got[k] != legs {
+			t.Errorf("rail connection %s: legs %q, want %q", k, got[k], legs)
+		}
+	}
+	for k, legs := range got {
+		if _, ok := want[k]; !ok {
+			t.Errorf("non-rail connection %s (%s) emitted as a train", k, legs)
 		}
 	}
 
