@@ -130,6 +130,19 @@ func printGroundTable(ctx context.Context, targetCurrency string, result *models
 
 	headers := []string{"Price", "Duration", "Type", "Provider", "Transfers", "Departs", "Arrives", "Seats"}
 	models.FormatTable(os.Stdout, headers, rows)
+
+	// A provider that answered with a caveat (a ProviderNotice) says what
+	// its routes are and what would improve them.
+	for _, st := range result.ProviderStatuses {
+		if st.Status != models.StatusOK || st.FixHint == "" {
+			continue
+		}
+		name := st.Name
+		if name == "" {
+			name = st.ID
+		}
+		fmt.Printf("Note: %s: %s\n", name, st.FixHint)
+	}
 	return nil
 }
 
