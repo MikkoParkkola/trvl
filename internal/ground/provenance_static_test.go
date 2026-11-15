@@ -25,10 +25,10 @@ func eckeroDefaultHome(w http.ResponseWriter, _ *http.Request) {
 func withEckeroServer(t *testing.T, home, dep http.HandlerFunc) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/":
+		switch r.URL.Path {
+		case "/":
 			home(w, r)
-		case r.URL.Path == "/checkout/bookingBar/getdepartures":
+		case "/checkout/bookingBar/getdepartures":
 			dep(w, r)
 		default:
 			http.NotFound(w, r)
