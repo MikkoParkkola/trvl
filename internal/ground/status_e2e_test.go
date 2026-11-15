@@ -168,3 +168,19 @@ func TestSearchByNameCore_EurostarLaunchesGatedByOwnName(t *testing.T) {
 		})
 	}
 }
+
+// TestSearchByNameCore_EveryAliasLaunches pins that the non-marketed names the
+// filter accepts really launch: each breaker is tripped, so a launch shows up
+// as a circuit_broken row without touching the network.
+func TestSearchByNameCore_EveryAliasLaunches(t *testing.T) {
+	for _, name := range []string{"rome2rio"} {
+		t.Run(name, func(t *testing.T) {
+			swapGroundBreaker(t)
+			groundBreaker.RecordFailure(name)
+			res := runCore(t, context.Background(), "London", "Paris", name)
+			if st := statusByID(res.ProviderStatuses)[name]; st.Status != models.StatusCircuitBroken {
+				t.Errorf("%s row = %+v, want circuit_broken (launched)", name, st)
+			}
+		})
+	}
+}
