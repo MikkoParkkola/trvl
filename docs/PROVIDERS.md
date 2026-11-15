@@ -113,7 +113,7 @@ trvl searches 22 ground transport providers in parallel, covering most of Europe
 | **Italo (NTV)** | REST/BFF JSON | Italian high-speed rail (AGV/EVO; Milano/Torino/Venezia ↔ Roma/Napoli ↔ Salerno) | EUR 20+ | None (anonymous session token) |
 | **SNCF** | REST | French TGV, TER, Intercity | Varies | None by default; optional browser/curl fallback |
 | **Trainline** | REST | Aggregated: SNCF, DB, Eurostar, Trenitalia, … | Varies | None by default; optional browser/curl fallback |
-| **European Sleeper** | Reference schedule | Night trains (Brussels ↔ Amsterdam ↔ Berlin ↔ Prague) | EUR 49+ | None |
+| **European Sleeper** | REST (booking site JSON API) | Night trains Brussels ↔ Amsterdam ↔ Berlin ↔ Prague, Paris ↔ Berlin, Brussels ↔ Milan | EUR 59.99+ (seat, live per departure) | None |
 | **Snälltåget** | Reference schedule | Swedish night trains (Stockholm ↔ Malmö ↔ Berlin) | EUR 40+ | None |
 | **FlixBus** | REST | Pan-European buses (40+ countries) | EUR 5+ | None |
 | **RegioJet** | REST | CZ/SK/AT/HU/DE/PL buses + trains | EUR 5+ | None |
