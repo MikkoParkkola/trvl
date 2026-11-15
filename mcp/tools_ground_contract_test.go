@@ -327,6 +327,9 @@ func TestSearchGroundDefaultCapsBothCopiesAt20(t *testing.T) {
 	if !strings.Contains(got.userText, "20 of 53") {
 		t.Errorf("text copy should say it shows 20 of 53 routes:\n%s", got.userText)
 	}
+	if strings.Contains(got.userText, "Outbound:") || strings.Contains(got.userText, "Inbound:") {
+		t.Errorf("one-way text copy should carry no direction header:\n%s", got.userText)
+	}
 	assertCompactJSONOf(t, got.assistant, got.structured)
 }
 
@@ -397,6 +400,12 @@ func TestSearchGroundRoundTripCapKeepsInbound(t *testing.T) {
 		if !strings.Contains(got.userText, want) {
 			t.Errorf("summary lacks %q:\n%s", want, got.userText)
 		}
+	}
+	// Each direction gets a header right before its first row, so inbound
+	// rows never read as more outbound options.
+	out, in := strings.Index(got.userText, "\nOutbound:\n1. "), strings.Index(got.userText, "\nInbound:\n21. ")
+	if out < 0 || in < 0 || out > in {
+		t.Errorf("want an Outbound: header before row 1 and an Inbound: header before row 21:\n%s", got.userText)
 	}
 
 	stubGroundRoutes(t, roundTripFixture(25, false))
