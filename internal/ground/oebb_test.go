@@ -15,10 +15,10 @@ func TestLookupOebbStation(t *testing.T) {
 		wantExtID string
 		wantOK    bool
 	}{
-		{"Vienna", "1190100", true},
-		{"vienna", "1190100", true},
-		{"Wien", "1190100", true},
-		{"  Vienna  ", "1190100", true},
+		{"Vienna", "8103000", true},
+		{"vienna", "8103000", true},
+		{"Wien", "8103000", true},
+		{"  Vienna  ", "8103000", true},
 		{"Salzburg", "8100002", true},
 		{"Innsbruck", "8100108", true},
 		{"Graz", "8100173", true},
