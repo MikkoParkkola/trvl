@@ -234,3 +234,21 @@ func TestFinalizeClearsStaleConversionWarning(t *testing.T) {
 		t.Fatalf("warnings = %v, stale flag from the first pass", h.PriceWarnings)
 	}
 }
+
+// TestFinalizeTreatsNonPositiveConversionAsFailure: a converter that says ok
+// but returns 0 or a negative amount has not produced a price.
+func TestFinalizeTreatsNonPositiveConversionAsFailure(t *testing.T) {
+	for name, amount := range map[string]float64{"zero": 0, "negative": -5} {
+		t.Run(name, func(t *testing.T) {
+			conv := func(float64, string, string) (float64, bool) { return amount, true }
+			h := HotelResult{Sources: []PriceSource{{Provider: "google_hotels", Price: 6000, Currency: "CZK"}}}
+			FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, conv)
+			if h.Price != 6000 || h.Currency != "CZK" {
+				t.Fatalf("headline = %v %s, want 6000 CZK kept", h.Price, h.Currency)
+			}
+			if !containsString(h.PriceWarnings, PriceWarningCurrencyNotConverted) {
+				t.Fatalf("warnings = %v, want %s", h.PriceWarnings, PriceWarningCurrencyNotConverted)
+			}
+		})
+	}
+}
