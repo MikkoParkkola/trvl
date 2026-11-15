@@ -153,3 +153,41 @@ func TestFinalizeNoRequestedCurrencyNeedsNoConversion(t *testing.T) {
 		t.Fatalf("headline = %v %s warnings %v, want 6000 CZK with no conversion warning", h.Price, h.Currency, h.PriceWarnings)
 	}
 }
+
+// TestFinalizeBasisIsPartOfTheTrustTier pins the tier as confidence, then
+// price basis (today's within-currency order), ahead of currency preference:
+// a verified tax-inclusive total in CZK beats a cheaper verified nightly rate
+// already in EUR.
+func TestFinalizeBasisIsPartOfTheTrustTier(t *testing.T) {
+	h := HotelResult{
+		Sources: []PriceSource{
+			{Provider: "a", Price: 100, Currency: "EUR", PriceConfidence: PriceConfidenceVerified, PriceBasis: PriceBasisRoomNightly},
+			{Provider: "b", Price: 3000, Currency: "CZK", PriceConfidence: PriceConfidenceVerified, PriceBasis: PriceBasisTaxInclusiveTotal},
+		},
+	}
+	FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, stubFX)
+	if h.Price != 120 || h.Currency != "EUR" || h.PriceBasis != PriceBasisTaxInclusiveTotal {
+		t.Fatalf("headline = %v %s basis %q, want 120 EUR tax_inclusive_total (3000 CZK converted)", h.Price, h.Currency, h.PriceBasis)
+	}
+}
+
+// TestFinalizeSkipsUnconvertibleTopTierSource: the converter fails for GBP
+// only. The converted comparison runs over the sources it can convert, the
+// GBP quote sits out, and the converted headline carries no conversion
+// warning.
+func TestFinalizeSkipsUnconvertibleTopTierSource(t *testing.T) {
+	h := HotelResult{
+		Sources: []PriceSource{
+			{Provider: "a", Price: 2000, Currency: "CZK", PriceConfidence: PriceConfidenceVerified}, // 80 EUR
+			{Provider: "b", Price: 10, Currency: "GBP", PriceConfidence: PriceConfidenceVerified},   // no rate
+			{Provider: "c", Price: 100, Currency: "USD", PriceConfidence: PriceConfidenceVerified},  // 90 EUR
+		},
+	}
+	FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, stubFX)
+	if h.Price != 80 || h.Currency != "EUR" {
+		t.Fatalf("headline = %v %s, want 80 EUR (cheapest convertible top-tier quote)", h.Price, h.Currency)
+	}
+	if containsString(h.PriceWarnings, PriceWarningCurrencyNotConverted) {
+		t.Fatalf("warnings = %v, the headline was converted", h.PriceWarnings)
+	}
+}
