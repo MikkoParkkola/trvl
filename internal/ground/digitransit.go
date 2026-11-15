@@ -159,11 +159,11 @@ type digitransitStop struct {
 func SearchDigitransit(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromStation, ok := LookupDigitransitStation(from)
 	if !ok {
-		return nil, fmt.Errorf("no Digitransit station for %q", from)
+		return nil, fmt.Errorf("no Digitransit station for %q: %w", from, models.ErrNotApplicable)
 	}
 	toStation, ok := LookupDigitransitStation(to)
 	if !ok {
-		return nil, fmt.Errorf("no Digitransit station for %q", to)
+		return nil, fmt.Errorf("no Digitransit station for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if currency == "" {

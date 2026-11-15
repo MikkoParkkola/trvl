@@ -461,11 +461,11 @@ func firstString(m map[string]any, keys ...string) string {
 func SearchSNCF(ctx context.Context, from, to, date, currency string, allowBrowserFallbacks bool) ([]models.GroundRoute, error) {
 	fromStation, ok := LookupSNCFStation(from)
 	if !ok {
-		return nil, fmt.Errorf("no SNCF station for %q", from)
+		return nil, fmt.Errorf("no SNCF station for %q: %w", from, models.ErrNotApplicable)
 	}
 	toStation, ok := LookupSNCFStation(to)
 	if !ok {
-		return nil, fmt.Errorf("no SNCF station for %q", to)
+		return nil, fmt.Errorf("no SNCF station for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if currency == "" {

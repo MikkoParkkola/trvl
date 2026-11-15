@@ -315,11 +315,11 @@ type eurostarGQLResponse struct {
 func SearchEurostar(ctx context.Context, from, to, startDate, endDate, currency string, snapOnly bool) ([]models.GroundRoute, error) {
 	fromStation, ok := LookupEurostarStation(from)
 	if !ok {
-		return nil, fmt.Errorf("no Eurostar station for %q", from)
+		return nil, fmt.Errorf("no Eurostar station for %q: %w", from, models.ErrNotApplicable)
 	}
 	toStation, ok := LookupEurostarStation(to)
 	if !ok {
-		return nil, fmt.Errorf("no Eurostar station for %q", to)
+		return nil, fmt.Errorf("no Eurostar station for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if currency == "" {

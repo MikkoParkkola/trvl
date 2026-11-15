@@ -147,11 +147,11 @@ func lookupNSPrice(from, to string) float64 {
 func SearchNS(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromStation, ok := LookupNSStation(from)
 	if !ok {
-		return nil, fmt.Errorf("no NS station for %q", from)
+		return nil, fmt.Errorf("no NS station for %q: %w", from, models.ErrNotApplicable)
 	}
 	toStation, ok := LookupNSStation(to)
 	if !ok {
-		return nil, fmt.Errorf("no NS station for %q", to)
+		return nil, fmt.Errorf("no NS station for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if currency == "" {

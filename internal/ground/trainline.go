@@ -288,11 +288,11 @@ func trainlineDoWithRetry(ctx context.Context, makeReq func() (*http.Request, er
 func SearchTrainline(ctx context.Context, from, to, date, currency string, allowBrowserFallbacks bool) ([]models.GroundRoute, error) {
 	fromID, ok := LookupTrainlineStation(from)
 	if !ok {
-		return nil, fmt.Errorf("no Trainline station for %q", from)
+		return nil, fmt.Errorf("no Trainline station for %q: %w", from, models.ErrNotApplicable)
 	}
 	toID, ok := LookupTrainlineStation(to)
 	if !ok {
-		return nil, fmt.Errorf("no Trainline station for %q", to)
+		return nil, fmt.Errorf("no Trainline station for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	dateTime, err := models.ParseDate(date)

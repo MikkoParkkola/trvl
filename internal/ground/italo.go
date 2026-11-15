@@ -400,11 +400,11 @@ func SearchItalo(ctx context.Context, from, to, date, currency string) ([]models
 	}
 	osc, ok := italoStationCode(from)
 	if !ok {
-		return nil, fmt.Errorf("italo: unsupported origin %q", from)
+		return nil, fmt.Errorf("italo: unsupported origin %q: %w", from, models.ErrNotApplicable)
 	}
 	dsc, ok := italoStationCode(to)
 	if !ok {
-		return nil, fmt.Errorf("italo: unsupported destination %q", to)
+		return nil, fmt.Errorf("italo: unsupported destination %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if err := italoLimiter.Wait(ctx); err != nil {

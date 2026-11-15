@@ -187,7 +187,7 @@ func resolveAndSearch[T any](
 		return nil, fmt.Errorf("resolve from city: %w", err)
 	}
 	if len(fromCities) == 0 {
-		return nil, fmt.Errorf("no %s city found for %q", providerName, from)
+		return nil, fmt.Errorf("no %s city found for %q: %w", providerName, from, models.ErrNotApplicable)
 	}
 
 	toCities, err := autoComplete(ctx, to)
@@ -195,7 +195,7 @@ func resolveAndSearch[T any](
 		return nil, fmt.Errorf("resolve to city: %w", err)
 	}
 	if len(toCities) == 0 {
-		return nil, fmt.Errorf("no %s city found for %q", providerName, to)
+		return nil, fmt.Errorf("no %s city found for %q: %w", providerName, to, models.ErrNotApplicable)
 	}
 
 	return search(fromCities[0], toCities[0])
