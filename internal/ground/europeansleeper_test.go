@@ -361,12 +361,25 @@ type esConstants struct {
 }
 
 // esConfirmed lists the cities whose booking-system id a live search
-// confirmed as a stop on 2026-11-15.
+// confirmed as a stop (2026-11-15 and 2026-11-16).
 var esConfirmed = map[string]string{
 	"Brussels": "8800104", "Antwerp": "8800210", "Rotterdam": "8400530",
 	"Amsterdam": "8400058", "Berlin": "8010100", "Dresden": "8001305",
 	"Prague": "5457076", "Paris": "8700015", "Hamburg": "8020401",
 	"Köln": "8050500", "Milan": "8300112", "Breda": "8400131", "Eindhoven": "8400206",
+	"Roosendaal": "8400526", "Den Haag": "8400280", "Amersfoort": "8400055",
+	"Deventer": "8400173", "Berlin Ostbahnhof": "8010110", "Bad Schandau": "8001311",
+	"Děčín": "5455659", "Ústí nad Labem": "5453179", "Verviers": "8800440",
+	"Aachen": "8052101", "Aarau": "8500375", "Arth-Goldau": "8500004",
+	"Göschenen": "8500689", "Bellinzona": "8500521", "Lugano": "8500011",
+	"Como": "8300133", "Saint-Quentin": "8700433", "Aulnoye-Aymeries": "8700021",
+	"Mons": "8800810", "Liège": "8800410",
+}
+
+// esUnconfirmed lists unmapped stops from the site constants that a live
+// search did not confirm, so they stay out of the gate on purpose.
+var esUnconfirmed = map[string]string{
+	"8500360": "Chiasso: no trip in a live search on an operating day (Brussels, 2026-11-19)",
 }
 
 // Design: the gate serves a pair only when both stations stop on one line
@@ -385,6 +398,19 @@ func TestHasEuropeanSleeperRoute_MatchesSiteConstants(t *testing.T) {
 	disabled := map[string]bool{}
 	for _, cc := range c.DomesticDisabled {
 		disabled[cc] = true
+	}
+	// Every stop the site sells on a line must be in the table or on the
+	// unconfirmed list, so a confirmed stop cannot silently drop out.
+	confirmedIDs := map[string]bool{}
+	for _, id := range esConfirmed {
+		confirmedIDs[id] = true
+	}
+	for _, r := range c.Routes {
+		for _, s := range r.Stations {
+			if s.Mapped == nil && !confirmedIDs[s.ID] && esUnconfirmed[s.ID] == "" {
+				t.Errorf("line %s stop %s is in the site constants but neither confirmed nor listed as unconfirmed", r.ID[:8], s.ID)
+			}
+		}
 	}
 	sameLine := func(a, b string) bool {
 		for _, r := range c.Routes {
@@ -482,6 +508,27 @@ func TestEuropeanSleeperStationLookup(t *testing.T) {
 		"Prague":    {LocationID: "5457076", Name: "Praha hl.n.", City: "Prague", Country: "CZ"},
 		"Paris":     {LocationID: "8700015", Name: "Paris-Nord", City: "Paris", Country: "FR"},
 		"Milan":     {LocationID: "8300112", Name: "Milano Porta Garibaldi", City: "Milan", Country: "IT"},
+
+		"Roosendaal":        {LocationID: "8400526", Name: "Roosendaal", City: "Roosendaal", Country: "NL"},
+		"Den Haag":          {LocationID: "8400280", Name: "Den Haag HS", City: "Den Haag", Country: "NL"},
+		"Amersfoort":        {LocationID: "8400055", Name: "Amersfoort Centraal", City: "Amersfoort", Country: "NL"},
+		"Deventer":          {LocationID: "8400173", Name: "Deventer", City: "Deventer", Country: "NL"},
+		"Berlin Ostbahnhof": {LocationID: "8010110", Name: "Berlin Ostbahnhof", City: "Berlin", Country: "DE"},
+		"Bad Schandau":      {LocationID: "8001311", Name: "Bad Schandau", City: "Bad Schandau", Country: "DE"},
+		"Děčín":             {LocationID: "5455659", Name: "Děčín hl.n.", City: "Děčín", Country: "CZ"},
+		"Ústí nad Labem":    {LocationID: "5453179", Name: "Ústí nad Labem hl.n.", City: "Ústí nad Labem", Country: "CZ"},
+		"Verviers":          {LocationID: "8800440", Name: "Verviers-Central", City: "Verviers", Country: "BE"},
+		"Aachen":            {LocationID: "8052101", Name: "Aachen Hbf", City: "Aachen", Country: "DE"},
+		"Aarau":             {LocationID: "8500375", Name: "Aarau", City: "Aarau", Country: "CH"},
+		"Arth-Goldau":       {LocationID: "8500004", Name: "Arth-Goldau", City: "Arth-Goldau", Country: "CH"},
+		"Göschenen":         {LocationID: "8500689", Name: "Göschenen", City: "Göschenen", Country: "CH"},
+		"Bellinzona":        {LocationID: "8500521", Name: "Bellinzona", City: "Bellinzona", Country: "CH"},
+		"Lugano":            {LocationID: "8500011", Name: "Lugano", City: "Lugano", Country: "CH"},
+		"Como":              {LocationID: "8300133", Name: "Como San Giovanni", City: "Como", Country: "IT"},
+		"Saint-Quentin":     {LocationID: "8700433", Name: "Saint-Quentin", City: "Saint-Quentin", Country: "FR"},
+		"Aulnoye-Aymeries":  {LocationID: "8700021", Name: "Aulnoye-Aymeries", City: "Aulnoye-Aymeries", Country: "FR"},
+		"Mons":              {LocationID: "8800810", Name: "Mons", City: "Mons", Country: "BE"},
+		"Liège":             {LocationID: "8800410", Name: "Liège-Guillemins", City: "Liège", Country: "BE"},
 	}
 	if len(want) != len(esConfirmed) {
 		t.Fatalf("table rows = %d, live-confirmed cities = %d", len(want), len(esConfirmed))
@@ -495,14 +542,18 @@ func TestEuropeanSleeperStationLookup(t *testing.T) {
 		}
 	}
 	for in, city := range map[string]string{
-		"  praha ": "Prague", " PRAGUE ": "Prague", "BRUSSELS": "Brussels",
-		"Cologne": "Köln", "köln": "Köln", "Milano": "Milan", "milan": "Milan",
+		"  praha ": "Prague", " PRAGUE ": "Prague", "Prag": "Prague", "BRUSSELS": "Brussels",
+		"Bruxelles": "Brussels", "Brussel": "Brussels", "Antwerpen": "Antwerp",
+		"Cologne": "Köln", "köln": "Köln", "Koln": "Köln", "Koeln": "Köln",
+		"Milano": "Milan", "milan": "Milan", "The Hague": "Den Haag",
+		"Decin": "Děčín", "Usti nad Labem": "Ústí nad Labem", "Goschenen": "Göschenen",
+		"Liege": "Liège", "St-Quentin": "Saint-Quentin",
 	} {
 		if got, ok := LookupEuropeanSleeperStation(in); !ok || got != want[city] {
 			t.Errorf("Lookup(%q) = %+v, %v; want %+v", in, got, ok, want[city])
 		}
 	}
-	for _, in := range []string{"", "London", "Zürich", "Atlantis"} {
+	for _, in := range []string{"", "London", "Zürich", "Chiasso", "Atlantis"} {
 		if HasEuropeanSleeperStation(in) {
 			t.Errorf("HasEuropeanSleeperStation(%q) = true, want false", in)
 		}
@@ -542,6 +593,7 @@ func TestHasEuropeanSleeperRoute_Aliases(t *testing.T) {
 	}{
 		{"Cologne", "Milano", true}, {" PRAGUE ", "amsterdam", true}, {"praha", "BERLIN", true},
 		{"milano", "Brussels", true}, {"Cologne", "Berlin", false}, {"praha", " PRAGUE ", false},
+		{"Bruxelles", "Prag", true}, {"Koeln", "Antwerpen", true}, {"Brussel", "Antwerpen", false},
 	} {
 		if got := HasEuropeanSleeperRoute(tc.from, tc.to); got != tc.want {
 			t.Errorf("HasEuropeanSleeperRoute(%q, %q) = %v, want %v", tc.from, tc.to, got, tc.want)
@@ -643,5 +695,30 @@ func TestEuropeanSleeperSearch_OnlyBookableFaresPrice(t *testing.T) {
 				t.Errorf("price = %v %q, want %v %q", routes[0].Price, routes[0].PriceProvenance, tc.wantPrice, tc.provenance)
 			}
 		})
+	}
+}
+
+// Design: only bookable trips are priced. A trip on the requested date that
+// the trains answer marks bookable:false gets no availability call and an
+// unavailable price.
+func TestEuropeanSleeperSearch_UnbookableTripSkipsAvailability(t *testing.T) {
+	search := esFixture(t, "europeansleeper_search_amsterdam_prague.json")
+	// The first trip in the fixture is train 453 boarding 2026-11-20.
+	unbookable := bytes.Replace(search, []byte(`"bookable":true`), []byte(`"bookable":false`), 1)
+	if bytes.Equal(unbookable, search) {
+		t.Fatal("fixture has no bookable trip to flip")
+	}
+	rec := useEuropeanSleeperFake(t, esReply{http.StatusOK, unbookable},
+		esOK(t, "europeansleeper_availability_amsterdam_prague.json"))
+
+	routes, err := SearchEuropeanSleeper(context.Background(), "Amsterdam", "Prague", "2026-11-20", "EUR")
+	if err != nil {
+		t.Fatalf("SearchEuropeanSleeper: %v", err)
+	}
+	if calls := rec.snapshot(); len(calls) != 1 {
+		t.Errorf("upstream calls = %d, want 1 (no availability call for an unbookable trip)", len(calls))
+	}
+	if len(routes) != 1 || routes[0].Price != 0 || routes[0].PriceProvenance != models.PriceUnavailable {
+		t.Errorf("routes = %+v, want one route with price 0 and provenance unavailable", routes)
 	}
 }
