@@ -84,19 +84,20 @@ func TestFinalizeTrustTierBeatsRequestedCurrency(t *testing.T) {
 
 // TestFinalizeTopTierComparesConvertedPrices: when no top-tier source is in
 // the requested currency and the converter works, the cheapest top-tier
-// quote after conversion wins.
+// quote after conversion wins. The winner has the larger raw number (2000 vs
+// 100), so comparing raw amounts across currencies picks the wrong one.
 func TestFinalizeTopTierComparesConvertedPrices(t *testing.T) {
 	h := HotelResult{
 		Sources: []PriceSource{
-			{Provider: "a", Price: 2750, Currency: "CZK", PriceConfidence: PriceConfidenceVerified}, // 110 EUR
+			{Provider: "a", Price: 2000, Currency: "CZK", PriceConfidence: PriceConfidenceVerified}, // 80 EUR
 			{Provider: "b", Price: 100, Currency: "USD", PriceConfidence: PriceConfidenceVerified},  // 90 EUR
 			{Provider: "c", Price: 50, Currency: "EUR"},                                             // unverified
 		},
 	}
 	FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, stubFX)
 
-	if h.Price != 90 || h.Currency != "EUR" || h.PriceConfidence != PriceConfidenceVerified {
-		t.Fatalf("headline = %v %s/%s, want 90 EUR verified (100 USD is the cheaper verified quote)", h.Price, h.Currency, h.PriceConfidence)
+	if h.Price != 80 || h.Currency != "EUR" || h.PriceConfidence != PriceConfidenceVerified {
+		t.Fatalf("headline = %v %s/%s, want 80 EUR verified (2000 CZK is the cheaper verified quote once converted)", h.Price, h.Currency, h.PriceConfidence)
 	}
 }
 
