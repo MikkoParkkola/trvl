@@ -58,6 +58,9 @@ func TestHandleSearchHotelByName_NoMatchIsEmptySuccessWithNotice(t *testing.T) {
 	if !resp.Success || resp.Count != 0 || len(resp.Hotels) != 0 {
 		t.Fatalf("response = %s, want success with zero hotels", raw)
 	}
+	if !strings.Contains(string(raw), `"hotels":[]`) {
+		t.Errorf("response = %s, want an empty hotels array, not null", raw)
+	}
 	if !strings.Contains(resp.Notice, "Palais Nonexistent") {
 		t.Errorf("notice = %q, want it to name the requested property", resp.Notice)
 	}
@@ -101,5 +104,23 @@ func TestHandleSearchHotelByName_NoMatchWithoutGoogleError(t *testing.T) {
 	}
 	if !resp.Success || resp.Count != 0 || !strings.Contains(resp.Notice, "Palais Nonexistent") {
 		t.Fatalf("response = %s, want an empty success whose notice names the property", raw)
+	}
+}
+
+// TestSearchHotelByNameTool_DeclaresItsExtraFields: the response carries
+// search_name and notice, so the tool's output schema must declare them.
+func TestSearchHotelByNameTool_DeclaresItsExtraFields(t *testing.T) {
+	schema, ok := searchHotelByNameTool().OutputSchema.(map[string]interface{})
+	if !ok {
+		t.Fatalf("output schema is %T, want an object schema", searchHotelByNameTool().OutputSchema)
+	}
+	props, _ := schema["properties"].(map[string]interface{})
+	for _, field := range []string{"search_name", "notice"} {
+		if _, ok := props[field]; !ok {
+			t.Errorf("output schema lacks %q", field)
+		}
+	}
+	if _, ok := hotelSearchOutputSchema().(map[string]interface{})["properties"].(map[string]interface{})["notice"]; ok {
+		t.Errorf("the shared search_hotels schema gained notice; declare it on search_hotel_by_name only")
 	}
 }

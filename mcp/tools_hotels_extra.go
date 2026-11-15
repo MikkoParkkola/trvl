@@ -182,7 +182,7 @@ func searchHotelByNameTool() ToolDef {
 			},
 			Required: []string{"name", "check_in", "check_out"},
 		},
-		OutputSchema: hotelSearchOutputSchema(),
+		OutputSchema: hotelByNameOutputSchema(),
 		Annotations: &ToolAnnotations{
 			Title:          "Search Hotel by Name",
 			ReadOnlyHint:   true,
@@ -190,6 +190,16 @@ func searchHotelByNameTool() ToolDef {
 			OpenWorldHint:  true,
 		},
 	}
+}
+
+// hotelByNameOutputSchema is the hotel search schema plus the two fields this
+// tool adds to its response.
+func hotelByNameOutputSchema() interface{} {
+	schema := hotelSearchOutputSchema().(map[string]interface{})
+	props := schema["properties"].(map[string]interface{})
+	props["search_name"] = schemaStringDesc("Property name the lookup searched for.")
+	props["notice"] = schemaStringDesc("Set when no hotel matched the name: what was searched and any provider error that came with the miss.")
+	return schema
 }
 
 // searchHotelsByNameFunc is the by-name lookup; a variable so tests can stub it.
@@ -219,7 +229,7 @@ func handleSearchHotelByName(ctx context.Context, args map[string]any, elicit El
 	var notice string
 	if errors.Is(err, hotels.ErrNoNameMatch) {
 		notice = strings.ReplaceAll(err.Error(), "\n", "; ")
-		results, err = nil, nil
+		results, err = []models.HotelResult{}, nil
 	}
 	if err != nil {
 		return nil, nil, err
