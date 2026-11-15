@@ -296,6 +296,11 @@ func SearchFerryhopper(ctx context.Context, from, to, date, currency string) ([]
 		// actually said instead of an opaque "tool returned error".
 		if c := rpcResult.Result.Content; len(c) > 0 {
 			if msg := strings.TrimSpace(c[0].Text); msg != "" {
+				// "No route found for A - B on <date>" is Ferryhopper's answer
+				// for a date with no sailing: a valid empty result, not a fault.
+				if strings.HasPrefix(strings.ToLower(msg), "no route found") {
+					return nil, nil
+				}
 				if len(msg) > 256 {
 					msg = msg[:256]
 				}

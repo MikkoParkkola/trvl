@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -29,10 +30,6 @@ func groundProviderKey(opts SearchOptions) string {
 	return strings.Join(sorted, ",")
 }
 
-// isProviderNotApplicable returns true when the error indicates that a provider
-// simply does not serve the requested route (e.g. "no DB station for Helsinki")
-// or that the provider was throttled during a burst of calls. Both are expected
-// during broad multi-provider searches and should be logged at DEBUG level
 // annotateGroundConfidence attaches an honest bookability Confidence to every
 // ground route (innovation #3), scored from the just-fetched quote freshness,
 // provider reliability, and multi-source corroboration via the shared fareintel
@@ -54,10 +51,17 @@ func annotateGroundConfidence(routes []models.GroundRoute, now time.Time) {
 	}
 }
 
-// rather than WARN to avoid polluting normal operation output.
+// isProviderNotApplicable reports a provider that does not serve the
+// requested pair: a healthy "nothing to sell", never a failure. Providers wrap
+// models.ErrNotApplicable; the wording checks remain for providers outside
+// this change that still return plain "no ... for" errors. A deadline or a
+// limiter wait past it is a timeout, never "not served".
 func isProviderNotApplicable(err error) bool {
-	if err == nil {
+	if err == nil || isProviderTimeout(err) {
 		return false
+	}
+	if errors.Is(err, models.ErrNotApplicable) {
+		return true
 	}
 	msg := err.Error()
 	return strings.Contains(msg, " station for ") ||
@@ -67,10 +71,22 @@ func isProviderNotApplicable(err error) bool {
 		strings.Contains(msg, "no Tallink route") ||
 		strings.Contains(msg, "no Eurostar route") ||
 		strings.Contains(msg, "no DFDS route") ||
-		strings.Contains(msg, "no Stena Line route") ||
-		strings.Contains(msg, "rate limiter: rate: Wait") ||
-		strings.Contains(msg, "would exceed context deadline") ||
-		strings.Contains(msg, "context deadline exceeded")
+		strings.Contains(msg, "no Stena Line route")
+}
+
+// isProviderTimeout reports a provider cut off by the search deadline, either
+// mid-request or while waiting on its rate limiter.
+func isProviderTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "would exceed context deadline") ||
+		strings.Contains(msg, "context deadline exceeded") ||
+		strings.Contains(msg, "Client.Timeout exceeded")
 }
 
 type groundRouteKey struct {

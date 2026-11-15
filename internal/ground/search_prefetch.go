@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,13 +52,34 @@ func groundEnvBool(name string, def bool) bool {
 // groundNegKey returns the negative-cache key for a search and whether the search
 // is eligible for negative caching. Only unfiltered searches qualify: a MaxPrice
 // or Type filter can make a served route look empty, which is NOT a "no service"
-// fact and must never be negative-cached. The provider set is folded into the key
-// so restricting providers cannot poison the all-providers result.
+// fact and must never be negative-cached. Everything else that can change the
+// answer is folded into the key: the provider filter, the exclusions and the
+// browser-fallback mode. Ground "no service" is per exact date, because a ferry
+// that does not sail on the 15th may sail on the 16th.
 func groundNegKey(from, to, date string, opts SearchOptions, providerKey string) (string, bool) {
 	if opts.MaxPrice > 0 || opts.Type != "" {
 		return "", false
 	}
-	return cache.NegativeKey("ground|"+providerKey, from, to, date), true
+	excl := make([]string, 0, len(opts.ExcludeProviders))
+	for _, p := range opts.ExcludeProviders {
+		excl = append(excl, strings.ToLower(strings.TrimSpace(p)))
+	}
+	sort.Strings(excl)
+	scope := "ground|" + providerKey + "|x=" + strings.Join(excl, ",") + "|b=" + strconv.FormatBool(browserFallbacksEnabled(opts))
+	return cache.NegativeKey(scope, from, to, date) + "|" + strings.TrimSpace(date), true
+}
+
+// negCacheHitResult answers a search the negative cache already knows has no
+// service: one skipped, route_not_served row per provider asked for by name.
+func negCacheHitResult(opts SearchOptions) *models.GroundSearchResult {
+	res := &models.GroundSearchResult{Success: false, Count: 0}
+	for _, p := range opts.Providers {
+		res.ProviderStatuses = append(res.ProviderStatuses, models.ProviderStatus{
+			ID: p, Name: p, Status: models.StatusSkipped, Reason: models.ReasonRouteNotServed,
+		})
+	}
+	res.Completeness = models.ComputeCompleteness(res.ProviderStatuses)
+	return res
 }
 
 // groundPrefetchCtxKey marks a context as a prefetch (or nested) search so
