@@ -91,7 +91,9 @@ func TestDetectorGroundSearches_ForwardSearchScope(t *testing.T) {
 				SearchOverride: chMultiModalFlights, GroundSearchOverride: c.search}))
 		}},
 		{"ferry positioning", 1, func(t *testing.T, c *scopeCapture) {
-			t.Setenv("HOME", t.TempDir())
+			dir := t.TempDir()
+			t.Setenv("HOME", dir)
+			t.Setenv("USERPROFILE", dir)
 			detectFerryPositioning(context.Background(), scoped(DetectorInput{Origin: "HEL", Destination: "BCN", Date: d, Currency: "EUR",
 				SearchOverride: anyFlight400EUR, GroundSearchOverride: c.search}))
 		}},
