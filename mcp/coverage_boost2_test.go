@@ -67,7 +67,7 @@ func TestBuildHacksSummary_WithHacks(t *testing.T) {
 
 func TestBuildGroundRouteSummary2_Empty(t *testing.T) {
 	t.Parallel()
-	got := buildGroundRouteSummary("Found 0 routes", nil)
+	got := buildGroundRouteSummary("Found 0 routes", nil, 10)
 	if !strings.Contains(got, "Found 0 routes") {
 		t.Errorf("should contain header, got %q", got)
 	}
@@ -83,7 +83,7 @@ func TestBuildGroundRouteSummary2_WithPriceRange(t *testing.T) {
 			Arrival:   models.GroundStop{Time: "2026-07-01T14:00:00"},
 		},
 	}
-	got := buildGroundRouteSummary("Found routes", routes)
+	got := buildGroundRouteSummary("Found routes", routes, 10)
 	if !strings.Contains(got, "EUR 12.00-18.00") {
 		t.Error("should show price range when PriceMax differs from Price")
 	}
@@ -95,7 +95,7 @@ func TestBuildGroundRouteSummary2_MoreThan10(t *testing.T) {
 	for i := range routes {
 		routes[i] = models.GroundRoute{Provider: "flixbus", Type: "bus", Price: float64(i + 10), Currency: "EUR", Duration: 120, Departure: models.GroundStop{Time: "08:00"}, Arrival: models.GroundStop{Time: "10:00"}}
 	}
-	got := buildGroundRouteSummary("Found 15 routes", routes)
+	got := buildGroundRouteSummary("Found 15 routes", routes, 10)
 	if !strings.Contains(got, "5 more routes") {
 		t.Errorf("should show overflow count, got %q", got)
 	}
