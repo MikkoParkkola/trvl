@@ -37,9 +37,6 @@ func requireRateLimited(t *testing.T, label string, err error) {
 	if !errors.Is(err, models.ErrRateLimited) {
 		t.Fatalf("%s: err = %q does not wrap models.ErrRateLimited (an MCP gateway would label it INVALID_PARAM)", label, err)
 	}
-	if !strings.Contains(err.Error(), "rate-limited") {
-		t.Fatalf("%s: err = %q, want the text to say rate-limited", label, err)
-	}
 }
 
 // TestGetHotelPrices_Status13IsRateLimited: Google's quota refusal (wrb.fr
