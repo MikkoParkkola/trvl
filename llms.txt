@@ -62,7 +62,7 @@ done
 - search_deals([origin, max_price, type])
 - plan_trip(origin, destination, depart_date, return_date, [currency, guests])
 - search_route(from, to, arrive_by, [avoid, currency])
-- get_weather(location, [days])
+- get_weather(city|location, [from_date, to_date])
 - get_preferences()
 - update_preferences(field, value, ...)
 - detect_travel_hacks(origin, destination, date, [return_date, carry_on_only])

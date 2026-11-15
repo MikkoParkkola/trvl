@@ -9,11 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `golang.org/x/crypto` updated to v0.59.0 (was v0.58.0) for GO-2026-5932, which moves the unmaintained `openpgp` packages out of the module; the expired osv-scanner exception for that advisory is removed. `golang.org/x/sync`, `sys`, `term` and `text` move up with it.
 - Go toolchain pinned to 1.26.10 (was 1.26.9) and the release Docker image builds with Go 1.27.3 (was 1.27.2), for GO-2026-6809 (`crypto/x509` trusted certificates from compromised intermediates).
 - Go toolchain pinned to 1.27.4 (was 1.27.3) and the release Docker image builds with Go 1.27.4 (was 1.27.3), for GO-2026-6859 (`net/http` HTTP/1 servers using `MaxBytesReader` could panic on a data race over the `Connection: close` header).
 
 ### Fixed
 
+- MCP tool results send their assistant text copy as compact JSON instead of indented JSON, which shrinks the duplicate copy of every result (by about a third on the test fixtures).
+  ([#774](https://github.com/MikkoParkkola/trvl/pull/774))
+- `get_weather` accepts `location` as an alias of `city`, rejects a missing or conflicting place before any lookup, and reports a failed forecast lookup as an error instead of a normal result.
+  ([#774](https://github.com/MikkoParkkola/trvl/pull/774))
 - Google Hotels results without their own price are now unpriced instead of showing the search-wide price ceiling as the hotel's price.
   ([#777](https://github.com/MikkoParkkola/trvl/pull/777))
 - Hotel headline prices stay in the requested currency: the chosen provider quote is converted for the headline, the quote itself keeps its own currency, and a headline that could not be converted keeps its currency and carries `currency_not_converted`. A verified price now outranks an unverified one in another currency.
