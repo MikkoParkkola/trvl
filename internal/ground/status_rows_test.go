@@ -61,8 +61,8 @@ func TestCollectGroundResults_StatusMapping(t *testing.T) {
 			t.Errorf("%s status = %q, want %q", id, got[id].Status, want)
 		}
 	}
-	if n := got["eckeroline"]; n.FixHint == "" || n.Results != 1 {
-		t.Errorf("eckeroline notice row = %+v, want results 1 and the fix hint", n)
+	if n := got["eckeroline"]; n.FixHint == "" || n.Results != 1 || n.Error != "" {
+		t.Errorf("eckeroline notice row = %+v, want results 1, the fix hint and no error (an ok row is not a failure)", n)
 	}
 	if s := got["stenaline"]; s.Status == models.StatusOK || s.Status == models.StatusSkipped || s.Reason != models.ReasonBlocked {
 		t.Errorf("stenaline notice-without-routes row = %+v, want a failure with reason blocked", s)

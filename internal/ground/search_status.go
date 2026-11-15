@@ -96,9 +96,10 @@ func collectGroundResults(results <-chan providerResult) ([]models.GroundRoute, 
 			row.FixHint = "wait for the cooldown to elapse, then it retries automatically"
 			statuses = append(statuses, row)
 		case errors.As(r.err, &notice) && len(r.routes) > 0:
-			// Routes with a caveat: an answer, with the reason and the fix.
+			// Routes with a caveat: an answer, with the reason and the fix. No
+			// Error, which renderers read as a failed provider.
 			row.Status, row.Results = models.StatusOK, len(r.routes)
-			row.Reason, row.FixHint, row.Error = notice.Reason, notice.FixHint, r.err.Error()
+			row.Reason, row.FixHint = notice.Reason, notice.FixHint
 			routes = append(routes, r.routes...)
 			statuses = append(statuses, row)
 		case errors.As(r.err, &notice):
