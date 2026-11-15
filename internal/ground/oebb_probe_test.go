@@ -140,17 +140,21 @@ func TestLiveProbe_OebbHafasTripSearch(t *testing.T) {
 	}
 }
 
-// TestLiveProbe_OebbStationIDs looks each audited station up by name in ÖBB
-// HAFAS and checks the table's ExtID against the first match.
+// TestLiveProbe_OebbStationIDs looks each audited station up in ÖBB HAFAS
+// by the table's own name: the best match must carry the table's ExtID and
+// that name. (HAFAS LocMatch never lists Vienna's 8103000 by name;
+// TestOebbTripFixtureRailEndsAtViennaExtID covers Vienna.)
 func TestLiveProbe_OebbStationIDs(t *testing.T) {
 	testutil.RequireLiveProbe(t)
-	for city, query := range map[string]string{"warsaw": "Warszawa Centralna", "krakow": "Krakow Glowny"} {
-		body := oebbProbeMgate(t, oebbLocMatchRequest(query))
-		got := oebbFirstLocMatch(t, body)
-		station, _ := LookupOebbStation(city)
-		t.Logf("%s: HAFAS %q extId=%s, table ExtID=%s", city, got.Name, got.ExtID, station.ExtID)
-		if got.ExtID != station.ExtID {
-			t.Errorf("%s: table ExtID %s, HAFAS says %q is %s", city, station.ExtID, got.Name, got.ExtID)
+	for _, city := range []string{"warsaw", "krakow", "kraków"} {
+		station, ok := LookupOebbStation(city)
+		if !ok {
+			t.Fatalf("no oebb station for %q", city)
+		}
+		got := oebbFirstLocMatch(t, oebbProbeMgate(t, oebbLocMatchRequest(station.Name)))
+		t.Logf("%s: HAFAS %q extId=%s, table %q ExtID=%s", city, got.Name, got.ExtID, station.Name, station.ExtID)
+		if got.ExtID != station.ExtID || upstreamStationName(got.Name) != station.Name {
+			t.Errorf("%s: table has %q (%s), HAFAS best match is %q (%s)", city, station.Name, station.ExtID, got.Name, got.ExtID)
 		}
 	}
 }

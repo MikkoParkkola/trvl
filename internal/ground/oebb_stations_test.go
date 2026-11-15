@@ -86,6 +86,7 @@ func TestOebbStationTableMatchesCaptures(t *testing.T) {
 		// HAFAS LocMatch never lists 8103000 by name; the trip search capture
 		// names it as the Wien Hbf arrival platforms.
 		{"vienna", oebbTripFixture, "oebb_shop_stations_wien_2026-11-15.json"},
+		{"wien", oebbTripFixture, "oebb_shop_stations_wien_2026-11-15.json"},
 		{"warsaw", "oebb_hafas_locmatch_warszawa_2026-11-15.json", "oebb_shop_stations_warszawa_2026-11-15.json"},
 		{"krakow", "oebb_hafas_locmatch_krakow_2026-11-15.json", "oebb_shop_stations_krakow_2026-11-15.json"},
 		{"kraków", "oebb_hafas_locmatch_krakow_2026-11-15.json", "oebb_shop_stations_krakow_2026-11-15.json"},
@@ -131,5 +132,35 @@ func TestOebbStationTableMatchesCaptures(t *testing.T) {
 				t.Errorf("Number %d is %q in the shop, table says %q", station.Number, shopName, station.Name)
 			}
 		})
+	}
+}
+
+// TestOebbTripFixtureRailEndsAtViennaExtID checks the table's Vienna ExtID
+// is where the captured rail connections actually end, not just a name HAFAS
+// knows: the city-wide 1190100 also ended trips at Franz-Josefs-Bahnhof.
+func TestOebbTripFixtureRailEndsAtViennaExtID(t *testing.T) {
+	var env oebbMgateResponse
+	if err := json.Unmarshal(readFixture(t, oebbTripFixture), &env); err != nil || len(env.SvcResL) == 0 {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	res := env.SvcResL[0].Res
+	for _, city := range []string{"vienna", "wien"} {
+		station, ok := LookupOebbStation(city)
+		if !ok {
+			t.Fatalf("no oebb station for %q", city)
+		}
+		rail := 0
+		for _, con := range res.OutConL {
+			if !oebbAllRail(con, res.Common.ProdL) {
+				continue
+			}
+			rail++
+			if x := con.Arr.LocX; x < 0 || x >= len(res.Common.LocL) || res.Common.LocL[x].ExtID != station.ExtID {
+				t.Errorf("%s: rail connection %s ends off %s", city, con.Dep.DTimeS, station.ExtID)
+			}
+		}
+		if rail == 0 {
+			t.Errorf("%s: fixture has no rail connections", city)
+		}
 	}
 }

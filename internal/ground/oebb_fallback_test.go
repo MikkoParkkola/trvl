@@ -289,3 +289,50 @@ func TestSearchOebb_ShopPricesRefusedKeepsDepartures(t *testing.T) {
 		}
 	}
 }
+
+// A shop that refuses at initUserData refuses like any other step: typed,
+// title only, and the timetable answers instead.
+func TestSearchOebb_InitUserDataRefusalIsTyped(t *testing.T) {
+	mock := &oebbMock{
+		shopToken: func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(oebbShopAnonymousTokenResponse{AccessToken: "tok"})
+		},
+		shopInit:  oebbShopRefuses,
+		mgateFile: oebbTripFixture,
+	}
+	mock.install(t)
+
+	routes, err := SearchOebb(context.Background(), "Prague", "Vienna", "2026-11-17", "EUR")
+	notice := assertOebbBlockedErr(t, err)
+	if !strings.Contains(err.Error(), "initUserData") {
+		t.Errorf("error does not name the refusing step: %q", err.Error())
+	}
+	if strings.Contains(notice.FixHint, "<") {
+		t.Errorf("notice carries HTML: %q", notice.FixHint)
+	}
+	if len(routes) == 0 {
+		t.Error("no timetable routes after the shop refused")
+	}
+}
+
+// A connection without a single vehicle leg (walk only, or empty) is not a
+// train and is never emitted.
+func TestOebbAllRail_NeedsATrain(t *testing.T) {
+	prods := []oebbProd{{Name: "RJ 53", Cls: 1}, {Name: "Bus 962", Cls: 1024}}
+	for _, tc := range []struct {
+		name string
+		secs []oebbSec
+		want bool
+	}{
+		{"empty", nil, false},
+		{"walk only", []oebbSec{{Type: "WALK"}}, false},
+		{"train", []oebbSec{{Type: "JNY", JnyL: &oebbJny{ProdX: 0}}}, true},
+		{"train and walk", []oebbSec{{Type: "JNY", JnyL: &oebbJny{ProdX: 0}}, {Type: "WALK"}}, true},
+		{"bus", []oebbSec{{Type: "JNY", JnyL: &oebbJny{ProdX: 1}}}, false},
+		{"leg without product", []oebbSec{{Type: "JNY"}}, false},
+	} {
+		if got := oebbAllRail(oebbCon{SecL: tc.secs}, prods); got != tc.want {
+			t.Errorf("%s: oebbAllRail = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

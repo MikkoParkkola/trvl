@@ -56,10 +56,10 @@ func printCapture(t *testing.T, file string, body []byte) {
 }
 
 // TestLiveProbe_DBStationIDs searches DB journeys through SearchDeutscheBahn
-// (same endpoint, body and headers as production) to each audited station id
-// and logs where the journeys end. Each id must end at a final halt carrying
-// that same evaNr and the expected name: an id DB resolves to a different
-// station (8101003 -> Wien Blumental) fails here.
+// (same endpoint, body and headers as production) to the dbStations entries
+// and requires every journey to end at a final halt with the table's EVA and
+// name: an id DB resolves to another station (8101003 -> Wien Blumental)
+// fails here.
 func TestLiveProbe_DBStationIDs(t *testing.T) {
 	testutil.RequireLiveProbe(t)
 
@@ -71,25 +71,33 @@ func TestLiveProbe_DBStationIDs(t *testing.T) {
 	date := time.Now().AddDate(0, 0, 2).Format("2006-01-02")
 	stamp := time.Now().UTC().Format("2006-01-02")
 	cases := []struct {
-		slug, from, eva, want string
+		slug, from, to string
+		eva            string // only for the reproduction id, which is not in the table
 	}{
-		{"praha_8101003", "prague", "8101003", ""}, // the id the table used for Vienna: reproduction only
-		{"praha_8103000", "prague", "8103000", "Wien Hbf"},
-		{"berlin_5100065", "berlin", "5100065", "Warszawa Centralna"},
-		{"berlin_5100028", "berlin", "5100028", "Krakow Glowny"},
+		{slug: "praha_8101003", from: "prague", eva: "8101003"}, // the old Vienna id: capture and log only
+		{slug: "praha_8103000", from: "prague", to: "vienna"},
+		{slug: "berlin_5100065", from: "berlin", to: "warsaw"},
+		{slug: "berlin_5100028", from: "berlin", to: "krakow"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.slug, func(t *testing.T) {
-			key := "probe-" + tc.eva
-			dbStations[key] = DBStation{EVA: tc.eva, Name: tc.want, City: key}
-			t.Cleanup(func() { delete(dbStations, key) })
+			to := tc.to
+			if tc.eva != "" {
+				to = "probe-" + tc.eva
+				dbStations[to] = DBStation{EVA: tc.eva, City: to}
+				t.Cleanup(func() { delete(dbStations, to) })
+			}
+			station, ok := LookupDBStation(to)
+			if !ok {
+				t.Fatalf("no DB station for %q", to)
+			}
 			capture.mu.Lock()
 			capture.bodies = nil
 			capture.mu.Unlock()
 
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
-			routes, err := SearchDeutscheBahn(ctx, tc.from, key, date, "EUR")
+			routes, err := SearchDeutscheBahn(ctx, tc.from, to, date, "EUR")
 			capture.mu.Lock()
 			bodies := capture.bodies
 			capture.mu.Unlock()
@@ -98,27 +106,29 @@ func TestLiveProbe_DBStationIDs(t *testing.T) {
 			}
 			if err != nil {
 				testutil.SkipIfTransient(t, err)
-				t.Fatalf("SearchDeutscheBahn(%s -> %s): %v", tc.from, tc.eva, err)
+				t.Fatalf("SearchDeutscheBahn(%s -> %s): %v", tc.from, station.EVA, err)
 			}
 			ends := map[string]int{}
 			for _, r := range routes {
 				ends[r.Arrival.Station]++
 			}
-			t.Logf("%s -> %s on %s: %d routes ending at %v", tc.from, tc.eva, date, len(routes), ends)
+			t.Logf("%s -> %s on %s: %d routes ending at %v", tc.from, station.EVA, date, len(routes), ends)
 
-			if tc.want == "" {
+			if tc.eva != "" {
 				return
 			}
 			if len(bodies) == 0 {
 				t.Fatal("no fahrplan body captured")
 			}
 			halts := dbFinalHalts(t, bodies[0])
+			if len(halts) == 0 {
+				t.Fatal("no journeys in the fahrplan answer")
+			}
 			for _, h := range halts {
-				if h.EvaNr == tc.eva && h.Name == tc.want {
-					return
+				if h.EvaNr != station.EVA || h.Name != station.Name {
+					t.Errorf("journey ends at %q (%s), table has %q (%s)", h.Name, h.EvaNr, station.Name, station.EVA)
 				}
 			}
-			t.Errorf("no journey to %s ends at %q with that evaNr; final halts: %+v", tc.eva, tc.want, halts)
 		})
 	}
 }

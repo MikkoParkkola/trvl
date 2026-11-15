@@ -29,6 +29,7 @@ const oebbShopBlockPage = `<!doctype html>
 // records the HAFAS request bodies it receives.
 type oebbMock struct {
 	shopToken  http.HandlerFunc
+	shopInit   http.HandlerFunc // nil answers 404
 	mgateFile  string
 	mu         sync.Mutex
 	mgateCalls []map[string]any
@@ -43,6 +44,12 @@ func (m *oebbMock) install(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/domain/v1/anonymousToken":
 			m.shopToken(w, r)
+		case "/api/domain/v1/initUserData":
+			if m.shopInit == nil {
+				http.NotFound(w, r)
+				return
+			}
+			m.shopInit(w, r)
 		case "/bin/mgate.exe":
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
