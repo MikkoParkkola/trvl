@@ -70,7 +70,7 @@ func TestSearchRoundTripPartialDirection(t *testing.T) {
 	res, err := SearchByName(context.Background(), from, to, out, SearchOptions{
 		Currency:   "EUR",
 		ReturnDate: ret,
-		Providers:  []string{"nonexistent_xyz"}, // inbound finds nothing
+		Providers:  []string{"dfds"}, // route-gated for these cities: inbound finds nothing
 	})
 	if err != nil {
 		t.Fatalf("partial round-trip: %v", err)

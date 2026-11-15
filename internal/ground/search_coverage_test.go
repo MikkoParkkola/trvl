@@ -291,7 +291,7 @@ func TestSearchResultBufferCapacity(t *testing.T) {
 // not exist, so empty inputs run the whole search path with nothing to call.
 func TestDefaultProvider_SearchGround_EmptyInputs(t *testing.T) {
 	p := &DefaultProvider{}
-	result, err := p.SearchGround(t.Context(), "", "", "2026-07-01", models.GroundSearchOptions{Providers: []string{"no-such-provider"}})
+	result, err := p.SearchGround(t.Context(), "", "", "2026-07-01", models.GroundSearchOptions{Providers: []string{"dfds"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

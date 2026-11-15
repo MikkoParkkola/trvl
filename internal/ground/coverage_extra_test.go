@@ -579,9 +579,9 @@ func TestSearchByName_CacheHit(t *testing.T) {
 // ============================================================
 
 func TestSearchByName_NoCache(t *testing.T) {
-	// Use a provider that won't make network calls (nonexistent provider filter).
+	// Use a provider whose route gate skips these cities, so nothing dials out.
 	from, to, date := "NoCacheTestFrom", "NoCacheTestTo", "2099-12-31"
-	opts := SearchOptions{Currency: "EUR", NoCache: true, Providers: []string{"nonexistent_xyz"}}
+	opts := SearchOptions{Currency: "EUR", NoCache: true, Providers: []string{"dfds"}}
 
 	// Seed the cache with a known result.
 	testResult := &models.GroundSearchResult{
@@ -593,7 +593,7 @@ func TestSearchByName_NoCache(t *testing.T) {
 	}
 	data, _ := json.Marshal(testResult)
 
-	cacheKey := cache.Key("ground", from+"|"+to+"|"+date+"|EUR|nonexistent_xyz|0.00||false")
+	cacheKey := cache.Key("ground", from+"|"+to+"|"+date+"|EUR|dfds|0.00||false")
 	groundCache.Set(cacheKey, data, 5*time.Minute)
 
 	// With NoCache=true, should NOT use the cache.
@@ -611,10 +611,10 @@ func TestSearchByName_NoCache(t *testing.T) {
 // ============================================================
 
 func TestSearchByName_ProviderFilter(t *testing.T) {
-	// Filter to a nonexistent provider so no network calls are made.
+	// Filter to DFDS, whose route gate skips these cities: no network calls.
 	opts := SearchOptions{
 		Currency:  "EUR",
-		Providers: []string{"nonexistent_provider_xyz"},
+		Providers: []string{"dfds"},
 		NoCache:   true,
 	}
 	result, err := SearchByName(context.Background(), "FakeProvFilterA", "FakeProvFilterB", "2099-12-31", opts)
