@@ -554,6 +554,9 @@ func TestExtractOrganicPrice_Valid(t *testing.T) {
 		{"per-hotel block null", []any{nil, searchWide, nil}, 0},
 		{"per-hotel block malformed", []any{nil, searchWide, "€61"}, 0},
 		{"per-hotel price info null", []any{nil, searchWide, []any{nil, nil}}, 0},
+		{"per-hotel numeric slots null", []any{nil, searchWide, []any{nil, []any{"€61", nil, nil, nil, nil}}}, 0},
+		{"per-hotel numeric slots strings", []any{nil, searchWide, []any{nil, []any{"€61", nil, "60.72", nil, "61"}}}, 0},
+		{"per-hotel numeric slots zero", []any{nil, searchWide, []any{nil, []any{"€0", nil, 0.0, nil, 0.0}}}, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
