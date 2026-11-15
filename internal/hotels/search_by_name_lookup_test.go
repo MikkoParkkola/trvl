@@ -96,6 +96,9 @@ func TestSearchHotelsByName_NoMatchIsEmptyWithSentinel(t *testing.T) {
 	if !errors.Is(err, ErrNoNameMatch) {
 		t.Fatalf("err = %v, want ErrNoNameMatch", err)
 	}
+	if !strings.Contains(err.Error(), "Palais Nonexistent") {
+		t.Errorf("err = %q, want it to name the requested property (the MCP notice is built from it)", err)
+	}
 	if len(got) != 0 {
 		t.Fatalf("returned %v as matches for a property that is not there", hotelNames(got))
 	}

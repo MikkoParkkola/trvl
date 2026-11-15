@@ -77,3 +77,29 @@ func TestHandleSearchHotelByName_OtherErrorsStayErrors(t *testing.T) {
 		t.Fatalf("err = %v, want the provider error passed through", err)
 	}
 }
+
+// TestHandleSearchHotelByName_NoMatchWithoutGoogleError: Google answered
+// fine and simply had no such property. Still an empty success, and the
+// notice names the property without inventing a provider failure.
+func TestHandleSearchHotelByName_NoMatchWithoutGoogleError(t *testing.T) {
+	stubSearchHotelsByName(t, func(_ context.Context, name, _, _, _, _ string) ([]models.HotelResult, error) {
+		return nil, fmt.Errorf("%w: %q", hotels.ErrNoNameMatch, name)
+	})
+
+	_, structured, err := handleSearchHotelByName(context.Background(), byNameArgs(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("no-match returned a tool error %q, want an empty success", err)
+	}
+	raw, _ := json.Marshal(structured)
+	var resp struct {
+		Success bool   `json:"success"`
+		Count   int    `json:"count"`
+		Notice  string `json:"notice"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("decode %s: %v", raw, err)
+	}
+	if !resp.Success || resp.Count != 0 || !strings.Contains(resp.Notice, "Palais Nonexistent") {
+		t.Fatalf("response = %s, want an empty success whose notice names the property", raw)
+	}
+}
