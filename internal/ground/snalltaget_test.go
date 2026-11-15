@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -411,6 +412,7 @@ func TestSearchSnalltaget_PriceIsCheapestBookableBundle(t *testing.T) {
 		"legs":[{"departureStation":{"name":"Stockholm C","departureTimestamp":"2026-11-20T10:00:00"},
 		"arrivalStation":{"name":"Malmö C","arrivalTimestamp":"2026-11-20T15:00:00"},
 		"serviceType":{"modality":"LONG_DISTANCE_TRAINS","name":"Snälltåget"}}],
+		"bundleAvailability":{"logicalAvailability":true,"availability":true},
 		"bundles":[{"price":600.0},{"price":0},{"price":300.0},{"price":450.0}]}]}]},"messages":[]}`
 	useSnalltagetServer(t, snalltagetTokenOK, snalltagetServe(t, body, "740000001", "Malmö C", "2026-11-20"))
 
@@ -465,5 +467,128 @@ func TestSearchSnalltaget_TypedErrors(t *testing.T) {
 				t.Errorf("routes = %d, want none alongside an error", len(routes))
 			}
 		})
+	}
+}
+
+// TestSearchSnalltaget_UnavailableRouteHasNoFare mirrors the booking app,
+// which disables a route whose bundleAvailability.availability is false: its
+// bundles are not bookable, so the route carries no fare and is never live.
+func TestSearchSnalltaget_UnavailableRouteHasNoFare(t *testing.T) {
+	const body = `{"offer":{"travels":[{"routes":[{"lowestPrice":849.0,
+		"legs":[{"departureStation":{"name":"Stockholm C","departureTimestamp":"2026-11-20T10:43:00"},
+		"arrivalStation":{"name":"Malmö C","arrivalTimestamp":"2026-11-20T15:41:00"},
+		"serviceType":{"modality":"LONG_DISTANCE_TRAINS","name":"Snälltåget"}}],
+		"bundleAvailability":{"logicalAvailability":true,"availability":false},
+		"bundles":[{"price":948.0},{"price":849.0}]}]}]},"messages":[]}`
+	useSnalltagetServer(t, snalltagetTokenOK, snalltagetServe(t, body, "740000001", "Malmö C", "2026-11-20"))
+
+	routes, err := SearchSnalltaget(context.Background(), "Stockholm", "Malmö", "2026-11-20", "SEK")
+	if err != nil {
+		t.Fatalf("SearchSnalltaget: %v", err)
+	}
+	if len(routes) != 1 {
+		t.Fatalf("routes = %d, want the departure kept and shown unavailable", len(routes))
+	}
+	if r := routes[0]; r.Price != 0 || r.PriceProvenance == models.PriceLive {
+		t.Errorf("fare = %v (%q), want 0 and not live for an unavailable route", r.Price, r.PriceProvenance)
+	}
+}
+
+const (
+	snalltagetTokenCall  = "GET www.snalltaget.se/token/v2"
+	snalltagetSearchCall = "POST apiv2.snalltaget.se/orientation/searchjourney"
+)
+
+// snalltagetSeqTokens hands out tok-1, tok-2, ... valid for expiresIn seconds.
+func snalltagetSeqTokens(expiresIn int) http.HandlerFunc {
+	var mu sync.Mutex
+	n := 0
+	return func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		n++
+		tok := fmt.Sprintf("tok-%d", n)
+		mu.Unlock()
+		_, _ = fmt.Fprintf(w, `{"access_token":%q,"expires_in":%d}`, tok, expiresIn)
+	}
+}
+
+// snalltagetAnswerFor serves the Malmö fixture to the given bearer token and
+// a 401 to any other.
+func snalltagetAnswerFor(t *testing.T, token string) http.HandlerFunc {
+	fixture := loadGroundFixture(t, "snalltaget_stockholm_malmo_searchjourney.json")
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(fixture))
+	}
+}
+
+func snalltagetSearchTwice(t *testing.T) {
+	t.Helper()
+	for i := 0; i < 2; i++ {
+		if _, err := SearchSnalltaget(context.Background(), "Stockholm", "Malmö", "2026-11-20", "SEK"); err != nil {
+			t.Fatalf("search %d: %v", i+1, err)
+		}
+	}
+}
+
+func TestSearchSnalltaget_ReusesGuestToken(t *testing.T) {
+	calls := useSnalltagetServer(t, snalltagetSeqTokens(900), snalltagetAnswerFor(t, "tok-1"))
+	snalltagetSearchTwice(t)
+	want := []string{snalltagetTokenCall, snalltagetSearchCall, snalltagetSearchCall}
+	if got := calls(); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("calls = %q, want one token fetch reused by both searches %q", got, want)
+	}
+}
+
+// TestSearchSnalltaget_RefetchesTokenNearExpiry: a token about to expire
+// (30 s left, inside the safety margin) is not reused.
+func TestSearchSnalltaget_RefetchesTokenNearExpiry(t *testing.T) {
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	tokens := snalltagetSeqTokens(30)
+	fixture := loadGroundFixture(t, "snalltaget_stockholm_malmo_searchjourney.json")
+	calls := useSnalltagetServer(t, tokens, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen[r.Header.Get("Authorization")] = true
+		mu.Unlock()
+		_, _ = w.Write([]byte(fixture))
+	})
+	snalltagetSearchTwice(t)
+	want := []string{snalltagetTokenCall, snalltagetSearchCall, snalltagetTokenCall, snalltagetSearchCall}
+	if got := calls(); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("calls = %q, want a fresh token per search %q", got, want)
+	}
+	if !seen["Bearer tok-1"] || !seen["Bearer tok-2"] {
+		t.Errorf("bearers seen = %v, want tok-1 then tok-2", seen)
+	}
+}
+
+func TestSearchSnalltaget_RefreshesTokenOnceOn401(t *testing.T) {
+	calls := useSnalltagetServer(t, snalltagetSeqTokens(900), snalltagetAnswerFor(t, "tok-2"))
+	routes, err := SearchSnalltaget(context.Background(), "Stockholm", "Malmö", "2026-11-20", "SEK")
+	if err != nil {
+		t.Fatalf("SearchSnalltaget: %v", err)
+	}
+	if len(routes) != 2 {
+		t.Errorf("routes = %d, want 2 after the refreshed token", len(routes))
+	}
+	want := []string{snalltagetTokenCall, snalltagetSearchCall, snalltagetTokenCall, snalltagetSearchCall}
+	if got := calls(); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("calls = %q, want %q", got, want)
+	}
+}
+
+func TestSearchSnalltaget_Second401IsAnError(t *testing.T) {
+	calls := useSnalltagetServer(t, snalltagetSeqTokens(900), snalltagetAnswerFor(t, "never-issued"))
+	routes, err := SearchSnalltaget(context.Background(), "Stockholm", "Malmö", "2026-11-20", "SEK")
+	if !errors.Is(err, models.ErrParseFailed) || len(routes) != 0 {
+		t.Errorf("routes = %d, err = %v; want none and an error wrapping ErrParseFailed", len(routes), err)
+	}
+	want := []string{snalltagetTokenCall, snalltagetSearchCall, snalltagetTokenCall, snalltagetSearchCall}
+	if got := calls(); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("calls = %q, want exactly one refresh %q", got, want)
 	}
 }
