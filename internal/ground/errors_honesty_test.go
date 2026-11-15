@@ -47,6 +47,9 @@ func TestTryEckeroLineLive_ErrorsAreErrors(t *testing.T) {
 			_, _ = w.Write([]byte(`<html><input name="form_key" type="hidden" value="k"/></html>`))
 		}, eckeroBody(`[]`), models.ErrParseFailed},
 		{"departures JSON error object", eckeroDefaultHome, eckeroBody(`{"error":true,"message":"Session expired"}`), models.ErrParseFailed},
+		{"departures bare null", eckeroDefaultHome, eckeroBody(`null`), models.ErrParseFailed},
+		{"departures wrapped null", eckeroDefaultHome, eckeroBody(`{"departures":null}`), models.ErrParseFailed},
+		{"departures all without a time", eckeroDefaultHome, eckeroBody(`[{"price":20},{"time":"","price":25}]`), models.ErrParseFailed},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -156,5 +159,20 @@ func TestSearchDFDS_InactiveRouteIsValidEmpty(t *testing.T) {
 	routes, err := SearchDFDS(context.Background(), "Amsterdam", "Newcastle", "2026-07-15", "EUR")
 	if err != nil || len(routes) != 0 {
 		t.Fatalf("got %d routes, err %v; want 0 and nil", len(routes), err)
+	}
+}
+
+// TestSearchEckeroLine_NullAnswerFallsBackWithNotice pins that a live answer
+// that is not a departure list (null) is a parse failure, so the timetable
+// and the notice path run instead of a silent "no sailings".
+func TestSearchEckeroLine_NullAnswerFallsBackWithNotice(t *testing.T) {
+	withEckeroServer(t, eckeroDefaultHome, eckeroBody(`{"departures":null}`))
+	routes, err := SearchEckeroLine(context.Background(), "Helsinki", "Tallinn", "2026-07-15", "EUR")
+	var notice *models.ProviderNotice
+	if !errors.As(err, &notice) || !errors.Is(err, models.ErrParseFailed) {
+		t.Fatalf("err = %v, want a ProviderNotice wrapping ErrParseFailed", err)
+	}
+	if len(routes) == 0 {
+		t.Error("want the timetable routes after a null live answer, got none")
 	}
 }
