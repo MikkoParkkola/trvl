@@ -27,9 +27,9 @@ func detailViewPage(t *testing.T) []byte {
 	return []byte(`<html>` + padding + `AF_initDataCallback({key: 'ds:0', data:` + strings.TrimSpace(string(data)) + `});</html>`)
 }
 
-// TestParseHotelsFromPage_DetailView: the detail view's place ID lands on the
-// same-name ad, which keeps its own price (the entry's price block was for
-// other dates and is never read). One Sacher row; other ads stay.
+// TestParseHotelsFromPage_DetailView: one Sacher row carries the detail
+// view's place ID and no price. The entry's own price block was dated for
+// another stay, so the same-name ad's undated price goes too. Other ads stay.
 func TestParseHotelsFromPage_DetailView(t *testing.T) {
 	pr := parseHotelsFromPageFull(string(detailViewPage(t)), "EUR")
 
@@ -46,8 +46,8 @@ func TestParseHotelsFromPage_DetailView(t *testing.T) {
 	if got.HotelID != sacherPlaceID {
 		t.Errorf("HotelID = %q, want the entry's own place ID %q", got.HotelID, sacherPlaceID)
 	}
-	if got.Price != 1002 {
-		t.Errorf("Price = %v, want the ad's own 1002, not the detail entry's 478", got.Price)
+	if got.Price != 0 {
+		t.Errorf("Price = %v, want 0: neither the ad's undated 1002 nor the entry's other-stay 478", got.Price)
 	}
 	if names := hotelNames(pr.Hotels); len(names) != 2 {
 		t.Errorf("hotels = %v, want the Sacher detail hotel and the Stefanie ad", names)
@@ -136,22 +136,23 @@ func TestParseHotelsFromPage_DetailViewNeedsObservedID(t *testing.T) {
 }
 
 // TestParseHotelsFromPage_DetailViewKeepsSameNameRowID: a same-name organic
-// row with its own Google ID and price is not displaced or rewritten.
+// row with its own Google ID and price keeps both.
 func TestParseHotelsFromPage_DetailViewKeepsSameNameRowID(t *testing.T) {
 	page := detailViewPageWith(t, func(data []any) {
 		organic := make([]any, 10)
 		organic[1] = "Hotel Sacher Vienna"
 		organic[9] = "/g/sacher_organic"
+		organic[6] = []any{nil, []any{nil, nil, nil, "EUR"}, []any{nil, []any{"€300", nil, 300.0, nil, 300.0}}}
 		list := data[0].([]any)[0].([]any)[0].([]any)
 		list[1] = append(list[1].([]any), []any{nil, map[string]any{"397419284": []any{organic}}})
 	})
-	var ids []string
+	var rows []models.HotelResult
 	for _, h := range parseHotelsFromPageFull(page, "EUR").Hotels {
 		if h.Name == "Hotel Sacher Vienna" {
-			ids = append(ids, h.HotelID)
+			rows = append(rows, h)
 		}
 	}
-	if len(ids) != 1 || ids[0] != "/g/sacher_organic" {
-		t.Errorf("Hotel Sacher Vienna IDs = %v, want only the organic row's own /g/sacher_organic", ids)
+	if len(rows) != 1 || rows[0].HotelID != "/g/sacher_organic" || rows[0].Price != 300 {
+		t.Errorf("Hotel Sacher Vienna rows = %+v, want one with its own /g/sacher_organic and price 300", rows)
 	}
 }
