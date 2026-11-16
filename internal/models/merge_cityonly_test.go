@@ -47,3 +47,39 @@ func TestMergeHotelResults_PriceZeroRowKeepsSources(t *testing.T) {
 		t.Fatalf("sources = %+v, want the booking source with its URL", got[0].Sources)
 	}
 }
+
+// TestMergeHotelResults_GoogleIDBeatsOtherIDs: the merged row carries the
+// Google ID whichever row arrives first; a Booking id must not shadow it.
+func TestMergeHotelResults_GoogleIDBeatsOtherIDs(t *testing.T) {
+	for _, googleID := range []string{"ChIJI85wbpwHbUcRiJL_xm_zLE4", "0x476d079e5136ca9f:0xfdc2e58a51a25b46"} {
+		booking, google := sacherRows()
+		google.HotelID = googleID
+		for _, order := range [][]HotelResult{{booking, google}, {google, booking}} {
+			got := MergeHotelResults(order[:1], order[1:])
+			if len(got) != 1 || got[0].HotelID != googleID {
+				t.Errorf("merge of %q then %q = %+v, want one row with HotelID %q", order[0].Name, order[1].Name, got, googleID)
+			}
+		}
+	}
+}
+
+// TestStreetAddress_Forms: an address is city-only when every comma part is
+// an alias-table city, a country, or a postcode followed by such a city;
+// anything else is a street.
+func TestStreetAddress_Forms(t *testing.T) {
+	cases := map[string]bool{ // address -> is a street
+		"Vienna, Austria":       false,
+		"1010 Wien, Austria":    false,
+		"Wien":                  false,
+		"Austria":               false,
+		"Rue de Rivoli, Paris":  true,
+		"Kärntner Ring, Vienna": true,
+		"Philharmoniker-Straße 4, 1010 Wien, Austria": true,
+		"123 Main St": true,
+	}
+	for address, street := range cases {
+		if got := streetAddress(address) != ""; got != street {
+			t.Errorf("streetAddress(%q) is a street = %v, want %v", address, got, street)
+		}
+	}
+}
