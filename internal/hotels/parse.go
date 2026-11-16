@@ -713,8 +713,9 @@ func detailViewPlaceID(entry []any) string {
 }
 
 // addDetailViewHotel grafts the detail view's place ID onto a same-name row
-// that has no Google ID, keeping that row's rating, reviews and amenities;
-// with no same-name row the detail hotel is added first.
+// that has no Google ID, keeping that row's rating, reviews and amenities
+// and filling its missing stars and coordinates; with no same-name row the
+// detail hotel is added first.
 func addDetailViewHotel(hotels []models.HotelResult, detail models.HotelResult) []models.HotelResult {
 	for i := range hotels {
 		if !strings.EqualFold(hotels[i].Name, detail.Name) {
@@ -722,6 +723,12 @@ func addDetailViewHotel(hotels []models.HotelResult, detail models.HotelResult) 
 		}
 		if !models.IsGoogleHotelID(hotels[i].HotelID) {
 			hotels[i].HotelID = detail.HotelID
+		}
+		if hotels[i].Stars == 0 {
+			hotels[i].Stars = detail.Stars
+		}
+		if hotels[i].Lat == 0 && hotels[i].Lon == 0 {
+			hotels[i].Lat, hotels[i].Lon = detail.Lat, detail.Lon
 		}
 		return hotels
 	}
