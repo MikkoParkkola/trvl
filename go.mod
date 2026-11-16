@@ -5,7 +5,7 @@ go 1.27.4
 require (
 	github.com/andybalholm/brotli v1.2.8
 	github.com/bogdanfinn/fhttp v0.7.3
-	github.com/bogdanfinn/tls-client v1.18.0
+	github.com/bogdanfinn/tls-client v1.18.1
 	github.com/bogdanfinn/utls v1.8.2-barnius
 	github.com/browserutils/kooky v0.2.10
 	github.com/chromedp/cdproto v0.159.2
