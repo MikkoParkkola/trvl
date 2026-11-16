@@ -29,6 +29,8 @@ type accommodationSearchResponse struct {
 	Suggestions             []Suggestion                   `json:"suggestions,omitempty"`
 	Warnings                []string                       `json:"warnings,omitempty"`
 	Destination             *models.DestinationInfo        `json:"destination,omitempty"`
+	MaxDistanceKm           float64                        `json:"max_distance_km,omitempty"`
+	FartherOmitted          int                            `json:"farther_omitted,omitempty"`
 	Error                   string                         `json:"error,omitempty"`
 }
 
@@ -144,6 +146,8 @@ func accommodationSearchOutputSchema() interface{} {
 			"final_trip_cost_ready_count": schemaInt(),
 			"candidate_count":             schemaInt(),
 			"total_available":             schemaInt(),
+			"max_distance_km":             schemaNumDesc("Distance cap applied around the city centre (25 by default; absent when none applied)."),
+			"farther_omitted":             schemaIntDesc("Hotels trvl left out for being farther than max_distance_km. Below 25 km Google is also asked for that radius and withholds farther hotels itself, so the count then covers only what trvl removed."),
 			"offers":                      schemaArray(accommodationOfferSchema()),
 			"rejected_offers":             schemaArray(accommodationOfferSchema()),
 			"evidence":                    schemaArray(accommodationEvidenceSchema()),
@@ -180,7 +184,7 @@ func accommodationSearchOutputSchema() interface{} {
 					"error":         schemaString(),
 					"fix_hint":      schemaString(),
 					"fix_hint_code": schemaString(),
-					"reason":        schemaString(),
+					"reason":        schemaStringDesc("Why a provider gave no answer: blocked, rate_limited, unavailable, dns, network, timeout or other; city_not_served on a skipped provider that does not serve the city."),
 				},
 			}),
 			"completeness": schemaObject(),
@@ -408,6 +412,8 @@ func handleSearchAccommodations(ctx context.Context, args map[string]any, elicit
 		Completeness:     result.Completeness,
 		Suggestions:      hotelSuggestions(result, req.Options),
 		Warnings:         accommodationSearchWarnings(result, offers, rejected, evidence, len(candidateHotels)),
+		MaxDistanceKm:    result.MaxDistanceKm,
+		FartherOmitted:   result.FartherOmitted,
 		Error:            result.Error,
 	}
 	for _, offer := range offers {

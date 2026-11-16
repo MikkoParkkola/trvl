@@ -45,7 +45,7 @@ Examples:
 	cmd.Flags().Float64("min-price", 0, "Minimum price per night")
 	cmd.Flags().Float64("max-price", 0, "Maximum price per night")
 	cmd.Flags().Float64("min-rating", 0, "Minimum guest rating on 0-10 scale (e.g. 8.0)")
-	cmd.Flags().Float64("max-distance", 0, "Maximum distance from city center in km")
+	cmd.Flags().Float64("max-distance", hotels.DefaultMaxDistanceKm, "Maximum distance from city center in km (0 = no limit)")
 	cmd.Flags().String("amenities", "", "Filter by amenities (comma-separated, e.g. pool,wifi,breakfast)")
 	cmd.Flags().Bool("free-cancellation", false, "Only show hotels with free cancellation")
 	cmd.Flags().String("property-type", "", "Property type: hotel, apartment, hostel, resort, bnb, villa")
@@ -272,6 +272,9 @@ func formatHotelsTable(ctx context.Context, targetCurrency, location string, res
 		summary = fmt.Sprintf("Showing %d of %d hotels", result.Count, result.TotalAvailable)
 	}
 	models.Banner(os.Stdout, "🏨", "Hotels", summary)
+	if note := hotelsFartherNote(result); note != "" {
+		fmt.Println(note)
+	}
 	fmt.Println()
 
 	// Convert prices if --currency specified and differs from API result.
@@ -596,8 +599,33 @@ func maybeShowAccomHackTip(ctx context.Context, city, checkIn, checkOut, currenc
 // failed, so a blocked provider is not read as an empty city (MIK-8032).
 func hotelsEmptyMessage(result *models.HotelSearchResult) string {
 	c := models.ComputeCompleteness(result.ProviderStatuses)
+	msg := "No hotels returned. " + c.IncompleteNote() + "\n" + models.ProviderFailureLines(result.ProviderStatuses)
 	if c.MayClaimExhaustive() {
-		return "No hotels found."
+		msg = "No hotels found."
 	}
-	return "No hotels returned. " + c.IncompleteNote() + "\n" + models.ProviderFailureLines(result.ProviderStatuses)
+	if note := hotelsFartherNote(result); note != "" {
+		msg += "\n" + note
+	}
+	return msg
+}
+
+// hotelsFartherNote says how many hotels the distance cap left out and how to
+// bring them back; empty when it left none out.
+func hotelsFartherNote(result *models.HotelSearchResult) string {
+	limited := hotels.GoogleRadiusApplied(result.MaxDistanceKm, result.ProviderStatuses)
+	if result.FartherOmitted <= 0 && !limited {
+		return ""
+	}
+	note := fmt.Sprintf("Google limited its results to %g km, so farther hotels may exist", result.MaxDistanceKm)
+	if result.FartherOmitted > 0 {
+		noun := "hotels"
+		if result.FartherOmitted == 1 {
+			noun = "hotel"
+		}
+		note = fmt.Sprintf("Left out %d %s farther than %g km from the centre", result.FartherOmitted, noun, result.MaxDistanceKm)
+		if limited {
+			note += fmt.Sprintf("; Google limited its results to %g km, so this counts only hotels trvl itself removed", result.MaxDistanceKm)
+		}
+	}
+	return note + "; use --max-distance to include them."
 }

@@ -340,7 +340,9 @@ func TestRetryWithoutTrailingWord_CountsNormalizedWords(t *testing.T) {
 // may go and the two-word floor applies.
 func TestSearchHotelByName_CommaSuffixActsAsLocation(t *testing.T) {
 	serveGooglePage(t, hotelWithPrice{"Hotel Sacher", 300})
-	for _, q := range []string{"Wien", "Hotel Sacher Vienna Vienna", "Hotel Sacher Vienna, Vienna"} {
+	// The search geocodes the English city name since local aliases are
+	// canonicalised at entry; an unseeded name would reach the real geocoder.
+	for _, q := range []string{"Vienna", "Hotel Sacher Vienna Vienna", "Hotel Sacher Vienna, Vienna"} {
 		seedGeo(t, q)
 	}
 

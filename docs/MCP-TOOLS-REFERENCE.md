@@ -84,7 +84,7 @@ Dates in the compact examples are illustrative; use future dates for live provid
 | Brand / chain | `brand` | Case-insensitive substring match (e.g. `hilton`, `marriott`) — client-side |
 | Star rating | `stars` | Minimum 1-5 — server-side `?class=N` |
 | Guest rating | `min_rating` | e.g. `4.0` — server-side `?rating=N` and client-side guard |
-| Distance from center | `max_distance` | Kilometres — server-side `?lrad=N` (metres) |
+| Distance from center | `max_distance` | Kilometres, default 25 (`0` = no limit). A tighter cap is also sent to Google as `?lrad=N` (metres), and Google then withholds farther hotels, so `farther_omitted` counts only what trvl removed (the summary says so); at 25 km or wider trvl filters and counts every farther hotel. Hotels left out are counted in `farther_omitted` and the summary; hotels without coordinates stay |
 | Amenities | `amenities` | Comma-separated required amenities — client-side |
 | Price range | `min_price` / `max_price` | Per night — server-side `?min_price` / `?max_price` and client-side guard |
 | Sort | `sort` | `price`, `rating`, `distance`, `stars` |

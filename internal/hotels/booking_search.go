@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -51,7 +52,7 @@ func defaultSearchBooking(ctx context.Context, location string, opts HotelSearch
 	if blob == "" {
 		return nil, fmt.Errorf("booking search: apollo store not found in page")
 	}
-	hotels, perr := parseBookingApollo(blob, opts.Currency)
+	hotels, perr := parseBookingApollo(blob, opts.Currency, agodaNights(opts.CheckIn, opts.CheckOut))
 	if perr != nil {
 		return nil, perr
 	}
@@ -232,7 +233,7 @@ func extractBookingApolloBlob(page string) string {
 // parseBookingApollo parses the Apollo store JSON and returns hotel results.
 // It walks ROOT_QUERY → searchQueries → search(<input>) → results[], resolving
 // Apollo normalized __ref pointers against the top-level cache as needed.
-func parseBookingApollo(blob, currency string) ([]models.HotelResult, error) {
+func parseBookingApollo(blob, currency string, nights int) ([]models.HotelResult, error) {
 	var cache map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(blob), &cache); err != nil {
 		// The apollo store <script> was present but its JSON did not parse — the
@@ -266,6 +267,10 @@ func parseBookingApollo(blob, currency string) ([]models.HotelResult, error) {
 		h := bookingResultToHotel(resolver, node, currency)
 		if h.Name == "" {
 			continue
+		}
+		// finalPrice is the stay total; every other provider quotes a night.
+		if nights > 1 && h.Price > 0 {
+			h.Price = math.Round(h.Price/float64(nights)*100) / 100
 		}
 		key := h.Name + "|" + h.BookingURL
 		if seen[key] {
@@ -450,7 +455,8 @@ func bookingResultToHotel(r apolloResolver, result map[string]json.RawMessage, c
 		}
 	}
 
-	// Price from blocks[0].finalPrice (total for stay).
+	// Price from blocks[0].finalPrice: the total for the whole stay, which
+	// parseBookingApollo turns into a nightly price.
 	if blocksRaw, ok := result["blocks"]; ok {
 		var blocks []json.RawMessage
 		if err := json.Unmarshal(blocksRaw, &blocks); err == nil && len(blocks) > 0 {

@@ -19,3 +19,21 @@ func TestMatchesBucketRegions(t *testing.T) {
 		t.Fatal("accented Icelandic names should match Iceland")
 	}
 }
+
+// TestFold pins Fold, which ground's Ferryhopper gate also uses: it lowercases,
+// strips accents and trims, and keeps the inner spaces and brackets that the
+// gate splits names on.
+func TestFold(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"Reykjavík", "reykjavik"},
+		{"TRAVEMÜNDE", "travemunde"},
+		{"  Świnoujście  ", "swinoujscie"},
+		{"THIRA (SANTORINI)", "thira (santorini)"},
+		{"HELSINKI - VUOSAARI\r", "helsinki - vuosaari"},
+		{"", ""},
+	} {
+		if got := Fold(c.in); got != c.want {
+			t.Errorf("Fold(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

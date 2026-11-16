@@ -149,6 +149,9 @@ func SearchLanding(ctx context.Context, location string, opts HotelSearchOptions
 	if strings.TrimSpace(location) == "" {
 		return nil, fmt.Errorf("landing: location is required")
 	}
+	if !landingServesCity(location) {
+		return nil, fmt.Errorf("landing lists US homes only, not %q: %w", location, models.ErrNotApplicable)
+	}
 
 	// Step 1: resolve the Next.js buildId + canonical market slug from the
 	// public city search page's __NEXT_DATA__.
@@ -172,6 +175,22 @@ func SearchLanding(ctx context.Context, location string, opts HotelSearchOptions
 	}
 	slog.Debug("landing results", "location", location, "count", len(hotels))
 	return hotels, nil
+}
+
+// landingServesCity reports whether Landing, which lists US homes only, can
+// serve the city: false when every airport the city resolves to is outside
+// the US. A city trvl knows no airports for is still tried.
+func landingServesCity(location string) bool {
+	airports := models.ResolveCityToAirports(location)
+	if len(airports) == 0 {
+		return true
+	}
+	for _, code := range airports {
+		if models.AirportCountry(code) == "US" {
+			return true
+		}
+	}
+	return false
 }
 
 // landingSlug converts a free-text location into the URL slug Landing uses for
