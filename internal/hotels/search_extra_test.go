@@ -536,17 +536,6 @@ func TestExtractOrganicPrice_NotArray(t *testing.T) {
 	}
 }
 
-func TestExtractOrganicPrice_Valid(t *testing.T) {
-	raw := []any{nil, []any{[]any{189.0, 0.0}, nil, nil, "EUR"}}
-	price, cur := extractOrganicPrice(raw)
-	if price != 189 {
-		t.Errorf("price = %v, want 189", price)
-	}
-	if cur != "EUR" {
-		t.Errorf("currency = %q, want EUR", cur)
-	}
-}
-
 // --- looksLikeProviderEntry / looksLikePriceList ---
 
 func TestLooksLikeProviderEntry(t *testing.T) {

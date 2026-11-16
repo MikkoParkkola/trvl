@@ -522,11 +522,11 @@ func TestParseRatingString_InvalidFloat(t *testing.T) {
 	}
 }
 
-func TestParseRatingString_AlreadyOnFiveScale(t *testing.T) {
-	// Value <= 5 should be returned as-is.
+func TestParseRatingString_LowScoreUnchanged(t *testing.T) {
+	// Trivago scores are 0-10; a low score is returned as-is.
 	got := parseRatingString("3.5")
 	if got != 3.5 {
-		t.Errorf("expected 3.5 (already on 5-scale), got %v", got)
+		t.Errorf("expected 3.5 (0-10 scale), got %v", got)
 	}
 }
 

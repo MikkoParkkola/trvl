@@ -36,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#774](https://github.com/MikkoParkkola/trvl/pull/774))
 - `get_weather` accepts `location` as an alias of `city`, rejects a missing or conflicting place before any lookup, and reports a failed forecast lookup as an error instead of a normal result.
   ([#774](https://github.com/MikkoParkkola/trvl/pull/774))
+- Google Hotels results without their own price are now unpriced instead of showing the search-wide price ceiling as the hotel's price.
+  ([#777](https://github.com/MikkoParkkola/trvl/pull/777))
+- Hotel headline prices stay in the requested currency: the chosen provider quote is converted for the headline, the quote itself keeps its own currency, and a headline that could not be converted keeps its currency and carries `currency_not_converted`. A verified price now outranks an unverified one in another currency.
+  ([#777](https://github.com/MikkoParkkola/trvl/pull/777))
+- Google quota refusals on hotel searches and hotel prices (HTTP 429, status 13, an active cooldown) are reported as rate limits instead of bad parameters. A price lookup that Google answers with no data, and that no fallback can fill, now fails with "price service returned no data" instead of succeeding with no partners.
+  ([#777](https://github.com/MikkoParkkola/trvl/pull/777))
+- `search_hotel_by_name` finds "ARTIST Boutique Hotel Vienna"-style names by retrying once without a trailing location word, and a name with no match returns an empty result with a notice (including any Google error) instead of every hotel in the area.
+  ([#777](https://github.com/MikkoParkkola/trvl/pull/777))
+- Trivago ratings stay on the 0-10 scale, so Trivago-only hotels are no longer dropped by `min_rating`.
+  ([#777](https://github.com/MikkoParkkola/trvl/pull/777))
+- The Booking.com headless token harvest no longer fails when a third-party host such as a consent CDN is blocked by a DNS filter; only a refused Booking.com host fails it, and the error no longer suggests `TRVL_ALLOW_LOCAL_PROVIDERS=1`.
+  ([#777](https://github.com/MikkoParkkola/trvl/pull/777))
 - Deutsche Bahn and ÖBB searches to Vienna end at Wien Hbf: DB's old id sent every journey on to Wien Blumental, adding a change to direct trains. Warsaw and Kraków use their own station ids (they had their neighbours'), and DB now covers Kraków.
   ([#782](https://github.com/MikkoParkkola/trvl/pull/782))
 - ÖBB answers again: shop requests send a browser User-Agent, which the shop requires. When the shop still refuses, the ÖBB timetable lists the trains without fares and says why. A refusal shows the page title instead of its HTML, and DB's bot wall (`OPS_BLOCKED`) reports as a retryable refusal.

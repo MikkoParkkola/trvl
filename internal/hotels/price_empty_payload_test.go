@@ -15,8 +15,11 @@ import (
 // envelope with a NULL payload and an internal status of [3] — i.e. it accepts
 // the request (HTTP 200) but returns zero booking-partner data. The decode step
 // must succeed and ParseHotelPriceResponse must surface the routine
-// "no provider prices found" signal (NOT a hard parse error), so the caller can
-// degrade gracefully to a Notice rather than failing the whole lookup.
+// "no provider prices found" signal (NOT a hard parse error), so the caller
+// routes it into the price fallback chain (SerpAPI, then the search page).
+// When that chain also yields nothing, GetHotelPricesWithOpts fails with
+// ErrPriceNoData (see google_throttle_test.go); it no longer reports success
+// with an empty provider list.
 //
 // This is a regression guard for #187/#188: it documents that empty room/OTA
 // pricing is a Google-side request-protocol change, not a parser defect. When a
@@ -48,9 +51,9 @@ func TestParseHotelPriceResponse_EmptyPayload(t *testing.T) {
 	}
 
 	// The error must be classified as the routine no-provider case so the
-	// GetHotelPricesWithOpts caller degrades to a Notice instead of failing.
+	// GetHotelPricesWithOpts caller tries the fallback chain first.
 	if !isNoProviderPricesError(perr) {
-		t.Fatalf("error %q is not classified as no-provider-prices; the graceful "+
-			"degradation path in GetHotelPricesWithOpts would not trigger", perr)
+		t.Fatalf("error %q is not classified as no-provider-prices; the "+
+			"fallback path in GetHotelPricesWithOpts would not trigger", perr)
 	}
 }
