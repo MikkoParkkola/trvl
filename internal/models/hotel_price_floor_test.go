@@ -43,3 +43,18 @@ func TestFinalizeTreatsSubEuroPricesAsUnavailable(t *testing.T) {
 		}
 	}
 }
+
+// TestPriceFloorAddsNoRateLookups: the floor is checked in the requested
+// currency, which the search converts into anyway, so a same-currency search
+// never asks for an exchange rate (a USD search must not fetch USD to EUR).
+func TestPriceFloorAddsNoRateLookups(t *testing.T) {
+	noFX := func(amount float64, from, to string) (float64, bool) {
+		t.Errorf("unexpected rate lookup %s to %s", from, to)
+		return 0, false
+	}
+	h := HotelResult{Name: "Hotel", Sources: []PriceSource{{Provider: "google_hotels", Price: 150, Currency: "USD"}}}
+	FinalizeHotelResultPriceTrust(&h, "USD", trustNow, noFX)
+	if h.Price != 150 || h.HeadlineProvider != "google_hotels" {
+		t.Errorf("headline = %v %s from %q, want 150 USD from google_hotels", h.Price, h.Currency, h.HeadlineProvider)
+	}
+}
