@@ -52,26 +52,11 @@ func annotateGroundConfidence(routes []models.GroundRoute, now time.Time) {
 }
 
 // isProviderNotApplicable reports a provider that does not serve the
-// requested pair: a healthy "nothing to sell", never a failure. Providers wrap
-// models.ErrNotApplicable; the wording checks remain for providers outside
-// this change that still return plain "no ... for" errors. A deadline or a
-// limiter wait past it is a timeout, never "not served".
+// requested pair: a healthy "nothing to sell", never a failure. Only
+// models.ErrNotApplicable counts; the message wording is never read. A
+// deadline or a limiter wait past it is a timeout, never "not served".
 func isProviderNotApplicable(err error) bool {
-	if err == nil || isProviderTimeout(err) {
-		return false
-	}
-	if errors.Is(err, models.ErrNotApplicable) {
-		return true
-	}
-	msg := err.Error()
-	return strings.Contains(msg, " station for ") ||
-		strings.Contains(msg, " city found for ") ||
-		strings.Contains(msg, " port for ") ||
-		strings.Contains(msg, "no route for ") ||
-		strings.Contains(msg, "no Tallink route") ||
-		strings.Contains(msg, "no Eurostar route") ||
-		strings.Contains(msg, "no DFDS route") ||
-		strings.Contains(msg, "no Stena Line route")
+	return errors.Is(err, models.ErrNotApplicable) && !isProviderTimeout(err)
 }
 
 // isProviderTimeout reports a provider cut off by the search deadline, either
