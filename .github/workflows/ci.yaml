@@ -6,9 +6,19 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
+  # A merge queue tests the combined tree once before it lands on main.
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
+
+# A newer commit on a pull request cancels that PR's superseded run. Every other
+# event (main and tag pushes, merge-queue groups) gets a group of its own, so
+# its run is never cancelled, nor replaced as a pending run by a later one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   workflow-hygiene:
@@ -69,6 +79,18 @@ jobs:
         go-version: ["1.27.4"]
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # Pin lint/vuln tool versions instead of @latest: every GitHub Action in
+    # this workflow is SHA-pinned, so an unpinned `go install ...@latest` was
+    # the one remaining non-reproducible, supply-chain-exposed step — a new
+    # upstream release could silently change findings or pull a compromised
+    # version into CI. These pins match the latest release at time of writing;
+    # bump them deliberately (Dependabot tracks the Go modules separately).
+    # The tool cache key is built from these same values, so a bump always
+    # misses the cache and installs the new version.
+    env:
+      STATICCHECK_VERSION: v0.8.2
+      GOLANGCI_LINT_VERSION: v2.15.0
+      GOVULNCHECK_VERSION: v1.9.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -78,27 +100,28 @@ jobs:
         run: go build ./...
       - name: Vet
         run: go vet ./...
-      # Pin lint/vuln tool versions instead of @latest: every GitHub Action in
-      # this workflow is SHA-pinned, so an unpinned `go install ...@latest` was
-      # the one remaining non-reproducible, supply-chain-exposed step — a new
-      # upstream release could silently change findings or pull a compromised
-      # version into CI. These pins match the latest release at time of writing;
-      # bump them deliberately (Dependabot tracks the Go modules separately).
-      - name: Install staticcheck
+      - name: Cache lint and vuln tools
+        id: tools
         if: runner.os != 'Windows'
-        run: go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/bin
+          key: go-tools-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-go${{ matrix.go-version }}-staticcheck-${{ env.STATICCHECK_VERSION }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-govulncheck-${{ env.GOVULNCHECK_VERSION }}
+      - name: Install staticcheck
+        if: runner.os != 'Windows' && steps.tools.outputs.cache-hit != 'true'
+        run: go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}"
       - name: Staticcheck
         if: runner.os != 'Windows'
         run: staticcheck ./...
       - name: Install golangci-lint
-        if: runner.os != 'Windows'
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+        if: runner.os != 'Windows' && steps.tools.outputs.cache-hit != 'true'
+        run: go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}"
       - name: Golangci-lint
         if: runner.os != 'Windows'
         run: golangci-lint run ./...
       - name: Install govulncheck
-        if: runner.os != 'Windows'
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+        if: runner.os != 'Windows' && steps.tools.outputs.cache-hit != 'true'
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
       - name: Vulnerability check
         if: runner.os != 'Windows'
         run: govulncheck ./...
@@ -181,6 +204,10 @@ jobs:
       - uses: trufflesecurity/trufflehog@3bd2b5887eb0efb8fa18bfd1d296032924e4ffdc # main
         with:
           extra_args: --only-verified
+          # The action derives the range itself for push and pull_request; a
+          # merge-queue group passes its own range (empty for other events).
+          base: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || '' }}
+          head: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || '' }}
 
   # Fast layer of the dependency-vulnerability gate: scans go.mod/go.sum against
   # the OSV database on every PR and push. Fails the build on any known, fixable
@@ -224,6 +251,8 @@ jobs:
   gosec:
     name: gosec (zero HIGH/MEDIUM)
     runs-on: ubuntu-latest
+    env:
+      GOSEC_VERSION: v2.28.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -231,8 +260,15 @@ jobs:
           go-version: "1.27.4"
       - name: Self-test the gate
         run: .github/scripts/gosec-gate_test.sh
+      - name: Cache gosec
+        id: gosec-bin
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/bin
+          key: go-tools-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-go1.27.4-gosec-${{ env.GOSEC_VERSION }}
       - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
+        if: steps.gosec-bin.outputs.cache-hit != 'true'
+        run: go install "github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}"
       - name: Run gosec
         # gosec exits non-zero whenever it finds anything, which under `set -e`
         # would end the step before the gate ever reads the report. The gate

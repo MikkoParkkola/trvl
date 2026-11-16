@@ -1,9 +1,10 @@
 name: govulncheck
 
+# Every pull request and main push already runs this exact check (same
+# govulncheck version and Go toolchain) inside the required CI job
+# `test (ubuntu-latest)`. This workflow keeps the weekly run, which catches a
+# newly published advisory when no code has changed, and a manual trigger.
 on:
-  push:
-    branches: [main]
-  pull_request:
   schedule:
     - cron: "0 7 * * 1"
   workflow_dispatch:
