@@ -37,11 +37,28 @@ func TestHotelsMaxDistanceDefaultsTo25Km(t *testing.T) {
 
 // TestHotelsFartherNoteSaysWhenGoogleLimitedResults mirrors the MCP note.
 func TestHotelsFartherNoteSaysWhenGoogleLimitedResults(t *testing.T) {
-	tight := hotelsFartherNote(&models.HotelSearchResult{FartherOmitted: 3, MaxDistanceKm: 2})
+	tight := hotelsFartherNote(&models.HotelSearchResult{FartherOmitted: 3, MaxDistanceKm: 2,
+		ProviderStatuses: []models.ProviderStatus{{ID: "google_hotels", Status: models.StatusCheckedHit}}})
 	if !strings.Contains(tight, "Google limited its results to 2 km") || !strings.Contains(tight, "only") {
 		t.Errorf("2 km note %q does not say Google limited its results", tight)
 	}
 	if def := hotelsFartherNote(&models.HotelSearchResult{FartherOmitted: 3, MaxDistanceKm: 25}); strings.Contains(def, "Google") {
 		t.Errorf("25 km note %q mentions Google", def)
+	}
+}
+
+// TestHotelsFartherNoteGoogleClauseOnlyWhenGoogleAnswered mirrors the MCP rule.
+func TestHotelsFartherNoteGoogleClauseOnlyWhenGoogleAnswered(t *testing.T) {
+	failed := []models.ProviderStatus{{ID: "google_hotels", Status: models.StatusFailed}}
+	answered := []models.ProviderStatus{{ID: "google_hotels", Status: models.StatusCheckedHit}}
+	const clause = "Google limited its results to 2 km"
+	if got := hotelsFartherNote(&models.HotelSearchResult{FartherOmitted: 3, MaxDistanceKm: 2, ProviderStatuses: failed}); strings.Contains(got, "Google") {
+		t.Errorf("Google failed, 2 km: note %q claims Google limited its results", got)
+	}
+	if got := hotelsFartherNote(&models.HotelSearchResult{MaxDistanceKm: 2, ProviderStatuses: answered}); !strings.Contains(got, clause) {
+		t.Errorf("Google answered, 2 km, 0 removed: note %q lacks %q", got, clause)
+	}
+	if got := hotelsFartherNote(&models.HotelSearchResult{FartherOmitted: 3, MaxDistanceKm: 25, ProviderStatuses: answered}); strings.Contains(got, "Google") {
+		t.Errorf("default cap: note %q mentions Google", got)
 	}
 }

@@ -109,13 +109,14 @@ func TestHotelListToolsReportFartherHotels(t *testing.T) {
 // asked for the radius too and withholds farther hotels, so the note says the
 // count covers only what trvl removed. At the default it says no such thing.
 func TestHotelFartherNoteSaysWhenGoogleLimitedResults(t *testing.T) {
-	tight := hotelFartherNote(3, 2)
+	googleAnswered := []models.ProviderStatus{{ID: "google_hotels", Status: models.StatusCheckedHit}}
+	tight := hotelFartherNote(3, 2, googleAnswered)
 	for _, want := range []string{"3 hotels", "2 km", "Google limited its results to 2 km", "only"} {
 		if !strings.Contains(tight, want) {
 			t.Errorf("2 km note %q lacks %q", tight, want)
 		}
 	}
-	if def := hotelFartherNote(3, 25); strings.Contains(def, "Google") {
+	if def := hotelFartherNote(3, 25, googleAnswered); strings.Contains(def, "Google") {
 		t.Errorf("25 km note %q mentions Google; trvl counted every farther hotel", def)
 	}
 }
@@ -127,5 +128,23 @@ func TestHotelSummaryIncompleteKeepsFartherNote(t *testing.T) {
 		ProviderStatuses: []models.ProviderStatus{{ID: "google_hotels", Name: "Google Hotels", Status: models.StatusFailed, Error: "boom"}}}
 	if got := hotelSummary(res, "Vienna"); !strings.Contains(got, "3 hotels") || !strings.Contains(got, "max_distance") {
 		t.Errorf("incomplete empty summary %q drops the farther note", got)
+	}
+}
+
+// TestHotelFartherNoteGoogleClauseOnlyWhenGoogleAnswered: the Google clause is
+// about this search's Google answer, so it appears only when Google answered,
+// even when trvl itself removed nothing, and never at the default cap.
+func TestHotelFartherNoteGoogleClauseOnlyWhenGoogleAnswered(t *testing.T) {
+	failed := []models.ProviderStatus{{ID: "google_hotels", Status: models.StatusFailed}}
+	answered := []models.ProviderStatus{{ID: "google_hotels", Status: models.StatusCheckedNoHit}}
+	const clause = "Google limited its results to 2 km"
+	if got := hotelFartherNote(3, 2, failed); strings.Contains(got, "Google") {
+		t.Errorf("Google failed, 2 km: note %q claims Google limited its results", got)
+	}
+	if got := hotelFartherNote(0, 2, answered); !strings.Contains(got, clause) {
+		t.Errorf("Google answered, 2 km, 0 removed: note %q lacks %q", got, clause)
+	}
+	if got := hotelFartherNote(3, 25, answered); strings.Contains(got, "Google") {
+		t.Errorf("default cap: note %q mentions Google", got)
 	}
 }

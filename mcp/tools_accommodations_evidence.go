@@ -699,7 +699,7 @@ func accommodationEvidenceHasWarning(evidence []models.AccommodationEvidence, wa
 }
 
 func accommodationSearchSummary(resp accommodationSearchResponse) string {
-	return accommodationSearchSummaryText(resp) + hotelFartherNote(resp.FartherOmitted, resp.MaxDistanceKm)
+	return accommodationSearchSummaryText(resp) + hotelFartherNote(resp.FartherOmitted, resp.MaxDistanceKm, resp.ProviderStatuses)
 }
 
 func accommodationSearchSummaryText(resp accommodationSearchResponse) string {

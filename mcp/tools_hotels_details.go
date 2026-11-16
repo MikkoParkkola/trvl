@@ -706,7 +706,7 @@ func hotelDetailsLimit(requested, available int) int {
 }
 
 func hotelDetailsSummary(result hotelDetailsSearchResponse, location string) string {
-	return hotelDetailsSummaryText(result, location) + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm)
+	return hotelDetailsSummaryText(result, location) + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm, result.ProviderStatuses)
 }
 
 func hotelDetailsSummaryText(result hotelDetailsSearchResponse, location string) string {

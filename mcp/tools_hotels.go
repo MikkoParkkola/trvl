@@ -330,7 +330,7 @@ func handleHotelPrices(ctx context.Context, args map[string]any, elicit ElicitFu
 
 // hotelFartherNote says how many hotels the distance cap left out and how to
 // bring them back; empty when it left none out.
-func hotelFartherNote(omitted int, capKm float64) string {
+func hotelFartherNote(omitted int, capKm float64, statuses []models.ProviderStatus) string {
 	if omitted <= 0 {
 		return ""
 	}
@@ -351,15 +351,15 @@ func hotelSummary(result *models.HotelSearchResult, location string) string {
 			return fmt.Sprintf("Hotel search in %s failed: %s", location, result.Error)
 		}
 		if msg, ok := incompleteAbsence("hotels in "+location, result.ProviderStatuses); ok {
-			return msg + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm)
+			return msg + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm, result.ProviderStatuses)
 		}
 		if result.FartherOmitted > 0 {
-			return fmt.Sprintf("No hotels found within %g km of the centre of %s.%s", result.MaxDistanceKm, location, hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm))
+			return fmt.Sprintf("No hotels found within %g km of the centre of %s.%s", result.MaxDistanceKm, location, hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm, result.ProviderStatuses))
 		}
 		return fmt.Sprintf("No hotels found in %s.", location)
 	}
 
-	summary := fmt.Sprintf("Found %d hotels in %s.", result.Count, location) + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm)
+	summary := fmt.Sprintf("Found %d hotels in %s.", result.Count, location) + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm, result.ProviderStatuses)
 
 	// Cheapest headline goes through the currency-cohort guard: a nominally-small
 	// unconverted foreign price must not crown the "Lowest lead-in" line ahead of
