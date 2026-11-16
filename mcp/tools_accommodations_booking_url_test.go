@@ -77,3 +77,18 @@ func TestReverifyAccommodation_KeepsOnlyABookingCallerURL(t *testing.T) {
 		}
 	}
 }
+
+// TestAccommodationHotelIDIsGooglePlaceID_SharesTheStrictRule: the
+// accommodation check accepts exactly models.IsGoogleHotelID's shapes.
+func TestAccommodationHotelIDIsGooglePlaceID_SharesTheStrictRule(t *testing.T) {
+	for id, want := range map[string]bool{
+		"0x476d079e5136ca9f:0xfdc2e58a51a25b46": true,
+		"ChIJI85wbpwHbUcRiJL_xm_zLE4":           true,
+		"agoda:123":                             false,
+		"/g/":                                   false,
+	} {
+		if got := accommodationHotelIDIsGooglePlaceID(models.HotelResult{HotelID: id}); got != want {
+			t.Errorf("accommodationHotelIDIsGooglePlaceID(%q) = %v, want %v", id, got, want)
+		}
+	}
+}
