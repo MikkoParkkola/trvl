@@ -71,8 +71,8 @@ func TestSearchHotelsByName_StrippedNameRefusesOtherTown(t *testing.T) {
 func TestSearchHotelByName_StrippedNameRefusesOtherTown(t *testing.T) {
 	serveGooglePage(t, hotelWithPrice{"Hotel Imperial", 300})
 	withBookingResult(t, bookingSacherBaden())
-	// SearchHotels geocodes "Vienna" under its alias "Wien".
-	for _, q := range []string{"Wien", "Hotel Sacher Wien Vienna", "Hotel Sacher Wien, Vienna"} {
+	// SearchHotels geocodes the English city name ("Vienna").
+	for _, q := range []string{"Vienna", "Hotel Sacher Wien Vienna", "Hotel Sacher Wien, Vienna"} {
 		seedGeo(t, q)
 	}
 
@@ -274,5 +274,19 @@ func TestNameMatch_EarlyLoneWordIsNoTown(t *testing.T) {
 	}}
 	if kept := withoutOtherTowns(ibis, "Ibis Wien", "Vienna"); len(kept) != 1 {
 		t.Error("withoutOtherTowns dropped Ibis Wien Mariahilf for its district")
+	}
+}
+
+// TestNameMatch_LocalCityFindsTheEnglishGeocode: the search caches a city's
+// geocode under its English name, so a "…, Wien" query still finds Vienna's
+// point and prefers the Vienna hotel over the Baden one 26 km out.
+func TestNameMatch_LocalCityFindsTheEnglishGeocode(t *testing.T) {
+	seedGeoAt(t, "Vienna", 48.2083537, 16.3725042)
+	candidates := []models.HotelResult{
+		{Name: "Hotel Sacher Baden", HotelID: "/g/sacher_baden", Lat: 48.0, Lon: 16.22},
+		{Name: "Hotel Sacher Vienna", HotelID: "/g/sacher_vienna", Lat: 48.2040009, Lon: 16.3697963},
+	}
+	if got := findBestNameMatch(candidates, "Hotel Sacher, Wien"); got == nil || got.Name != "Hotel Sacher Vienna" {
+		t.Errorf("findBestNameMatch = %v, want Hotel Sacher Vienna", got)
 	}
 }
