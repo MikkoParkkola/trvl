@@ -45,7 +45,8 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 		Result struct {
 			StructuredContent struct {
 				Ports []struct {
-					Name string `json:"name"`
+					Name    string `json:"name"`
+					Country string `json:"countryName"`
 				} `json:"ports"`
 			} `json:"structuredContent"`
 		} `json:"result"`
@@ -62,10 +63,15 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 	seen := map[string]bool{}
 	var live []string
 	for _, p := range answer.Result.StructuredContent.Ports {
-		if name := strings.TrimSpace(p.Name); name != "" && !seen[name] {
-			seen[name] = true
-			live = append(live, name)
+		name := strings.TrimSpace(p.Name)
+		// Country groups ("GERMANY (ALL PORTS)") are left out of the file, as
+		// the generator does.
+		base, group := strings.CutSuffix(name, " (ALL PORTS)")
+		if name == "" || seen[name] || (group && strings.EqualFold(base, strings.TrimSpace(p.Country))) {
+			continue
 		}
+		seen[name] = true
+		live = append(live, name)
 	}
 	if len(live) == 0 {
 		t.Fatal("get_ports returned no ports")
@@ -73,17 +79,26 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 	sort.Strings(live)
 
 	embedded := map[string]bool{}
-	for _, line := range strings.Split(ferryhopperPortList, "\n") {
+	for _, line := range strings.Split(strings.TrimSuffix(ferryhopperPortList, "\n"), "\n") {
 		embedded[line] = true
 	}
-	var missing []string
+	var missing, dropped []string
 	for _, name := range live {
 		if !embedded[name] {
 			missing = append(missing, name)
 		}
 	}
+	for name := range embedded {
+		if !seen[name] {
+			dropped = append(dropped, name)
+		}
+	}
+	sort.Strings(dropped)
 	if len(missing) > 0 {
 		t.Errorf("%d live ports missing from ferryhopper_ports.txt (first: %q); regenerate it with go run ./scripts/ferryhopper-ports", len(missing), missing[:min(5, len(missing))])
 	}
-	t.Logf("live ports %d, embedded %d", len(live), len(embedded)-1)
+	if len(dropped) > 0 {
+		t.Errorf("%d ports in ferryhopper_ports.txt are gone from the live list (first: %q); regenerate it with go run ./scripts/ferryhopper-ports", len(dropped), dropped[:min(5, len(dropped))])
+	}
+	t.Logf("live ports %d, embedded %d", len(live), len(embedded))
 }

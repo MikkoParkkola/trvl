@@ -1,7 +1,9 @@
 // Command ferryhopper-ports regenerates internal/ground/ferryhopper_ports.txt,
 // the port list behind Ferryhopper's launch gate, from one call to
 // Ferryhopper's public MCP get_ports tool: one port name per line, trimmed,
-// de-duplicated and byte-sorted. Run it from the repository root:
+// de-duplicated and byte-sorted. Country groups ("GERMANY (ALL PORTS)") are
+// left out so a country never counts as a port. Run it from the repository
+// root:
 //
 //	go run ./scripts/ferryhopper-ports
 package main
@@ -13,6 +15,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"sort"
@@ -26,51 +29,57 @@ func main() {
 	out := flag.String("out", "internal/ground/ferryhopper_ports.txt", "file to write")
 	flag.Parse()
 
-	names, err := fetchPortNames()
-	if err != nil {
+	if err := run(*out); err != nil {
 		fmt.Fprintln(os.Stderr, "ferryhopper-ports:", err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(*out, []byte(strings.Join(names, "\n")+"\n"), 0o600); err != nil {
-		fmt.Fprintln(os.Stderr, "ferryhopper-ports:", err)
-		os.Exit(1)
-	}
-	fmt.Printf("wrote %d ports to %s\n", len(names), *out)
 }
 
-// fetchPortNames calls get_ports once and returns the sorted, unique names.
-func fetchPortNames() ([]string, error) {
+func run(out string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_ports","arguments":{}}}`
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, mcpURL, strings.NewReader(body))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("User-Agent", "trvl/1.0 (travel agent; github.com/MikkoParkkola/trvl)")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("get_ports: HTTP %d", resp.StatusCode)
+		return fmt.Errorf("get_ports: HTTP %d", resp.StatusCode)
 	}
 
-	// The answer is a Server-Sent Events stream; the JSON-RPC result is on a
-	// "data: " line.
+	names, err := portNames(resp.Body)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(out, render(names), 0o600); err != nil {
+		return err
+	}
+	fmt.Printf("wrote %d ports to %s\n", len(names), out)
+	return nil
+}
+
+// portNames reads a get_ports Server-Sent Events reply and returns the port
+// names trimmed, de-duplicated and byte-sorted, without country groups.
+func portNames(r io.Reader) ([]string, error) {
 	var answer struct {
 		Result struct {
 			StructuredContent struct {
 				Ports []struct {
-					Name string `json:"name"`
+					Name    string `json:"name"`
+					Country string `json:"countryName"`
 				} `json:"ports"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
-	sc := bufio.NewScanner(resp.Body)
+	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 1<<20), 8<<20)
 	for sc.Scan() {
 		if data, ok := strings.CutPrefix(sc.Text(), "data: "); ok {
@@ -86,14 +95,27 @@ func fetchPortNames() ([]string, error) {
 	seen := map[string]bool{}
 	var names []string
 	for _, p := range answer.Result.StructuredContent.Ports {
-		if name := strings.TrimSpace(p.Name); name != "" && !seen[name] {
-			seen[name] = true
-			names = append(names, name)
+		name := strings.TrimSpace(p.Name)
+		if name == "" || seen[name] || isCountryGroup(name, p.Country) {
+			continue
 		}
+		seen[name] = true
+		names = append(names, name)
 	}
 	if len(names) == 0 {
 		return nil, errors.New("get_ports returned no ports")
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+// isCountryGroup reports Ferryhopper's per-country "X (ALL PORTS)" entry.
+func isCountryGroup(name, country string) bool {
+	base, ok := strings.CutSuffix(name, " (ALL PORTS)")
+	return ok && country != "" && strings.EqualFold(base, strings.TrimSpace(country))
+}
+
+// render is the file format: one name per line, newline-terminated.
+func render(names []string) []byte {
+	return []byte(strings.Join(names, "\n") + "\n")
 }
