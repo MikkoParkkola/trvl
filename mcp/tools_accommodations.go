@@ -146,6 +146,8 @@ func accommodationSearchOutputSchema() interface{} {
 			"final_trip_cost_ready_count": schemaInt(),
 			"candidate_count":             schemaInt(),
 			"total_available":             schemaInt(),
+			"max_distance_km":             schemaNumDesc("Distance cap applied around the city centre (25 by default; absent when none applied)."),
+			"farther_omitted":             schemaIntDesc("Hotels left out for being farther than max_distance_km."),
 			"offers":                      schemaArray(accommodationOfferSchema()),
 			"rejected_offers":             schemaArray(accommodationOfferSchema()),
 			"evidence":                    schemaArray(accommodationEvidenceSchema()),
@@ -410,6 +412,8 @@ func handleSearchAccommodations(ctx context.Context, args map[string]any, elicit
 		Completeness:     result.Completeness,
 		Suggestions:      hotelSuggestions(result, req.Options),
 		Warnings:         accommodationSearchWarnings(result, offers, rejected, evidence, len(candidateHotels)),
+		MaxDistanceKm:    result.MaxDistanceKm,
+		FartherOmitted:   result.FartherOmitted,
 		Error:            result.Error,
 	}
 	for _, offer := range offers {

@@ -699,6 +699,10 @@ func accommodationEvidenceHasWarning(evidence []models.AccommodationEvidence, wa
 }
 
 func accommodationSearchSummary(resp accommodationSearchResponse) string {
+	return accommodationSearchSummaryText(resp) + hotelFartherNote(resp.FartherOmitted, resp.MaxDistanceKm)
+}
+
+func accommodationSearchSummaryText(resp accommodationSearchResponse) string {
 	location := resp.Need.Location
 	if location == "" {
 		location = "requested location"
