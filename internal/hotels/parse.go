@@ -104,14 +104,24 @@ func parseHotelsFromPageFull(page string, currency string) parseResult {
 
 	// Extract sponsored/ad hotel entries.
 	sponsored := extractSponsoredHotels(hotelData, currency)
+
+	// A query naming one property gets Google's detail view instead of a
+	// list; its place ID is what the rooms flow needs. The view's only dates
+	// belonged to another stay, so a same-name ad's undated price is dropped
+	// too; an organic row keeps its own.
+	detail, isDetail := extractDetailViewHotel(hotelData, currency)
+	if isDetail {
+		for i := range sponsored {
+			if strings.EqualFold(sponsored[i].Name, detail.Name) {
+				sponsored[i].Price = 0
+			}
+		}
+	}
 	hotels = append(hotels, sponsored...)
 
 	// Deduplicate by name (sponsored and organic can overlap).
 	hotels = deduplicateHotels(hotels)
-
-	// A query naming one property gets Google's detail view instead of a
-	// list; its place ID is what the rooms flow needs.
-	if detail, ok := extractDetailViewHotel(hotelData, currency); ok {
+	if isDetail {
 		hotels = addDetailViewHotel(hotels, detail)
 	}
 
