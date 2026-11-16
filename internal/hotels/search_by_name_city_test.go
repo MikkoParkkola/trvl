@@ -264,3 +264,15 @@ func TestNameMatch_SingleWordAddressPartIsATown(t *testing.T) {
 		t.Errorf("withoutOtherTowns kept %v, want Baden refused for Vienna", hotelNames(kept))
 	}
 }
+
+// TestNameMatch_EarlyLoneWordIsNoTown: only the last non-country part can be
+// a lone-word town. "Mariahilf" opens the address as its district, so "Ibis
+// Wien Mariahilf" still answers an "Ibis Wien" query for Vienna.
+func TestNameMatch_EarlyLoneWordIsNoTown(t *testing.T) {
+	ibis := []models.HotelResult{{
+		Name: "Ibis Wien Mariahilf", HotelID: "/g/ibis_mariahilf", Address: "Mariahilf, Mariahilfer Straße 1, 1060 Wien, Austria",
+	}}
+	if kept := withoutOtherTowns(ibis, "Ibis Wien", "Vienna"); len(kept) != 1 {
+		t.Error("withoutOtherTowns dropped Ibis Wien Mariahilf for its district")
+	}
+}
