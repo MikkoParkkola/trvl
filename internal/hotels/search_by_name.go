@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -33,12 +34,15 @@ var ErrNoNameMatch = errors.New("no hotel matched the requested name")
 //     area search when not already present in the name
 //   - checkIn, checkOut: dates in YYYY-MM-DD format
 //   - currency: 3-letter ISO code (e.g. "USD", "EUR"); defaults to "USD"
-func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, currency string) ([]models.HotelResult, error) {
+//
+// The provider statuses come back with the matches and with a name miss, so a
+// caller can tell a complete "not found" from one where providers failed.
+func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, currency string) ([]models.HotelResult, []models.ProviderStatus, error) {
 	if name == "" {
-		return nil, fmt.Errorf("hotel name is required")
+		return nil, nil, fmt.Errorf("hotel name is required")
 	}
 	if checkIn == "" || checkOut == "" {
-		return nil, fmt.Errorf("check-in and check-out dates are required")
+		return nil, nil, fmt.Errorf("check-in and check-out dates are required")
 	}
 	if currency == "" {
 		currency = "USD"
@@ -62,8 +66,8 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 	// Run Google Hotels + Trivago + external providers in parallel.
 	// Google Hotels is always primary; others are non-fatal.
 	type providerResult struct {
-		hotels []models.HotelResult
-		source string
+		hotels   []models.HotelResult
+		statuses []models.ProviderStatus
 	}
 
 	resultCh := make(chan providerResult, 3)
@@ -80,6 +84,9 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 		if err != nil {
 			slog.Warn("search_by_name: google hotels failed", "error", logredact.Err(err))
 			googleErr = fmt.Errorf("google hotels: %w", err)
+			resultCh <- providerResult{statuses: []models.ProviderStatus{
+				hotelProviderStatusFromError("google_hotels", "Google Hotels", err),
+			}}
 			return
 		}
 		// When another provider returned hotels, SearchHotels succeeds and
@@ -89,7 +96,7 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 				googleErr = fmt.Errorf("google hotels: %s", ps.Error)
 			}
 		}
-		resultCh <- providerResult{hotels: res.Hotels, source: "google_hotels"}
+		resultCh <- providerResult{hotels: res.Hotels, statuses: res.ProviderStatuses}
 	}()
 
 	// Trivago — location-only query (Trivago's API resolves by area, name
@@ -103,9 +110,14 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 		res, err := SearchTrivago(ctx, location, opts)
 		if err != nil {
 			slog.Warn("search_by_name: trivago failed", "error", logredact.Err(err))
+			resultCh <- providerResult{statuses: []models.ProviderStatus{
+				hotelProviderStatusFromError("trivago", "Trivago", err),
+			}}
 			return
 		}
-		resultCh <- providerResult{hotels: res, source: "trivago"}
+		resultCh <- providerResult{hotels: res, statuses: []models.ProviderStatus{
+			hotelProviderStatusFromResults("trivago", "Trivago", len(res)),
+		}}
 	}()
 
 	// External providers (Booking, Airbnb, Hostelworld, …).
@@ -122,12 +134,13 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 				slog.Warn("search_by_name: geocode failed", "error", logredact.Err(err))
 				return
 			}
-			res, _, err := eprt.SearchHotels(ctx, query, lat, lon, checkIn, checkOut, currency, 2, nil)
+			res, statuses, err := eprt.SearchHotels(ctx, query, lat, lon, checkIn, checkOut, currency, 2, nil)
 			if err != nil {
 				slog.Warn("search_by_name: external providers failed", "error", logredact.Err(err))
+				resultCh <- providerResult{statuses: statuses}
 				return
 			}
-			resultCh <- providerResult{hotels: res, source: "external"}
+			resultCh <- providerResult{hotels: res, statuses: statuses}
 		}()
 	}
 
@@ -136,9 +149,17 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 
 	// Collect and merge all provider results.
 	var batches [][]models.HotelResult
+	var statuses []models.ProviderStatus
 	for pr := range resultCh {
-		batches = append(batches, pr.hotels)
+		if pr.hotels != nil {
+			batches = append(batches, pr.hotels)
+		}
+		statuses = append(statuses, pr.statuses...)
 	}
+	// The Google search already runs Trivago and the external providers, so
+	// the same provider can report twice; keep its best answer.
+	statuses = coalesceProviderStatuses(statuses)
+	slices.SortFunc(statuses, func(a, b models.ProviderStatus) int { return strings.Compare(a.ID, b.ID) })
 
 	// Normalize before merge so headline adoption is cross-currency safe.
 	// Use provided currency (already defaulted to USD by caller) or first observed.
@@ -171,27 +192,30 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 	// Zero candidates is a failed or empty search, not a name miss: nothing
 	// was matched against, so report the provider outcome instead.
 	if len(merged) == 0 {
-		return nil, errors.Join(fmt.Errorf("no results from any provider for %q", name), googleErr)
+		return nil, statuses, errors.Join(fmt.Errorf("no results from any provider for %q", name), googleErr)
 	}
 
 	// Filter to keep only hotels whose name fuzzy-matches the search name; on a
 	// miss, retry once without a trailing location word.
-	matched := filterByNameMatch(merged, name)
+	// Distance only chooses among full-name matches; a stripped-name retry
+	// must also sit inside the city radius.
+	matched := preferWithinRadius(filterByNameMatch(withoutOtherTowns(merged, name, location), name), name, location)
 	if len(matched) == 0 {
 		if stripped, eligible, ok := retryWithoutTrailingWord(name, location, merged); ok {
-			matched = filterByNameMatch(eligible, stripped)
+			city := retryCity(name, location)
+			matched = filterByNameMatch(withinRadius(withoutOtherTowns(eligible, stripped, city), city), stripped)
 		}
 	}
 
 	// No match is an answer, not a reason to present unrelated hotels as the
 	// requested property. A Google failure travels with it.
 	if len(matched) == 0 {
-		return nil, errors.Join(
+		return nil, statuses, errors.Join(
 			fmt.Errorf("%w: %q among %d candidates", ErrNoNameMatch, name, len(merged)),
 			googleErr,
 		)
 	}
-	return matched, nil
+	return matched, statuses, nil
 }
 
 // buildNameQuery constructs the location query string used for the area search.
@@ -213,7 +237,7 @@ func buildNameQuery(name, location string) string {
 // punctuation stripped). E.g. "CORU House" matches "CORU House Prague -
 // Design Hotel" but not "Prague Hilton".
 func filterByNameMatch(hotels []models.HotelResult, searchName string) []models.HotelResult {
-	searchWords := normalizeWords(searchName)
+	searchWords := canonicalCityWords(normalizeWords(searchName))
 	if len(searchWords) == 0 {
 		return hotels
 	}
@@ -254,13 +278,13 @@ func retryWithoutTrailingWord(name, location string, candidates []models.HotelRe
 	if len(normalizeWords(stripped)) < minRemaining || len(meaningfulHotelNameWords(stripped)) == 0 {
 		return "", nil, false
 	}
-	if strings.EqualFold(last[0], strings.TrimSpace(location)) {
+	if sameCityWord(last[0], location) {
 		return stripped, candidates, true
 	}
 	var eligible []models.HotelResult
 	for _, c := range candidates {
 		for _, w := range hotelNameWords(c.Address) {
-			if w == last[0] {
+			if sameCityWord(w, last[0]) {
 				eligible = append(eligible, c)
 				break
 			}
@@ -280,9 +304,10 @@ func normalizeWords(s string) []string {
 	return words
 }
 
-// normalizeWordsSet returns a set of normalised words from the string.
+// normalizeWordsSet returns a set of normalised words from the string, with
+// alias-table city words in their shared form.
 func normalizeWordsSet(s string) map[string]bool {
-	words := normalizeWords(s)
+	words := canonicalCityWords(normalizeWords(s))
 	set := make(map[string]bool, len(words))
 	for _, w := range words {
 		set[w] = true
@@ -346,7 +371,7 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 		}
 		sawResults = true
 
-		match := findBestNameMatch(result.Hotels, query)
+		match, matchQuery := findBestNameMatch(result.Hotels, query), query
 		if match == nil {
 			// The text after the last comma, when present, is the location;
 			// otherwise only a word found in a candidate's address may go.
@@ -356,16 +381,19 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 				suffix = strings.TrimSpace(query[idx+1:])
 			}
 			if stripped, eligible, ok := retryWithoutTrailingWord(namePart, suffix, result.Hotels); ok {
-				match = findBestNameMatch(eligible, stripped)
+				city := retryCity(namePart, suffix)
+				matchQuery = stripped + ", " + city
+				match = findBestNameMatch(withinRadius(eligible, city), matchQuery)
 			}
 		}
 		if match != nil {
-			// If the match has no Google ID, do a targeted Google-only search
+			// If the match has no Google place ID (none, or another provider's
+			// id such as Booking's), do a targeted Google-only search
 			// using the hotel name + location as the query. Google Hotels
 			// interprets "Summer Shades Hotel, Naoussa" as a specific hotel
 			// query and returns it with the proper Google ID, while auxiliary
 			// providers (Trivago etc.) may not set HotelID.
-			if match.HotelID == "" {
+			if !hotelIDIsGooglePlaceID(match.HotelID) {
 				// Extract just the hotel name part from the query (before comma)
 				namePart := query
 				if idx := strings.LastIndex(query, ","); idx >= 0 {
@@ -374,15 +402,16 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 				targetedQuery := namePart + ", " + loc
 				targeted, tErr := SearchHotels(ctx, targetedQuery, opts)
 				if tErr == nil {
-					for i := range targeted.Hotels {
-						if targeted.Hotels[i].HotelID != "" {
-							if models.NameSimilar(
-								strings.ToLower(targeted.Hotels[i].Name),
-								strings.ToLower(namePart),
-							) {
-								return &targeted.Hotels[i], nil
-							}
+					// A Google-ID row must pass the same name and town rules
+					// as the match it replaces.
+					var google []models.HotelResult
+					for _, h := range targeted.Hotels {
+						if hotelIDIsGooglePlaceID(h.HotelID) {
+							google = append(google, h)
 						}
+					}
+					if again := findBestNameMatch(google, matchQuery); again != nil {
+						return again, nil
 					}
 				}
 			}
@@ -441,22 +470,37 @@ func buildLocationCandidates(query string) []string {
 // don't cause false matches with unrelated hotels.
 func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelResult {
 	// Strip location context: only match against the part before the last comma.
-	namePart := query
+	// City words compare through the alias table, and a candidate naming a
+	// town other than the comma-suffix city is not the property.
+	namePart, city := query, ""
 	if idx := strings.LastIndex(query, ","); idx >= 0 {
 		namePart = strings.TrimSpace(query[:idx])
+		city = strings.TrimSpace(query[idx+1:])
 	}
-	queryWords := meaningfulHotelNameWords(namePart)
+	queryWords := canonicalCityWords(meaningfulHotelNameWords(namePart))
 	if len(queryWords) == 0 {
 		return nil
 	}
-	queryNormalized := strings.Join(hotelNameWords(namePart), " ")
+	queryNormalized := strings.Join(canonicalCityWords(hotelNameWords(namePart)), " ")
+	conflicts := townConflict(namePart, city)
+	beyond := beyondCityRadius(city)
 
 	bestIdx := -1
 	bestScore := 0
 	bestIDRank := -1
+	bestWithin := false
 
 	for i := range hotels {
-		candidateWords := hotelNameWords(hotels[i].Name)
+		if conflicts != nil && conflicts(hotels[i]) {
+			continue
+		}
+		// Outside the city radius only a name adding nothing to the query
+		// may match; distance then just ranks it below matches inside.
+		within := beyond == nil || !beyond(hotels[i])
+		if !within && addsWords(hotels[i].Name, namePart+" "+city) {
+			continue
+		}
+		candidateWords := canonicalCityWords(hotelNameWords(hotels[i].Name))
 		candidateSet := make(map[string]struct{}, len(candidateWords))
 		for _, word := range candidateWords {
 			candidateSet[word] = struct{}{}
@@ -496,12 +540,14 @@ func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelR
 		// over no ID at all (mirrors the #288 candidate-ranking doctrine), then a
 		// stable lexical key so two equally-usable results resolve identically
 		// regardless of input ordering.
+		// A match inside the city radius beats any outside it; distance
+		// never removes the only match.
 		idRank := hotelIDRank(hotels[i].HotelID)
-		if bestIdx == -1 || nameMatchBetter(
+		if bestIdx == -1 || (within && !bestWithin) || (within == bestWithin && nameMatchBetter(
 			score, idRank, hotels[i],
 			bestScore, bestIDRank, hotels[bestIdx],
-		) {
-			bestIdx, bestScore, bestIDRank = i, score, idRank
+		)) {
+			bestIdx, bestScore, bestIDRank, bestWithin = i, score, idRank, within
 		}
 	}
 
@@ -589,8 +635,7 @@ func hotelIDRank(id string) int {
 // (prefixed "/g/" or "ChIJ") that the rooms RPC can resolve. Mirrors
 // looksLikeGoogleHotelID / accommodationHotelIDIsGooglePlaceID used elsewhere.
 func hotelIDIsGooglePlaceID(id string) bool {
-	id = strings.TrimSpace(id)
-	return strings.HasPrefix(id, "/g/") || strings.HasPrefix(strings.ToUpper(id), "CHIJ")
+	return models.IsGoogleHotelID(id)
 }
 
 // enrichHotelAmenities fetches detail pages for the top N hotels to get full

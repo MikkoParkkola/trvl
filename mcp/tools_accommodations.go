@@ -336,7 +336,7 @@ func handleSearchAccommodations(ctx context.Context, args map[string]any, elicit
 						Guests:       req.Options.Guests,
 						ChildrenAges: req.Options.ChildrenAges,
 						Rooms:        req.Options.Rooms,
-						BookingURL:   accommodationRoomLookupBookingURL(hotel),
+						BookingURL:   hotels.BookingSourceURL(hotel),
 						Location:     req.Location,
 					})
 					cancelRoomLookup()
@@ -464,6 +464,12 @@ func handleReverifyAccommodation(ctx context.Context, req hotelSearchRequest, ne
 		hotel.Currency = req.Options.Currency
 	}
 
+	// Here BookingURL is the caller's own page for the hotel; keep it only
+	// when the room fetch accepts it, so a bad one cannot abort the lookup.
+	reverifyBookingURL := hotel.BookingURL
+	if !hotels.IsBookingRoomsURL(reverifyBookingURL) {
+		reverifyBookingURL = ""
+	}
 	checkedAt := time.Now()
 	candidate := accommodationCandidateFromHotel(hotel)
 	roomCtx, cancelRoomLookup := context.WithTimeout(ctx, accommodationReverifyRoomLookupTimeout)
@@ -475,7 +481,7 @@ func handleReverifyAccommodation(ctx context.Context, req hotelSearchRequest, ne
 		Guests:       req.Options.Guests,
 		ChildrenAges: req.Options.ChildrenAges,
 		Rooms:        req.Options.Rooms,
-		BookingURL:   accommodationRoomLookupBookingURL(hotel),
+		BookingURL:   reverifyBookingURL,
 		Location:     req.Location,
 	})
 	cancelRoomLookup()

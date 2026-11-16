@@ -516,6 +516,11 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 	checkOut := argString(args, "check_out")
 	currency := argString(args, "currency")
 	bookingURL := argString(args, "booking_url")
+	// A booking_url outside https booking.com would make the room fetch
+	// refuse the whole lookup; drop it and let the Google fetch run alone.
+	if bookingURL != "" && !hotels.IsBookingRoomsURL(bookingURL) {
+		bookingURL = ""
+	}
 	if currency == "" {
 		currency = "USD"
 	}
@@ -526,6 +531,11 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 
 	if err := models.ValidateDateRange(checkIn, checkOut); err != nil {
 		return nil, nil, err
+	}
+	// Only a Google hotel ID resolves rooms; another provider's id would
+	// fetch nothing, or the wrong property.
+	if hotelID != "" && !models.IsGoogleHotelID(hotelID) {
+		return nil, nil, fmt.Errorf("hotel_id %q is not a Google hotel ID (/g/…, ChIJ… or 0x…:0x…); pass hotel_name to look the hotel up", hotelID)
 	}
 
 	// Resolved property identity. When the caller supplies a hotel_id (from
@@ -538,14 +548,16 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		if err != nil {
 			return nil, nil, fmt.Errorf("hotel lookup for %q: %w", hotelName, err)
 		}
-		if hotel.HotelID == "" {
+		// Only a Google place ID resolves rooms; another provider's id
+		// (Booking's, say) must not be sent as one.
+		if !models.IsGoogleHotelID(hotel.HotelID) {
 			return nil, nil, fmt.Errorf("hotel %q found (%s) but has no Google ID", hotelName, hotel.Name)
 		}
 		resolvedID = hotel.HotelID
 		resolvedName = hotel.Name
-		// Use the booking URL from the search result if the caller didn't provide one.
-		if bookingURL == "" && hotel.BookingURL != "" {
-			bookingURL = hotel.BookingURL
+		// Use the booking source's page if the caller didn't provide one.
+		if bookingURL == "" {
+			bookingURL = hotels.BookingSourceURL(*hotel)
 		}
 	}
 
