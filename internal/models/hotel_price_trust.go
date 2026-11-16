@@ -102,6 +102,8 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 		// sources stay unstamped; they are not quotes.
 		h.HeadlineProvider = ""
 		h.PriceProvenance = PriceUnavailable
+		// No number stays behind to sort first or take the cheapest line.
+		h.Price, h.ComparablePrice = 0, 0
 	}
 	if h.PropertyType == "" {
 		h.PropertyType = InferHotelPropertyType(*h)
