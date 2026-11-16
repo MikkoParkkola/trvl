@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"strings"
@@ -26,9 +27,9 @@ func detailViewPage(t *testing.T) []byte {
 	return []byte(`<html>` + padding + `AF_initDataCallback({key: 'ds:0', data:` + strings.TrimSpace(string(data)) + `});</html>`)
 }
 
-// TestParseHotelsFromPage_DetailView: the detail view's hotel is parsed with
-// its own place ID and no price (the entry's price block was for other
-// dates), and the same-name ad without an ID is dropped. Other ads stay.
+// TestParseHotelsFromPage_DetailView: the detail view's place ID lands on the
+// same-name ad, which keeps its own price (the entry's price block was for
+// other dates and is never read). One Sacher row; other ads stay.
 func TestParseHotelsFromPage_DetailView(t *testing.T) {
 	pr := parseHotelsFromPageFull(string(detailViewPage(t)), "EUR")
 
@@ -45,11 +46,8 @@ func TestParseHotelsFromPage_DetailView(t *testing.T) {
 	if got.HotelID != sacherPlaceID {
 		t.Errorf("HotelID = %q, want the entry's own place ID %q", got.HotelID, sacherPlaceID)
 	}
-	if got.Lat != 48.2040009 || got.Lon != 16.3697963 || got.Stars != 5 {
-		t.Errorf("identity = %v,%v %d stars, want 48.2040009,16.3697963 5 stars", got.Lat, got.Lon, got.Stars)
-	}
-	if got.Price != 0 {
-		t.Errorf("Price = %v, want 0: the detail entry's price block is for other dates", got.Price)
+	if got.Price != 1002 {
+		t.Errorf("Price = %v, want the ad's own 1002, not the detail entry's 478", got.Price)
 	}
 	if names := hotelNames(pr.Hotels); len(names) != 2 {
 		t.Errorf("hotels = %v, want the Sacher detail hotel and the Stefanie ad", names)
@@ -98,5 +96,62 @@ func TestSearchHotelByName_DetailViewGoogleOnly(t *testing.T) {
 	}
 	if got.Name != "Hotel Sacher Vienna" || got.HotelID != sacherPlaceID {
 		t.Fatalf("matched %q with HotelID %q, want Hotel Sacher Vienna with %q", got.Name, got.HotelID, sacherPlaceID)
+	}
+}
+
+// detailViewPageWith is detailViewPage after mutate edits the decoded data.
+func detailViewPageWith(t *testing.T, mutate func(data []any)) string {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/google_detail_view_sacher.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data []any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		t.Fatal(err)
+	}
+	mutate(data)
+	out, _ := json.Marshal(data)
+	return `<html>` + strings.Repeat("<!-- padding -->", 100) + `AF_initDataCallback({key: 'ds:0', data:` + string(out) + `});</html>`
+}
+
+func detailEntry(data []any) []any {
+	return data[1].([]any)[7].(map[string]any)["441552390"].([]any)
+}
+
+// TestParseHotelsFromPage_DetailViewNeedsObservedID: only [26][4] holds the
+// place ID. A ChIJ string in another field is not it, and a detail view
+// without one adds nothing.
+func TestParseHotelsFromPage_DetailViewNeedsObservedID(t *testing.T) {
+	page := detailViewPageWith(t, func(data []any) {
+		entry := detailEntry(data)
+		entry[26] = nil
+		entry[20] = []any{"ChIJdecoyInAnotherField"}
+	})
+	for _, h := range parseHotelsFromPageFull(page, "EUR").Hotels {
+		if h.HotelID != "" {
+			t.Errorf("%q got HotelID %q, want none without [26][4]", h.Name, h.HotelID)
+		}
+	}
+}
+
+// TestParseHotelsFromPage_DetailViewKeepsSameNameRowID: a same-name organic
+// row with its own Google ID and price is not displaced or rewritten.
+func TestParseHotelsFromPage_DetailViewKeepsSameNameRowID(t *testing.T) {
+	page := detailViewPageWith(t, func(data []any) {
+		organic := make([]any, 10)
+		organic[1] = "Hotel Sacher Vienna"
+		organic[9] = "/g/sacher_organic"
+		list := data[0].([]any)[0].([]any)[0].([]any)
+		list[1] = append(list[1].([]any), []any{nil, map[string]any{"397419284": []any{organic}}})
+	})
+	var ids []string
+	for _, h := range parseHotelsFromPageFull(page, "EUR").Hotels {
+		if h.Name == "Hotel Sacher Vienna" {
+			ids = append(ids, h.HotelID)
+		}
+	}
+	if len(ids) != 1 || ids[0] != "/g/sacher_organic" {
+		t.Errorf("Hotel Sacher Vienna IDs = %v, want only the organic row's own /g/sacher_organic", ids)
 	}
 }
