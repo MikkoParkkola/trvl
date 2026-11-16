@@ -165,6 +165,8 @@ That relaxes the proxy hop only. Destinations are still refused on private addre
 
 Authenticated proxies (`http://user:pass@host`) are not supported.
 
+The Google Flights and Hotels client makes its own Chrome-like TLS connection, and tunnels it through the same proxy with `CONNECT`. It only ever connects to Google's fixed hosts, so it does not resolve or pin the destination itself and does not apply the private-address check to the proxy.
+
 ### If you run trvl on a cloud server
 
 trvl calls travel sites directly, and many of them treat cloud and datacenter IP addresses as bots. From a server, the same search can return fewer options than from home. trvl reports this instead of hiding it. Each provider in `provider_statuses` carries a `reason` when it did not answer: `blocked` (refused, usually HTTP 403 or a bot check), `rate_limited`, `unavailable` (the provider's own 5xx error), `dns`, `network` or `timeout`. A search where some providers failed is marked partial, never "nothing found".

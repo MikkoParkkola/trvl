@@ -177,8 +177,7 @@ func dialTLSChromeHTTP1(ctx context.Context, network, addr string) (net.Conn, er
 }
 
 func dialTLSChromeHTTP1WithConfig(ctx context.Context, network, addr string, tlsConfig *utls.Config) (net.Conn, error) {
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	rawConn, err := dialer.DialContext(ctx, network, addr)
+	rawConn, err := dialRaw(ctx, network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("dial tcp: %w", err)
 	}
@@ -686,8 +685,7 @@ func dialTLSChromeH2(ctx context.Context, network, addr string) (net.Conn, error
 		return nil, fmt.Errorf("split host: %w", err)
 	}
 
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	rawConn, err := dialer.DialContext(ctx, network, addr)
+	rawConn, err := dialRaw(ctx, network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("dial tcp: %w", err)
 	}

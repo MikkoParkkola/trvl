@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Google Flights and Hotels searches honour `HTTPS_PROXY` and `NO_PROXY`: the Google client opened its own TLS connection straight to the destination and ignored the proxy, so it failed with a DNS or network error wherever the proxy is the only way out. It now tunnels through the proxy with `CONNECT`, and connects directly as before when no proxy applies.
 - Tallink searches decode again: `marketingMessage` became an object in the timetable answer. Its sailing fares are marked `live`.
 - Snälltåget searches the booking app's API (`apiv2.snalltaget.se`) with the site's anonymous guest token instead of a retired host. It returns live per-departure fares in SEK, takes station names from the answer, adds Copenhagen and Hamburg, and links to the current booking page.
 - Renfe returns its price-calendar day minimum as an `estimated` EUR fare with no invented 00:00 departure.
