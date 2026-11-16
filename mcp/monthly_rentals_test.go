@@ -11,9 +11,12 @@ import (
 )
 
 // stubNightlyAndMonthly makes the hotel search return one nightly hotel and
-// one monthly rental, offline.
-func stubNightlyAndMonthly(t *testing.T) {
+// one monthly rental, offline, honouring StayTerm the way the core search does
+// (TestCoreSearchLeavesMonthlyRentalsOutByDefault pins the core). It returns
+// the terms each call asked for.
+func stubNightlyAndMonthly(t *testing.T) *[]hotels.StayTerm {
 	t.Helper()
+	var terms []hotels.StayTerm
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -21,20 +24,26 @@ func stubNightlyAndMonthly(t *testing.T) {
 	t.Cleanup(func() {
 		searchHotelsFunc, fetchHotelAmenitiesFunc, getRoomAvailabilityWithOptsFunc = origS, origA, origR
 	})
-	searchHotelsFunc = func(context.Context, string, hotels.HotelSearchOptions) (*models.HotelSearchResult, error) {
-		return &models.HotelSearchResult{Success: true, Count: 2, Hotels: []models.HotelResult{
+	searchHotelsFunc = func(_ context.Context, _ string, opts hotels.HotelSearchOptions) (*models.HotelSearchResult, error) {
+		terms = append(terms, opts.StayTerm)
+		res := &models.HotelSearchResult{Success: true, Count: 2, Hotels: []models.HotelResult{
 			{Name: "Hotel Nightly", HotelID: "/g/nightly", Price: 90, Currency: "EUR", PropertyType: "hotel",
 				PriceBasis: models.PriceBasisLeadIn, BookingURL: "https://booking.example/nightly",
 				Sources: []models.PriceSource{{Provider: "booking", Price: 90, Currency: "EUR", PriceBasis: models.PriceBasisLeadIn}}},
 			{Name: "Spotahome Flat", HotelID: "spot-1", Price: 1850, Currency: "EUR", PropertyType: "apartment",
 				PriceBasis: models.PriceBasisMonthly, BookingURL: "https://spotahome.example/1",
 				Sources: []models.PriceSource{{Provider: "spotahome", Price: 1850, Currency: "EUR", PriceBasis: models.PriceBasisMonthly}}},
-		}}, nil
+		}}
+		if opts.StayTerm == hotels.StayNightly {
+			hotels.DropMonthlyRentals(res)
+		}
+		return res, nil
 	}
 	fetchHotelAmenitiesFunc = func(context.Context, string) ([]string, error) { return nil, errors.New("offline") }
 	getRoomAvailabilityWithOptsFunc = func(context.Context, hotels.RoomSearchOptions) (*hotels.RoomAvailability, error) {
 		return nil, errors.New("offline")
 	}
+	return &terms
 }
 
 var stayArgs = map[string]any{"location": "Vienna", "check_in": "2027-04-10", "check_out": "2027-04-12"}
@@ -55,7 +64,7 @@ func hotelNamesIn(v any) []string {
 // price, so search_hotels and search_hotels_with_details leave the rental out,
 // count it, and point to search_accommodations.
 func TestNightlyHotelListsLeaveMonthlyRentalsOut(t *testing.T) {
-	stubNightlyAndMonthly(t)
+	terms := stubNightlyAndMonthly(t)
 	for _, tool := range []string{"search_hotels", "search_hotels_with_details"} {
 		text, structured, isErr := callTool(t, NewServer(), tool, stayArgs)
 		if isErr {
@@ -79,12 +88,17 @@ func TestNightlyHotelListsLeaveMonthlyRentalsOut(t *testing.T) {
 			}
 		}
 	}
+	for _, term := range *terms {
+		if term != hotels.StayNightly {
+			t.Errorf("a nightly hotel tool asked for stay term %v, want StayNightly", term)
+		}
+	}
 }
 
 // TestAccommodationsKeepMonthlyRentalsLabelled: search_accommodations is where
 // monthly rentals belong; the rental stays, labelled with its monthly basis.
 func TestAccommodationsKeepMonthlyRentalsLabelled(t *testing.T) {
-	stubNightlyAndMonthly(t)
+	terms := stubNightlyAndMonthly(t)
 	text, structured, isErr := callTool(t, NewServer(), "search_accommodations", stayArgs)
 	if isErr {
 		t.Fatalf("isError: %s", text)
@@ -104,6 +118,9 @@ func TestAccommodationsKeepMonthlyRentalsLabelled(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("search_accommodations dropped the monthly rental: %v", structured)
+	}
+	if len(*terms) == 0 || (*terms)[0] != hotels.StayIncludeMonthly {
+		t.Errorf("search_accommodations asked for stay terms %v, want StayIncludeMonthly", *terms)
 	}
 }
 
