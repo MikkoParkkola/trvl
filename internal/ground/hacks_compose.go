@@ -104,10 +104,12 @@ func attachGroundHackSaving(ctx context.Context, result *models.GroundSearchResu
 		NoCache:          opts.NoCache,
 	}
 
-	// Start a savings pass: the detectors' own flight and ground searches see
-	// the shared marker, start no pass of their own, and share one memo.
-	hctx, cancel := context.WithTimeout(searchctx.StartSavingsPass(ctx), hackComposeTimeout)
+	// Start a savings pass on the bounded context: the detectors' own flight
+	// and ground searches see the shared marker, start no pass of their own,
+	// and share one memo whose calls run within the same budget.
+	tctx, cancel := context.WithTimeout(ctx, hackComposeTimeout)
 	defer cancel()
+	hctx := searchctx.StartSavingsPass(tctx)
 
 	if saving := composeHackSaving(hctx, req); saving != nil {
 		result.HackSaving = saving

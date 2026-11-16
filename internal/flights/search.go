@@ -218,7 +218,7 @@ func searchFlightsWithClient(ctx context.Context, client *batchexec.Client, orig
 		return searchRoundTripComposed(ctx, client, origin, destination, date, opts)
 	}
 
-	key := flightSearchKey(origin, destination, date, opts)
+	key := flightSearchKey(origin, destination, date, opts) + savingsOffKey(ctx, opts)
 	result, err := doFlightSearchSingleflight(ctx, key, func(sharedCtx context.Context) (*models.FlightSearchResult, error) {
 		return searchFlightsCore(sharedCtx, client, origin, destination, date, opts)
 	})

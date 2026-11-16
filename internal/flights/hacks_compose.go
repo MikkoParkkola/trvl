@@ -99,11 +99,12 @@ func attachFlightHackSaving(ctx context.Context, result *models.FlightSearchResu
 		Passengers:  opts.Adults,
 	}
 
-	// Bound the engine and start a savings pass: the detectors' own flight and
-	// ground searches see the shared marker, start no pass of their own, and
-	// share one memo.
-	hctx, cancel := context.WithTimeout(searchctx.StartSavingsPass(ctx), hackComposeTimeout)
+	// Bound the engine and start a savings pass on the bounded context: the
+	// detectors' own flight and ground searches see the shared marker, start no
+	// pass of their own, and share one memo whose calls run within the budget.
+	tctx, cancel := context.WithTimeout(ctx, hackComposeTimeout)
 	defer cancel()
+	hctx := searchctx.StartSavingsPass(tctx)
 
 	if saving := composeHackSaving(hctx, req); saving != nil {
 		result.HackSaving = saving
