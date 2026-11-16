@@ -64,7 +64,9 @@ func TestHotelsFartherNoteGoogleClauseOnlyWhenGoogleAnswered(t *testing.T) {
 }
 
 // TestHotelsOutputCountsMonthlyRentals: `trvl hotels` says how many monthly
-// rentals it left out of the nightly list and where they are listed.
+// rentals it left out of the nightly list and why, and points nowhere:
+// search_accommodations shows only its top few candidates, so it does not
+// list them.
 func TestHotelsOutputCountsMonthlyRentals(t *testing.T) {
 	shown := &models.HotelSearchResult{Success: true, Count: 1, MonthlyOmitted: 2,
 		Hotels: []models.HotelResult{{Name: "A", Price: 80, Currency: "EUR"}}}
@@ -73,10 +75,13 @@ func TestHotelsOutputCountsMonthlyRentals(t *testing.T) {
 		"table": captureStdout(t, func() { _ = formatHotelsTable(context.Background(), "", "Vienna", shown, false) }),
 		"empty": hotelsEmptyMessage(empty),
 	} {
-		for _, want := range []string{"2 monthly rentals", "search_accommodations"} {
+		for _, want := range []string{"2 monthly rentals", "monthly rents, not nightly rates"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("%s output lacks %q:\n%s", name, want, out)
 			}
+		}
+		if strings.Contains(out, "search_accommodations") {
+			t.Errorf("%s output promises search_accommodations lists the rentals:\n%s", name, out)
 		}
 	}
 }

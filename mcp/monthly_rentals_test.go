@@ -84,11 +84,7 @@ func TestNightlyHotelListsLeaveMonthlyRentalsOut(t *testing.T) {
 		if got, _ := structured["monthly_omitted"].(float64); got != 1 {
 			t.Errorf("%s monthly_omitted = %v, want 1", tool, structured["monthly_omitted"])
 		}
-		for _, want := range []string{"1 monthly rental", "search_accommodations"} {
-			if !strings.Contains(text, want) {
-				t.Errorf("%s summary lacks %q:\n%s", tool, want, text)
-			}
-		}
+		assertMonthlyNote(t, tool, text, "1 monthly rental")
 	}
 	for _, term := range *terms {
 		if term != hotels.StayNightly {
@@ -129,4 +125,36 @@ func TestAccommodationsKeepMonthlyRentalsLabelled(t *testing.T) {
 func asString(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+// monthlyNoteSentence returns the sentence of text that reports left-out
+// monthly rentals, or "" when there is none.
+func monthlyNoteSentence(text string) string {
+	i := strings.Index(text, "monthly rental")
+	if i < 0 {
+		return ""
+	}
+	start := strings.LastIndex(text[:i], "Left out")
+	end := strings.Index(text[i:], ".")
+	if start < 0 || end < 0 {
+		return ""
+	}
+	return text[start : i+end+1]
+}
+
+// assertMonthlyNote requires the note to give the count and the reason, and
+// to point nowhere: search_accommodations shows only its top few candidates,
+// so promising that it lists the rentals would be false (live Vienna
+// 2026-11-18..20: 0 monthly rows of 246).
+func assertMonthlyNote(t *testing.T, where, text, count string) {
+	t.Helper()
+	note := monthlyNoteSentence(text)
+	for _, want := range []string{count, "monthly rents, not nightly rates"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("%s monthly note %q lacks %q (full text:\n%s)", where, note, want, text)
+		}
+	}
+	if strings.Contains(note, "search_accommodations") {
+		t.Errorf("%s monthly note %q promises search_accommodations lists the rentals", where, note)
+	}
 }
