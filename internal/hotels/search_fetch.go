@@ -330,7 +330,10 @@ func buildTravelURL(location string, opts HotelSearchOptions) string {
 		// Google's rating param is on 0-10 scale (same as our internal scale).
 		query.Set("rating", strconv.FormatFloat(opts.MinRating, 'f', 0, 64))
 	}
-	if opts.MaxDistanceKm > 0 {
+	// Only a cap tighter than the default goes to Google: at the default and
+	// wider, Google returns its normal set so trvl can filter and count every
+	// farther hotel itself (farther_omitted).
+	if opts.MaxDistanceKm > 0 && opts.MaxDistanceKm < DefaultMaxDistanceKm {
 		// Google uses meters for the lrad (location radius) parameter.
 		query.Set("lrad", strconv.FormatFloat(opts.MaxDistanceKm*1000, 'f', 0, 64))
 	}
