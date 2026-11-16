@@ -154,3 +154,41 @@ func hasSource(h models.HotelResult, provider string) bool {
 	}
 	return false
 }
+
+// TestFlatioTagsMonthlyOnlyWhenTheUnitSaysMonth: Flatio's live JSON-LD prices
+// a 30-day stay (UnitPriceSpecification referenceQuantity 30 DAY), so those
+// rows are monthly; the older shape with no price specification quoted a
+// night (32-200 EUR in the Lisbon fixture) and stays untagged.
+func TestFlatioTagsMonthlyOnlyWhenTheUnitSaysMonth(t *testing.T) {
+	vienna, err := os.ReadFile("testdata/flatio_vienna_monthly.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	monthly, err := parseFlatioHTML(vienna, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(monthly) != 3 {
+		t.Fatalf("vienna fixture parsed %d hotels, want 3", len(monthly))
+	}
+	assertMonthly(t, "flatio (30-day spec)", monthly)
+
+	lisbon, err := os.ReadFile("testdata/flatio_lisbon.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nightly, err := parseFlatioHTML(lisbon, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range nightly {
+		if h.PriceBasis == models.PriceBasisMonthly {
+			t.Errorf("old no-spec shape %q tagged monthly", h.Name)
+		}
+		for _, s := range h.Sources {
+			if s.PriceBasis == models.PriceBasisMonthly {
+				t.Errorf("old no-spec shape %q source tagged monthly", h.Name)
+			}
+		}
+	}
+}
