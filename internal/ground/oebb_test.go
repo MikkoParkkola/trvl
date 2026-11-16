@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/testutil"
 )
 
@@ -15,10 +16,10 @@ func TestLookupOebbStation(t *testing.T) {
 		wantExtID string
 		wantOK    bool
 	}{
-		{"Vienna", "1190100", true},
-		{"vienna", "1190100", true},
-		{"Wien", "1190100", true},
-		{"  Vienna  ", "1190100", true},
+		{"Vienna", "8103000", true},
+		{"vienna", "8103000", true},
+		{"Wien", "8103000", true},
+		{"  Vienna  ", "8103000", true},
 		{"Salzburg", "8100002", true},
 		{"Innsbruck", "8100108", true},
 		{"Graz", "8100173", true},
@@ -241,7 +242,7 @@ func TestParseOebbConnections_Basic(t *testing.T) {
 	res := oebbTripRes{
 		Common: oebbCommon{
 			LocL:  []oebbLoc{{Name: "Wien Hbf"}, {Name: "München Hbf"}},
-			ProdL: []oebbProd{{Name: "RJX 163"}},
+			ProdL: []oebbProd{{Name: "RJX 163", Cls: 1}},
 		},
 		OutConL: []oebbCon{
 			{
@@ -259,13 +260,7 @@ func TestParseOebbConnections_Basic(t *testing.T) {
 					},
 				},
 				TrfRes: &oebbTrfRes{
-					FareSetL: []oebbFareSet{
-						{
-							FareL: []oebbFare{
-								{Name: "Sparschiene", Price: 2990, Cur: "EUR"},
-							},
-						},
-					},
+					Clickout: "https://shop.oebbtickets.at/en/ticket?cref=scotty&connectionOrigEva=8103000",
 				},
 			},
 		},
@@ -283,8 +278,9 @@ func TestParseOebbConnections_Basic(t *testing.T) {
 	if r.Type != "train" {
 		t.Errorf("Type = %q, want train", r.Type)
 	}
-	if r.Price != 29.90 {
-		t.Errorf("Price = %f, want 29.90", r.Price)
+	// HAFAS has no ÖBB fares: the route is unpriced and says so.
+	if r.Price != 0 || r.PriceProvenance != models.PriceUnavailable {
+		t.Errorf("Price = %v %q, want 0 unavailable", r.Price, r.PriceProvenance)
 	}
 	if r.Currency != "EUR" {
 		t.Errorf("Currency = %q, want EUR", r.Currency)
@@ -307,8 +303,8 @@ func TestParseOebbConnections_Basic(t *testing.T) {
 	if r.Legs[0].Provider != "RJX 163" {
 		t.Errorf("Leg provider = %q, want RJX 163", r.Legs[0].Provider)
 	}
-	if r.BookingURL == "" {
-		t.Error("BookingURL should not be empty")
+	if r.BookingURL != "https://shop.oebbtickets.at/en/ticket?cref=scotty&connectionOrigEva=8103000" {
+		t.Errorf("BookingURL = %q, want the HAFAS clickout", r.BookingURL)
 	}
 }
 
@@ -319,7 +315,7 @@ func TestParseOebbConnections_MultiLeg(t *testing.T) {
 	res := oebbTripRes{
 		Common: oebbCommon{
 			LocL:  []oebbLoc{{Name: "Wien Hbf"}, {Name: "Brno"}, {Name: "Praha hl.n."}},
-			ProdL: []oebbProd{{Name: "RJX 77"}, {Name: "EC 101"}},
+			ProdL: []oebbProd{{Name: "RJX 77", Cls: 1}, {Name: "EC 101", Cls: 4}},
 		},
 		OutConL: []oebbCon{
 			{
