@@ -22,6 +22,8 @@ package hotels
 // emits markerData. We now parse the stable schema.org JSON-LD ItemList. The
 // JSON-LD carries no lat/lng, so Lat/Lon are left zero (Flatio surfaces the
 // nightly price; monthly total / m² are not in the structured block).
+// UPDATE 2026-11: offers now carry a UnitPriceSpecification for a 30-day
+// stay, and those prices are monthly (see flatioMonthly).
 
 import (
 	"context"
@@ -108,6 +110,45 @@ type flatioLDOffers struct {
 	Price         json.Number `json:"price"`
 	PriceCurrency string      `json:"priceCurrency"`
 	URL           string      `json:"url"`
+	// PriceSpecification is kept raw: schema.org allows an object or an array,
+	// and a shape change here must not break the whole parse.
+	PriceSpecification json.RawMessage `json:"priceSpecification"`
+}
+
+type flatioLDPriceSpec struct {
+	ReferenceQuantity struct {
+		Value    float64 `json:"value"`
+		UnitCode string  `json:"unitCode"`
+	} `json:"referenceQuantity"`
+}
+
+// flatioMonthly reports whether an offer prices a month: a price specification
+// whose reference quantity spans at least 28 days (live 2026-11: value 30,
+// unitCode DAY, "lowest price for a 30-day stay") or is given in months (MON).
+// Without one, the older JSON-LD quoted a night.
+func flatioMonthly(raw json.RawMessage) bool {
+	var specs []flatioLDPriceSpec
+	if err := json.Unmarshal(raw, &specs); err != nil {
+		var one flatioLDPriceSpec
+		if json.Unmarshal(raw, &one) != nil {
+			return false
+		}
+		specs = []flatioLDPriceSpec{one}
+	}
+	for _, sp := range specs {
+		q := sp.ReferenceQuantity
+		switch strings.ToUpper(strings.TrimSpace(q.UnitCode)) {
+		case "MON":
+			if q.Value >= 1 {
+				return true
+			}
+		case "DAY":
+			if q.Value >= 28 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // SearchFlatio searches Flatio for monthly furnished apartments in a city. It is
@@ -273,5 +314,9 @@ func flatioItemToHotel(item flatioLDItem, defCurrency string) (models.HotelResul
 		Currency:   currency,
 		BookingURL: url,
 	}}
+	if flatioMonthly(item.Offers.PriceSpecification) {
+		h.PriceBasis = models.PriceBasisMonthly
+		h.Sources[0].PriceBasis = models.PriceBasisMonthly
+	}
 	return h, true
 }
