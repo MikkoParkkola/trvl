@@ -373,3 +373,21 @@ func TestSearchDeutscheBahn_HalfFailedLookupIsNotNoFares(t *testing.T) {
 		t.Errorf("FixHint = %q, want the failed-lookup hint", notice.FixHint)
 	}
 }
+
+// TestFerryhopperPortNames_CRLF: a Windows checkout may turn the embedded list
+// into CRLF; the reader must give the same names and places either way.
+func TestFerryhopperPortNames_CRLF(t *testing.T) {
+	lf := ferryhopperPortNames(ferryhopperPortList)
+	crlf := ferryhopperPortNames(strings.ReplaceAll(ferryhopperPortList, "\n", "\r\n"))
+	if len(lf) != len(crlf) {
+		t.Fatalf("names: %d from LF, %d from CRLF", len(lf), len(crlf))
+	}
+	for i := range lf {
+		if lf[i] != crlf[i] {
+			t.Fatalf("name %d = %q from CRLF, want %q", i, crlf[i], lf[i])
+		}
+	}
+	if a, b := ferryhopperPlacesFrom(lf), ferryhopperPlacesFrom(crlf); len(a) != len(b) {
+		t.Errorf("places: %d from LF, %d from CRLF", len(a), len(b))
+	}
+}
