@@ -111,7 +111,10 @@ func TestSearchOebb_ShopBlockedAndTimetableErrorFails(t *testing.T) {
 	if len(routes) != 0 {
 		t.Errorf("got %d routes, want none", len(routes))
 	}
-	assertOebbBlockedErr(t, err)
+	notice := assertOebbBlockedErr(t, err)
+	if want := "shop refused and the timetable fallback failed: retry later"; notice.FixHint != want {
+		t.Errorf("FixHint = %q, want %q", notice.FixHint, want)
+	}
 	if err != nil && !strings.Contains(err.Error(), "LOCATION") {
 		t.Errorf("error text does not name the HAFAS failure: %q", err.Error())
 	}
