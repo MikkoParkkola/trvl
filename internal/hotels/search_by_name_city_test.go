@@ -224,3 +224,31 @@ func TestNameMatch_StreetWordInAddressIsNoTown(t *testing.T) {
 		t.Error("withoutOtherTowns dropped Ibis Wien Hauptbahnhof for a street word in its address")
 	}
 }
+
+// TestNameMatch_RadiusVetoesSoleMatchWithExtraWords: only a sole match whose
+// name equals the query name is exempt from the radius. "Hotel Sacher Baden"
+// adds a word to "Hotel Sacher", so 26 km out it is not the Vienna hotel.
+func TestNameMatch_RadiusVetoesSoleMatchWithExtraWords(t *testing.T) {
+	const cityLat, cityLon, badenLat = 60.1699, 24.9384, 60.4099
+	baden := models.HotelResult{
+		Name: "Hotel Sacher Baden", HotelID: "/g/sacher_baden", Price: 200, Currency: "USD", Lat: badenLat, Lon: cityLon,
+	}
+	if d := Haversine(cityLat, cityLon, badenLat, cityLon); d <= 25 {
+		t.Fatalf("precondition: Baden is %.1f km out, want beyond 25", d)
+	}
+	for _, q := range []string{"Vienna", "Wien", "Hotel Sacher, Vienna"} {
+		seedGeoAt(t, q, cityLat, cityLon)
+	}
+
+	if got := findBestNameMatch([]models.HotelResult{baden}, "Hotel Sacher, Vienna"); got != nil {
+		t.Errorf("findBestNameMatch = %q, want nil: it adds a town 26 km out", got.Name)
+	}
+
+	freshRateManager(t)
+	serveGooglePage(t, hotelWithPrice{"Hotel Imperial", 300})
+	withBookingResult(t, baden)
+	got, _, err := SearchHotelsByName(context.Background(), "Hotel Sacher", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if len(got) != 0 || !errors.Is(err, ErrNoNameMatch) {
+		t.Errorf("SearchHotelsByName = %v, %v; want no match", hotelNames(got), err)
+	}
+}
