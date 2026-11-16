@@ -248,3 +248,18 @@ func TestAnnotateHotelConfidenceScoresTheHeadlineProvider(t *testing.T) {
 		t.Errorf("signals = %v: scored google_hotels instead of the agoda headline", hs[0].Confidence.Signals)
 	}
 }
+
+// TestGoogleRadiusOnlyForTightCaps: Google gets lrad only when the cap is
+// tighter than the 25 km default. At the default and wider, Google returns its
+// normal set and trvl filters and counts every farther hotel itself.
+func TestGoogleRadiusOnlyForTightCaps(t *testing.T) {
+	for capKm, wantLrad := range map[float64]string{2: "lrad=2000", DefaultMaxDistanceKm: "", 30: ""} {
+		u := buildTravelURL("Vienna", HotelSearchOptions{CheckIn: "2027-04-10", CheckOut: "2027-04-12", MaxDistanceKm: capKm})
+		switch {
+		case wantLrad != "" && !strings.Contains(u, wantLrad):
+			t.Errorf("cap %v km: URL %s lacks %s", capKm, u, wantLrad)
+		case wantLrad == "" && strings.Contains(u, "lrad="):
+			t.Errorf("cap %v km: URL %s sends lrad; trvl must filter and count itself", capKm, u)
+		}
+	}
+}
