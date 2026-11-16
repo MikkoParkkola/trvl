@@ -254,3 +254,38 @@ func TestHotelSearchKeyFallbackSeparatesStayTerms(t *testing.T) {
 		t.Errorf("fallback key %q is shared by nightly and long-stay searches", nightly)
 	}
 }
+
+// TestNightlySearchDropsTheMonthlyBookingLink: a mixed hotel whose booking
+// link pointed at its monthly source gets the nightly link instead (or the
+// fallback search link), never the rental's page.
+func TestNightlySearchDropsTheMonthlyBookingLink(t *testing.T) {
+	const rentalURL = "https://spotahome.example/rent/9"
+	mixed := func(googleURL string) models.HotelResult {
+		return models.HotelResult{Name: "Mixed", HotelID: "/g/mixed", Price: 40, Currency: "EUR", BookingURL: rentalURL,
+			Lat: viennaLat + 0.009, Lon: viennaLon,
+			Sources: []models.PriceSource{
+				{Provider: "google_hotels", Price: 90, Currency: "EUR", PriceBasis: models.PriceBasisLeadIn, BookingURL: googleURL},
+				{Provider: "spotahome", Price: 40, Currency: "EUR", PriceBasis: models.PriceBasisMonthly, BookingURL: rentalURL},
+			}}
+	}
+	for _, googleURL := range []string{"https://google.example/mixed", ""} {
+		stubGoogleHotels(t, []models.HotelResult{mixed(googleURL)})
+		freshHotelBreaker(t)
+		res, err := SearchHotelsWithClient(context.Background(), offlineSearchClient(t), "Vienna", HotelSearchOptions{
+			CheckIn: "2027-06-05", CheckOut: "2027-06-07", Currency: "EUR", MaxPages: 1, CenterLat: viennaLat, CenterLon: viennaLon,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Hotels) != 1 {
+			t.Fatalf("hotels = %v, want Mixed", sortedHotelNames(res.Hotels))
+		}
+		got := res.Hotels[0].BookingURL
+		if got == rentalURL || got == "" {
+			t.Errorf("google url %q: booking_url = %q, want the nightly link, not the rental page", googleURL, got)
+		}
+		if googleURL != "" && got != googleURL {
+			t.Errorf("booking_url = %q, want the nightly source's %q", got, googleURL)
+		}
+	}
+}

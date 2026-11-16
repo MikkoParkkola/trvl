@@ -91,3 +91,18 @@ func TestFinalizeRemovesSubFloorSourcesAndStaleSavings(t *testing.T) {
 		t.Errorf("sources = %v, want the sub-floor quote removed", got)
 	}
 }
+
+// TestMergeTimeFinalizeKeepsSubUnitQuotes: merge finalizes with no requested
+// currency and no converter, so it cannot judge the floor; a 0.50 quote stays
+// until the search's finalize, which knows the currency, judges it.
+func TestMergeTimeFinalizeKeepsSubUnitQuotes(t *testing.T) {
+	h := HotelResult{Name: "Hostel", Sources: []PriceSource{{Provider: "hostelworld", Price: 0.5, Currency: "EUR"}}}
+	FinalizeHotelResultPriceTrust(&h, "", trustNow, nil)
+	if len(h.Sources) != 1 {
+		t.Errorf("merge-time finalize removed the 0.50 quote: sources = %v", h.Sources)
+	}
+	FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, nil)
+	if len(h.Sources) != 0 || h.PriceProvenance != PriceUnavailable {
+		t.Errorf("search finalize kept the 0.50 EUR quote: sources = %v, provenance %q", h.Sources, h.PriceProvenance)
+	}
+}

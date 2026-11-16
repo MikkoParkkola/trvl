@@ -34,8 +34,10 @@ func stubNightlyAndMonthly(t *testing.T) *[]hotels.StayTerm {
 				PriceBasis: models.PriceBasisMonthly, BookingURL: "https://spotahome.example/1",
 				Sources: []models.PriceSource{{Provider: "spotahome", Price: 1850, Currency: "EUR", PriceBasis: models.PriceBasisMonthly}}},
 		}}
-		if opts.StayTerm == hotels.StayNightly {
-			hotels.DropMonthlyRentals(res)
+		if opts.StayTerm != hotels.StayIncludeMonthly {
+			// What the core search returns for a nightly term (pinned by
+			// TestCoreSearchLeavesMonthlyRentalsOutByDefault).
+			res.Hotels, res.Count, res.MonthlyOmitted = res.Hotels[:1], 1, 1
 		}
 		return res, nil
 	}
