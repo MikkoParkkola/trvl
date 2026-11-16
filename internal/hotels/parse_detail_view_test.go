@@ -49,6 +49,9 @@ func TestParseHotelsFromPage_DetailView(t *testing.T) {
 	if got.Price != 0 {
 		t.Errorf("Price = %v, want 0: neither the ad's undated 1002 nor the entry's other-stay 478", got.Price)
 	}
+	if got.Stars != 5 {
+		t.Errorf("Stars = %d, want the detail view's 5 on the starless ad row", got.Stars)
+	}
 	if names := hotelNames(pr.Hotels); len(names) != 2 {
 		t.Errorf("hotels = %v, want the Sacher detail hotel and the Stefanie ad", names)
 	}
@@ -164,7 +167,7 @@ func TestParseHotelsFromPage_DetailViewGraftsOntoAd(t *testing.T) {
 	page := detailViewPageWith(t, func(data []any) {
 		list := data[0].([]any)[0].([]any)[0].([]any)[1].([]any)
 		ad := list[0].([]any)[1].(map[string]any)["300000000"].([]any)[2].([]any)[0].([]any)
-		ad[4], ad[5], ad[9] = 2468.0, 4.6, []any{2.0}
+		ad[4], ad[5], ad[9], ad[16] = 2468.0, 4.6, []any{2.0}, nil
 	})
 	var rows []models.HotelResult
 	for _, h := range parseHotelsFromPageFull(page, "EUR").Hotels {
@@ -176,6 +179,9 @@ func TestParseHotelsFromPage_DetailViewGraftsOntoAd(t *testing.T) {
 		t.Fatalf("Hotel Sacher Vienna rows = %+v, want one", rows)
 	}
 	got := rows[0]
+	if got.Lat != 48.2040009 || got.Lon != 16.3697963 {
+		t.Errorf("coordinates = %v,%v, want the detail view's pin on the pinless ad row", got.Lat, got.Lon)
+	}
 	if got.HotelID != sacherPlaceID || got.Price != 0 || got.ReviewCount != 2468 || got.Rating != 9.2 || len(got.Amenities) != 1 {
 		t.Errorf("row = %+v, want the ad's rating 9.2, 2468 reviews and amenities with the place ID and no price", got)
 	}
