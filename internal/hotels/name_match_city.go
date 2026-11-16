@@ -207,15 +207,22 @@ func carriesOtherTown(h models.HotelResult, allowed map[string]bool) bool {
 
 // addressTowns returns an address's town words: alias-table cities anywhere
 // in it, the place after a postcode ("2500 Baden", "1100 Wien"), and a lone
-// non-country word between commas ("…, Baden, Austria"). Street words ("Am
-// Hauptbahnhof 1") are not towns.
+// word forming the last non-country part ("…, Baden, Austria"). Street and
+// district words ("Am Hauptbahnhof 1", "Mariahilf, …") are not towns.
 func addressTowns(address string) map[string]bool {
 	towns := make(map[string]bool)
-	for _, part := range strings.Split(address, ",") {
+	parts := strings.Split(address, ",")
+	lastPlace := -1
+	for i, part := range parts {
+		if strings.TrimSpace(part) != "" && !models.IsCountryName(part) {
+			lastPlace = i
+		}
+	}
+	for i, part := range parts {
 		words := canonicalCityWords(hotelNameWords(part))
-		// A lone word between commas is a town ("…, Baden, Austria") unless
-		// it is the country.
-		if len(words) == 1 && !models.IsPostcode(words[0]) && !models.IsCountryName(part) {
+		// A lone word in the last non-country part is the town ("…, Baden,
+		// Austria"); earlier it is a street or district ("Mariahilf, …").
+		if i == lastPlace && len(words) == 1 && !models.IsPostcode(words[0]) {
 			towns[words[0]] = true
 		}
 		afterPostcode := false
