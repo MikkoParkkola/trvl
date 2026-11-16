@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#777](https://github.com/MikkoParkkola/trvl/pull/777))
 - The Booking.com headless token harvest no longer fails when a third-party host such as a consent CDN is blocked by a DNS filter; only a refused Booking.com host fails it, and the error no longer suggests `TRVL_ALLOW_LOCAL_PROVIDERS=1`.
   ([#777](https://github.com/MikkoParkkola/trvl/pull/777))
+- Deutsche Bahn and ÖBB searches to Vienna end at Wien Hbf: DB's old id sent every journey on to Wien Blumental, adding a change to direct trains. Warsaw and Kraków use their own station ids (they had their neighbours'), and DB now covers Kraków.
+  ([#782](https://github.com/MikkoParkkola/trvl/pull/782))
+- ÖBB answers again: shop requests send a browser User-Agent, which the shop requires. When the shop still refuses, the ÖBB timetable lists the trains without fares and says why. A refusal shows the page title instead of its HTML, and DB's bot wall (`OPS_BLOCKED`) reports as a retryable refusal.
+  ([#782](https://github.com/MikkoParkkola/trvl/pull/782))
 
 ## [1.27.0] - 2026-10-10
 
