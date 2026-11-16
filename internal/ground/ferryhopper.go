@@ -33,12 +33,11 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/MikkoParkkola/trvl/internal/logredact"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
-	"golang.org/x/text/unicode/norm"
+	"github.com/MikkoParkkola/trvl/internal/preferences"
 )
 
 // ferryhopperMCPURL is the Ferryhopper MCP endpoint. It is a var (not a const)
@@ -59,8 +58,9 @@ var ferryhopperAliases = map[string]string{
 }
 
 // ferryhopperPlaces is the folded set of names a city can match: each port
-// name, its part before " (", " - " or ",", and the text in parentheses, so
-// "THIRA (SANTORINI)" answers to both thira and santorini.
+// name, its part before " (", " - " or ",", the text inside its parentheses
+// (even when more follows, as in "SANTA LUCIA (PIAZZALE ROMA), VENICE"), and
+// the text after " - " ("HELSINKI - VUOSAARI").
 var ferryhopperPlaces = sync.OnceValue(func() map[string]bool {
 	places := map[string]bool{}
 	add := func(s string) {
@@ -69,32 +69,24 @@ var ferryhopperPlaces = sync.OnceValue(func() map[string]bool {
 		}
 	}
 	for _, line := range strings.Split(ferryhopperPortList, "\n") {
-		name := ferryhopperFold(line)
+		name := preferences.Fold(line)
 		add(name)
-		if i := strings.Index(name, " ("); i > 0 {
-			add(name[:i])
-			add(strings.TrimSuffix(name[i+2:], ")"))
-		}
-		for _, sep := range []string{" - ", ","} {
-			if i := strings.Index(name, sep); i > 0 {
-				add(name[:i])
+		if open := strings.Index(name, " ("); open > 0 {
+			add(name[:open])
+			if end := strings.Index(name[open:], ")"); end > 0 {
+				add(name[open+2 : open+end])
 			}
+		}
+		if i := strings.Index(name, " - "); i > 0 {
+			add(name[:i])
+			add(name[i+3:])
+		}
+		if i := strings.Index(name, ","); i > 0 {
+			add(name[:i])
 		}
 	}
 	return places
 })
-
-// ferryhopperFold lowercases and strips accents so "Travemünde" matches
-// Ferryhopper's "TRAVEMUNDE".
-func ferryhopperFold(s string) string {
-	var b strings.Builder
-	for _, r := range norm.NFD.String(strings.ToLower(strings.TrimSpace(s))) {
-		if !unicode.Is(unicode.Mn, r) {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
 
 // HasFerryhopperRoute reports whether both cities match a Ferryhopper port or
 // alias. It is the launch gate: Ferryhopper's resolver answers any name with
@@ -106,7 +98,7 @@ func HasFerryhopperRoute(from, to string) bool {
 }
 
 func hasFerryhopperPlace(city string) bool {
-	key := ferryhopperFold(city)
+	key := preferences.Fold(city)
 	if alias, ok := ferryhopperAliases[key]; ok {
 		key = alias
 	}

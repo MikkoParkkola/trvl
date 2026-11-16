@@ -268,3 +268,26 @@ func TestSearchDeutscheBahn_FailedPriceLookupIsNotNoFares(t *testing.T) {
 		})
 	}
 }
+
+// TestFerryhopperPortListForm pins the embedded list to the generator's form:
+// trimmed, unique, byte-sorted names, newline-terminated, and no country group
+// such as "GERMANY (ALL PORTS)".
+func TestFerryhopperPortListForm(t *testing.T) {
+	if !strings.HasSuffix(ferryhopperPortList, "\n") {
+		t.Fatal("ferryhopper_ports.txt must end with a newline")
+	}
+	lines := strings.Split(strings.TrimSuffix(ferryhopperPortList, "\n"), "\n")
+	for i, line := range lines {
+		if line == "" || line != strings.TrimSpace(line) {
+			t.Errorf("line %d = %q, want a trimmed, non-empty name", i+1, line)
+		}
+		if i > 0 && lines[i-1] >= line {
+			t.Errorf("line %d %q is not after %q: want unique, byte-sorted names", i+1, line, lines[i-1])
+		}
+	}
+	for _, country := range []string{"GERMANY", "DENMARK", "SPAIN", "FINLAND"} {
+		if strings.Contains(ferryhopperPortList, "\n"+country+" (ALL PORTS)\n") {
+			t.Errorf("%s (ALL PORTS) is a country group and must not be in the list", country)
+		}
+	}
+}
