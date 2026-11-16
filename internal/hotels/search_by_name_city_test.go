@@ -180,3 +180,32 @@ func TestSearchHotelByName_ReSearchKeepsTheMatchRules(t *testing.T) {
 		t.Error("a hex feature ID must rank as a Google ID")
 	}
 }
+
+// TestNameMatch_RadiusNeverVetoesTheSoleFullNameMatch: an airport hotel
+// sits about 28 km from its city. When it is the only hotel matching the
+// full name, distance has nothing to choose between and must not drop it.
+func TestNameMatch_RadiusNeverVetoesTheSoleFullNameMatch(t *testing.T) {
+	const cityLat, cityLon, hotelLat = 60.1699, 24.9384, 60.4199
+	hilton := models.HotelResult{
+		Name: "Hilton Munich Airport", HotelID: "/g/hilton_muc", Price: 200, Currency: "USD",
+		Lat: hotelLat, Lon: cityLon, Address: "Terminalstraße Mitte 20, 85356 Munich",
+	}
+	if d := Haversine(cityLat, cityLon, hotelLat, cityLon); d <= 25 {
+		t.Fatalf("precondition: hotel is %.1f km out, want beyond 25", d)
+	}
+	seedGeoAt(t, "Munich", cityLat, cityLon)
+	seedGeoAt(t, "München", cityLat, cityLon)
+
+	if got := findBestNameMatch([]models.HotelResult{hilton}, "Hilton Munich Airport, Munich"); got == nil {
+		t.Error("findBestNameMatch dropped the sole full-name match for its distance")
+	}
+
+	freshRateManager(t)
+	serveGooglePage(t, hotelWithPrice{"Hotel Imperial", 300})
+	withBookingResult(t, hilton)
+	seedGeoAt(t, "Hilton Munich Airport", cityLat, cityLon) // the name already holds the city
+	got, _, err := SearchHotelsByName(context.Background(), "Hilton Munich Airport", "Munich", lookupCheckIn, lookupCheckOut, "USD")
+	if err != nil || len(got) != 1 {
+		t.Fatalf("SearchHotelsByName = %v, %v; want the sole full-name match", hotelNames(got), err)
+	}
+}
