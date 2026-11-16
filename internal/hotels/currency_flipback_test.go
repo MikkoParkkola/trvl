@@ -105,7 +105,7 @@ func TestSearchHotelsByName_HeadlineStaysInRequestedCurrency(t *testing.T) {
 	}))
 	seedGeo(t, "Hotel Paris Praha, Prague")
 
-	got, err := SearchHotelsByName(context.Background(), "Hotel Paris Praha", "Prague", "2026-06-15", "2026-06-18", "EUR")
+	got, _, err := SearchHotelsByName(context.Background(), "Hotel Paris Praha", "Prague", "2026-06-15", "2026-06-18", "EUR")
 	if err != nil {
 		t.Fatalf("search by name: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestSearchHotelsByName_FailedConversionFlagsHeadline(t *testing.T) {
 	}))
 	seedGeo(t, "Hotel Paris Praha, Prague")
 
-	got, err := SearchHotelsByName(context.Background(), "Hotel Paris Praha", "Prague", "2026-06-15", "2026-06-18", "EUR")
+	got, _, err := SearchHotelsByName(context.Background(), "Hotel Paris Praha", "Prague", "2026-06-15", "2026-06-18", "EUR")
 	if err != nil || len(got) != 1 {
 		t.Fatalf("search by name: %v (%d hotels), want 1 hotel", err, len(got))
 	}

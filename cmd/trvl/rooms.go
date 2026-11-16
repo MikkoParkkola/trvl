@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/pricefeed"
@@ -132,7 +133,9 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 	if err != nil {
 		return nil, fmt.Errorf("hotel lookup for %q: %w", hotelQuery, err)
 	}
-	if hotel.HotelID == "" {
+	// Only a Google place ID resolves rooms; another provider's id (Booking's,
+	// say) must not be sent as one.
+	if !looksLikeGoogleHotelID(hotel.HotelID) {
 		return nil, fmt.Errorf("hotel %q found (%s) but has no Google ID", hotelQuery, hotel.Name)
 	}
 
@@ -145,11 +148,12 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 		hint = searchQuery
 	}
 	opts := hotels.RoomSearchOptions{
-		HotelID:  hotel.HotelID,
-		CheckIn:  checkIn,
-		CheckOut: checkOut,
-		Currency: currency,
-		Location: hint,
+		HotelID:    hotel.HotelID,
+		CheckIn:    checkIn,
+		CheckOut:   checkOut,
+		Currency:   currency,
+		Location:   hint,
+		BookingURL: bookingRoomsURL(hotel),
 	}
 	result, err := getRoomAvailabilityWithOpts(ctx, opts)
 	if err != nil {
@@ -159,6 +163,18 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 		result.Name = hotel.Name
 	}
 	return result, nil
+}
+
+// bookingRoomsURL is the hotel's Booking.com source page when it is an https
+// booking.com URL; anything else would make the room fetch refuse the whole
+// lookup. HotelResult.BookingURL is a display link, never a room-fetch target.
+func bookingRoomsURL(hotel *models.HotelResult) string {
+	for _, s := range hotel.Sources {
+		if s.Provider == "booking" && cookies.IsHTTPSOnSite(s.BookingURL, "booking.com") {
+			return s.BookingURL
+		}
+	}
+	return ""
 }
 
 func looksLikeGoogleHotelID(value string) bool {

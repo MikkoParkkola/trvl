@@ -57,7 +57,7 @@ func TestSearchHotelsByName_StrippedNameRefusesOtherTown(t *testing.T) {
 	withBookingResult(t, bookingSacherBaden())
 	seedGeo(t, "Hotel Sacher Wien, Vienna")
 
-	got, err := SearchHotelsByName(context.Background(), "Hotel Sacher Wien", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	got, _, err := SearchHotelsByName(context.Background(), "Hotel Sacher Wien", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
 	if len(got) != 0 {
 		t.Fatalf("matches = %v, want none: Baden is not Vienna", hotelNames(got))
 	}

@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // HasExternalProviderSource returns true if the hotel has at least one price
@@ -136,7 +137,10 @@ func MergeHotelResults(sources ...[]HotelResult) []HotelResult {
 				if existing.HotelID == "" && h.HotelID != "" {
 					existing.HotelID = h.HotelID
 				}
-				if existing.Address == "" && h.Address != "" {
+				// A street address replaces a city-only one; a city-only one only
+				// fills a blank.
+				if h.Address != "" && (existing.Address == "" ||
+					(streetAddress(existing.Address) == "" && streetAddress(h.Address) != "")) {
 					existing.Address = h.Address
 				}
 				if existing.Lat == 0 && h.Lat != 0 {
@@ -293,8 +297,8 @@ func ComputeSavings(hotels []HotelResult) {
 }
 
 func sameHotelCandidate(existing, incoming HotelResult, maxDistanceMeters float64) bool {
-	existingAddress := normalizeAddress(existing.Address)
-	incomingAddress := normalizeAddress(incoming.Address)
+	existingAddress := normalizeAddress(streetAddress(existing.Address))
+	incomingAddress := normalizeAddress(streetAddress(incoming.Address))
 	if existingAddress != "" && incomingAddress != "" {
 		if existingAddress == incomingAddress {
 			return true
@@ -347,21 +351,28 @@ func deduplicateSources(sources []PriceSource) []PriceSource {
 	return out
 }
 
-// buildSources creates a Sources slice from a HotelResult's own price.
+// streetAddress returns address, or "" when it names only a place such as
+// "Vienna, Austria": no digit and at most two comma-separated parts. A
+// city-only address can neither tell two hotels apart nor improve on a street.
+func streetAddress(address string) string {
+	if !strings.ContainsFunc(address, unicode.IsDigit) && strings.Count(address, ",") <= 1 {
+		return ""
+	}
+	return address
+}
+
+// buildSources returns a HotelResult's sources, or one built from its own
+// price. A row without a headline price keeps the sources it has: they still
+// say where the hotel was found.
 func buildSources(h HotelResult) []PriceSource {
-	if h.Price == 0 {
-		return nil
-	}
-	provider := "unknown"
-	for _, s := range h.Sources {
-		provider = s.Provider
-		break
-	}
 	if len(h.Sources) > 0 {
 		return h.Sources
 	}
+	if h.Price == 0 {
+		return nil
+	}
 	return []PriceSource{{
-		Provider:   provider,
+		Provider:   "unknown",
 		Price:      h.Price,
 		Currency:   h.Currency,
 		BookingURL: h.BookingURL,

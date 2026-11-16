@@ -328,13 +328,13 @@ func TestCov_SortReviews_Lowest(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSearchHotelsByName_EmptyName(t *testing.T) {
-	if _, err := SearchHotelsByName(context.Background(), "", "Paris", "2026-07-01", "2026-07-05", "EUR"); err == nil {
+	if _, _, err := SearchHotelsByName(context.Background(), "", "Paris", "2026-07-01", "2026-07-05", "EUR"); err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestSearchHotelsByName_NoDates(t *testing.T) {
-	if _, err := SearchHotelsByName(context.Background(), "Hotel", "Paris", "", "", "EUR"); err == nil {
+	if _, _, err := SearchHotelsByName(context.Background(), "Hotel", "Paris", "", "", "EUR"); err == nil {
 		t.Fatal("expected error")
 	}
 }

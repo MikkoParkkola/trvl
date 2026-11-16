@@ -223,7 +223,7 @@ func handleSearchHotelByName(ctx context.Context, args map[string]any, elicit El
 		return nil, nil, err
 	}
 
-	results, err := searchHotelsByNameFunc(ctx, name, location, checkIn, checkOut, currency)
+	results, statuses, err := searchHotelsByNameFunc(ctx, name, location, checkIn, checkOut, currency)
 	// "No hotel by that name" is an answer: an empty success whose notice
 	// names the property and any provider failure that came with the miss.
 	var notice string
@@ -236,9 +236,11 @@ func handleSearchHotelByName(ctx context.Context, args map[string]any, elicit El
 	}
 
 	result := &models.HotelSearchResult{
-		Success: true,
-		Count:   len(results),
-		Hotels:  results,
+		Success:          true,
+		Count:            len(results),
+		Hotels:           results,
+		ProviderStatuses: statuses,
+		Completeness:     models.ComputeCompleteness(statuses),
 	}
 
 	displayLoc := name
