@@ -363,7 +363,7 @@ func hotelMonthlyNote(n int) string {
 	if n == 1 {
 		noun = "monthly rental"
 	}
-	return fmt.Sprintf(" Left out %d %s: their prices are monthly rents, not nightly rates; search_accommodations lists them.", n, noun)
+	return fmt.Sprintf(" Left out %d %s: their prices are monthly rents, not nightly rates.", n, noun)
 }
 
 func hotelSummaryText(result *models.HotelSearchResult, location string) string {

@@ -89,7 +89,7 @@ Dates in the compact examples are illustrative; use future dates for live provid
 | Price range | `min_price` / `max_price` | Per night — server-side `?min_price` / `?max_price` and client-side guard |
 | Sort | `sort` | `price`, `rating`, `distance`, `stars` |
 
-`search_hotels` and `search_hotels_with_details` list nightly prices only, like every hotel search except `search_accommodations`. Monthly rentals (Uniplaces, Wunderflats, Spotahome, Anyplace, Blueground, HousingAnywhere, Landing, and Flatio listings priced for a 30-day stay) are left out, counted in `monthly_omitted` and named in the summary; `search_accommodations` lists them with `price_basis: "monthly"`. A quote worth less than one unit of the requested currency (EUR 1 in a EUR search) counts as no price.
+`search_hotels` and `search_hotels_with_details` list nightly prices only, like every hotel search except `search_accommodations`. Monthly rentals (Uniplaces, Wunderflats, Spotahome, Anyplace, Blueground, HousingAnywhere, Landing, and Flatio listings priced for a 30-day stay) are left out and counted in `monthly_omitted` and in the summary. `search_accommodations` still searches them, labelled `price_basis: "monthly"`, but it shows only its top candidates (5 by default, at most 8), so they may not appear in its reply. A quote worth less than one unit of the requested currency (EUR 1 in a EUR search) counts as no price.
 
 ### Ground Transport Filters (`search_ground`)
 
