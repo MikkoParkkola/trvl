@@ -11,14 +11,14 @@ import (
 // "Iceland" matches Reykjavik and Keflavik. "Balkans" and "Balkan" match the
 // cities a ground route to that region actually arrives in.
 func MatchesBucket(city, airport string, bucket []string) bool {
-	cityKey := fold(city)
+	cityKey := Fold(city)
 	airportUp := strings.ToUpper(strings.TrimSpace(airport))
 	for _, raw := range bucket {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
 		}
-		low := fold(raw)
+		low := Fold(raw)
 		if (cityKey != "" && cityKey == low) || (airportUp != "" && strings.EqualFold(raw, airportUp)) {
 			return true
 		}
@@ -41,8 +41,8 @@ func MatchesBucket(city, airport string, bucket []string) bool {
 	return false
 }
 
-// fold lowercases and strips accents so "Reykjavík" matches the ASCII alias.
-func fold(s string) string {
+// Fold lowercases and strips accents so "Reykjavík" matches the ASCII alias.
+func Fold(s string) string {
 	var b strings.Builder
 	for _, r := range norm.NFD.String(strings.ToLower(strings.TrimSpace(s))) {
 		if unicode.Is(unicode.Mn, r) {

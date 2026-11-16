@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ferryhopper runs only when both ends match one of its 1,451 ports, so an inland pair such as Prague to Vienna shows as not served instead of a search its resolver misreads (Prague became Grand Portage, USA).
+- Finnlines and Tallink treat two of their ports with no line between them (Naantali to Travemünde, Helsinki to Riga) as not served.
+- Deutsche Bahn journeys without any fare, such as Praha to Wien, come back with a notice naming the carriers that run them, and the day-best fallback tries its second request format before giving up.
 - Tallink searches decode again: `marketingMessage` became an object in the timetable answer. Its sailing fares are marked `live`.
 - Snälltåget searches the booking app's API (`apiv2.snalltaget.se`) with the site's anonymous guest token instead of a retired host. It returns live per-departure fares in SEK, takes station names from the answer, adds Copenhagen and Hamburg, and links to the current booking page.
 - Renfe returns its price-calendar day minimum as an `estimated` EUR fare with no invented 00:00 departure.

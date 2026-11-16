@@ -1,1 +1,2 @@
 /.github/scripts/gosec-gate.sh text eol=lf
+internal/ground/ferryhopper_ports.txt text eol=lf
