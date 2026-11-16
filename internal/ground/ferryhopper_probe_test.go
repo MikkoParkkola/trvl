@@ -62,14 +62,20 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	var live []string
-	// Country groups ("GERMANY (ALL PORTS)") are set aside on both sides: the
-	// generator decides which island countries to keep, the probe checks ports.
+	// Country groups ("GERMANY (ALL PORTS)") stay out of the file, except the
+	// island countries scripts/ferryhopper-ports keeps (its keepCountryGroups).
+	keptIslandGroups := map[string]bool{
+		"BERMUDA (ALL PORTS)": true, "GUADELOUPE (ALL PORTS)": true,
+		"IRELAND (ALL PORTS)": true, "MALTA (ALL PORTS)": true,
+	}
 	countryGroups := map[string]bool{}
 	for _, p := range answer.Result.StructuredContent.Ports {
 		name := strings.TrimSpace(p.Name)
 		if base, group := strings.CutSuffix(name, " (ALL PORTS)"); group && strings.EqualFold(base, strings.TrimSpace(p.Country)) {
 			countryGroups[name] = true
-			continue
+			if !keptIslandGroups[name] {
+				continue
+			}
 		}
 		if name == "" || seen[name] {
 			continue
@@ -86,6 +92,11 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 	for _, line := range strings.Split(strings.TrimSuffix(ferryhopperPortList, "\n"), "\n") {
 		embedded[line] = true
 	}
+	for name := range keptIslandGroups {
+		if !embedded[name] {
+			t.Errorf("%s is a kept island country and must be in ferryhopper_ports.txt", name)
+		}
+	}
 	var missing, dropped []string
 	for _, name := range live {
 		if !embedded[name] {
@@ -93,7 +104,10 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 		}
 	}
 	for name := range embedded {
-		if !seen[name] && !countryGroups[name] {
+		switch {
+		case countryGroups[name] && !keptIslandGroups[name]:
+			t.Errorf("%s is a mainland country group and must not be in ferryhopper_ports.txt", name)
+		case !seen[name]:
 			dropped = append(dropped, name)
 		}
 	}
@@ -104,5 +118,5 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 	if len(dropped) > 0 {
 		t.Errorf("%d ports in ferryhopper_ports.txt are gone from the live list (first: %q); regenerate it with go run ./scripts/ferryhopper-ports", len(dropped), dropped[:min(5, len(dropped))])
 	}
-	t.Logf("live ports %d plus %d country groups; embedded %d (island countries kept)", len(live), len(countryGroups), len(embedded))
+	t.Logf("live ports %d (incl. %d kept island groups; %d country groups in all); embedded %d", len(live), len(keptIslandGroups), len(countryGroups), len(embedded))
 }
