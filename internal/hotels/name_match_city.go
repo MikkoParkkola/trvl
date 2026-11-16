@@ -188,18 +188,10 @@ func addressTowns(address string) map[string]bool {
 			if _, isCity := cityAliasCanon[w]; isCity || afterPostcode {
 				towns[w] = true
 			}
-			if isPostcodeWord(w) {
+			if models.IsPostcode(w) {
 				afterPostcode = true
 			}
 		}
 	}
 	return towns
-}
-
-// isPostcodeWord reports a run of three to six digits.
-func isPostcodeWord(w string) bool {
-	if len(w) < 3 || len(w) > 6 {
-		return false
-	}
-	return !strings.ContainsFunc(w, func(r rune) bool { return r < '0' || r > '9' })
 }
