@@ -354,7 +354,7 @@ func hotelSummary(result *models.HotelSearchResult, location string) string {
 }
 
 // hotelMonthlyNote says how many monthly rentals a nightly list left out and
-// where they are listed; empty when none.
+// why; empty when none.
 func hotelMonthlyNote(n int) string {
 	if n <= 0 {
 		return ""

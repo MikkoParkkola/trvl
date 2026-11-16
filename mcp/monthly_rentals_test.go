@@ -64,14 +64,15 @@ func hotelNamesIn(v any) []string {
 
 // TestNightlyHotelListsLeaveMonthlyRentalsOut: a monthly rent is not a nightly
 // price, so search_hotels and search_hotels_with_details leave the rental out,
-// count it, and point to search_accommodations.
+// count it, and say why, without pointing anywhere.
 func TestNightlyHotelListsLeaveMonthlyRentalsOut(t *testing.T) {
 	terms := stubNightlyAndMonthly(t)
 	for _, tool := range []string{"search_hotels", "search_hotels_with_details"} {
-		text, structured, isErr := callTool(t, NewServer(), tool, stayArgs)
-		if isErr {
-			t.Fatalf("%s: isError: %s", tool, text)
+		reply := callGroundTool(t, tool, stayArgs)
+		if reply.isError {
+			t.Fatalf("%s: isError: %s", tool, reply.errText)
 		}
+		structured := reply.structured
 		names := hotelNamesIn(structured["hotels"])
 		for _, n := range names {
 			if n == "Spotahome Flat" {
@@ -84,7 +85,7 @@ func TestNightlyHotelListsLeaveMonthlyRentalsOut(t *testing.T) {
 		if got, _ := structured["monthly_omitted"].(float64); got != 1 {
 			t.Errorf("%s monthly_omitted = %v, want 1", tool, structured["monthly_omitted"])
 		}
-		assertMonthlyNote(t, tool, text, "1 monthly rental")
+		assertMonthlyNote(t, tool, reply.userText, "1 monthly rental")
 	}
 	for _, term := range *terms {
 		if term != hotels.StayNightly {
@@ -127,34 +128,58 @@ func asString(v any) string {
 	return s
 }
 
-// monthlyNoteSentence returns the sentence of text that reports left-out
-// monthly rentals, or "" when there is none.
-func monthlyNoteSentence(text string) string {
-	i := strings.Index(text, "monthly rental")
+// monthlyNoteToEnd returns the summary from the start of the monthly note to
+// its end. hotelSummary and hotelDetailsSummary append the note last, so this
+// covers the note and any sentence that might follow it, never the summary's
+// earlier text. It is "" when the summary has no monthly note.
+func monthlyNoteToEnd(summary string) string {
+	i := strings.Index(summary, "monthly rental")
 	if i < 0 {
 		return ""
 	}
-	start := strings.LastIndex(text[:i], "Left out")
-	end := strings.Index(text[i:], ".")
-	if start < 0 || end < 0 {
+	start := strings.LastIndex(summary[:i], "Left out")
+	if start < 0 {
 		return ""
 	}
-	return text[start : i+end+1]
+	return summary[start:]
 }
 
 // assertMonthlyNote requires the note to give the count and the reason, and
 // to point nowhere: search_accommodations shows only its top few candidates,
-// so promising that it lists the rentals would be false (live Vienna
-// 2026-11-18..20: 0 monthly rows of 246).
-func assertMonthlyNote(t *testing.T, where, text, count string) {
+// so it may leave the rentals out (live Vienna 2026-11-18..20: 0 monthly rows
+// of 246). summary is the reply's summary block, not the JSON copy, which may
+// mention search_accommodations for other reasons.
+func assertMonthlyNote(t *testing.T, where, summary, count string) {
 	t.Helper()
-	note := monthlyNoteSentence(text)
+	note := monthlyNoteToEnd(summary)
 	for _, want := range []string{count, "monthly rents, not nightly rates"} {
 		if !strings.Contains(note, want) {
-			t.Errorf("%s monthly note %q lacks %q (full text:\n%s)", where, note, want, text)
+			t.Errorf("%s monthly note %q lacks %q (summary:\n%s)", where, note, want, summary)
 		}
 	}
 	if strings.Contains(note, "search_accommodations") {
-		t.Errorf("%s monthly note %q promises search_accommodations lists the rentals", where, note)
+		t.Errorf("%s monthly note %q points to search_accommodations", where, note)
+	}
+}
+
+// TestMonthlyOmittedSchemaGivesTheReasonOnly: both output schemas describe
+// monthly_omitted by its reason and send nobody to search_accommodations.
+func TestMonthlyOmittedSchemaGivesTheReasonOnly(t *testing.T) {
+	for name, schema := range map[string]interface{}{
+		"search_hotels":              hotelSearchOutputSchema(),
+		"search_hotels_with_details": hotelDetailsSearchOutputSchema(),
+	} {
+		props := schema.(map[string]interface{})["properties"].(map[string]interface{})
+		field, ok := props["monthly_omitted"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s schema lacks monthly_omitted", name)
+		}
+		desc, _ := field["description"].(string)
+		if !strings.Contains(desc, "monthly rents, not nightly rates") {
+			t.Errorf("%s monthly_omitted description %q lacks the reason", name, desc)
+		}
+		if strings.Contains(desc, "search_accommodations") {
+			t.Errorf("%s monthly_omitted description %q points to search_accommodations", name, desc)
+		}
 	}
 }
