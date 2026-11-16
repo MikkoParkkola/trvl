@@ -277,9 +277,10 @@ type dbBestPriceInterval struct {
 }
 
 // fetchDBBestPrice queries the DB tagesbestpreis endpoint for cross-border routes
-// that return no price from the standard fahrplan search. Returns (price, currency).
-// Returns (0, "") on any error so callers can skip gracefully.
-func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64, string) {
+// that return no price from the standard fahrplan search. It returns the day's
+// best (price, currency); (0, "", nil) when DB answered cleanly with no price;
+// and an error only when no request got a decodable 200.
+func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64, string, error) {
 	fromLid := fmt.Sprintf("A=1@L=%s@", fromEVA)
 	toLid := fmt.Sprintf("A=1@L=%s@", toEVA)
 
@@ -332,14 +333,20 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 
 	contentType := "application/x.db.vendo.mob.verbindungssuche.v9+json"
 
+	// decoded records a clean 200 with no positive price: DB answered and
+	// sells nothing. lastErr keeps the reason when no attempt got that far.
+	decoded := false
+	var lastErr error
 	for _, reqBody := range []map[string]any{reqBodyA, reqBodyB} {
 		body, err := json.Marshal(reqBody)
 		if err != nil {
+			lastErr = fmt.Errorf("db tagesbestpreis marshal: %w", err)
 			continue
 		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, dbBestPriceEndpoint, bytes.NewReader(body))
 		if err != nil {
+			lastErr = fmt.Errorf("db tagesbestpreis: %w", err)
 			continue
 		}
 		req.Header.Set("Content-Type", contentType)
@@ -350,29 +357,34 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 
 		resp, err := dbClient.Do(req)
 		if err != nil {
+			lastErr = fmt.Errorf("db tagesbestpreis: %w", err)
 			slog.Warn("db tagesbestpreis request failed", "err", logredact.Err(err))
 			continue
 		}
-		defer func() { _ = resp.Body.Close() }()
+		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
+		_ = resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			if _, drainErr := io.Copy(io.Discard, io.LimitReader(resp.Body, 256)); drainErr != nil {
-				slog.Debug("db tagesbestpreis response drain failed", "error", logredact.Err(drainErr))
+			if bytes.Contains(respBody, []byte("OPS_BLOCKED")) {
+				lastErr = fmt.Errorf("db tagesbestpreis: HTTP %d OPS_BLOCKED: %w", resp.StatusCode, models.ErrRateLimited)
+			} else {
+				lastErr = httpStatusError("db", "tagesbestpreis", resp.StatusCode)
 			}
 			slog.Warn("db tagesbestpreis non-200", "status", resp.StatusCode)
 			continue
 		}
-
-		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
-		if err != nil {
+		if readErr != nil {
+			lastErr = fmt.Errorf("db tagesbestpreis read: %w", readErr)
 			continue
 		}
 
 		var bpResp dbBestPriceResponse
 		if err := json.Unmarshal(respBody, &bpResp); err != nil {
+			lastErr = fmt.Errorf("db tagesbestpreis decode: %v: %w", err, models.ErrParseFailed)
 			slog.Warn("db tagesbestpreis decode failed", "err", logredact.Err(err))
 			continue
 		}
+		decoded = true
 
 		// Find cheapest price across all intervals.
 		var bestPrice float64
@@ -386,13 +398,16 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 			}
 		}
 		if bestPrice > 0 {
-			return bestPrice, bestCur
+			return bestPrice, bestCur, nil
 		}
 		// An empty 200 for body A says nothing about body B: try it (one
 		// extra request at most) before giving up.
 	}
 
-	return 0, ""
+	if decoded {
+		return 0, "", nil
+	}
+	return 0, "", lastErr
 }
 
 // SearchDeutscheBahn searches Deutsche Bahn for train journeys between two cities.
@@ -487,8 +502,10 @@ func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([
 			break
 		}
 	}
+	var bestPriceErr error
 	if needsBestPrice {
-		bp, bpCur := fetchDBBestPrice(ctx, fromStation.EVA, toStation.EVA, date)
+		bp, bpCur, err := fetchDBBestPrice(ctx, fromStation.EVA, toStation.EVA, date)
+		bestPriceErr = err
 		if bp > 0 {
 			slog.Debug("db tagesbestpreis fallback", "price", bp, "currency", bpCur)
 			for i := range routes {
@@ -504,6 +521,9 @@ func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([
 	}
 
 	if len(routes) > 0 && !anyGroundRoutePriced(routes) {
+		if bestPriceErr != nil {
+			return routes, dbPriceLookupNotice(bestPriceErr)
+		}
 		return routes, dbNoFaresNotice(dbResp.Verbindungen)
 	}
 	return routes, nil
@@ -516,6 +536,16 @@ func anyGroundRoutePriced(routes []models.GroundRoute) bool {
 		}
 	}
 	return false
+}
+
+// dbPriceLookupNotice explains journeys served without fares because every
+// day-best lookup failed: DB did not say it sells nothing.
+func dbPriceLookupNotice(err error) *models.ProviderNotice {
+	return &models.ProviderNotice{
+		Reason:  models.ClassifyProviderReason(err.Error()),
+		FixHint: "DB's price lookup failed: fares unavailable",
+		Err:     err,
+	}
 }
 
 // dbNoFaresNotice explains journeys DB lists but sells no fare for (cross-border

@@ -145,7 +145,11 @@ func TestLiveProbe_DBBestPrice(t *testing.T) {
 		t.Fatal("Berlin or Munich missing from the DB station table")
 	}
 	date := time.Now().AddDate(0, 0, 21).Format("2006-01-02")
-	price, currency := fetchDBBestPrice(context.Background(), from.EVA, to.EVA, date)
+	price, currency, err := fetchDBBestPrice(context.Background(), from.EVA, to.EVA, date)
+	testutil.SkipIfTransient(t, err) // timeouts, 429 and 452 OPS_BLOCKED are not drift
+	if err != nil {
+		t.Fatalf("tagesbestpreis %s -> %s on %s: %v", from.EVA, to.EVA, date, err)
+	}
 	if price <= 0 || currency == "" {
 		t.Fatalf("tagesbestpreis %s -> %s on %s = %v %q, want a priced answer", from.EVA, to.EVA, date, price, currency)
 	}
