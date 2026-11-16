@@ -290,3 +290,16 @@ func TestNameMatch_LocalCityFindsTheEnglishGeocode(t *testing.T) {
 		t.Errorf("findBestNameMatch = %v, want Hotel Sacher Vienna", got)
 	}
 }
+
+// TestNameMatch_GeocodeLookupIgnoresCase: the cache keeps a query as typed,
+// so "vienna" cached in lower case is still Vienna's point.
+func TestNameMatch_GeocodeLookupIgnoresCase(t *testing.T) {
+	seedGeoAt(t, "vienna", 48.2083537, 16.3725042)
+	candidates := []models.HotelResult{
+		{Name: "Hotel Sacher Baden", HotelID: "/g/sacher_baden", Lat: 48.0, Lon: 16.22},
+		{Name: "Hotel Sacher Vienna", HotelID: "/g/sacher_vienna", Lat: 48.2040009, Lon: 16.3697963},
+	}
+	if got := findBestNameMatch(candidates, "Hotel Sacher, Vienna"); got == nil || got.Name != "Hotel Sacher Vienna" {
+		t.Errorf("findBestNameMatch = %v, want Hotel Sacher Vienna", got)
+	}
+}
