@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/fareintel"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -523,3 +524,33 @@ func normalizeHotelCurrencies(ctx context.Context, hotels []models.HotelResult, 
 //
 // Strategy: Google Hotels returns listings when searching by city/area, not hotel
 // names. We extract a location context from the query (text after comma, or last
+
+// annotateHotelConfidence attaches an honest bookability Confidence to every
+// hotel (innovation #3), scored via the shared fareintel scorer from the
+// property's price freshness, provider reliability, multi-source corroboration,
+// and price-basis verification. Hotels with no usable signal are left unrated,
+// never faked.
+func annotateHotelConfidence(hotels []models.HotelResult, now time.Time) {
+	for i := range hotels {
+		h := &hotels[i]
+		// Score the quote the headline shows, not the cheapest one.
+		provider := h.HeadlineProvider
+		if provider == "" && len(h.Sources) > 0 {
+			provider = h.Sources[0].Provider
+		}
+		retrievedAt := h.RetrievedAt
+		if retrievedAt.IsZero() {
+			retrievedAt = now
+		}
+		c := fareintel.ScoreConfidence(fareintel.ConfidenceInput{
+			Price:             h.Price,
+			Currency:          h.Currency,
+			Provider:          provider,
+			RetrievedAt:       retrievedAt,
+			Now:               now,
+			Sources:           h.Sources,
+			PriceVerification: h.PriceConfidence,
+		})
+		h.Confidence = &c
+	}
+}
