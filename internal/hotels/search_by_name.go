@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -9,10 +10,14 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
+
+// ErrNoNameMatch means the providers answered but no candidate's name matched
+// the requested property. Callers show an empty result with a notice instead
+// of presenting unrelated hotels as matches.
+var ErrNoNameMatch = errors.New("no hotel matched the requested name")
 
 // SearchHotelsByName searches for hotels matching a specific property name across
 // all providers (Google Hotels, Trivago, and any configured external providers).
@@ -63,6 +68,8 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 
 	resultCh := make(chan providerResult, 3)
 	var wg sync.WaitGroup
+	// googleErr is written by the Google goroutine and read after wg.Wait.
+	var googleErr error
 
 	// Google Hotels — use the full "name + location" query so the algorithm
 	// surfaces the specific property.
@@ -72,7 +79,15 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 		res, err := SearchHotels(ctx, query, opts)
 		if err != nil {
 			slog.Warn("search_by_name: google hotels failed", "error", logredact.Err(err))
+			googleErr = fmt.Errorf("google hotels: %w", err)
 			return
+		}
+		// When another provider returned hotels, SearchHotels succeeds and
+		// keeps a Google failure only as a provider status.
+		for _, ps := range res.ProviderStatuses {
+			if ps.ID == "google_hotels" && ps.Error != "" {
+				googleErr = fmt.Errorf("google hotels: %s", ps.Error)
+			}
 		}
 		resultCh <- providerResult{hotels: res.Hotels, source: "google_hotels"}
 	}()
@@ -124,9 +139,6 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 	for pr := range resultCh {
 		batches = append(batches, pr.hotels)
 	}
-	if len(batches) == 0 {
-		return nil, fmt.Errorf("no results from any provider for %q", name)
-	}
 
 	// Normalize before merge so headline adoption is cross-currency safe.
 	// Use provided currency (already defaulted to USD by caller) or first observed.
@@ -145,32 +157,40 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 		}
 	}
 	if normTarget != "" {
-		conv := func(ctx context.Context, amount float64, from, to string) (float64, bool) {
-			amt, status := destinations.ConvertCurrency(ctx, amount, from, to)
-			if amt > 0 && strings.EqualFold(strings.TrimSpace(status), strings.TrimSpace(to)) {
-				return amt, true
-			}
-			return amt, false
-		}
+		conv := hotelCurrencyConverter()
 		for _, b := range batches {
 			normalizeHotelCurrencies(ctx, b, normTarget, conv)
 		}
 	}
 
 	merged := models.MergeHotelResults(batches...)
-
-	// Filter to keep only hotels whose name fuzzy-matches the search name.
-	matched := filterByNameMatch(merged, name)
-
-	// If the fuzzy filter left nothing (e.g. the property is in results under a
-	// slightly different name), fall back to all merged results so the caller
-	// at least gets something useful.
-	if len(matched) == 0 {
-		slog.Warn("search_by_name: no fuzzy match, returning all merged results",
-			"name", name, "total", len(merged))
-		return merged, nil
+	// The merge finalizes without a requested currency; finalize again so the
+	// headline is the selected quote converted into the caller's currency.
+	models.FinalizeHotelPriceTrust(merged, currency, time.Now(), trustConverter(ctx))
+	ensureComparableInTargetCurrency(merged, currency)
+	// Zero candidates is a failed or empty search, not a name miss: nothing
+	// was matched against, so report the provider outcome instead.
+	if len(merged) == 0 {
+		return nil, errors.Join(fmt.Errorf("no results from any provider for %q", name), googleErr)
 	}
 
+	// Filter to keep only hotels whose name fuzzy-matches the search name; on a
+	// miss, retry once without a trailing location word.
+	matched := filterByNameMatch(merged, name)
+	if len(matched) == 0 {
+		if stripped, eligible, ok := retryWithoutTrailingWord(name, location, merged); ok {
+			matched = filterByNameMatch(eligible, stripped)
+		}
+	}
+
+	// No match is an answer, not a reason to present unrelated hotels as the
+	// requested property. A Google failure travels with it.
+	if len(matched) == 0 {
+		return nil, errors.Join(
+			fmt.Errorf("%w: %q among %d candidates", ErrNoNameMatch, name, len(merged)),
+			googleErr,
+		)
+	}
 	return matched, nil
 }
 
@@ -208,17 +228,52 @@ func filterByNameMatch(hotels []models.HotelResult, searchName string) []models.
 	return out
 }
 
-// normalizeWords lowercases, strips punctuation, and returns words of length >= 3.
-func normalizeWords(s string) []string {
-	s = strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == ' ' {
-			return unicode.ToLower(r)
+// retryWithoutTrailingWord decides whether a name lookup that matched nothing
+// may try once more without its last word, as in "ARTIST Boutique Hotel
+// Vienna". The word may go when it equals the location argument (every
+// candidate stays eligible) or appears in a candidate's address (only those
+// candidates stay eligible; HotelResult has no city field). At least two
+// words must remain with a location set, three without, so the retry cannot
+// collapse to a single generic word.
+func retryWithoutTrailingWord(name, location string, candidates []models.HotelResult) (string, []models.HotelResult, bool) {
+	words := strings.Fields(name)
+	if len(words) < 2 {
+		return "", nil, false
+	}
+	last := hotelNameWords(words[len(words)-1])
+	if len(last) != 1 {
+		return "", nil, false
+	}
+	stripped := strings.Join(words[:len(words)-1], " ")
+	// Count the words the matcher compares, and require one that identifies
+	// the property: "a&o Hotel" or "Hotel -" would otherwise match any hotel.
+	minRemaining := 3
+	if strings.TrimSpace(location) != "" {
+		minRemaining = 2
+	}
+	if len(normalizeWords(stripped)) < minRemaining || len(meaningfulHotelNameWords(stripped)) == 0 {
+		return "", nil, false
+	}
+	if strings.EqualFold(last[0], strings.TrimSpace(location)) {
+		return stripped, candidates, true
+	}
+	var eligible []models.HotelResult
+	for _, c := range candidates {
+		for _, w := range hotelNameWords(c.Address) {
+			if w == last[0] {
+				eligible = append(eligible, c)
+				break
+			}
 		}
-		return ' '
-	}, s)
+	}
+	return stripped, eligible, len(eligible) > 0
+}
+
+// normalizeWords returns the hotelNameWords tokens of at least three letters.
+func normalizeWords(s string) []string {
 	var words []string
-	for _, w := range strings.Fields(s) {
-		if len(w) >= 3 {
+	for _, w := range hotelNameWords(s) {
+		if len([]rune(w)) >= 3 {
 			words = append(words, w)
 		}
 	}
@@ -269,6 +324,7 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 	candidates := buildLocationCandidates(query)
 
 	var lastErr error
+	sawResults := false
 	for i, loc := range candidates {
 		// Cooldown between candidates to avoid Google 429 rate limits.
 		// Each SearchHotels call makes multiple page requests across sort
@@ -288,8 +344,21 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 		if len(result.Hotels) == 0 {
 			continue
 		}
+		sawResults = true
 
 		match := findBestNameMatch(result.Hotels, query)
+		if match == nil {
+			// The text after the last comma, when present, is the location;
+			// otherwise only a word found in a candidate's address may go.
+			namePart, suffix := query, ""
+			if idx := strings.LastIndex(query, ","); idx >= 0 {
+				namePart = strings.TrimSpace(query[:idx])
+				suffix = strings.TrimSpace(query[idx+1:])
+			}
+			if stripped, eligible, ok := retryWithoutTrailingWord(namePart, suffix, result.Hotels); ok {
+				match = findBestNameMatch(eligible, stripped)
+			}
+		}
 		if match != nil {
 			// If the match has no Google ID, do a targeted Google-only search
 			// using the hotel name + location as the query. Google Hotels
@@ -327,10 +396,10 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 		continue
 	}
 
-	if lastErr != nil {
+	if lastErr != nil && !sawResults {
 		return nil, fmt.Errorf("hotel name search: %w", lastErr)
 	}
-	return nil, fmt.Errorf("no hotels found for %q", query)
+	return nil, errors.Join(fmt.Errorf("%w: %q", ErrNoNameMatch, query), lastErr)
 }
 
 // buildLocationCandidates generates location search strings from a hotel name query.

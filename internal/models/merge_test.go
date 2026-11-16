@@ -660,7 +660,7 @@ func TestFinalizeHotelPriceTrustPrefersRequestedCurrency(t *testing.T) {
 		},
 	}}
 
-	FinalizeHotelPriceTrust(hotels, "EUR", checkedAt)
+	FinalizeHotelPriceTrust(hotels, "EUR", checkedAt, nil)
 
 	h := hotels[0]
 	if h.Price != 122 || h.Currency != "EUR" || h.BookingURL != "https://google.example/hotel" {
