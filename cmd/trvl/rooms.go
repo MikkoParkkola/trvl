@@ -97,6 +97,12 @@ func runRooms(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// The name lookup and the room fetch, as variables so tests can stub them.
+var (
+	searchHotelByName           = hotels.SearchHotelByName
+	getRoomAvailabilityWithOpts = hotels.GetRoomAvailabilityWithOpts
+)
+
 func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut, currency, location string) (*hotels.RoomAvailability, error) {
 	if looksLikeGoogleHotelID(hotelQuery) {
 		// Direct ID lookup. Pass any caller-provided location hint so the
@@ -110,7 +116,7 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 			Currency: currency,
 			Location: location,
 		}
-		return hotels.GetRoomAvailabilityWithOpts(ctx, opts)
+		return getRoomAvailabilityWithOpts(ctx, opts)
 	}
 
 	// If --location is provided, append it to the query so SearchHotelByName
@@ -122,7 +128,7 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 		searchQuery = hotelQuery + ", " + location
 	}
 
-	hotel, err := hotels.SearchHotelByName(ctx, searchQuery, checkIn, checkOut, currency)
+	hotel, err := searchHotelByName(ctx, searchQuery, checkIn, checkOut, currency)
 	if err != nil {
 		return nil, fmt.Errorf("hotel lookup for %q: %w", hotelQuery, err)
 	}
@@ -145,7 +151,7 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 		Currency: currency,
 		Location: hint,
 	}
-	result, err := hotels.GetRoomAvailabilityWithOpts(ctx, opts)
+	result, err := getRoomAvailabilityWithOpts(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("room availability for %s: %w", hotel.Name, err)
 	}
