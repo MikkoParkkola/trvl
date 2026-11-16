@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.28.0] - 2026-11-16
+
 ### Security
 
 - `golang.org/x/crypto` updated to v0.59.0 (was v0.58.0) for GO-2026-5932, which moves the unmaintained `openpgp` packages out of the module; the expired osv-scanner exception for that advisory is removed. `golang.org/x/sync`, `sys`, `term` and `text` move up with it.
@@ -27,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Finding a hotel by name works across city aliases: `trvl rooms "Hotel Sacher Wien"` now matches Google's "Hotel Sacher Vienna". A candidate named after another town is dropped, a query naming one property reads Google's single-hotel detail view for its place ID, and a merge keeps a Google ID over another provider's. An address counts as city-only when every part is a city, a country or a postcode with a city. Room lookups accept only real Google IDs (`/g/…`, `ChIJ…`, `0x…:0x…`), and the room fetch uses the Booking.com source's own page.
 - Booking.com prices were stay totals; they are now nightly like every other provider's, so a nightly `--max-price` compares like with like.
 - Hotel side providers (Flatio, Spotahome, Uniplaces, Blueground and the rest) get the English city name, so "Wien" and "Vienna" both reach Vienna; only the Google fetch gets the local form it needs.
 - Ferryhopper runs only when both ends match one of its 1,451 ports, so an inland pair such as Prague to Vienna shows as not served instead of a search its resolver misreads (Prague became Grand Portage, USA).
@@ -1447,7 +1450,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.27.0...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.28.0...HEAD
+[1.28.0]: https://github.com/MikkoParkkola/trvl/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/MikkoParkkola/trvl/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/MikkoParkkola/trvl/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/MikkoParkkola/trvl/compare/v1.24.0...v1.25.0
