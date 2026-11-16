@@ -3,17 +3,17 @@ module github.com/MikkoParkkola/trvl
 go 1.27.4
 
 require (
-	github.com/andybalholm/brotli v1.2.8
+	github.com/andybalholm/brotli v1.3.0
 	github.com/bogdanfinn/fhttp v0.7.3
-	github.com/bogdanfinn/tls-client v1.18.0
+	github.com/bogdanfinn/tls-client v1.18.1
 	github.com/bogdanfinn/utls v1.8.2-barnius
 	github.com/browserutils/kooky v0.2.10
-	github.com/chromedp/cdproto v0.159.2
+	github.com/chromedp/cdproto v0.160.0
 	github.com/chromedp/chromedp v0.23.0
 	github.com/cloudflare/circl v1.6.5
 	github.com/google/uuid v1.6.0
 	github.com/grafana/sobek v0.0.0-20261005111419-f56574604191
-	github.com/klauspost/compress v1.20.3
+	github.com/klauspost/compress v1.20.4
 	github.com/refraction-networking/utls v1.8.2
 	github.com/spf13/cobra v1.10.2
 	go.etcd.io/bbolt v1.5.0
