@@ -114,8 +114,8 @@ dod: release-config lint security-gosec test
 	@echo
 	@echo "dod: lint, gosec and tests all clean -- safe to commit."
 
-# The pull-request gates CI runs, cheapest first, failing fast: see
-# scripts/ci/prepush.sh for the list and what it leaves to `dod`.
+# Most of CI's pull-request gates, cheapest first, failing fast. The header of
+# scripts/ci/prepush.sh lists what it runs and what it does not cover.
 prepush:
 	GOTOOLCHAIN=$(GOTOOLCHAIN) GOLANGCI_LINT_VERSION=$(GOLANGCI_LINT_VERSION) scripts/ci/prepush.sh
 
