@@ -50,12 +50,14 @@ func retryCity(name, location string) string {
 
 // withoutOtherTowns drops candidates whose name carries a town that is not the
 // query's city, so "Hotel Sacher" for Vienna never matches "Hotel Sacher
-// Baden". A name word counts as a town when it is an alias-table city or also
-// appears in the candidate's own address; words of the query name or city
-// never count. With no city there is nothing to conflict with.
+// Baden". A name word counts as a town when it appears in the candidate's own
+// address, or when it is an alias-table city trailing the name (a leading one,
+// as in "Vienna House Andel's Prague", is a brand); words of the query name or
+// city never count. With no city there is nothing to conflict with.
 //
 // ponytail: there is no gazetteer, so an address-less row whose town is not in
-// the alias table passes; a geocoded town list would close that gap.
+// the alias table passes unless the distance check below catches it; a
+// geocoded town list would close that gap.
 func withoutOtherTowns(hotels []models.HotelResult, name, city string) []models.HotelResult {
 	conflicts := townConflict(name, city)
 	if conflicts == nil {
@@ -71,9 +73,11 @@ func withoutOtherTowns(hotels []models.HotelResult, name, city string) []models.
 }
 
 // townConflict returns the withoutOtherTowns test for one candidate, or nil
-// when there is no city to conflict with. When the city is already in the
-// geocode cache, a candidate pinned more than nameMatchMaxKm from it conflicts
-// too: that is what catches an address-less row such as Google's.
+// when there is no city to conflict with. When the city is an alias-table city
+// already in the geocode cache, a candidate pinned more than nameMatchMaxKm
+// from it conflicts too: that is what catches an address-less row such as
+// Google's. Other suffixes may name a region or island ("…, Crete"), whose
+// geocoded point says nothing about how far its hotels may be.
 func townConflict(name, city string) func(models.HotelResult) bool {
 	cityWords := canonicalCityWords(hotelNameWords(city))
 	if len(cityWords) == 0 {
@@ -83,7 +87,11 @@ func townConflict(name, city string) func(models.HotelResult) bool {
 	for _, w := range append(canonicalCityWords(hotelNameWords(name)), cityWords...) {
 		allowed[w] = true
 	}
-	cityLat, cityLon, located := cachedLocation(city)
+	var cityLat, cityLon float64
+	var located bool
+	if _, known := cityAliasCanon[cityWords[0]]; known && len(cityWords) == 1 {
+		cityLat, cityLon, located = cachedLocation(city)
+	}
 	return func(h models.HotelResult) bool {
 		if located && (h.Lat != 0 || h.Lon != 0) && Haversine(cityLat, cityLon, h.Lat, h.Lon) > nameMatchMaxKm {
 			return true
@@ -116,11 +124,19 @@ func carriesOtherTown(h models.HotelResult, allowed map[string]bool) bool {
 	for _, w := range canonicalCityWords(hotelNameWords(h.Address)) {
 		address[w] = true
 	}
-	for _, w := range canonicalCityWords(hotelNameWords(h.Name)) {
+	words := canonicalCityWords(hotelNameWords(h.Name))
+	lastAllowed := -1
+	for i, w := range words {
+		if allowed[w] {
+			lastAllowed = i
+		}
+	}
+	for i, w := range words {
 		if allowed[w] || len([]rune(w)) < 3 {
 			continue
 		}
-		if _, isCity := cityAliasCanon[w]; isCity || address[w] {
+		_, isCity := cityAliasCanon[w]
+		if address[w] || (isCity && i > lastAllowed) {
 			return true
 		}
 	}
