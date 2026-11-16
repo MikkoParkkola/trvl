@@ -86,10 +86,6 @@ public recommendation or ranking a final trip cost:
    when known.
 6. Do not say a hotel rate is booked, held, locked, guaranteed, or checkout-final
    unless a provider checkout page confirms it.
-7. Credit `headline_provider` for the headline `price`: it names the most
-   trusted quote (price confidence, then basis). `cheapest_source` can name a
-   cheaper lead-in teaser from another provider. A hotel with no usable quote
-   carries `price_provenance: "unavailable"`; do not read its `price` as a fare.
 
 ### Step 5: Build travel profile (recommended)
 
@@ -370,7 +366,7 @@ Optional:
 - `property_type`: "hotel" | "apartment" | "hostel" | "resort" | "bnb" | "villa" — server-side `?ptype=N`
 - `brand`: hotel chain name substring (e.g. "hilton", "marriott", "ibis") — client-side
 - `min_rating`: minimum guest rating e.g. 4.0 — server-side `?rating=N` + client-side guard
-- `max_distance`: maximum km from city center (default 25; 0 = no limit) — server-side `?lrad=N`. The summary and `farther_omitted` say how many farther hotels were left out
+- `max_distance`: maximum km from city center — server-side `?lrad=N`
 - `amenities`: comma-separated required amenities (e.g. "pool,wifi") — client-side
 - `min_price` / `max_price`: price range per night — server-side `?min_price` / `?max_price` + client-side guard
 - `enrich_amenities`: true/false — fetch detail pages for top results (slower)
