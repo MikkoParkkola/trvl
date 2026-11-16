@@ -16,20 +16,9 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-// hotelCityAliases maps common English city names to the form that Google
-// Hotels actually resolves correctly. Without this, "Prague" returns zero
-// results while "Praha" works fine.
-var hotelCityAliases = map[string]string{
-	"prague":     "Praha",
-	"munich":     "München",
-	"vienna":     "Wien",
-	"cologne":    "Köln",
-	"copenhagen": "København",
-	"warsaw":     "Warszawa",
-	"bucharest":  "București",
-	"gothenburg": "Göteborg",
-	"nuremberg":  "Nürnberg",
-}
+// hotelCityAliases maps common English city names to the form Google Hotels
+// resolves; the table lives in models so address matching shares it.
+var hotelCityAliases = models.CityAliases
 
 // englishCityNames maps each local form in hotelCityAliases back to the
 // English name ("wien" -> "Vienna"), which the side providers' slugs expect.

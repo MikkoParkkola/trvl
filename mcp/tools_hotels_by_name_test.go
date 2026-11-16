@@ -12,7 +12,7 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-func stubSearchHotelsByName(t *testing.T, fn func(context.Context, string, string, string, string, string) ([]models.HotelResult, error)) {
+func stubSearchHotelsByName(t *testing.T, fn func(context.Context, string, string, string, string, string) ([]models.HotelResult, []models.ProviderStatus, error)) {
 	t.Helper()
 	orig := searchHotelsByNameFunc
 	searchHotelsByNameFunc = fn
@@ -31,8 +31,8 @@ func byNameArgs() map[string]any {
 // success whose notice names the property and carries the Google error that
 // came back with the miss.
 func TestHandleSearchHotelByName_NoMatchIsEmptySuccessWithNotice(t *testing.T) {
-	stubSearchHotelsByName(t, func(_ context.Context, name, _, _, _, _ string) ([]models.HotelResult, error) {
-		return nil, errors.Join(
+	stubSearchHotelsByName(t, func(_ context.Context, name, _, _, _, _ string) ([]models.HotelResult, []models.ProviderStatus, error) {
+		return nil, nil, errors.Join(
 			fmt.Errorf("%w: %q", hotels.ErrNoNameMatch, name),
 			errors.New("hotel search request: request blocked (403)"),
 		)
@@ -73,8 +73,8 @@ func TestHandleSearchHotelByName_NoMatchIsEmptySuccessWithNotice(t *testing.T) {
 // the no-match sentinel becomes an empty success.
 func TestHandleSearchHotelByName_OtherErrorsStayErrors(t *testing.T) {
 	boom := errors.New("no results from any provider")
-	stubSearchHotelsByName(t, func(context.Context, string, string, string, string, string) ([]models.HotelResult, error) {
-		return nil, boom
+	stubSearchHotelsByName(t, func(context.Context, string, string, string, string, string) ([]models.HotelResult, []models.ProviderStatus, error) {
+		return nil, nil, boom
 	})
 	if _, _, err := handleSearchHotelByName(context.Background(), byNameArgs(), nil, nil, nil); !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want the provider error passed through", err)
@@ -85,8 +85,8 @@ func TestHandleSearchHotelByName_OtherErrorsStayErrors(t *testing.T) {
 // fine and simply had no such property. Still an empty success, and the
 // notice names the property without inventing a provider failure.
 func TestHandleSearchHotelByName_NoMatchWithoutGoogleError(t *testing.T) {
-	stubSearchHotelsByName(t, func(_ context.Context, name, _, _, _, _ string) ([]models.HotelResult, error) {
-		return nil, fmt.Errorf("%w: %q", hotels.ErrNoNameMatch, name)
+	stubSearchHotelsByName(t, func(_ context.Context, name, _, _, _, _ string) ([]models.HotelResult, []models.ProviderStatus, error) {
+		return nil, nil, fmt.Errorf("%w: %q", hotels.ErrNoNameMatch, name)
 	})
 
 	_, structured, err := handleSearchHotelByName(context.Background(), byNameArgs(), nil, nil, nil)
@@ -122,5 +122,45 @@ func TestSearchHotelByNameTool_DeclaresItsExtraFields(t *testing.T) {
 	}
 	if _, ok := hotelSearchOutputSchema().(map[string]interface{})["properties"].(map[string]interface{})["notice"]; ok {
 		t.Errorf("the shared search_hotels schema gained notice; declare it on search_hotel_by_name only")
+	}
+}
+
+// TestHandleSearchHotelByName_ReportsCompleteness: the by-name lookup carries
+// its provider statuses and the completeness they add up to, on a hit and on
+// a miss. A miss while Google failed must not read as a complete answer.
+func TestHandleSearchHotelByName_ReportsCompleteness(t *testing.T) {
+	statuses := []models.ProviderStatus{
+		{ID: "google_hotels", Status: models.StatusFailed, Error: "request blocked (403)"},
+		{ID: "booking", Status: models.StatusCheckedHit},
+	}
+	cases := map[string][]models.HotelResult{
+		"hit":  {{Name: "Hotel Sacher Vienna", HotelID: "ChIJsacher"}},
+		"miss": nil,
+	}
+	for label, found := range cases {
+		stubSearchHotelsByName(t, func(_ context.Context, name, _, _, _, _ string) ([]models.HotelResult, []models.ProviderStatus, error) {
+			if found == nil {
+				return nil, statuses, fmt.Errorf("%w: %q", hotels.ErrNoNameMatch, name)
+			}
+			return found, statuses, nil
+		})
+		_, structured, err := handleSearchHotelByName(context.Background(), byNameArgs(), nil, nil, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", label, err)
+		}
+		raw, _ := json.Marshal(structured)
+		var resp struct {
+			ProviderStatuses []models.ProviderStatus `json:"provider_statuses"`
+			Completeness     models.Completeness     `json:"completeness"`
+		}
+		if err := json.Unmarshal(raw, &resp); err != nil {
+			t.Fatalf("%s: decode %s: %v", label, raw, err)
+		}
+		if len(resp.ProviderStatuses) != 2 {
+			t.Errorf("%s: provider_statuses = %+v, want both statuses", label, resp.ProviderStatuses)
+		}
+		if resp.Completeness.State != models.CompletenessPartial || resp.Completeness.Queried != 2 {
+			t.Errorf("%s: completeness = %+v, want partial with 2 queried", label, resp.Completeness)
+		}
 	}
 }

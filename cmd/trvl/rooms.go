@@ -97,6 +97,12 @@ func runRooms(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// The name lookup and the room fetch, as variables so tests can stub them.
+var (
+	searchHotelByName           = hotels.SearchHotelByName
+	getRoomAvailabilityWithOpts = hotels.GetRoomAvailabilityWithOpts
+)
+
 func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut, currency, location string) (*hotels.RoomAvailability, error) {
 	if looksLikeGoogleHotelID(hotelQuery) {
 		// Direct ID lookup. Pass any caller-provided location hint so the
@@ -110,7 +116,7 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 			Currency: currency,
 			Location: location,
 		}
-		return hotels.GetRoomAvailabilityWithOpts(ctx, opts)
+		return getRoomAvailabilityWithOpts(ctx, opts)
 	}
 
 	// If --location is provided, append it to the query so SearchHotelByName
@@ -122,11 +128,13 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 		searchQuery = hotelQuery + ", " + location
 	}
 
-	hotel, err := hotels.SearchHotelByName(ctx, searchQuery, checkIn, checkOut, currency)
+	hotel, err := searchHotelByName(ctx, searchQuery, checkIn, checkOut, currency)
 	if err != nil {
 		return nil, fmt.Errorf("hotel lookup for %q: %w", hotelQuery, err)
 	}
-	if hotel.HotelID == "" {
+	// Only a Google place ID resolves rooms; another provider's id (Booking's,
+	// say) must not be sent as one.
+	if !looksLikeGoogleHotelID(hotel.HotelID) {
 		return nil, fmt.Errorf("hotel %q found (%s) but has no Google ID", hotelQuery, hotel.Name)
 	}
 
@@ -139,13 +147,14 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 		hint = searchQuery
 	}
 	opts := hotels.RoomSearchOptions{
-		HotelID:  hotel.HotelID,
-		CheckIn:  checkIn,
-		CheckOut: checkOut,
-		Currency: currency,
-		Location: hint,
+		HotelID:    hotel.HotelID,
+		CheckIn:    checkIn,
+		CheckOut:   checkOut,
+		Currency:   currency,
+		Location:   hint,
+		BookingURL: hotels.BookingSourceURL(*hotel),
 	}
-	result, err := hotels.GetRoomAvailabilityWithOpts(ctx, opts)
+	result, err := getRoomAvailabilityWithOpts(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("room availability for %s: %w", hotel.Name, err)
 	}
@@ -155,18 +164,10 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 	return result, nil
 }
 
+// looksLikeGoogleHotelID reports a Google hotel ID: only those resolve
+// rooms (models.IsGoogleHotelID; "flatio:98765" is not one).
 func looksLikeGoogleHotelID(value string) bool {
-	value = strings.TrimSpace(value)
-	if strings.HasPrefix(value, "/g/") {
-		return true
-	}
-
-	upper := strings.ToUpper(value)
-	if strings.HasPrefix(upper, "CHIJ") {
-		return true
-	}
-
-	return strings.Count(value, ":") == 1 && !strings.ContainsAny(value, " \t")
+	return models.IsGoogleHotelID(value)
 }
 
 func formatRoomsTable(result *hotels.RoomAvailability) error {

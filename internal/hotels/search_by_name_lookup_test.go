@@ -42,7 +42,7 @@ func TestSearchHotelsByName_RetriesWithoutTrailingLocationWord(t *testing.T) {
 	serveGooglePage(t, viennaPage...)
 	seedGeo(t, "ARTIST Boutique Hotel Vienna")
 
-	got, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel Vienna", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	got, _, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel Vienna", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
 	if err != nil {
 		t.Fatalf("lookup: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestSearchHotelsByName_TwoWordNameAllowedWithLocation(t *testing.T) {
 	serveGooglePage(t, viennaPage...)
 	seedGeo(t, "Hotel Sacher Vienna")
 
-	got, err := SearchHotelsByName(context.Background(), "Hotel Sacher Vienna", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	got, _, err := SearchHotelsByName(context.Background(), "Hotel Sacher Vienna", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
 	if err != nil {
 		t.Fatalf("lookup: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestSearchHotelsByName_TrailingWordMustBeLocation(t *testing.T) {
 	seedGeo(t, "ARTIST Boutique Hotel Graz, Vienna")
 	requireCandidate(t, "ARTIST Boutique Hotel Graz, Vienna", "ARTIST Boutique Hotel")
 
-	got, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel Graz", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	got, _, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel Graz", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
 	if !errors.Is(err, ErrNoNameMatch) {
 		t.Fatalf("err = %v, want ErrNoNameMatch", err)
 	}
@@ -92,7 +92,7 @@ func TestSearchHotelsByName_NoMatchIsEmptyWithSentinel(t *testing.T) {
 	serveGooglePage(t, viennaPage...)
 	seedGeo(t, "Palais Nonexistent, Vienna")
 
-	got, err := SearchHotelsByName(context.Background(), "Palais Nonexistent", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	got, _, err := SearchHotelsByName(context.Background(), "Palais Nonexistent", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
 	if !errors.Is(err, ErrNoNameMatch) {
 		t.Fatalf("err = %v, want ErrNoNameMatch", err)
 	}
@@ -111,7 +111,7 @@ func TestSearchHotelsByName_StrippedNameNeedsTwoWords(t *testing.T) {
 	serveGooglePage(t, viennaPage...)
 	seedGeo(t, "Sacher Vienna")
 
-	got, err := SearchHotelsByName(context.Background(), "Sacher Vienna", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	got, _, err := SearchHotelsByName(context.Background(), "Sacher Vienna", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
 	if !errors.Is(err, ErrNoNameMatch) {
 		t.Fatalf("err = %v, want ErrNoNameMatch", err)
 	}
@@ -135,7 +135,7 @@ func TestSearchHotelsByName_GoogleErrorSurfaced(t *testing.T) {
 		t.Fatalf("precondition: Google search against the 403 server = %v, want batchexec.ErrBlocked", err)
 	}
 
-	got, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	got, _, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
 	if len(got) != 0 {
 		t.Fatalf("matches = %v, want none", hotelNames(got))
 	}
@@ -160,7 +160,7 @@ func TestSearchHotelsByName_NoCandidatesIsNotANameMiss(t *testing.T) {
 	}))
 	seedGeo(t, "ARTIST Boutique Hotel, Vienna")
 
-	got, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	got, _, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
 	if len(got) != 0 {
 		t.Fatalf("matches = %v, want none", hotelNames(got))
 	}
@@ -213,6 +213,9 @@ func TestSearchHotelByName_TrailingWordFoundInAddress(t *testing.T) {
 	serveGooglePage(t, hotelWithPrice{"Hotel Sacher", 300})
 	withBookingResult(t, bookingArtist("Kirchengasse 41, 1070 Vienna, Austria"))
 	seedGeo(t, "ARTIST Boutique Hotel Vienna")
+	// The match carries a Booking id, not a Google place ID, so the lookup
+	// re-searches Google for "<name>, <area>"; seed it to stay offline.
+	seedGeo(t, "ARTIST Boutique Hotel Vienna, ARTIST Boutique Hotel Vienna")
 	requireCandidate(t, "ARTIST Boutique Hotel Vienna", "ARTIST Boutique Hotel")
 
 	got, err := SearchHotelByName(context.Background(), "ARTIST Boutique Hotel Vienna", lookupCheckIn, lookupCheckOut, "USD")
@@ -252,7 +255,7 @@ func TestSearchHotelsByName_StripsOnlyAfterAMiss(t *testing.T) {
 	serveGooglePage(t, hotelWithPrice{"Hotel Sacher Vienna", 300}, hotelWithPrice{"Hotel Sacher", 280})
 	seedGeo(t, "Hotel Sacher Vienna")
 
-	got, err := SearchHotelsByName(context.Background(), "Hotel Sacher Vienna", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	got, _, err := SearchHotelsByName(context.Background(), "Hotel Sacher Vienna", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
 	if err != nil {
 		t.Fatalf("lookup: %v", err)
 	}
@@ -270,7 +273,7 @@ func TestSearchHotelsByName_StripsWordFoundInAddress(t *testing.T) {
 	seedGeo(t, "ARTIST Boutique Hotel Neubau, Vienna")
 	requireCandidate(t, "ARTIST Boutique Hotel Neubau, Vienna", "ARTIST Boutique Hotel")
 
-	got, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel Neubau", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	got, _, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel Neubau", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
 	if err != nil {
 		t.Fatalf("lookup: %v", err)
 	}
@@ -299,7 +302,7 @@ func TestSearchHotelsByName_MaskedGoogleErrorSurfaced(t *testing.T) {
 		t.Fatalf("precondition: search = %v, %v; want Booking's hotel with the Google error masked", res, err)
 	}
 
-	_, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	_, _, err := SearchHotelsByName(context.Background(), "ARTIST Boutique Hotel", "Vienna", lookupCheckIn, lookupCheckOut, "USD")
 	if !errors.Is(err, ErrNoNameMatch) {
 		t.Fatalf("err = %v, want ErrNoNameMatch", err)
 	}

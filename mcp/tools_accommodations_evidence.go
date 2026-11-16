@@ -487,11 +487,10 @@ func accommodationVerificationCandidateScore(hotel models.HotelResult, need mode
 }
 
 // accommodationHotelIDIsGooglePlaceID reports whether the hotel carries a
-// Google place ID ("/g/..." or "ChIJ..."), the only ID shape the Google
+// Google hotel ID (models.IsGoogleHotelID), the only shape the Google
 // price/detail RPCs can resolve into an exact-room partner matrix.
 func accommodationHotelIDIsGooglePlaceID(hotel models.HotelResult) bool {
-	id := strings.TrimSpace(hotel.HotelID)
-	return strings.HasPrefix(id, "/g/") || strings.HasPrefix(id, "ChIJ")
+	return models.IsGoogleHotelID(hotel.HotelID)
 }
 
 // accommodationHotelIDSupportsRoomLookup keys on the ID the Google room RPC

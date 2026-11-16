@@ -104,10 +104,27 @@ func parseHotelsFromPageFull(page string, currency string) parseResult {
 
 	// Extract sponsored/ad hotel entries.
 	sponsored := extractSponsoredHotels(hotelData, currency)
+
+	// A query naming one property gets Google's detail view instead of a
+	// list; its place ID is what the rooms flow needs. The view's only dates
+	// belonged to another stay, so a same-name ad's undated price is dropped
+	// too (the row stays and gains the place ID); an organic row keeps its
+	// own.
+	detail, isDetail := extractDetailViewHotel(hotelData, currency)
+	if isDetail {
+		for i := range sponsored {
+			if strings.EqualFold(sponsored[i].Name, detail.Name) {
+				sponsored[i].Price = 0
+			}
+		}
+	}
 	hotels = append(hotels, sponsored...)
 
 	// Deduplicate by name (sponsored and organic can overlap).
 	hotels = deduplicateHotels(hotels)
+	if isDetail {
+		hotels = addDetailViewHotel(hotels, detail)
+	}
 
 	// Extract total results count from metadata keys.
 	totalAvailable := extractTotalAvailable(hotelData)
@@ -667,3 +684,53 @@ func deduplicateHotels(hotels []models.HotelResult) []models.HotelResult {
 // ParseHotelSearchResponse parses hotel search results from a decoded
 // batchexecute response. This is the legacy path used when batchexecute
 // responses are available. The Travel page scraping path (parseHotelsFromPage)
+
+// extractDetailViewHotel reads the single hotel of Google's detail view, at
+// data[1][7]["441552390"]. Its leading fields share the organic layout ([1]
+// name, [2][0] coordinates, [3] stars) and [26][4] holds its place ID. Only
+// identity is read: the captured entry's price block ([6]) was for other
+// dates than the search, and nested related hotels carry their own IDs. It
+// counts only when it yields a place ID.
+func extractDetailViewHotel(data any, currency string) (models.HotelResult, bool) {
+	m, _ := jsonutil.NavigateArray(data, 1, 7).(map[string]any)
+	entry, _ := m["441552390"].([]any)
+	if len(entry) < 2 {
+		return models.HotelResult{}, false
+	}
+	h := parseOrganicHotel(entry[:min(len(entry), 4)], currency)
+	h.HotelID = detailViewPlaceID(entry)
+	return h, h.Name != "" && h.HotelID != ""
+}
+
+// detailViewPlaceID returns the place ID at [26][4], the only position
+// observed; ChIJ strings elsewhere in the entry belong to related hotels.
+func detailViewPlaceID(entry []any) string {
+	id, _ := jsonutil.NavigateArray(entry, 26, 4).(string)
+	if !strings.HasPrefix(id, "ChIJ") {
+		return ""
+	}
+	return id
+}
+
+// addDetailViewHotel grafts the detail view's place ID onto a same-name row
+// that has no Google ID, keeping that row's rating, reviews and amenities
+// and filling its missing stars and coordinates; with no same-name row the
+// detail hotel is added first.
+func addDetailViewHotel(hotels []models.HotelResult, detail models.HotelResult) []models.HotelResult {
+	for i := range hotels {
+		if !strings.EqualFold(hotels[i].Name, detail.Name) {
+			continue
+		}
+		if !models.IsGoogleHotelID(hotels[i].HotelID) {
+			hotels[i].HotelID = detail.HotelID
+		}
+		if hotels[i].Stars == 0 {
+			hotels[i].Stars = detail.Stars
+		}
+		if hotels[i].Lat == 0 && hotels[i].Lon == 0 {
+			hotels[i].Lat, hotels[i].Lon = detail.Lat, detail.Lon
+		}
+		return hotels
+	}
+	return append([]models.HotelResult{detail}, hotels...)
+}

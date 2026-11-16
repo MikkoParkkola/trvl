@@ -127,18 +127,23 @@ func TestLoungesCmd_ValidIATANoNetworkV25(t *testing.T) {
 }
 
 func TestLooksLikeGoogleHotelID_CHIJ_V26(t *testing.T) {
-	cases := []string{"ChIJabc123", "chijlower", "CHIJUPPER"}
-	for _, id := range cases {
-		if !looksLikeGoogleHotelID(id) {
-			t.Errorf("looksLikeGoogleHotelID(%q) = false, want true", id)
+	// Place IDs always start "ChIJ"; other cases are not Google IDs.
+	for id, want := range map[string]bool{"ChIJabc123": true, "chijlower": false, "CHIJUPPER": false} {
+		if got := looksLikeGoogleHotelID(id); got != want {
+			t.Errorf("looksLikeGoogleHotelID(%q) = %v, want %v", id, got, want)
 		}
 	}
 }
 
 func TestLooksLikeGoogleHotelID_ColonForm_V26(t *testing.T) {
 
-	if !looksLikeGoogleHotelID("namespace:identifier") {
-		t.Error("looksLikeGoogleHotelID(colon form) = false, want true")
+	// Only the hex feature form counts; "namespace:identifier" is another
+	// provider's id.
+	if !looksLikeGoogleHotelID("0x476d079e5136ca9f:0xfdc2e58a51a25b46") {
+		t.Error("looksLikeGoogleHotelID(hex colon form) = false, want true")
+	}
+	if looksLikeGoogleHotelID("namespace:identifier") {
+		t.Error("looksLikeGoogleHotelID(namespace:identifier) = true, want false")
 	}
 
 	if looksLikeGoogleHotelID("a:b:c") {
