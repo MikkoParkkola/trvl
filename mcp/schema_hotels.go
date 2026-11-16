@@ -151,7 +151,7 @@ func hotelSearchInputProperties() map[string]Property {
 		"min_price":           {Type: "number", Description: "Minimum price per night (default: no filter)"},
 		"max_price":           {Type: "number", Description: "Maximum price per night (default: no filter)"},
 		"min_rating":          {Type: "number", Description: "Minimum guest rating on 0-10 scale, e.g. 8.0 (default: no filter)"},
-		"max_distance":        {Type: "number", Description: "Maximum distance from city center in km (default: no filter)"},
+		"max_distance":        {Type: "number", Description: "Maximum distance from city center in km (default: 25; 0 = no limit). Farther hotels are left out and counted in farther_omitted."},
 		"amenities":           {Type: "string", Description: "Filter by amenities (comma-separated, e.g. pool,wifi,breakfast)"},
 		"enrich_amenities":    {Type: "boolean", Description: "Fetch detail pages for top results to get full amenity lists (slower, default: false)"},
 		"enrich_rooms":        {Type: "boolean", Description: "Drill into the top results for real room-level prices (Google/Booking/SerpAPI/Agoda) instead of headline teasers; verified room rates lead the ranking. Bounded to the top 5 hotels and rate-limit aware. Default: true; set false for a faster headline-only search."},

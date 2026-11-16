@@ -134,7 +134,7 @@ func buildHotelSearchRequest(args map[string]any) (hotelSearchRequest, error) {
 		MinPrice:           argFloat(args, "min_price", 0),
 		MaxPrice:           argFloat(args, "max_price", 0),
 		MinRating:          argFloat(args, "min_rating", 0),
-		MaxDistanceKm:      argFloat(args, "max_distance", 0),
+		MaxDistanceKm:      argFloat(args, "max_distance", hotels.DefaultMaxDistanceKm),
 		Amenities:          amenities,
 		EnrichAmenities:    argBool(args, "enrich_amenities", false),
 		EnrichRooms:        argBool(args, "enrich_rooms", true),

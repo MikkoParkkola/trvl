@@ -13,6 +13,11 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
+// DefaultMaxDistanceKm is the distance cap the hotel list entry points (trvl
+// hotels, MCP search_hotels, search_accommodations, search_hotels_with_details)
+// apply when the caller sets none. Lookups of one named hotel set no cap.
+const DefaultMaxDistanceKm = 25
+
 // filterHotels applies all post-fetch filters to hotel results.
 func filterHotels(hotels []models.HotelResult, opts HotelSearchOptions) []models.HotelResult {
 	filtered, _ := filterHotelsCounted(hotels, opts)

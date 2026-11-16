@@ -45,7 +45,7 @@ Examples:
 	cmd.Flags().Float64("min-price", 0, "Minimum price per night")
 	cmd.Flags().Float64("max-price", 0, "Maximum price per night")
 	cmd.Flags().Float64("min-rating", 0, "Minimum guest rating on 0-10 scale (e.g. 8.0)")
-	cmd.Flags().Float64("max-distance", 0, "Maximum distance from city center in km")
+	cmd.Flags().Float64("max-distance", hotels.DefaultMaxDistanceKm, "Maximum distance from city center in km (0 = no limit)")
 	cmd.Flags().String("amenities", "", "Filter by amenities (comma-separated, e.g. pool,wifi,breakfast)")
 	cmd.Flags().Bool("free-cancellation", false, "Only show hotels with free cancellation")
 	cmd.Flags().String("property-type", "", "Property type: hotel, apartment, hostel, resort, bnb, villa")
