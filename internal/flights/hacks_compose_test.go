@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/searchctx"
 )
 
 // withStubComposer temporarily installs a deterministic savings-engine seam so
@@ -111,7 +112,7 @@ func TestAttachFlightHackSaving_ReentrancyGuard(t *testing.T) {
 		return &models.HackSaving{Type: "x"}
 	})
 	res := okFlightResult()
-	nested := disableHacksCompose(context.Background())
+	nested := searchctx.SuppressSavingsPass(context.Background())
 	attachFlightHackSaving(nested, res, "HEL", "AMS", "2026-09-01", SearchOptions{})
 	if called {
 		t.Error("composer ran inside a nested (hacks-disabled) search — recursion not guarded")
