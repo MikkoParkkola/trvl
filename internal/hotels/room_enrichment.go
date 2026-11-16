@@ -16,6 +16,12 @@ import (
 // GetRoomAvailabilityWithOpts when the seam is unset.
 var fetchRoomAvailability func(ctx context.Context, opts RoomSearchOptions) (*RoomAvailability, error)
 
+// IsBookingRoomsURL reports whether the room fetch accepts u as a Booking.com
+// page: an https URL on booking.com. Any other makes it refuse the lookup.
+func IsBookingRoomsURL(u string) bool {
+	return bookingHostAllowed(u, bookingCookieSite)
+}
+
 // BookingSourceURL returns the Booking.com hotel page from a result's booking
 // source when it is an https booking.com URL; the room fetch refuses any
 // other, which would fail the whole lookup. It deliberately ignores
@@ -23,7 +29,7 @@ var fetchRoomAvailability func(ctx context.Context, opts RoomSearchOptions) (*Ro
 // per-hotel detail page suitable for room drill-down.
 func BookingSourceURL(h models.HotelResult) string {
 	for _, s := range h.Sources {
-		if s.Provider == "booking" && bookingHostAllowed(s.BookingURL, bookingCookieSite) {
+		if s.Provider == "booking" && IsBookingRoomsURL(s.BookingURL) {
 			return s.BookingURL
 		}
 	}

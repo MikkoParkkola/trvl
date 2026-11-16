@@ -492,6 +492,11 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 	checkOut := argString(args, "check_out")
 	currency := argString(args, "currency")
 	bookingURL := argString(args, "booking_url")
+	// A booking_url outside https booking.com would make the room fetch
+	// refuse the whole lookup; drop it and let the Google fetch run alone.
+	if bookingURL != "" && !hotels.IsBookingRoomsURL(bookingURL) {
+		bookingURL = ""
+	}
 	if currency == "" {
 		currency = "USD"
 	}
