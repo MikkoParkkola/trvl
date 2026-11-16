@@ -98,13 +98,6 @@ func parseHotelsFromPageFull(page string, currency string) parseResult {
 
 	var hotels []models.HotelResult
 
-	// A query naming one property gets Google's detail view instead of a
-	// list. Its hotel goes first, so deduplicateHotels drops the same-name ad
-	// (which carries no place ID) from the same response.
-	if detail, ok := extractDetailViewHotel(hotelData, currency); ok {
-		hotels = append(hotels, detail)
-	}
-
 	// Extract organic hotel entries.
 	organic := extractOrganicHotels(hotelData, currency)
 	hotels = append(hotels, organic...)
@@ -115,6 +108,12 @@ func parseHotelsFromPageFull(page string, currency string) parseResult {
 
 	// Deduplicate by name (sponsored and organic can overlap).
 	hotels = deduplicateHotels(hotels)
+
+	// A query naming one property gets Google's detail view instead of a
+	// list; its place ID is what the rooms flow needs.
+	if detail, ok := extractDetailViewHotel(hotelData, currency); ok {
+		hotels = addDetailViewHotel(hotels, detail)
+	}
 
 	// Extract total results count from metadata keys.
 	totalAvailable := extractTotalAvailable(hotelData)
@@ -679,7 +678,8 @@ func deduplicateHotels(hotels []models.HotelResult) []models.HotelResult {
 // data[1][7]["441552390"]. Its leading fields share the organic layout ([1]
 // name, [2][0] coordinates, [3] stars) and [26][4] holds its place ID. Only
 // identity is read: the captured entry's price block ([6]) was for other
-// dates than the search, and nested related hotels carry their own IDs.
+// dates than the search, and nested related hotels carry their own IDs. It
+// counts only when it yields a place ID.
 func extractDetailViewHotel(data any, currency string) (models.HotelResult, bool) {
 	m, _ := jsonutil.NavigateArray(data, 1, 7).(map[string]any)
 	entry, _ := m["441552390"].([]any)
@@ -688,27 +688,34 @@ func extractDetailViewHotel(data any, currency string) (models.HotelResult, bool
 	}
 	h := parseOrganicHotel(entry[:min(len(entry), 4)], currency)
 	h.HotelID = detailViewPlaceID(entry)
-	return h, h.Name != ""
+	return h, h.Name != "" && h.HotelID != ""
 }
 
-// detailViewPlaceID returns the ChIJ place ID at [26][4], else the first ChIJ
-// string directly inside one of the entry's own fields. It never descends
-// further: the price block nests other hotels' place IDs.
+// detailViewPlaceID returns the place ID at [26][4], the only position
+// observed; ChIJ strings elsewhere in the entry belong to related hotels.
 func detailViewPlaceID(entry []any) string {
-	isPlaceID := func(v any) bool {
-		s, ok := v.(string)
-		return ok && strings.HasPrefix(s, "ChIJ")
+	id, _ := jsonutil.NavigateArray(entry, 26, 4).(string)
+	if !strings.HasPrefix(id, "ChIJ") {
+		return ""
 	}
-	if id := jsonutil.NavigateArray(entry, 26, 4); isPlaceID(id) {
-		return id.(string)
-	}
-	for _, field := range entry {
-		children, _ := field.([]any)
-		for _, v := range children {
-			if isPlaceID(v) {
-				return v.(string)
-			}
+	return id
+}
+
+// addDetailViewHotel adds the detail-view hotel without displacing a richer
+// same-name row: a row with a price or an ID stays, gaining the place ID
+// when it has no Google ID of its own; a bare row is replaced.
+func addDetailViewHotel(hotels []models.HotelResult, detail models.HotelResult) []models.HotelResult {
+	for i := range hotels {
+		if !strings.EqualFold(hotels[i].Name, detail.Name) {
+			continue
 		}
+		switch {
+		case hotels[i].Price == 0 && hotels[i].HotelID == "":
+			hotels[i] = detail
+		case !models.IsGoogleHotelID(hotels[i].HotelID):
+			hotels[i].HotelID = detail.HotelID
+		}
+		return hotels
 	}
-	return ""
+	return append([]models.HotelResult{detail}, hotels...)
 }
