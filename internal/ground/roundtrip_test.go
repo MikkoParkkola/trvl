@@ -19,7 +19,7 @@ func seedGroundCache(from, to, date, provider string, price float64) {
 		Routes:  []models.GroundRoute{{Provider: provider, Price: price, Currency: "EUR"}},
 	}
 	data, _ := json.Marshal(res)
-	key := cache.Key("ground", from+"|"+to+"|"+date+"|EUR|all|0.00||false|x=")
+	key := cache.Key("ground", from+"|"+to+"|"+date+"|EUR|all|0.00||false|x=|savingsoff=false")
 	groundCache.Set(key, data, 5*time.Minute)
 }
 
