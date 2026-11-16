@@ -8,6 +8,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/searchctx"
 )
 
 // Round-trip support combines two complementary sources:
@@ -61,7 +62,7 @@ func searchRoundTripComposed(ctx context.Context, client *batchexec.Client, orig
 	// suppressed: Skiplagged is queried once as a native round-trip instead (see
 	// searchNativeRoundTrip), so two redundant one-way Skiplagged calls would
 	// only waste its rate budget.
-	legCtx := disableSkiplaggedOneWay(disableHacksCompose(ctx))
+	legCtx := disableSkiplaggedOneWay(searchctx.SuppressSavingsPass(ctx))
 
 	statuses := make([]models.ProviderStatus, 0, 8)
 
