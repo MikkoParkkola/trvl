@@ -254,6 +254,7 @@ func TestSearchGroundSummaryLabelsPriceProvenance(t *testing.T) {
 		{Provider: "taxi", Type: "taxi", Price: 22, Currency: "EUR", PriceProvenance: models.PriceEstimated, Duration: 30},
 		{Provider: "snalltaget", Type: "train", Price: 120, Currency: "SEK", PriceProvenance: models.PriceEstimated, Duration: 300},
 		{Provider: "db", Type: "train", Price: 30, Currency: "EUR", PriceProvenance: models.PriceUnavailable, Duration: 260},
+		{Provider: "trainline", Type: "train", Price: 40, Currency: "EUR", Duration: 270}, // no provenance: fail closed
 	})
 	got := callSearchGround(t, groundContractArgs)
 	if got.isError {
@@ -276,6 +277,7 @@ func TestSearchGroundSummaryLabelsPriceProvenance(t *testing.T) {
 		{"taxi", "~€22 (est.)", "EUR 22.00"},
 		{"snalltaget", "~SEK 120 (est.)", "SEK 120.00"},
 		{"db", "price unavailable", "30"},
+		{"trainline", "~€40 (est.)", "EUR 40.00"},
 	}
 	for _, tc := range cases {
 		l := line(tc.provider)
@@ -408,9 +410,26 @@ func TestSearchGroundRoundTripCapKeepsInbound(t *testing.T) {
 		t.Errorf("want an Outbound: header before row 1 and an Inbound: header before row 21:\n%s", got.userText)
 	}
 
-	stubGroundRoutes(t, roundTripFixture(25, false))
+	rich := roundTripFixture(25, false)
+	stubGroundRoutes(t, rich)
 	got = callSearchGround(t, args)
 	dirs := dirCounts(got)
+	// The guard drops only the tail: what survives is each direction's
+	// leading rows in ranking order.
+	ranked, kept := map[string][]string{}, map[string][]string{}
+	for _, r := range rich {
+		ranked[r.Direction] = append(ranked[r.Direction], r.BookingURL)
+	}
+	for _, r := range structuredRoutes(t, got) {
+		d, _ := r["direction"].(string)
+		u, _ := r["booking_url"].(string)
+		kept[d] = append(kept[d], u)
+	}
+	for d, urls := range kept {
+		if len(urls) > len(ranked[d]) || !slices.Equal(urls, ranked[d][:len(urls)]) {
+			t.Errorf("%s rows are not the leading %d rows in ranking order: %v", d, len(urls), urls)
+		}
+	}
 	if dirs["outbound"] == 0 || dirs["inbound"] == 0 || dirs["outbound"]-dirs["inbound"] > 1 || dirs["inbound"]-dirs["outbound"] > 1 {
 		t.Errorf("rich directions = %v, want both kept and within one row of each other", dirs)
 	}
@@ -591,5 +610,51 @@ func TestSearchGroundOversizeGuardKeepsBudget(t *testing.T) {
 	}
 	if !strings.Contains(got.userText, fmt.Sprintf("%d of 53", len(routes))) || !strings.Contains(got.userText, "50 KB") {
 		t.Errorf("summary should report %d of 53 and the 50 KB trim:\n%s", len(routes), got.userText)
+	}
+}
+
+// TestSearchGroundEmptySuccessKeepsRoutesArray pins routes as an array: a
+// successful search with no rows left serializes [] and never null.
+func TestSearchGroundEmptySuccessKeepsRoutesArray(t *testing.T) {
+	stubGroundRoutes(t, nil)
+	got := callSearchGround(t, groundContractArgs)
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	if !strings.Contains(got.assistant, `"routes":[]`) {
+		t.Errorf("assistant copy should carry \"routes\":[]: %s", got.assistant)
+	}
+	if r, ok := got.structured["routes"].([]any); !ok || len(r) != 0 {
+		t.Errorf("structured routes = %#v, want an empty array", got.structured["routes"])
+	}
+}
+
+// TestSearchGroundRouteSchemaCoversCompactRoute pins the route schema to what
+// compactGroundRoute returns: every top-level key is declared, and the
+// confidence object is the reduced one.
+func TestSearchGroundRouteSchemaCoversCompactRoute(t *testing.T) {
+	seats := 3
+	r := groundContractFixture(1)[0] // two legs, one source, confidence
+	r.Direction, r.PriceMax, r.SeatsLeft, r.Savings = "outbound", 30, &seats, 4
+	r.SeaState = &models.SeaState{WaveHeight: 0.8, Label: "calm"}
+	r.Sources = append(r.Sources, models.PriceSource{Provider: "omio", Price: 23, Currency: "EUR", Provenance: models.PriceEstimated})
+	raw, err := json.Marshal(compactGroundRoute(r))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var route map[string]any
+	if err := json.Unmarshal(raw, &route); err != nil {
+		t.Fatal(err)
+	}
+	props := groundRoutesOutputSchema().(map[string]interface{})["items"].(map[string]interface{})["properties"].(map[string]interface{})
+	for _, k := range sortedKeys(route) {
+		if _, ok := props[k]; !ok {
+			t.Errorf("compact route key %q is missing from the route schema", k)
+		}
+	}
+	conf, _ := props["confidence"].(map[string]interface{})
+	confProps, _ := conf["properties"].(map[string]interface{})
+	if got, want := sortedKeys(confProps), []string{"basis", "label", "score", "signals"}; !slices.Equal(got, want) {
+		t.Errorf("confidence schema keys = %v, want %v", got, want)
 	}
 }
