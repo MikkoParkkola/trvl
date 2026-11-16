@@ -365,7 +365,7 @@ func streetAddress(address string) string {
 	for _, part := range strings.Split(address, ",") {
 		if part = strings.TrimSpace(part); part != "" {
 			parts = append(parts, part)
-			hasCountry = hasCountry || isCountryName(part)
+			hasCountry = hasCountry || IsCountryName(part)
 		}
 	}
 	for _, part := range parts {
@@ -377,7 +377,7 @@ func streetAddress(address string) string {
 }
 
 func placeOnlyPart(part string, hasCountry bool) bool {
-	if isAliasCity(part) || isCountryName(part) {
+	if isAliasCity(part) || IsCountryName(part) {
 		return true
 	}
 	digitFree := !strings.ContainsFunc(part, unicode.IsDigit)

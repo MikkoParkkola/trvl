@@ -37,9 +37,9 @@ var localCountryNames = map[string]string{
 	"PL": "Polska", "RO": "România", "SE": "Sverige",
 }
 
-// isCountryName reports whether s names a country in CountryNames, in its
+// IsCountryName reports whether s names a country in CountryNames, in its
 // local form from localCountryNames, or as "Czechia", ignoring case.
-func isCountryName(s string) bool {
+func IsCountryName(s string) bool {
 	s = strings.TrimSpace(s)
 	if strings.EqualFold(s, "Czechia") {
 		return true
