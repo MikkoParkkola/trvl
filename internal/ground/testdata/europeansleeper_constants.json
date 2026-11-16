@@ -1,0 +1,437 @@
+{
+  "domesticJourneyDisabledCountries": [
+    "84",
+    "88",
+    "54",
+    "87",
+    "85",
+    "83"
+  ],
+  "routes": [
+    {
+      "id": "77ab1c5a-ea0b-4634-7cdd-08db0daabe3f",
+      "from": "0001-01-01T00:00:00",
+      "stations": [
+        {
+          "id": "8800104",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8800210",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8400526",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8400131",
+          "from": null,
+          "mappedStationId": "8400526"
+        },
+        {
+          "id": "8400530",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8400280",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8400058",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8400055",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8400173",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8010100",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8010110",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8001305",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8001311",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "5455659",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "5453179",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "5457076",
+          "from": null,
+          "mappedStationId": null
+        }
+      ]
+    },
+    {
+      "id": "c4c37ac1-a9dc-4ffa-a9ec-1acd0a8c9c16",
+      "from": "2026-09-09T00:00:00",
+      "stations": [
+        {
+          "id": "8800104",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8800410",
+          "from": null,
+          "mappedStationId": "8800440"
+        },
+        {
+          "id": "8800440",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8800210",
+          "from": "2026-12-13T00:00:00",
+          "mappedStationId": null
+        },
+        {
+          "id": "8400131",
+          "from": "2026-12-13T00:00:00",
+          "mappedStationId": null
+        },
+        {
+          "id": "8400526",
+          "from": "2026-12-13T00:00:00",
+          "mappedStationId": "8400131"
+        },
+        {
+          "id": "8400058",
+          "from": "2026-12-13T00:00:00",
+          "mappedStationId": "8400206"
+        },
+        {
+          "id": "8400280",
+          "from": "2026-12-13T00:00:00",
+          "mappedStationId": "8400131"
+        },
+        {
+          "id": "8400530",
+          "from": "2026-12-13T00:00:00",
+          "mappedStationId": "8400131"
+        },
+        {
+          "id": "8400206",
+          "from": "2026-12-13T00:00:00",
+          "mappedStationId": null
+        },
+        {
+          "id": "8052101",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8050500",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8500375",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8500004",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8500200",
+          "from": null,
+          "mappedStationId": "8500375"
+        },
+        {
+          "id": "8500689",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8500521",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8500011",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8500360",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8300133",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8300112",
+          "from": null,
+          "mappedStationId": null
+        }
+      ]
+    },
+    {
+      "id": "c181e609-05b7-456a-bab6-4203dc2c3402",
+      "from": "2026-03-26T00:00:00",
+      "stations": [
+        {
+          "id": "8700015",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8700433",
+          "from": "2026-12-13T00:00:00",
+          "mappedStationId": null
+        },
+        {
+          "id": "8700021",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8800810",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8800104",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8800410",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8020401",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8010110",
+          "from": null,
+          "mappedStationId": null
+        },
+        {
+          "id": "8010100",
+          "from": null,
+          "mappedStationId": null
+        }
+      ]
+    }
+  ],
+  "stations": [
+    {
+      "id": "8800104",
+      "name": "Bruxelles Midi/Brussel Zuid",
+      "countryId": "88"
+    },
+    {
+      "id": "8800210",
+      "name": "Antwerpen Centraal",
+      "countryId": "88"
+    },
+    {
+      "id": "8800410",
+      "name": "Liège-Guillemins",
+      "countryId": "88"
+    },
+    {
+      "id": "8800440",
+      "name": "Verviers",
+      "countryId": "88"
+    },
+    {
+      "id": "8800810",
+      "name": "Mons",
+      "countryId": "88"
+    },
+    {
+      "id": "8700015",
+      "name": "Paris-Nord",
+      "countryId": "87"
+    },
+    {
+      "id": "8700433",
+      "name": "St-Quentin",
+      "countryId": "87"
+    },
+    {
+      "id": "8700021",
+      "name": "Aulnoye-Aymeries",
+      "countryId": "87"
+    },
+    {
+      "id": "8400526",
+      "name": "Roosendaal",
+      "countryId": "84"
+    },
+    {
+      "id": "8400131",
+      "name": "Breda",
+      "countryId": "84"
+    },
+    {
+      "id": "8400530",
+      "name": "Rotterdam Centraal",
+      "countryId": "84"
+    },
+    {
+      "id": "8400280",
+      "name": "Den Haag HS",
+      "countryId": "84"
+    },
+    {
+      "id": "8400058",
+      "name": "Amsterdam Centraal",
+      "countryId": "84"
+    },
+    {
+      "id": "8400055",
+      "name": "Amersfoort Centraal",
+      "countryId": "84"
+    },
+    {
+      "id": "8400173",
+      "name": "Deventer",
+      "countryId": "84"
+    },
+    {
+      "id": "8400206",
+      "name": "Eindhoven​ Centraal",
+      "countryId": "84"
+    },
+    {
+      "id": "8020401",
+      "name": "Hamburg Harburg",
+      "countryId": "80"
+    },
+    {
+      "id": "8010110",
+      "name": "Berlin Ostbahnhof",
+      "countryId": "80"
+    },
+    {
+      "id": "8010100",
+      "name": "Berlin Hbf",
+      "countryId": "80"
+    },
+    {
+      "id": "8052101",
+      "name": "Aachen Hbf",
+      "countryId": "80"
+    },
+    {
+      "id": "8001305",
+      "name": "Dresden Hbf",
+      "countryId": "80"
+    },
+    {
+      "id": "8050500",
+      "name": "Köln Hbf​",
+      "countryId": "80"
+    },
+    {
+      "id": "8001311",
+      "name": "Bad Schandau",
+      "countryId": "80"
+    },
+    {
+      "id": "8500375",
+      "name": "Aarau",
+      "countryId": "85"
+    },
+    {
+      "id": "8500004",
+      "name": "Arth-Goldau",
+      "countryId": "85"
+    },
+    {
+      "id": "8500200",
+      "name": "Zürich HB",
+      "countryId": "85"
+    },
+    {
+      "id": "8500689",
+      "name": "Göschenen",
+      "countryId": "85"
+    },
+    {
+      "id": "8500521",
+      "name": "Bellinzona",
+      "countryId": "85"
+    },
+    {
+      "id": "8500011",
+      "name": "Lugano",
+      "countryId": "85"
+    },
+    {
+      "id": "8500360",
+      "name": "Chiasso",
+      "countryId": "85"
+    },
+    {
+      "id": "5455659",
+      "name": "Děčín hl.n.",
+      "countryId": "54"
+    },
+    {
+      "id": "5453179",
+      "name": "Ústí nad Labem hl.n.",
+      "countryId": "54"
+    },
+    {
+      "id": "5457076",
+      "name": "Praha hl.n. (main station)",
+      "countryId": "54"
+    },
+    {
+      "id": "8300133",
+      "name": "Como san Giovanni",
+      "countryId": "83"
+    },
+    {
+      "id": "8300112",
+      "name": "Milano Porta Garibaldi",
+      "countryId": "83"
+    }
+  ]
+}

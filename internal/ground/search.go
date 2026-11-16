@@ -584,7 +584,7 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		})
 	}
 
-	// European Sleeper — night train Brussels→Amsterdam→Berlin→Dresden→Prague.
+	// European Sleeper — night trains Brussels–Amsterdam–Berlin–Prague, Paris–Berlin, Brussels–Milan.
 	if useProvider("european_sleeper") {
 		if HasEuropeanSleeperRoute(from, to) {
 			launchProvider(&wg, results, "european_sleeper", func() ([]models.GroundRoute, error) {
