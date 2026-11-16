@@ -213,6 +213,9 @@ func TestSearchHotelByName_TrailingWordFoundInAddress(t *testing.T) {
 	serveGooglePage(t, hotelWithPrice{"Hotel Sacher", 300})
 	withBookingResult(t, bookingArtist("Kirchengasse 41, 1070 Vienna, Austria"))
 	seedGeo(t, "ARTIST Boutique Hotel Vienna")
+	// The match carries a Booking id, not a Google place ID, so the lookup
+	// re-searches Google for "<name>, <area>"; seed it to stay offline.
+	seedGeo(t, "ARTIST Boutique Hotel Vienna, ARTIST Boutique Hotel Vienna")
 	requireCandidate(t, "ARTIST Boutique Hotel Vienna", "ARTIST Boutique Hotel")
 
 	got, err := SearchHotelByName(context.Background(), "ARTIST Boutique Hotel Vienna", lookupCheckIn, lookupCheckOut, "USD")
