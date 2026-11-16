@@ -17,6 +17,9 @@ import (
 
 var searchGroundByNameFunc = ground.SearchByName
 
+// searchAirportTransfersFunc is a seam so tests can stub the airport search.
+var searchAirportTransfersFunc = trip.SearchAirportTransfers
+
 func searchGroundTool() ToolDef {
 	return ToolDef{
 		Name:        "search_ground",
@@ -392,7 +395,7 @@ func handleSearchAirportTransfers(ctx context.Context, args map[string]any, elic
 		return nil, nil, fmt.Errorf("airport_code, destination, and date are required")
 	}
 
-	result, err := trip.SearchAirportTransfers(ctx, input)
+	result, err := searchAirportTransfersFunc(ctx, input)
 	if err != nil {
 		return nil, nil, err
 	}
