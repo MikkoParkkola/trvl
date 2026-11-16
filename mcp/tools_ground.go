@@ -52,7 +52,7 @@ func groundSearchOutputSchema() interface{} {
 		"type": "object",
 		"properties": map[string]interface{}{
 			"success":     schemaBool(),
-			"count":       schemaIntDesc("Routes returned: at most 20 per direction, fewer when the result would pass 50 KB."),
+			"count":       schemaIntDesc("Routes returned in this response (the tool shows up to 20 per direction, fewer when the result would pass 50 KB)."),
 			"total_count": schemaIntDesc("Routes found before the cap; narrow with type, provider or max_price to see the rest."),
 			"routes":      groundRoutesOutputSchema(),
 			"error":       schemaString(),
@@ -107,8 +107,54 @@ func groundRoutesOutputSchema() interface{} {
 			"amenities":        schemaStringArray(),
 			"seats_left":       schemaInt(),
 			"booking_url":      schemaString(),
+			"comparable_price": schemaNumDesc("Price in the search currency, used for ranking; absent when it could not be converted."),
+			"cheapest_source":  schemaString(),
+			"savings":          schemaNumDesc("How much the cheapest source undercuts the next one."),
+			"departure":        groundStopSchema(),
+			"arrival":          groundStopSchema(),
+			"legs": schemaArrayDesc("Segments of the journey; search_ground omits them when a single leg only repeats the route, and omits a leg city the route or the previous leg already names.", map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"type":             schemaString(),
+					"provider":         schemaString(),
+					"departure":        groundStopSchema(),
+					"arrival":          groundStopSchema(),
+					"duration_minutes": schemaInt(),
+					"amenities":        schemaStringArray(),
+				},
+			}),
+			"confidence": map[string]interface{}{
+				"type":        "object",
+				"description": "How likely the headline price is bookable as shown.",
+				"properties": map[string]interface{}{
+					"label":   schemaStringDesc("high, medium, low or unrated"),
+					"score":   schemaNumDesc("0 to 1; absent when unrated"),
+					"basis":   schemaString(),
+					"signals": schemaStringArray(),
+				},
+			},
+			"sea_state": map[string]interface{}{
+				"type":        "object",
+				"description": "Forecast sea state for ferry routes.",
+				"properties": map[string]interface{}{
+					"wave_height_m":  schemaNum(),
+					"swell_height_m": schemaNum(),
+					"label":          schemaStringDesc("calm, moderate or rough"),
+				},
+			},
 		},
 	})
+}
+
+func groundStopSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"city":    schemaString(),
+			"station": schemaString(),
+			"time":    schemaStringDesc("ISO 8601 local time"),
+		},
+	}
 }
 
 func searchAirportTransfersTool() ToolDef {
@@ -228,7 +274,7 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 	shown := capGroundRoutes(result.Routes, groundRowsPerDirection)
 	trimmed := false
 	for {
-		resp := groundSearchResponse{GroundSearchResult: result, TotalCount: total}
+		resp := groundSearchResponse{GroundSearchResult: result, TotalCount: total, Routes: make([]groundRouteOut, 0, len(shown))}
 		result.Count = len(shown)
 		for _, r := range shown {
 			resp.Routes = append(resp.Routes, compactGroundRoute(r))
