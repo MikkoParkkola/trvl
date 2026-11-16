@@ -1,8 +1,15 @@
 package ground
 
 import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
+	"golang.org/x/time/rate"
 )
 
 func TestLookupTallinkPort(t *testing.T) {
@@ -384,6 +391,114 @@ func TestTallinkFormatCabinClasses(t *testing.T) {
 			got := tallinkFormatCabinClasses(tt.classes)
 			if got != tt.want {
 				t.Errorf("tallinkFormatCabinClasses() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// useTallinkMock routes tallinkClient to a canned timetable and lifts the
+// limiter for the test.
+func useTallinkMock(t *testing.T, timetableJSON string) {
+	t.Helper()
+	origClient, origLimiter := tallinkClient, tallinkLimiter
+	t.Cleanup(func() { tallinkClient, tallinkLimiter = origClient, origLimiter })
+	tallinkLimiter = rate.NewLimiter(rate.Limit(1000), 1)
+	tallinkClient = &http.Client{Transport: &tallinkTransportMock{
+		bookingPageBody: `<html><script>window.Env = { sessionGuid: 'MOCK-GUID' };</script></html>`,
+		timetableJSON:   timetableJSON,
+		summaryStatus:   http.StatusOK,
+		travelClasses:   `[]`,
+	}}
+}
+
+// TestSearchTallink_LiveTimetableFixture replays a live HEL-TAL timetable
+// captured 2026-11-15, where marketingMessage became an object
+// ({description,imageUrl,name}) on 23 of 43 sailings and broke the decode.
+func TestSearchTallink_LiveTimetableFixture(t *testing.T) {
+	useTallinkMock(t, loadGroundFixture(t, "tallink_hel_tal_timetables.json"))
+
+	routes, err := SearchTallink(context.Background(), "Helsinki", "Tallinn", "2026-11-20", "EUR")
+	if err != nil {
+		t.Fatalf("SearchTallink: %v", err)
+	}
+	if len(routes) != 7 {
+		t.Fatalf("routes = %d, want the 7 enabled 2026-11-20 sailings", len(routes))
+	}
+	r := routes[0]
+	if r.Departure.Time != "2026-11-20T07:30:00" || r.Arrival.Time != "2026-11-20T09:30:00" {
+		t.Errorf("first sailing = %s -> %s, want 2026-11-20T07:30:00 -> 2026-11-20T09:30:00", r.Departure.Time, r.Arrival.Time)
+	}
+	if r.Price != 29.90 || r.Currency != "EUR" {
+		t.Errorf("first sailing fare = %v %s, want 29.90 EUR", r.Price, r.Currency)
+	}
+}
+
+// TestSearchTallink_PricesAreLive pins that a timetable personPrice is a fare
+// for that sailing, so the parser marks it live rather than leaving the merge
+// pass to call it estimated.
+func TestSearchTallink_PricesAreLive(t *testing.T) {
+	useTallinkMock(t, tallinkMockTimetableDay)
+
+	routes, err := SearchTallink(context.Background(), "Helsinki", "Tallinn", "2026-09-01", "EUR")
+	if err != nil {
+		t.Fatalf("SearchTallink: %v", err)
+	}
+	if len(routes) == 0 {
+		t.Fatal("want routes from the mock timetable")
+	}
+	for i, r := range routes {
+		if r.PriceProvenance != models.PriceLive {
+			t.Errorf("route %d provenance = %q, want %q", i, r.PriceProvenance, models.PriceLive)
+		}
+	}
+}
+
+func TestSearchTallink_NotApplicableWrapsSentinel(t *testing.T) {
+	for _, pair := range [][2]string{{"Narnia", "Tallinn"}, {"Helsinki", "Narnia"}} {
+		_, err := SearchTallink(context.Background(), pair[0], pair[1], "2026-11-20", "EUR")
+		if !errors.Is(err, models.ErrNotApplicable) {
+			t.Errorf("%s -> %s: error %v does not wrap models.ErrNotApplicable", pair[0], pair[1], err)
+		}
+	}
+}
+
+// TestSearchTallink_TypedErrors pins that a refused or reshaped timetable is a
+// classifiable error: refusals wrap ErrRateLimited, a moved endpoint or an
+// undecodable body wraps ErrParseFailed.
+func TestSearchTallink_TypedErrors(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   error
+	}{
+		{"refused", http.StatusServiceUnavailable, "", models.ErrRateLimited},
+		{"rate limited", http.StatusTooManyRequests, "", models.ErrRateLimited},
+		{"moved", http.StatusNotFound, "", models.ErrParseFailed},
+		{"reshaped", http.StatusOK, `{"trips":{"2026-11-20":{"outwards":"soon"}}}`, models.ErrParseFailed},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			origClient, origLimiter := tallinkClient, tallinkLimiter
+			t.Cleanup(func() { tallinkClient, tallinkLimiter = origClient, origLimiter })
+			tallinkLimiter = rate.NewLimiter(rate.Limit(1000), 1)
+			tallinkClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				rec := httptest.NewRecorder()
+				if strings.Contains(r.URL.Path, "/api/timetables") {
+					rec.WriteHeader(c.status)
+					_, _ = rec.WriteString(c.body)
+					return rec.Result(), nil
+				}
+				rec.Header().Set("Set-Cookie", "JSESSIONID=mock-sess; Path=/")
+				_, _ = rec.WriteString(`<script>window.Env = { sessionGuid: 'MOCK-GUID' };</script>`)
+				return rec.Result(), nil
+			})}
+			routes, err := SearchTallink(context.Background(), "Helsinki", "Tallinn", "2026-11-20", "EUR")
+			if !errors.Is(err, c.want) {
+				t.Errorf("err = %v, want it to wrap %v", err, c.want)
+			}
+			if len(routes) != 0 {
+				t.Errorf("routes = %d, want none alongside an error", len(routes))
 			}
 		})
 	}
