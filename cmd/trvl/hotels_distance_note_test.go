@@ -25,3 +25,12 @@ func TestHotelsOutputCountsFartherHotels(t *testing.T) {
 		}
 	}
 }
+
+// TestHotelsMaxDistanceDefaultsTo25Km: `trvl hotels` caps distance at 25 km
+// unless --max-distance is given.
+func TestHotelsMaxDistanceDefaultsTo25Km(t *testing.T) {
+	f := hotelsCmd().Flags().Lookup("max-distance")
+	if f == nil || f.DefValue != "25" {
+		t.Fatalf("--max-distance default = %v, want 25", f)
+	}
+}

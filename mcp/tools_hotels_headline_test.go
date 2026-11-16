@@ -39,3 +39,29 @@ func TestHotelSummaryCountsFartherHotels(t *testing.T) {
 		}
 	}
 }
+
+// TestHotelListToolsDefaultTo25Km: the list tools (search_hotels,
+// search_accommodations, search_hotels_with_details share this builder) cap
+// distance at 25 km unless max_distance is given; 0 lifts the cap.
+func TestHotelListToolsDefaultTo25Km(t *testing.T) {
+	base := map[string]any{"location": "Vienna", "check_in": "2027-04-10", "check_out": "2027-04-12"}
+	for _, c := range []struct {
+		arg  any
+		want float64
+	}{{nil, 25}, {30.0, 30}, {0.0, 0}} {
+		args := map[string]any{}
+		for k, v := range base {
+			args[k] = v
+		}
+		if c.arg != nil {
+			args["max_distance"] = c.arg
+		}
+		req, err := buildHotelSearchRequest(args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if req.Options.MaxDistanceKm != c.want {
+			t.Errorf("max_distance %v: cap = %v, want %v", c.arg, req.Options.MaxDistanceKm, c.want)
+		}
+	}
+}

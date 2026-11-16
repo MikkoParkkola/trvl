@@ -84,40 +84,39 @@ func TestParseBookingApolloDividesStayTotalByNights(t *testing.T) {
 	}
 }
 
-// TestSearchHotelsDefaultDistanceCap: trvl leaves out hotels more than 25 km
-// from the centre and counts them; an explicit cap wins; a hotel without
-// coordinates stays.
-func TestSearchHotelsDefaultDistanceCap(t *testing.T) {
+// TestSearchHotelsAppliesTheCapItIsGiven: the search applies the distance cap
+// it is handed (the 25 km default is set at the list entry points), counts the
+// hotels it leaves out, and keeps hotels without coordinates. No cap, no count.
+func TestSearchHotelsAppliesTheCapItIsGiven(t *testing.T) {
 	stubGoogleHotels(t, []models.HotelResult{
 		viennaHotel("near", viennaLat+0.009, viennaLon),
 		viennaHotel("far", viennaLat+0.234, viennaLon),
 		viennaHotel("nocoords", 0, 0),
 	})
 	client := offlineSearchClient(t)
-	opts := HotelSearchOptions{CheckIn: "2027-04-10", CheckOut: "2027-04-12", Currency: "EUR", MaxPages: 1,
-		CenterLat: viennaLat, CenterLon: viennaLon}
-
-	res, err := SearchHotelsWithClient(context.Background(), client, "Vienna", opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := sortedHotelNames(res.Hotels); !slices.Equal(got, []string{"near", "nocoords"}) {
-		t.Errorf("default cap hotels = %v, want near and nocoords", got)
-	}
-	if res.FartherOmitted != 1 || res.MaxDistanceKm != 25 {
-		t.Errorf("farther_omitted = %d, max_distance_km = %v, want 1 and 25", res.FartherOmitted, res.MaxDistanceKm)
-	}
-
-	opts.MaxDistanceKm = 30
-	res, err = SearchHotelsWithClient(context.Background(), client, "Vienna", opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := sortedHotelNames(res.Hotels); !slices.Equal(got, []string{"far", "near", "nocoords"}) {
-		t.Errorf("30 km cap hotels = %v, want all three", got)
-	}
-	if res.FartherOmitted != 0 || res.MaxDistanceKm != 30 {
-		t.Errorf("farther_omitted = %d, max_distance_km = %v, want 0 and 30", res.FartherOmitted, res.MaxDistanceKm)
+	for _, c := range []struct {
+		capKm       float64
+		want        []string
+		wantFarther int
+	}{
+		{25, []string{"near", "nocoords"}, 1},
+		{30, []string{"far", "near", "nocoords"}, 0},
+		{0, []string{"far", "near", "nocoords"}, 0},
+	} {
+		res, err := SearchHotelsWithClient(context.Background(), client, "Vienna", HotelSearchOptions{
+			CheckIn: "2027-04-10", CheckOut: "2027-04-12", Currency: "EUR", MaxPages: 1,
+			CenterLat: viennaLat, CenterLon: viennaLon, MaxDistanceKm: c.capKm,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := sortedHotelNames(res.Hotels); !slices.Equal(got, c.want) {
+			t.Errorf("cap %v: hotels = %v, want %v", c.capKm, got, c.want)
+		}
+		if res.FartherOmitted != c.wantFarther || res.MaxDistanceKm != c.capKm {
+			t.Errorf("cap %v: farther_omitted = %d, max_distance_km = %v, want %d and %v",
+				c.capKm, res.FartherOmitted, res.MaxDistanceKm, c.wantFarther, c.capKm)
+		}
 	}
 }
 
@@ -167,8 +166,8 @@ func TestSideProvidersGetEnglishCityGoogleGetsLocal(t *testing.T) {
 func TestHotelAuxNotApplicableIsSkippedWithoutStrike(t *testing.T) {
 	wrapped := fmt.Errorf("booking: no market for this city: %w", models.ErrNotApplicable)
 	row := hotelProviderStatusFromError("booking", "Booking.com", wrapped)
-	if row.Status != models.StatusSkipped || row.Reason != models.ReasonRouteNotServed {
-		t.Errorf("status row = %+v, want skipped with reason %s", row, models.ReasonRouteNotServed)
+	if row.Status != models.StatusSkipped || row.Reason != "city_not_served" {
+		t.Errorf("status row = %+v, want skipped with reason city_not_served", row)
 	}
 
 	stubGoogleHotels(t, []models.HotelResult{viennaHotel("near", viennaLat+0.009, viennaLon)})
