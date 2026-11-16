@@ -55,7 +55,9 @@ func TestHandleHotelRooms_FallsBackToNameSearch(t *testing.T) {
 		if name != "Hotel Lutetia, Paris" {
 			t.Errorf("name search query = %q", name)
 		}
-		return &models.HotelResult{Name: "Hotel Lutetia", HotelID: "/g/lutetia", BookingURL: "https://booking.example/lutetia"}, nil
+		return &models.HotelResult{Name: "Hotel Lutetia", HotelID: "/g/lutetia", Sources: []models.PriceSource{
+			{Provider: "booking", BookingURL: "https://www.booking.com/hotel/fr/lutetia.html"},
+		}}, nil
 	}
 	var gotID, gotBookingURL string
 	getRoomAvailabilityWithOptsFunc = func(_ context.Context, opts hotels.RoomSearchOptions) (*hotels.RoomAvailability, error) {
@@ -78,9 +80,10 @@ func TestHandleHotelRooms_FallsBackToNameSearch(t *testing.T) {
 	if gotID != "/g/lutetia" {
 		t.Errorf("room fetch HotelID = %q, want /g/lutetia", gotID)
 	}
-	// Booking URL from the search result should propagate when caller omits it.
-	if gotBookingURL != "https://booking.example/lutetia" {
-		t.Errorf("BookingURL = %q, want propagated search-result URL", gotBookingURL)
+	// The booking source's Booking.com page should propagate when the caller
+	// omits booking_url.
+	if gotBookingURL != "https://www.booking.com/hotel/fr/lutetia.html" {
+		t.Errorf("BookingURL = %q, want the booking source's page", gotBookingURL)
 	}
 }
 
