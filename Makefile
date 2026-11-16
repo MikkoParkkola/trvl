@@ -9,9 +9,9 @@ GOSEC_VERSION ?= v2.28.0
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION) -X github.com/MikkoParkkola/trvl/mcp.serverVersion=$(VERSION)"
 
-.PHONY: build test test-proof test-coverage test-live-integrations test-live-probes lint repo-hygiene release-config security-gosec dod distribution-metrics clean cross install safe-clean force-clean
+.PHONY: build test test-proof test-coverage test-live-integrations test-live-probes lint repo-hygiene release-config security-gosec dod prepush distribution-metrics clean cross install safe-clean force-clean
 
-lint security-gosec: export PATH := $(GO_TOOLS_BIN):$(PATH)
+lint security-gosec prepush: export PATH := $(GO_TOOLS_BIN):$(PATH)
 
 build:
 	@mkdir -p bin
@@ -113,6 +113,11 @@ security-gosec:
 dod: release-config lint security-gosec test
 	@echo
 	@echo "dod: lint, gosec and tests all clean -- safe to commit."
+
+# Most of CI's pull-request gates, cheapest first, failing fast. The header of
+# scripts/ci/prepush.sh lists what it runs and what it does not cover.
+prepush:
+	GOTOOLCHAIN=$(GOTOOLCHAIN) GOLANGCI_LINT_VERSION=$(GOLANGCI_LINT_VERSION) scripts/ci/prepush.sh
 
 distribution-metrics:
 	$(GO_RUN) run ./cmd/distribution-metrics

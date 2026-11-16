@@ -96,7 +96,7 @@ func hotelDetailsSearchOutputSchema() interface{} {
 			"count":           schemaInt(),
 			"total_available": schemaInt(),
 			"max_distance_km": schemaNumDesc("Distance cap applied around the city centre (25 by default; absent when none applied)."),
-			"monthly_omitted": schemaIntDesc("Monthly rentals left out of this nightly list; search_accommodations lists them."),
+			"monthly_omitted": schemaIntDesc("Monthly rentals left out of this nightly list: their prices are monthly rents, not nightly rates."),
 			"farther_omitted": schemaIntDesc("Hotels trvl left out for being farther than max_distance_km. Below 25 km Google is also asked for that radius and withholds farther hotels itself, so the count then covers only what trvl removed."),
 			"hotels": schemaArray(map[string]interface{}{
 				"type": "object",
