@@ -209,3 +209,18 @@ func TestNameMatch_RadiusNeverVetoesTheSoleFullNameMatch(t *testing.T) {
 		t.Fatalf("SearchHotelsByName = %v, %v; want the sole full-name match", hotelNames(got), err)
 	}
 }
+
+// TestNameMatch_StreetWordInAddressIsNoTown: "Hauptbahnhof" is in the hotel's
+// address as a street, not a town, so it must not make "Ibis Wien
+// Hauptbahnhof" conflict with an "Ibis Wien" query for Vienna.
+func TestNameMatch_StreetWordInAddressIsNoTown(t *testing.T) {
+	ibis := []models.HotelResult{{
+		Name: "Ibis Wien Hauptbahnhof", HotelID: "/g/ibis_hbf", Address: "Am Hauptbahnhof 1, 1100 Wien, Austria",
+	}}
+	if got := findBestNameMatch(ibis, "Ibis Wien, Vienna"); got == nil {
+		t.Error(`findBestNameMatch("Ibis Wien, Vienna") = nil, want Ibis Wien Hauptbahnhof`)
+	}
+	if kept := withoutOtherTowns(ibis, "Ibis Wien", "Vienna"); len(kept) != 1 {
+		t.Error("withoutOtherTowns dropped Ibis Wien Hauptbahnhof for a street word in its address")
+	}
+}
