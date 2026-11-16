@@ -123,7 +123,7 @@ func TestHasTallinkRoute(t *testing.T) {
 		{"Stockholm", "Riga", true},
 		{"Stockholm", "Helsinki", true},
 		{"Helsinki", "Stockholm", true},
-		{"Helsinki", "Paldiski", true},
+		{"Helsinki", "Paldiski", false}, // no Tallink sailing (live timetables, 2026-12-04..10)
 		{"Kapellskär", "Paldiski", true},
 		{"Helsinki", "London", false}, // London not a Tallink port
 		{"London", "Tallinn", false},
