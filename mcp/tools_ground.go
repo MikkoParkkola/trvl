@@ -258,6 +258,7 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 			msg = fmt.Sprintf("No ground routes returned from %s to %s on %s yet. %s",
 				from, to, date, result.Completeness.IncompleteNote())
 		}
+		result.Routes = arrayRoutes(result.Routes)
 		return []ContentBlock{{Type: "text", Text: msg}}, result, nil
 	}
 
@@ -399,6 +400,7 @@ func handleSearchAirportTransfers(ctx context.Context, args map[string]any, elic
 	if err != nil {
 		return nil, nil, err
 	}
+	result.Routes = arrayRoutes(result.Routes)
 	if !result.Success {
 		msg := fmt.Sprintf("No airport transfer routes found from %s to %s on %s", result.Airport, result.Destination, result.Date)
 		if result.Error != "" {
@@ -481,6 +483,21 @@ func enrichFerrySeaState(ctx context.Context, routes []models.GroundRoute) {
 		cache[port] = &s
 		routes[i].SeaState = &s
 	}
+}
+
+// arrayRoutes makes the route fields the shared route schema declares as
+// arrays serialize as [] instead of null (the taxi row sets no legs). Only
+// routes and legs need it: amenities and sources are omitempty and drop out.
+func arrayRoutes(routes []models.GroundRoute) []models.GroundRoute {
+	if routes == nil {
+		return []models.GroundRoute{}
+	}
+	for i := range routes {
+		if routes[i].Legs == nil {
+			routes[i].Legs = []models.GroundLeg{}
+		}
+	}
+	return routes
 }
 
 func groundRoutesHaveProvider(routes []models.GroundRoute, provider string) bool {
