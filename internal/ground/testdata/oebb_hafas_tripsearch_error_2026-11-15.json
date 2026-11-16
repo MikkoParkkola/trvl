@@ -1,0 +1,1 @@
+{"ver":"1.45","ext":"OEBB.1","lang":"eng","id":"mu2kvqcsg4tnpc4k","err":"OK","graph":{"id":"standard","index":0},"subGraph":{"id":"global","index":0},"view":{"id":"standard","index":0,"type":"WGS84"},"svcResL":[{"meth":"TripSearch","err":"LOCATION","errTxt":"HCI Service: location missing or invalid","errTxtOut":"An internal error occurred during the search"}]}
