@@ -196,10 +196,6 @@ func runHotels(cmd *cobra.Command, args []string) error {
 	}
 
 	result, err := hotels.SearchHotels(ctx, location, opts)
-	if err == nil {
-		// A nightly list: monthly rents are not nightly prices.
-		hotels.DropMonthlyRentals(result)
-	}
 	if err == nil && prefs != nil {
 		result.Hotels = preferences.FilterHotels(result.Hotels, location, prefs)
 		result.Count = len(result.Hotels)

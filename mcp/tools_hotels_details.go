@@ -332,8 +332,6 @@ func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, eli
 	if err != nil {
 		return nil, nil, err
 	}
-	// A nightly list: monthly rents go to search_accommodations instead.
-	hotels.DropMonthlyRentals(result)
 
 	includeAmenities := argBool(args, "include_amenities", true)
 	includeRooms := argBool(args, "include_rooms", true)

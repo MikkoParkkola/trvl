@@ -239,8 +239,6 @@ func handleSearchHotels(ctx context.Context, args map[string]any, elicit ElicitF
 	if err != nil {
 		return nil, nil, err
 	}
-	// A nightly list: monthly rents go to search_accommodations instead.
-	hotels.DropMonthlyRentals(result)
 
 	// Build suggestions for progressive disclosure.
 	suggestions := hotelSuggestions(result, req.Options)

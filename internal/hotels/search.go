@@ -733,7 +733,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 
 	annotateHotelConfidence(hotels, time.Now())
 
-	return &models.HotelSearchResult{
+	result := &models.HotelSearchResult{
 		Success:          true,
 		Count:            len(hotels),
 		TotalAvailable:   totalAvailable,
@@ -742,7 +742,14 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		Hotels:           hotels,
 		ProviderStatuses: providerStatuses,
 		Completeness:     models.ComputeCompleteness(providerStatuses),
-	}, nil
+	}
+	// Monthly rents are not nightly prices: every caller but the long-stay
+	// accommodation search gets them left out (and counted), so none shows or
+	// multiplies a monthly rent as a night's price.
+	if opts.StayTerm == StayNightly {
+		DropMonthlyRentals(result)
+	}
+	return result, nil
 }
 
 func cloneHotelSearchResult(shared *models.HotelSearchResult) *models.HotelSearchResult {
