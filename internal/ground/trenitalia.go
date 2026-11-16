@@ -301,8 +301,9 @@ func resolveTrenitaliaStation(ctx context.Context, city string) (int, string, er
 		return 0, "", fmt.Errorf("trenitalia station resolve decode: %w", err)
 	}
 
+	// A clean 200 with no stations: Trenitalia does not serve this city.
 	if len(results) == 0 {
-		return 0, "", fmt.Errorf("trenitalia: no station found for %q", city)
+		return 0, "", fmt.Errorf("trenitalia: no station found for %q: %w", city, models.ErrNotApplicable)
 	}
 
 	queryLower := strings.ToLower(query)

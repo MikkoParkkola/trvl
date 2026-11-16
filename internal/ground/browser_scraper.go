@@ -87,11 +87,11 @@ func BrowserScrapeRoutes(ctx context.Context, provider, from, to, date, currency
 func browserScrapeTrainline(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromID, ok := LookupTrainlineStation(from)
 	if !ok {
-		return nil, fmt.Errorf("browser scraper trainline: no station ID for %q", from)
+		return nil, fmt.Errorf("browser scraper trainline: no station ID for %q: %w", from, models.ErrNotApplicable)
 	}
 	toID, ok := LookupTrainlineStation(to)
 	if !ok {
-		return nil, fmt.Errorf("browser scraper trainline: no station ID for %q", to)
+		return nil, fmt.Errorf("browser scraper trainline: no station ID for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	targetURL := buildTrainlineBrowserResultsURL(fromID, toID, date)
@@ -110,11 +110,11 @@ func browserScrapeTrainline(ctx context.Context, from, to, date, currency string
 func browserScrapeSNCF(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromStation, ok := LookupSNCFStation(from)
 	if !ok {
-		return nil, fmt.Errorf("browser scraper sncf: no station code for %q", from)
+		return nil, fmt.Errorf("browser scraper sncf: no station code for %q: %w", from, models.ErrNotApplicable)
 	}
 	toStation, ok := LookupSNCFStation(to)
 	if !ok {
-		return nil, fmt.Errorf("browser scraper sncf: no station code for %q", to)
+		return nil, fmt.Errorf("browser scraper sncf: no station code for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	bookingURL := buildSNCFBookingURL(fromStation.Code, toStation.Code, date)
