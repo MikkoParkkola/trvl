@@ -29,7 +29,9 @@ func IsBookingRoomsURL(u string) bool {
 // per-hotel detail page suitable for room drill-down.
 func BookingSourceURL(h models.HotelResult) string {
 	for _, s := range h.Sources {
-		if s.Provider == "booking" && IsBookingRoomsURL(s.BookingURL) {
+		// The search tags SearchBooking results "booking.com"; the provider
+		// runtime writes its config ID, "booking".
+		if (s.Provider == "booking" || s.Provider == "booking.com") && IsBookingRoomsURL(s.BookingURL) {
 			return s.BookingURL
 		}
 	}
