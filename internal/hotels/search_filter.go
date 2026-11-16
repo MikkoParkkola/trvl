@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -351,6 +352,11 @@ func hotelProviderStatusFromResults(id, name string, results int) models.Provide
 }
 
 func hotelProviderStatusFromError(id, name string, err error) models.ProviderStatus {
+	// A provider that does not serve the place answered honestly: skipped,
+	// never failed. Classified by the sentinel alone, as ground search does.
+	if errors.Is(err, models.ErrNotApplicable) {
+		return models.ProviderStatus{ID: id, Name: name, Status: models.StatusSkipped, Reason: models.ReasonRouteNotServed}
+	}
 	status := models.ClassifyProviderError(err)
 	return models.ProviderStatus{
 		ID:     id,

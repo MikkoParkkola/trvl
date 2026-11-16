@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -180,7 +181,9 @@ func SearchHotels(ctx context.Context, location string, opts HotelSearchOptions)
 
 // SearchHotelsWithClient is like SearchHotels but reuses the provided client.
 func SearchHotelsWithClient(ctx context.Context, client *batchexec.Client, location string, opts HotelSearchOptions) (*models.HotelSearchResult, error) {
-	location = normalizeHotelCity(location)
+	// Every provider gets the English city name; only the Google fetch swaps
+	// in the local form Google resolves (see googleLocation in searchHotelsCore).
+	location = englishHotelCity(location)
 	if opts.CheckIn == "" || opts.CheckOut == "" {
 		return nil, fmt.Errorf("check-in and check-out dates are required")
 	}
@@ -234,6 +237,7 @@ func doHotelSearchSingleflight(ctx context.Context, key string, fn func(context.
 
 // searchHotelsCore performs the actual hotel search without singleflight wrapping.
 func searchHotelsCore(ctx context.Context, client *batchexec.Client, location string, opts HotelSearchOptions) (*models.HotelSearchResult, error) {
+	googleLocation := normalizeHotelCity(location)
 	pageLimit := hotelPageLimit(opts.MaxPages)
 
 	// Determine which sort orders to use. When MaxPages is 1 (compound
@@ -293,7 +297,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		}
 
 		// Fetch first page for this sort order (with metadata on the primary sort).
-		firstPage, err := fetchHotelPageFullFn(ctx, client, location, opts, 0, googleSort)
+		firstPage, err := fetchHotelPageFullFn(ctx, client, googleLocation, opts, 0, googleSort)
 		if err != nil {
 			if sortIdx == 0 {
 				// Primary Google sort failed. Don't abort the whole search:
@@ -321,7 +325,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 
 		// Paginate within this sort order.
 		for page := 1; page < pageLimit; page++ {
-			pageHotels, err := fetchHotelPage(ctx, client, location, opts, page*pageSize, googleSort)
+			pageHotels, err := fetchHotelPage(ctx, client, googleLocation, opts, page*pageSize, googleSort)
 			if err != nil {
 				// Non-fatal: keep what we have from previous pages.
 				break
@@ -380,6 +384,11 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 						statuses:      []models.ProviderStatus{hotelProviderStatusFromError(id, name, ctxErr)},
 						breakerAction: hotelAuxBreakerFailure,
 					}
+				}
+				if errors.Is(err, models.ErrNotApplicable) {
+					// Not served here: no strike, no reset; nothing was learnt
+					// about the provider's health.
+					return hotelAuxOutcome{statuses: []models.ProviderStatus{hotelProviderStatusFromError(id, name, err)}}
 				}
 				if err != nil {
 					slog.Warn(id+" search failed", "error", logredact.Err(err))
@@ -688,7 +697,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// provider-specific URLs that were already attached during source merges.
 	for i := range hotels {
 		if hotels[i].BookingURL == "" {
-			hotels[i].BookingURL = buildHotelBookingURL(location, opts.CheckIn, opts.CheckOut)
+			hotels[i].BookingURL = buildHotelBookingURL(googleLocation, opts.CheckIn, opts.CheckOut)
 		}
 	}
 
@@ -722,7 +731,8 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 func annotateHotelConfidence(hotels []models.HotelResult, now time.Time) {
 	for i := range hotels {
 		h := &hotels[i]
-		provider := h.CheapestSource
+		// Score the quote the headline shows, not the cheapest one.
+		provider := h.HeadlineProvider
 		if provider == "" && len(h.Sources) > 0 {
 			provider = h.Sources[0].Provider
 		}

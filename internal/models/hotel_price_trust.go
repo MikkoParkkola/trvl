@@ -70,6 +70,10 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 		// currency and says so rather than relabelling the number.
 		h.Price = selected.Price
 		h.Currency = selected.Currency
+		// The headline credits the quote the trust rule picked; cheapest_source
+		// below may name a cheaper, less trusted one.
+		h.HeadlineProvider = selected.Provider
+		h.PriceProvenance = ""
 		h.PriceWarnings = withoutString(h.PriceWarnings, PriceWarningCurrencyNotConverted)
 		if preferredCurrency != "" && h.Currency != preferredCurrency {
 			if amount, ok := convertPrice(convert, h.Price, h.Currency, preferredCurrency); ok {
@@ -89,6 +93,11 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 		h.PriceConfidence = selected.PriceConfidence
 		h.RetrievedAt = selected.RetrievedAt
 		h.Freshness = selected.Freshness
+	} else {
+		// No source carries a usable price: say so on the hotel. Price-0
+		// sources stay unstamped; they are not quotes.
+		h.HeadlineProvider = ""
+		h.PriceProvenance = PriceUnavailable
 	}
 	if h.PropertyType == "" {
 		h.PropertyType = InferHotelPropertyType(*h)

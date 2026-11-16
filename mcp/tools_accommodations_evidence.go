@@ -120,12 +120,14 @@ func accommodationOfferEvidence(need models.AccommodationNeed, hotel models.Hote
 }
 
 func accommodationEvidenceProvider(hotel models.HotelResult, offer models.AccommodationOffer) string {
-	return firstNonEmpty(offer.Provider, hotel.CheapestSource, accommodationHotelProvider(hotel))
+	return firstNonEmpty(offer.Provider, accommodationHotelProvider(hotel))
 }
 
+// accommodationHotelProvider credits the provider whose quote is the headline
+// price; cheapest_source can name a cheaper, less trusted quote.
 func accommodationHotelProvider(hotel models.HotelResult) string {
-	if hotel.CheapestSource != "" {
-		return hotel.CheapestSource
+	if hotel.HeadlineProvider != "" {
+		return hotel.HeadlineProvider
 	}
 	if len(hotel.Sources) > 0 && hotel.Sources[0].Provider != "" {
 		return hotel.Sources[0].Provider
@@ -492,15 +494,10 @@ func accommodationHotelIDIsGooglePlaceID(hotel models.HotelResult) bool {
 	return strings.HasPrefix(id, "/g/") || strings.HasPrefix(id, "ChIJ")
 }
 
+// accommodationHotelIDSupportsRoomLookup keys on the ID the Google room RPC
+// resolves, not on which provider won the headline.
 func accommodationHotelIDSupportsRoomLookup(hotel models.HotelResult) bool {
-	if strings.TrimSpace(hotel.HotelID) == "" {
-		return false
-	}
-	provider := strings.ToLower(accommodationHotelProvider(hotel))
-	if provider == "" || provider == "google_hotels" || provider == "google hotels" {
-		return true
-	}
-	return len(hotel.Sources) == 0 && hotel.CheapestSource == ""
+	return accommodationHotelIDIsGooglePlaceID(hotel)
 }
 
 func accommodationBookingURLSupportsRoomLookup(rawURL string) bool {

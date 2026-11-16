@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -267,6 +268,10 @@ func parseBookingApollo(blob, currency string, nights int) ([]models.HotelResult
 		if h.Name == "" {
 			continue
 		}
+		// finalPrice is the stay total; every other provider quotes a night.
+		if nights > 1 && h.Price > 0 {
+			h.Price = math.Round(h.Price/float64(nights)*100) / 100
+		}
 		key := h.Name + "|" + h.BookingURL
 		if seen[key] {
 			continue
@@ -450,7 +455,8 @@ func bookingResultToHotel(r apolloResolver, result map[string]json.RawMessage, c
 		}
 	}
 
-	// Price from blocks[0].finalPrice (total for stay).
+	// Price from blocks[0].finalPrice: the total for the whole stay, which
+	// parseBookingApollo turns into a nightly price.
 	if blocksRaw, ok := result["blocks"]; ok {
 		var blocks []json.RawMessage
 		if err := json.Unmarshal(blocksRaw, &blocks); err == nil && len(blocks) > 0 {

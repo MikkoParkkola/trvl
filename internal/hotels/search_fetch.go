@@ -31,8 +31,27 @@ var hotelCityAliases = map[string]string{
 	"nuremberg":  "Nürnberg",
 }
 
+// englishCityNames maps each local form in hotelCityAliases back to the
+// English name ("wien" -> "Vienna"), which the side providers' slugs expect.
+var englishCityNames = func() map[string]string {
+	m := make(map[string]string, len(hotelCityAliases))
+	for english, local := range hotelCityAliases {
+		m[strings.ToLower(local)] = strings.ToUpper(english[:1]) + english[1:]
+	}
+	return m
+}()
+
+// englishHotelCity canonicalises a local city name to English at search
+// entry. Passthrough for every other location.
+func englishHotelCity(location string) string {
+	if english, ok := englishCityNames[strings.ToLower(strings.TrimSpace(location))]; ok {
+		return english
+	}
+	return location
+}
+
 // normalizeHotelCity replaces known English city names with the form Google
-// Hotels expects. Passthrough for unknown cities.
+// Hotels expects. Passthrough for other cities. Only the Google fetch uses it.
 func normalizeHotelCity(location string) string {
 	if mapped, ok := hotelCityAliases[strings.ToLower(strings.TrimSpace(location))]; ok {
 		return mapped

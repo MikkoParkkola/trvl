@@ -30,8 +30,9 @@ func IsAdultsOnly(name, description string) bool {
 }
 
 // PriceSource tracks which provider found a result at what price.
-// When multiple providers return the same hotel, all sources are preserved
-// and the lowest price becomes the primary HotelResult.Price.
+// When multiple providers return the same hotel, all sources are preserved and
+// the most trusted quote (price confidence, then basis) becomes the headline
+// HotelResult.Price, named by HotelResult.HeadlineProvider.
 type PriceSource struct {
 	Provider string  `json:"provider"` // "google_hotels", "trivago", "airbnb", "booking"
 	Price    float64 `json:"price"`
@@ -90,7 +91,7 @@ type HotelResult struct {
 	Rating      float64 `json:"rating"`
 	ReviewCount int     `json:"review_count"`
 	Stars       int     `json:"stars"`
-	Price       float64 `json:"price"` // Lowest price across all sources
+	Price       float64 `json:"price"` // Headline price: the most trusted source quote (see HeadlineProvider)
 	Currency    string  `json:"currency"`
 	// ComparablePrice is the headline price converted to a common target currency
 	// for cross-currency ranking and Min/MaxPrice filtering (and PriceForRanking).
