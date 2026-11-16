@@ -26,6 +26,21 @@ func SendsGoogleRadius(capKm float64) bool {
 	return capKm > 0 && capKm < DefaultMaxDistanceKm
 }
 
+// GoogleRadiusApplied reports whether this search's Google answer was narrowed
+// by that radius: the cap was sent and Google answered (checked_hit or
+// checked_no_hit). A failed, timed-out or skipped Google withheld nothing.
+func GoogleRadiusApplied(capKm float64, statuses []models.ProviderStatus) bool {
+	if !SendsGoogleRadius(capKm) {
+		return false
+	}
+	for _, st := range statuses {
+		if st.ID == "google_hotels" && (st.Status == models.StatusCheckedHit || st.Status == models.StatusCheckedNoHit) {
+			return true
+		}
+	}
+	return false
+}
+
 // filterHotels applies all post-fetch filters to hotel results.
 func filterHotels(hotels []models.HotelResult, opts HotelSearchOptions) []models.HotelResult {
 	filtered, _ := filterHotelsCounted(hotels, opts)

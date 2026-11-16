@@ -612,16 +612,20 @@ func hotelsEmptyMessage(result *models.HotelSearchResult) string {
 // hotelsFartherNote says how many hotels the distance cap left out and how to
 // bring them back; empty when it left none out.
 func hotelsFartherNote(result *models.HotelSearchResult) string {
-	if result.FartherOmitted <= 0 {
+	limited := hotels.GoogleRadiusApplied(result.MaxDistanceKm, result.ProviderStatuses)
+	if result.FartherOmitted <= 0 && !limited {
 		return ""
 	}
-	noun := "hotels"
-	if result.FartherOmitted == 1 {
-		noun = "hotel"
-	}
-	note := fmt.Sprintf("Left out %d %s farther than %g km from the centre", result.FartherOmitted, noun, result.MaxDistanceKm)
-	if hotels.SendsGoogleRadius(result.MaxDistanceKm) {
-		note += fmt.Sprintf("; Google limited its results to %g km, so this counts only hotels trvl itself removed", result.MaxDistanceKm)
+	note := fmt.Sprintf("Google limited its results to %g km, so farther hotels may exist", result.MaxDistanceKm)
+	if result.FartherOmitted > 0 {
+		noun := "hotels"
+		if result.FartherOmitted == 1 {
+			noun = "hotel"
+		}
+		note = fmt.Sprintf("Left out %d %s farther than %g km from the centre", result.FartherOmitted, noun, result.MaxDistanceKm)
+		if limited {
+			note += fmt.Sprintf("; Google limited its results to %g km, so this counts only hotels trvl itself removed", result.MaxDistanceKm)
+		}
 	}
 	return note + "; use --max-distance to include them."
 }
