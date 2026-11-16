@@ -16,6 +16,7 @@ func TestPortNames(t *testing.T) {
 		`{"name":"THIRA (SANTORINI)","countryName":"Greece","code":"JTR"},` +
 		`{"name":"PIRAEUS","countryName":"Greece","code":"PIR"},` +
 		`{"name":"GERMANY (ALL PORTS)","countryName":"Germany","code":"DE"},` +
+		`{"name":"MALTA (ALL PORTS)","countryName":"Malta","code":"MT"},` +
 		`{"name":"ATHENS (ALL PORTS)","countryName":"Greece","code":"ATH"},` +
 		`{"name":"","countryName":"Greece","code":"X"},` +
 		`{"name":"ABBADIA L.","countryName":"Italy","code":"ABB"}]}}}` + "\n\n"
@@ -24,7 +25,7 @@ func TestPortNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("portNames: %v", err)
 	}
-	want := "ABBADIA L.\nATHENS (ALL PORTS)\nPIRAEUS\nTHIRA (SANTORINI)\n"
+	want := "ABBADIA L.\nATHENS (ALL PORTS)\nMALTA (ALL PORTS)\nPIRAEUS\nTHIRA (SANTORINI)\n"
 	if got := string(render(names)); got != want {
 		t.Errorf("rendered file =\n%q\nwant\n%q", got, want)
 	}

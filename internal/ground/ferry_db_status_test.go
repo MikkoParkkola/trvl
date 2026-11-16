@@ -190,7 +190,9 @@ func TestHasFerryhopperRoute(t *testing.T) {
 		{"Rome", "Barcelona", true},       // Rome resolves to Civitavecchia
 		{"Vuosaari", "Travemünde", true},  // HELSINKI - VUOSAARI
 		{"Piazzale Roma", "Athens", true}, // SANTA LUCIA (PIAZZALE ROMA), VENICE
-		{"Germany", "Denmark", false},     // country groups are no place
+		{"Pozzallo", "Malta", true},       // MALTA (ALL PORTS): island countries stay
+		{"Malta", "Pozzallo", true},
+		{"Germany", "Denmark", false}, // country groups are no place
 		{"Helsinki", "Germany", false},
 		{"Prague", "Vienna", false}, // Prague is no port
 		{"Prague", "Berlin", false},
@@ -206,7 +208,7 @@ func TestHasFerryhopperRoute(t *testing.T) {
 // Ferryhopper ports are searched, and an empty answer there stays a valid
 // empty day (checked_no_hit), never "not served".
 func TestSearchByNameCore_FerryhopperGateLaunchesPortPairs(t *testing.T) {
-	for _, pair := range [][2]string{{"Athens", "Santorini"}, {"Helsinki", "Travemünde"}} {
+	for _, pair := range [][2]string{{"Athens", "Santorini"}, {"Helsinki", "Travemünde"}, {"Pozzallo", "Malta"}} {
 		t.Run(pair[0]+"-"+pair[1], func(t *testing.T) {
 			isolateGroundBreaker(t)
 			var hits atomic.Int32
@@ -284,6 +286,9 @@ func TestFerryhopperPortListForm(t *testing.T) {
 		if i > 0 && lines[i-1] >= line {
 			t.Errorf("line %d %q is not after %q: want unique, byte-sorted names", i+1, line, lines[i-1])
 		}
+	}
+	if !strings.Contains(ferryhopperPortList, "\nMALTA (ALL PORTS)\n") {
+		t.Error("MALTA (ALL PORTS) is an island destination and must stay in the list")
 	}
 	for _, country := range []string{"GERMANY", "DENMARK", "SPAIN", "FINLAND"} {
 		if strings.Contains(ferryhopperPortList, "\n"+country+" (ALL PORTS)\n") {
