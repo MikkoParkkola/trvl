@@ -86,19 +86,6 @@ func DefaultClient() *batchexec.Client {
 }
 
 // HotelSearchOptions configures a hotel search.
-// StayTerm says which prices a hotel search returns.
-type StayTerm int
-
-const (
-	// StayNightly is the default: nightly prices only. Results whose only
-	// price is a monthly rent are left out and counted in MonthlyOmitted, so
-	// no caller shows or multiplies a monthly rent as a night's price.
-	StayNightly StayTerm = iota
-	// StayIncludeMonthly also returns monthly rentals, labelled with the
-	// monthly price basis. Only the long-stay accommodation search uses it.
-	StayIncludeMonthly
-)
-
 type HotelSearchOptions struct {
 	CheckIn      string // YYYY-MM-DD
 	CheckOut     string // YYYY-MM-DD
