@@ -19,6 +19,9 @@
 #   PREPUSH_TITLE            the PR title, which the regression gate also reads
 #   PREPUSH_SKIP_REGRESSION  1 skips the regression gate, like CI's
 #                            skip-regression-test label
+#   PREPUSH_SKIP_TESTS       1 skips the race tests, the fuzz step and the
+#                            offline guard (all run the suite), to check the
+#                            gate's shell logic on a machine without the room
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -110,25 +113,31 @@ fi
 step "GOOS=windows GOARCH=amd64 go vet ./..."
 GOOS=windows GOARCH=amd64 go vet ./...
 
-step "go test -p=1 -race -timeout=10m ./... with the 80% coverage floor"
-mkdir -p bin
-coverage="bin/prepush-coverage.out"
-go test -p=1 -race -count=1 -timeout=10m -coverprofile "${coverage}" ./...
-total="$(go tool cover -func="${coverage}" | awk '/^total:/ {print substr($3, 1, length($3)-1)}')" || fail "go tool cover failed"
-echo "total coverage: ${total}%"
-if [ -z "${total}" ] || awk -v c="${total}" 'BEGIN { exit !(c < 80) }'; then
-  fail "coverage ${total:-unparsed}% is below CI's 80% threshold"
-fi
-
-step "fuzz FuzzBuildFilters for 60s"
-go test ./internal/flights/ -run '^$' -fuzz=FuzzBuildFilters -fuzztime=60s
-
-step "offline guard"
-if command -v strace >/dev/null 2>&1; then
-  go test -count=1 ./scripts/ci/offline-guard/
-  go run ./scripts/ci/offline-guard
+if [ "${PREPUSH_SKIP_TESTS:-}" = 1 ]; then
+  skip "race tests and the 80% coverage floor (PREPUSH_SKIP_TESTS=1)"
+  skip "fuzz FuzzBuildFilters (PREPUSH_SKIP_TESTS=1)"
+  skip "offline guard (PREPUSH_SKIP_TESTS=1)"
 else
-  skip "offline guard (strace not installed; Linux only)"
+  step "go test -p=1 -race -timeout=10m ./... with the 80% coverage floor"
+  mkdir -p bin
+  coverage="bin/prepush-coverage.out"
+  go test -p=1 -race -count=1 -timeout=10m -coverprofile "${coverage}" ./...
+  total="$(go tool cover -func="${coverage}" | awk '/^total:/ {print substr($3, 1, length($3)-1)}')" || fail "go tool cover failed"
+  echo "total coverage: ${total}%"
+  if [ -z "${total}" ] || awk -v c="${total}" 'BEGIN { exit !(c < 80) }'; then
+    fail "coverage ${total:-unparsed}% is below CI's 80% threshold"
+  fi
+
+  step "fuzz FuzzBuildFilters for 60s"
+  go test ./internal/flights/ -run '^$' -fuzz=FuzzBuildFilters -fuzztime=60s
+
+  step "offline guard"
+  if command -v strace >/dev/null 2>&1; then
+    go test -count=1 ./scripts/ci/offline-guard/
+    go run ./scripts/ci/offline-guard
+  else
+    skip "offline guard (strace not installed; Linux only)"
+  fi
 fi
 
 if [ -n "${skipped}" ]; then
