@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.28.1] - 2026-11-16
+
+### Fixed
+
+- The release workflow builds on macOS 26: GitHub retired the macOS 14 runners on 2026-11-02, so v1.28.0 was tagged but never published. 1.28.1 is the first published 1.28 release and carries every 1.28.0 change listed below.
+
 ## [1.28.0] - 2026-11-16
 
 ### Security
@@ -1451,7 +1457,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.28.0...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.28.1...HEAD
+[1.28.1]: https://github.com/MikkoParkkola/trvl/compare/v1.28.0...v1.28.1
 [1.28.0]: https://github.com/MikkoParkkola/trvl/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/MikkoParkkola/trvl/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/MikkoParkkola/trvl/compare/v1.25.0...v1.26.0
