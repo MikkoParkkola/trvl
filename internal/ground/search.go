@@ -595,7 +595,7 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		}
 	}
 
-	// Snälltåget — Swedish night trains (Stockholm→Malmö, Stockholm→Åre, Stockholm→Berlin).
+	// Snälltåget — Stockholm–Malmö–Copenhagen–Hamburg–Berlin and the Åre night train.
 	if useProvider("snalltaget") {
 		if HasSnalltagetRoute(from, to) {
 			launchProvider(&wg, results, "snalltaget", func() ([]models.GroundRoute, error) {

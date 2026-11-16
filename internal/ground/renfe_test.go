@@ -1,10 +1,17 @@
 package ground
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
+	"golang.org/x/time/rate"
 )
 
 func TestLookupRenfeStation(t *testing.T) {
@@ -221,5 +228,103 @@ func TestRenfeDuplicateAliasesResolveSameStation(t *testing.T) {
 	}
 	if s3.Code != s4.Code {
 		t.Errorf("San Sebastian.Code=%q != Donostia.Code=%q", s3.Code, s4.Code)
+	}
+}
+
+// TestSearchRenfe_CalendarMinimumIsEstimated replays the live price-calendar
+// answer captured 2026-11-15. It holds one day minimum and no train times, so
+// the route must not invent a departure, must be estimated, and keeps Renfe's
+// own currency (EUR) whatever currency the caller asked for.
+func TestSearchRenfe_CalendarMinimumIsEstimated(t *testing.T) {
+	origClient, origLimiter := renfeClient, renfeLimiter
+	t.Cleanup(func() { renfeClient, renfeLimiter = origClient, origLimiter })
+	renfeLimiter = rate.NewLimiter(rate.Limit(1000), 1)
+	fixture := loadGroundFixture(t, "renfe_madrid_barcelona_calendar.json")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req renfePriceCalendarRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		if req.OriginID != "60000" || req.DestinyID != "71801" || req.InitDate != "2026-11-20" || req.EndDate != "2026-11-20" {
+			t.Errorf("request = %+v, want 60000 -> 71801 for 2026-11-20 only", req)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fixture))
+	}))
+	defer srv.Close()
+	renfeClient = &http.Client{Transport: &redirectTransport{target: srv.URL}, Timeout: 5 * time.Second}
+
+	routes, err := SearchRenfe(context.Background(), "Madrid", "Barcelona", "2026-11-20", "SEK")
+	if err != nil {
+		t.Fatalf("SearchRenfe: %v", err)
+	}
+	if len(routes) != 1 {
+		t.Fatalf("routes = %d, want 1 day-minimum route", len(routes))
+	}
+	r := routes[0]
+	if r.Price != 32 {
+		t.Errorf("price = %v, want 32", r.Price)
+	}
+	if r.Currency != "EUR" {
+		t.Errorf("currency = %q, want EUR (Renfe's own, not the requested SEK)", r.Currency)
+	}
+	if r.PriceProvenance != models.PriceEstimated {
+		t.Errorf("provenance = %q, want %q for a calendar day minimum", r.PriceProvenance, models.PriceEstimated)
+	}
+	if r.Departure.Time != "" {
+		t.Errorf("departure time = %q, want empty: the calendar carries no train times", r.Departure.Time)
+	}
+	if r.Arrival.Time != "" {
+		t.Errorf("arrival time = %q, want empty: the calendar carries no train times", r.Arrival.Time)
+	}
+}
+
+func TestSearchRenfe_NotApplicableWrapsSentinel(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"Narnia", "Barcelona"},
+		{"Madrid", "Narnia"},
+		{"Madrid", "Paris"}, // Paris has no numeric ID the calendar API accepts
+	} {
+		_, err := SearchRenfe(context.Background(), pair[0], pair[1], "2026-11-20", "EUR")
+		if !errors.Is(err, models.ErrNotApplicable) {
+			t.Errorf("%s -> %s: error %v does not wrap models.ErrNotApplicable", pair[0], pair[1], err)
+		}
+	}
+}
+
+// TestSearchRenfe_TypedErrors pins that a refused or reshaped calendar answer
+// is a classifiable error rather than a bare string.
+func TestSearchRenfe_TypedErrors(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   error
+	}{
+		{"refused", http.StatusInternalServerError, "server error", models.ErrRateLimited},
+		{"rate limited", http.StatusTooManyRequests, "", models.ErrRateLimited},
+		{"moved", http.StatusNotFound, "", models.ErrParseFailed},
+		{"reshaped", http.StatusOK, `{"journeysPriceCalendar":"none"}`, models.ErrParseFailed},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			origClient, origLimiter := renfeClient, renfeLimiter
+			t.Cleanup(func() { renfeClient, renfeLimiter = origClient, origLimiter })
+			renfeLimiter = rate.NewLimiter(rate.Limit(1000), 1)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(c.status)
+				_, _ = w.Write([]byte(c.body))
+			}))
+			t.Cleanup(srv.Close)
+			renfeClient = &http.Client{Transport: &redirectTransport{target: srv.URL}, Timeout: 5 * time.Second}
+
+			routes, err := SearchRenfe(context.Background(), "Madrid", "Barcelona", "2026-11-20", "EUR")
+			if !errors.Is(err, c.want) {
+				t.Errorf("err = %v, want it to wrap %v", err, c.want)
+			}
+			if len(routes) != 0 {
+				t.Errorf("routes = %d, want none alongside an error", len(routes))
+			}
+		})
 	}
 }
