@@ -97,6 +97,18 @@ Dates in the compact examples are illustrative; use future dates for live provid
 | Max price | `max_price` | Currency units — client-side |
 | Provider | `provider` | Restrict to one provider (e.g. `flixbus`, `db`, `regiojet`) |
 
+A misspelled `provider` is a tool error (`isError`) that lists the valid names.
+
+### Ground Transport Results (`search_ground`)
+
+trvl sizes the result itself; there is no limit argument.
+
+- **Cap.** At most 20 routes per direction (outbound and inbound on a round trip), in ranking order: live fares first, then estimates, then routes without a fare. If the whole result would still pass 50 KB, the lowest-ranked rows of the longest direction go first until it fits, and the summary says the 50 KB budget trimmed it.
+- **Counts.** `count` is the number of routes returned; `total_count` is the number found. When rows were left out, the summary says so, for example `Showing 20 of 53 routes; narrow with type, provider or max_price.` (per direction on a round trip).
+- **Round trips.** The text summary puts an `Outbound:` header before the outbound rows and an `Inbound:` header before the inbound rows.
+- **Price labels.** Each route and each price source carries `price_provenance`: `live`, `estimated` or `unavailable`. In the text summary a live fare is unmarked (`EUR 25.00`), an estimate reads `~€22 (est.)`, and a route without a fare reads `price unavailable`. `search_airport_transfers` uses the same labels, so taxi fares read as estimates.
+- **Fields left out of each route** because they repeat it: a `sources` array with one entry, a single leg with the route's own type, provider, stops and times, a leg stop's `city` when the route or the previous leg already names it, and the confidence `rated` and `freshness` fields (`label`, `score`, `basis` and `signals` stay). Routes without legs omit `legs`.
+
 ### Rental Car Filters (`search_cars`)
 
 | Filter | Parameter | Notes |
