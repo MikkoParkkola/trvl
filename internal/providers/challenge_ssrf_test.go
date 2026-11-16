@@ -112,7 +112,7 @@ func TestBrowserPolicyProxyRefusesRedirectToLoopback(t *testing.T) {
 	if witnessHits.Load() != 0 {
 		t.Fatalf("loopback redirect reached witness %d times", witnessHits.Load())
 	}
-	if refusal := policyProxy.Refusal(); !errors.Is(refusal, ErrDestinationRefused) {
-		t.Fatalf("proxy refusal = %v, want ErrDestinationRefused", refusal)
+	if refusals := policyProxy.Refusals(); len(refusals) != 1 || !errors.Is(refusals[0].Err, ErrDestinationRefused) {
+		t.Fatalf("proxy refusals = %+v, want one ErrDestinationRefused record", refusals)
 	}
 }
