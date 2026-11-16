@@ -186,3 +186,31 @@ func TestParseHotelsFromPage_DetailViewGraftsOntoAd(t *testing.T) {
 		t.Errorf("row = %+v, want the ad's rating 9.2, 2468 reviews and amenities with the place ID and no price", got)
 	}
 }
+
+// TestBookingSourceURL_ThroughTheSearchTagger: SearchBooking results reach
+// the merge tagged by the search itself (provider "booking.com"); the room
+// fetch must still get their Booking.com page.
+func TestBookingSourceURL_ThroughTheSearchTagger(t *testing.T) {
+	const page = "https://www.booking.com/hotel/at/sacher.html"
+	serveGooglePage(t, hotelWithPrice{"Hotel Imperial", 300})
+	withBookingResult(t, models.HotelResult{
+		Name: "Hotel Sacher Wien", HotelID: "4711", Price: 480, Currency: "USD",
+		Lat: 60.1699, Lon: 24.9384, BookingURL: page,
+	})
+	seedGeo(t, "Hotel Sacher Wien")
+	res, err := SearchHotels(context.Background(), "Hotel Sacher Wien", HotelSearchOptions{
+		CheckIn: lookupCheckIn, CheckOut: lookupCheckOut, Guests: 2, Currency: "USD", MaxPages: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range res.Hotels {
+		if h.Name == "Hotel Sacher Wien" {
+			if got := BookingSourceURL(h); got != page {
+				t.Fatalf("BookingSourceURL = %q with sources %+v, want %q", got, h.Sources, page)
+			}
+			return
+		}
+	}
+	t.Fatalf("search returned %v, want the Booking row", hotelNames(res.Hotels))
+}
