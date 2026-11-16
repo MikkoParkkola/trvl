@@ -108,7 +108,8 @@ func parseHotelsFromPageFull(page string, currency string) parseResult {
 	// A query naming one property gets Google's detail view instead of a
 	// list; its place ID is what the rooms flow needs. The view's only dates
 	// belonged to another stay, so a same-name ad's undated price is dropped
-	// too; an organic row keeps its own.
+	// too (the row stays and gains the place ID); an organic row keeps its
+	// own.
 	detail, isDetail := extractDetailViewHotel(hotelData, currency)
 	if isDetail {
 		for i := range sponsored {
@@ -711,18 +712,15 @@ func detailViewPlaceID(entry []any) string {
 	return id
 }
 
-// addDetailViewHotel adds the detail-view hotel without displacing a richer
-// same-name row: a row with a price or an ID stays, gaining the place ID
-// when it has no Google ID of its own; a bare row is replaced.
+// addDetailViewHotel grafts the detail view's place ID onto a same-name row
+// that has no Google ID, keeping that row's rating, reviews and amenities;
+// with no same-name row the detail hotel is added first.
 func addDetailViewHotel(hotels []models.HotelResult, detail models.HotelResult) []models.HotelResult {
 	for i := range hotels {
 		if !strings.EqualFold(hotels[i].Name, detail.Name) {
 			continue
 		}
-		switch {
-		case hotels[i].Price == 0 && hotels[i].HotelID == "":
-			hotels[i] = detail
-		case !models.IsGoogleHotelID(hotels[i].HotelID):
+		if !models.IsGoogleHotelID(hotels[i].HotelID) {
 			hotels[i].HotelID = detail.HotelID
 		}
 		return hotels
