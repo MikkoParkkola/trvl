@@ -296,3 +296,80 @@ func TestFerryhopperPortListForm(t *testing.T) {
 		}
 	}
 }
+
+// sequencedDayBest answers the day-best endpoint with first, then second.
+func sequencedDayBest(first, second http.HandlerFunc) http.HandlerFunc {
+	var n atomic.Int32
+	return func(w http.ResponseWriter, r *http.Request) {
+		if n.Add(1) == 1 {
+			first(w, r)
+			return
+		}
+		second(w, r)
+	}
+}
+
+var (
+	dayBestEmpty = func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"tagesbestPreisIntervalle":[]}`))
+	}
+	dayBestFailed  = func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) }
+	dayBestNoField = func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"fehlerNachricht":{"code":"X"}}`))
+	}
+	dayBestPriced = func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"tagesbestPreisIntervalle":[{"angebotsPreis":{"betrag":27.99,"waehrung":"eur"}}]}`))
+	}
+)
+
+// TestFetchDBBestPrice_NoFaresNeedsEveryBodyClean: "DB sells no fares" needs
+// every attempted request body to answer cleanly with an empty interval list.
+// One failed body (or a 200 without the intervals field) makes it a failed
+// lookup; a price from either body wins.
+func TestFetchDBBestPrice_NoFaresNeedsEveryBodyClean(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		first, second http.HandlerFunc
+		wantPrice     float64
+		wantErr       error // nil: a clean answer
+	}{
+		{"clean empty, then failed", dayBestEmpty, dayBestFailed, 0, models.ErrRateLimited},
+		{"clean empty twice", dayBestEmpty, dayBestEmpty, 0, nil},
+		{"failed, then priced", dayBestFailed, dayBestPriced, 27.99, nil},
+		{"200 without the intervals field", dayBestNoField, dayBestNoField, 0, models.ErrParseFailed},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			origClient, origLimiter := dbClient, dbLimiter
+			t.Cleanup(func() { dbClient, dbLimiter = origClient, origLimiter })
+			dbLimiter = rate.NewLimiter(rate.Limit(1000), 1)
+			srv := httptest.NewServer(sequencedDayBest(c.first, c.second))
+			t.Cleanup(srv.Close)
+			dbClient = &http.Client{Transport: &redirectTransport{target: srv.URL}, Timeout: 5 * time.Second}
+
+			price, _, err := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
+			if price != c.wantPrice {
+				t.Errorf("price = %v, want %v", price, c.wantPrice)
+			}
+			if c.wantErr == nil && err != nil {
+				t.Errorf("err = %v, want a clean answer", err)
+			}
+			if c.wantErr != nil && !errors.Is(err, c.wantErr) {
+				t.Errorf("err = %v, want it to wrap %v", err, c.wantErr)
+			}
+		})
+	}
+}
+
+// TestSearchDeutscheBahn_HalfFailedLookupIsNotNoFares: body A answers cleanly
+// empty and body B fails, so DB has not shown it sells nothing.
+func TestSearchDeutscheBahn_HalfFailedLookupIsNotNoFares(t *testing.T) {
+	serveDBFixture(t, "db_fahrplan_praha_8103000_2026-11-15.json", sequencedDayBest(dayBestEmpty, dayBestFailed))
+	_, err := SearchDeutscheBahn(context.Background(), "Prague", "Vienna", "2026-11-15", "EUR")
+	var notice *models.ProviderNotice
+	if !errors.As(err, &notice) {
+		t.Fatalf("err = %v, want a *models.ProviderNotice", err)
+	}
+	if strings.Contains(notice.FixHint, "sells no fares") {
+		t.Errorf("FixHint = %q, want the failed-lookup hint", notice.FixHint)
+	}
+}
