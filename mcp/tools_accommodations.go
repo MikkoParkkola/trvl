@@ -249,6 +249,9 @@ func handleSearchAccommodations(ctx context.Context, args map[string]any, elicit
 	if err != nil {
 		return nil, nil, err
 	}
+	// The long-stay search is the one place monthly rentals belong; they come
+	// back labelled with the monthly price basis.
+	req.Options.StayTerm = hotels.StayIncludeMonthly
 
 	need := accommodationNeedFromHotelSearchRequest(req)
 	need = enrichAccommodationNeedFromArgs(need, normalizedArgs)

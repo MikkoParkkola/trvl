@@ -62,3 +62,21 @@ func TestHotelsFartherNoteGoogleClauseOnlyWhenGoogleAnswered(t *testing.T) {
 		t.Errorf("default cap: note %q mentions Google", got)
 	}
 }
+
+// TestHotelsOutputCountsMonthlyRentals: `trvl hotels` says how many monthly
+// rentals it left out of the nightly list and where they are listed.
+func TestHotelsOutputCountsMonthlyRentals(t *testing.T) {
+	shown := &models.HotelSearchResult{Success: true, Count: 1, MonthlyOmitted: 2,
+		Hotels: []models.HotelResult{{Name: "A", Price: 80, Currency: "EUR"}}}
+	empty := &models.HotelSearchResult{Success: true, MonthlyOmitted: 2}
+	for name, out := range map[string]string{
+		"table": captureStdout(t, func() { _ = formatHotelsTable(context.Background(), "", "Vienna", shown, false) }),
+		"empty": hotelsEmptyMessage(empty),
+	} {
+		for _, want := range []string{"2 monthly rentals", "search_accommodations"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s output lacks %q:\n%s", name, want, out)
+			}
+		}
+	}
+}

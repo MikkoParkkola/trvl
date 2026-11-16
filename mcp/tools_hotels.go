@@ -350,6 +350,23 @@ func hotelFartherNote(omitted int, capKm float64, statuses []models.ProviderStat
 }
 
 func hotelSummary(result *models.HotelSearchResult, location string) string {
+	return hotelSummaryText(result, location) + hotelMonthlyNote(result.MonthlyOmitted)
+}
+
+// hotelMonthlyNote says how many monthly rentals a nightly list left out and
+// where they are listed; empty when none.
+func hotelMonthlyNote(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	noun := "monthly rentals"
+	if n == 1 {
+		noun = "monthly rental"
+	}
+	return fmt.Sprintf(" Left out %d %s: their prices are monthly rents, not nightly rates; search_accommodations lists them.", n, noun)
+}
+
+func hotelSummaryText(result *models.HotelSearchResult, location string) string {
 	if !result.Success || result.Count == 0 {
 		if result.Error != "" {
 			return fmt.Sprintf("Hotel search in %s failed: %s", location, result.Error)

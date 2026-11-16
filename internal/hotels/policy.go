@@ -43,3 +43,65 @@ func excludeAdultsOnly(in []models.HotelResult) (kept []models.HotelResult, hidd
 	}
 	return kept, hidden
 }
+
+// nightlyOnly is the nightly stay term, applied by the core search before
+// pricing. It leaves out hotels whose only price is a monthly rent (a monthly
+// rent shown as a night's price is off by about thirty times) and strips the
+// monthly sources from hotels that also have a nightly one, so a monthly rent
+// never competes for the headline, savings or cheapest_source. It returns the
+// kept hotels and how many were left out. The input slice is not mutated.
+func nightlyOnly(in []models.HotelResult) ([]models.HotelResult, int) {
+	kept := make([]models.HotelResult, 0, len(in))
+	omitted := 0
+	for _, h := range in {
+		if monthlyOnly(h) {
+			omitted++
+			continue
+		}
+		var sources []models.PriceSource
+		for _, src := range h.Sources {
+			if src.PriceBasis != models.PriceBasisMonthly {
+				sources = append(sources, src)
+				continue
+			}
+			// The rental's page is not a nightly booking link; finalize or the
+			// fallback search link supplies one.
+			if src.BookingURL != "" && h.BookingURL == src.BookingURL {
+				h.BookingURL = ""
+			}
+		}
+		if len(sources) != len(h.Sources) {
+			h.Sources = sources
+			if h.PriceBasis == models.PriceBasisMonthly {
+				h.PriceBasis = "" // finalize takes the basis from the headline source
+			}
+		}
+		kept = append(kept, h)
+	}
+	return kept, omitted
+}
+
+func monthlyOnly(h models.HotelResult) bool {
+	if len(h.Sources) == 0 {
+		return h.PriceBasis == models.PriceBasisMonthly
+	}
+	for _, s := range h.Sources {
+		if s.PriceBasis != models.PriceBasisMonthly {
+			return false
+		}
+	}
+	return true
+}
+
+// StayTerm says which prices a hotel search returns.
+type StayTerm int
+
+const (
+	// StayNightly is the default: nightly prices only. Results whose only
+	// price is a monthly rent are left out and counted in MonthlyOmitted, so
+	// no caller shows or multiplies a monthly rent as a night's price.
+	StayNightly StayTerm = iota
+	// StayIncludeMonthly also returns monthly rentals, labelled with the
+	// monthly price basis. Only the long-stay accommodation search uses it.
+	StayIncludeMonthly
+)
