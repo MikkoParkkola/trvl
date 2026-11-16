@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/searchctx"
 )
 
 func withStubComposer(t *testing.T, fn func(ctx context.Context, req HackComposeRequest) *models.HackSaving) {
@@ -96,7 +97,7 @@ func TestAttachGroundHackSaving_ReentrancyGuard(t *testing.T) {
 		return &models.HackSaving{Type: "x"}
 	})
 	res := okGroundResult()
-	attachGroundHackSaving(disableHacksCompose(context.Background()), res, "Helsinki", "Tallinn", "2026-09-01", SearchOptions{})
+	attachGroundHackSaving(searchctx.SuppressSavingsPass(context.Background()), res, "Helsinki", "Tallinn", "2026-09-01", SearchOptions{})
 	if called || res.HackSaving != nil {
 		t.Error("composer ran inside a nested (hacks-disabled) search — recursion not guarded")
 	}

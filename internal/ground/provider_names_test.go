@@ -73,18 +73,23 @@ func TestValidateProviderNames_RejectsUnknown(t *testing.T) {
 	}
 }
 
-// TestAttachGroundHackSaving_PassesSearchScope pins D4's plumbing: the hacks
-// engine receives the caller's provider filter and no-cache flag.
+// TestAttachGroundHackSaving_PassesSearchScope pins D4's plumbing for an
+// exclude-only filter (an include filter skips the pass): the hacks engine
+// receives the exclusions and the no-cache flag.
 func TestAttachGroundHackSaving_PassesSearchScope(t *testing.T) {
 	var got HackComposeRequest
+	called := false
 	withStubComposer(t, func(_ context.Context, req HackComposeRequest) *models.HackSaving {
-		got = req
+		got, called = req, true
 		return nil
 	})
-	opts := SearchOptions{Providers: []string{"flixbus"}, ExcludeProviders: []string{"rome2rio"}, NoCache: true}
+	opts := SearchOptions{ExcludeProviders: []string{"rome2rio"}, NoCache: true}
 	attachGroundHackSaving(context.Background(), okGroundResult(), "Prague", "Vienna", "2026-07-01", opts)
-	if strings.Join(got.Providers, ",") != "flixbus" || strings.Join(got.ExcludeProviders, ",") != "rome2rio" || !got.NoCache {
-		t.Errorf("compose request scope = providers %v exclude %v nocache %v; want [flixbus] [rome2rio] true", got.Providers, got.ExcludeProviders, got.NoCache)
+	if !called {
+		t.Fatal("savings pass did not run under an exclude-only filter")
+	}
+	if len(got.Providers) != 0 || strings.Join(got.ExcludeProviders, ",") != "rome2rio" || !got.NoCache {
+		t.Errorf("compose request scope = providers %v exclude %v nocache %v; want [] [rome2rio] true", got.Providers, got.ExcludeProviders, got.NoCache)
 	}
 }
 
