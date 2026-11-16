@@ -87,7 +87,9 @@ func resolveRoomAvailabilityForWatch(ctx context.Context, hotelQuery, checkIn, c
 	if err != nil {
 		return nil, fmt.Errorf("hotel lookup for %q: %w", hotelQuery, err)
 	}
-	if hotel.HotelID == "" {
+	// Only a Google place ID resolves rooms; another provider's id (Booking's,
+	// say) must not be sent as one.
+	if !looksLikeGoogleHotelIDForWatch(hotel.HotelID) {
 		return nil, fmt.Errorf("hotel %q found (%s) but has no Google ID", hotelQuery, hotel.Name)
 	}
 
