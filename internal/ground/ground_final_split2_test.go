@@ -158,14 +158,6 @@ func TestIsProviderNotApplicable_Various(t *testing.T) {
 		msg  string
 		want bool
 	}{
-		{"no DB station for Helsinki", true},
-		{"no FlixBus city found for X", true},
-		{"no port for Y", true},
-		{"no route for Z", true},
-		{"no Tallink route", true},
-		{"no Eurostar route", true},
-		{"no DFDS route", true},
-		{"no Stena Line route", true},
 		// D3: a deadline or a limiter wait past it is a timeout, not "not served".
 		{"rate limiter: rate: Wait exceeded", false},
 		{"would exceed context deadline", false},

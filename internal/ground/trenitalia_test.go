@@ -2,12 +2,16 @@ package ground
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // loadTrenitaliaFixture reads the named file from the testdata/ directory.
@@ -291,5 +295,89 @@ func TestItalianCityMultiWordStations(t *testing.T) {
 	// Foreign multi-word still rejected.
 	if _, ok := italianCity("Venice Beach"); ok {
 		t.Error("Venice Beach must not match")
+	}
+}
+
+// useTrenitaliaServer points the Trenitalia client at srvURL and lifts the
+// limiter for the test.
+func useTrenitaliaServer(t *testing.T, srvURL string) {
+	t.Helper()
+	origHost, origLimiter := trenitaliaHost, trenitaliaLimiter
+	t.Cleanup(func() { trenitaliaHost, trenitaliaLimiter = origHost, origLimiter })
+	trenitaliaHost = srvURL
+	trenitaliaLimiter = newProviderLimiter(0)
+}
+
+// TestSearchTrenitalia_EmptyStationSearchIsNotApplicable: a station search
+// that answers 200 with no stations means Trenitalia does not serve that
+// city, so the pair is not applicable rather than a provider failure.
+func TestSearchTrenitalia_EmptyStationSearchIsNotApplicable(t *testing.T) {
+	locations := loadTrenitaliaFixture(t, "trenitalia_locations.json")
+	for _, c := range []struct {
+		side    string
+		emptyOn int // which station search answers []
+	}{{"origin", 1}, {"destination", 2}} {
+		// An origin miss stops before the destination lookup.
+		t.Run(c.side, func(t *testing.T) {
+			var mu sync.Mutex
+			searches := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.Contains(r.URL.Path, "locations/search") {
+					t.Errorf("unexpected %s after an empty station search", r.URL.Path)
+					http.NotFound(w, r)
+					return
+				}
+				mu.Lock()
+				searches++
+				n := searches
+				mu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				if n == c.emptyOn {
+					_, _ = w.Write([]byte(`[]`))
+					return
+				}
+				_, _ = w.Write(locations)
+			}))
+			defer srv.Close()
+			useTrenitaliaServer(t, srv.URL)
+
+			_, err := SearchTrenitalia(context.Background(), "Milan", "Rome", "2026-07-15", "EUR")
+			if !errors.Is(err, models.ErrNotApplicable) {
+				t.Errorf("err = %v, want it to wrap models.ErrNotApplicable", err)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if searches != c.emptyOn {
+				t.Errorf("station searches = %d, want %d", searches, c.emptyOn)
+			}
+		})
+	}
+}
+
+// TestSearchTrenitalia_StationSearchFailureStaysAFailure: an HTTP 500 or a
+// 200 that does not decode says nothing about coverage, so neither may read
+// as not served.
+func TestSearchTrenitalia_StationSearchFailureStaysAFailure(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"HTTP 500", http.StatusInternalServerError, ""},
+		{"malformed JSON", http.StatusOK, `[{"id":`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(c.status)
+				_, _ = w.Write([]byte(c.body))
+			}))
+			defer srv.Close()
+			useTrenitaliaServer(t, srv.URL)
+
+			_, err := SearchTrenitalia(context.Background(), "Milan", "Rome", "2026-07-15", "EUR")
+			if err == nil || errors.Is(err, models.ErrNotApplicable) || isProviderNotApplicable(err) {
+				t.Errorf("err = %v, want a failure that is not models.ErrNotApplicable", err)
+			}
+		})
 	}
 }

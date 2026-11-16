@@ -265,8 +265,8 @@ func parseRome2Rio(body, from, to string) (routes []models.GroundRoute, matched 
 
 // rome2rioParseFailure classifies a zero-route render. A genuine "no route for
 // this pair" (the page rendered but the selector matched no route-card anchors)
-// is a healthy not-applicable answer — its message matches isProviderNotApplicable
-// so the breaker treats it as success. Anchors present but none decoded means the
+// is a healthy not-applicable answer: it wraps models.ErrNotApplicable, which
+// isProviderNotApplicable reads with errors.Is, so the breaker treats it as success. Anchors present but none decoded means the
 // route-card markup rotated: a real parse failure, typed with models.ErrParseFailed
 // so ClassifyProviderError maps it to StatusFailed and the breaker counts it.
 func rome2rioParseFailure(decoded, matched int, from, to string) error {

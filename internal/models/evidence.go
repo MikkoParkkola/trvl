@@ -49,9 +49,11 @@ var ErrRateLimited = errors.New("upstream provider rate-limited or temporarily u
 // toward the circuit breaker, whereas an honest empty result must not.
 var ErrParseFailed = errors.New("provider response could not be parsed (response shape changed)")
 
-// ErrNotApplicable marks a provider that does not serve the requested pair
-// (no station, port or route for it). It is returned before any network call
-// and maps to a skipped status, never to a failure.
+// ErrNotApplicable marks a provider that does not serve the requested pair:
+// no station, port or route for it in a static table, or a lookup that
+// answered cleanly with no match (an empty Trenitalia station search). Ground
+// search classifies "not served" with errors.Is on this sentinel alone, never
+// by message text, and maps it to a skipped status, never to a failure.
 var ErrNotApplicable = errors.New("provider does not serve this route")
 
 // ProviderNotice is a non-fatal provider caveat: routes may still be present,
