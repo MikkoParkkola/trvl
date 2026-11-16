@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Monthly rents from Uniplaces, Wunderflats and Spotahome no longer appear as nightly hotel prices: they are tagged `monthly`, `search_hotels`, `search_hotels_with_details` and `trvl hotels` leave every monthly-only result out and say how many (`monthly_omitted`), and `search_accommodations` keeps them with their monthly label. A quote worth under EUR 1 after conversion, such as a 0.01 ARS placeholder, no longer becomes a headline price.
 - Booking.com prices were stay totals; they are now nightly like every other provider's, so a nightly `--max-price` compares like with like.
 - Hotel side providers (Flatio, Spotahome, Uniplaces, Blueground and the rest) get the English city name, so "Wien" and "Vienna" both reach Vienna; only the Google fetch gets the local form it needs.
 - Ferryhopper runs only when both ends match one of its 1,451 ports, so an inland pair such as Prague to Vienna shows as not served instead of a search its resolver misreads (Prague became Grand Portage, USA).
