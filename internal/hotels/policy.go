@@ -44,20 +44,8 @@ func excludeAdultsOnly(in []models.HotelResult) (kept []models.HotelResult, hidd
 	return kept, hidden
 }
 
-// DropMonthlyRentals applies the nightly stay term to a finished result: see
-// nightlyOnly. The core search does this itself for every stay term but
-// StayIncludeMonthly; this form serves callers holding a result.
-func DropMonthlyRentals(result *models.HotelSearchResult) {
-	if result == nil {
-		return
-	}
-	var omitted int
-	result.Hotels, omitted = nightlyOnly(result.Hotels)
-	result.MonthlyOmitted += omitted
-	result.Count = len(result.Hotels)
-}
-
-// nightlyOnly leaves out hotels whose only price is a monthly rent (a monthly
+// nightlyOnly is the nightly stay term, applied by the core search before
+// pricing. It leaves out hotels whose only price is a monthly rent (a monthly
 // rent shown as a night's price is off by about thirty times) and strips the
 // monthly sources from hotels that also have a nightly one, so a monthly rent
 // never competes for the headline, savings or cheapest_source. It returns the
@@ -74,6 +62,12 @@ func nightlyOnly(in []models.HotelResult) ([]models.HotelResult, int) {
 		for _, src := range h.Sources {
 			if src.PriceBasis != models.PriceBasisMonthly {
 				sources = append(sources, src)
+				continue
+			}
+			// The rental's page is not a nightly booking link; finalize or the
+			// fallback search link supplies one.
+			if src.BookingURL != "" && h.BookingURL == src.BookingURL {
+				h.BookingURL = ""
 			}
 		}
 		if len(sources) != len(h.Sources) {

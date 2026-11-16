@@ -124,9 +124,11 @@ const priceFloorUnits = 1.0
 // dropSubFloorQuotes removes priced sources worth less than priceFloorUnits in
 // the requested currency, so a placeholder never resurfaces in sources[] or
 // room data. Price-0 sources stay: they carry provenance, not a quote. With no
-// requested currency, or no rate, a quote is judged in its own currency.
+// rate for a source, it is judged in its own currency.
 func dropSubFloorQuotes(sources []PriceSource, target string, convert func(amount float64, from, to string) (float64, bool)) []PriceSource {
-	if len(sources) == 0 {
+	// Without a requested currency (merge-time finalize) there is no unit to
+	// judge against: keep every quote until the search's finalize judges it.
+	if len(sources) == 0 || target == "" {
 		return sources
 	}
 	out := make([]PriceSource, 0, len(sources))
