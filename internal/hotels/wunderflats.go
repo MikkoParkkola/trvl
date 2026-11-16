@@ -329,6 +329,7 @@ func parseWunderflatsListings(lr wunderflatsListingResults, fallbackCurrency str
 			Name:         wunderflatsTitle(it.Title),
 			HotelID:      it.ID,
 			Price:        price,
+			PriceBasis:   models.PriceBasisMonthly, // a monthly rent, never a nightly rate
 			Currency:     currency,
 			BookingURL:   wunderflatsListingURL(it.ID),
 			ImageURL:     wunderflatsImageURL(it.Images),
@@ -347,6 +348,7 @@ func parseWunderflatsListings(lr wunderflatsListingResults, fallbackCurrency str
 		h.Sources = []models.PriceSource{{
 			Provider:   "wunderflats",
 			Price:      price,
+			PriceBasis: models.PriceBasisMonthly, // a monthly rent, never a nightly rate
 			Currency:   currency,
 			BookingURL: h.BookingURL,
 		}}

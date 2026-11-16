@@ -97,13 +97,16 @@ type HotelSearchOptions struct {
 	Currency     string // default "USD"
 
 	// Post-fetch filters.
-	MinPrice      float64  // minimum price per night (0 = no filter)
-	MaxPrice      float64  // maximum price per night (0 = no filter)
-	MinRating     float64  // minimum guest rating on 0-10 scale, e.g. 8.0 (0 = no filter)
-	MaxDistanceKm float64  // max km from city center (0 = no filter)
-	Amenities     []string // required amenities, all must match (nil = no filter)
-	CenterLat     float64  // city center latitude (resolved automatically if 0)
-	CenterLon     float64  // city center longitude (resolved automatically if 0)
+	MinPrice      float64 // minimum price per night (0 = no filter)
+	MaxPrice      float64 // maximum price per night (0 = no filter)
+	MinRating     float64 // minimum guest rating on 0-10 scale, e.g. 8.0 (0 = no filter)
+	MaxDistanceKm float64 // max km from city center (0 = no filter)
+	// StayTerm picks which prices the search returns: nightly (the default)
+	// or nightly plus monthly rentals (long-stay accommodation search only).
+	StayTerm  StayTerm
+	Amenities []string // required amenities, all must match (nil = no filter)
+	CenterLat float64  // city center latitude (resolved automatically if 0)
+	CenterLon float64  // city center longitude (resolved automatically if 0)
 
 	// Enrichment options.
 	EnrichAmenities bool // fetch detail pages for top hotels to get full amenity lists
@@ -606,6 +609,14 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		return nil, googlePrimaryErr
 	}
 
+	// Monthly rents are not nightly prices: every search but the long-stay one
+	// (StayIncludeMonthly) leaves them out before the headline is picked, so no
+	// caller shows or multiplies a monthly rent as a night. Fail closed: any
+	// other stay term counts as nightly.
+	monthlyOmitted := 0
+	if opts.StayTerm != StayIncludeMonthly {
+		hotels, monthlyOmitted = nightlyOnly(hotels)
+	}
 	models.FinalizeHotelPriceTrust(hotels, opts.Currency, time.Now(), trustConverter(ctx))
 	// FinalizeHotelPriceTrust may refresh Price/Currency from a source, so
 	// re-assert ComparablePrice for any headline already in the target currency.
@@ -717,16 +728,18 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 
 	annotateHotelConfidence(hotels, time.Now())
 
-	return &models.HotelSearchResult{
+	result := &models.HotelSearchResult{
 		Success:          true,
 		Count:            len(hotels),
 		TotalAvailable:   totalAvailable,
 		MaxDistanceKm:    appliedCapKm,
 		FartherOmitted:   farther,
+		MonthlyOmitted:   monthlyOmitted,
 		Hotels:           hotels,
 		ProviderStatuses: providerStatuses,
 		Completeness:     models.ComputeCompleteness(providerStatuses),
-	}, nil
+	}
+	return result, nil
 }
 
 func cloneHotelSearchResult(shared *models.HotelSearchResult) *models.HotelSearchResult {

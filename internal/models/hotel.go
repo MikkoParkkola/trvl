@@ -167,7 +167,10 @@ type HotelSearchResult struct {
 	// unless the caller set one); FartherOmitted counts the hotels it left out.
 	MaxDistanceKm  float64 `json:"max_distance_km,omitempty"`
 	FartherOmitted int     `json:"farther_omitted,omitempty"`
-	Error          string  `json:"error,omitempty"`
+	// MonthlyOmitted counts monthly rentals a nightly hotel list left out;
+	// search_accommodations lists them.
+	MonthlyOmitted int    `json:"monthly_omitted,omitempty"`
+	Error          string `json:"error,omitempty"`
 }
 
 // ProviderPrice represents a single booking provider's price for a hotel.
