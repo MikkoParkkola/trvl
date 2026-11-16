@@ -353,14 +353,47 @@ func deduplicateSources(sources []PriceSource) []PriceSource {
 	return out
 }
 
-// streetAddress returns address, or "" when it names only a place such as
-// "Vienna, Austria": no digit and at most two comma-separated parts. A
-// city-only address can neither tell two hotels apart nor improve on a street.
+// streetAddress returns address, or "" when it names only a place: every
+// comma part is an alias-table city, a country, or a postcode followed by an
+// alias-table city ("1010 Wien, Austria"). A city-only address can neither
+// tell two hotels apart nor improve on a street.
 func streetAddress(address string) string {
-	if !strings.ContainsFunc(address, unicode.IsDigit) && strings.Count(address, ",") <= 1 {
-		return ""
+	for _, part := range strings.Split(address, ",") {
+		if !placeOnlyPart(strings.TrimSpace(part)) {
+			return address
+		}
 	}
-	return address
+	return ""
+}
+
+func placeOnlyPart(part string) bool {
+	if part == "" || isAliasCity(part) || isCountryName(part) {
+		return true
+	}
+	postcode, city, ok := strings.Cut(part, " ")
+	return ok && isPostcode(postcode) && isAliasCity(city)
+}
+
+// isAliasCity reports whether s is a CityAliases city, English or local.
+func isAliasCity(s string) bool {
+	s = strings.TrimSpace(s)
+	if _, ok := CityAliases[strings.ToLower(s)]; ok {
+		return true
+	}
+	for _, local := range CityAliases {
+		if strings.EqualFold(s, local) {
+			return true
+		}
+	}
+	return false
+}
+
+// isPostcode reports a run of three to six digits.
+func isPostcode(s string) bool {
+	if len(s) < 3 || len(s) > 6 {
+		return false
+	}
+	return !strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsDigit(r) })
 }
 
 // buildSources returns a HotelResult's sources, or one built from its own

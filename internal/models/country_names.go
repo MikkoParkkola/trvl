@@ -1,5 +1,7 @@
 package models
 
+import "strings"
+
 // CountryNames maps ISO 3166-1 alpha-2 codes to country names.
 var CountryNames = map[string]string{
 	"AL": "Albania", "AR": "Argentina", "AT": "Austria", "AU": "Australia",
@@ -25,4 +27,27 @@ var CountryNames = map[string]string{
 	"SI": "Slovenia", "SK": "Slovakia", "TH": "Thailand", "TR": "Turkey",
 	"TW": "Taiwan", "TZ": "Tanzania", "UA": "Ukraine", "AE": "United Arab Emirates",
 	"US": "United States", "UZ": "Uzbekistan", "VN": "Vietnam", "ZA": "South Africa",
+}
+
+// localCountryNames adds the local names (and Czechia) of the countries
+// whose cities are in CityAliases, so "1010 Wien, Österreich" reads as
+// city-only like "1010 Wien, Austria".
+var localCountryNames = map[string]string{
+	"AT": "Österreich", "CZ": "Česko", "DE": "Deutschland", "DK": "Danmark",
+	"PL": "Polska", "RO": "România", "SE": "Sverige",
+}
+
+// isCountryName reports whether s names a country in CountryNames, in its
+// local form from localCountryNames, or as "Czechia", ignoring case.
+func isCountryName(s string) bool {
+	s = strings.TrimSpace(s)
+	if strings.EqualFold(s, "Czechia") {
+		return true
+	}
+	for code, name := range CountryNames {
+		if strings.EqualFold(s, name) || strings.EqualFold(s, localCountryNames[code]) {
+			return true
+		}
+	}
+	return false
 }
