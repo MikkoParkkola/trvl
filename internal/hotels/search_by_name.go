@@ -154,8 +154,11 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 		if pr.hotels != nil {
 			batches = append(batches, pr.hotels)
 		}
-		statuses = mergeProviderStatuses(statuses, pr.statuses)
+		statuses = append(statuses, pr.statuses...)
 	}
+	// The Google search already runs Trivago and the external providers, so
+	// the same provider can report twice; keep its best answer.
+	statuses = coalesceProviderStatuses(statuses)
 	slices.SortFunc(statuses, func(a, b models.ProviderStatus) int { return strings.Compare(a.ID, b.ID) })
 
 	// Normalize before merge so headline adoption is cross-currency safe.
@@ -213,22 +216,6 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 		)
 	}
 	return matched, statuses, nil
-}
-
-// mergeProviderStatuses adds more to statuses, one entry per provider ID. The
-// Google search already runs Trivago and the external providers, so the same
-// ID can arrive twice; an answer without an error wins over a failure.
-func mergeProviderStatuses(statuses, more []models.ProviderStatus) []models.ProviderStatus {
-	for _, s := range more {
-		i := slices.IndexFunc(statuses, func(e models.ProviderStatus) bool { return e.ID == s.ID })
-		switch {
-		case i < 0:
-			statuses = append(statuses, s)
-		case statuses[i].Error != "" && s.Error == "":
-			statuses[i] = s
-		}
-	}
-	return statuses
 }
 
 // buildNameQuery constructs the location query string used for the area search.
