@@ -16,13 +16,14 @@ import (
 // GetRoomAvailabilityWithOpts when the seam is unset.
 var fetchRoomAvailability func(ctx context.Context, opts RoomSearchOptions) (*RoomAvailability, error)
 
-// bookingSourceURL returns the Booking.com hotel URL from a result's price
-// sources, if one is present. It deliberately ignores HotelResult.BookingURL,
-// which is a city-level link backfilled for display and not a per-hotel detail
-// page suitable for room drill-down.
-func bookingSourceURL(h models.HotelResult) string {
+// BookingSourceURL returns the Booking.com hotel page from a result's booking
+// source when it is an https booking.com URL; the room fetch refuses any
+// other, which would fail the whole lookup. It deliberately ignores
+// HotelResult.BookingURL, a display link that may be city-level and is not a
+// per-hotel detail page suitable for room drill-down.
+func BookingSourceURL(h models.HotelResult) string {
 	for _, s := range h.Sources {
-		if s.Provider == "booking" && s.BookingURL != "" {
+		if s.Provider == "booking" && bookingHostAllowed(s.BookingURL, bookingCookieSite) {
 			return s.BookingURL
 		}
 	}
@@ -139,7 +140,7 @@ func enrichHotelRooms(ctx context.Context, hotels []models.HotelResult, opts Hot
 				Guests:       opts.Guests,
 				ChildrenAges: opts.ChildrenAges,
 				Rooms:        opts.Rooms,
-				BookingURL:   bookingSourceURL(hotels[i]),
+				BookingURL:   BookingSourceURL(hotels[i]),
 			})
 			if err != nil || av == nil || len(av.Rooms) == 0 {
 				return

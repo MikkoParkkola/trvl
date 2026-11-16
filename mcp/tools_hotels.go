@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/preferences"
@@ -524,7 +523,7 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		resolvedName = hotel.Name
 		// Use the booking source's page if the caller didn't provide one.
 		if bookingURL == "" {
-			bookingURL = bookingSourceRoomsURL(*hotel)
+			bookingURL = hotels.BookingSourceURL(*hotel)
 		}
 	}
 
@@ -594,17 +593,4 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 	}
 
 	return content, enriched, nil
-}
-
-// bookingSourceRoomsURL is the hotel's Booking.com source page when it is an
-// https booking.com URL; anything else would make the room fetch refuse the
-// whole lookup. HotelResult.BookingURL is a display link, never a room-fetch
-// target.
-func bookingSourceRoomsURL(hotel models.HotelResult) string {
-	for _, s := range hotel.Sources {
-		if s.Provider == "booking" && cookies.IsHTTPSOnSite(s.BookingURL, "booking.com") {
-			return s.BookingURL
-		}
-	}
-	return ""
 }

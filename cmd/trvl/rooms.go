@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikkoParkkola/trvl/internal/cookies"
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/pricefeed"
@@ -153,7 +152,7 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 		CheckOut:   checkOut,
 		Currency:   currency,
 		Location:   hint,
-		BookingURL: bookingRoomsURL(hotel),
+		BookingURL: hotels.BookingSourceURL(*hotel),
 	}
 	result, err := getRoomAvailabilityWithOpts(ctx, opts)
 	if err != nil {
@@ -163,18 +162,6 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 		result.Name = hotel.Name
 	}
 	return result, nil
-}
-
-// bookingRoomsURL is the hotel's Booking.com source page when it is an https
-// booking.com URL; anything else would make the room fetch refuse the whole
-// lookup. HotelResult.BookingURL is a display link, never a room-fetch target.
-func bookingRoomsURL(hotel *models.HotelResult) string {
-	for _, s := range hotel.Sources {
-		if s.Provider == "booking" && cookies.IsHTTPSOnSite(s.BookingURL, "booking.com") {
-			return s.BookingURL
-		}
-	}
-	return ""
 }
 
 func looksLikeGoogleHotelID(value string) bool {
