@@ -71,3 +71,24 @@ func TestResolveRoomAvailability_BookingURLFromBookingSourceOnly(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveRoomAvailability_ProviderColonIDIsNotGoogle: "flatio:98765"
+// typed in is a name to look up, not a Google ID, and "agoda:123" from the
+// name lookup is refused like any other non-Google id.
+func TestResolveRoomAvailability_ProviderColonIDIsNotGoogle(t *testing.T) {
+	fetched := stubRoomsLookup(t, models.HotelResult{Name: "Hotel Sacher Vienna", HotelID: "ChIJsacher"})
+	if _, err := resolveRoomAvailability(context.Background(), "flatio:98765", "2026-11-18", "2026-11-20", "EUR", ""); err != nil {
+		t.Fatal(err)
+	}
+	if *fetched == nil || (*fetched).HotelID != "ChIJsacher" {
+		t.Errorf("room fetch = %+v, want the name lookup's ChIJsacher, not flatio:98765 as a Google ID", *fetched)
+	}
+
+	fetched = stubRoomsLookup(t, models.HotelResult{Name: "Hotel Sacher Wien", HotelID: "agoda:123"})
+	if _, err := resolveRoomAvailability(context.Background(), "Hotel Sacher Wien", "2026-11-18", "2026-11-20", "EUR", ""); err == nil {
+		t.Error("resolved rooms for an agoda:123 match, want an error naming the missing Google ID")
+	}
+	if *fetched != nil {
+		t.Errorf("room fetch ran with HotelID %q, want no fetch", (*fetched).HotelID)
+	}
+}
