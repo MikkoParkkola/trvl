@@ -354,24 +354,38 @@ func deduplicateSources(sources []PriceSource) []PriceSource {
 }
 
 // streetAddress returns address, or "" when it names only a place: every
-// comma part is an alias-table city, a country, or a postcode followed by an
-// alias-table city ("1010 Wien, Austria"). A city-only address can neither
-// tell two hotels apart nor improve on a street.
+// comma part is an alias-table city, a country, a postcode before one place
+// word ("75001 Paris"), or, next to a country part, any digit-free place or
+// postcode-led place ("Paris, France", "2500 Baden bei Wien, Austria"). A
+// city-only address can neither tell two hotels apart nor improve on a
+// street; "Rue de Rivoli, Paris" and "123 Main St" stay streets.
 func streetAddress(address string) string {
+	var parts []string
+	hasCountry := false
 	for _, part := range strings.Split(address, ",") {
-		if !placeOnlyPart(strings.TrimSpace(part)) {
+		if part = strings.TrimSpace(part); part != "" {
+			parts = append(parts, part)
+			hasCountry = hasCountry || isCountryName(part)
+		}
+	}
+	for _, part := range parts {
+		if !placeOnlyPart(part, hasCountry) {
 			return address
 		}
 	}
 	return ""
 }
 
-func placeOnlyPart(part string) bool {
-	if part == "" || isAliasCity(part) || isCountryName(part) {
+func placeOnlyPart(part string, hasCountry bool) bool {
+	if isAliasCity(part) || isCountryName(part) {
 		return true
 	}
-	postcode, city, ok := strings.Cut(part, " ")
-	return ok && isPostcode(postcode) && isAliasCity(city)
+	digitFree := !strings.ContainsFunc(part, unicode.IsDigit)
+	postcode, place, ok := strings.Cut(part, " ")
+	if ok && IsPostcode(postcode) && !strings.ContainsFunc(place, unicode.IsDigit) {
+		return hasCountry || !strings.Contains(place, " ")
+	}
+	return digitFree && hasCountry
 }
 
 // isAliasCity reports whether s is a CityAliases city, English or local.
@@ -388,12 +402,12 @@ func isAliasCity(s string) bool {
 	return false
 }
 
-// isPostcode reports a run of three to six digits.
-func isPostcode(s string) bool {
+// IsPostcode reports a run of three to six ASCII digits.
+func IsPostcode(s string) bool {
 	if len(s) < 3 || len(s) > 6 {
 		return false
 	}
-	return !strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsDigit(r) })
+	return !strings.ContainsFunc(s, func(r rune) bool { return r < '0' || r > '9' })
 }
 
 // buildSources returns a HotelResult's sources, or one built from its own
