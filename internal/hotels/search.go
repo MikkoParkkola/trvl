@@ -86,6 +86,19 @@ func DefaultClient() *batchexec.Client {
 }
 
 // HotelSearchOptions configures a hotel search.
+// StayTerm says which prices a hotel search returns.
+type StayTerm int
+
+const (
+	// StayNightly is the default: nightly prices only. Results whose only
+	// price is a monthly rent are left out and counted in MonthlyOmitted, so
+	// no caller shows or multiplies a monthly rent as a night's price.
+	StayNightly StayTerm = iota
+	// StayIncludeMonthly also returns monthly rentals, labelled with the
+	// monthly price basis. Only the long-stay accommodation search uses it.
+	StayIncludeMonthly
+)
+
 type HotelSearchOptions struct {
 	CheckIn      string // YYYY-MM-DD
 	CheckOut     string // YYYY-MM-DD
@@ -97,13 +110,16 @@ type HotelSearchOptions struct {
 	Currency     string // default "USD"
 
 	// Post-fetch filters.
-	MinPrice      float64  // minimum price per night (0 = no filter)
-	MaxPrice      float64  // maximum price per night (0 = no filter)
-	MinRating     float64  // minimum guest rating on 0-10 scale, e.g. 8.0 (0 = no filter)
-	MaxDistanceKm float64  // max km from city center (0 = no filter)
-	Amenities     []string // required amenities, all must match (nil = no filter)
-	CenterLat     float64  // city center latitude (resolved automatically if 0)
-	CenterLon     float64  // city center longitude (resolved automatically if 0)
+	MinPrice      float64 // minimum price per night (0 = no filter)
+	MaxPrice      float64 // maximum price per night (0 = no filter)
+	MinRating     float64 // minimum guest rating on 0-10 scale, e.g. 8.0 (0 = no filter)
+	MaxDistanceKm float64 // max km from city center (0 = no filter)
+	// StayTerm picks which prices the search returns: nightly (the default)
+	// or nightly plus monthly rentals (long-stay accommodation search only).
+	StayTerm  StayTerm
+	Amenities []string // required amenities, all must match (nil = no filter)
+	CenterLat float64  // city center latitude (resolved automatically if 0)
+	CenterLon float64  // city center longitude (resolved automatically if 0)
 
 	// Enrichment options.
 	EnrichAmenities bool // fetch detail pages for top hotels to get full amenity lists

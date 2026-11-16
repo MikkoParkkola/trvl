@@ -85,6 +85,7 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 		MaxPrice          float64  `json:"max_price"`
 		MinRating         float64  `json:"min_rating"`
 		MaxDistanceKm     float64  `json:"max_distance_km"`
+		StayTerm          StayTerm `json:"stay_term"`
 		Amenities         []string `json:"amenities,omitempty"`
 		CenterLat         float64  `json:"center_lat"`
 		CenterLon         float64  `json:"center_lon"`
@@ -123,6 +124,7 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 		MaxPrice:          opts.MaxPrice,
 		MinRating:         opts.MinRating,
 		MaxDistanceKm:     opts.MaxDistanceKm,
+		StayTerm:          opts.StayTerm,
 		Amenities:         amenities,
 		CenterLat:         opts.CenterLat,
 		CenterLon:         opts.CenterLon,
