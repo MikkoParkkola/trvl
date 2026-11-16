@@ -67,7 +67,7 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 
 	h.Sources = finalizePriceSources(h.Sources, now)
 	preferredCurrency = strings.ToUpper(strings.TrimSpace(preferredCurrency))
-	quotes := quotesAboveFloor(h.Sources, convert)
+	quotes := quotesAboveFloor(h.Sources, preferredCurrency, convert)
 	if selected, ok := selectPrimaryHotelSource(quotes, preferredCurrency, h.Currency, convert); ok {
 		// Sources stay provider quotes in the provider's currency; only the
 		// headline is converted. A failed conversion keeps the quote's own
@@ -113,20 +113,29 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 	}
 }
 
-// priceFloorEUR is the smallest amount that counts as a quote: anything worth
-// less than EUR 1 once converted (a 0.01 ARS placeholder) is not a price.
-const priceFloorEUR = 1.0
+// priceFloorUnits is the smallest amount that counts as a quote, in units of
+// the requested currency: EUR 1 for a EUR search, roughly that for USD or GBP.
+// Anything below (a 0.01 ARS placeholder becomes EUR 0.0000059) is not a price.
+// The check uses the requested currency because the search converts into it
+// anyway; a fixed EUR floor would fetch a new exchange rate on every search.
+const priceFloorUnits = 1.0
 
 // quotesAboveFloor keeps the sources that may become the headline: priced, and
-// worth at least priceFloorEUR. A quote that cannot be converted stays; nothing
-// shows it is a placeholder.
-func quotesAboveFloor(sources []PriceSource, convert func(amount float64, from, to string) (float64, bool)) []PriceSource {
+// worth at least priceFloorUnits in the requested currency. With no requested
+// currency, or no rate, a quote is judged in its own currency.
+func quotesAboveFloor(sources []PriceSource, target string, convert func(amount float64, from, to string) (float64, bool)) []PriceSource {
 	out := make([]PriceSource, 0, len(sources))
 	for _, s := range sources {
 		if s.Price <= 0 {
 			continue
 		}
-		if eur, ok := convertPrice(convert, s.Price, s.Currency, "EUR"); ok && eur < priceFloorEUR {
+		amount := s.Price
+		if target != "" && !strings.EqualFold(s.Currency, target) {
+			if converted, ok := convertPrice(convert, s.Price, s.Currency, target); ok {
+				amount = converted
+			}
+		}
+		if amount < priceFloorUnits {
 			continue
 		}
 		out = append(out, s)
