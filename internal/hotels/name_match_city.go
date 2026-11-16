@@ -169,14 +169,14 @@ func withinRadius(hotels []models.HotelResult, city string) []models.HotelResult
 // ponytail: one radius for every city; a per-city radius if metro areas differ.
 const nameMatchMaxKm = 25.0
 
-// cachedLocation reads the geocode cache only, under the city's own name or
-// the alias SearchHotels geocodes it as ("Vienna" is cached as "Wien"). The
-// matcher must not add a geocoding request, so a city nobody resolved yet has
-// no distance check.
+// cachedLocation reads the geocode cache only, under the city's own name,
+// its English form (the key the search geocodes, "Wien" -> "Vienna") or its
+// local form. The matcher must not add a geocoding request, so a city nobody
+// resolved yet has no distance check.
 func cachedLocation(query string) (lat, lon float64, ok bool) {
 	geoCache.RLock()
 	defer geoCache.RUnlock()
-	for _, q := range []string{strings.TrimSpace(query), normalizeHotelCity(query)} {
+	for _, q := range []string{strings.TrimSpace(query), englishHotelCity(query), normalizeHotelCity(query)} {
 		if e, found := geoCache.entries[q]; found {
 			return e.lat, e.lon, true
 		}
