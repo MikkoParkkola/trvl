@@ -58,3 +58,36 @@ func TestPriceFloorAddsNoRateLookups(t *testing.T) {
 		t.Errorf("headline = %v %s from %q, want 150 USD from google_hotels", h.Price, h.Currency, h.HeadlineProvider)
 	}
 }
+
+// TestFinalizeRemovesSubFloorSourcesAndStaleSavings: a sub-floor quote is not
+// kept as a source either (it would resurface in sources[] and room data);
+// price-0 sources stay, and a hotel with no usable quote keeps no savings.
+func TestFinalizeRemovesSubFloorSourcesAndStaleSavings(t *testing.T) {
+	providers := func(h HotelResult) []string {
+		var out []string
+		for _, s := range h.Sources {
+			out = append(out, s.Provider)
+		}
+		return out
+	}
+	h := HotelResult{Name: "Studio", Savings: 5, CheapestSource: "housinganywhere", Sources: []PriceSource{
+		{Provider: "housinganywhere", Price: 0.01, Currency: "ARS"},
+		{Provider: "booking", Price: 0, Currency: "EUR"},
+	}}
+	FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, arsFX)
+	if got := providers(h); len(got) != 1 || got[0] != "booking" {
+		t.Errorf("sources = %v, want only the price-0 booking source", got)
+	}
+	if h.Savings != 0 || h.CheapestSource != "" {
+		t.Errorf("savings = %v, cheapest = %q; want none for a hotel with no usable quote", h.Savings, h.CheapestSource)
+	}
+
+	h = HotelResult{Name: "Studio", Sources: []PriceSource{
+		{Provider: "housinganywhere", Price: 0.01, Currency: "ARS"},
+		{Provider: "booking", Price: 80, Currency: "EUR"},
+	}}
+	FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, arsFX)
+	if got := providers(h); len(got) != 1 || got[0] != "booking" {
+		t.Errorf("sources = %v, want the sub-floor quote removed", got)
+	}
+}

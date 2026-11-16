@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -199,5 +200,57 @@ func TestFlatioTagsMonthlyOnlyWhenTheUnitSaysMonth(t *testing.T) {
 				t.Errorf("old no-spec shape %q source tagged monthly", h.Name)
 			}
 		}
+	}
+}
+
+// TestNightlySearchStripsMonthlySourcesFromMixedHotels: a hotel merged from a
+// nightly and a monthly source stays in a nightly search, but its monthly
+// source never competes for the headline, savings or cheapest_source. Any
+// stay term other than StayIncludeMonthly counts as nightly (fail closed).
+func TestNightlySearchStripsMonthlySourcesFromMixedHotels(t *testing.T) {
+	stubGoogleHotels(t, []models.HotelResult{
+		{Name: "Mixed", HotelID: "/g/mixed", Price: 90, Currency: "EUR", Lat: viennaLat + 0.009, Lon: viennaLon,
+			Sources: []models.PriceSource{
+				{Provider: "google_hotels", Price: 90, Currency: "EUR", PriceBasis: models.PriceBasisLeadIn},
+				{Provider: "spotahome", Price: 40, Currency: "EUR", PriceBasis: models.PriceBasisMonthly},
+			}},
+		{Name: "Rental", HotelID: "spot-9", Price: 1500, Currency: "EUR", PriceBasis: models.PriceBasisMonthly, Lat: viennaLat + 0.01, Lon: viennaLon,
+			Sources: []models.PriceSource{{Provider: "spotahome", Price: 1500, Currency: "EUR", PriceBasis: models.PriceBasisMonthly}}},
+	})
+	for _, term := range []StayTerm{StayNightly, StayTerm(99)} {
+		freshHotelBreaker(t)
+		res, err := SearchHotelsWithClient(context.Background(), offlineSearchClient(t), "Vienna", HotelSearchOptions{
+			CheckIn: "2027-06-01", CheckOut: "2027-06-03", Currency: "EUR", MaxPages: 1,
+			CenterLat: viennaLat, CenterLon: viennaLon, StayTerm: term,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if names := sortedHotelNames(res.Hotels); !slices.Equal(names, []string{"Mixed"}) {
+			t.Errorf("term %d: hotels = %v, want only Mixed (Rental is monthly-only)", term, names)
+		}
+		for _, h := range res.Hotels {
+			if h.Name != "Mixed" {
+				continue
+			}
+			if hasSource(h, "spotahome") {
+				t.Errorf("term %d: Mixed kept its monthly source", term)
+			}
+			if h.HeadlineProvider != "google_hotels" || h.Price != 90 || h.CheapestSource == "spotahome" {
+				t.Errorf("term %d: Mixed headline = %v from %q, cheapest %q; want 90 from google_hotels", term, h.Price, h.HeadlineProvider, h.CheapestSource)
+			}
+		}
+	}
+}
+
+// TestHotelSearchKeyFallbackSeparatesStayTerms: when the key cannot be
+// encoded (NaN coordinates), the fallback key still keeps a nightly and a
+// long-stay search apart.
+func TestHotelSearchKeyFallbackSeparatesStayTerms(t *testing.T) {
+	opts := HotelSearchOptions{CheckIn: "2027-04-10", CheckOut: "2027-04-12", CenterLat: math.NaN()}
+	nightly := hotelSearchKey("Vienna", opts)
+	opts.StayTerm = StayIncludeMonthly
+	if hotelSearchKey("Vienna", opts) == nightly {
+		t.Errorf("fallback key %q is shared by nightly and long-stay searches", nightly)
 	}
 }
