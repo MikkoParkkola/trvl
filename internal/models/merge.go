@@ -134,7 +134,9 @@ func MergeHotelResults(sources ...[]HotelResult) []HotelResult {
 				if existing.Stars == 0 && h.Stars > 0 {
 					existing.Stars = h.Stars
 				}
-				if existing.HotelID == "" && h.HotelID != "" {
+				// A Google ID replaces another provider's: only it resolves rooms.
+				if h.HotelID != "" && (existing.HotelID == "" ||
+					(!IsGoogleHotelID(existing.HotelID) && IsGoogleHotelID(h.HotelID))) {
 					existing.HotelID = h.HotelID
 				}
 				// A street address replaces a city-only one; a city-only one only
