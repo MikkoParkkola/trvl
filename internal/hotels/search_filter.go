@@ -15,6 +15,15 @@ import (
 
 // filterHotels applies all post-fetch filters to hotel results.
 func filterHotels(hotels []models.HotelResult, opts HotelSearchOptions) []models.HotelResult {
+	filtered, _ := filterHotelsCounted(hotels, opts)
+	return filtered
+}
+
+// filterHotelsCounted is filterHotels that also counts the hotels the distance
+// cap left out (the 100 km outlier ceiling is not counted: those are listings
+// from another city, not farther hotels).
+func filterHotelsCounted(hotels []models.HotelResult, opts HotelSearchOptions) ([]models.HotelResult, int) {
+	farther := 0
 	filtered := hotels[:0]
 	for _, h := range hotels {
 		// Stars filter: h.Stars==0 means Google didn't annotate this hotel
@@ -61,6 +70,7 @@ func filterHotels(hotels []models.HotelResult, opts HotelSearchOptions) []models
 				continue
 			}
 			if opts.MaxDistanceKm > 0 && dist > opts.MaxDistanceKm {
+				farther++
 				continue
 			}
 		}
@@ -72,7 +82,7 @@ func filterHotels(hotels []models.HotelResult, opts HotelSearchOptions) []models
 		}
 		filtered = append(filtered, h)
 	}
-	return filtered
+	return filtered, farther
 }
 
 // priceComparableToTarget reports whether a hotel's ranking price can be

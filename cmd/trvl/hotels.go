@@ -272,6 +272,9 @@ func formatHotelsTable(ctx context.Context, targetCurrency, location string, res
 		summary = fmt.Sprintf("Showing %d of %d hotels", result.Count, result.TotalAvailable)
 	}
 	models.Banner(os.Stdout, "🏨", "Hotels", summary)
+	if note := hotelsFartherNote(result); note != "" {
+		fmt.Println(note)
+	}
 	fmt.Println()
 
 	// Convert prices if --currency specified and differs from API result.
@@ -596,8 +599,26 @@ func maybeShowAccomHackTip(ctx context.Context, city, checkIn, checkOut, currenc
 // failed, so a blocked provider is not read as an empty city (MIK-8032).
 func hotelsEmptyMessage(result *models.HotelSearchResult) string {
 	c := models.ComputeCompleteness(result.ProviderStatuses)
+	msg := "No hotels returned. " + c.IncompleteNote() + "\n" + models.ProviderFailureLines(result.ProviderStatuses)
 	if c.MayClaimExhaustive() {
-		return "No hotels found."
+		msg = "No hotels found."
 	}
-	return "No hotels returned. " + c.IncompleteNote() + "\n" + models.ProviderFailureLines(result.ProviderStatuses)
+	if note := hotelsFartherNote(result); note != "" {
+		msg += "\n" + note
+	}
+	return msg
+}
+
+// hotelsFartherNote says how many hotels the distance cap left out and how to
+// bring them back; empty when it left none out.
+func hotelsFartherNote(result *models.HotelSearchResult) string {
+	if result.FartherOmitted <= 0 {
+		return ""
+	}
+	noun := "hotels"
+	if result.FartherOmitted == 1 {
+		noun = "hotel"
+	}
+	return fmt.Sprintf("Left out %d %s farther than %g km from the centre; use --max-distance to include them.",
+		result.FartherOmitted, noun, result.MaxDistanceKm)
 }

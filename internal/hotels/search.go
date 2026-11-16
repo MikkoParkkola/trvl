@@ -643,7 +643,12 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	}
 
 	// Apply post-filters.
-	hotels = filterHotels(hotels, opts)
+	hotels, farther := filterHotelsCounted(hotels, opts)
+	// The cap is only applied when the centre is known (same test as the filter).
+	appliedCapKm := 0.0
+	if opts.CenterLat != 0 {
+		appliedCapKm = opts.MaxDistanceKm
+	}
 
 	if len(externalResults) > 0 {
 		slog.Info("post-filter hotel counts",
@@ -717,6 +722,8 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		Success:          true,
 		Count:            len(hotels),
 		TotalAvailable:   totalAvailable,
+		MaxDistanceKm:    appliedCapKm,
+		FartherOmitted:   farther,
 		Hotels:           hotels,
 		ProviderStatuses: providerStatuses,
 		Completeness:     models.ComputeCompleteness(providerStatuses),

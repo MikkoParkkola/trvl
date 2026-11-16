@@ -328,6 +328,20 @@ func handleHotelPrices(ctx context.Context, args map[string]any, elicit ElicitFu
 
 // --- Summary builders ---
 
+// hotelFartherNote says how many hotels the distance cap left out and how to
+// bring them back; empty when it left none out.
+func hotelFartherNote(result *models.HotelSearchResult) string {
+	if result.FartherOmitted <= 0 {
+		return ""
+	}
+	noun := "hotels"
+	if result.FartherOmitted == 1 {
+		noun = "hotel"
+	}
+	return fmt.Sprintf(" Left out %d %s farther than %g km from the centre; set max_distance to include them.",
+		result.FartherOmitted, noun, result.MaxDistanceKm)
+}
+
 func hotelSummary(result *models.HotelSearchResult, location string) string {
 	if !result.Success || result.Count == 0 {
 		if result.Error != "" {
@@ -336,10 +350,13 @@ func hotelSummary(result *models.HotelSearchResult, location string) string {
 		if msg, ok := incompleteAbsence("hotels in "+location, result.ProviderStatuses); ok {
 			return msg
 		}
+		if result.FartherOmitted > 0 {
+			return fmt.Sprintf("No hotels found within %g km of the centre of %s.%s", result.MaxDistanceKm, location, hotelFartherNote(result))
+		}
 		return fmt.Sprintf("No hotels found in %s.", location)
 	}
 
-	summary := fmt.Sprintf("Found %d hotels in %s.", result.Count, location)
+	summary := fmt.Sprintf("Found %d hotels in %s.", result.Count, location) + hotelFartherNote(result)
 
 	// Cheapest headline goes through the currency-cohort guard: a nominally-small
 	// unconverted foreign price must not crown the "Lowest lead-in" line ahead of
