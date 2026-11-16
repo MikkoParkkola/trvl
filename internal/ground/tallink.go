@@ -115,6 +115,11 @@ var tallinkRouteDurations = map[string]int{
 	"STO-TUR": 660,
 	"HEL-ALA": 360,
 	"ALA-HEL": 360,
+	// Silja calls at Mariehamn; durations from Tallink's timetable (2026-12-04).
+	"STO-ALA": 450,
+	"ALA-STO": 330,
+	"TUR-ALA": 300,
+	"ALA-TUR": 240,
 	"PAL-KAP": 540,
 	"KAP-PAL": 540,
 	"HEL-VIS": 780,
