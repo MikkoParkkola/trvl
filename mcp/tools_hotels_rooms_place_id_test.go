@@ -67,3 +67,25 @@ func TestHandleHotelRooms_BookingURLFromBookingSourceOnly(t *testing.T) {
 		t.Fatalf("room fetch options = %+v, want no BookingURL", *fetched)
 	}
 }
+
+// TestRoomLookups_ProviderColonIDIsNotGoogle: hotel_rooms refuses a caller
+// hotel_id that is not a Google ID instead of forwarding it, and watches
+// refuse an "agoda:123" match from the name lookup.
+func TestRoomLookups_ProviderColonIDIsNotGoogle(t *testing.T) {
+	fetched := stubNameThenRooms(t, models.HotelResult{Name: "Hotel Sacher Vienna", HotelID: "ChIJsacher"})
+	args := map[string]any{"hotel_id": "flatio:98765", "check_in": "2099-11-18", "check_out": "2099-11-20"}
+	if _, _, err := handleHotelRooms(context.Background(), args, nil, nil, nil); err == nil {
+		t.Error("hotel_rooms accepted hotel_id flatio:98765, want an error")
+	}
+	if *fetched != nil {
+		t.Errorf("room fetch ran with HotelID %q, want no fetch", (*fetched).HotelID)
+	}
+
+	fetched = stubNameThenRooms(t, models.HotelResult{Name: "Hotel Sacher Wien", HotelID: "agoda:123"})
+	if _, err := resolveRoomAvailabilityForWatch(context.Background(), "Hotel Sacher Wien", "2099-11-18", "2099-11-20", "EUR"); err == nil {
+		t.Error("watch resolved an agoda:123 match, want an error naming the missing Google ID")
+	}
+	if *fetched != nil {
+		t.Errorf("room fetch ran with HotelID %q, want no fetch", (*fetched).HotelID)
+	}
+}
