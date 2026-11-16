@@ -11,6 +11,9 @@ const (
 	PriceBasisRoomNightly       = "room_nightly"
 	PriceBasisRoomTotal         = "room_total"
 	PriceBasisTaxInclusiveTotal = "tax_inclusive_total"
+	// PriceBasisMonthly is a monthly rent (mid-term rental providers), never a
+	// nightly rate.
+	PriceBasisMonthly = "monthly"
 
 	PriceConfidenceUnverified = "unverified"
 	PriceConfidenceRoomLevel  = "room_level"
