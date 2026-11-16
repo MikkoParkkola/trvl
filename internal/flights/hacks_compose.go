@@ -5,28 +5,13 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/searchctx"
 )
 
 // hackComposeTimeout bounds the auto-compose savings engine so a slow detector
 // never blocks the naive flight results. The naive search has already returned
 // by the time this runs; if the budget is exceeded we simply surface no saving.
 const hackComposeTimeout = 12 * time.Second
-
-// hacksComposeKey is a context marker set while the savings engine runs. The
-// hack detectors fan out by calling flights.SearchFlights themselves; without
-// this guard each detector search would recursively auto-compose hacks again,
-// exploding into unbounded recursion. A search whose context carries the marker
-// skips auto-compose and behaves as a plain naive search.
-type hacksComposeKey struct{}
-
-func disableHacksCompose(ctx context.Context) context.Context {
-	return context.WithValue(ctx, hacksComposeKey{}, true)
-}
-
-func hacksComposeDisabled(ctx context.Context) bool {
-	v, _ := ctx.Value(hacksComposeKey{}).(bool)
-	return v
-}
 
 // HackComposeRequest is the route/baseline the savings engine evaluates. It is
 // deliberately built from primitives + models types so the flights package does
@@ -95,7 +80,7 @@ func attachFlightHackSaving(ctx context.Context, result *models.FlightSearchResu
 	if composeHackSaving == nil || result == nil || !result.Success {
 		return
 	}
-	if opts.NoHacks || hacksComposeDisabled(ctx) {
+	if opts.NoHacks || searchctx.SavingsPassSuppressed(ctx) {
 		return
 	}
 	naive := cheapestFlightPrice(result.Flights)
@@ -114,9 +99,10 @@ func attachFlightHackSaving(ctx context.Context, result *models.FlightSearchResu
 		Passengers:  opts.Adults,
 	}
 
-	// Bound the engine and mark the context so the detectors' own
-	// flights.SearchFlights fan-out does not recursively auto-compose.
-	hctx, cancel := context.WithTimeout(disableHacksCompose(ctx), hackComposeTimeout)
+	// Bound the engine and start a savings pass: the detectors' own flight and
+	// ground searches see the shared marker, start no pass of their own, and
+	// share one memo.
+	hctx, cancel := context.WithTimeout(searchctx.StartSavingsPass(ctx), hackComposeTimeout)
 	defer cancel()
 
 	if saving := composeHackSaving(hctx, req); saving != nil {

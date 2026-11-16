@@ -185,9 +185,9 @@ func canonicalStringSlice(values []string) string {
 	return strings.Join(sorted, ",")
 }
 
-// SearchFlightsWithClient is like SearchFlights but accepts a pre-built client,
-// useful for reusing connections across multiple requests.
-func SearchFlightsWithClient(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) (*models.FlightSearchResult, error) {
+// searchFlightsWithClient is SearchFlightsWithClient without the savings-pass
+// memo.
+func searchFlightsWithClient(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) (*models.FlightSearchResult, error) {
 	// A per-call override takes over entirely, bypassing validation, caching,
 	// and every provider — the same contract the old package-level function
 	// variables in internal/hacks gave test callers, but carried as ordinary

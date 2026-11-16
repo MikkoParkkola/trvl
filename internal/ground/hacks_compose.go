@@ -5,26 +5,12 @@ import (
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/searchctx"
 )
 
 // hackComposeTimeout bounds the auto-compose savings engine so a slow detector
 // never blocks the naive ground results.
 const hackComposeTimeout = 12 * time.Second
-
-// hacksComposeKey is a context marker set while the savings engine runs. Several
-// hack detectors fan out by calling ground.SearchByName themselves; without this
-// guard each detector search would recursively auto-compose hacks again. A
-// search whose context carries the marker skips auto-compose.
-type hacksComposeKey struct{}
-
-func disableHacksCompose(ctx context.Context) context.Context {
-	return context.WithValue(ctx, hacksComposeKey{}, true)
-}
-
-func hacksComposeDisabled(ctx context.Context) bool {
-	v, _ := ctx.Value(hacksComposeKey{}).(bool)
-	return v
-}
 
 // HackComposeRequest is the route/baseline the savings engine evaluates. Built
 // from primitives + models types so the ground package does not depend on the
@@ -87,14 +73,18 @@ func groundHackCurrency(routes []models.GroundRoute, optCurrency string) string 
 // search and, when a genuinely cheaper synthesized option exists, attaches the
 // single best one to result.HackSaving. The naive Routes are never modified.
 //
-// No-op when the engine is unwired, when opted out (opts.NoHacks), when this is a
-// nested detector-initiated search (re-entrancy guard), when the result is not a
-// successful priced search, or when the naive cheapest price is unknown.
+// No-op when the engine is unwired, when opted out (opts.NoHacks), when an
+// include provider filter is set, inside another savings pass (re-entrancy
+// guard), when the result is not a successful priced search, or when the naive
+// cheapest price is unknown.
 func attachGroundHackSaving(ctx context.Context, result *models.GroundSearchResult, from, to, date string, opts SearchOptions) {
 	if composeHackSaving == nil || result == nil || !result.Success {
 		return
 	}
-	if opts.NoHacks || hacksComposeDisabled(ctx) {
+	// An include filter scopes the whole search: the detectors would search
+	// flights and ground providers the caller did not ask for. An exclude-only
+	// filter still runs the pass, scoped by the exclusions.
+	if opts.NoHacks || len(opts.Providers) > 0 || searchctx.SavingsPassSuppressed(ctx) {
 		return
 	}
 	naive := cheapestRoutePrice(result.Routes)
@@ -114,7 +104,9 @@ func attachGroundHackSaving(ctx context.Context, result *models.GroundSearchResu
 		NoCache:          opts.NoCache,
 	}
 
-	hctx, cancel := context.WithTimeout(disableHacksCompose(ctx), hackComposeTimeout)
+	// Start a savings pass: the detectors' own flight and ground searches see
+	// the shared marker, start no pass of their own, and share one memo.
+	hctx, cancel := context.WithTimeout(searchctx.StartSavingsPass(ctx), hackComposeTimeout)
 	defer cancel()
 
 	if saving := composeHackSaving(hctx, req); saving != nil {
