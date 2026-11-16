@@ -125,3 +125,33 @@ func TestNameMatch_RefusesCandidateBeyondCityRadius(t *testing.T) {
 		})
 	}
 }
+
+// TestFindBestNameMatch_RegionSuffixKeepsDistantExactMatch: a comma suffix
+// can name a region or island, not a city. An exact name match 80 km from
+// the region's geocoded point is still the property.
+func TestFindBestNameMatch_RegionSuffixKeepsDistantExactMatch(t *testing.T) {
+	seedGeoAt(t, "Crete", 35.2401, 24.8093)
+	candidates := []models.HotelResult{{Name: "Blue Palace Elounda", HotelID: "/g/blue_palace", Lat: 35.2650, Lon: 25.7380}}
+	if d := Haversine(35.2401, 24.8093, 35.2650, 25.7380); d < 60 {
+		t.Fatalf("precondition: candidate is %.0f km out, want a distant one", d)
+	}
+	if got := findBestNameMatch(candidates, "Blue Palace Elounda, Crete"); got == nil {
+		t.Fatal("exact name match dropped for being far from the region's centre")
+	}
+}
+
+// TestNameMatch_OnlyTrailingCityWordConflicts: a city word leading a brand
+// ("Vienna House …") is not the hotel's town; a trailing one ("… Prague") is.
+// Prague queries keep the Vienna House hotel; Vienna queries refuse it.
+func TestNameMatch_OnlyTrailingCityWordConflicts(t *testing.T) {
+	andels := []models.HotelResult{{Name: "Vienna House Andel's Prague", HotelID: "/g/andels"}}
+	if got := findBestNameMatch(andels, "Andel's, Prague"); got == nil {
+		t.Error(`findBestNameMatch("Andel's, Prague") = nil, want Vienna House Andel's Prague`)
+	}
+	if kept := withoutOtherTowns(andels, "Andel's", "Prague"); len(kept) != 1 {
+		t.Errorf("Prague query dropped %v, want it kept", hotelNames(andels))
+	}
+	if got := findBestNameMatch(andels, "Andel's, Vienna"); got != nil {
+		t.Errorf(`findBestNameMatch("Andel's, Vienna") = %q, want nil: its town is Prague`, got.Name)
+	}
+}
