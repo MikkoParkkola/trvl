@@ -338,7 +338,11 @@ func hotelFartherNote(omitted int, capKm float64) string {
 	if omitted == 1 {
 		noun = "hotel"
 	}
-	return fmt.Sprintf(" Left out %d %s farther than %g km from the centre; set max_distance to include them.", omitted, noun, capKm)
+	note := fmt.Sprintf(" Left out %d %s farther than %g km from the centre", omitted, noun, capKm)
+	if hotels.SendsGoogleRadius(capKm) {
+		note += fmt.Sprintf("; Google limited its results to %g km, so this counts only hotels trvl itself removed", capKm)
+	}
+	return note + "; set max_distance to include them."
 }
 
 func hotelSummary(result *models.HotelSearchResult, location string) string {
@@ -347,7 +351,7 @@ func hotelSummary(result *models.HotelSearchResult, location string) string {
 			return fmt.Sprintf("Hotel search in %s failed: %s", location, result.Error)
 		}
 		if msg, ok := incompleteAbsence("hotels in "+location, result.ProviderStatuses); ok {
-			return msg
+			return msg + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm)
 		}
 		if result.FartherOmitted > 0 {
 			return fmt.Sprintf("No hotels found within %g km of the centre of %s.%s", result.MaxDistanceKm, location, hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm))

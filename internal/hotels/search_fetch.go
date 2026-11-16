@@ -333,7 +333,7 @@ func buildTravelURL(location string, opts HotelSearchOptions) string {
 	// Only a cap tighter than the default goes to Google: at the default and
 	// wider, Google returns its normal set so trvl can filter and count every
 	// farther hotel itself (farther_omitted).
-	if opts.MaxDistanceKm > 0 && opts.MaxDistanceKm < DefaultMaxDistanceKm {
+	if SendsGoogleRadius(opts.MaxDistanceKm) {
 		// Google uses meters for the lrad (location radius) parameter.
 		query.Set("lrad", strconv.FormatFloat(opts.MaxDistanceKm*1000, 'f', 0, 64))
 	}

@@ -619,6 +619,9 @@ func hotelsFartherNote(result *models.HotelSearchResult) string {
 	if result.FartherOmitted == 1 {
 		noun = "hotel"
 	}
-	return fmt.Sprintf("Left out %d %s farther than %g km from the centre; use --max-distance to include them.",
-		result.FartherOmitted, noun, result.MaxDistanceKm)
+	note := fmt.Sprintf("Left out %d %s farther than %g km from the centre", result.FartherOmitted, noun, result.MaxDistanceKm)
+	if hotels.SendsGoogleRadius(result.MaxDistanceKm) {
+		note += fmt.Sprintf("; Google limited its results to %g km, so this counts only hotels trvl itself removed", result.MaxDistanceKm)
+	}
+	return note + "; use --max-distance to include them."
 }

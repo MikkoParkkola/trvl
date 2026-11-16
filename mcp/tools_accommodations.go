@@ -147,7 +147,7 @@ func accommodationSearchOutputSchema() interface{} {
 			"candidate_count":             schemaInt(),
 			"total_available":             schemaInt(),
 			"max_distance_km":             schemaNumDesc("Distance cap applied around the city centre (25 by default; absent when none applied)."),
-			"farther_omitted":             schemaIntDesc("Hotels left out for being farther than max_distance_km."),
+			"farther_omitted":             schemaIntDesc("Hotels trvl left out for being farther than max_distance_km. Below 25 km Google is also asked for that radius and withholds farther hotels itself, so the count then covers only what trvl removed."),
 			"offers":                      schemaArray(accommodationOfferSchema()),
 			"rejected_offers":             schemaArray(accommodationOfferSchema()),
 			"evidence":                    schemaArray(accommodationEvidenceSchema()),

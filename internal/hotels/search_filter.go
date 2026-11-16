@@ -19,6 +19,13 @@ import (
 // apply when the caller sets none. Lookups of one named hotel set no cap.
 const DefaultMaxDistanceKm = 25
 
+// SendsGoogleRadius reports whether a cap goes to Google as a server-side
+// radius (lrad): only when tighter than the default. Google then withholds
+// farther hotels itself, so farther_omitted covers only what trvl removed.
+func SendsGoogleRadius(capKm float64) bool {
+	return capKm > 0 && capKm < DefaultMaxDistanceKm
+}
+
 // filterHotels applies all post-fetch filters to hotel results.
 func filterHotels(hotels []models.HotelResult, opts HotelSearchOptions) []models.HotelResult {
 	filtered, _ := filterHotelsCounted(hotels, opts)
@@ -67,6 +74,14 @@ func filterHotelsCounted(hotels []models.HotelResult, opts HotelSearchOptions) (
 				continue
 			}
 		}
+		if len(opts.Amenities) > 0 && !hasAllAmenities(h.Amenities, opts.Amenities) {
+			continue
+		}
+		if opts.Brand != "" && !strings.Contains(strings.ToLower(h.Name), strings.ToLower(opts.Brand)) {
+			continue
+		}
+		// Distance runs last so farther counts only hotels every other filter
+		// passed.
 		if h.Lat != 0 && h.Lon != 0 && opts.CenterLat != 0 {
 			dist := Haversine(opts.CenterLat, opts.CenterLon, h.Lat, h.Lon)
 			// Hard geo-outlier ceiling: reject hotels >100km from city
@@ -79,12 +94,6 @@ func filterHotelsCounted(hotels []models.HotelResult, opts HotelSearchOptions) (
 				farther++
 				continue
 			}
-		}
-		if len(opts.Amenities) > 0 && !hasAllAmenities(h.Amenities, opts.Amenities) {
-			continue
-		}
-		if opts.Brand != "" && !strings.Contains(strings.ToLower(h.Name), strings.ToLower(opts.Brand)) {
-			continue
 		}
 		filtered = append(filtered, h)
 	}
