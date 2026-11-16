@@ -171,14 +171,21 @@ const nameMatchMaxKm = 25.0
 
 // cachedLocation reads the geocode cache only, under the city's own name,
 // its English form (the key the search geocodes, "Wien" -> "Vienna") or its
-// local form. The matcher must not add a geocoding request, so a city nobody
-// resolved yet has no distance check.
+// local form, ignoring case: the cache keeps each query as typed. The
+// matcher must not add a geocoding request, so a city nobody resolved yet
+// has no distance check.
+//
+// ponytail: a linear scan of the per-process cache; key it case-folded if
+// the cache ever grows large.
 func cachedLocation(query string) (lat, lon float64, ok bool) {
+	forms := []string{strings.TrimSpace(query), englishHotelCity(query), normalizeHotelCity(query)}
 	geoCache.RLock()
 	defer geoCache.RUnlock()
-	for _, q := range []string{strings.TrimSpace(query), englishHotelCity(query), normalizeHotelCity(query)} {
-		if e, found := geoCache.entries[q]; found {
-			return e.lat, e.lon, true
+	for key, e := range geoCache.entries {
+		for _, form := range forms {
+			if strings.EqualFold(key, form) {
+				return e.lat, e.lon, true
+			}
 		}
 	}
 	return 0, 0, false
