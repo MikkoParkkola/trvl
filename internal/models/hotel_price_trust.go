@@ -67,8 +67,8 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 
 	h.Sources = finalizePriceSources(h.Sources, now)
 	preferredCurrency = strings.ToUpper(strings.TrimSpace(preferredCurrency))
-	quotes := quotesAboveFloor(h.Sources, preferredCurrency, convert)
-	if selected, ok := selectPrimaryHotelSource(quotes, preferredCurrency, h.Currency, convert); ok {
+	h.Sources = dropSubFloorQuotes(h.Sources, preferredCurrency, convert)
+	if selected, ok := selectPrimaryHotelSource(h.Sources, preferredCurrency, h.Currency, convert); ok {
 		// Sources stay provider quotes in the provider's currency; only the
 		// headline is converted. A failed conversion keeps the quote's own
 		// currency and says so rather than relabelling the number.
@@ -89,7 +89,7 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 		// Savings are displayed in the headline's currency ("saves EUR 20"),
 		// but merge computed them in whichever currency had the most quotes.
 		// Restate them in the headline currency, or drop them if they cannot be.
-		h.Savings, h.CheapestSource = savingsIn(quotes, h.Currency, convert)
+		h.Savings, h.CheapestSource = savingsIn(h.Sources, h.Currency, convert)
 		if selected.BookingURL != "" {
 			h.BookingURL = selected.BookingURL
 		}
@@ -104,6 +104,7 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 		h.PriceProvenance = PriceUnavailable
 		// No number stays behind to sort first or take the cheapest line.
 		h.Price, h.ComparablePrice = 0, 0
+		h.Savings, h.CheapestSource = 0, ""
 	}
 	if h.PropertyType == "" {
 		h.PropertyType = InferHotelPropertyType(*h)
@@ -120,23 +121,26 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 // anyway; a fixed EUR floor would fetch a new exchange rate on every search.
 const priceFloorUnits = 1.0
 
-// quotesAboveFloor keeps the sources that may become the headline: priced, and
-// worth at least priceFloorUnits in the requested currency. With no requested
-// currency, or no rate, a quote is judged in its own currency.
-func quotesAboveFloor(sources []PriceSource, target string, convert func(amount float64, from, to string) (float64, bool)) []PriceSource {
+// dropSubFloorQuotes removes priced sources worth less than priceFloorUnits in
+// the requested currency, so a placeholder never resurfaces in sources[] or
+// room data. Price-0 sources stay: they carry provenance, not a quote. With no
+// requested currency, or no rate, a quote is judged in its own currency.
+func dropSubFloorQuotes(sources []PriceSource, target string, convert func(amount float64, from, to string) (float64, bool)) []PriceSource {
+	if len(sources) == 0 {
+		return sources
+	}
 	out := make([]PriceSource, 0, len(sources))
 	for _, s := range sources {
-		if s.Price <= 0 {
-			continue
-		}
-		amount := s.Price
-		if target != "" && !strings.EqualFold(s.Currency, target) {
-			if converted, ok := convertPrice(convert, s.Price, s.Currency, target); ok {
-				amount = converted
+		if s.Price > 0 {
+			amount := s.Price
+			if target != "" && !strings.EqualFold(s.Currency, target) {
+				if converted, ok := convertPrice(convert, s.Price, s.Currency, target); ok {
+					amount = converted
+				}
 			}
-		}
-		if amount < priceFloorUnits {
-			continue
+			if amount < priceFloorUnits {
+				continue
+			}
 		}
 		out = append(out, s)
 	}

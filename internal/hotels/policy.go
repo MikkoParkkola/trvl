@@ -44,25 +44,47 @@ func excludeAdultsOnly(in []models.HotelResult) (kept []models.HotelResult, hidd
 	return kept, hidden
 }
 
-// DropMonthlyRentals takes hotels whose only price is a monthly rent out of a
-// nightly hotel list, counting them in MonthlyOmitted: a monthly rent shown as
-// a night's price is off by about thirty times. search_accommodations keeps
-// them. A hotel with any non-monthly quote stays. The input slice is not
-// mutated.
+// DropMonthlyRentals applies the nightly stay term to a finished result: see
+// nightlyOnly. The core search does this itself for every stay term but
+// StayIncludeMonthly; this form serves callers holding a result.
 func DropMonthlyRentals(result *models.HotelSearchResult) {
 	if result == nil {
 		return
 	}
-	kept := make([]models.HotelResult, 0, len(result.Hotels))
-	for _, h := range result.Hotels {
+	var omitted int
+	result.Hotels, omitted = nightlyOnly(result.Hotels)
+	result.MonthlyOmitted += omitted
+	result.Count = len(result.Hotels)
+}
+
+// nightlyOnly leaves out hotels whose only price is a monthly rent (a monthly
+// rent shown as a night's price is off by about thirty times) and strips the
+// monthly sources from hotels that also have a nightly one, so a monthly rent
+// never competes for the headline, savings or cheapest_source. It returns the
+// kept hotels and how many were left out. The input slice is not mutated.
+func nightlyOnly(in []models.HotelResult) ([]models.HotelResult, int) {
+	kept := make([]models.HotelResult, 0, len(in))
+	omitted := 0
+	for _, h := range in {
 		if monthlyOnly(h) {
-			result.MonthlyOmitted++
+			omitted++
 			continue
+		}
+		var sources []models.PriceSource
+		for _, src := range h.Sources {
+			if src.PriceBasis != models.PriceBasisMonthly {
+				sources = append(sources, src)
+			}
+		}
+		if len(sources) != len(h.Sources) {
+			h.Sources = sources
+			if h.PriceBasis == models.PriceBasisMonthly {
+				h.PriceBasis = "" // finalize takes the basis from the headline source
+			}
 		}
 		kept = append(kept, h)
 	}
-	result.Hotels = kept
-	result.Count = len(kept)
+	return kept, omitted
 }
 
 func monthlyOnly(h models.HotelResult) bool {

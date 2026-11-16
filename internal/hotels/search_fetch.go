@@ -152,7 +152,7 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 	}
 	data, err := json.Marshal(key)
 	if err != nil {
-		return fmt.Sprintf("hotel|%s|%s|%s|%d|%s", location, opts.CheckIn, opts.CheckOut, opts.Guests, opts.Currency)
+		return fmt.Sprintf("hotel|%s|%s|%s|%d|%s|stay=%d", location, opts.CheckIn, opts.CheckOut, opts.Guests, opts.Currency, opts.StayTerm)
 	}
 	return "hotel|" + string(data)
 }

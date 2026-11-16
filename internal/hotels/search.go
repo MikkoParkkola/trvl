@@ -609,6 +609,14 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		return nil, googlePrimaryErr
 	}
 
+	// Monthly rents are not nightly prices: every search but the long-stay one
+	// (StayIncludeMonthly) leaves them out before the headline is picked, so no
+	// caller shows or multiplies a monthly rent as a night. Fail closed: any
+	// other stay term counts as nightly.
+	monthlyOmitted := 0
+	if opts.StayTerm != StayIncludeMonthly {
+		hotels, monthlyOmitted = nightlyOnly(hotels)
+	}
 	models.FinalizeHotelPriceTrust(hotels, opts.Currency, time.Now(), trustConverter(ctx))
 	// FinalizeHotelPriceTrust may refresh Price/Currency from a source, so
 	// re-assert ComparablePrice for any headline already in the target currency.
@@ -726,15 +734,10 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		TotalAvailable:   totalAvailable,
 		MaxDistanceKm:    appliedCapKm,
 		FartherOmitted:   farther,
+		MonthlyOmitted:   monthlyOmitted,
 		Hotels:           hotels,
 		ProviderStatuses: providerStatuses,
 		Completeness:     models.ComputeCompleteness(providerStatuses),
-	}
-	// Monthly rents are not nightly prices: every caller but the long-stay
-	// accommodation search gets them left out (and counted), so none shows or
-	// multiplies a monthly rent as a night's price.
-	if opts.StayTerm == StayNightly {
-		DropMonthlyRentals(result)
 	}
 	return result, nil
 }
