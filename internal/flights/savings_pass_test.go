@@ -58,33 +58,36 @@ func countingFlightsServer(t *testing.T) (*batchexec.Client, *atomic.Int32) {
 	return batchexec.NewTestClient(ts.URL), &n
 }
 
-// heldFlightsServer holds the first request until a second one arrives, so
-// two concurrent searches either both reach upstream or provably share one
-// call: when no second request comes within the timeout, joined reports true.
-// Each search needs its own client: a client sends one Google request at a
-// time (batchexec googleMu).
-func heldFlightsServer(t *testing.T) (func() *batchexec.Client, func() bool) {
+// holdFirstFlightsServer holds the first upstream request for up to a second
+// so a second search starts while the first is in flight, and counts requests.
+// One client sends one Google request at a time (batchexec googleMu), so with
+// a shared client a second search that does not join the first reaches the
+// server only after it: two requests in total means no join, one means joined.
+func holdFirstFlightsServer(t *testing.T) (*batchexec.Client, <-chan struct{}, *atomic.Int32) {
 	t.Helper()
 	body := makeFlightResponseBody(t)
 	var n atomic.Int32
-	var joined atomic.Bool
-	second := make(chan struct{})
+	firstIn := make(chan struct{})
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		switch n.Add(1) {
-		case 1:
-			select {
-			case <-second:
-			case <-time.After(5 * time.Second):
-				joined.Store(true)
-			}
-		case 2:
-			close(second)
+		if n.Add(1) == 1 {
+			close(firstIn)
+			time.Sleep(time.Second)
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(body)
 	}))
 	t.Cleanup(ts.Close)
-	return func() *batchexec.Client { return batchexec.NewTestClient(ts.URL) }, joined.Load
+	return batchexec.NewTestClient(ts.URL), firstIn, &n
+}
+
+// concurrentPair starts first, waits until its request is held upstream, then
+// starts second, and returns both results.
+func concurrentPair(firstIn <-chan struct{}, first, second func() *models.FlightSearchResult) (*models.FlightSearchResult, *models.FlightSearchResult) {
+	a, b := make(chan *models.FlightSearchResult, 1), make(chan *models.FlightSearchResult, 1)
+	go func() { a <- first() }()
+	<-firstIn
+	go func() { b <- second() }()
+	return <-a, <-b
 }
 
 // Two detectors asking the same flight query within one savings pass cause
@@ -144,62 +147,93 @@ func skiplaggedRow(r *models.FlightSearchResult) models.ProviderStatus {
 	return models.ProviderStatus{}
 }
 
+const skiplaggedSuppressedMsg = "one-way Skiplagged skipped"
+
 // A round-trip leg (one-way Skiplagged suppressed) and a plain one-way for the
-// same route, run concurrently in one savings pass, each reach upstream and
-// keep their own Skiplagged answer instead of sharing one call.
+// same route, concurrent on one client in one pass, do not share a call: each
+// keeps its own Skiplagged answer.
 func TestSearchFlights_SkiplaggedSuppressedLegNotSharedWithOneWay(t *testing.T) {
-	newClient, joined := heldFlightsServer(t)
+	client, firstIn, reqs := holdFirstFlightsServer(t)
 	pass := searchctx.StartSavingsPass(context.Background())
-
-	leg, oneWay := make(chan *models.FlightSearchResult, 1), make(chan *models.FlightSearchResult, 1)
-	go func() {
-		r, _ := SearchFlightsWithClient(disableSkiplaggedOneWay(pass), newClient(), "HEL", "NRT", "2026-12-04", SearchOptions{})
-		leg <- r
-	}()
-	go func() {
-		r, _ := SearchFlightsWithClient(pass, newClient(), "HEL", "NRT", "2026-12-04", SearchOptions{})
-		oneWay <- r
-	}()
-	legRes, oneWayRes := <-leg, <-oneWay
-
-	if joined() {
-		t.Error("the suppressed leg and the one-way shared one upstream call")
+	legRes, oneWayRes := concurrentPair(firstIn,
+		func() *models.FlightSearchResult {
+			r, _ := SearchFlightsWithClient(disableSkiplaggedOneWay(pass), client, "HEL", "NRT", "2026-12-04", SearchOptions{})
+			return r
+		},
+		func() *models.FlightSearchResult {
+			r, _ := SearchFlightsWithClient(pass, client, "HEL", "NRT", "2026-12-04", SearchOptions{})
+			return r
+		})
+	if n := reqs.Load(); n != 2 {
+		t.Errorf("upstream requests = %d, want 2: the suppressed leg and the one-way shared a call", n)
 	}
-	const suppressedMsg = "one-way Skiplagged skipped"
-	if row := skiplaggedRow(legRes); !strings.Contains(row.Error, suppressedMsg) {
+	if row := skiplaggedRow(legRes); !strings.Contains(row.Error, skiplaggedSuppressedMsg) {
 		t.Errorf("leg Skiplagged row = %+v, want the round-trip suppression", row)
 	}
-	if row := skiplaggedRow(oneWayRes); strings.Contains(row.Error, suppressedMsg) {
+	if row := skiplaggedRow(oneWayRes); strings.Contains(row.Error, skiplaggedSuppressedMsg) {
 		t.Errorf("one-way Skiplagged row = %+v: it got the leg's suppression", row)
 	}
 }
 
+// The same pair one after the other on one client in one pass: the memo must
+// keep them apart, so the one-way does not get the leg's memoized result.
+func TestSearchFlights_SkiplaggedSuppressedLegNotMemoizedForOneWay(t *testing.T) {
+	client, reqs := countingFlightsServer(t)
+	pass := searchctx.StartSavingsPass(context.Background())
+	legRes, _ := SearchFlightsWithClient(disableSkiplaggedOneWay(pass), client, "HEL", "NRT", "2026-12-05", SearchOptions{})
+	oneWayRes, _ := SearchFlightsWithClient(pass, client, "HEL", "NRT", "2026-12-05", SearchOptions{})
+	if n := reqs.Load(); n != 2 {
+		t.Errorf("upstream requests = %d, want 2: the one-way reused the leg's memo entry", n)
+	}
+	if row := skiplaggedRow(legRes); !strings.Contains(row.Error, skiplaggedSuppressedMsg) {
+		t.Errorf("leg Skiplagged row = %+v, want the round-trip suppression", row)
+	}
+	if row := skiplaggedRow(oneWayRes); strings.Contains(row.Error, skiplaggedSuppressedMsg) {
+		t.Errorf("one-way Skiplagged row = %+v: it got the leg's memoized suppression", row)
+	}
+}
+
 // A search inside a savings pass runs without one. A concurrent top-level
-// search for the same query must reach upstream itself and keep its saving.
+// search for the same query on the same client keeps its own call and saving.
 func TestSearchFlights_SuppressedSearchNotSharedWithTopLevel(t *testing.T) {
 	withStubComposer(t, func(context.Context, HackComposeRequest) *models.HackSaving {
 		return &models.HackSaving{Type: "stub"}
 	})
-	newClient, joined := heldFlightsServer(t)
-
-	suppressed, top := make(chan *models.FlightSearchResult, 1), make(chan *models.FlightSearchResult, 1)
-	go func() {
-		r, _ := SearchFlightsWithClient(searchctx.StartSavingsPass(context.Background()), newClient(), "HEL", "NRT", "2026-12-03", SearchOptions{})
-		suppressed <- r
-	}()
-	go func() {
-		r, _ := SearchFlightsWithClient(context.Background(), newClient(), "HEL", "NRT", "2026-12-03", SearchOptions{})
-		top <- r
-	}()
-	topRes, supRes := <-top, <-suppressed
-
-	if joined() {
-		t.Error("the in-pass search and the top-level search shared one upstream call")
+	client, firstIn, reqs := holdFirstFlightsServer(t)
+	supRes, topRes := concurrentPair(firstIn,
+		func() *models.FlightSearchResult {
+			r, _ := SearchFlightsWithClient(searchctx.StartSavingsPass(context.Background()), client, "HEL", "NRT", "2026-12-03", SearchOptions{})
+			return r
+		},
+		func() *models.FlightSearchResult {
+			r, _ := SearchFlightsWithClient(context.Background(), client, "HEL", "NRT", "2026-12-03", SearchOptions{})
+			return r
+		})
+	if n := reqs.Load(); n != 2 {
+		t.Errorf("upstream requests = %d, want 2: the in-pass and top-level searches shared a call", n)
 	}
 	if topRes == nil || topRes.HackSaving == nil {
 		t.Errorf("top-level search has no saving: %+v", topRes)
 	}
 	if supRes != nil && supRes.HackSaving != nil {
 		t.Errorf("search inside a savings pass got a saving: %+v", supRes.HackSaving)
+	}
+}
+
+// DepartureFlexDays changes the query (Kiwi searches the flex window), so two
+// concurrent searches that differ only in it do not share a call.
+func TestSearchFlights_DifferentFlexDaysDoNotJoin(t *testing.T) {
+	client, firstIn, reqs := holdFirstFlightsServer(t)
+	concurrentPair(firstIn,
+		func() *models.FlightSearchResult {
+			r, _ := SearchFlightsWithClient(context.Background(), client, "HEL", "NRT", "2026-12-06", SearchOptions{})
+			return r
+		},
+		func() *models.FlightSearchResult {
+			r, _ := SearchFlightsWithClient(context.Background(), client, "HEL", "NRT", "2026-12-06", SearchOptions{DepartureFlexDays: 3})
+			return r
+		})
+	if n := reqs.Load(); n != 2 {
+		t.Errorf("upstream requests = %d, want 2: searches with different flex days shared a call", n)
 	}
 }
