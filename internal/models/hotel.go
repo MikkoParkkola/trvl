@@ -121,6 +121,12 @@ type HotelResult struct {
 	RetrievedAt     time.Time     `json:"retrieved_at,omitempty"`     // checked time for primary Price
 	Freshness       string        `json:"freshness,omitempty"`        // freshness for primary Price
 	PriceWarnings   []string      `json:"price_warnings,omitempty"`   // machine-readable caveats, e.g. mixed_source_currencies
+	// HeadlineProvider names the source whose quote is the headline Price,
+	// picked by the trust rule (confidence, then basis); CheapestSource can
+	// name a different, cheaper but less trusted quote.
+	HeadlineProvider string `json:"headline_provider,omitempty"`
+	// PriceProvenance is "unavailable" when no source carries a usable price.
+	PriceProvenance PriceProvenance `json:"price_provenance,omitempty"`
 	// Confidence is an honest bookability assessment of the headline Price
 	// (innovation #3). Nil when not scored; an unrated Confidence means trvl
 	// lacked the signal to judge — it is never a fabricated number.
@@ -156,7 +162,11 @@ type HotelSearchResult struct {
 	// holidays, currency, country facts) for the searched location. Additive and
 	// silently degrading — absent when the lookup fails; never blocks the search.
 	Destination *DestinationInfo `json:"destination,omitempty"`
-	Error       string           `json:"error,omitempty"`
+	// MaxDistanceKm is the distance cap applied around the city centre (25 km
+	// unless the caller set one); FartherOmitted counts the hotels it left out.
+	MaxDistanceKm  float64 `json:"max_distance_km,omitempty"`
+	FartherOmitted int     `json:"farther_omitted,omitempty"`
+	Error          string  `json:"error,omitempty"`
 }
 
 // ProviderPrice represents a single booking provider's price for a hotel.

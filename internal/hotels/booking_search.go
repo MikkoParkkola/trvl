@@ -51,7 +51,7 @@ func defaultSearchBooking(ctx context.Context, location string, opts HotelSearch
 	if blob == "" {
 		return nil, fmt.Errorf("booking search: apollo store not found in page")
 	}
-	hotels, perr := parseBookingApollo(blob, opts.Currency)
+	hotels, perr := parseBookingApollo(blob, opts.Currency, agodaNights(opts.CheckIn, opts.CheckOut))
 	if perr != nil {
 		return nil, perr
 	}
@@ -232,7 +232,7 @@ func extractBookingApolloBlob(page string) string {
 // parseBookingApollo parses the Apollo store JSON and returns hotel results.
 // It walks ROOT_QUERY → searchQueries → search(<input>) → results[], resolving
 // Apollo normalized __ref pointers against the top-level cache as needed.
-func parseBookingApollo(blob, currency string) ([]models.HotelResult, error) {
+func parseBookingApollo(blob, currency string, nights int) ([]models.HotelResult, error) {
 	var cache map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(blob), &cache); err != nil {
 		// The apollo store <script> was present but its JSON did not parse — the
