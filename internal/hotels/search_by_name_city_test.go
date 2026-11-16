@@ -83,3 +83,39 @@ func TestSearchHotelByName_StrippedNameRefusesOtherTown(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNoNameMatch", err)
 	}
 }
+
+// seedGeoAt pins the geocode cache entry for query to the given point.
+func seedGeoAt(t *testing.T, query string, lat, lon float64) {
+	t.Helper()
+	geoCache.Lock()
+	geoCache.entries[query] = geoEntry{lat: lat, lon: lon}
+	geoCache.Unlock()
+	t.Cleanup(func() {
+		geoCache.Lock()
+		delete(geoCache.entries, query)
+		geoCache.Unlock()
+	})
+}
+
+// TestNameMatch_RefusesCandidateBeyondCityRadius: a Google row has no
+// address, so only its distance from the resolved city shows that "Hotel
+// Sacher Baden", a Baden-area pin about 26 km out, is not the Vienna hotel.
+func TestNameMatch_RefusesCandidateBeyondCityRadius(t *testing.T) {
+	const cityLat, cityLon = 48.2083537, 16.3725042
+	seedGeoAt(t, "Vienna", cityLat, cityLon)
+	candidates := []models.HotelResult{
+		{Name: "Hotel Sacher Baden", HotelID: "/g/sacher_baden", Lat: 48.0, Lon: 16.22},
+		{Name: "Hotel Sacher Vienna", HotelID: "/g/sacher_vienna", Lat: 48.2040009, Lon: 16.3697963},
+	}
+	if d := Haversine(cityLat, cityLon, 48.0, 16.22); d <= 25 {
+		t.Fatalf("precondition: Baden pin is %.1f km from the centre, want beyond 25", d)
+	}
+
+	if got := findBestNameMatch(candidates, "Hotel Sacher, Vienna"); got == nil || got.Name != "Hotel Sacher Vienna" {
+		t.Errorf("findBestNameMatch = %v, want Hotel Sacher Vienna", got)
+	}
+	kept := filterByNameMatch(withoutOtherTowns(candidates, "Hotel Sacher", "Vienna"), "Hotel Sacher")
+	if names := hotelNames(kept); len(names) != 1 || names[0] != "Hotel Sacher Vienna" {
+		t.Errorf("plural match = %v, want only Hotel Sacher Vienna", names)
+	}
+}
