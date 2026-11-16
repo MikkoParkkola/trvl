@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/breaker"
-	"github.com/MikkoParkkola/trvl/internal/fareintel"
 	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
@@ -180,7 +180,9 @@ func SearchHotels(ctx context.Context, location string, opts HotelSearchOptions)
 
 // SearchHotelsWithClient is like SearchHotels but reuses the provided client.
 func SearchHotelsWithClient(ctx context.Context, client *batchexec.Client, location string, opts HotelSearchOptions) (*models.HotelSearchResult, error) {
-	location = normalizeHotelCity(location)
+	// Every provider gets the English city name; only the Google fetch swaps
+	// in the local form Google resolves (see googleLocation in searchHotelsCore).
+	location = englishHotelCity(location)
 	if opts.CheckIn == "" || opts.CheckOut == "" {
 		return nil, fmt.Errorf("check-in and check-out dates are required")
 	}
@@ -234,6 +236,7 @@ func doHotelSearchSingleflight(ctx context.Context, key string, fn func(context.
 
 // searchHotelsCore performs the actual hotel search without singleflight wrapping.
 func searchHotelsCore(ctx context.Context, client *batchexec.Client, location string, opts HotelSearchOptions) (*models.HotelSearchResult, error) {
+	googleLocation := normalizeHotelCity(location)
 	pageLimit := hotelPageLimit(opts.MaxPages)
 
 	// Determine which sort orders to use. When MaxPages is 1 (compound
@@ -293,7 +296,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		}
 
 		// Fetch first page for this sort order (with metadata on the primary sort).
-		firstPage, err := fetchHotelPageFullFn(ctx, client, location, opts, 0, googleSort)
+		firstPage, err := fetchHotelPageFullFn(ctx, client, googleLocation, opts, 0, googleSort)
 		if err != nil {
 			if sortIdx == 0 {
 				// Primary Google sort failed. Don't abort the whole search:
@@ -321,7 +324,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 
 		// Paginate within this sort order.
 		for page := 1; page < pageLimit; page++ {
-			pageHotels, err := fetchHotelPage(ctx, client, location, opts, page*pageSize, googleSort)
+			pageHotels, err := fetchHotelPage(ctx, client, googleLocation, opts, page*pageSize, googleSort)
 			if err != nil {
 				// Non-fatal: keep what we have from previous pages.
 				break
@@ -380,6 +383,11 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 						statuses:      []models.ProviderStatus{hotelProviderStatusFromError(id, name, ctxErr)},
 						breakerAction: hotelAuxBreakerFailure,
 					}
+				}
+				if errors.Is(err, models.ErrNotApplicable) {
+					// Not served here: no strike, no reset; nothing was learnt
+					// about the provider's health.
+					return hotelAuxOutcome{statuses: []models.ProviderStatus{hotelProviderStatusFromError(id, name, err)}}
 				}
 				if err != nil {
 					slog.Warn(id+" search failed", "error", logredact.Err(err))
@@ -634,7 +642,12 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	}
 
 	// Apply post-filters.
-	hotels = filterHotels(hotels, opts)
+	hotels, farther := filterHotelsCounted(hotels, opts)
+	// The cap is only applied when the centre is known (same test as the filter).
+	appliedCapKm := 0.0
+	if opts.CenterLat != 0 {
+		appliedCapKm = opts.MaxDistanceKm
+	}
 
 	if len(externalResults) > 0 {
 		slog.Info("post-filter hotel counts",
@@ -688,7 +701,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// provider-specific URLs that were already attached during source merges.
 	for i := range hotels {
 		if hotels[i].BookingURL == "" {
-			hotels[i].BookingURL = buildHotelBookingURL(location, opts.CheckIn, opts.CheckOut)
+			hotels[i].BookingURL = buildHotelBookingURL(googleLocation, opts.CheckIn, opts.CheckOut)
 		}
 	}
 
@@ -708,39 +721,12 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		Success:          true,
 		Count:            len(hotels),
 		TotalAvailable:   totalAvailable,
+		MaxDistanceKm:    appliedCapKm,
+		FartherOmitted:   farther,
 		Hotels:           hotels,
 		ProviderStatuses: providerStatuses,
 		Completeness:     models.ComputeCompleteness(providerStatuses),
 	}, nil
-}
-
-// annotateHotelConfidence attaches an honest bookability Confidence to every
-// hotel (innovation #3), scored via the shared fareintel scorer from the
-// property's price freshness, provider reliability, multi-source corroboration,
-// and price-basis verification. Hotels with no usable signal are left unrated,
-// never faked.
-func annotateHotelConfidence(hotels []models.HotelResult, now time.Time) {
-	for i := range hotels {
-		h := &hotels[i]
-		provider := h.CheapestSource
-		if provider == "" && len(h.Sources) > 0 {
-			provider = h.Sources[0].Provider
-		}
-		retrievedAt := h.RetrievedAt
-		if retrievedAt.IsZero() {
-			retrievedAt = now
-		}
-		c := fareintel.ScoreConfidence(fareintel.ConfidenceInput{
-			Price:             h.Price,
-			Currency:          h.Currency,
-			Provider:          provider,
-			RetrievedAt:       retrievedAt,
-			Now:               now,
-			Sources:           h.Sources,
-			PriceVerification: h.PriceConfidence,
-		})
-		h.Confidence = &c
-	}
 }
 
 func cloneHotelSearchResult(shared *models.HotelSearchResult) *models.HotelSearchResult {

@@ -57,6 +57,8 @@ type hotelDetailsSearchResponse struct {
 	ProviderStatuses []models.ProviderStatus `json:"provider_statuses,omitempty"`
 	Completeness     models.Completeness     `json:"completeness,omitempty"`
 	Suggestions      []Suggestion            `json:"suggestions,omitempty"`
+	MaxDistanceKm    float64                 `json:"max_distance_km,omitempty"`
+	FartherOmitted   int                     `json:"farther_omitted,omitempty"`
 	Error            string                  `json:"error,omitempty"`
 }
 
@@ -92,6 +94,8 @@ func hotelDetailsSearchOutputSchema() interface{} {
 			"success":         schemaBool(),
 			"count":           schemaInt(),
 			"total_available": schemaInt(),
+			"max_distance_km": schemaNumDesc("Distance cap applied around the city centre (25 by default; absent when none applied)."),
+			"farther_omitted": schemaIntDesc("Hotels trvl left out for being farther than max_distance_km. Below 25 km Google is also asked for that radius and withholds farther hotels itself, so the count then covers only what trvl removed."),
 			"hotels": schemaArray(map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -114,6 +118,8 @@ func hotelDetailsSearchOutputSchema() interface{} {
 					"price_warnings":       schemaStringArray(),
 					"savings":              schemaNumDesc("Price savings vs most expensive source"),
 					"cheapest_source":      schemaStringDesc("Provider with lowest price"),
+					"headline_provider":    schemaStringDesc("Provider whose quote is the headline price (the most trusted one; cheapest_source can name a cheaper lead-in)."),
+					"price_provenance":     schemaStringDesc("unavailable when no source carries a usable price; absent otherwise."),
 					"verified_rate":        hotelVerifiedRateSchema(),
 					"accommodation_offers": schemaArray(accommodationOfferSchema()),
 					"room_types":           schemaArray(hotelRoomTypeSchema()),
@@ -392,6 +398,8 @@ func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, eli
 		ProviderStatuses: result.ProviderStatuses,
 		Completeness:     result.Completeness,
 		Suggestions:      hotelSuggestions(result, req.Options),
+		MaxDistanceKm:    result.MaxDistanceKm,
+		FartherOmitted:   result.FartherOmitted,
 		Error:            result.Error,
 	}
 
@@ -698,6 +706,10 @@ func hotelDetailsLimit(requested, available int) int {
 }
 
 func hotelDetailsSummary(result hotelDetailsSearchResponse, location string) string {
+	return hotelDetailsSummaryText(result, location) + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm, result.ProviderStatuses)
+}
+
+func hotelDetailsSummaryText(result hotelDetailsSearchResponse, location string) string {
 	if !result.Success || result.TotalAvailable == 0 {
 		if result.Error != "" {
 			return fmt.Sprintf("Detailed hotel search in %s failed: %s", location, result.Error)

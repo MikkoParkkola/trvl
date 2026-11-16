@@ -79,6 +79,10 @@ trvl rooms "Hotel Lutetia Paris" --checkin 2027-06-15 --checkout 2027-06-18
 
 **Price position:** `trvl prices` shows where the current rate sits in that property's observed price history (low / typical / high). Available in `--format json` as `price_position`.
 
+**Distance:** `trvl hotels` lists hotels within 25 km of the city centre and says how many farther ones it left out; `--max-distance 40` widens the radius and `--max-distance 0` removes it. Hotels without coordinates are always kept.
+
+**Price labels:** the headline price is the most trusted quote, and `headline_provider` in `--format json` names whose it is (`cheapest_source` can name a cheaper lead-in from another site). A hotel with no usable quote carries `price_provenance: "unavailable"`.
+
 **Booking readiness:** `trvl prices` and `trvl rooms` show a readiness verdict (ready / caution / unverified) composed from verified price, stable link, confirmed property identity, and known refundability. Any unknown signal downgrades the verdict conservatively. In `--format json` the fields are `booking_readiness` and `booking_readiness_reasons`.
 
 `ready` is reachable from `trvl rooms` when one concrete room offer has a real

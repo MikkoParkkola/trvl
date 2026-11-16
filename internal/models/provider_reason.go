@@ -19,6 +19,7 @@ const (
 	ReasonOther       = "other"
 
 	ReasonRouteNotServed = "route_not_served" // the provider does not serve this pair; not queried
+	ReasonCityNotServed  = "city_not_served"  // the provider does not serve this city; not queried
 )
 
 var (

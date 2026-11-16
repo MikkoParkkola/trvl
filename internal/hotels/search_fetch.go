@@ -31,8 +31,27 @@ var hotelCityAliases = map[string]string{
 	"nuremberg":  "Nürnberg",
 }
 
+// englishCityNames maps each local form in hotelCityAliases back to the
+// English name ("wien" -> "Vienna"), which the side providers' slugs expect.
+var englishCityNames = func() map[string]string {
+	m := make(map[string]string, len(hotelCityAliases))
+	for english, local := range hotelCityAliases {
+		m[strings.ToLower(local)] = strings.ToUpper(english[:1]) + english[1:]
+	}
+	return m
+}()
+
+// englishHotelCity canonicalises a local city name to English at search
+// entry. Passthrough for every other location.
+func englishHotelCity(location string) string {
+	if english, ok := englishCityNames[strings.ToLower(strings.TrimSpace(location))]; ok {
+		return english
+	}
+	return location
+}
+
 // normalizeHotelCity replaces known English city names with the form Google
-// Hotels expects. Passthrough for unknown cities.
+// Hotels expects. Passthrough for other cities. Only the Google fetch uses it.
 func normalizeHotelCity(location string) string {
 	if mapped, ok := hotelCityAliases[strings.ToLower(strings.TrimSpace(location))]; ok {
 		return mapped
@@ -311,7 +330,10 @@ func buildTravelURL(location string, opts HotelSearchOptions) string {
 		// Google's rating param is on 0-10 scale (same as our internal scale).
 		query.Set("rating", strconv.FormatFloat(opts.MinRating, 'f', 0, 64))
 	}
-	if opts.MaxDistanceKm > 0 {
+	// Only a cap tighter than the default goes to Google: at the default and
+	// wider, Google returns its normal set so trvl can filter and count every
+	// farther hotel itself (farther_omitted).
+	if SendsGoogleRadius(opts.MaxDistanceKm) {
 		// Google uses meters for the lrad (location radius) parameter.
 		query.Set("lrad", strconv.FormatFloat(opts.MaxDistanceKm*1000, 'f', 0, 64))
 	}

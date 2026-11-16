@@ -37,7 +37,7 @@ done
   - free_cancellation: server-side Google Hotels ?fc=1 param
   - property_type: hotel|apartment|hostel|resort|bnb|villa — server-side ?ptype=N
   - brand: chain name substring — client-side
-  - min_rating/max_distance/min_price/max_price: server-side + client-side guard
+  - min_rating/max_distance/min_price/max_price: server-side + client-side guard; max_distance defaults to 25 km (0 = no limit) and farther_omitted counts what it left out
   - eco_certified: boolean (default false) — only show eco-certified hotels with sustainability certifications — server-side &ecof=1
 - hotel_prices(hotel_id, check_in, check_out, [currency])
   - Provider price comparison when Google exposes booking partners. Prefer criteria-matched offers from `search_accommodations` or room-level totals from `hotel_rooms`/`search_hotels_with_details` for booking decisions.
