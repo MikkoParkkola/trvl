@@ -180,14 +180,38 @@ func TestHasFerryhopperRoute(t *testing.T) {
 	}{
 		{"Piraeus", "Santorini", true},   // THIRA (SANTORINI)
 		{"Helsinki", "Travemünde", true}, // accents folded
-		{"Athens", "Mykonos", true},      // ATHENS (ALL PORTS)
-		{"Rome", "Barcelona", true},      // Rome resolves to Civitavecchia
-		{"Prague", "Vienna", false},      // Prague is no port
+		{"Athens", "Santorini", true},    // ATHENS (ALL PORTS), THIRA (SANTORINI)
+		{"Athens", "Mykonos", true},
+		{"Rome", "Barcelona", true}, // Rome resolves to Civitavecchia
+		{"Prague", "Vienna", false}, // Prague is no port
 		{"Prague", "Berlin", false},
 		{"", "Piraeus", false},
 	} {
 		if got := HasFerryhopperRoute(c.from, c.to); got != c.want {
 			t.Errorf("HasFerryhopperRoute(%q, %q) = %v, want %v", c.from, c.to, got, c.want)
 		}
+	}
+}
+
+// TestSearchByNameCore_FerryhopperGateLaunchesPortPairs: pairs whose ends are
+// Ferryhopper ports are searched, and an empty answer there stays a valid
+// empty day (checked_no_hit), never "not served".
+func TestSearchByNameCore_FerryhopperGateLaunchesPortPairs(t *testing.T) {
+	for _, pair := range [][2]string{{"Athens", "Santorini"}, {"Helsinki", "Travemünde"}} {
+		t.Run(pair[0]+"-"+pair[1], func(t *testing.T) {
+			isolateGroundBreaker(t)
+			var hits atomic.Int32
+			withFerryhopperServer(t, func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				ferryhopperFrame(ferryhopperEmptyFrame)(w, r)
+			})
+			res := runCore(t, context.Background(), pair[0], pair[1], "ferryhopper")
+			if hits.Load() == 0 {
+				t.Error("ferryhopper was not asked for a pair of its ports")
+			}
+			if st := statusByID(res.ProviderStatuses)["ferryhopper"]; st.Status != models.StatusCheckedNoHit {
+				t.Errorf("ferryhopper status = %q, want checked_no_hit", st.Status)
+			}
+		})
 	}
 }

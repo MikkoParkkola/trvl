@@ -15,8 +15,8 @@ import (
 
 // TestLiveProbe_FerryhopperPortsCurrent compares the embedded port list with
 // Ferryhopper's live get_ports answer. A live port missing from the file would
-// be wrongly skipped by the launch gate. TRVL_PROBE_CAPTURE=1 prints the
-// regenerated ferryhopper_ports.txt as a CAPTURE line.
+// be wrongly skipped by the launch gate; regenerate it with
+// go run ./scripts/ferryhopper-ports.
 func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 	testutil.RequireLiveProbe(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -64,7 +64,6 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 		t.Fatal("get_ports returned no ports")
 	}
 	sort.Strings(live)
-	printCapture(t, "ferryhopper_ports.txt", []byte(strings.Join(live, "\n")+"\n"))
 
 	embedded := map[string]bool{}
 	for _, line := range strings.Split(ferryhopperPortList, "\n") {
@@ -77,7 +76,7 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 		}
 	}
 	if len(missing) > 0 {
-		t.Errorf("%d live ports missing from ferryhopper_ports.txt (first: %q); refresh it with TRVL_PROBE_CAPTURE=1", len(missing), missing[:min(5, len(missing))])
+		t.Errorf("%d live ports missing from ferryhopper_ports.txt (first: %q); regenerate it with go run ./scripts/ferryhopper-ports", len(missing), missing[:min(5, len(missing))])
 	}
 	t.Logf("live ports %d, embedded %d", len(live), len(embedded)-1)
 }
