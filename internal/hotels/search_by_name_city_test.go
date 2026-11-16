@@ -118,7 +118,7 @@ func TestNameMatch_RefusesCandidateBeyondCityRadius(t *testing.T) {
 			if got := findBestNameMatch(candidates, "Hotel Sacher, Vienna"); got == nil || got.Name != "Hotel Sacher Vienna" {
 				t.Errorf("findBestNameMatch = %v, want Hotel Sacher Vienna", got)
 			}
-			kept := filterByNameMatch(withoutOtherTowns(candidates, "Hotel Sacher", "Vienna"), "Hotel Sacher")
+			kept := preferWithinRadius(filterByNameMatch(withoutOtherTowns(candidates, "Hotel Sacher", "Vienna"), "Hotel Sacher"), "Vienna")
 			if names := hotelNames(kept); len(names) != 1 || names[0] != "Hotel Sacher Vienna" {
 				t.Errorf("plural match = %v, want only Hotel Sacher Vienna", names)
 			}

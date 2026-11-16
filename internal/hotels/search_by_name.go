@@ -194,10 +194,13 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 
 	// Filter to keep only hotels whose name fuzzy-matches the search name; on a
 	// miss, retry once without a trailing location word.
-	matched := filterByNameMatch(withoutOtherTowns(merged, name, location), name)
+	// Distance only chooses among full-name matches; a stripped-name retry
+	// must also sit inside the city radius.
+	matched := preferWithinRadius(filterByNameMatch(withoutOtherTowns(merged, name, location), name), location)
 	if len(matched) == 0 {
 		if stripped, eligible, ok := retryWithoutTrailingWord(name, location, merged); ok {
-			matched = filterByNameMatch(withoutOtherTowns(eligible, stripped, retryCity(name, location)), stripped)
+			city := retryCity(name, location)
+			matched = filterByNameMatch(withinRadius(withoutOtherTowns(eligible, stripped, city), city), stripped)
 		}
 	}
 
@@ -391,8 +394,9 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 				suffix = strings.TrimSpace(query[idx+1:])
 			}
 			if stripped, eligible, ok := retryWithoutTrailingWord(namePart, suffix, result.Hotels); ok {
-				matchQuery = stripped + ", " + retryCity(namePart, suffix)
-				match = findBestNameMatch(eligible, matchQuery)
+				city := retryCity(namePart, suffix)
+				matchQuery = stripped + ", " + city
+				match = findBestNameMatch(withinRadius(eligible, city), matchQuery)
 			}
 		}
 		if match != nil {
@@ -492,10 +496,12 @@ func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelR
 	}
 	queryNormalized := strings.Join(canonicalCityWords(hotelNameWords(namePart)), " ")
 	conflicts := townConflict(namePart, city)
+	beyond := beyondCityRadius(city)
 
 	bestIdx := -1
 	bestScore := 0
 	bestIDRank := -1
+	bestWithin := false
 
 	for i := range hotels {
 		if conflicts != nil && conflicts(hotels[i]) {
@@ -541,12 +547,15 @@ func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelR
 		// over no ID at all (mirrors the #288 candidate-ranking doctrine), then a
 		// stable lexical key so two equally-usable results resolve identically
 		// regardless of input ordering.
+		// A match inside the city radius beats any outside it; distance
+		// never removes the only match.
 		idRank := hotelIDRank(hotels[i].HotelID)
-		if bestIdx == -1 || nameMatchBetter(
+		within := beyond == nil || !beyond(hotels[i])
+		if bestIdx == -1 || (within && !bestWithin) || (within == bestWithin && nameMatchBetter(
 			score, idRank, hotels[i],
 			bestScore, bestIDRank, hotels[bestIdx],
-		) {
-			bestIdx, bestScore, bestIDRank = i, score, idRank
+		)) {
+			bestIdx, bestScore, bestIDRank, bestWithin = i, score, idRank, within
 		}
 	}
 

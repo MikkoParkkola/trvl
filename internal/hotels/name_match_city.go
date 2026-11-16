@@ -56,7 +56,7 @@ func retryCity(name, location string) string {
 // city never count. With no city there is nothing to conflict with.
 //
 // ponytail: there is no gazetteer, so an address-less row whose town is not in
-// the alias table passes unless the distance check below catches it; a
+// the alias table passes unless distance (beyondCityRadius) settles it; a
 // geocoded town list would close that gap.
 func withoutOtherTowns(hotels []models.HotelResult, name, city string) []models.HotelResult {
 	conflicts := townConflict(name, city)
@@ -73,11 +73,7 @@ func withoutOtherTowns(hotels []models.HotelResult, name, city string) []models.
 }
 
 // townConflict returns the withoutOtherTowns test for one candidate, or nil
-// when there is no city to conflict with. When the city is an alias-table city
-// already in the geocode cache, a candidate pinned more than nameMatchMaxKm
-// from it conflicts too: that is what catches an address-less row such as
-// Google's. Other suffixes may name a region or island ("…, Crete"), whose
-// geocoded point says nothing about how far its hotels may be.
+// when there is no city to conflict with.
 func townConflict(name, city string) func(models.HotelResult) bool {
 	cityWords := canonicalCityWords(hotelNameWords(city))
 	if len(cityWords) == 0 {
@@ -87,17 +83,58 @@ func townConflict(name, city string) func(models.HotelResult) bool {
 	for _, w := range append(canonicalCityWords(hotelNameWords(name)), cityWords...) {
 		allowed[w] = true
 	}
-	var cityLat, cityLon float64
-	var located bool
-	if _, known := cityAliasCanon[cityWords[0]]; known && len(cityWords) == 1 {
-		cityLat, cityLon, located = cachedLocation(city)
+	return func(h models.HotelResult) bool { return carriesOtherTown(h, allowed) }
+}
+
+// beyondCityRadius returns a test for a candidate pinned more than
+// nameMatchMaxKm from city, or nil when distance cannot judge: the city is
+// not an alias-table city (a suffix may name a region or island, "…, Crete")
+// or it is not in the geocode cache. Distance catches an address-less row
+// such as Google's "Hotel Sacher Baden", but it only chooses among competing
+// matches (preferWithinRadius) and judges stripped-name retries
+// (withinRadius); it never vetoes the sole full-name match, which may be an
+// airport hotel 28 km out.
+func beyondCityRadius(city string) func(models.HotelResult) bool {
+	cityWords := canonicalCityWords(hotelNameWords(city))
+	if len(cityWords) != 1 {
+		return nil
+	}
+	if _, known := cityAliasCanon[cityWords[0]]; !known {
+		return nil
+	}
+	lat, lon, located := cachedLocation(city)
+	if !located {
+		return nil
 	}
 	return func(h models.HotelResult) bool {
-		if located && (h.Lat != 0 || h.Lon != 0) && Haversine(cityLat, cityLon, h.Lat, h.Lon) > nameMatchMaxKm {
-			return true
-		}
-		return carriesOtherTown(h, allowed)
+		return (h.Lat != 0 || h.Lon != 0) && Haversine(lat, lon, h.Lat, h.Lon) > nameMatchMaxKm
 	}
+}
+
+// preferWithinRadius keeps the matches inside the city radius when there are
+// any; otherwise every match stays.
+func preferWithinRadius(matches []models.HotelResult, city string) []models.HotelResult {
+	within := withinRadius(matches, city)
+	if len(within) == 0 {
+		return matches
+	}
+	return within
+}
+
+// withinRadius keeps only the candidates inside the city radius, or all of
+// them when distance cannot judge.
+func withinRadius(hotels []models.HotelResult, city string) []models.HotelResult {
+	beyond := beyondCityRadius(city)
+	if beyond == nil {
+		return hotels
+	}
+	var out []models.HotelResult
+	for _, h := range hotels {
+		if !beyond(h) {
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 // nameMatchMaxKm is how far from the query city's centre a name match may be.
