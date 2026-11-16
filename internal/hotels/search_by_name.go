@@ -199,7 +199,7 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 	// miss, retry once without a trailing location word.
 	// Distance only chooses among full-name matches; a stripped-name retry
 	// must also sit inside the city radius.
-	matched := preferWithinRadius(filterByNameMatch(withoutOtherTowns(merged, name, location), name), location)
+	matched := preferWithinRadius(filterByNameMatch(withoutOtherTowns(merged, name, location), name), name, location)
 	if len(matched) == 0 {
 		if stripped, eligible, ok := retryWithoutTrailingWord(name, location, merged); ok {
 			city := retryCity(name, location)
@@ -494,6 +494,12 @@ func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelR
 		if conflicts != nil && conflicts(hotels[i]) {
 			continue
 		}
+		// Outside the city radius only a name adding nothing to the query
+		// may match; distance then just ranks it below matches inside.
+		within := beyond == nil || !beyond(hotels[i])
+		if !within && addsWords(hotels[i].Name, namePart+" "+city) {
+			continue
+		}
 		candidateWords := canonicalCityWords(hotelNameWords(hotels[i].Name))
 		candidateSet := make(map[string]struct{}, len(candidateWords))
 		for _, word := range candidateWords {
@@ -537,7 +543,6 @@ func findBestNameMatch(hotels []models.HotelResult, query string) *models.HotelR
 		// A match inside the city radius beats any outside it; distance
 		// never removes the only match.
 		idRank := hotelIDRank(hotels[i].HotelID)
-		within := beyond == nil || !beyond(hotels[i])
 		if bestIdx == -1 || (within && !bestWithin) || (within == bestWithin && nameMatchBetter(
 			score, idRank, hotels[i],
 			bestScore, bestIDRank, hotels[bestIdx],

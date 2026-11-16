@@ -111,14 +111,42 @@ func beyondCityRadius(city string) func(models.HotelResult) bool {
 	}
 }
 
-// preferWithinRadius keeps the matches inside the city radius when there are
-// any; otherwise every match stays.
-func preferWithinRadius(matches []models.HotelResult, city string) []models.HotelResult {
-	within := withinRadius(matches, city)
-	if len(within) == 0 {
+// preferWithinRadius keeps the full-name matches inside the city radius when
+// there are any. Outside it, only a match whose name adds nothing to the
+// query name survives (an airport hotel 28 km out); "Hotel Sacher Baden" for
+// "Hotel Sacher" in Vienna does not.
+func preferWithinRadius(matches []models.HotelResult, name, city string) []models.HotelResult {
+	beyond := beyondCityRadius(city)
+	if beyond == nil {
 		return matches
 	}
-	return within
+	var within, exact []models.HotelResult
+	for _, h := range matches {
+		switch {
+		case !beyond(h):
+			within = append(within, h)
+		case !addsWords(h.Name, name+" "+city):
+			exact = append(exact, h)
+		}
+	}
+	if len(within) > 0 {
+		return within
+	}
+	return exact
+}
+
+// addsWords reports whether name carries a meaningful word query lacks.
+func addsWords(name, query string) bool {
+	known := make(map[string]bool)
+	for _, w := range canonicalCityWords(meaningfulHotelNameWords(query)) {
+		known[w] = true
+	}
+	for _, w := range canonicalCityWords(meaningfulHotelNameWords(name)) {
+		if !known[w] {
+			return true
+		}
+	}
+	return false
 }
 
 // withinRadius keeps only the candidates inside the city radius, or all of
