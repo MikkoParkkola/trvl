@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -43,16 +44,13 @@ func TestAttachFlightHackSaving_MarksItsPass(t *testing.T) {
 }
 
 // countingFlightsServer answers every request with the fixture flight body and
-// counts them; the first request waits for gate when gate is non-nil.
-func countingFlightsServer(t *testing.T, gate <-chan struct{}, firstIn chan<- struct{}) (*batchexec.Client, *atomic.Int32) {
+// counts them.
+func countingFlightsServer(t *testing.T) (*batchexec.Client, *atomic.Int32) {
 	t.Helper()
 	body := makeFlightResponseBody(t)
 	var n atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		if n.Add(1) == 1 && gate != nil {
-			close(firstIn)
-			<-gate
-		}
+		n.Add(1)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(body)
 	}))
@@ -60,10 +58,39 @@ func countingFlightsServer(t *testing.T, gate <-chan struct{}, firstIn chan<- st
 	return batchexec.NewTestClient(ts.URL), &n
 }
 
+// heldFlightsServer holds the first request until a second one arrives, so
+// two concurrent searches either both reach upstream or provably share one
+// call: when no second request comes within the timeout, joined reports true.
+// Each search needs its own client: a client sends one Google request at a
+// time (batchexec googleMu).
+func heldFlightsServer(t *testing.T) (func() *batchexec.Client, func() bool) {
+	t.Helper()
+	body := makeFlightResponseBody(t)
+	var n atomic.Int32
+	var joined atomic.Bool
+	second := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		switch n.Add(1) {
+		case 1:
+			select {
+			case <-second:
+			case <-time.After(5 * time.Second):
+				joined.Store(true)
+			}
+		case 2:
+			close(second)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(ts.Close)
+	return func() *batchexec.Client { return batchexec.NewTestClient(ts.URL) }, joined.Load
+}
+
 // Two detectors asking the same flight query within one savings pass cause
 // one upstream search, even one after the other; each gets its own deep copy.
 func TestSearchFlights_SameQueryOncePerSavingsPass(t *testing.T) {
-	client, reqs := countingFlightsServer(t, nil, nil)
+	client, reqs := countingFlightsServer(t)
 	pass := searchctx.StartSavingsPass(context.Background())
 	first, err := SearchFlightsWithClient(pass, client, "HEL", "NRT", "2026-12-01", SearchOptions{})
 	if err != nil || first == nil || len(first.Flights) == 0 {
@@ -105,44 +132,74 @@ func TestSearchFlights_OverrideBypassesMemo(t *testing.T) {
 	}
 }
 
-// A round-trip leg suppresses the one-way Skiplagged call, so its query is not
-// the plain one-way query and must not share its memo entry.
-func TestFlightMemoKey_SeparatesSkiplaggedSuppressedLegs(t *testing.T) {
-	ctx := context.Background()
-	plain := flightMemoKey(ctx, nil, "HEL", "BCN", "2026-12-01", SearchOptions{})
-	leg := flightMemoKey(disableSkiplaggedOneWay(ctx), nil, "HEL", "BCN", "2026-12-01", SearchOptions{})
-	if plain == leg {
-		t.Errorf("memo key ignores the Skiplagged suppression: %q", plain)
+// skiplaggedRow returns the Skiplagged provider status of a result.
+func skiplaggedRow(r *models.FlightSearchResult) models.ProviderStatus {
+	if r != nil {
+		for _, st := range r.ProviderStatuses {
+			if st.ID == "skiplagged" {
+				return st
+			}
+		}
+	}
+	return models.ProviderStatus{}
+}
+
+// A round-trip leg (one-way Skiplagged suppressed) and a plain one-way for the
+// same route, run concurrently in one savings pass, each reach upstream and
+// keep their own Skiplagged answer instead of sharing one call.
+func TestSearchFlights_SkiplaggedSuppressedLegNotSharedWithOneWay(t *testing.T) {
+	newClient, joined := heldFlightsServer(t)
+	pass := searchctx.StartSavingsPass(context.Background())
+
+	leg, oneWay := make(chan *models.FlightSearchResult, 1), make(chan *models.FlightSearchResult, 1)
+	go func() {
+		r, _ := SearchFlightsWithClient(disableSkiplaggedOneWay(pass), newClient(), "HEL", "NRT", "2026-12-04", SearchOptions{})
+		leg <- r
+	}()
+	go func() {
+		r, _ := SearchFlightsWithClient(pass, newClient(), "HEL", "NRT", "2026-12-04", SearchOptions{})
+		oneWay <- r
+	}()
+	legRes, oneWayRes := <-leg, <-oneWay
+
+	if joined() {
+		t.Error("the suppressed leg and the one-way shared one upstream call")
+	}
+	const suppressedMsg = "one-way Skiplagged skipped"
+	if row := skiplaggedRow(legRes); !strings.Contains(row.Error, suppressedMsg) {
+		t.Errorf("leg Skiplagged row = %+v, want the round-trip suppression", row)
+	}
+	if row := skiplaggedRow(oneWayRes); strings.Contains(row.Error, suppressedMsg) {
+		t.Errorf("one-way Skiplagged row = %+v: it got the leg's suppression", row)
 	}
 }
 
 // A search inside a savings pass runs without one. A concurrent top-level
-// search for the same query must not join it and lose its own saving.
+// search for the same query must reach upstream itself and keep its saving.
 func TestSearchFlights_SuppressedSearchNotSharedWithTopLevel(t *testing.T) {
 	withStubComposer(t, func(context.Context, HackComposeRequest) *models.HackSaving {
 		return &models.HackSaving{Type: "stub"}
 	})
-	gate, firstIn := make(chan struct{}), make(chan struct{})
-	client, _ := countingFlightsServer(t, gate, firstIn)
+	newClient, joined := heldFlightsServer(t)
 
-	suppressed := make(chan *models.FlightSearchResult, 1)
+	suppressed, top := make(chan *models.FlightSearchResult, 1), make(chan *models.FlightSearchResult, 1)
 	go func() {
-		r, _ := SearchFlightsWithClient(searchctx.StartSavingsPass(context.Background()), client, "HEL", "NRT", "2026-12-03", SearchOptions{})
+		r, _ := SearchFlightsWithClient(searchctx.StartSavingsPass(context.Background()), newClient(), "HEL", "NRT", "2026-12-03", SearchOptions{})
 		suppressed <- r
 	}()
-	<-firstIn
-	top := make(chan *models.FlightSearchResult, 1)
 	go func() {
-		r, _ := SearchFlightsWithClient(context.Background(), client, "HEL", "NRT", "2026-12-03", SearchOptions{})
+		r, _ := SearchFlightsWithClient(context.Background(), newClient(), "HEL", "NRT", "2026-12-03", SearchOptions{})
 		top <- r
 	}()
-	time.Sleep(50 * time.Millisecond) // let the top-level search reach the in-flight call
-	close(gate)
+	topRes, supRes := <-top, <-suppressed
 
-	if r := <-top; r == nil || r.HackSaving == nil {
-		t.Errorf("top-level search got the in-pass result without a saving: %+v", r)
+	if joined() {
+		t.Error("the in-pass search and the top-level search shared one upstream call")
 	}
-	if r := <-suppressed; r != nil && r.HackSaving != nil {
-		t.Errorf("search inside a savings pass got a saving: %+v", r.HackSaving)
+	if topRes == nil || topRes.HackSaving == nil {
+		t.Errorf("top-level search has no saving: %+v", topRes)
+	}
+	if supRes != nil && supRes.HackSaving != nil {
+		t.Errorf("search inside a savings pass got a saving: %+v", supRes.HackSaving)
 	}
 }

@@ -12,18 +12,27 @@ import (
 )
 
 // A search inside a savings pass runs without one, so its result carries no
-// saving. A concurrent or later top-level search for the same query must not
-// get that result through the shared in-flight call or the result cache.
+// saving. A concurrent top-level search for the same query must reach the
+// provider itself, not share the in-pass call or its cached result.
 func TestSearchByName_SuppressedResultNotSharedWithTopLevel(t *testing.T) {
 	t.Setenv("TRVL_PREFETCH", "0")
 	isolateGroundBreaker(t)
+	// The first request waits for a second; if none comes, the two searches
+	// shared one call (joined).
 	var reqs atomic.Int32
-	firstIn, release := make(chan struct{}), make(chan struct{})
+	var joined atomic.Bool
+	second := make(chan struct{})
 	frame := ferryhopperFrame(goldenFerryhopperFrame)
 	withFerryhopperServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if reqs.Add(1) == 1 {
-			close(firstIn)
-			<-release
+		switch reqs.Add(1) {
+		case 1:
+			select {
+			case <-second:
+			case <-time.After(5 * time.Second):
+				joined.Store(true)
+			}
+		case 2:
+			close(second)
 		}
 		frame(w, r)
 	})
@@ -40,24 +49,24 @@ func TestSearchByName_SuppressedResultNotSharedWithTopLevel(t *testing.T) {
 	opts := SearchOptions{Currency: "EUR", ExcludeProviders: exclude}
 	const date = "2026-07-23" // distinct from other tests' cache keys
 
-	suppressed := make(chan *models.GroundSearchResult, 1)
+	suppressed, top := make(chan *models.GroundSearchResult, 1), make(chan *models.GroundSearchResult, 1)
 	go func() {
 		r, _ := SearchByName(searchctx.StartSavingsPass(context.Background()), "Piraeus", "Santorini", date, opts)
 		suppressed <- r
 	}()
-	<-firstIn
-	top := make(chan *models.GroundSearchResult, 1)
 	go func() {
 		r, _ := SearchByName(context.Background(), "Piraeus", "Santorini", date, opts)
 		top <- r
 	}()
-	time.Sleep(50 * time.Millisecond) // let the top-level search reach the in-flight call
-	close(release)
+	topRes, supRes := <-top, <-suppressed
 
-	if r := <-top; r == nil || r.HackSaving == nil {
-		t.Errorf("top-level search got the in-pass result without a saving: %+v", r)
+	if joined.Load() {
+		t.Error("the in-pass search and the top-level search shared one provider call")
 	}
-	if r := <-suppressed; r != nil && r.HackSaving != nil {
-		t.Errorf("search inside a savings pass got a saving: %+v", r.HackSaving)
+	if topRes == nil || topRes.HackSaving == nil {
+		t.Errorf("top-level search has no saving: %+v", topRes)
+	}
+	if supRes != nil && supRes.HackSaving != nil {
+		t.Errorf("search inside a savings pass got a saving: %+v", supRes.HackSaving)
 	}
 }
