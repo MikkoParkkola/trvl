@@ -80,7 +80,7 @@ func attachFlightHackSaving(ctx context.Context, result *models.FlightSearchResu
 	if composeHackSaving == nil || result == nil || !result.Success {
 		return
 	}
-	if opts.NoHacks || searchctx.SavingsPassSuppressed(ctx) {
+	if searchctx.SavingsOff(ctx, opts.NoHacks) {
 		return
 	}
 	naive := cheapestFlightPrice(result.Flights)

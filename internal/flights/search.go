@@ -155,7 +155,7 @@ func SearchFlights(ctx context.Context, origin, destination, date string, opts S
 	return SearchFlightsWithClient(ctx, DefaultClient(), origin, destination, date, opts)
 }
 
-// flightSearchKey builds a singleflight dedup key from the search parameters.
+// flightSearchKey builds the options part of flightQueryKey from the search parameters.
 //
 // suppressAFKLM is part of the key because it changes which providers a result
 // includes. Today the one-way singleflight path never sees it set (it is only
@@ -218,7 +218,7 @@ func searchFlightsWithClient(ctx context.Context, client *batchexec.Client, orig
 		return searchRoundTripComposed(ctx, client, origin, destination, date, opts)
 	}
 
-	key := flightSearchKey(origin, destination, date, opts) + callerFlagsKey(ctx, opts)
+	key := flightQueryKey(ctx, client, origin, destination, date, opts)
 	result, err := doFlightSearchSingleflight(ctx, key, func(sharedCtx context.Context) (*models.FlightSearchResult, error) {
 		return searchFlightsCore(sharedCtx, client, origin, destination, date, opts)
 	})

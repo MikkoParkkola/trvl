@@ -84,7 +84,7 @@ func attachGroundHackSaving(ctx context.Context, result *models.GroundSearchResu
 	// An include filter scopes the whole search: the detectors would search
 	// flights and ground providers the caller did not ask for. An exclude-only
 	// filter still runs the pass, scoped by the exclusions.
-	if opts.NoHacks || len(opts.Providers) > 0 || searchctx.SavingsPassSuppressed(ctx) {
+	if searchctx.SavingsOff(ctx, opts.NoHacks) || len(opts.Providers) > 0 {
 		return
 	}
 	naive := cheapestRoutePrice(result.Routes)

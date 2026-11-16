@@ -19,7 +19,7 @@ func SearchFlightsWithClient(ctx context.Context, client *batchexec.Client, orig
 	if !searchctx.InSavingsPass(ctx) || opts.SearchOverride != nil || opts.afklmNewProvider != nil || opts.afklmTestFlights != nil {
 		return searchFlightsWithClient(ctx, client, origin, destination, date, opts)
 	}
-	res, err := searchctx.Memo(ctx, flightMemoKey(ctx, client, origin, destination, date, opts), func(passCtx context.Context) (*models.FlightSearchResult, error) {
+	res, err := searchctx.Memo(ctx, flightQueryKey(ctx, client, origin, destination, date, opts), func(passCtx context.Context) (*models.FlightSearchResult, error) {
 		return searchFlightsWithClient(withCallerFlags(ctx, passCtx), client, origin, destination, date, opts)
 	})
 	return cloneFlightSearchResult(res), err
@@ -37,9 +37,11 @@ func withCallerFlags(caller, passCtx context.Context) context.Context {
 	return passCtx
 }
 
-// flightMemoKey is the full query for the savings-pass memo: flightSearchKey
-// plus every option it leaves out, the caller's context flags, and the client.
-func flightMemoKey(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) string {
+// flightQueryKey is the full query: flightSearchKey plus every option it
+// leaves out, the caller's context flags, and the client whose transport the
+// search uses. The shared in-flight call and the savings-pass memo both key on
+// it, so they can never disagree about which searches are the same.
+func flightQueryKey(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) string {
 	opts.defaults()
 	return fmt.Sprintf("%s%s|%p|%d|%d|%v|%v|%s|%v|%s|%s",
 		flightSearchKey(origin, destination, date, opts), callerFlagsKey(ctx, opts), client,
