@@ -14,10 +14,14 @@ func arsFX(amount float64, from, to string) (float64, bool) {
 // quote worth less than EUR 1 once converted is not a price, so it never
 // becomes the headline and the hotel reads as unavailable.
 func TestFinalizeTreatsSubEuroPricesAsUnavailable(t *testing.T) {
-	h := HotelResult{Name: "Studio", Sources: []PriceSource{{Provider: "housinganywhere", Price: 0.01, Currency: "ARS", PriceBasis: "monthly"}}}
+	h := HotelResult{Name: "Studio", Price: 0.0000059, Currency: "EUR", ComparablePrice: 0.0000059, Sources: []PriceSource{{Provider: "housinganywhere", Price: 0.01, Currency: "ARS", PriceBasis: "monthly"}}}
 	FinalizeHotelResultPriceTrust(&h, "EUR", trustNow, arsFX)
 	if h.PriceProvenance != PriceUnavailable || h.HeadlineProvider != "" {
 		t.Errorf("headline = %v %s from %q, provenance %q; want unavailable", h.Price, h.Currency, h.HeadlineProvider, h.PriceProvenance)
+	}
+	// No number survives to sort first or take the cheapest line.
+	if h.Price != 0 || h.ComparablePrice != 0 {
+		t.Errorf("unavailable hotel kept price %v (comparable %v), want 0", h.Price, h.ComparablePrice)
 	}
 
 	// A real quote next to the sub-euro one still wins.
