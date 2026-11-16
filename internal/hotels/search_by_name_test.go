@@ -256,7 +256,7 @@ func TestHotelIDRank(t *testing.T) {
 	cases := map[string]int{
 		"/g/11abcd":   2, // genuine Google place ID
 		"ChIJabc123":  2, // genuine Google place ID
-		"chijLower":   2, // case-insensitive ChIJ prefix
+		"chijLower":   1, // place IDs always start "ChIJ"; any other case is not one
 		"flatio:9876": 1, // non-empty OTA id
 		"12345":       1, // non-empty numeric id
 		"":            0, // no id

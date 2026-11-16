@@ -381,7 +381,7 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 		}
 		sawResults = true
 
-		match := findBestNameMatch(result.Hotels, query)
+		match, matchQuery := findBestNameMatch(result.Hotels, query), query
 		if match == nil {
 			// The text after the last comma, when present, is the location;
 			// otherwise only a word found in a candidate's address may go.
@@ -391,7 +391,8 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 				suffix = strings.TrimSpace(query[idx+1:])
 			}
 			if stripped, eligible, ok := retryWithoutTrailingWord(namePart, suffix, result.Hotels); ok {
-				match = findBestNameMatch(eligible, stripped+", "+retryCity(namePart, suffix))
+				matchQuery = stripped + ", " + retryCity(namePart, suffix)
+				match = findBestNameMatch(eligible, matchQuery)
 			}
 		}
 		if match != nil {
@@ -410,15 +411,16 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 				targetedQuery := namePart + ", " + loc
 				targeted, tErr := SearchHotels(ctx, targetedQuery, opts)
 				if tErr == nil {
-					for i := range targeted.Hotels {
-						if hotelIDIsGooglePlaceID(targeted.Hotels[i].HotelID) {
-							if models.NameSimilar(
-								strings.ToLower(targeted.Hotels[i].Name),
-								strings.ToLower(namePart),
-							) {
-								return &targeted.Hotels[i], nil
-							}
+					// A Google-ID row must pass the same name and town rules
+					// as the match it replaces.
+					var google []models.HotelResult
+					for _, h := range targeted.Hotels {
+						if hotelIDIsGooglePlaceID(h.HotelID) {
+							google = append(google, h)
 						}
+					}
+					if again := findBestNameMatch(google, matchQuery); again != nil {
+						return again, nil
 					}
 				}
 			}
@@ -632,8 +634,7 @@ func hotelIDRank(id string) int {
 // (prefixed "/g/" or "ChIJ") that the rooms RPC can resolve. Mirrors
 // looksLikeGoogleHotelID / accommodationHotelIDIsGooglePlaceID used elsewhere.
 func hotelIDIsGooglePlaceID(id string) bool {
-	id = strings.TrimSpace(id)
-	return strings.HasPrefix(id, "/g/") || strings.HasPrefix(strings.ToUpper(id), "CHIJ")
+	return models.IsGoogleHotelID(id)
 }
 
 // enrichHotelAmenities fetches detail pages for the top N hotels to get full
