@@ -83,6 +83,7 @@ govulncheck ./...
 
 The Makefile wraps these as `make lint` and `make test` and pins the
 toolchain; use the Make targets if your host `go` is older than 1.27.4.
+Before pushing, run `make prepush`: it runs CI's pull-request gates, cheapest first, and stops at the first failure.
 
 CI enforces an 80% line-coverage threshold. New packages are expected to land
 with coverage at or above that threshold; regressions in existing packages
