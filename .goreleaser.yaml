@@ -44,7 +44,7 @@ builds:
     # Apple Developer ID or notarization required. The hook only runs on
     # darwin artifacts because codesign is a darwin-only binary; Linux and
     # Windows build hosts never reach this path during `goreleaser release`
-    # executed from macOS-14 runners.
+    # executed from macOS-26 runners.
     #
     # IMPORTANT: do NOT add `-o runtime` (hardened runtime) here. An ad-hoc
     # signature can never pass Gatekeeper for distribution anyway (that needs
