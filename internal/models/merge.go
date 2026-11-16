@@ -354,38 +354,44 @@ func deduplicateSources(sources []PriceSource) []PriceSource {
 }
 
 // streetAddress returns address, or "" when it names only a place: every
-// comma part is an alias-table city, a country, a postcode before one place
-// word ("75001 Paris"), or, next to a country part, any digit-free place or
-// postcode-led place ("Paris, France", "2500 Baden bei Wien, Austria"). A
-// city-only address can neither tell two hotels apart nor improve on a
-// street; "Rue de Rivoli, Paris" and "123 Main St" stay streets.
+// comma part is an alias-table city, a country, or a postcode before one
+// place word ("75001 Paris"). When a country follows exactly one other part,
+// that part may also be any digit-free or postcode-led place ("Paris,
+// France", "2500 Baden bei Wien, Austria"). A city-only address can neither
+// tell two hotels apart nor improve on a street; "Rue de Rivoli, Paris",
+// "123 Main St" and "Kärntner Ring, Vienna, Austria" stay streets.
 func streetAddress(address string) string {
 	var parts []string
-	hasCountry := false
+	countries := 0
 	for _, part := range strings.Split(address, ",") {
 		if part = strings.TrimSpace(part); part != "" {
 			parts = append(parts, part)
-			hasCountry = hasCountry || IsCountryName(part)
+			if IsCountryName(part) {
+				countries++
+			}
 		}
 	}
+	lonePlace := countries > 0 && len(parts)-countries == 1
 	for _, part := range parts {
-		if !placeOnlyPart(part, hasCountry) {
+		if !placeOnlyPart(part, lonePlace) {
 			return address
 		}
 	}
 	return ""
 }
 
-func placeOnlyPart(part string, hasCountry bool) bool {
+// placeOnlyPart reports whether part names only a place; lonePlace widens it
+// to any place for the single non-country part next to a country.
+func placeOnlyPart(part string, lonePlace bool) bool {
 	if isAliasCity(part) || IsCountryName(part) {
 		return true
 	}
 	digitFree := !strings.ContainsFunc(part, unicode.IsDigit)
 	postcode, place, ok := strings.Cut(part, " ")
 	if ok && IsPostcode(postcode) && !strings.ContainsFunc(place, unicode.IsDigit) {
-		return hasCountry || !strings.Contains(place, " ")
+		return lonePlace || !strings.Contains(place, " ")
 	}
-	return digitFree && hasCountry
+	return digitFree && lonePlace
 }
 
 // isAliasCity reports whether s is a CityAliases city, English or local.
