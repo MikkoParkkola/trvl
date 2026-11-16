@@ -145,7 +145,7 @@ func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions
 	// saving (opted out, or inside a savings pass) from reaching a search that
 	// attaches one, through the cache or the shared in-flight call.
 	providerKey := groundProviderKey(opts)
-	cacheKey := cache.Key("ground", fmt.Sprintf("%s|%s|%s|%s|%s|%.2f|%s|%t|x=%s|savingsoff=%t", from, to, date, opts.Currency, providerKey, opts.MaxPrice, opts.Type, allowBrowserFallbacks, groundExcludeKey(opts), opts.NoHacks || searchctx.SavingsPassSuppressed(ctx)))
+	cacheKey := cache.Key("ground", fmt.Sprintf("%s|%s|%s|%s|%s|%.2f|%s|%t|x=%s|savingsoff=%t", from, to, date, opts.Currency, providerKey, opts.MaxPrice, opts.Type, allowBrowserFallbacks, groundExcludeKey(opts), searchctx.SavingsOff(ctx, opts.NoHacks)))
 
 	negKey, negEligible := groundNegKey(from, to, date, opts, providerKey)
 

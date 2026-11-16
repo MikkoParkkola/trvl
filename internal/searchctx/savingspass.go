@@ -60,6 +60,14 @@ func InSavingsPass(ctx context.Context) bool {
 	return pass != nil
 }
 
+// SavingsOff reports whether a search attaches no savings: opted out
+// (noHacks), or inside or suppressed by a savings pass. Result caches and
+// shared in-flight calls key on it, so a result without a saving never reaches
+// a search that attaches one.
+func SavingsOff(ctx context.Context, noHacks bool) bool {
+	return noHacks || SavingsPassSuppressed(ctx)
+}
+
 // Memo runs fn once per key within the savings pass carried by ctx and hands
 // every caller that one result, error included. The call runs under the pass
 // context, so a caller that gives up (its own ctx done) returns its context

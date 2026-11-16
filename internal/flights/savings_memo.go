@@ -41,17 +41,18 @@ func withCallerFlags(caller, passCtx context.Context) context.Context {
 // plus every option it leaves out, the caller's context flags, and the client.
 func flightMemoKey(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) string {
 	opts.defaults()
-	return fmt.Sprintf("%s|%p|%d|%d|%v|%v|%s|%v|%s|%s|skip1w=%v|prefetch=%v",
-		flightSearchKey(origin, destination, date, opts), client,
+	return fmt.Sprintf("%s%s|%p|%d|%d|%v|%v|%s|%v|%s|%s",
+		flightSearchKey(origin, destination, date, opts), callerFlagsKey(ctx, opts), client,
 		opts.DepartureFlexDays, opts.ReturnFlexDays, opts.FirstResult, opts.NoHacks,
 		canonicalStringSlice(opts.SuppressedHacks), opts.Stealth, opts.wizzHost, opts.transaviaHost,
-		skiplaggedOneWayDisabled(ctx), prefetchDisabled(ctx),
 	)
 }
 
-// savingsOffKey separates searches that attach no savings (opted out, or
-// inside or suppressed by a savings pass) from those that do, so the shared
-// in-flight call never hands a top-level caller a result without its saving.
-func savingsOffKey(ctx context.Context, opts SearchOptions) string {
-	return fmt.Sprintf("|savingsoff=%v", opts.NoHacks || searchctx.SavingsPassSuppressed(ctx))
+// callerFlagsKey is the part of a query that lives in the caller's context:
+// whether the search attaches savings, and whether a round-trip leg skips
+// one-way Skiplagged or a prefetch spawned it. Searches that differ in any of
+// these never share an in-flight call or a memo entry.
+func callerFlagsKey(ctx context.Context, opts SearchOptions) string {
+	return fmt.Sprintf("|savingsoff=%v|skip1w=%v|prefetch=%v",
+		searchctx.SavingsOff(ctx, opts.NoHacks), skiplaggedOneWayDisabled(ctx), prefetchDisabled(ctx))
 }
