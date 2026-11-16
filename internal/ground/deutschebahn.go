@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -237,6 +239,14 @@ type dbAbschnitt struct {
 	ProduktGattung    string            `json:"produktGattung"`
 	Verkehrsmittel    *dbVerkehrsmittel `json:"verkehrsmittel,omitempty"`
 	Halte             []dbHalt          `json:"halte"`
+	AttributNotizen   []dbNotiz         `json:"attributNotizen,omitempty"`
+}
+
+// dbNotiz is a segment attribute note; key "OP" names the operating
+// carrier(s), comma-separated ("Ceske Drahy, Österreichische Bundesbahnen").
+type dbNotiz struct {
+	Key  string `json:"key"`
+	Text string `json:"text"`
 }
 
 type dbVerkehrsmittel struct {
@@ -340,7 +350,7 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 
 		resp, err := dbClient.Do(req)
 		if err != nil {
-			slog.Debug("db tagesbestpreis request failed", "err", logredact.Err(err))
+			slog.Warn("db tagesbestpreis request failed", "err", logredact.Err(err))
 			continue
 		}
 		defer func() { _ = resp.Body.Close() }()
@@ -349,7 +359,7 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 			if _, drainErr := io.Copy(io.Discard, io.LimitReader(resp.Body, 256)); drainErr != nil {
 				slog.Debug("db tagesbestpreis response drain failed", "error", logredact.Err(drainErr))
 			}
-			slog.Debug("db tagesbestpreis non-200", "status", resp.StatusCode)
+			slog.Warn("db tagesbestpreis non-200", "status", resp.StatusCode)
 			continue
 		}
 
@@ -360,7 +370,7 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 
 		var bpResp dbBestPriceResponse
 		if err := json.Unmarshal(respBody, &bpResp); err != nil {
-			slog.Debug("db tagesbestpreis decode failed", "err", logredact.Err(err))
+			slog.Warn("db tagesbestpreis decode failed", "err", logredact.Err(err))
 			continue
 		}
 
@@ -378,7 +388,8 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 		if bestPrice > 0 {
 			return bestPrice, bestCur
 		}
-		break
+		// An empty 200 for body A says nothing about body B: try it (one
+		// extra request at most) before giving up.
 	}
 
 	return 0, ""
@@ -492,7 +503,56 @@ func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([
 		}
 	}
 
+	if len(routes) > 0 && !anyGroundRoutePriced(routes) {
+		return routes, dbNoFaresNotice(dbResp.Verbindungen)
+	}
 	return routes, nil
+}
+
+func anyGroundRoutePriced(routes []models.GroundRoute) bool {
+	for _, r := range routes {
+		if r.Price > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// dbNoFaresNotice explains journeys DB lists but sells no fare for (cross-border
+// trains run by other carriers): it names the carriers from DB's own "OP"
+// segment notes, sorted, or falls back to a generic hint.
+func dbNoFaresNotice(verbindungen []dbVerbindung) *models.ProviderNotice {
+	seen := map[string]bool{}
+	var carriers []string
+	for _, v := range verbindungen {
+		segments := v.VerbindungsAbschnitte
+		if v.Verbindung != nil {
+			segments = append(append([]dbAbschnitt(nil), segments...), v.Verbindung.VerbindungsAbschnitte...)
+		}
+		for _, seg := range segments {
+			for _, n := range seg.AttributNotizen {
+				if n.Key != "OP" {
+					continue
+				}
+				for _, c := range strings.Split(n.Text, ",") {
+					if c = strings.TrimSpace(c); c != "" && !seen[c] {
+						seen[c] = true
+						carriers = append(carriers, c)
+					}
+				}
+			}
+		}
+	}
+	hint := "DB sells no fares for this route; book with the operating rail carrier"
+	if len(carriers) > 0 {
+		slices.Sort(carriers)
+		hint = "DB sells no fares for this route; book with " + strings.Join(carriers, ", ")
+	}
+	return &models.ProviderNotice{
+		Reason:  models.ReasonOther,
+		FixHint: hint,
+		Err:     errors.New("db: no journey carries a fare"),
+	}
 }
 
 // parseDBVerbindungen converts raw DB API connections into GroundRoute models.
