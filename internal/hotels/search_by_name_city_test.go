@@ -252,3 +252,15 @@ func TestNameMatch_RadiusVetoesSoleMatchWithExtraWords(t *testing.T) {
 		t.Errorf("SearchHotelsByName = %v, %v; want no match", hotelNames(got), err)
 	}
 }
+
+// TestNameMatch_SingleWordAddressPartIsATown: in "Helenenstraße 55, Baden,
+// Austria" the lone word between street and country is the town, with or
+// without a postcode.
+func TestNameMatch_SingleWordAddressPartIsATown(t *testing.T) {
+	baden := []models.HotelResult{{
+		Name: "Hotel Sacher Baden", HotelID: "/g/sacher_baden", Address: "Helenenstraße 55, Baden, Austria",
+	}}
+	if kept := withoutOtherTowns(baden, "Hotel Sacher", "Vienna"); len(kept) != 0 {
+		t.Errorf("withoutOtherTowns kept %v, want Baden refused for Vienna", hotelNames(kept))
+	}
+}
