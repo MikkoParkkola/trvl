@@ -71,7 +71,9 @@ func withoutOtherTowns(hotels []models.HotelResult, name, city string) []models.
 }
 
 // townConflict returns the withoutOtherTowns test for one candidate, or nil
-// when there is no city to conflict with.
+// when there is no city to conflict with. When the city is already in the
+// geocode cache, a candidate pinned more than nameMatchMaxKm from it conflicts
+// too: that is what catches an address-less row such as Google's.
 func townConflict(name, city string) func(models.HotelResult) bool {
 	cityWords := canonicalCityWords(hotelNameWords(city))
 	if len(cityWords) == 0 {
@@ -81,7 +83,26 @@ func townConflict(name, city string) func(models.HotelResult) bool {
 	for _, w := range append(canonicalCityWords(hotelNameWords(name)), cityWords...) {
 		allowed[w] = true
 	}
-	return func(h models.HotelResult) bool { return carriesOtherTown(h, allowed) }
+	cityLat, cityLon, located := cachedLocation(city)
+	return func(h models.HotelResult) bool {
+		if located && (h.Lat != 0 || h.Lon != 0) && Haversine(cityLat, cityLon, h.Lat, h.Lon) > nameMatchMaxKm {
+			return true
+		}
+		return carriesOtherTown(h, allowed)
+	}
+}
+
+// nameMatchMaxKm is how far from the query city's centre a name match may be.
+// ponytail: one radius for every city; a per-city radius if metro areas differ.
+const nameMatchMaxKm = 25.0
+
+// cachedLocation reads the geocode cache only. The matcher must not add a
+// geocoding request, so a city nobody resolved yet has no distance check.
+func cachedLocation(query string) (lat, lon float64, ok bool) {
+	geoCache.RLock()
+	defer geoCache.RUnlock()
+	e, ok := geoCache.entries[strings.TrimSpace(query)]
+	return e.lat, e.lon, ok
 }
 
 func carriesOtherTown(h models.HotelResult, allowed map[string]bool) bool {
