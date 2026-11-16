@@ -89,3 +89,19 @@ func TestRoomLookups_ProviderColonIDIsNotGoogle(t *testing.T) {
 		t.Errorf("room fetch ran with HotelID %q, want no fetch", (*fetched).HotelID)
 	}
 }
+
+// TestHandleHotelRooms_DropsNonBookingURL: a caller booking_url that is not
+// an https booking.com page would make the room fetch refuse the whole
+// lookup; it is dropped and the Google fetch runs alone.
+func TestHandleHotelRooms_DropsNonBookingURL(t *testing.T) {
+	fetched := stubNameThenRooms(t, models.HotelResult{})
+	for _, url := range []string{"http://www.booking.com/hotel/at/sacher.html", "https://evil.example/hotel"} {
+		args := map[string]any{"hotel_id": "ChIJsacher", "booking_url": url, "check_in": "2099-11-18", "check_out": "2099-11-20"}
+		if _, _, err := handleHotelRooms(context.Background(), args, nil, nil, nil); err != nil {
+			t.Fatalf("%s: %v", url, err)
+		}
+		if *fetched == nil || (*fetched).BookingURL != "" || (*fetched).HotelID != "ChIJsacher" {
+			t.Errorf("%s: room fetch = %+v, want ChIJsacher without a BookingURL", url, *fetched)
+		}
+	}
+}
