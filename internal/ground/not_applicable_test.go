@@ -91,3 +91,23 @@ func TestIsProviderNotApplicable_Sentinel(t *testing.T) {
 		t.Errorf("isProviderNotApplicable(%q) = false, want true", err)
 	}
 }
+
+// TestIsProviderNotApplicable_BareLegacyWordingIsNotEnough pins that the
+// classifier reads only the sentinel: a bare message carrying one of the old
+// wordings is a failure, not a skipped provider.
+func TestIsProviderNotApplicable_BareLegacyWordingIsNotEnough(t *testing.T) {
+	for _, msg := range []string{
+		"no DB station for Helsinki",
+		"no FlixBus city found for X",
+		"dfds: no port for X",
+		"no route for HEL-XYZ",
+		"no Tallink route from X to Y",
+		"no Eurostar route",
+		"no DFDS route from X to Y",
+		"no Stena Line route",
+	} {
+		if isProviderNotApplicable(errors.New(msg)) {
+			t.Errorf("isProviderNotApplicable(%q) = true, want false without models.ErrNotApplicable", msg)
+		}
+	}
+}

@@ -14,20 +14,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func TestIsProviderNotApplicable_DFDSRoute(t *testing.T) {
-	err := fmt.Errorf("no DFDS route from X to Y")
-	if !isProviderNotApplicable(err) {
-		t.Errorf("dfds route error should be not-applicable")
-	}
-}
-
-func TestIsProviderNotApplicable_StenaLineRoute(t *testing.T) {
-	err := fmt.Errorf("no Stena Line route")
-	if !isProviderNotApplicable(err) {
-		t.Errorf("stena route error should be not-applicable")
-	}
-}
-
 // D3: a limiter wait that would pass the deadline is a timeout, not a
 // "provider does not serve this route" answer.
 func TestIsProviderNotApplicable_RateLimiterExceed_v2(t *testing.T) {

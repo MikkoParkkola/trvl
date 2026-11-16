@@ -107,14 +107,14 @@ func TestIsProviderNotApplicable(t *testing.T) {
 		want bool
 	}{
 		{"nil", nil, false},
-		{"station for city", fmt.Errorf("no DB station for Helsinki"), true},
-		{"city found for", fmt.Errorf("no FlixBus city found for X"), true},
-		{"port for", fmt.Errorf("no DFDS port for X"), true},
-		{"no route for", fmt.Errorf("no route for X"), true},
-		{"no Tallink route", fmt.Errorf("no Tallink route"), true},
-		{"no Eurostar route", fmt.Errorf("no Eurostar route"), true},
-		{"no DFDS route", fmt.Errorf("no DFDS route"), true},
-		{"no Stena Line route", fmt.Errorf("no Stena Line route"), true},
+		{"station for city", fmt.Errorf("no DB station for Helsinki: %w", models.ErrNotApplicable), true},
+		{"city found for", fmt.Errorf("no FlixBus city found for X: %w", models.ErrNotApplicable), true},
+		{"port for", fmt.Errorf("no DFDS port for X: %w", models.ErrNotApplicable), true},
+		{"no route for", fmt.Errorf("no route for X: %w", models.ErrNotApplicable), true},
+		{"no Tallink route", fmt.Errorf("no Tallink route: %w", models.ErrNotApplicable), true},
+		{"no Eurostar route", fmt.Errorf("no Eurostar route: %w", models.ErrNotApplicable), true},
+		{"no DFDS route", fmt.Errorf("no DFDS route: %w", models.ErrNotApplicable), true},
+		{"no Stena Line route", fmt.Errorf("no Stena Line route: %w", models.ErrNotApplicable), true},
 		// D3: limiter waits and deadlines are timeouts, not "not served".
 		{"rate limiter", fmt.Errorf("rate limiter: rate: Wait something"), false},
 		{"deadline", fmt.Errorf("context deadline exceeded"), false},
