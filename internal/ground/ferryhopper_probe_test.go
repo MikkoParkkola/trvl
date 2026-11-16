@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -29,10 +30,16 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	resp, err := ferryhopperClient.Do(req)
+	testutil.SkipIfTransient(t, err) // throttling or a timeout is not drift
 	if err != nil {
 		t.Fatalf("get_ports: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		statusErr := fmt.Errorf("get_ports: HTTP %d", resp.StatusCode)
+		testutil.SkipIfTransient(t, statusErr)
+		t.Fatal(statusErr)
+	}
 
 	var answer struct {
 		Result struct {
