@@ -15,20 +15,40 @@ name: regression-test-gate
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+  # The merge queue needs this required check to report on its groups too.
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
+
+# A newer event on a pull request cancels that PR's superseded run; merge-queue
+# groups get a group of their own and are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   require-test-for-fix:
     runs-on: ubuntu-latest
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-regression-test') }}
     steps:
+      # The gate reads the pull request (title, commits, base..head diff), which
+      # a merge-queue event does not carry. It already ran on the PR, and a PR
+      # enters the queue only after passing every required check. The queue
+      # must run with "Only merge non-failing pull requests" (grouping strategy
+      # ALLGREEN): without it a PR that failed this gate could merge inside a
+      # group whose last PR passed.
+      - name: Checked on the pull request
+        if: github.event_name == 'merge_group'
+        run: echo "require-test-for-fix passed on the pull request before it entered the merge queue."
       - name: Checkout (full history for base..head diff)
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Require a same-package regression test for fix PRs
+        if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
