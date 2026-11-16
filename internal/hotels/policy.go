@@ -43,3 +43,36 @@ func excludeAdultsOnly(in []models.HotelResult) (kept []models.HotelResult, hidd
 	}
 	return kept, hidden
 }
+
+// DropMonthlyRentals takes hotels whose only price is a monthly rent out of a
+// nightly hotel list, counting them in MonthlyOmitted: a monthly rent shown as
+// a night's price is off by about thirty times. search_accommodations keeps
+// them. A hotel with any non-monthly quote stays. The input slice is not
+// mutated.
+func DropMonthlyRentals(result *models.HotelSearchResult) {
+	if result == nil {
+		return
+	}
+	kept := make([]models.HotelResult, 0, len(result.Hotels))
+	for _, h := range result.Hotels {
+		if monthlyOnly(h) {
+			result.MonthlyOmitted++
+			continue
+		}
+		kept = append(kept, h)
+	}
+	result.Hotels = kept
+	result.Count = len(kept)
+}
+
+func monthlyOnly(h models.HotelResult) bool {
+	if len(h.Sources) == 0 {
+		return h.PriceBasis == models.PriceBasisMonthly
+	}
+	for _, s := range h.Sources {
+		if s.PriceBasis != models.PriceBasisMonthly {
+			return false
+		}
+	}
+	return true
+}

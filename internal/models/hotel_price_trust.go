@@ -67,7 +67,8 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 
 	h.Sources = finalizePriceSources(h.Sources, now)
 	preferredCurrency = strings.ToUpper(strings.TrimSpace(preferredCurrency))
-	if selected, ok := selectPrimaryHotelSource(h.Sources, preferredCurrency, h.Currency, convert); ok {
+	quotes := quotesAboveFloor(h.Sources, convert)
+	if selected, ok := selectPrimaryHotelSource(quotes, preferredCurrency, h.Currency, convert); ok {
 		// Sources stay provider quotes in the provider's currency; only the
 		// headline is converted. A failed conversion keeps the quote's own
 		// currency and says so rather than relabelling the number.
@@ -88,7 +89,7 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 		// Savings are displayed in the headline's currency ("saves EUR 20"),
 		// but merge computed them in whichever currency had the most quotes.
 		// Restate them in the headline currency, or drop them if they cannot be.
-		h.Savings, h.CheapestSource = savingsIn(h.Sources, h.Currency, convert)
+		h.Savings, h.CheapestSource = savingsIn(quotes, h.Currency, convert)
 		if selected.BookingURL != "" {
 			h.BookingURL = selected.BookingURL
 		}
@@ -108,6 +109,27 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 	if hasMixedSourceCurrencies(h.Sources) {
 		h.PriceWarnings = appendUniqueString(h.PriceWarnings, PriceWarningMixedSourceCurrencies)
 	}
+}
+
+// priceFloorEUR is the smallest amount that counts as a quote: anything worth
+// less than EUR 1 once converted (a 0.01 ARS placeholder) is not a price.
+const priceFloorEUR = 1.0
+
+// quotesAboveFloor keeps the sources that may become the headline: priced, and
+// worth at least priceFloorEUR. A quote that cannot be converted stays; nothing
+// shows it is a placeholder.
+func quotesAboveFloor(sources []PriceSource, convert func(amount float64, from, to string) (float64, bool)) []PriceSource {
+	out := make([]PriceSource, 0, len(sources))
+	for _, s := range sources {
+		if s.Price <= 0 {
+			continue
+		}
+		if eur, ok := convertPrice(convert, s.Price, s.Currency, "EUR"); ok && eur < priceFloorEUR {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 func finalizePriceSources(sources []PriceSource, now time.Time) []PriceSource {

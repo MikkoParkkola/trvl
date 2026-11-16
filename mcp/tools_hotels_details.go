@@ -59,6 +59,7 @@ type hotelDetailsSearchResponse struct {
 	Suggestions      []Suggestion            `json:"suggestions,omitempty"`
 	MaxDistanceKm    float64                 `json:"max_distance_km,omitempty"`
 	FartherOmitted   int                     `json:"farther_omitted,omitempty"`
+	MonthlyOmitted   int                     `json:"monthly_omitted,omitempty"`
 	Error            string                  `json:"error,omitempty"`
 }
 
@@ -95,6 +96,7 @@ func hotelDetailsSearchOutputSchema() interface{} {
 			"count":           schemaInt(),
 			"total_available": schemaInt(),
 			"max_distance_km": schemaNumDesc("Distance cap applied around the city centre (25 by default; absent when none applied)."),
+			"monthly_omitted": schemaIntDesc("Monthly rentals left out of this nightly list; search_accommodations lists them."),
 			"farther_omitted": schemaIntDesc("Hotels trvl left out for being farther than max_distance_km. Below 25 km Google is also asked for that radius and withholds farther hotels itself, so the count then covers only what trvl removed."),
 			"hotels": schemaArray(map[string]interface{}{
 				"type": "object",
@@ -330,6 +332,8 @@ func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, eli
 	if err != nil {
 		return nil, nil, err
 	}
+	// A nightly list: monthly rents go to search_accommodations instead.
+	hotels.DropMonthlyRentals(result)
 
 	includeAmenities := argBool(args, "include_amenities", true)
 	includeRooms := argBool(args, "include_rooms", true)
@@ -400,6 +404,7 @@ func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, eli
 		Suggestions:      hotelSuggestions(result, req.Options),
 		MaxDistanceKm:    result.MaxDistanceKm,
 		FartherOmitted:   result.FartherOmitted,
+		MonthlyOmitted:   result.MonthlyOmitted,
 		Error:            result.Error,
 	}
 
@@ -706,7 +711,8 @@ func hotelDetailsLimit(requested, available int) int {
 }
 
 func hotelDetailsSummary(result hotelDetailsSearchResponse, location string) string {
-	return hotelDetailsSummaryText(result, location) + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm, result.ProviderStatuses)
+	return hotelDetailsSummaryText(result, location) + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm, result.ProviderStatuses) +
+		hotelMonthlyNote(result.MonthlyOmitted)
 }
 
 func hotelDetailsSummaryText(result hotelDetailsSearchResponse, location string) string {
