@@ -59,7 +59,9 @@ jobs:
   goreleaser:
     if: github.event_name != 'workflow_dispatch'
     needs: security-gate
-    runs-on: macos-14
+    # GitHub retired the macOS 14 images on 2026-11-02; macos-26 is the
+    # newest arm64 image, so the darwin smoke test still builds an arm64 binary.
+    runs-on: macos-26
     permissions:
       contents: write  # create the GitHub release and upload assets
       id-token: write  # cosign keyless signing via Sigstore needs OIDC token
