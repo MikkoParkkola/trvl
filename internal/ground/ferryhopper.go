@@ -23,6 +23,7 @@ package ground
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,16 +31,87 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
 
 	"github.com/MikkoParkkola/trvl/internal/logredact"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
+	"golang.org/x/text/unicode/norm"
 )
 
 // ferryhopperMCPURL is the Ferryhopper MCP endpoint. It is a var (not a const)
 // so tests can point the full SearchFerryhopper path at a local httptest server.
 var ferryhopperMCPURL = "https://mcp.ferryhopper.com/mcp"
+
+// ferryhopperPortList is Ferryhopper's own port list (its MCP get_ports tool),
+// one name per line. TestLiveProbe_FerryhopperPortsCurrent checks it against
+// the live list and, with TRVL_PROBE_CAPTURE=1, prints a refreshed copy.
+//
+//go:embed ferryhopper_ports.txt
+var ferryhopperPortList string
+
+// ferryhopperAliases maps a city that matches no Ferryhopper port name to the
+// port Ferryhopper's own resolver picks for it.
+var ferryhopperAliases = map[string]string{
+	"rome": "civitavecchia",
+}
+
+// ferryhopperPlaces is the folded set of names a city can match: each port
+// name, its part before " (", " - " or ",", and the text in parentheses, so
+// "THIRA (SANTORINI)" answers to both thira and santorini.
+var ferryhopperPlaces = sync.OnceValue(func() map[string]bool {
+	places := map[string]bool{}
+	add := func(s string) {
+		if s = strings.TrimSpace(s); s != "" && s != "all ports" {
+			places[s] = true
+		}
+	}
+	for _, line := range strings.Split(ferryhopperPortList, "\n") {
+		name := ferryhopperFold(line)
+		add(name)
+		if i := strings.Index(name, " ("); i > 0 {
+			add(name[:i])
+			add(strings.TrimSuffix(name[i+2:], ")"))
+		}
+		for _, sep := range []string{" - ", ","} {
+			if i := strings.Index(name, sep); i > 0 {
+				add(name[:i])
+			}
+		}
+	}
+	return places
+})
+
+// ferryhopperFold lowercases and strips accents so "Travemünde" matches
+// Ferryhopper's "TRAVEMUNDE".
+func ferryhopperFold(s string) string {
+	var b strings.Builder
+	for _, r := range norm.NFD.String(strings.ToLower(strings.TrimSpace(s))) {
+		if !unicode.Is(unicode.Mn, r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// HasFerryhopperRoute reports whether both cities match a Ferryhopper port or
+// alias. It is the launch gate: Ferryhopper's resolver answers any name with
+// its closest port (Prague becomes Grand Portage, USA), so an inland pair is
+// not served. The pair itself is left to the live search: an empty answer on
+// two ports is a valid empty day.
+func HasFerryhopperRoute(from, to string) bool {
+	return hasFerryhopperPlace(from) && hasFerryhopperPlace(to)
+}
+
+func hasFerryhopperPlace(city string) bool {
+	key := ferryhopperFold(city)
+	if alias, ok := ferryhopperAliases[key]; ok {
+		key = alias
+	}
+	return key != "" && ferryhopperPlaces()[key]
+}
 
 // ferryhopperLimiter: 2 req/s — conservative to avoid overloading the free MCP endpoint.
 var ferryhopperLimiter = newProviderLimiter(500 * time.Millisecond)

@@ -575,13 +575,18 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		}
 	}
 
-	// Ferryhopper — Greek ferry aggregator (Aegean, Ionian, Adriatic seas).
-	// Uses the public Ferryhopper MCP endpoint; no API key required.
-	// Accepts free-form location names so it is always attempted.
+	// Ferryhopper — ferry aggregator (Aegean, Ionian, Adriatic, Baltic and more).
+	// Uses the public Ferryhopper MCP endpoint; no API key required. Launched
+	// only when both ends match a Ferryhopper port: its resolver answers any
+	// name, so an inland pair would come back as a fuzzy foreign port.
 	if useProvider("ferryhopper") {
-		launchProvider(&wg, results, "ferryhopper", func() ([]models.GroundRoute, error) {
-			return SearchFerryhopper(ctx, from, to, date, opts.Currency)
-		})
+		if HasFerryhopperRoute(from, to) {
+			launchProvider(&wg, results, "ferryhopper", func() ([]models.GroundRoute, error) {
+				return SearchFerryhopper(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("ferryhopper")
+		}
 	}
 
 	// European Sleeper — night trains Brussels–Amsterdam–Berlin–Prague, Paris–Berlin, Brussels–Milan.

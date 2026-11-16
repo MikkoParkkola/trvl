@@ -169,3 +169,25 @@ func TestSearchDeutscheBahn_PricedJourneysCarryNoNotice(t *testing.T) {
 		t.Errorf("day-best requests = %d, want 0 when every journey is priced", n)
 	}
 }
+
+// TestHasFerryhopperRoute pins the launch gate: both ends must match a
+// Ferryhopper port name, its parts, or an alias; the pair is left to the live
+// search.
+func TestHasFerryhopperRoute(t *testing.T) {
+	for _, c := range []struct {
+		from, to string
+		want     bool
+	}{
+		{"Piraeus", "Santorini", true},   // THIRA (SANTORINI)
+		{"Helsinki", "Travemünde", true}, // accents folded
+		{"Athens", "Mykonos", true},      // ATHENS (ALL PORTS)
+		{"Rome", "Barcelona", true},      // Rome resolves to Civitavecchia
+		{"Prague", "Vienna", false},      // Prague is no port
+		{"Prague", "Berlin", false},
+		{"", "Piraeus", false},
+	} {
+		if got := HasFerryhopperRoute(c.from, c.to); got != c.want {
+			t.Errorf("HasFerryhopperRoute(%q, %q) = %v, want %v", c.from, c.to, got, c.want)
+		}
+	}
+}

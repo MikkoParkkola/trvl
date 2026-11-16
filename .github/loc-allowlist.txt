@@ -5,3 +5,4 @@
 # decided not to meet, so the list is kept to files where the ceiling does not
 # apply in the first place rather than to code that has not been split yet.
 CHANGELOG.md # reason: append-only public release history stays root-visible for users and release tooling
+internal/ground/ferryhopper_ports.txt # reason: generated data, one Ferryhopper port name per line from its get_ports tool; refreshed by TestLiveProbe_FerryhopperPortsCurrent
