@@ -107,8 +107,9 @@ func TestTallink_UnservedPortPairNotApplicable(t *testing.T) {
 }
 
 // serveDBFixture answers the DB journey search with a captured fixture and the
-// day-best endpoint with no intervals; it returns the day-best request count.
-func serveDBFixture(t *testing.T, fixture string) *atomic.Int32 {
+// day-best endpoint with bestPrice (nil: a decoded 200 with no intervals); it
+// returns the day-best request count.
+func serveDBFixture(t *testing.T, fixture string, bestPrice http.HandlerFunc) *atomic.Int32 {
 	t.Helper()
 	body := loadGroundFixture(t, fixture)
 	var bestPriceHits atomic.Int32
@@ -116,6 +117,10 @@ func serveDBFixture(t *testing.T, fixture string) *atomic.Int32 {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(r.URL.Path, "/tagesbestpreis") {
 			bestPriceHits.Add(1)
+			if bestPrice != nil {
+				bestPrice(w, r)
+				return
+			}
 			_, _ = w.Write([]byte(`{"tagesbestPreisIntervalle":[]}`))
 			return
 		}
@@ -136,7 +141,7 @@ func serveDBFixture(t *testing.T, fixture string) *atomic.Int32 {
 // ticket here, so the routes come back with a notice that names the carriers
 // in DB's own segments, after both day-best request bodies came back empty.
 func TestSearchDeutscheBahn_NoFaresNoticeNamesCarriers(t *testing.T) {
-	hits := serveDBFixture(t, "db_fahrplan_praha_8103000_2026-11-15.json")
+	hits := serveDBFixture(t, "db_fahrplan_praha_8103000_2026-11-15.json", nil)
 
 	routes, err := SearchDeutscheBahn(context.Background(), "Prague", "Vienna", "2026-11-15", "EUR")
 	if len(routes) != 5 {
@@ -159,7 +164,7 @@ func TestSearchDeutscheBahn_NoFaresNoticeNamesCarriers(t *testing.T) {
 // TestSearchDeutscheBahn_PricedJourneysCarryNoNotice: Berlin–Warsaw journeys
 // all carry fares, so there is no notice and no day-best request.
 func TestSearchDeutscheBahn_PricedJourneysCarryNoNotice(t *testing.T) {
-	hits := serveDBFixture(t, "db_fahrplan_berlin_5100065_2026-11-15.json")
+	hits := serveDBFixture(t, "db_fahrplan_berlin_5100065_2026-11-15.json", nil)
 
 	routes, err := SearchDeutscheBahn(context.Background(), "Berlin", "Warsaw", "2026-11-15", "EUR")
 	if err != nil || len(routes) == 0 {
@@ -182,7 +187,11 @@ func TestHasFerryhopperRoute(t *testing.T) {
 		{"Helsinki", "Travemünde", true}, // accents folded
 		{"Athens", "Santorini", true},    // ATHENS (ALL PORTS), THIRA (SANTORINI)
 		{"Athens", "Mykonos", true},
-		{"Rome", "Barcelona", true}, // Rome resolves to Civitavecchia
+		{"Rome", "Barcelona", true},       // Rome resolves to Civitavecchia
+		{"Vuosaari", "Travemünde", true},  // HELSINKI - VUOSAARI
+		{"Piazzale Roma", "Athens", true}, // SANTA LUCIA (PIAZZALE ROMA), VENICE
+		{"Germany", "Denmark", false},     // country groups are no place
+		{"Helsinki", "Germany", false},
 		{"Prague", "Vienna", false}, // Prague is no port
 		{"Prague", "Berlin", false},
 		{"", "Piraeus", false},
@@ -211,6 +220,50 @@ func TestSearchByNameCore_FerryhopperGateLaunchesPortPairs(t *testing.T) {
 			}
 			if st := statusByID(res.ProviderStatuses)["ferryhopper"]; st.Status != models.StatusCheckedNoHit {
 				t.Errorf("ferryhopper status = %q, want checked_no_hit", st.Status)
+			}
+		})
+	}
+}
+
+// TestTallink_SiljaMariehamnCallsServed: Silja ships call at Mariehamn on the
+// Stockholm and Turku lines (live timetables, 2026-12-04..10).
+func TestTallink_SiljaMariehamnCallsServed(t *testing.T) {
+	for _, p := range [][2]string{
+		{"Stockholm", "Mariehamn"}, {"Mariehamn", "Stockholm"},
+		{"Turku", "Mariehamn"}, {"Mariehamn", "Turku"},
+	} {
+		if !HasTallinkRoute(p[0], p[1]) {
+			t.Errorf("HasTallinkRoute(%s, %s) = false, want a served line", p[0], p[1])
+		}
+	}
+}
+
+// TestSearchDeutscheBahn_FailedPriceLookupIsNotNoFares: when every day-best
+// call fails, DB has not said it sells nothing; the notice reports the failed
+// lookup instead of "DB sells no fares".
+func TestSearchDeutscheBahn_FailedPriceLookupIsNotNoFares(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		h    http.HandlerFunc
+	}{
+		{"HTTP 500", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) }},
+		{"undecodable 200", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("<html>busy</html>")) }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			serveDBFixture(t, "db_fahrplan_praha_8103000_2026-11-15.json", c.h)
+			routes, err := SearchDeutscheBahn(context.Background(), "Prague", "Vienna", "2026-11-15", "EUR")
+			if len(routes) != 5 {
+				t.Errorf("routes = %d, want the 5 journeys kept", len(routes))
+			}
+			var notice *models.ProviderNotice
+			if !errors.As(err, &notice) {
+				t.Fatalf("err = %v, want a *models.ProviderNotice", err)
+			}
+			if strings.Contains(notice.FixHint, "sells no fares") {
+				t.Errorf("FixHint = %q, want a failed-lookup hint, not no-fares", notice.FixHint)
+			}
+			if notice.Err == nil {
+				t.Error("notice carries no cause")
 			}
 		})
 	}
