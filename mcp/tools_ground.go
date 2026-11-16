@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +16,9 @@ import (
 )
 
 var searchGroundByNameFunc = ground.SearchByName
+
+// searchAirportTransfersFunc is a seam so tests can stub the airport search.
+var searchAirportTransfersFunc = trip.SearchAirportTransfers
 
 func searchGroundTool() ToolDef {
 	return ToolDef{
@@ -49,10 +54,11 @@ func groundSearchOutputSchema() interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"success": schemaBool(),
-			"count":   schemaInt(),
-			"routes":  groundRoutesOutputSchema(),
-			"error":   schemaString(),
+			"success":     schemaBool(),
+			"count":       schemaIntDesc("Routes returned in this response (the tool shows up to 20 per direction, fewer when the result would pass 50 KB)."),
+			"total_count": schemaIntDesc("Routes found before the cap; narrow with type, provider or max_price to see the rest."),
+			"routes":      groundRoutesOutputSchema(),
+			"error":       schemaString(),
 			"provider_statuses": schemaArrayDesc("Per-provider outcome. reason is blocked, rate_limited, unavailable, dns, network, timeout or other when a provider did not answer, so a blocked provider is not mistaken for an empty search.", map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -69,6 +75,15 @@ func groundSearchOutputSchema() interface{} {
 	}
 }
 
+// groundPriceProvenanceSchema mirrors models.PriceProvenance.
+func groundPriceProvenanceSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "string",
+		"enum":        []string{string(models.PriceLive), string(models.PriceEstimated), string(models.PriceUnavailable)},
+		"description": "live is a quoted fare; estimated is a static or distance-based figure; unavailable means no fare.",
+	}
+}
+
 func groundRoutesOutputSchema() interface{} {
 	return schemaArray(map[string]interface{}{
 		"type": "object",
@@ -79,13 +94,70 @@ func groundRoutesOutputSchema() interface{} {
 			"price":            schemaNum(),
 			"price_max":        schemaNum(),
 			"currency":         schemaString(),
+			"price_provenance": groundPriceProvenanceSchema(),
+			"sources": schemaArrayDesc("Providers that sold this connection; search_ground lists them only when more than one did.", map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"provider":         schemaString(),
+					"price":            schemaNum(),
+					"currency":         schemaString(),
+					"price_provenance": groundPriceProvenanceSchema(),
+					"booking_url":      schemaString(),
+				},
+			}),
 			"duration_minutes": schemaInt(),
 			"transfers":        schemaInt(),
 			"amenities":        schemaStringArray(),
 			"seats_left":       schemaInt(),
 			"booking_url":      schemaString(),
+			"comparable_price": schemaNumDesc("Price in the search currency, used for ranking; absent when it could not be converted."),
+			"cheapest_source":  schemaString(),
+			"savings":          schemaNumDesc("How much the cheapest source undercuts the next one."),
+			"departure":        groundStopSchema(),
+			"arrival":          groundStopSchema(),
+			"legs": schemaArrayDesc("Segments of the journey; search_ground omits them when a single leg only repeats the route, and omits a leg city the route or the previous leg already names.", map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"type":             schemaString(),
+					"provider":         schemaString(),
+					"departure":        groundStopSchema(),
+					"arrival":          groundStopSchema(),
+					"duration_minutes": schemaInt(),
+					"amenities":        schemaStringArray(),
+				},
+			}),
+			"confidence": map[string]interface{}{
+				"type":        "object",
+				"description": "How likely the headline price is bookable as shown.",
+				"properties": map[string]interface{}{
+					"label":   schemaStringDesc("high, medium, low or unrated"),
+					"score":   schemaNumDesc("0 to 1; absent when unrated"),
+					"basis":   schemaString(),
+					"signals": schemaStringArray(),
+				},
+			},
+			"sea_state": map[string]interface{}{
+				"type":        "object",
+				"description": "Forecast sea state for ferry routes.",
+				"properties": map[string]interface{}{
+					"wave_height_m":  schemaNum(),
+					"swell_height_m": schemaNum(),
+					"label":          schemaStringDesc("calm, moderate or rough"),
+				},
+			},
 		},
 	})
+}
+
+func groundStopSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"city":    schemaString(),
+			"station": schemaString(),
+			"time":    schemaStringDesc("ISO 8601 local time"),
+		},
+	}
 }
 
 func searchAirportTransfersTool() ToolDef {
@@ -186,6 +258,7 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 			msg = fmt.Sprintf("No ground routes returned from %s to %s on %s yet. %s",
 				from, to, date, result.Completeness.IncompleteNote())
 		}
+		result.Routes = arrayRoutes(result.Routes)
 		return []ContentBlock{{Type: "text", Text: msg}}, result, nil
 	}
 
@@ -198,23 +271,112 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 	// inline, with no extra switch. Silent degrade — never blocks the search.
 	result.Destination = enrichDestination(ctx, to, models.DateRange{CheckIn: date, CheckOut: opts.ReturnDate})
 
-	summary := buildGroundRouteSummary(
-		fmt.Sprintf("Found %d ground routes from %s to %s on %s", result.Count, from, to, date),
-		result.Routes,
-	)
-	// Partial-failure caveat: some providers returned routes but others timed
-	// out / failed, so this set is not exhaustive — say so rather than imply the
-	// cheapest shown is the cheapest available.
-	if note := result.Completeness.IncompleteNote(); note != "" {
-		summary += "\n\n" + note
-	}
+	// trvl sizes the result itself (no limit knob): the best-ranked rows per
+	// direction, then fewer if both copies would still pass the budget.
+	total := len(result.Routes)
+	found, dirs := groundDirectionCounts(result.Routes)
+	shown := capGroundRoutes(result.Routes, groundRowsPerDirection)
+	trimmed := false
+	for {
+		resp := groundSearchResponse{GroundSearchResult: result, TotalCount: total, Routes: make([]groundRouteOut, 0, len(shown))}
+		result.Count = len(shown)
+		for _, r := range shown {
+			resp.Routes = append(resp.Routes, compactGroundRoute(r))
+		}
+		summary := buildGroundRouteSummary(
+			fmt.Sprintf("Found %d ground routes from %s to %s on %s", total, from, to, date),
+			shown, len(shown),
+		)
+		if len(shown) < total {
+			shownBy, _ := groundDirectionCounts(shown)
+			parts := make([]string, 0, len(dirs))
+			for _, d := range dirs {
+				label := d
+				if label == "" {
+					label = "routes"
+				}
+				parts = append(parts, fmt.Sprintf("%d of %d %s", shownBy[d], found[d], label))
+			}
+			summary += "\n\nShowing " + strings.Join(parts, ", ") + "; narrow with type, provider or max_price."
+			if trimmed {
+				summary += " Fewer rows fit the 50 KB result budget."
+			}
+		}
+		// Partial-failure caveat: some providers returned routes but others timed
+		// out / failed, so this set is not exhaustive — say so rather than imply the
+		// cheapest shown is the cheapest available.
+		if note := result.Completeness.IncompleteNote(); note != "" {
+			summary += "\n\n" + note
+		}
 
-	content, err := buildAnnotatedContentBlocks(summary, result)
-	if err != nil {
-		return nil, nil, err
+		content, err := buildAnnotatedContentBlocks(summary, resp)
+		if err != nil {
+			return nil, nil, err
+		}
+		size, err := json.Marshal(ToolCallResult{Content: content, StructuredContent: resp})
+		if err != nil {
+			return nil, nil, fmt.Errorf("marshal result: %w", err)
+		}
+		if len(shown) <= 1 || len(size) < groundResultBudget {
+			return content, resp, nil
+		}
+		shown = dropLowestRankedGroundRoute(shown)
+		trimmed = true
 	}
+}
 
-	return content, result, nil
+// groundRowsPerDirection caps each direction of a search_ground result.
+const groundRowsPerDirection = 20
+
+// groundResultBudget bounds the handler's result; the 2 KB under the 50 KB
+// promise leaves room for the resource links and envelope added afterwards.
+const groundResultBudget = 48_000
+
+// groundDirectionCounts counts routes per direction ("" for one-way) and
+// lists the directions in first-seen order.
+func groundDirectionCounts(routes []models.GroundRoute) (map[string]int, []string) {
+	counts := map[string]int{}
+	var order []string
+	for _, r := range routes {
+		if counts[r.Direction] == 0 {
+			order = append(order, r.Direction)
+		}
+		counts[r.Direction]++
+	}
+	return counts, order
+}
+
+// capGroundRoutes keeps the first n routes of each direction in search order.
+// Ground search ranks live fares first and unpriced routes last, so these are
+// the best-evidenced, cheapest rows.
+func capGroundRoutes(routes []models.GroundRoute, n int) []models.GroundRoute {
+	kept := map[string]int{}
+	out := make([]models.GroundRoute, 0, min(len(routes), 2*n))
+	for _, r := range routes {
+		if kept[r.Direction] < n {
+			kept[r.Direction]++
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// dropLowestRankedGroundRoute removes the last row of the direction with the
+// most rows, so a long outbound list shrinks before a short inbound one.
+func dropLowestRankedGroundRoute(routes []models.GroundRoute) []models.GroundRoute {
+	counts, order := groundDirectionCounts(routes)
+	longest := order[0]
+	for _, d := range order {
+		if counts[d] > counts[longest] {
+			longest = d
+		}
+	}
+	for i := len(routes) - 1; i >= 0; i-- {
+		if routes[i].Direction == longest {
+			return slices.Delete(routes, i, i+1)
+		}
+	}
+	return routes
 }
 
 func handleSearchAirportTransfers(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
@@ -234,10 +396,11 @@ func handleSearchAirportTransfers(ctx context.Context, args map[string]any, elic
 		return nil, nil, fmt.Errorf("airport_code, destination, and date are required")
 	}
 
-	result, err := trip.SearchAirportTransfers(ctx, input)
+	result, err := searchAirportTransfersFunc(ctx, input)
 	if err != nil {
 		return nil, nil, err
 	}
+	result.Routes = arrayRoutes(result.Routes)
 	if !result.Success {
 		msg := fmt.Sprintf("No airport transfer routes found from %s to %s on %s", result.Airport, result.Destination, result.Date)
 		if result.Error != "" {
@@ -248,7 +411,7 @@ func handleSearchAirportTransfers(ctx context.Context, args map[string]any, elic
 
 	summary := buildGroundRouteSummary(
 		fmt.Sprintf("Found %d airport transfer routes from %s to %s on %s", result.Count, result.Airport, result.Destination, result.Date),
-		result.Routes,
+		result.Routes, 10,
 	)
 	if result.ArrivalTime != "" {
 		summary += fmt.Sprintf("\n\nFiltered to departures at or after %s.", result.ArrivalTime)
@@ -322,6 +485,21 @@ func enrichFerrySeaState(ctx context.Context, routes []models.GroundRoute) {
 	}
 }
 
+// arrayRoutes makes the route fields the shared route schema declares as
+// arrays serialize as [] instead of null (the taxi row sets no legs). Only
+// routes and legs need it: amenities and sources are omitempty and drop out.
+func arrayRoutes(routes []models.GroundRoute) []models.GroundRoute {
+	if routes == nil {
+		return []models.GroundRoute{}
+	}
+	for i := range routes {
+		if routes[i].Legs == nil {
+			routes[i].Legs = []models.GroundLeg{}
+		}
+	}
+	return routes
+}
+
 func groundRoutesHaveProvider(routes []models.GroundRoute, provider string) bool {
 	for _, route := range routes {
 		if strings.EqualFold(route.Provider, provider) {
@@ -331,22 +509,24 @@ func groundRoutesHaveProvider(routes []models.GroundRoute, provider string) bool
 	return false
 }
 
-func buildGroundRouteSummary(header string, routes []models.GroundRoute) string {
+func buildGroundRouteSummary(header string, routes []models.GroundRoute, maxRows int) string {
 	var sb strings.Builder
 	sb.WriteString(header)
 	sb.WriteString(":\n\n")
 
-	limit := len(routes)
-	if limit > 10 {
-		limit = 10
-	}
+	limit := min(len(routes), maxRows)
+	// A round trip lists outbound then inbound rows; a header before each
+	// direction keeps inbound rows from reading as more outbound options.
+	prevDir := ""
 	for i, r := range routes[:limit] {
-		price := fmt.Sprintf("%s %.2f", r.Currency, r.Price)
-		if r.Price <= 0 {
-			price = "price unavailable"
-		} else if r.PriceMax > 0 && r.PriceMax != r.Price {
-			price = fmt.Sprintf("%s %.2f-%.2f", r.Currency, r.Price, r.PriceMax)
+		if r.Direction != "" && r.Direction != prevDir {
+			if i > 0 {
+				sb.WriteString("\n")
+			}
+			sb.WriteString(strings.ToUpper(r.Direction[:1]) + r.Direction[1:] + ":\n")
 		}
+		prevDir = r.Direction
+		price := groundPriceLabel(r)
 		dur := fmt.Sprintf("%dh%02dm", r.Duration/60, r.Duration%60)
 		transfers := "direct"
 		if r.Transfers > 0 {
@@ -367,10 +547,30 @@ func buildGroundRouteSummary(header string, routes []models.GroundRoute) string 
 		}
 		sb.WriteString("\n")
 	}
-	if len(routes) > 10 {
-		_, _ = fmt.Fprintf(&sb, "\n... and %d more routes", len(routes)-10)
+	if len(routes) > limit {
+		_, _ = fmt.Fprintf(&sb, "\n... and %d more routes", len(routes)-limit)
 	}
 	return sb.String()
+}
+
+// groundPriceLabel marks a price the way the CLI table does (estimatedPrice in
+// cmd/trvl/ground.go): only a live fare reads as a plain price, any other
+// priced route is an estimate, and a route without a fare never shows a number.
+func groundPriceLabel(r models.GroundRoute) string {
+	switch {
+	case r.Price <= 0 || r.PriceProvenance == models.PriceUnavailable:
+		return "price unavailable"
+	case r.PriceProvenance == models.PriceLive:
+		if r.PriceMax > 0 && r.PriceMax != r.Price {
+			return fmt.Sprintf("%s %.2f-%.2f", r.Currency, r.Price, r.PriceMax)
+		}
+		return fmt.Sprintf("%s %.2f", r.Currency, r.Price)
+	}
+	symbols := map[string]string{"EUR": "€", "GBP": "£", "USD": "$"}
+	if sym, ok := symbols[strings.ToUpper(r.Currency)]; ok {
+		return fmt.Sprintf("~%s%.0f (est.)", sym, r.Price)
+	}
+	return fmt.Sprintf("~%s %.0f (est.)", r.Currency, r.Price)
 }
 
 // safeTimeSlice extracts HH:MM from an ISO 8601 timestamp, or returns the raw string.
@@ -379,4 +579,73 @@ func safeTimeSlice(t string) string {
 		return t[11:16]
 	}
 	return t
+}
+
+// groundSearchResponse is the search_ground payload: the search result with
+// its routes capped and compacted. Routes shadows the embedded field, so the
+// rest of GroundSearchResult keeps its JSON shape.
+type groundSearchResponse struct {
+	*models.GroundSearchResult
+	Routes     []groundRouteOut `json:"routes"`
+	TotalCount int              `json:"total_count"`
+}
+
+// groundRouteOut drops what repeats the route: legs that add nothing, leg
+// cities already known, and confidence fields the label already carries.
+type groundRouteOut struct {
+	models.GroundRoute
+	Legs       []groundLegOut       `json:"legs,omitempty"`
+	Confidence *groundConfidenceOut `json:"confidence,omitempty"`
+}
+
+type groundLegOut struct {
+	models.GroundLeg
+	Departure groundStopOut `json:"departure"`
+	Arrival   groundStopOut `json:"arrival"`
+}
+
+// groundStopOut is models.GroundStop with an omittable city.
+type groundStopOut struct {
+	City    string `json:"city,omitempty"`
+	Station string `json:"station,omitempty"`
+	Time    string `json:"time"`
+}
+
+type groundConfidenceOut struct {
+	Score   float64  `json:"score,omitempty"`
+	Label   string   `json:"label"`
+	Basis   string   `json:"basis"`
+	Signals []string `json:"signals,omitempty"`
+}
+
+func compactGroundRoute(r models.GroundRoute) groundRouteOut {
+	if len(r.Sources) <= 1 {
+		r.Sources = nil
+	}
+	out := groundRouteOut{GroundRoute: r}
+	if c := r.Confidence; c != nil {
+		out.Confidence = &groundConfidenceOut{Score: c.Score, Label: c.Label, Basis: c.Basis, Signals: c.Signals}
+	}
+	if len(r.Legs) == 1 {
+		l := r.Legs[0]
+		if l.Type == r.Type && l.Provider == r.Provider && l.Departure == r.Departure && l.Arrival == r.Arrival {
+			return out
+		}
+	}
+	prevArrival := ""
+	for _, l := range r.Legs {
+		known := func(city string) bool {
+			return city == r.Departure.City || city == r.Arrival.City || city == prevArrival
+		}
+		leg := groundLegOut{GroundLeg: l, Departure: groundStopOut(l.Departure), Arrival: groundStopOut(l.Arrival)}
+		if known(l.Departure.City) {
+			leg.Departure.City = ""
+		}
+		if known(l.Arrival.City) {
+			leg.Arrival.City = ""
+		}
+		prevArrival = l.Arrival.City
+		out.Legs = append(out.Legs, leg)
+	}
+	return out
 }

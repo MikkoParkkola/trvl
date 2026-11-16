@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ground routes and each of their price sources carry `price_provenance` (`live`, `estimated` or `unavailable`), and sources also carry `comparable_price`. A static table, a day-best or a range low is `estimated` and never outranks a live fare for the same connection; within the comparable group, live fares rank first.
 - A ground search lists a status row for every provider asked for by name: `checked_no_hit` for a valid empty answer, `timeout` when the deadline cuts a provider off, and `skipped` with reason `route_not_served` when the provider does not serve the pair.
 - `trvl ground` shows estimated fares as `~€22 (est.)` and routes without a fare as `—`, and its `--provider` help lists every valid name.
+- MCP `search_ground` labels prices the same way in its text summary (`~€22 (est.)`, `price unavailable`, live fares unmarked) and declares `price_provenance` on routes and sources in its output schema. `search_airport_transfers` shares the summary, so its taxi estimates now read `~€45 (est.)`.
+- MCP `search_ground` returns at most 20 routes per direction, ranked as before (live fares first), and fewer when the whole result would pass 50 KB. `count` is the number returned and the new `total_count` the number found; the summary says how many more exist and that `type`, `provider` or `max_price` narrow them. On the 53-route test fixture the result shrank from 184 KB to 45 KB.
+- MCP `search_ground` drops repeats from each route: a single-provider `sources` array, a lone leg identical to the route, leg cities already named by the route or the previous leg, and the confidence `rated` and `freshness` fields (`label`, `score`, `basis` and `signals` stay). An empty `legs` is omitted instead of `null`.
 
 ### Fixed
 
