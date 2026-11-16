@@ -98,7 +98,10 @@ var tallinkPorts = map[string]tallinkPort{
 }
 
 // tallinkRouteDurations stores approximate journey durations in minutes for each route pair.
-// Key format: "FROM-TO" using uppercase port codes.
+// Key format: "FROM-TO" using uppercase port codes. It is also the route table:
+// two Tallink ports without an entry (Helsinki–Riga, Helsinki–Paldiski) are not
+// served. HEL-VIS had no sailing in the 2026-12-04..10 live timetables; it stays
+// as a possibly seasonal line.
 var tallinkRouteDurations = map[string]int{
 	"HEL-TAL": 120,
 	"TAL-HEL": 120,
@@ -130,9 +133,17 @@ func HasTallinkPort(city string) bool {
 	return ok
 }
 
-// HasTallinkRoute returns true if both cities have Tallink ports.
+// HasTallinkRoute returns true if a Tallink line joins the two cities' ports.
 func HasTallinkRoute(from, to string) bool {
-	return HasTallinkPort(from) && HasTallinkPort(to)
+	fromPort, okFrom := LookupTallinkPort(from)
+	toPort, okTo := LookupTallinkPort(to)
+	return okFrom && okTo && tallinkServes(fromPort.Code, toPort.Code)
+}
+
+// tallinkServes reports whether tallinkRouteDurations lists the port pair.
+func tallinkServes(fromCode, toCode string) bool {
+	_, ok := tallinkRouteDurations[fromCode+"-"+toCode]
+	return ok
 }
 
 // tallinkRouteDuration returns the approximate journey duration in minutes for a port pair.
@@ -456,6 +467,9 @@ func SearchTallink(ctx context.Context, from, to, date, currency string) ([]mode
 	toPort, ok := LookupTallinkPort(to)
 	if !ok {
 		return nil, fmt.Errorf("tallink: no port for %q: %w", to, models.ErrNotApplicable)
+	}
+	if !tallinkServes(fromPort.Code, toPort.Code) {
+		return nil, fmt.Errorf("tallink: no route for %s→%s: %w", fromPort.Code, toPort.Code, models.ErrNotApplicable)
 	}
 
 	if _, err := models.ParseDate(date); err != nil {
