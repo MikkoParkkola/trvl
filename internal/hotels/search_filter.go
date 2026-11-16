@@ -365,7 +365,7 @@ func hotelProviderStatusFromError(id, name string, err error) models.ProviderSta
 	// A provider that does not serve the place answered honestly: skipped,
 	// never failed. Classified by the sentinel alone, as ground search does.
 	if errors.Is(err, models.ErrNotApplicable) {
-		return models.ProviderStatus{ID: id, Name: name, Status: models.StatusSkipped, Reason: models.ReasonRouteNotServed}
+		return models.ProviderStatus{ID: id, Name: name, Status: models.StatusSkipped, Reason: models.ReasonCityNotServed}
 	}
 	status := models.ClassifyProviderError(err)
 	return models.ProviderStatus{

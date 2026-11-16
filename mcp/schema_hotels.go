@@ -69,7 +69,7 @@ func hotelSearchOutputSchema() interface{} {
 					"error":         schemaString(),
 					"fix_hint":      schemaString(),
 					"fix_hint_code": schemaString(),
-					"reason":        schemaString(),
+					"reason":        schemaStringDesc("Why a provider gave no answer: blocked, rate_limited, unavailable, dns, network, timeout or other; city_not_served on a skipped provider that does not serve the city."),
 				},
 			}),
 			"error": schemaString(),
