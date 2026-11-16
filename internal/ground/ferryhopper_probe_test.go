@@ -62,12 +62,16 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	var live []string
+	// Country groups ("GERMANY (ALL PORTS)") are set aside on both sides: the
+	// generator decides which island countries to keep, the probe checks ports.
+	countryGroups := map[string]bool{}
 	for _, p := range answer.Result.StructuredContent.Ports {
 		name := strings.TrimSpace(p.Name)
-		// Country groups ("GERMANY (ALL PORTS)") are left out of the file, as
-		// the generator does.
-		base, group := strings.CutSuffix(name, " (ALL PORTS)")
-		if name == "" || seen[name] || (group && strings.EqualFold(base, strings.TrimSpace(p.Country))) {
+		if base, group := strings.CutSuffix(name, " (ALL PORTS)"); group && strings.EqualFold(base, strings.TrimSpace(p.Country)) {
+			countryGroups[name] = true
+			continue
+		}
+		if name == "" || seen[name] {
 			continue
 		}
 		seen[name] = true
@@ -89,7 +93,7 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 		}
 	}
 	for name := range embedded {
-		if !seen[name] {
+		if !seen[name] && !countryGroups[name] {
 			dropped = append(dropped, name)
 		}
 	}
@@ -100,5 +104,5 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 	if len(dropped) > 0 {
 		t.Errorf("%d ports in ferryhopper_ports.txt are gone from the live list (first: %q); regenerate it with go run ./scripts/ferryhopper-ports", len(dropped), dropped[:min(5, len(dropped))])
 	}
-	t.Logf("live ports %d, embedded %d", len(live), len(embedded))
+	t.Logf("live ports %d plus %d country groups; embedded %d (island countries kept)", len(live), len(countryGroups), len(embedded))
 }

@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Ferryhopper runs only when both ends match one of its 1,447 ports, so an inland pair such as Prague to Vienna shows as not served instead of a search its resolver misreads (Prague became Grand Portage, USA).
+- Ferryhopper runs only when both ends match one of its 1,451 ports, so an inland pair such as Prague to Vienna shows as not served instead of a search its resolver misreads (Prague became Grand Portage, USA).
 - Finnlines and Tallink treat two of their ports with no line between them (Naantali to Travemünde, Helsinki to Riga) as not served.
 - Deutsche Bahn journeys without any fare, such as Praha to Wien, come back with a notice naming the carriers that run them, and the day-best fallback tries its second request format before giving up.
 - Tallink searches decode again: `marketingMessage` became an object in the timetable answer. Its sailing fares are marked `live`.

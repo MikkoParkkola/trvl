@@ -1,9 +1,9 @@
 // Command ferryhopper-ports regenerates internal/ground/ferryhopper_ports.txt,
 // the port list behind Ferryhopper's launch gate, from one call to
 // Ferryhopper's public MCP get_ports tool: one port name per line, trimmed,
-// de-duplicated and byte-sorted. Country groups ("GERMANY (ALL PORTS)") are
-// left out so a country never counts as a port. Run it from the repository
-// root:
+// de-duplicated and byte-sorted. Mainland country groups ("GERMANY (ALL
+// PORTS)") are left out so a country never counts as a port; island countries
+// stay (see keepCountryGroups). Run it from the repository root:
 //
 //	go run ./scripts/ferryhopper-ports
 package main
@@ -109,10 +109,24 @@ func portNames(r io.Reader) ([]string, error) {
 	return names, nil
 }
 
-// isCountryGroup reports Ferryhopper's per-country "X (ALL PORTS)" entry.
+// keepCountryGroups lists the country groups that stay: island countries,
+// where the country is the place people sail to ("Pozzallo to Malta").
+// Ferryhopper's 22 country groups on 2026-11-16 were Albania, Algeria,
+// Bermuda, Croatia, Denmark, Estonia, Finland, Germany, Guadeloupe, Ireland,
+// Latvia, Malta, Montenegro, Morocco, Netherlands, Norway, Poland, Slovenia,
+// Spain, Tunisia, Turkey and Uruguay; the 18 mainland ones are dropped.
+var keepCountryGroups = map[string]bool{
+	"BERMUDA (ALL PORTS)":    true,
+	"GUADELOUPE (ALL PORTS)": true,
+	"IRELAND (ALL PORTS)":    true,
+	"MALTA (ALL PORTS)":      true,
+}
+
+// isCountryGroup reports Ferryhopper's per-country "X (ALL PORTS)" entry for
+// a mainland country, which must not become a place name.
 func isCountryGroup(name, country string) bool {
 	base, ok := strings.CutSuffix(name, " (ALL PORTS)")
-	return ok && country != "" && strings.EqualFold(base, strings.TrimSpace(country))
+	return ok && country != "" && strings.EqualFold(base, strings.TrimSpace(country)) && !keepCountryGroups[name]
 }
 
 // render is the file format: one name per line, newline-terminated.
