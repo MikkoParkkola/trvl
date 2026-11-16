@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Tallink searches decode again: `marketingMessage` became an object in the timetable answer. Its sailing fares are marked `live`.
+- Snälltåget searches the booking app's API (`apiv2.snalltaget.se`) with the site's anonymous guest token instead of a retired host. It returns live per-departure fares in SEK, takes station names from the answer, adds Copenhagen and Hamburg, and links to the current booking page.
+- Renfe returns its price-calendar day minimum as an `estimated` EUR fare with no invented 00:00 departure.
+- Tallink, Snälltåget and Renfe report refusals as rate-limited, changed answers as parse failures, and pairs they do not serve as skipped.
 - Ground search keeps unpriced routes and shows them as unavailable; only a RegioJet row priced 0 (sold out) is dropped. A `--max-price` budget compares the converted price and drops routes it cannot check.
 - A misspelled ground provider name in `--provider` or in an include or exclude list is an error that lists the valid names, instead of a search that runs nothing.
 - DFDS no longer shows a reference sailing when its availability check fails, and Eckerö Line returns its timetable with a notice that live prices failed instead of hiding the failure.

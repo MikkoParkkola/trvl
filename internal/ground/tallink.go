@@ -251,25 +251,25 @@ func fetchTallinkCabinClasses(ctx context.Context, cookies []*http.Cookie, sessi
 
 // tallinkSail is a single sailing from the booking timetables API response.
 type tallinkSail struct {
-	SailID              int64   `json:"sailId"`
-	ShipCode            string  `json:"shipCode"`
-	DepartureIsoDate    string  `json:"departureIsoDate"` // "2026-05-01T07:30"
-	ArrivalIsoDate      string  `json:"arrivalIsoDate"`   // "2026-05-01T09:30"
-	PersonPrice         string  `json:"personPrice"`      // "38.90"
-	VehiclePrice        *string `json:"vehiclePrice"`     // null or "45.00"
-	Duration            float64 `json:"duration"`         // hours, e.g. 2.0
-	SailPackageCode     string  `json:"sailPackageCode"`  // "HEL-TAL"
-	SailPackageName     string  `json:"sailPackageName"`  // "Helsinki-Tallinn"
-	CityFrom            string  `json:"cityFrom"`         // "HEL"
-	CityTo              string  `json:"cityTo"`           // "TAL"
-	PierFrom            string  `json:"pierFrom"`
-	PierTo              string  `json:"pierTo"`
-	HasRoom             bool    `json:"hasRoom"`
-	IsOvernight         bool    `json:"isOvernight"`
-	IsDisabled          bool    `json:"isDisabled"`
-	PromotionApplied    bool    `json:"promotionApplied"`
-	MarketingMessage    *string `json:"marketingMessage"`
-	IsVoucherApplicable bool    `json:"isVoucherApplicable"`
+	SailID              int64           `json:"sailId"`
+	ShipCode            string          `json:"shipCode"`
+	DepartureIsoDate    string          `json:"departureIsoDate"` // "2026-05-01T07:30"
+	ArrivalIsoDate      string          `json:"arrivalIsoDate"`   // "2026-05-01T09:30"
+	PersonPrice         string          `json:"personPrice"`      // "38.90"
+	VehiclePrice        *string         `json:"vehiclePrice"`     // null or "45.00"
+	Duration            float64         `json:"duration"`         // hours, e.g. 2.0
+	SailPackageCode     string          `json:"sailPackageCode"`  // "HEL-TAL"
+	SailPackageName     string          `json:"sailPackageName"`  // "Helsinki-Tallinn"
+	CityFrom            string          `json:"cityFrom"`         // "HEL"
+	CityTo              string          `json:"cityTo"`           // "TAL"
+	PierFrom            string          `json:"pierFrom"`
+	PierTo              string          `json:"pierTo"`
+	HasRoom             bool            `json:"hasRoom"`
+	IsOvernight         bool            `json:"isOvernight"`
+	IsDisabled          bool            `json:"isDisabled"`
+	PromotionApplied    bool            `json:"promotionApplied"`
+	MarketingMessage    json.RawMessage `json:"marketingMessage"` // null, a string, or an object since 2026-11
+	IsVoucherApplicable bool            `json:"isVoucherApplicable"`
 }
 
 // tallinkDayTrips holds outward and return sails for a single day.
@@ -416,7 +416,8 @@ func fetchTallinkTimetables(ctx context.Context, fromCode, toCode, date string) 
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("tallink timetables: HTTP %d: %s", resp.StatusCode, body)
+		slog.Debug("tallink timetables refused", "status", resp.StatusCode, "body", string(body))
+		return nil, httpStatusError("tallink", "timetables", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
@@ -426,7 +427,7 @@ func fetchTallinkTimetables(ctx context.Context, fromCode, toCode, date string) 
 
 	var result tallinkTimetableResponse
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("tallink timetables decode: %w", err)
+		return nil, fmt.Errorf("tallink timetables decode: %v: %w", err, models.ErrParseFailed)
 	}
 	return &tallinkFetchResult{Timetable: &result, Session: session}, nil
 }
@@ -450,11 +451,11 @@ func tallinkNormalizeDateTime(s string) string {
 func SearchTallink(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromPort, ok := LookupTallinkPort(from)
 	if !ok {
-		return nil, fmt.Errorf("tallink: no port for %q", from)
+		return nil, fmt.Errorf("tallink: no port for %q: %w", from, models.ErrNotApplicable)
 	}
 	toPort, ok := LookupTallinkPort(to)
 	if !ok {
-		return nil, fmt.Errorf("tallink: no port for %q", to)
+		return nil, fmt.Errorf("tallink: no port for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if _, err := models.ParseDate(date); err != nil {
@@ -543,11 +544,12 @@ func SearchTallink(ctx context.Context, from, to, date, currency string) ([]mode
 		}
 
 		routes = append(routes, models.GroundRoute{
-			Provider: "tallink",
-			Type:     "ferry",
-			Price:    price,
-			Currency: "EUR",
-			Duration: duration,
+			Provider:        "tallink",
+			Type:            "ferry",
+			Price:           price,
+			Currency:        "EUR",
+			PriceProvenance: livePrice(price), // the timetable's fare for this sailing
+			Duration:        duration,
 			Departure: models.GroundStop{
 				City:    fromPort.City,
 				Station: fromPort.Name + tallinkShipSuffix(s.ShipCode),
