@@ -241,15 +241,22 @@ func TestBrowserScrapeRoutes_Integration(t *testing.T) {
 func TestBrowserScrape_StationMissIsNotApplicable(t *testing.T) {
 	ctx := context.Background()
 	const d = "2026-07-15"
-	cases := map[string]func() error{
-		"trainline from": func() error { _, err := browserScrapeTrainline(ctx, "Narnia", "Paris", d, "EUR"); return err },
-		"trainline to":   func() error { _, err := browserScrapeTrainline(ctx, "Paris", "Narnia", d, "EUR"); return err },
-		"sncf from":      func() error { _, err := browserScrapeSNCF(ctx, "Narnia", "Paris", d, "EUR"); return err },
-		"sncf to":        func() error { _, err := browserScrapeSNCF(ctx, "Paris", "Narnia", d, "EUR"); return err },
+	cases := []struct {
+		name, missing string // missing: the city the error must name
+		call          func() error
+	}{
+		{"trainline from", "Narnia", func() error { _, err := browserScrapeTrainline(ctx, "Narnia", "Paris", d, "EUR"); return err }},
+		{"trainline to", "Atlantis", func() error { _, err := browserScrapeTrainline(ctx, "Paris", "Atlantis", d, "EUR"); return err }},
+		{"sncf from", "Narnia", func() error { _, err := browserScrapeSNCF(ctx, "Narnia", "Paris", d, "EUR"); return err }},
+		{"sncf to", "Atlantis", func() error { _, err := browserScrapeSNCF(ctx, "Paris", "Atlantis", d, "EUR"); return err }},
 	}
-	for name, call := range cases {
-		if err := call(); !errors.Is(err, models.ErrNotApplicable) {
-			t.Errorf("%s: err = %v, want it to wrap models.ErrNotApplicable", name, err)
+	for _, c := range cases {
+		err := c.call()
+		if !errors.Is(err, models.ErrNotApplicable) {
+			t.Errorf("%s: err = %v, want it to wrap models.ErrNotApplicable", c.name, err)
+		}
+		if err == nil || !strings.Contains(err.Error(), c.missing) {
+			t.Errorf("%s: err = %v, want it to name %q", c.name, err, c.missing)
 		}
 	}
 }

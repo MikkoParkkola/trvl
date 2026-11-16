@@ -317,6 +317,7 @@ func TestSearchTrenitalia_EmptyStationSearchIsNotApplicable(t *testing.T) {
 		side    string
 		emptyOn int // which station search answers []
 	}{{"origin", 1}, {"destination", 2}} {
+		// An origin miss stops before the destination lookup.
 		t.Run(c.side, func(t *testing.T) {
 			var mu sync.Mutex
 			searches := 0
@@ -344,21 +345,39 @@ func TestSearchTrenitalia_EmptyStationSearchIsNotApplicable(t *testing.T) {
 			if !errors.Is(err, models.ErrNotApplicable) {
 				t.Errorf("err = %v, want it to wrap models.ErrNotApplicable", err)
 			}
+			mu.Lock()
+			defer mu.Unlock()
+			if searches != c.emptyOn {
+				t.Errorf("station searches = %d, want %d", searches, c.emptyOn)
+			}
 		})
 	}
 }
 
-// TestSearchTrenitalia_StationSearchFailureStaysAFailure: an HTTP 500 at the
-// same lookup says nothing about coverage, so it must not read as not served.
+// TestSearchTrenitalia_StationSearchFailureStaysAFailure: an HTTP 500 or a
+// 200 that does not decode says nothing about coverage, so neither may read
+// as not served.
 func TestSearchTrenitalia_StationSearchFailureStaysAFailure(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-	useTrenitaliaServer(t, srv.URL)
+	for _, c := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"HTTP 500", http.StatusInternalServerError, ""},
+		{"malformed JSON", http.StatusOK, `[{"id":`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(c.status)
+				_, _ = w.Write([]byte(c.body))
+			}))
+			defer srv.Close()
+			useTrenitaliaServer(t, srv.URL)
 
-	_, err := SearchTrenitalia(context.Background(), "Milan", "Rome", "2026-07-15", "EUR")
-	if err == nil || errors.Is(err, models.ErrNotApplicable) || isProviderNotApplicable(err) {
-		t.Errorf("err = %v, want a failure that is not models.ErrNotApplicable", err)
+			_, err := SearchTrenitalia(context.Background(), "Milan", "Rome", "2026-07-15", "EUR")
+			if err == nil || errors.Is(err, models.ErrNotApplicable) || isProviderNotApplicable(err) {
+				t.Errorf("err = %v, want a failure that is not models.ErrNotApplicable", err)
+			}
+		})
 	}
 }
