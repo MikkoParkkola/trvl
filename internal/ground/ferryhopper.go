@@ -65,11 +65,12 @@ var ferryhopperPlaces = sync.OnceValue(func() map[string]bool {
 	return ferryhopperPlacesFrom(ferryhopperPortNames(ferryhopperPortList))
 })
 
-// ferryhopperPortNames splits the embedded list into port names.
+// ferryhopperPortNames splits the embedded list into port names. It drops a
+// trailing "\r" so the gate never depends on how the file was checked out.
 func ferryhopperPortNames(list string) []string {
 	var names []string
 	for _, line := range strings.Split(list, "\n") {
-		if line != "" {
+		if line = strings.TrimSuffix(line, "\r"); line != "" {
 			names = append(names, line)
 		}
 	}
