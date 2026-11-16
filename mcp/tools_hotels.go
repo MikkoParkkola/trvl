@@ -503,6 +503,11 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 	if err := models.ValidateDateRange(checkIn, checkOut); err != nil {
 		return nil, nil, err
 	}
+	// Only a Google hotel ID resolves rooms; another provider's id would
+	// fetch nothing, or the wrong property.
+	if hotelID != "" && !models.IsGoogleHotelID(hotelID) {
+		return nil, nil, fmt.Errorf("hotel_id %q is not a Google hotel ID (/g/…, ChIJ… or 0x…:0x…); pass hotel_name to look the hotel up", hotelID)
+	}
 
 	// Resolved property identity. When the caller supplies a hotel_id (from
 	// search_hotels), use it directly — re-running the fuzzy name search can
@@ -516,7 +521,7 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		}
 		// Only a Google place ID resolves rooms; another provider's id
 		// (Booking's, say) must not be sent as one.
-		if !looksLikeGoogleHotelIDForWatch(hotel.HotelID) {
+		if !models.IsGoogleHotelID(hotel.HotelID) {
 			return nil, nil, fmt.Errorf("hotel %q found (%s) but has no Google ID", hotelName, hotel.Name)
 		}
 		resolvedID = hotel.HotelID

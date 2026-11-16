@@ -311,7 +311,7 @@ func TestLooksLikeGoogleHotelID_ExtraCases(t *testing.T) {
 	}{
 		{"/g/11b6d4_v_4", true},
 		{"ChIJy7MSZP0LkkYRZw2dDekQP78", true},
-		{"entity:12345", true},
+		{"entity:12345", false}, // only the 0x…:0x… colon form is Google's
 		{"Hotel Lutetia", false},
 		{"Prague", false},
 		{"  /g/11test  ", true},

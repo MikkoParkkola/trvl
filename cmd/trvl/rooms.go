@@ -164,18 +164,10 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 	return result, nil
 }
 
+// looksLikeGoogleHotelID reports a Google hotel ID: only those resolve
+// rooms (models.IsGoogleHotelID; "flatio:98765" is not one).
 func looksLikeGoogleHotelID(value string) bool {
-	value = strings.TrimSpace(value)
-	if strings.HasPrefix(value, "/g/") {
-		return true
-	}
-
-	upper := strings.ToUpper(value)
-	if strings.HasPrefix(upper, "CHIJ") {
-		return true
-	}
-
-	return strings.Count(value, ":") == 1 && !strings.ContainsAny(value, " \t")
+	return models.IsGoogleHotelID(value)
 }
 
 func formatRoomsTable(result *hotels.RoomAvailability) error {
