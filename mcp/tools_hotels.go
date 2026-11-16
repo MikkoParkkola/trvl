@@ -354,7 +354,7 @@ func hotelSummary(result *models.HotelSearchResult, location string) string {
 }
 
 // hotelMonthlyNote says how many monthly rentals a nightly list left out and
-// where they are listed; empty when none.
+// why; empty when none.
 func hotelMonthlyNote(n int) string {
 	if n <= 0 {
 		return ""
@@ -363,7 +363,7 @@ func hotelMonthlyNote(n int) string {
 	if n == 1 {
 		noun = "monthly rental"
 	}
-	return fmt.Sprintf(" Left out %d %s: their prices are monthly rents, not nightly rates; search_accommodations lists them.", n, noun)
+	return fmt.Sprintf(" Left out %d %s: their prices are monthly rents, not nightly rates.", n, noun)
 }
 
 func hotelSummaryText(result *models.HotelSearchResult, location string) string {

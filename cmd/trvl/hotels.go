@@ -616,7 +616,7 @@ func hotelsEmptyMessage(result *models.HotelSearchResult) string {
 }
 
 // hotelsMonthlyNote says how many monthly rentals the nightly list left out
-// and where they are listed; empty when none.
+// and why; empty when none.
 func hotelsMonthlyNote(result *models.HotelSearchResult) string {
 	if result.MonthlyOmitted <= 0 {
 		return ""
@@ -625,7 +625,7 @@ func hotelsMonthlyNote(result *models.HotelSearchResult) string {
 	if result.MonthlyOmitted == 1 {
 		noun = "monthly rental"
 	}
-	return fmt.Sprintf("Left out %d %s: their prices are monthly rents, not nightly rates; the MCP search_accommodations tool lists them.", result.MonthlyOmitted, noun)
+	return fmt.Sprintf("Left out %d %s: their prices are monthly rents, not nightly rates.", result.MonthlyOmitted, noun)
 }
 
 // hotelsFartherNote says how many hotels the distance cap left out and how to
