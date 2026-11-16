@@ -132,3 +132,22 @@ func TestLiveProbe_DBStationIDs(t *testing.T) {
 		})
 	}
 }
+
+// TestLiveProbe_DBBestPrice calls the tagesbestpreis endpoint through
+// fetchDBBestPrice (production bodies and headers) for Berlin Hbf to München
+// Hbf three weeks out, a domestic pair DB always prices, and requires a fare.
+// A zero means both request bodies stopped working or the answer changed shape.
+func TestLiveProbe_DBBestPrice(t *testing.T) {
+	testutil.RequireLiveProbe(t)
+	from, okFrom := LookupDBStation("Berlin")
+	to, okTo := LookupDBStation("Munich")
+	if !okFrom || !okTo {
+		t.Fatal("Berlin or Munich missing from the DB station table")
+	}
+	date := time.Now().AddDate(0, 0, 21).Format("2006-01-02")
+	price, currency := fetchDBBestPrice(context.Background(), from.EVA, to.EVA, date)
+	if price <= 0 || currency == "" {
+		t.Fatalf("tagesbestpreis %s -> %s on %s = %v %q, want a priced answer", from.EVA, to.EVA, date, price, currency)
+	}
+	t.Logf("tagesbestpreis Berlin -> München on %s: %.2f %s", date, price, currency)
+}
