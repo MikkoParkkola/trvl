@@ -57,6 +57,8 @@ type hotelDetailsSearchResponse struct {
 	ProviderStatuses []models.ProviderStatus `json:"provider_statuses,omitempty"`
 	Completeness     models.Completeness     `json:"completeness,omitempty"`
 	Suggestions      []Suggestion            `json:"suggestions,omitempty"`
+	MaxDistanceKm    float64                 `json:"max_distance_km,omitempty"`
+	FartherOmitted   int                     `json:"farther_omitted,omitempty"`
 	Error            string                  `json:"error,omitempty"`
 }
 

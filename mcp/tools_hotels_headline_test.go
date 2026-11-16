@@ -65,3 +65,42 @@ func TestHotelListToolsDefaultTo25Km(t *testing.T) {
 		}
 	}
 }
+
+// TestHotelListToolsReportFartherHotels: every list tool that gets the 25 km
+// default says what it left out, and declares the new fields in its schema.
+func TestHotelListToolsReportFartherHotels(t *testing.T) {
+	details := hotelDetailsSummary(hotelDetailsSearchResponse{Success: true, Count: 1, TotalAvailable: 1, MaxDistanceKm: 25, FartherOmitted: 3}, "Vienna")
+	accom := accommodationSearchSummary(accommodationSearchResponse{Success: true, TotalAvailable: 1, CandidateCount: 1, MaxDistanceKm: 25, FartherOmitted: 3,
+		Need: models.AccommodationNeed{Location: "Vienna"}})
+	for name, got := range map[string]string{"search_hotels_with_details": details, "search_accommodations": accom} {
+		for _, want := range []string{"3 hotels", "25 km", "max_distance"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s summary %q lacks %q", name, got, want)
+			}
+		}
+	}
+
+	props := func(schema interface{}) map[string]interface{} {
+		return schema.(map[string]interface{})["properties"].(map[string]interface{})
+	}
+	hotelItem := func(schema interface{}) map[string]interface{} {
+		return props(schema)["hotels"].(map[string]interface{})["items"].(map[string]interface{})["properties"].(map[string]interface{})
+	}
+	for name, schema := range map[string]interface{}{
+		"search_hotels": hotelSearchOutputSchema(), "search_hotels_with_details": hotelDetailsSearchOutputSchema(), "search_accommodations": accommodationSearchOutputSchema(),
+	} {
+		for _, k := range []string{"max_distance_km", "farther_omitted"} {
+			if _, ok := props(schema)[k]; !ok {
+				t.Errorf("%s output schema lacks %q", name, k)
+			}
+		}
+		if name == "search_accommodations" {
+			continue
+		}
+		for _, k := range []string{"headline_provider", "price_provenance"} {
+			if _, ok := hotelItem(schema)[k]; !ok {
+				t.Errorf("%s hotel schema lacks %q", name, k)
+			}
+		}
+	}
+}

@@ -29,6 +29,8 @@ type accommodationSearchResponse struct {
 	Suggestions             []Suggestion                   `json:"suggestions,omitempty"`
 	Warnings                []string                       `json:"warnings,omitempty"`
 	Destination             *models.DestinationInfo        `json:"destination,omitempty"`
+	MaxDistanceKm           float64                        `json:"max_distance_km,omitempty"`
+	FartherOmitted          int                            `json:"farther_omitted,omitempty"`
 	Error                   string                         `json:"error,omitempty"`
 }
 
