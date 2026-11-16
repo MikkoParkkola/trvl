@@ -156,3 +156,27 @@ func TestParseHotelsFromPage_DetailViewKeepsSameNameRowID(t *testing.T) {
 		t.Errorf("Hotel Sacher Vienna rows = %+v, want one with its own /g/sacher_organic and price 300", rows)
 	}
 }
+
+// TestParseHotelsFromPage_DetailViewGraftsOntoAd: the same-name ad row stays
+// and gains the place ID; its rating, review count and amenities survive.
+// Only its undated price goes.
+func TestParseHotelsFromPage_DetailViewGraftsOntoAd(t *testing.T) {
+	page := detailViewPageWith(t, func(data []any) {
+		list := data[0].([]any)[0].([]any)[0].([]any)[1].([]any)
+		ad := list[0].([]any)[1].(map[string]any)["300000000"].([]any)[2].([]any)[0].([]any)
+		ad[4], ad[5], ad[9] = 2468.0, 4.6, []any{2.0}
+	})
+	var rows []models.HotelResult
+	for _, h := range parseHotelsFromPageFull(page, "EUR").Hotels {
+		if h.Name == "Hotel Sacher Vienna" {
+			rows = append(rows, h)
+		}
+	}
+	if len(rows) != 1 {
+		t.Fatalf("Hotel Sacher Vienna rows = %+v, want one", rows)
+	}
+	got := rows[0]
+	if got.HotelID != sacherPlaceID || got.Price != 0 || got.ReviewCount != 2468 || got.Rating != 9.2 || len(got.Amenities) != 1 {
+		t.Errorf("row = %+v, want the ad's rating 9.2, 2468 reviews and amenities with the place ID and no price", got)
+	}
+}
