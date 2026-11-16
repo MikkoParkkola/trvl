@@ -89,8 +89,8 @@ func TestLiveProbe_FerryhopperPortsCurrent(t *testing.T) {
 	sort.Strings(live)
 
 	embedded := map[string]bool{}
-	for _, line := range strings.Split(strings.TrimSuffix(ferryhopperPortList, "\n"), "\n") {
-		embedded[line] = true
+	for _, name := range ferryhopperPortNames(ferryhopperPortList) {
+		embedded[name] = true
 	}
 	for name := range keptIslandGroups {
 		if !embedded[name] {

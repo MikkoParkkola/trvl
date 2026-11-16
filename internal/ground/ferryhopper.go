@@ -62,13 +62,29 @@ var ferryhopperAliases = map[string]string{
 // (even when more follows, as in "SANTA LUCIA (PIAZZALE ROMA), VENICE"), and
 // the text after " - " ("HELSINKI - VUOSAARI").
 var ferryhopperPlaces = sync.OnceValue(func() map[string]bool {
+	return ferryhopperPlacesFrom(ferryhopperPortNames(ferryhopperPortList))
+})
+
+// ferryhopperPortNames splits the embedded list into port names.
+func ferryhopperPortNames(list string) []string {
+	var names []string
+	for _, line := range strings.Split(list, "\n") {
+		if line != "" {
+			names = append(names, line)
+		}
+	}
+	return names
+}
+
+// ferryhopperPlacesFrom builds the place set described on ferryhopperPlaces.
+func ferryhopperPlacesFrom(names []string) map[string]bool {
 	places := map[string]bool{}
 	add := func(s string) {
 		if s = strings.TrimSpace(s); s != "" && s != "all ports" {
 			places[s] = true
 		}
 	}
-	for _, line := range strings.Split(ferryhopperPortList, "\n") {
+	for _, line := range names {
 		name := preferences.Fold(line)
 		add(name)
 		if open := strings.Index(name, " ("); open > 0 {
@@ -86,7 +102,7 @@ var ferryhopperPlaces = sync.OnceValue(func() map[string]bool {
 		}
 	}
 	return places
-})
+}
 
 // HasFerryhopperRoute reports whether both cities match a Ferryhopper port or
 // alias. It is the launch gate: Ferryhopper's resolver answers any name with
