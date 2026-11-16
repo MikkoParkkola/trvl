@@ -34,3 +34,14 @@ func TestHotelsMaxDistanceDefaultsTo25Km(t *testing.T) {
 		t.Fatalf("--max-distance default = %v, want 25", f)
 	}
 }
+
+// TestHotelsFartherNoteSaysWhenGoogleLimitedResults mirrors the MCP note.
+func TestHotelsFartherNoteSaysWhenGoogleLimitedResults(t *testing.T) {
+	tight := hotelsFartherNote(&models.HotelSearchResult{FartherOmitted: 3, MaxDistanceKm: 2})
+	if !strings.Contains(tight, "Google limited its results to 2 km") || !strings.Contains(tight, "only") {
+		t.Errorf("2 km note %q does not say Google limited its results", tight)
+	}
+	if def := hotelsFartherNote(&models.HotelSearchResult{FartherOmitted: 3, MaxDistanceKm: 25}); strings.Contains(def, "Google") {
+		t.Errorf("25 km note %q mentions Google", def)
+	}
+}

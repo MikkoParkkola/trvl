@@ -263,3 +263,21 @@ func TestGoogleRadiusOnlyForTightCaps(t *testing.T) {
 		}
 	}
 }
+
+// TestFartherCountSkipsHotelsOtherFiltersDrop: farther_omitted counts only
+// hotels that every other filter passed; a far hotel the brand filter drops
+// anyway is not a "farther hotel left out".
+func TestFartherCountSkipsHotelsOtherFiltersDrop(t *testing.T) {
+	hs := []models.HotelResult{
+		{Name: "Hilton Near", Lat: viennaLat + 0.009, Lon: viennaLon},
+		{Name: "Hilton Far", Lat: viennaLat + 0.234, Lon: viennaLon},
+		{Name: "Pension Far", Lat: viennaLat + 0.234, Lon: viennaLon},
+	}
+	kept, farther := filterHotelsCounted(hs, HotelSearchOptions{CenterLat: viennaLat, CenterLon: viennaLon, MaxDistanceKm: 25, Brand: "hilton"})
+	if got := sortedHotelNames(kept); !slices.Equal(got, []string{"Hilton Near"}) {
+		t.Errorf("kept = %v, want Hilton Near", got)
+	}
+	if farther != 1 {
+		t.Errorf("farther = %d, want 1 (Pension Far fails the brand filter, so it is not counted)", farther)
+	}
+}

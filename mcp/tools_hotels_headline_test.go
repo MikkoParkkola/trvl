@@ -104,3 +104,28 @@ func TestHotelListToolsReportFartherHotels(t *testing.T) {
 		}
 	}
 }
+
+// TestHotelFartherNoteSaysWhenGoogleLimitedResults: below 25 km Google is
+// asked for the radius too and withholds farther hotels, so the note says the
+// count covers only what trvl removed. At the default it says no such thing.
+func TestHotelFartherNoteSaysWhenGoogleLimitedResults(t *testing.T) {
+	tight := hotelFartherNote(3, 2)
+	for _, want := range []string{"3 hotels", "2 km", "Google limited its results to 2 km", "only"} {
+		if !strings.Contains(tight, want) {
+			t.Errorf("2 km note %q lacks %q", tight, want)
+		}
+	}
+	if def := hotelFartherNote(3, 25); strings.Contains(def, "Google") {
+		t.Errorf("25 km note %q mentions Google; trvl counted every farther hotel", def)
+	}
+}
+
+// TestHotelSummaryIncompleteKeepsFartherNote: an empty result with a provider
+// that did not answer still says what the distance cap left out.
+func TestHotelSummaryIncompleteKeepsFartherNote(t *testing.T) {
+	res := &models.HotelSearchResult{Success: true, FartherOmitted: 3, MaxDistanceKm: 25,
+		ProviderStatuses: []models.ProviderStatus{{ID: "google_hotels", Name: "Google Hotels", Status: models.StatusFailed, Error: "boom"}}}
+	if got := hotelSummary(res, "Vienna"); !strings.Contains(got, "3 hotels") || !strings.Contains(got, "max_distance") {
+		t.Errorf("incomplete empty summary %q drops the farther note", got)
+	}
+}
