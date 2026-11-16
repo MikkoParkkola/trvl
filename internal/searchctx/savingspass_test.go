@@ -32,7 +32,7 @@ func TestMemo_RunsEachKeyOncePerPass(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			v, err := Memo(ctx, "HEL|BCN|2026-12-01", func() (int, error) {
+			v, err := Memo(ctx, "HEL|BCN|2026-12-01", func(context.Context) (int, error) {
 				calls.Add(1)
 				return 42, nil
 			})
@@ -51,7 +51,7 @@ func TestMemo_RunsEachKeyOncePerPass(t *testing.T) {
 			t.Errorf("caller %d got %d, want 42", i, v)
 		}
 	}
-	if _, _ = Memo(ctx, "HEL|BCN|2026-12-02", func() (int, error) { calls.Add(1); return 7, nil }); calls.Load() != 2 {
+	if _, _ = Memo(ctx, "HEL|BCN|2026-12-02", func(context.Context) (int, error) { calls.Add(1); return 7, nil }); calls.Load() != 2 {
 		t.Errorf("a different key did not run: %d calls", calls.Load())
 	}
 }
@@ -61,7 +61,7 @@ func TestMemo_RunsEachKeyOncePerPass(t *testing.T) {
 func TestMemo_ScopedToItsPass(t *testing.T) {
 	boom := errors.New("refused")
 	var calls int
-	fn := func() (string, error) { calls++; return "", boom }
+	fn := func(context.Context) (string, error) { calls++; return "", boom }
 
 	pass := StartSavingsPass(context.Background())
 	for range 2 {
@@ -80,5 +80,54 @@ func TestMemo_ScopedToItsPass(t *testing.T) {
 	}
 	if _, _ = Memo(context.Background(), "k", fn); calls != 4 {
 		t.Errorf("a plain context memoized: %d calls", calls)
+	}
+}
+
+// Suppressing inside an active pass (a round-trip leg search inside a savings
+// pass) keeps that pass's memo.
+func TestSuppressSavingsPass_KeepsActivePass(t *testing.T) {
+	pass := StartSavingsPass(context.Background())
+	calls := 0
+	fn := func(context.Context) (int, error) { calls++; return 1, nil }
+	_, _ = Memo(pass, "leg", fn)
+	_, _ = Memo(SuppressSavingsPass(pass), "leg", fn)
+	if calls != 1 {
+		t.Errorf("fn ran %d times, want 1: suppressing dropped the pass memo", calls)
+	}
+	if !SavingsPassSuppressed(SuppressSavingsPass(pass)) {
+		t.Error("a suppressed pass context is not marked")
+	}
+}
+
+// A caller that gives up returns its own context error, but the shared call
+// runs on under the pass, and later callers get its real answer.
+func TestMemo_CallerCancellationDoesNotPoison(t *testing.T) {
+	pass := StartSavingsPass(context.Background())
+	started, release := make(chan struct{}), make(chan struct{})
+	fn := func(ctx context.Context) (int, error) {
+		close(started)
+		<-release
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		return 42, nil
+	}
+
+	caller, cancel := context.WithCancel(pass)
+	done := make(chan error, 1)
+	go func() {
+		_, err := Memo(caller, "k", fn)
+		done <- err
+	}()
+	<-started
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled caller err = %v, want context.Canceled", err)
+	}
+	close(release)
+
+	v, err := Memo(pass, "k", fn)
+	if err != nil || v != 42 {
+		t.Errorf("later caller got %d, %v; want 42 from the shared call, not the cancellation", v, err)
 	}
 }
