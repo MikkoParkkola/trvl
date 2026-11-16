@@ -1,0 +1,1 @@
+{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.1","title":"One or more validation errors occurred.","status":400,"errors":{"ToLocationId":["Domestic journey is not allowed within this country"]},"traceId":"00-1ec8e8a1a80a6dec15e05d6bd1ba7575-0e0b69597266de0d-00"}
