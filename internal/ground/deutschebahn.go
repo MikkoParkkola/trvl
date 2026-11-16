@@ -278,8 +278,9 @@ type dbBestPriceInterval struct {
 
 // fetchDBBestPrice queries the DB tagesbestpreis endpoint for cross-border routes
 // that return no price from the standard fahrplan search. It returns the day's
-// best (price, currency); (0, "", nil) when DB answered cleanly with no price;
-// and an error only when no request got a decodable 200.
+// best (price, currency) as soon as one request body finds it; (0, "", nil)
+// only when every attempted body answered cleanly with an empty interval list;
+// otherwise the last failure.
 func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64, string, error) {
 	fromLid := fmt.Sprintf("A=1@L=%s@", fromEVA)
 	toLid := fmt.Sprintf("A=1@L=%s@", toEVA)
@@ -333,9 +334,8 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 
 	contentType := "application/x.db.vendo.mob.verbindungssuche.v9+json"
 
-	// decoded records a clean 200 with no positive price: DB answered and
-	// sells nothing. lastErr keeps the reason when no attempt got that far.
-	decoded := false
+	// lastErr keeps the last failed attempt. "No fares" needs every attempt
+	// to answer cleanly, so any failure without a price is a failed lookup.
 	var lastErr error
 	for _, reqBody := range []map[string]any{reqBodyA, reqBodyB} {
 		body, err := json.Marshal(reqBody)
@@ -384,7 +384,13 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 			slog.Warn("db tagesbestpreis decode failed", "err", logredact.Err(err))
 			continue
 		}
-		decoded = true
+		// A 200 without the intervals field (an in-body error, a renamed
+		// field) is not a clean "nothing on sale".
+		if bpResp.TagesbestPreisIntervalle == nil {
+			lastErr = fmt.Errorf("db tagesbestpreis: no tagesbestPreisIntervalle in the answer: %w", models.ErrParseFailed)
+			slog.Warn("db tagesbestpreis answer without intervals")
+			continue
+		}
 
 		// Find cheapest price across all intervals.
 		var bestPrice float64
@@ -404,9 +410,6 @@ func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64
 		// extra request at most) before giving up.
 	}
 
-	if decoded {
-		return 0, "", nil
-	}
 	return 0, "", lastErr
 }
 
