@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 func TestParseBrowserPrice(t *testing.T) {
@@ -228,5 +230,26 @@ func TestBrowserScrapeRoutes_Integration(t *testing.T) {
 	}
 	if routes[0].Price <= 0 {
 		t.Fatalf("price = %f, want > 0", routes[0].Price)
+	}
+}
+
+// TestBrowserScrape_StationMissIsNotApplicable: a station missing from the
+// static tables means the pair is not served. SearchTrainline and SearchSNCF
+// run the same lookups first and their callers only log scraper errors
+// (sncf.go, trainline.go), so this keeps the scraper's errors consistent; it
+// changes no status a search shows today.
+func TestBrowserScrape_StationMissIsNotApplicable(t *testing.T) {
+	ctx := context.Background()
+	const d = "2026-07-15"
+	cases := map[string]func() error{
+		"trainline from": func() error { _, err := browserScrapeTrainline(ctx, "Narnia", "Paris", d, "EUR"); return err },
+		"trainline to":   func() error { _, err := browserScrapeTrainline(ctx, "Paris", "Narnia", d, "EUR"); return err },
+		"sncf from":      func() error { _, err := browserScrapeSNCF(ctx, "Narnia", "Paris", d, "EUR"); return err },
+		"sncf to":        func() error { _, err := browserScrapeSNCF(ctx, "Paris", "Narnia", d, "EUR"); return err },
+	}
+	for name, call := range cases {
+		if err := call(); !errors.Is(err, models.ErrNotApplicable) {
+			t.Errorf("%s: err = %v, want it to wrap models.ErrNotApplicable", name, err)
+		}
 	}
 }
