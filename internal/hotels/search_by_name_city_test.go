@@ -155,3 +155,28 @@ func TestNameMatch_OnlyTrailingCityWordConflicts(t *testing.T) {
 		t.Errorf(`findBestNameMatch("Andel's, Vienna") = %q, want nil: its town is Prague`, got.Name)
 	}
 }
+
+// TestSearchHotelByName_ReSearchKeepsTheMatchRules: the Booking match has no
+// Google ID, so the lookup re-searches Google. A Google-ID row from that
+// re-search must pass the same name and town rules as the first match;
+// "Hotel Sacher Baden" is only Jaccard-similar to "Hotel Sacher Wien".
+func TestSearchHotelByName_ReSearchKeepsTheMatchRules(t *testing.T) {
+	serveGooglePage(t, hotelWithPrice{"Hotel Sacher Baden", 200})
+	withBookingResult(t, models.HotelResult{
+		Name: "Hotel Sacher Wien", Address: "Philharmoniker-Straße 4, 1010 Wien", HotelID: "4711",
+		Price: 480, Currency: "USD", Lat: 60.1699, Lon: 24.9384,
+	})
+	seedGeo(t, "Hotel Sacher Wien")
+	seedGeo(t, "Hotel Sacher Wien, Hotel Sacher Wien")
+
+	got, err := SearchHotelByName(context.Background(), "Hotel Sacher Wien", lookupCheckIn, lookupCheckOut, "USD")
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if got.Name != "Hotel Sacher Wien" {
+		t.Fatalf("matched %q (%s), want the Booking row Hotel Sacher Wien", got.Name, got.HotelID)
+	}
+	if hotelIDRank("0x476d079e5136ca9f:0xfdc2e58a51a25b46") != 2 {
+		t.Error("a hex feature ID must rank as a Google ID")
+	}
+}
