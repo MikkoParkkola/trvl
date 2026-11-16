@@ -62,6 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#782](https://github.com/MikkoParkkola/trvl/pull/782))
 - ÖBB answers again: shop requests send a browser User-Agent, which the shop requires. When the shop still refuses, the ÖBB timetable lists the trains without fares and says why. A refusal shows the page title instead of its HTML, and DB's bot wall (`OPS_BLOCKED`) reports as a retryable refusal.
   ([#782](https://github.com/MikkoParkkola/trvl/pull/782))
+- A ground search limited to named providers (`--provider`) searches only those providers: the travel-hacks savings pass no longer runs flight and other ground searches behind it. A savings pass never starts inside another, and each flight query runs once per pass.
+  ([#785](https://github.com/MikkoParkkola/trvl/pull/785))
 
 ## [1.27.0] - 2026-10-10
 

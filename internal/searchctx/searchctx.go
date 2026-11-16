@@ -1,4 +1,6 @@
-// Package searchctx keeps request values after the caller's cancel signal stops.
+// Package searchctx carries search-scoped context: request values detached
+// from the caller's cancel signal, and the savings-pass marker and memo that
+// flights and ground share.
 package searchctx
 
 import (
