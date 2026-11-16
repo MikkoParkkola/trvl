@@ -98,6 +98,13 @@ func parseHotelsFromPageFull(page string, currency string) parseResult {
 
 	var hotels []models.HotelResult
 
+	// A query naming one property gets Google's detail view instead of a
+	// list. Its hotel goes first, so deduplicateHotels drops the same-name ad
+	// (which carries no place ID) from the same response.
+	if detail, ok := extractDetailViewHotel(hotelData, currency); ok {
+		hotels = append(hotels, detail)
+	}
+
 	// Extract organic hotel entries.
 	organic := extractOrganicHotels(hotelData, currency)
 	hotels = append(hotels, organic...)
@@ -667,3 +674,41 @@ func deduplicateHotels(hotels []models.HotelResult) []models.HotelResult {
 // ParseHotelSearchResponse parses hotel search results from a decoded
 // batchexecute response. This is the legacy path used when batchexecute
 // responses are available. The Travel page scraping path (parseHotelsFromPage)
+
+// extractDetailViewHotel reads the single hotel of Google's detail view, at
+// data[1][7]["441552390"]. Its leading fields share the organic layout ([1]
+// name, [2][0] coordinates, [3] stars) and [26][4] holds its place ID. Only
+// identity is read: the captured entry's price block ([6]) was for other
+// dates than the search, and nested related hotels carry their own IDs.
+func extractDetailViewHotel(data any, currency string) (models.HotelResult, bool) {
+	m, _ := jsonutil.NavigateArray(data, 1, 7).(map[string]any)
+	entry, _ := m["441552390"].([]any)
+	if len(entry) < 2 {
+		return models.HotelResult{}, false
+	}
+	h := parseOrganicHotel(entry[:min(len(entry), 4)], currency)
+	h.HotelID = detailViewPlaceID(entry)
+	return h, h.Name != ""
+}
+
+// detailViewPlaceID returns the ChIJ place ID at [26][4], else the first ChIJ
+// string directly inside one of the entry's own fields. It never descends
+// further: the price block nests other hotels' place IDs.
+func detailViewPlaceID(entry []any) string {
+	isPlaceID := func(v any) bool {
+		s, ok := v.(string)
+		return ok && strings.HasPrefix(s, "ChIJ")
+	}
+	if id := jsonutil.NavigateArray(entry, 26, 4); isPlaceID(id) {
+		return id.(string)
+	}
+	for _, field := range entry {
+		children, _ := field.([]any)
+		for _, v := range children {
+			if isPlaceID(v) {
+				return v.(string)
+			}
+		}
+	}
+	return ""
+}
