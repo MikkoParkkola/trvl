@@ -50,8 +50,8 @@ func retryCity(name, location string) string {
 
 // withoutOtherTowns drops candidates whose name carries a town that is not the
 // query's city, so "Hotel Sacher" for Vienna never matches "Hotel Sacher
-// Baden". A name word counts as a town when it appears in the candidate's own
-// address, or when it is an alias-table city trailing the name (a leading one,
+// Baden". A name word counts as a town when its address names it as a town
+// (addressTowns), or when it is an alias-table city trailing the name (a leading one,
 // as in "Vienna House Andel's Prague", is a brand); words of the query name or
 // city never count. With no city there is nothing to conflict with.
 //
@@ -157,10 +157,7 @@ func cachedLocation(query string) (lat, lon float64, ok bool) {
 }
 
 func carriesOtherTown(h models.HotelResult, allowed map[string]bool) bool {
-	address := make(map[string]bool)
-	for _, w := range canonicalCityWords(hotelNameWords(h.Address)) {
-		address[w] = true
-	}
+	towns := addressTowns(h.Address)
 	words := canonicalCityWords(hotelNameWords(h.Name))
 	lastAllowed := -1
 	for i, w := range words {
@@ -173,9 +170,36 @@ func carriesOtherTown(h models.HotelResult, allowed map[string]bool) bool {
 			continue
 		}
 		_, isCity := cityAliasCanon[w]
-		if address[w] || (isCity && i > lastAllowed) {
+		if towns[w] || (isCity && i > lastAllowed) {
 			return true
 		}
 	}
 	return false
+}
+
+// addressTowns returns an address's town words: alias-table cities anywhere
+// in it, and the place after a postcode ("2500 Baden", "1100 Wien"). Street
+// words ("Am Hauptbahnhof 1") are not towns.
+func addressTowns(address string) map[string]bool {
+	towns := make(map[string]bool)
+	for _, part := range strings.Split(address, ",") {
+		afterPostcode := false
+		for _, w := range canonicalCityWords(hotelNameWords(part)) {
+			if _, isCity := cityAliasCanon[w]; isCity || afterPostcode {
+				towns[w] = true
+			}
+			if isPostcodeWord(w) {
+				afterPostcode = true
+			}
+		}
+	}
+	return towns
+}
+
+// isPostcodeWord reports a run of three to six digits.
+func isPostcodeWord(w string) bool {
+	if len(w) < 3 || len(w) > 6 {
+		return false
+	}
+	return !strings.ContainsFunc(w, func(r rune) bool { return r < '0' || r > '9' })
 }
