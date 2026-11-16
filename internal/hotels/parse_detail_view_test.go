@@ -80,3 +80,23 @@ func TestSearchHotelByName_DetailViewKeepsPlaceID(t *testing.T) {
 		t.Fatalf("matched %q with HotelID %q, want the Google place ID %q", got.Name, got.HotelID, sacherPlaceID)
 	}
 }
+
+// TestSearchHotelByName_DetailViewGoogleOnly: without a Booking row (no
+// browser cookies, the common case) the detail view alone resolves the
+// place ID.
+func TestSearchHotelByName_DetailViewGoogleOnly(t *testing.T) {
+	freshRateManager(t)
+	page := detailViewPage(t)
+	useTestDefaultClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(page)
+	}))
+	seedGeoAt(t, "Hotel Sacher Wien", 48.2040009, 16.3697963)
+
+	got, err := SearchHotelByName(context.Background(), "Hotel Sacher Wien", lookupCheckIn, lookupCheckOut, "EUR")
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if got.Name != "Hotel Sacher Vienna" || got.HotelID != sacherPlaceID {
+		t.Fatalf("matched %q with HotelID %q, want Hotel Sacher Vienna with %q", got.Name, got.HotelID, sacherPlaceID)
+	}
+}
