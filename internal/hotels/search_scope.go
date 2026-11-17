@@ -105,3 +105,29 @@ func googleRefusal(err error) error {
 	}
 	return fmt.Errorf("%w: %w", models.ErrRateLimited, err)
 }
+
+// queryLocality is the place a by-name query names: the text after its first
+// comma, or, without a comma, the whole query.
+func queryLocality(query string) string {
+	if i := strings.Index(query, ","); i >= 0 {
+		return strings.TrimSpace(query[i+1:])
+	}
+	return strings.TrimSpace(query)
+}
+
+// hasLocality reports whether query carries every word of locality, matched
+// case-folded on whole words, so an answer for "Hotel Sacher" alone cannot
+// stand in for Vienna (#826 rev 6 [2]).
+func hasLocality(query, locality string) bool {
+	words := map[string]bool{}
+	for _, w := range hotelNameWords(query) {
+		words[w] = true
+	}
+	want := hotelNameWords(locality)
+	for _, w := range want {
+		if !words[w] {
+			return false
+		}
+	}
+	return len(want) > 0
+}
