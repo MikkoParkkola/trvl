@@ -43,7 +43,8 @@ func detectCurrencyArbitrage(ctx context.Context, in DetectorInput) []Hack {
 	}
 
 	baseResult, err := flights.SearchFlights(ctx, in.Origin, in.Destination, in.Date, flights.SearchOptions{
-		ReturnDate: in.ReturnDate,
+		ReturnDate:     in.ReturnDate,
+		SearchOverride: in.SearchOverride,
 	})
 	if err != nil || !baseResult.Success || len(baseResult.Flights) == 0 {
 		return nil
