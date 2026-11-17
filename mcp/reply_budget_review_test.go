@@ -100,7 +100,9 @@ func TestReplyBudgetDetailsVerifiedRateIsShown(t *testing.T) {
 	orig := getRoomAvailabilityWithOptsFunc
 	getRoomAvailabilityWithOptsFunc = func(ctx context.Context, opts hotels.RoomSearchOptions) (*hotels.RoomAvailability, error) {
 		a, err := orig(ctx, opts)
-		a.Rooms[0].TotalPrice = 1
+		// verified_rate picks Room 00 by its total (1); the cut ranks it by
+		// its nightly rate (500), the dearest, so it goes first.
+		a.Rooms[0].TotalPrice, a.Rooms[0].NightlyPrice = 1, 500
 		return a, err
 	}
 	got := callGroundTool(t, "search_hotels_with_details", budgetDetailArgs)
@@ -112,8 +114,12 @@ func TestReplyBudgetDetailsVerifiedRateIsShown(t *testing.T) {
 		h, _ := r.(map[string]any)
 		vr, _ := h["verified_rate"].(map[string]any)
 		name, _ := vr["room_name"].(string)
-		if rooms := rowNames(h, "room_types", "name"); name != "" && !slices.Contains(rooms, name) {
-			t.Errorf("hotel %d verified_rate names %q, which the cut removed", i, name)
+		rooms := rowNames(h, "room_types", "name")
+		if slices.Contains(rooms, "Room 00") {
+			t.Fatalf("hotel %d kept Room 00; the fixture must force it out", i)
+		}
+		if name == "" || !slices.Contains(rooms, name) {
+			t.Errorf("hotel %d verified_rate names %q; want a non-empty rate for a room still listed", i, name)
 		}
 	}
 }
