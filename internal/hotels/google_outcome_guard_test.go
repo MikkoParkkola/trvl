@@ -12,10 +12,11 @@ import (
 )
 
 // googleOutcomeViolations lists the ways a file may bypass the one recorded
-// Google outcome (#826 design rev 6): writing its state outside
-// google_outcome.go, the deleted status-string helpers, an error built from a
-// ProviderStatus.Error string, a cooldown refusal built by hand, or a Google
-// notice outside the rooms notice line and the out-of-scope SerpAPI source.
+// Google outcome (#826 design rev 6): writing its state, or taking its
+// address, outside google_outcome.go, the deleted status-string helpers, an
+// error built from a ProviderStatus.Error string, a cooldown refusal built by
+// hand, or a Google notice outside the rooms notice line and the out-of-scope
+// SerpAPI source.
 func googleOutcomeViolations(fset *token.FileSet, name string, file *ast.File) []string {
 	var out []string
 	report := func(n ast.Node, what string) {
@@ -26,9 +27,16 @@ func googleOutcomeViolations(fset *token.FileSet, name string, file *ast.File) [
 		switch n := n.(type) {
 		case *ast.AssignStmt:
 			for _, lhs := range n.Lhs {
-				if base != "google_outcome.go" && writesOutcomeState(lhs) {
+				if base != "google_outcome.go" && reachesOutcomeState(lhs) {
 					report(n, "writes Google outcome state outside google_outcome.go")
 				}
+			}
+		case *ast.UnaryExpr:
+			// An address is a write waiting to happen: e := &c.events[0];
+			// e.err = nil writes through an alias the assignment check
+			// cannot see (gpt, review on e0baf88f).
+			if n.Op == token.AND && base != "google_outcome.go" && reachesOutcomeState(n.X) {
+				report(n, "takes the address of Google outcome state outside google_outcome.go")
 			}
 		case *ast.CompositeLit:
 			if id, ok := n.Type.(*ast.Ident); ok && base != "google_outcome.go" &&
@@ -66,12 +74,12 @@ func googleOutcomeViolations(fset *token.FileSet, name string, file *ast.File) [
 	return out
 }
 
-// writesOutcomeState reports whether an assignment target is, or reaches into,
+// reachesOutcomeState reports whether an expression is, or reaches into,
 // a field only the outcome and its calls own: googleOutcome's strongest and
 // settled, or anything under googleCall's events (an event's err included).
 // The names are the outcome's own, so an unrelated field called err passes
 // without type information (muse, review on 738ac158).
-func writesOutcomeState(e ast.Expr) bool {
+func reachesOutcomeState(e ast.Expr) bool {
 	for {
 		switch x := e.(type) {
 		case *ast.SelectorExpr:
