@@ -189,6 +189,15 @@ func TestReplyBudgetTransfersMatchCountsAndLabels(t *testing.T) {
 				Departure: models.GroundStop{City: "Vienna Airport"}, Arrival: models.GroundStop{City: "Vienna"},
 				BookingURL: budgetTransferURL(i) + "?pad=" + strings.Repeat("u", 1500)}
 		}
+		// Buses and trains up front; taxis only in the tail the cut removes.
+		for i := range routes {
+			switch {
+			case i >= 50 && i < 58:
+				routes[i].Provider, routes[i].Type = "taxi", "taxi"
+			case i%2 == 1:
+				routes[i].Provider, routes[i].Type = "oebb", "train"
+			}
+		}
 		routes[59].Price = 2
 		routes[58].Duration = 5
 		return &trip.AirportTransferResult{Success: true, AirportCode: "VIE", Airport: "Vienna International", AirportCity: "Vienna",
@@ -217,11 +226,29 @@ func TestReplyBudgetTransfersMatchCountsAndLabels(t *testing.T) {
 	if city := bodyInt(got.structured, "city_matches"); city != len(keys)-wantExact {
 		t.Errorf("city_matches = %d, want %d city routes listed", city, len(keys)-wantExact)
 	}
+	// The modes the listed routes give, plus ride-hail, which the comparison
+	// adds whenever there is a route.
+	listed := []string{"ride_hail"}
+	providers, types := rowNames(got.structured, "routes", "provider"), rowNames(got.structured, "routes", "type")
+	for i := range providers {
+		mode := types[i]
+		if providers[i] == "taxi" {
+			mode = "taxi"
+		}
+		listed = append(listed, mode)
+	}
+	if slices.Contains(listed, "taxi") {
+		t.Fatal("fixture should cut every taxi route")
+	}
 	cmp, _ := got.structured["comparison"].(map[string]any)
-	modes := rowNames(cmp, "options", "mode")
+	for _, m := range rowNames(cmp, "options", "mode") {
+		if !slices.Contains(listed, m) {
+			t.Errorf("comparison option mode %q comes from no listed route (listed %v)", m, listed)
+		}
+	}
 	for _, label := range []string{"cheapest_mode", "fastest_mode", "best_value_mode", "most_luggage_friendly_mode"} {
-		if m, _ := cmp[label].(string); m != "" && !slices.Contains(modes, m) {
-			t.Errorf("%s = %q names no listed option (modes %v)", label, m, modes)
+		if m, _ := cmp[label].(string); m != "" && !slices.Contains(listed, m) {
+			t.Errorf("%s = %q comes from no listed route (listed %v)", label, m, listed)
 		}
 	}
 }
@@ -314,15 +341,22 @@ func TestFitReplyFloorError(t *testing.T) {
 	}
 }
 
-// A drop step may edit the rows it is given; the caller's rows stay intact.
+// A drop step may edit the rows it is given, and copies a nested slice
+// before changing it, as fitReply's contract asks; the caller's rows and
+// their nested slices stay intact.
 func TestFitReplyLeavesCallerRows(t *testing.T) {
-	type row struct{ Name string }
-	rows := []row{{"a"}, {"b"}, {"c"}}
+	type row struct {
+		Name string
+		Tags []string
+	}
+	rows := []row{{"a", []string{"a1"}}, {"b", []string{"b1"}}, {"c", []string{"c1"}}}
 	drop := func(cur []row) ([]row, bool) {
 		if len(cur) <= 1 {
 			return cur, false
 		}
 		cur[0].Name = "edited"
+		cur[0].Tags = slices.Clone(cur[0].Tags)
+		cur[0].Tags[0] = "edited"
 		return cur[:len(cur)-1], true
 	}
 	build := func(shown []row, _ bool) (string, any) {
@@ -331,7 +365,7 @@ func TestFitReplyLeavesCallerRows(t *testing.T) {
 	if _, _, err := fitReply(rows, drop, build); err != nil {
 		t.Fatal(err)
 	}
-	if rows[0].Name != "a" || len(rows) != 3 {
+	if rows[0].Name != "a" || rows[0].Tags[0] != "a1" || len(rows) != 3 {
 		t.Errorf("caller rows changed: %+v", rows)
 	}
 }
