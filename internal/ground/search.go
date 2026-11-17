@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -291,74 +290,10 @@ func sharedGroundResult(v any, err error) (*models.GroundSearchResult, error) {
 	return cloneGroundSearchResult(v.(*models.GroundSearchResult)), nil
 }
 
-func cloneGroundSearchResult(shared *models.GroundSearchResult) *models.GroundSearchResult {
-	if shared == nil {
-		return nil
-	}
-
-	// singleflight.Do shares the winner's *GroundSearchResult pointer across
-	// concurrent callers. MCP handlers can post-filter Routes and rewrite Count,
-	// so each caller needs a private copy of the result header and nested mutable
-	// slices/pointers to avoid racing on shared state.
-	cp := *shared
-	if shared.Routes != nil {
-		cp.Routes = make([]models.GroundRoute, len(shared.Routes))
-		for i, route := range shared.Routes {
-			routeCopy := route
-			if route.Amenities != nil {
-				routeCopy.Amenities = append([]string(nil), route.Amenities...)
-			}
-			if route.Legs != nil {
-				routeCopy.Legs = make([]models.GroundLeg, len(route.Legs))
-				for j, leg := range route.Legs {
-					legCopy := leg
-					if leg.Amenities != nil {
-						legCopy.Amenities = append([]string(nil), leg.Amenities...)
-					}
-					routeCopy.Legs[j] = legCopy
-				}
-			}
-			if route.SeatsLeft != nil {
-				seatsLeft := *route.SeatsLeft
-				routeCopy.SeatsLeft = &seatsLeft
-			}
-			routeCopy.Sources = slices.Clone(route.Sources)
-			if route.Confidence != nil {
-				c := *route.Confidence
-				c.Signals = slices.Clone(c.Signals)
-				routeCopy.Confidence = &c
-			}
-			if route.SeaState != nil {
-				sea := *route.SeaState
-				routeCopy.SeaState = &sea
-			}
-			cp.Routes[i] = routeCopy
-		}
-	}
-	cp.ProviderStatuses = slices.Clone(shared.ProviderStatuses)
-	cp.Completeness.Missing = slices.Clone(shared.Completeness.Missing)
-	// The saving and destination are set rarely and nest deeply; a JSON copy
-	// keeps them private without tracking every field they hold.
-	cp.HackSaving = jsonClone(shared.HackSaving)
-	cp.Destination = jsonClone(shared.Destination)
-	return &cp
-}
-
-// jsonClone returns a deep copy of *v through JSON, or a shallow copy of *v
-// if it cannot be encoded. nil stays nil.
-func jsonClone[T any](v *T) *T {
-	if v == nil {
-		return nil
-	}
-	if data, err := json.Marshal(v); err == nil {
-		var cp T
-		if json.Unmarshal(data, &cp) == nil {
-			return &cp
-		}
-	}
-	cp := *v
-	return &cp
-}
+// convertGroundCurrency converts route fares into the search currency. A
+// variable so offline tests can supply fixed rates instead of fetching live
+// ones.
+var convertGroundCurrency = destinations.ConvertCurrency
 
 // searchByNameCore performs the actual ground search without singleflight wrapping.
 func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOptions, cacheKey string, allowBrowserFallbacks bool) (*models.GroundSearchResult, error) {
@@ -705,7 +640,7 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	}
 	if target != "" {
 		conv := func(ctx context.Context, amount float64, from, to string) (float64, bool) {
-			amt, status := destinations.ConvertCurrency(ctx, amount, from, to)
+			amt, status := convertGroundCurrency(ctx, amount, from, to)
 			// Faithful adaptation of ConvertCurrency + flights normalize convention:
 			// success when returned status matches the requested to-currency and amt > 0.
 			if amt > 0 && strings.EqualFold(strings.TrimSpace(status), strings.TrimSpace(to)) {

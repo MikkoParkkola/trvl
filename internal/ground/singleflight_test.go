@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -406,5 +407,85 @@ func TestCloneGroundSearchResult_NestedFieldsArePrivate(t *testing.T) {
 	}
 	if shared.HackSaving.Risks[0] != "r" || shared.Destination.Holidays[0].Name != "h" {
 		t.Errorf("saving or destination changed through the copy: %v %v", shared.HackSaving.Risks, shared.Destination.Holidays)
+	}
+}
+
+// fillRefs gives every exported pointer, slice and map reachable from v a
+// non-empty value, so a later comparison can see whether a copy shares it.
+func fillRefs(v reflect.Value, depth int) {
+	if depth > 8 {
+		return
+	}
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		fillRefs(v.Elem(), depth+1)
+	case reflect.Slice:
+		if v.Len() == 0 {
+			v.Set(reflect.MakeSlice(v.Type(), 1, 1))
+		}
+		fillRefs(v.Index(0), depth+1)
+	case reflect.Map:
+		if v.IsNil() {
+			v.Set(reflect.MakeMap(v.Type()))
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			if v.Type().Field(i).IsExported() {
+				fillRefs(v.Field(i), depth+1)
+			}
+		}
+	}
+}
+
+// sharedRefs lists the paths where a and b point at the same pointee, slice
+// backing array or map.
+func sharedRefs(a, b reflect.Value, path string, depth int) []string {
+	if depth > 8 {
+		return nil
+	}
+	var out []string
+	switch a.Kind() {
+	case reflect.Pointer:
+		if a.IsNil() || b.IsNil() {
+			return nil
+		}
+		if a.Pointer() == b.Pointer() {
+			out = append(out, path)
+		}
+		out = append(out, sharedRefs(a.Elem(), b.Elem(), path, depth+1)...)
+	case reflect.Slice:
+		if a.Len() == 0 || b.Len() == 0 {
+			return nil
+		}
+		if a.Pointer() == b.Pointer() {
+			out = append(out, path)
+		}
+		out = append(out, sharedRefs(a.Index(0), b.Index(0), path+"[0]", depth+1)...)
+	case reflect.Map:
+		if !a.IsNil() && a.Pointer() == b.Pointer() {
+			out = append(out, path)
+		}
+	case reflect.Struct:
+		for i := 0; i < a.NumField(); i++ {
+			if f := a.Type().Field(i); f.IsExported() {
+				out = append(out, sharedRefs(a.Field(i), b.Field(i), path+"."+f.Name, depth+1)...)
+			}
+		}
+	}
+	return out
+}
+
+// Every pointer, slice and map in a ground result, nested ones included, is
+// the caller's own after cloning. The fill is by reflection, so a reference
+// field added to the models later fails here until the clone copies it.
+func TestCloneGroundSearchResult_SharesNoReferences(t *testing.T) {
+	shared := &models.GroundSearchResult{}
+	fillRefs(reflect.ValueOf(shared).Elem(), 0)
+	c := cloneGroundSearchResult(shared)
+	if got := sharedRefs(reflect.ValueOf(c).Elem(), reflect.ValueOf(shared).Elem(), "result", 0); len(got) > 0 {
+		t.Errorf("clone shares these with the original: %v", got)
 	}
 }
