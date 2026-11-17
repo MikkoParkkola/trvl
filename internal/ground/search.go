@@ -145,44 +145,67 @@ func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions
 	// saving (opted out, or inside a savings pass) from reaching a search that
 	// attaches one, through the cache or the shared in-flight call.
 	providerKey := groundProviderKey(opts)
-	cacheKey := cache.Key("ground", fmt.Sprintf("%s|%s|%s|%s|%s|%.2f|%s|%t|x=%s|savingsoff=%t", from, to, date, opts.Currency, providerKey, opts.MaxPrice, opts.Type, allowBrowserFallbacks, groundExcludeKey(opts), searchctx.SavingsOff(ctx, opts.NoHacks)))
+	tripKey := groundTripKey(from, to, date, opts)
+	cacheKey := cache.Key("ground", fmt.Sprintf("%s|savingsoff=%t", tripKey, searchctx.SavingsOff(ctx, opts.NoHacks)))
 
-	negKey, negEligible := groundNegKey(from, to, date, opts, providerKey)
+	search := func(ctx context.Context) (*models.GroundSearchResult, error) {
+		negKey, negEligible := groundNegKey(from, to, date, opts, providerKey)
 
-	// Check cache unless bypassed.
-	if !opts.NoCache {
-		if data, ok := groundCache.Get(cacheKey); ok {
-			var cached models.GroundSearchResult
-			if err := json.Unmarshal(data, &cached); err == nil {
-				slog.Debug("ground cache hit", "from", from, "to", to, "date", date)
+		// Check cache unless bypassed.
+		if !opts.NoCache {
+			if data, ok := groundCache.Get(cacheKey); ok {
+				var cached models.GroundSearchResult
+				if err := json.Unmarshal(data, &cached); err == nil {
+					slog.Debug("ground cache hit", "from", from, "to", to, "date", date)
+					maybePrefetchGround(ctx, from, to, date, opts)
+					return &cached, nil
+				}
+			}
+
+			// Negative-result cache: a recent CLEAN "no service" short-circuits the
+			// whole provider fan-out for this route+month. Only unfiltered searches
+			// participate (negEligible).
+			if negEligible && negCacheEnabled() && groundNegCache.Seen(negKey) {
+				slog.Debug("ground negative cache hit", "from", from, "to", to, "date", date)
 				maybePrefetchGround(ctx, from, to, date, opts)
-				return &cached, nil
+				return negCacheHitResult(opts), nil
 			}
 		}
 
-		// Negative-result cache: a recent CLEAN "no service" short-circuits the
-		// whole provider fan-out for this route+month. Only unfiltered searches
-		// participate (negEligible).
-		if negEligible && negCacheEnabled() && groundNegCache.Seen(negKey) {
-			slog.Debug("ground negative cache hit", "from", from, "to", to, "date", date)
-			maybePrefetchGround(ctx, from, to, date, opts)
-			return negCacheHitResult(opts), nil
-		}
+		// Deduplicate concurrent identical in-flight searches. The cache check above
+		// already handles TTL-based reuse; singleflight only coalesces truly concurrent
+		// requests that both missed the cache.
+		result, err := doGroundSearchSingleflight(ctx, cacheKey, func(sharedCtx context.Context) (*models.GroundSearchResult, error) {
+			return searchByNameCore(sharedCtx, from, to, date, opts, cacheKey, allowBrowserFallbacks)
+		})
+
+		// Speculative prefetch: warm the cache for the likely next query. Best-effort
+		// and non-blocking.
+		maybePrefetchGround(ctx, from, to, date, opts)
+
+		return result, err
 	}
 
-	// Deduplicate concurrent identical in-flight searches. The cache check above
-	// already handles TTL-based reuse; singleflight only coalesces truly concurrent
-	// requests that both missed the cache.
-	result, err := doGroundSearchSingleflight(ctx, cacheKey, func(sharedCtx context.Context) (*models.GroundSearchResult, error) {
-		return searchByNameCore(sharedCtx, from, to, date, opts, cacheKey, allowBrowserFallbacks)
-	})
-
-	// Speculative prefetch: warm the cache for the likely next query. Best-effort
-	// and non-blocking.
-	maybePrefetchGround(ctx, from, to, date, opts)
-
-	return result, err
+	// Inside a savings pass, a search for the same trip shares one result per
+	// pass: the outer search seeds it (attachGroundHackSaving), so a detector
+	// repeating the caller's route gets those routes without a second
+	// provider round and without waiting on the call it runs inside (#810).
+	if searchctx.InSavingsPass(ctx) {
+		res, err := searchctx.Memo(ctx, groundPassKey(tripKey), search)
+		return cloneGroundSearchResult(res), err
+	}
+	return search(ctx)
 }
+
+// groundTripKey identifies one ground trip and its search scope: route, date,
+// currency, provider filters, price and type filters, browser fallbacks. The
+// cache key appends savingsoff to it; the savings-pass memo uses it as is.
+func groundTripKey(from, to, date string, opts SearchOptions) string {
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%.2f|%s|%t|x=%s", from, to, date, opts.Currency, groundProviderKey(opts), opts.MaxPrice, opts.Type, browserFallbacksEnabled(opts), groundExcludeKey(opts))
+}
+
+// groundPassKey is the savings-pass memo key for a ground trip.
+func groundPassKey(tripKey string) string { return "ground|" + tripKey }
 
 // searchRoundTripByName composes a round-trip ground itinerary from two one-way
 // searches: the outbound (from->to on date) and the inbound (to->from on

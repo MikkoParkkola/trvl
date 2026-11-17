@@ -139,3 +139,40 @@ func TestSearchByName_SavingsPassOtherDateStillSearches(t *testing.T) {
 		t.Errorf("ferryhopper requests = %d, want %d (outer date plus the other date)", got, 2*perSearch)
 	}
 }
+
+// Routes handed out by the pass are the caller's own copy: a detector that
+// edits them does not change what the next detector or the outer search sees.
+func TestSearchByName_SavingsPassRoutesAreCopies(t *testing.T) {
+	t.Setenv("TRVL_PREFETCH", "false")
+	stubFerryhopper(t)
+	opts := SearchOptions{Currency: "EUR", ExcludeProviders: allButFerryhopper(), NoCache: true}
+	const from, to, date = "Piraeus", "Santorini", "2027-07-15"
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	var first, second float64
+	withComposer(t, func(ctx context.Context, req HackComposeRequest) *models.HackSaving {
+		nested := SearchOptions{Currency: req.Currency, ExcludeProviders: req.ExcludeProviders, NoCache: req.NoCache}
+		a, err := SearchByName(ctx, req.Origin, req.Destination, req.Date, nested)
+		if err != nil || a == nil || len(a.Routes) == 0 {
+			return nil
+		}
+		first = a.Routes[0].Price
+		a.Routes[0].Price = -1
+		b, err := SearchByName(ctx, req.Origin, req.Destination, req.Date, nested)
+		if err == nil && b != nil && len(b.Routes) > 0 {
+			second = b.Routes[0].Price
+		}
+		return nil
+	})
+	outer, err := SearchByName(ctx, from, to, date, opts)
+	if err != nil || outer == nil || len(outer.Routes) == 0 {
+		t.Fatalf("outer search: err=%v result=%+v", err, outer)
+	}
+	if first <= 0 || second != first {
+		t.Errorf("second nested search saw price %v after the first caller edited its copy, want %v", second, first)
+	}
+	if outer.Routes[0].Price != first {
+		t.Errorf("outer route price %v changed by a detector's edit, want %v", outer.Routes[0].Price, first)
+	}
+}
