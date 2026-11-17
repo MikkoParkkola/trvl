@@ -34,7 +34,7 @@ func fitHotelDetailsReply(req hotelSearchRequest, result *models.HotelSearchResu
 	// The summary describes the full enrichment, failed lookups included,
 	// even when the budget cuts hotels or rooms; the note says what is shown.
 	summary := hotelDetailsSummary(newResp(hotelsWithDetails), req.Location)
-	cut := detailsDropStep(roomCutter(req.Options.Currency, stayNights(req.CheckIn, req.CheckOut), nil))
+	cut := detailsDropStep(roomCutter(req.Options.Currency, stayNights(req.CheckIn, req.CheckOut)))
 	return fitReply(hotelsWithDetails, cut, func(shown []hotelWithDetails, trimmed bool) (string, any) {
 		// Offers and verified_rate are rebuilt from the rooms kept, so
 		// room_types, accommodation_offers and verified_rate always name the

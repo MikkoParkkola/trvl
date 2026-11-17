@@ -670,10 +670,16 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 	// and in one currency), the cheapest per night stays, and the trimmed
 	// summary names that room instead of the raw-price pick.
 	total, nights := len(availability.Rooms), stayNights(checkIn, checkOut)
-	var pin, keptLine string
+	// Rows are indices into availability.Rooms, so exactly one room is
+	// pinned even when identical rates share every field.
+	pinAt, keptLine := -1, ""
+	idx := make([]int, total)
+	for i := range idx {
+		idx[i] = i
+	}
 	if total > 0 {
-		kept := cheapestRoomPerNight(availability.Rooms, currency, nights)
-		pin = roomKey(kept)
+		pinAt = cheapestRoomAt(availability.Rooms, currency, nights)
+		kept := availability.Rooms[pinAt]
 		if p := roomNightlyIn(kept, currency, nights); !math.IsInf(p, 1) {
 			cur := strings.ToUpper(currency)
 			if cur == "" {
@@ -682,8 +688,25 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 			keptLine = fmt.Sprintf(" Cheapest: %s %.0f/night (%s).", cur, p, kept.Name)
 		}
 	}
-	cut := roomCutter(currency, nights, func(r hotels.RoomType) bool { return roomKey(r) == pin })
-	return fitReply(availability.Rooms, cut, func(shown []hotels.RoomType, trimmed bool) (string, any) {
+	roomsAt := func(rows []int) []hotels.RoomType {
+		out := make([]hotels.RoomType, len(rows))
+		for j, i := range rows {
+			out[j] = availability.Rooms[i]
+		}
+		return out
+	}
+	cut := func(rows []int) ([]int, bool) {
+		if len(rows) <= 1 {
+			return rows, false
+		}
+		j := priciestRoomAt(roomsAt(rows), currency, nights, func(pos int) bool { return rows[pos] == pinAt })
+		if j < 0 {
+			return rows, false
+		}
+		return slices.Delete(rows, j, j+1), true
+	}
+	return fitReply(idx, cut, func(rows []int, trimmed bool) (string, any) {
+		shown := roomsAt(rows)
 		view := *availability
 		view.Rooms = shown
 		// MIK-6232: attach a booking-readiness verdict. Rooms carry
@@ -730,48 +753,44 @@ func summaryCheapestRoom(rooms []hotels.RoomType) hotels.RoomType {
 	return cheapest
 }
 
-// cheapestRoomPerNight is the first room with the lowest roomNightlyIn, the
-// room a budget cut keeps. rooms must not be empty.
-func cheapestRoomPerNight(rooms []hotels.RoomType, currency string, nights int) hotels.RoomType {
-	best := rooms[0]
-	for _, r := range rooms[1:] {
-		if roomNightlyIn(r, currency, nights) < roomNightlyIn(best, currency, nights) {
-			best = r
+// cheapestRoomAt is the index of the first room with the lowest
+// roomNightlyIn, the room a budget cut keeps. rooms must not be empty.
+func cheapestRoomAt(rooms []hotels.RoomType, currency string, nights int) int {
+	best := 0
+	for i := range rooms {
+		if roomNightlyIn(rooms[i], currency, nights) < roomNightlyIn(rooms[best], currency, nights) {
+			best = i
 		}
 	}
 	return best
 }
 
-// roomKey identifies a room within one list for pinning.
-func roomKey(r hotels.RoomType) string {
-	return fmt.Sprintf("%s|%s|%s|%s|%g", r.Name, r.Provider, r.RateID, r.Currency, r.Price)
+// priciestRoomAt is the position of the room that costs the most per night
+// once every price is on one basis and in one currency (roomNightlyIn),
+// skipping positions skip reports; -1 when every room is skipped. skip may
+// be nil.
+func priciestRoomAt(rooms []hotels.RoomType, currency string, nights int, skip func(pos int) bool) int {
+	worst, worstPrice := -1, 0.0
+	for i, r := range rooms {
+		if skip != nil && skip(i) {
+			continue
+		}
+		if p := roomNightlyIn(r, currency, nights); worst < 0 || p > worstPrice {
+			worst, worstPrice = i, p
+		}
+	}
+	return worst
 }
 
 // roomCutter returns the budget drop step for a room list: it removes the
-// room that costs the most per night once every price is on one basis and
-// in one currency (roomNightlyIn), never the first pinned room, down to one
-// room. pinned may be nil.
-func roomCutter(currency string, nights int, pinned func(hotels.RoomType) bool) func([]hotels.RoomType) ([]hotels.RoomType, bool) {
+// priciest room per night (priciestRoomAt), down to one room.
+func roomCutter(currency string, nights int) func([]hotels.RoomType) ([]hotels.RoomType, bool) {
 	return func(rooms []hotels.RoomType) ([]hotels.RoomType, bool) {
 		if len(rooms) <= 1 {
 			return rooms, false
 		}
-		worst, worstPrice, pinSeen := -1, 0.0, false
-		for i, r := range rooms {
-			// Only the first pinned match is protected: identical rates
-			// share a key, and keeping one of them is enough.
-			if !pinSeen && pinned != nil && pinned(r) {
-				pinSeen = true
-				continue
-			}
-			if p := roomNightlyIn(r, currency, nights); worst < 0 || p > worstPrice {
-				worst, worstPrice = i, p
-			}
-		}
-		if worst < 0 {
-			return rooms, false
-		}
-		return slices.Delete(rooms, worst, worst+1), true
+		i := priciestRoomAt(rooms, currency, nights, nil)
+		return slices.Delete(rooms, i, i+1), true
 	}
 }
 
