@@ -114,3 +114,27 @@ func TestFetchDBBestPrice_WarnCarriesBoundedRedactedExcerpt(t *testing.T) {
 		t.Errorf("warning carries more than a bounded excerpt (%d bytes logged)", len(logged))
 	}
 }
+
+// TestFetchDBBestPrice_WarnExcerptIsExactly200Bytes: byte 200 of DB's error
+// answer is logged, byte 201 is not.
+func TestFetchDBBestPrice_WarnExcerptIsExactly200Bytes(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	const last, next = "LASTBYTEMARK", "OVERMARK"
+	head := `{"code":"VALIDIERUNG",`
+	// Dots, not letters: a long letter run could read as a token to the
+	// scrubber and be masked together with the marker.
+	errBody := head + strings.Repeat(".", dbErrorExcerptBytes-len(head)-len(last)) + last + next + strings.Repeat(".", 100)
+	useDBDayBestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(errBody))
+	})
+
+	_, _, _ = fetchDBBestPrice(context.Background(), "5400014", "8103000", "2026-11-20")
+	if logged := buf.String(); !strings.Contains(logged, last) || strings.Contains(logged, next) {
+		t.Errorf("warning = %q, want the excerpt to end exactly at byte %d", logged, dbErrorExcerptBytes)
+	}
+}

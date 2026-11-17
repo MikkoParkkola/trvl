@@ -539,7 +539,7 @@ func searchOebbShop(ctx context.Context, fromStation, toStation oebbStation, dt 
 	if pricesErr != nil {
 		notice := oebbPricesNotice(pricesErr)
 		if sectionless > 0 {
-			notice.FixHint += "; " + oebbTransfersUnknownHint
+			notice.FixHint += "; " + oebbTransfersHint(sectionless, len(connections))
 		}
 		return routes, notice
 	}
@@ -547,14 +547,21 @@ func searchOebbShop(ctx context.Context, fromStation, toStation oebbStation, dt 
 		err := fmt.Errorf("oebb shop timetable: %d of %d connections carried no train sections", sectionless, len(connections))
 		return routes, &models.ProviderNotice{
 			Reason:  models.ClassifyProviderReason(err.Error()),
-			FixHint: oebbTransfersUnknownHint,
+			FixHint: oebbTransfersHint(sectionless, len(connections)),
 			Err:     err,
 		}
 	}
 	return routes, nil
 }
 
-const oebbTransfersUnknownHint = "shop timetable carried no train sections: transfer counts unknown"
+// oebbTransfersHint says which shop routes carry no change count: the whole
+// timetable, or how many of its connections (each route is flagged too).
+func oebbTransfersHint(sectionless, total int) string {
+	if sectionless == total {
+		return "shop timetable carried no train sections: transfer counts unknown"
+	}
+	return fmt.Sprintf("transfer counts unknown on %d of %d shop connections (no train sections)", sectionless, total)
+}
 
 // oebbShopLegs builds one train leg per "journey" section of a shop
 // connection. Only the route's two ends have a known city; a change station

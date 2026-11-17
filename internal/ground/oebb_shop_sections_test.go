@@ -176,8 +176,8 @@ func TestSearchOebbShop_NoSectionsSaysTransfersUnknown(t *testing.T) {
 			t.Errorf("%s: transfers %d unknown %v legs %d, want unknown, 0 and no legs", dep, r.Transfers, r.TransfersUnknown, len(r.Legs))
 		}
 	}
-	if n := oebbNotice(t, err); !strings.Contains(n.FixHint, "transfer counts unknown") {
-		t.Errorf("FixHint = %q, want it to say transfer counts are unknown", n.FixHint)
+	if n := oebbNotice(t, err); !strings.Contains(n.FixHint, "shop timetable carried no train sections") || strings.Contains(n.FixHint, " of ") {
+		t.Errorf("FixHint = %q, want the whole-timetable note", n.FixHint)
 	}
 }
 
@@ -195,8 +195,29 @@ func TestSearchOebbShop_OneSectionlessConnection(t *testing.T) {
 	if r := by["10:08"]; r.TransfersUnknown || r.Transfers != 1 || len(r.Legs) != 2 {
 		t.Errorf("10:08: transfers %d unknown %v legs %d, want 1 known with 2 legs", r.Transfers, r.TransfersUnknown, len(r.Legs))
 	}
-	if n := oebbNotice(t, err); !strings.Contains(n.FixHint, "transfer counts unknown") {
-		t.Errorf("FixHint = %q, want it to say transfer counts are unknown", n.FixHint)
+	if n := oebbNotice(t, err); !strings.Contains(n.FixHint, "transfer counts unknown") || !strings.Contains(n.FixHint, "1 of 5") {
+		t.Errorf("FixHint = %q, want it to name the 1 of 5 connections whose counts are unknown", n.FixHint)
+	}
+}
+
+// TestSearchOebbShop_WalkBetweenTrainsIsNoLeg: a walk between two trains is
+// neither a leg nor an extra change.
+func TestSearchOebbShop_WalkBetweenTrainsIsNoLeg(t *testing.T) {
+	serveOebbShopCapture(t, func(conns []map[string]any) {
+		c := connectionAt(conns, "10:21")
+		secs := c["sections"].([]any)
+		walk := map[string]any{"type": "walk", "duration": 300000,
+			"from": map[string]any{"name": "Linz/Donau Hbf", "departure": "2026-11-20T14:06:00.000"},
+			"to":   map[string]any{"name": "Linz/Donau Hbf", "arrival": "2026-11-20T14:11:00.000"}}
+		c["sections"] = []any{secs[0], walk, secs[1]}
+	}, nil)
+	routes, err := SearchOebb(context.Background(), "Prague", "Vienna", "2026-11-20", "EUR")
+	if err != nil {
+		t.Fatalf("SearchOebb: %v", err)
+	}
+	r := oebbRoutesByDeparture(t, routes)["10:21"]
+	if r.Transfers != 1 || len(r.Legs) != 2 || r.Legs[0].Provider != "EC 333" || r.Legs[1].Provider != "RJX 65" {
+		t.Errorf("10:21: transfers %d legs %+v, want 1 change and the two trains only", r.Transfers, r.Legs)
 	}
 }
 
