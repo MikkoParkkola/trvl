@@ -51,3 +51,20 @@ func TestRunRooms_NoMatchKeepsTheIndexHint(t *testing.T) {
 		t.Fatalf("err = %v, want the index hint", err)
 	}
 }
+
+// TestResolveRoomAvailability_LocationFlagReachesTheRoomHint (#812): the city
+// the user passes with --location must reach the room lookup as a place, even
+// when the hotel's name already contains it.
+func TestResolveRoomAvailability_LocationFlagReachesTheRoomHint(t *testing.T) {
+	fetched := stubRoomsLookup(t, models.HotelResult{Name: "Hotel Sacher Vienna", HotelID: "ChIJsacher"})
+	if _, err := resolveRoomAvailability(context.Background(), "Hotel Sacher Wien", "2030-06-15", "2030-06-18", "EUR", "Wien"); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	got := *fetched
+	if got == nil {
+		t.Fatal("room fetch never ran")
+	}
+	if !strings.HasSuffix(got.Location, ", Wien") || got.LocationKind != hotels.LocationHotelQuery {
+		t.Fatalf("room hint = %q (kind %v), want the hotel query ending in \", Wien\"", got.Location, got.LocationKind)
+	}
+}

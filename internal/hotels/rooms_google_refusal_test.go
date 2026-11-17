@@ -182,15 +182,20 @@ func TestSearchHotelByName_GoogleRefusalIsAnError(t *testing.T) {
 		search      http.HandlerFunc
 		prime       bool
 		wantClock   bool
+		noBooking   bool
 	}{
-		{"candidate search 429", "Hotel Sacher Wien", answer(429), false, false},
-		{"refusal only in the targeted search", "Hotel Sacher, Vienna", refuseHotelQuery, false, false},
-		{"cooldown already armed", "Hotel Sacher Wien", noSacherPage, true, true},
+		{"candidate search 429", "Hotel Sacher Wien", answer(429), false, false, false},
+		{"refusal only in the targeted search", "Hotel Sacher, Vienna", refuseHotelQuery, false, false, false},
+		{"cooldown already armed", "Hotel Sacher Wien", noSacherPage, true, true, false},
+		// Nothing else answered either, so the search itself fails.
+		{"cooldown armed, no other provider", "Hotel Sacher Wien", noSacherPage, true, true, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			roomLookupWorld(t, googleRoutes{shortEntity, answer(404), tc.search}, tc.prime)
-			withBookingResult(t, sacherBookingUSD)
+			if !tc.noBooking {
+				withBookingResult(t, sacherBookingUSD)
+			}
 			seedGeoAt(t, "Hotel Sacher Wien", sacherLat, sacherLon)
 			seedGeoAt(t, "Hotel Sacher Wien, Hotel Sacher Wien", sacherLat, sacherLon)
 

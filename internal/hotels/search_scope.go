@@ -42,14 +42,19 @@ type locationCandidate struct {
 }
 
 // locationCandidates types buildLocationCandidates' searches. In a hotel
-// query every candidate that carries the name is a property search; the comma
-// suffixes, and any hint that is a place, are area searches.
+// query only the text after a comma names a place; every other candidate
+// carries the hotel name and is a property search. A hint that is a place
+// keeps every candidate an area search.
 func locationCandidates(hint string, kind LocationKind) []locationCandidate {
-	name := strings.TrimSpace(strings.Split(hint, ",")[0])
+	places := map[string]bool{}
+	parts := strings.Split(hint, ",")
+	for i := 1; i < len(parts); i++ {
+		places[strings.TrimSpace(strings.Join(parts[i:], ","))] = true
+	}
 	var out []locationCandidate
 	for _, q := range buildLocationCandidates(hint) {
 		scope := SearchScopeArea
-		if kind == LocationHotelQuery && strings.Contains(q, name) {
+		if kind == LocationHotelQuery && !places[q] {
 			scope = SearchScopeProperty
 		}
 		out = append(out, locationCandidate{query: q, scope: scope})

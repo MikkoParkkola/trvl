@@ -26,6 +26,17 @@ func TestLocationCandidates_TypesNameAndPlace(t *testing.T) {
 			{"Hotel Lutetia, Paris", SearchScopeProperty},
 		}},
 		{"Vienna", LocationArea, []locationCandidate{{"Vienna", SearchScopeArea}}},
+		// The text after a comma is the place even when the name repeats it
+		// or is missing.
+		{"Paris, Paris", LocationHotelQuery, []locationCandidate{
+			{"Paris", SearchScopeArea},
+			{"Paris Paris", SearchScopeProperty},
+			{"Paris, Paris", SearchScopeProperty},
+		}},
+		{",Vienna", LocationHotelQuery, []locationCandidate{
+			{"Vienna", SearchScopeArea},
+			{",Vienna", SearchScopeProperty},
+		}},
 	}
 	for _, tc := range cases {
 		if got := locationCandidates(tc.hint, tc.kind); !slices.Equal(got, tc.want) {

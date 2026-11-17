@@ -151,6 +151,10 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 	hint := hotelQuery
 	if searchQuery != hotelQuery {
 		hint = searchQuery
+	} else if location != "" && !strings.Contains(hotelQuery, ",") {
+		// The name already holds the city, but the room lookup reads only the
+		// text after a comma as a place: keep the city the user gave.
+		hint = hotelQuery + ", " + location
 	}
 	opts := hotels.RoomSearchOptions{
 		HotelID:      hotel.HotelID,
