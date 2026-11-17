@@ -135,7 +135,7 @@ func hotelPricesRPC(ctx context.Context, opts HotelPriceOpts) (*models.HotelPric
 		return nil, batchexec.ErrBlocked
 	}
 	if batchexec.QuotaRefusal(status, body) {
-		return nil, fmt.Errorf("google hotel prices refused (HTTP %d): %w", status, models.ErrRateLimited)
+		return nil, googleCooldownErr("google hotel prices", status)
 	}
 	if status != 200 {
 		return nil, fmt.Errorf("hotel price lookup returned status %d", status)
