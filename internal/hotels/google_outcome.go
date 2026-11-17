@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
@@ -60,6 +61,11 @@ func (c googleCall) answered() bool {
 		}
 	}
 	return false
+}
+
+// clone returns a copy whose events the caller may change freely.
+func (c googleCall) clone() googleCall {
+	return googleCall{events: slices.Clone(c.events)}
 }
 
 // primaryErr returns the first request's error when it was not answered: the

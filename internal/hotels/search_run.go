@@ -3,7 +3,6 @@ package hotels
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
@@ -92,7 +91,7 @@ func sharedHotelRun(v any, err error) (hotelSearchRun, error) {
 		res, rerr := sharedHotelResult(v, err)
 		return hotelSearchRun{result: res}, rerr
 	}
-	out := hotelSearchRun{call: googleCall{events: slices.Clone(run.call.events)}}
+	out := hotelSearchRun{call: run.call.clone()}
 	if run.result != nil {
 		out.result = cloneHotelSearchResult(run.result)
 	}
