@@ -178,6 +178,9 @@ func TestCompleteness_CloneSharesNothing(t *testing.T) {
 	if !reflect.DeepEqual(cp, c) {
 		t.Fatalf("clone differs:\n got %+v\nwant %+v", cp, c)
 	}
+	if len(cp.Missing) == 0 || len(cp.missingWhy) == 0 {
+		t.Fatalf("fixture has no missing providers: %+v", cp)
+	}
 	cp.Missing[0] = "changed"
 	cp.missingWhy[0] = "changed"
 	if c.Missing[0] == "changed" || c.missingWhy[0] == "changed" {
@@ -185,5 +188,76 @@ func TestCompleteness_CloneSharesNothing(t *testing.T) {
 	}
 	if got := (Completeness{}).Clone(); got.Missing != nil || got.missingWhy != nil {
 		t.Errorf("nil slices became %#v", got)
+	}
+}
+
+// A provider refused partway (a later page or sort order) after returning
+// results answered in part: not silent, not refused outright, and the search
+// is partial, never blocked (t-rooms #826 reports google_hotels this way).
+func TestMissingPhrase_PartialAnswer(t *testing.T) {
+	partial := ProviderStatus{ID: "google_hotels", Status: StatusRateLimited, Results: 40, Error: "google hotels page 2: HTTP 429 Too Many Requests"}
+	if got := partial.MissingPhrase(); got != "answered only in part" {
+		t.Fatalf("MissingPhrase() = %q, want answered only in part", got)
+	}
+	c := ComputeCompleteness([]ProviderStatus{partial})
+	if c.State != CompletenessPartial {
+		t.Errorf("state = %q, want partial: google_hotels returned 40 results", c.State)
+	}
+	if got, want := c.IncompleteNote(), "Checked 1 of 1 providers; google_hotels answered only in part — results may be incomplete."; got != want {
+		t.Errorf("note:\n got %q\nwant %q", got, want)
+	}
+
+	mixed := ComputeCompleteness([]ProviderStatus{
+		partial,
+		statusFrom("trivago", errors.New("trivago: HTTP 403: forbidden")),
+	})
+	if got, want := mixed.IncompleteNote(), "Checked 1 of 2 providers; trivago refused the request; google_hotels answered only in part — results may be incomplete."; got != want {
+		t.Errorf("mixed note:\n got %q\nwant %q", got, want)
+	}
+	if mixed.State != CompletenessPartial {
+		t.Errorf("mixed state = %q, want partial", mixed.State)
+	}
+}
+
+// The same single provider with nothing returned still blocks the search: the
+// partial rule moves only a search that got results.
+func TestComputeCompleteness_SingleProviderBlockedOnlyWithoutResults(t *testing.T) {
+	for _, tc := range []struct {
+		results   int
+		wantState string
+		wantNote  string
+	}{
+		{0, CompletenessBlocked, "Checked 0 of 1 providers; google_hotels rate-limited the request — results may be incomplete."},
+		{40, CompletenessPartial, "Checked 1 of 1 providers; google_hotels answered only in part — results may be incomplete."},
+	} {
+		c := ComputeCompleteness([]ProviderStatus{{ID: "google_hotels", Status: StatusRateLimited, Results: tc.results, Error: "HTTP 429"}})
+		if c.State != tc.wantState || c.MayClaimExhaustive() {
+			t.Errorf("results %d: state %q (exhaustive %v), want %q and not exhaustive", tc.results, c.State, c.MayClaimExhaustive(), tc.wantState)
+		}
+		if got := c.IncompleteNote(); got != tc.wantNote {
+			t.Errorf("results %d: note\n got %q\nwant %q", tc.results, got, tc.wantNote)
+		}
+	}
+}
+
+// Every missing-type status that still returned results is a partial answer
+// with the same completeness JSON; without results it blocks (#832 review).
+func TestComputeCompleteness_PartialAcrossStatuses(t *testing.T) {
+	for _, status := range []string{StatusTimeout, StatusFailed, StatusError, StatusRateLimited} {
+		for _, tc := range []struct {
+			results int
+			want    string
+		}{
+			{40, `{"state":"partial","queried":1,"succeeded":0,"missing":["google_hotels"]}`},
+			{0, `{"state":"blocked","queried":1,"succeeded":0,"missing":["google_hotels"]}`},
+		} {
+			raw, err := json.Marshal(ComputeCompleteness([]ProviderStatus{{ID: "google_hotels", Status: status, Results: tc.results, Error: "page 2: HTTP 503"}}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(raw) != tc.want {
+				t.Errorf("%s, %d results: %s, want %s", status, tc.results, raw, tc.want)
+			}
+		}
 	}
 }

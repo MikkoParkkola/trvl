@@ -434,6 +434,11 @@ func TestHasVerifiedRoom_OwnQuoteMustHeadline(t *testing.T) {
 		Name: "Double Room", TotalPrice: 190, TaxesFeesIncluded: &yes, Currency: "EUR",
 		Provider: "Booking.com", Source: "booking.com", MatchConfidence: models.RoomInventoryMatchExact,
 	}}
+	// The case under test: the room's own quote is verified but has no
+	// nightly amount.
+	if q := roomInventoryQuote(rooms[0]); q.PriceConfidence != models.PriceConfidenceVerified || q.NightlyPrice != 0 {
+		t.Fatalf("own quote = %s with nightly %v, want verified with nightly 0", q.PriceConfidence, q.NightlyPrice)
+	}
 	if hasVerifiedRoom(rooms) {
 		t.Error("a total-only room that cannot headline suppressed the fallbacks")
 	}
@@ -452,5 +457,18 @@ func TestRoomInventoryQuote_PropertyLevelLeadInIsNotNightly(t *testing.T) {
 	}
 	if hasVerifiedRoom([]RoomType{room}) {
 		t.Error("a property-level lead-in counted as a verified room")
+	}
+}
+
+// A verified room with a nightly amount and no InventoryOptions still counts,
+// so the paid fallbacks stay skipped for it (#817 review).
+func TestHasVerifiedRoom_VerifiedRoomWithNightlyCounts(t *testing.T) {
+	yes := true
+	rooms := []RoomType{{
+		Name: "Double Room", NightlyPrice: 95, TotalPrice: 190, TaxesFeesIncluded: &yes, Currency: "EUR",
+		Provider: "Booking.com", Source: "booking.com", MatchConfidence: models.RoomInventoryMatchExact,
+	}}
+	if !hasVerifiedRoom(rooms) {
+		t.Error("a verified room with a nightly amount did not count as verified")
 	}
 }

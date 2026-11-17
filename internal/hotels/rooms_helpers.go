@@ -610,36 +610,14 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 			if len(br.Amenities) > 0 {
 				enriched.Amenities = mergeStringSlices(enriched.Amenities, br.Amenities)
 			}
-			if br.CancellationPolicy != "" && enriched.CancellationPolicy == "" {
-				enriched.CancellationPolicy = br.CancellationPolicy
-			}
-			if br.Refundable != nil && enriched.Refundable == nil {
-				enriched.Refundable = br.Refundable
-			}
-			if br.FreeCancellation != nil && enriched.FreeCancellation == nil {
-				enriched.FreeCancellation = br.FreeCancellation
-			}
-			if br.Board != "" && enriched.Board == "" {
-				enriched.Board = br.Board
-			}
-			if br.BreakfastIncluded != nil && enriched.BreakfastIncluded == nil {
-				enriched.BreakfastIncluded = br.BreakfastIncluded
-			}
-			// One seller's numbers per room: a priced Google room keeps its own
-			// quote, and Booking's stays in InventoryOptions above. Splicing
-			// Booking's nightly, total or taxes-included flag into it made the
-			// headline, the room watch and the confidence tier each read a
-			// different seller. An unpriced Google room takes Booking's whole
-			// quote, seller and link included.
+			// One seller's quote per room: a priced Google room keeps its own
+			// numbers and rate terms, and Booking's stay in InventoryOptions
+			// above. Splicing them made the headline, the room watch, the
+			// confidence tier and the readiness verdict each read a different
+			// seller (#808, #823). An unpriced Google room takes Booking's whole
+			// quote: price, seller, link and rate terms, its own replaced.
 			if !roomHasPrice(enriched) && roomHasPrice(br) {
-				enriched.Price = br.Price
-				enriched.NightlyPrice = br.NightlyPrice
-				enriched.TotalPrice = br.TotalPrice
-				enriched.TaxesAndFees = br.TaxesAndFees
-				enriched.TaxesFeesIncluded = br.TaxesFeesIncluded
-				enriched.Provider = br.Provider
-				enriched.ProviderURL = br.ProviderURL
-				enriched.Source = br.Source
+				enriched = adoptQuote(enriched, br)
 			}
 			merged[gr.index] = enriched
 			matched[bKey] = true
@@ -657,15 +635,42 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 	return merged
 }
 
+// adoptQuote is an unpriced room taking the donor's whole quote by
+// construction: every field is the donor's except the room's identity and the
+// details merged into it. A field added to RoomType later follows the donor
+// too, so a quote can never mix two sellers (#808, #823, #832 review).
+func adoptQuote(room, donor RoomType) RoomType {
+	adopted := donor
+	adopted.Name = room.Name
+	adopted.Description = room.Description
+	adopted.BedType = room.BedType
+	adopted.SizeM2 = room.SizeM2
+	adopted.MaxGuests = room.MaxGuests
+	adopted.Amenities = room.Amenities
+	adopted.InventoryOptions = room.InventoryOptions
+	return adopted
+}
+
+// roomSeller is the room's seller, or "Google Hotels" when it names none:
+// only Google's entity-page and partner-price paths leave the seller blank.
+// Every room and quote leaving this package names its seller through it.
+func roomSeller(room RoomType) string {
+	if s := strings.TrimSpace(room.Provider); s != "" {
+		return s
+	}
+	return "Google Hotels"
+}
+
 // roomHasPrice reports whether a room carries any price of its own.
 func roomHasPrice(r RoomType) bool {
 	return r.Price > 0 || r.NightlyPrice > 0 || r.TotalPrice > 0
 }
 
-// hasVerifiedRoom reports whether any room already carries a verified,
-// tax-inclusive room-level price -- the bar SerpAPI would otherwise be
-// consulted to reach. Used to spend SerpAPI quota only when it can upgrade an
-// otherwise sub-verified result.
+// hasVerifiedRoom reports whether any room already has a quote that is
+// verified and can become the hotel headline (quoteCanHeadline): the room's own
+// quote or one of its InventoryOptions. That is the bar SerpAPI and Agoda
+// would otherwise be consulted to reach, so their quota is spent only when they
+// can upgrade the result.
 func hasVerifiedRoom(rooms []RoomType) bool {
 	for _, r := range rooms {
 		// The room's own quote must be able to headline too: a verified stay
@@ -685,10 +690,7 @@ func hasVerifiedRoom(rooms []RoomType) bool {
 }
 
 func roomInventoryQuote(room RoomType) models.RoomInventoryQuote {
-	provider := strings.TrimSpace(room.Provider)
-	if provider == "" {
-		provider = "Google Hotels"
-	}
+	provider := roomSeller(room)
 	confidence := strings.TrimSpace(room.MatchConfidence)
 	if confidence == "" {
 		confidence = models.RoomInventoryMatchExact
