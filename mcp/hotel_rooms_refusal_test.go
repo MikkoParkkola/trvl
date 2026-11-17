@@ -28,6 +28,13 @@ func byNameRefusals(t *testing.T) map[string]error {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return parseByNameRefusals(t, raw)
+}
+
+// parseByNameRefusals reads golden lines, dropping the CR a Windows checkout
+// may add, so a sentence never carries a stray "\r".
+func parseByNameRefusals(t *testing.T, raw []byte) map[string]error {
+	t.Helper()
 	out := map[string]error{}
 	for _, line := range strings.Split(strings.TrimSpace(strings.ReplaceAll(string(raw), "\r", "")), "\n") {
 		name, sentence, ok := strings.Cut(line, ": ")
@@ -37,6 +44,14 @@ func byNameRefusals(t *testing.T) map[string]error {
 		out[name] = goldenRefusal(sentence)
 	}
 	return out
+}
+
+// TestParseByNameRefusals_CRLF: a CRLF golden reads the same as an LF one.
+func TestParseByNameRefusals_CRLF(t *testing.T) {
+	got := parseByNameRefusals(t, []byte("cooldown: first\r\nblocked: second\r\n"))
+	if len(got) != 2 || got["cooldown"].Error() != "first" || got["blocked"].Error() != "second" {
+		t.Fatalf("parsed = %q, want the two sentences without a CR", got)
+	}
 }
 
 // TestHandleHotelRooms_EmptyRoomsSummaryFollowsTheNotice: with no rooms and a

@@ -52,7 +52,7 @@ func TestByNameRefusals_Golden(t *testing.T) {
 		t.Fatalf("read golden: %v\nreal sentences:\ncooldown: %s\nblocked: %s", err, got["cooldown"], got["blocked"])
 	}
 	seen := map[string]int{}
-	for _, line := range strings.Split(strings.TrimSpace(strings.ReplaceAll(string(raw), "\r", "")), "\n") {
+	for _, line := range goldenLines(raw) {
 		name, want, ok := strings.Cut(line, ": ")
 		if !ok {
 			t.Fatalf("malformed golden line %q", line)
@@ -66,5 +66,19 @@ func TestByNameRefusals_Golden(t *testing.T) {
 	// doubled line would silently change their coverage.
 	if len(seen) != 2 || seen["cooldown"] != 1 || seen["blocked"] != 1 {
 		t.Errorf("golden cases = %v, want exactly one cooldown and one blocked", seen)
+	}
+}
+
+// goldenLines splits the golden file into lines, dropping the CR a Windows
+// checkout may add, so a sentence never carries a stray "\r".
+func goldenLines(raw []byte) []string {
+	return strings.Split(strings.TrimSpace(strings.ReplaceAll(string(raw), "\r", "")), "\n")
+}
+
+// TestGoldenLines_CRLF: a CRLF golden reads the same as an LF one.
+func TestGoldenLines_CRLF(t *testing.T) {
+	got := goldenLines([]byte("cooldown: first\r\nblocked: second\r\n"))
+	if len(got) != 2 || got[0] != "cooldown: first" || got[1] != "blocked: second" {
+		t.Fatalf("lines = %q, want the two lines without a CR", got)
 	}
 }

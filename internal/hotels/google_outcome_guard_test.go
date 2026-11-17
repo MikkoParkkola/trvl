@@ -126,6 +126,8 @@ func TestGoogleOutcomeGuard_Fixtures(t *testing.T) {
 		"events write":    `func f(c *googleCall) { c.events = nil }`,
 		"strongest write": `func f(o *googleOutcome) { o.strongest = nil }`,
 		"event write":     `func f(c *googleCall) { c.events[0].err = nil }`,
+		"aliased event":   `func f(c *googleCall) { e := &c.events[0]; e.err = nil }`,
+		"aliased field":   `func f(o *googleOutcome) { p := &o.strongest; *p = nil }`,
 		"hand-built":      `var o = googleOutcome{strongest: nil}`,
 		"deleted helper":  `var x = googleStatusErr`,
 		"cooldown text":   `var e = fmt.Errorf("x refused (HTTP 429)")`,
