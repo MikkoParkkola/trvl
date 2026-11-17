@@ -105,16 +105,17 @@ func groundRoutesOutputSchema() interface{} {
 					"booking_url":      schemaString(),
 				},
 			}),
-			"duration_minutes": schemaInt(),
-			"transfers":        schemaInt(),
-			"amenities":        schemaStringArray(),
-			"seats_left":       schemaInt(),
-			"booking_url":      schemaString(),
-			"comparable_price": schemaNumDesc("Price in the search currency, used for ranking; absent when it could not be converted."),
-			"cheapest_source":  schemaString(),
-			"savings":          schemaNumDesc("How much the cheapest source undercuts the next one."),
-			"departure":        groundStopSchema(),
-			"arrival":          groundStopSchema(),
+			"duration_minutes":  schemaInt(),
+			"transfers":         schemaInt(),
+			"transfers_unknown": schemaBoolDesc("True when the provider sent no change data: transfers is then 0 for not known, not for direct."),
+			"amenities":         schemaStringArray(),
+			"seats_left":        schemaInt(),
+			"booking_url":       schemaString(),
+			"comparable_price":  schemaNumDesc("Price in the search currency, used for ranking; absent when it could not be converted."),
+			"cheapest_source":   schemaString(),
+			"savings":           schemaNumDesc("How much the cheapest source undercuts the next one."),
+			"departure":         groundStopSchema(),
+			"arrival":           groundStopSchema(),
 			"legs": schemaArrayDesc("Segments of the journey; search_ground omits them when a single leg only repeats the route, and omits a leg city the route or the previous leg already names.", map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -531,6 +532,9 @@ func buildGroundRouteSummary(header string, routes []models.GroundRoute, maxRows
 		transfers := "direct"
 		if r.Transfers > 0 {
 			transfers = fmt.Sprintf("%d transfers", r.Transfers)
+		}
+		if r.TransfersUnknown {
+			transfers = "transfers unknown"
 		}
 
 		depTime := safeTimeSlice(r.Departure.Time)

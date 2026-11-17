@@ -433,6 +433,10 @@ func sortAirportTransferRoutes(routes []airportTransferRoute) {
 		if pricedI && routes[i].route.Price != routes[j].route.Price {
 			return routes[i].route.Price < routes[j].route.Price
 		}
+		// A count that is not known is no evidence of a direct ride.
+		if routes[i].route.TransfersUnknown != routes[j].route.TransfersUnknown {
+			return !routes[i].route.TransfersUnknown
+		}
 		if routes[i].route.Transfers != routes[j].route.Transfers {
 			return routes[i].route.Transfers < routes[j].route.Transfers
 		}
