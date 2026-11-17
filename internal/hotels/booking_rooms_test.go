@@ -424,8 +424,11 @@ func TestMergeRoomTypes(t *testing.T) {
 	if merged[0].BedType != "1 double bed" {
 		t.Errorf("merged[0].BedType = %q, want 1 double bed", merged[0].BedType)
 	}
-	if merged[0].TotalPrice != 250 {
-		t.Errorf("merged[0].TotalPrice = %v, want enriched total price", merged[0].TotalPrice)
+	// One seller's numbers per room: the Google room is priced, so Booking's
+	// 250 total is not spliced onto Google's 120. It stays in Booking's
+	// inventory quote below (#808 follow-up).
+	if merged[0].TotalPrice != 0 {
+		t.Errorf("merged[0].TotalPrice = %v, want 0 (Booking's total stays in its own quote)", merged[0].TotalPrice)
 	}
 	if merged[0].Board != "breakfast_included" {
 		t.Errorf("merged[0].Board = %q, want breakfast_included", merged[0].Board)

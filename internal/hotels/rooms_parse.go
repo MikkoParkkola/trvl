@@ -149,6 +149,7 @@ func tryRoomEntry(arr []any, defaultCurrency string) *RoomType {
 		Name:            name,
 		Price:           price,
 		Currency:        defaultCurrency,
+		Source:          "google_hotels",
 		MatchConfidence: models.RoomInventoryMatchExact,
 	}
 

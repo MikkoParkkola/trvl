@@ -439,19 +439,26 @@ func hotelSummaryText(result *models.HotelSearchResult, location string) string 
 	if bestRated != nil && (!hasCheapest || bestRated.Name != cheapest.Name) {
 		summary += fmt.Sprintf(" Highest rated: %s (%.1f/10).", bestRated.Name, bestRated.Rating)
 	}
-	if bookingCount := countHotelsWithProvider(result.Hotels, "booking"); bookingCount > 0 {
-		summary += fmt.Sprintf(" Includes %d Booking.com match%s.", bookingCount, pluralSuffix(bookingCount))
+	if bookingCount := countHotelsWithProvider(result.Hotels, "booking", "booking.com"); bookingCount > 0 {
+		noun := "matches"
+		if bookingCount == 1 {
+			noun = "match"
+		}
+		summary += fmt.Sprintf(" Includes %d Booking.com %s.", bookingCount, noun)
 	}
 	summary += " Treat search prices as lead-in until verified with room/detail totals."
 
 	return summary
 }
 
-func countHotelsWithProvider(hotels []models.HotelResult, provider string) int {
+// countHotelsWithProvider counts hotels with a source from any of the given
+// provider tags (Booking is "booking.com" from the built-in search and
+// "booking" from the provider runtime).
+func countHotelsWithProvider(hotels []models.HotelResult, providers ...string) int {
 	count := 0
 	for _, hotel := range hotels {
 		for _, source := range hotel.Sources {
-			if source.Provider == provider {
+			if slices.Contains(providers, source.Provider) {
 				count++
 				break
 			}

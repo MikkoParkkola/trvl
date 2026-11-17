@@ -21,9 +21,12 @@ type RoomType struct {
 	Currency          string  `json:"currency"`
 	Provider          string  `json:"provider,omitempty"`
 	ProviderURL       string  `json:"provider_url,omitempty"`
-	RateID            string  `json:"rate_id,omitempty"`
-	RatePlanName      string  `json:"rate_plan_name,omitempty"`
-	MatchConfidence   string  `json:"match_confidence,omitempty"`
+	// Source is the trvl provider that fetched this room; Provider is the
+	// seller it reported. Internal only.
+	Source          string `json:"-"`
+	RateID          string `json:"rate_id,omitempty"`
+	RatePlanName    string `json:"rate_plan_name,omitempty"`
+	MatchConfidence string `json:"match_confidence,omitempty"`
 	// Readiness is the composed booking-readiness verdict (ready|caution|
 	// unverified) from roomReadiness: one trustworthy gate over the scattered
 	// price, link-durability, identity, and refundability signals. See MIK-6232.

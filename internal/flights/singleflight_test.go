@@ -177,3 +177,21 @@ func TestCloneFlightSearchResult_ReturnsCallerPrivateCopy(t *testing.T) {
 		t.Fatalf("shared CheckedBagsIncluded = %d, want 1", got)
 	}
 }
+
+// A cached result's completeness is the caller's own: the clone shares no
+// slice with it and keeps the same per-provider wording.
+func TestCloneFlightSearchResult_CompletenessIsCallerPrivate(t *testing.T) {
+	shared := &models.FlightSearchResult{Completeness: models.ComputeCompleteness([]models.ProviderStatus{
+		{ID: "kiwi", Status: models.StatusCheckedHit},
+		{ID: "skiplagged", Status: models.StatusRateLimited, Error: "skiplagged: HTTP 403"},
+	})}
+	want := shared.Completeness.IncompleteNote()
+	c := cloneFlightSearchResult(shared)
+	if got := c.Completeness.IncompleteNote(); got != want {
+		t.Fatalf("clone note = %q, want %q", got, want)
+	}
+	c.Completeness.Missing[0] = "changed"
+	if shared.Completeness.Missing[0] != "skiplagged" {
+		t.Errorf("clone shares Missing with the cached result: %v", shared.Completeness.Missing)
+	}
+}
