@@ -12,7 +12,7 @@ func planMultimodalTool() ToolDef {
 	return ToolDef{
 		Name:        "plan_multimodal",
 		Title:       "Multimodal Itinerary Composer",
-		Description: "Compose end-to-end multimodal itineraries (e.g. ferry then fly). Rome2Rio discovers candidate mode-chains; trvl prices each leg with its existing flight and ground providers, sums them into a true total, ranks by that total, and annotates travel-hack savings. Legs that cannot be priced fall back to Rome2Rio's indicative range, clearly labelled as estimates — never fabricated fares.",
+		Description: "Compose end-to-end multimodal itineraries (e.g. ferry then fly). Rome2Rio discovers candidate mode-chains; trvl prices each leg with its existing flight and ground providers, sums them into a true total, and ranks by that total. Legs that cannot be priced fall back to Rome2Rio's indicative range, clearly labelled as estimates — never fabricated fares.",
 		InputSchema: InputSchema{
 			Type: "object",
 			Properties: map[string]Property{
