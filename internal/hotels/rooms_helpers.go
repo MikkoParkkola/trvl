@@ -161,6 +161,7 @@ func hotelRoomsToRoomTypes(rooms []models.Room, defaultCurrency string) []RoomTy
 			Currency:           currency,
 			Provider:           r.Provider,
 			ProviderURL:        r.ProviderURL,
+			Source:             r.Source,
 			RateID:             r.RateID,
 			RatePlanName:       r.RatePlanName,
 			MatchConfidence:    r.MatchConfidence,
@@ -289,6 +290,7 @@ func partnersToRoomTypes(providers []models.ProviderPrice, defaultCurrency strin
 			Currency:        currency,
 			Provider:        p.Provider,
 			ProviderURL:     p.ProviderURL,
+			Source:          "google_hotels", // Google fetched it; p.Provider is the seller
 			MatchConfidence: match,
 		})
 	}
@@ -358,7 +360,12 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 	if hotel == nil {
 		return nil, ""
 	}
+	return searchPageRooms(hotel, opts.Currency), hotel.Name
+}
 
+// searchPageRooms turns the hotel matched on the Google search page into room
+// entries: the headline price plus one entry per other priced source.
+func searchPageRooms(hotel *models.HotelResult, defaultCurrency string) []RoomType {
 	var rooms []RoomType
 	// Exactly one bookable price is promoted to room-level: the dated,
 	// occupancy-specific search price (roomFallbackSearchOptions carries
@@ -374,7 +381,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 	if hotel.Price > 0 {
 		currency := hotel.Currency
 		if currency == "" {
-			currency = opts.Currency
+			currency = defaultCurrency
 		}
 		rooms = append(rooms, RoomType{
 			Name:            "Standard Room",
@@ -383,6 +390,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 			Currency:        currency,
 			Provider:        providerFromSources(hotel),
 			ProviderURL:     hotel.BookingURL,
+			Source:          headlineSource(hotel),
 			MatchConfidence: models.RoomInventoryMatchSimilar,
 		})
 		roomLevelEmitted = true
@@ -408,7 +416,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		if src.Price > 0 && src.Price != hotel.Price {
 			currency := src.Currency
 			if currency == "" {
-				currency = opts.Currency
+				currency = defaultCurrency
 			}
 			match := models.RoomInventoryMatchPropertyLevelOnly
 			nightly := 0.0
@@ -423,12 +431,13 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 				Currency:        currency,
 				Provider:        src.Provider,
 				ProviderURL:     src.BookingURL,
+				Source:          src.Provider, // already a trvl tag: the search wrote it
 				MatchConfidence: match,
 			})
 		}
 	}
 
-	return rooms, hotel.Name
+	return rooms
 }
 
 func roomFallbackSearchOptions(opts RoomSearchOptions) HotelSearchOptions {
@@ -520,6 +529,17 @@ func findLocationTriplet(v any, depth int) string {
 
 // providerFromSources returns the provider display name from the first source
 // entry, or "Google Hotels" as the default.
+// headlineSource is the trvl tag of the quote behind h.Price.
+func headlineSource(h *models.HotelResult) string {
+	if h.HeadlineProvider != "" {
+		return h.HeadlineProvider
+	}
+	if len(h.Sources) > 0 && h.Sources[0].Provider != "" {
+		return h.Sources[0].Provider
+	}
+	return "unknown"
+}
+
 func providerFromSources(h *models.HotelResult) string {
 	if len(h.Sources) > 0 && h.Sources[0].Provider != "" {
 		return displayProvider(h.Sources[0].Provider)
@@ -587,7 +607,8 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 			if len(br.Amenities) > 0 {
 				enriched.Amenities = mergeStringSlices(enriched.Amenities, br.Amenities)
 			}
-			if br.NightlyPrice > 0 && enriched.NightlyPrice == 0 {
+			tookNightly := br.NightlyPrice > 0 && enriched.NightlyPrice == 0
+			if tookNightly {
 				enriched.NightlyPrice = br.NightlyPrice
 			}
 			if br.TotalPrice > 0 && enriched.TotalPrice == 0 {
@@ -615,10 +636,16 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 				enriched.BreakfastIncluded = br.BreakfastIncluded
 			}
 			// Keep Google price if available; add Booking as secondary.
-			if enriched.Price == 0 && br.Price > 0 {
+			tookPrice := enriched.Price == 0 && br.Price > 0
+			if tookPrice {
 				enriched.Price = br.Price
+			}
+			// The room's quote is its nightly rate, else its price (see
+			// roomHeadlinePrice): credit whichever room supplied that number.
+			if tookNightly || (tookPrice && enriched.NightlyPrice == 0) {
 				enriched.Provider = br.Provider
 				enriched.ProviderURL = br.ProviderURL
+				enriched.Source = br.Source
 			}
 			merged[gr.index] = enriched
 			matched[bKey] = true

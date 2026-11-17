@@ -130,6 +130,7 @@ func hotelDetailsSearchOutputSchema() interface{} {
 						"type": "object",
 						"properties": map[string]interface{}{
 							"provider":         schemaString(),
+							"seller":           schemaStringDesc("Party offering this quote when it is not the provider that fetched it, e.g. Hotels.com in Google's partner list."),
 							"price":            schemaNum(),
 							"max_price":        schemaNum(),
 							"currency":         schemaString(),

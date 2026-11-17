@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,6 +63,7 @@ func roomTypeToModelRoom(rt RoomType) models.Room {
 		Currency:           rt.Currency,
 		Provider:           rt.Provider,
 		ProviderURL:        rt.ProviderURL,
+		Source:             rt.Source,
 		RateID:             rt.RateID,
 		RatePlanName:       rt.RatePlanName,
 		MatchConfidence:    rt.MatchConfidence,
@@ -203,12 +205,19 @@ func bestRoomSource(rooms []models.Room) (models.PriceSource, bool) {
 	if !found {
 		return models.PriceSource{}, false
 	}
-	provider := best.Provider
+	// The source credits the trvl provider that fetched the room; the room's
+	// Provider is the seller it reported (#808).
+	provider := best.Source
 	if provider == "" {
-		provider = "google"
+		provider = "unknown"
+	}
+	seller := ""
+	if !strings.EqualFold(best.Provider, provider) {
+		seller = best.Provider
 	}
 	return models.PriceSource{
 		Provider:        provider,
+		Seller:          seller,
 		Price:           roomHeadlinePrice(best),
 		Currency:        best.Currency,
 		BookingURL:      best.ProviderURL,

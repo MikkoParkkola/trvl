@@ -34,7 +34,10 @@ func IsAdultsOnly(name, description string) bool {
 // the most trusted quote (price confidence, then basis) becomes the headline
 // HotelResult.Price, named by HotelResult.HeadlineProvider.
 type PriceSource struct {
-	Provider string  `json:"provider"` // "google_hotels", "trivago", "airbnb", "booking"
+	Provider string `json:"provider"` // "google_hotels", "trivago", "airbnb", "booking"
+	// Seller is the party offering this quote when it differs from the trvl
+	// provider that fetched it, e.g. "Hotels.com" in Google's partner list.
+	Seller   string  `json:"seller,omitempty"`
 	Price    float64 `json:"price"`
 	MaxPrice float64 `json:"max_price,omitempty"` // highest room/block price (when available)
 	Currency string  `json:"currency"`
@@ -58,15 +61,18 @@ type PriceSource struct {
 // which rates are shown. Rich room data enables LLM reasoning about
 // room selection ("which room has a balcony?", "cheapest with breakfast?").
 type Room struct {
-	Name               string   `json:"name"`            // e.g. "Standard Double Room", "Superior Suite"
-	Price              float64  `json:"price,omitempty"` // price for this room type (for the searched guest count)
-	NightlyPrice       float64  `json:"nightly_price,omitempty"`
-	TotalPrice         float64  `json:"total_price,omitempty"`
-	TaxesAndFees       float64  `json:"taxes_and_fees,omitempty"`
-	TaxesFeesIncluded  *bool    `json:"taxes_fees_included,omitempty"`
-	Currency           string   `json:"currency,omitempty"`
-	Provider           string   `json:"provider,omitempty"`
-	ProviderURL        string   `json:"provider_url,omitempty"`
+	Name              string  `json:"name"`            // e.g. "Standard Double Room", "Superior Suite"
+	Price             float64 `json:"price,omitempty"` // price for this room type (for the searched guest count)
+	NightlyPrice      float64 `json:"nightly_price,omitempty"`
+	TotalPrice        float64 `json:"total_price,omitempty"`
+	TaxesAndFees      float64 `json:"taxes_and_fees,omitempty"`
+	TaxesFeesIncluded *bool   `json:"taxes_fees_included,omitempty"`
+	Currency          string  `json:"currency,omitempty"`
+	Provider          string  `json:"provider,omitempty"`
+	ProviderURL       string  `json:"provider_url,omitempty"`
+	// Source is the trvl provider that fetched this room ("google_hotels",
+	// "agoda", ...); Provider is the seller it reported. Internal only.
+	Source             string   `json:"-"`
 	RateID             string   `json:"rate_id,omitempty"`
 	RatePlanName       string   `json:"rate_plan_name,omitempty"`
 	MatchConfidence    string   `json:"match_confidence,omitempty"`
