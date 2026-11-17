@@ -153,11 +153,14 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// room entry. This surfaces the full OTA matrix — including any Booking.com
 	// partner URL, which the downstream exact-room Booking.com fetch needs to
 	// produce a booking-ready offer.
-	var pricesErr error
+	// googleErr is the outcome of the last Google call that ran: an answer
+	// clears an earlier block, and a refusal stays visible even when the
+	// search fallback finds the rooms through another provider (#813).
+	googleErr := entityErr
 	if len(rooms) == 0 {
 		var rpcRooms []RoomType
 		var rpcName string
-		rpcRooms, rpcName, pricesErr = tryBatchExecutePrices(ctx, opts)
+		rpcRooms, rpcName, googleErr = tryBatchExecutePrices(ctx, opts)
 		if len(rpcRooms) > 0 {
 			rooms = rpcRooms
 			if hotelName == "" {
@@ -165,24 +168,15 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 			}
 		}
 	}
-	googlePriced := len(rooms) > 0
 
 	// Fallback: search for the hotel on the search page by location extracted
 	// from the hotel ID's geocoded area. The search page still has inline
-	// AF_initDataCallback data.
-	var searchErr error
-	if len(rooms) == 0 {
-		rooms, hotelName, searchErr = trySearchPageFallback(ctx, opts)
+	// AF_initDataCallback data. Without a location it asks nobody.
+	if len(rooms) == 0 && opts.Location != "" {
+		rooms, hotelName, googleErr = trySearchPageFallback(ctx, opts)
 	}
-	notice := ""
-	// A Google refusal withheld Google's own room pricing, even when the
-	// search fallback found the hotel's rooms through another provider
-	// (#813). One clause, worded as for Agoda and Booking.com.
-	if !googlePriced {
-		for _, err := range []error{entityErr, pricesErr, searchErr} {
-			notice = appendNotice(notice, providerRateLimitNotice("Google Hotels", err))
-		}
-	}
+	// One clause, worded as for Agoda and Booking.com.
+	notice := providerRateLimitNotice("Google Hotels", googleErr)
 
 	// Opt-in Google Hotels room-level detail fetch. Google's public yY52ce RPC
 	// returns a null payload to static clients (probed 2026-06-25 — see

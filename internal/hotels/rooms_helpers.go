@@ -362,9 +362,8 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 			lastErr = err
 			continue
 		}
-		if gErr := googleStatusErr(r); gErr != nil {
-			lastErr = gErr
-		}
+		// The latest Google answer wins (nil when Google answered).
+		lastErr = googleStatusErr(r)
 		if len(r.Hotels) > 0 {
 			result = r
 			break

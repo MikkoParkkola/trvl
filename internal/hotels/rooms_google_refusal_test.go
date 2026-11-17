@@ -271,3 +271,21 @@ func TestSearchHotelByName_LaterGoogleAnswerClearsAnEarlierBlock(t *testing.T) {
 		t.Fatalf("got %+v, err = %v; want Booking's match and no error", got, err)
 	}
 }
+
+// TestGetRoomAvailability_NoGoogleClauseWhenFallbackPricedFromGoogle: the
+// entity page was blocked, but the search fallback then priced the hotel from
+// Google itself. Google withheld nothing, so the notice must not say so.
+func TestGetRoomAvailability_NoGoogleClauseWhenFallbackPricedFromGoogle(t *testing.T) {
+	sacherPage := page(fakeHotelPageWithPrices(hotelWithPrice{"Hotel Sacher", 300}))
+	roomLookupWorld(t, googleRoutes{answer(http.StatusForbidden), answer(404), sacherPage}, false)
+	// The fake Google row sits at seedGeo's point; put Vienna there too.
+	seedGeo(t, "Vienna")
+	seedGeo(t, "Wien")
+	res := lookupSacherRooms(t)
+	if len(res.Rooms) == 0 {
+		t.Fatal("precondition: want the search fallback's Google rooms")
+	}
+	if strings.Contains(res.Notice, googleClause) {
+		t.Fatalf("notice = %q, want no Google Hotels clause: Google priced the hotel", res.Notice)
+	}
+}
