@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -51,6 +52,14 @@ func TestReplyBudgetHotelRoomsReadinessFromShownRooms(t *testing.T) {
 		t.Fatalf("isError: %s", got.errText)
 	}
 	shown := decodeRooms(t, got.structured["rooms"])
+	if bodyInt(got.structured, "budget_omitted") == 0 {
+		t.Fatal("fixture should force a cut")
+	}
+	for _, r := range shown {
+		if r.Name == "Room 00" {
+			t.Fatal("the only ready room (Room 00, the priciest) should be cut")
+		}
+	}
 	want := pricefeed.RoomsReadiness(&hotels.RoomAvailability{HotelID: "x", Rooms: shown})
 	if r, _ := got.structured["booking_readiness"].(string); r != string(want.Readiness) {
 		t.Errorf("booking_readiness = %q for %d shown rooms, want %q from the rooms in the reply", r, len(shown), want.Readiness)
@@ -195,9 +204,25 @@ func TestReplyBudgetTransfersMatchCountsAndLabels(t *testing.T) {
 			t.Errorf("%s (the cheapest or fastest route) was cut", want)
 		}
 	}
-	exact, city := bodyInt(got.structured, "exact_matches"), bodyInt(got.structured, "city_matches")
-	if exact+city != len(keys) {
-		t.Errorf("exact_matches %d + city_matches %d != %d routes listed", exact, city, len(keys))
+	wantExact := 0
+	for _, k := range keys {
+		var i int
+		if _, err := fmt.Sscanf(k, "https://transfers.example/r%03d", &i); err == nil && i < 30 {
+			wantExact++
+		}
+	}
+	if exact := bodyInt(got.structured, "exact_matches"); exact != wantExact {
+		t.Errorf("exact_matches = %d, want %d exact routes listed", exact, wantExact)
+	}
+	if city := bodyInt(got.structured, "city_matches"); city != len(keys)-wantExact {
+		t.Errorf("city_matches = %d, want %d city routes listed", city, len(keys)-wantExact)
+	}
+	cmp, _ := got.structured["comparison"].(map[string]any)
+	modes := rowNames(cmp, "options", "mode")
+	for _, label := range []string{"cheapest_mode", "fastest_mode", "best_value_mode", "most_luggage_friendly_mode"} {
+		if m, _ := cmp[label].(string); m != "" && !slices.Contains(modes, m) {
+			t.Errorf("%s = %q names no listed option (modes %v)", label, m, modes)
+		}
 	}
 }
 
@@ -256,5 +281,57 @@ func TestFitReplyFindsFitWhenSizeIsNotMonotone(t *testing.T) {
 	}
 	if got := data.(map[string]any)["rows"].([]int); len(got) != 8 {
 		t.Errorf("kept %d rows, want 8", len(got))
+	}
+}
+
+// fitReply keeps the most rows that fit: here 2 of 10, the first measured fit.
+func TestFitReplyFewestSteps(t *testing.T) {
+	build := func(shown []int, _ bool) (string, any) {
+		return "s", map[string]any{"rows": shown, "pad": strings.Repeat("p", len(shown)*8_000)}
+	}
+	_, data, err := fitReply([]int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, dropTail[int](nil), build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := data.(map[string]any)["rows"].([]int); !slices.Equal(got, []int{0, 1}) {
+		t.Errorf("kept %v, want [0 1]", got)
+	}
+}
+
+// A floor that never fits is the bounded error, after every step was measured.
+func TestFitReplyFloorError(t *testing.T) {
+	calls := 0
+	build := func(shown []int, _ bool) (string, any) {
+		calls++
+		return "s", map[string]any{"pad": strings.Repeat("p", 60_000)}
+	}
+	_, _, err := fitReply([]int{0, 1, 2, 3}, dropTail[int](nil), build)
+	if err == nil || !strings.Contains(err.Error(), "50 KB") {
+		t.Fatalf("err = %v, want the 50 KB budget error", err)
+	}
+	if calls != 4 {
+		t.Errorf("measured %d replies, want 4 (every step down to the floor)", calls)
+	}
+}
+
+// A drop step may edit the rows it is given; the caller's rows stay intact.
+func TestFitReplyLeavesCallerRows(t *testing.T) {
+	type row struct{ Name string }
+	rows := []row{{"a"}, {"b"}, {"c"}}
+	drop := func(cur []row) ([]row, bool) {
+		if len(cur) <= 1 {
+			return cur, false
+		}
+		cur[0].Name = "edited"
+		return cur[:len(cur)-1], true
+	}
+	build := func(shown []row, _ bool) (string, any) {
+		return "s", map[string]any{"pad": strings.Repeat("p", len(shown)*20_000)}
+	}
+	if _, _, err := fitReply(rows, drop, build); err != nil {
+		t.Fatal(err)
+	}
+	if rows[0].Name != "a" || len(rows) != 3 {
+		t.Errorf("caller rows changed: %+v", rows)
 	}
 }
