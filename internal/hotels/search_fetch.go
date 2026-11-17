@@ -238,7 +238,7 @@ func fetchHotelPageFull(ctx context.Context, client *batchexec.Client, location 
 	}
 	// A 429 or a 200 quota body armed the client's cooldown.
 	if batchexec.QuotaRefusal(status, body) {
-		return parseResult{}, googleCooldownErr("google hotel search", status)
+		return parseResult{}, googleCooldownErr(ctx, client, "google hotel search", status)
 	}
 	if status != 200 {
 		return parseResult{}, fmt.Errorf("hotel search returned status %d", status)
@@ -258,7 +258,7 @@ func fetchHotelPageFull(ctx context.Context, client *batchexec.Client, location 
 		case err2 != nil && errors.Is(err2, batchexec.ErrRefused):
 			return parseResult{}, googleCallErr("hotel search consent retry", err2)
 		case err2 == nil && batchexec.QuotaRefusal(status2, body2):
-			return parseResult{}, googleCooldownErr("google hotel search consent retry", status2)
+			return parseResult{}, googleCooldownErr(ctx, client, "google hotel search consent retry", status2)
 		case err2 == nil && (status2 == http.StatusForbidden || status2 == http.StatusServiceUnavailable):
 			// A block or an outage on the retry is a refusal that arms no
 			// cooldown, not a cookie-wall failure.

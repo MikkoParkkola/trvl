@@ -215,7 +215,7 @@ func tryEntityPage(ctx context.Context, opts RoomSearchOptions) ([]RoomType, str
 	}
 	// The client answers a Google refusal with its status and a nil error.
 	if batchexec.QuotaRefusal(status, body) {
-		return nil, "", "", googleCooldownErr("google hotel entity page", status)
+		return nil, "", "", googleCooldownErr(ctx, client, "google hotel entity page", status)
 	}
 	if status != 200 {
 		return nil, "", "", fmt.Errorf("hotel entity page returned status %d", status)

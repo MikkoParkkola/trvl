@@ -87,6 +87,11 @@ func TestGoogleRefusals_RealPaths(t *testing.T) {
 				if got := googleCooldown(err); got != a.wantMarker {
 					t.Fatalf("err = %v\ncooldown marker %v, want %v", err, got, a.wantMarker)
 				}
+				// #813: a refusal that armed the cooldown says when a retry can
+				// work, the arming 429 or quota body as much as a later skip.
+				if a.wantMarker && !strings.Contains(err.Error(), "retry after") {
+					t.Fatalf("err = %v\nwant the retry time", err)
+				}
 			})
 		}
 	}

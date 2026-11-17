@@ -1,6 +1,7 @@
 package hotels
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -132,10 +133,20 @@ func rateLimitWrap(err error) error {
 // googleCooldownErr is the one constructor for a refusal that armed the
 // client's cooldown: a Google 429, or a 200 whose body batchexec.QuotaRefusal
 // accepts. It carries batchexec.ErrRefused, so googleCooldown keys on the
-// error itself.
-func googleCooldownErr(op string, status int) error {
+// error itself. The refusal has just armed the cooldown, so a Google call made
+// now is skipped without dialling (the documented batchexec contract) and
+// returns the skip error with its retry clock; wrapping that error lets the
+// arming refusal say when a retry can work, as the later skips do (#813).
+func googleCooldownErr(ctx context.Context, client *batchexec.Client, op string, status int) error {
+	if _, _, skip := client.Get(ctx, googleCooldownProbeURL); errors.Is(skip, batchexec.ErrRefused) {
+		return fmt.Errorf("%s refused (HTTP %d): %w: %w", op, status, models.ErrRateLimited, skip)
+	}
 	return fmt.Errorf("%s refused (HTTP %d): %w: %w", op, status, models.ErrRateLimited, batchexec.ErrRefused)
 }
+
+// googleCooldownProbeURL is any Google URL: inside the cooldown the client
+// answers from its own state and never sends the request.
+const googleCooldownProbeURL = "https://www.google.com/travel/hotels"
 
 // googleCooldown reports whether a refusal armed Google's cooldown. Its only
 // callers pass original error values (the recorded refusal, strongerRefusal's

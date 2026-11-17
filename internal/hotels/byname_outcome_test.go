@@ -44,7 +44,7 @@ func TestSearchHotelByName_NoResultsReportsTheStrongestRefusal(t *testing.T) {
 		if strings.Contains(loc, "Sacher") {
 			return parseResult{}, batchexec.ErrBlocked
 		}
-		return parseResult{}, googleCooldownErr("google hotel search", http.StatusTooManyRequests)
+		return parseResult{}, googleCooldownErr(context.Background(), DefaultClient(), "google hotel search", http.StatusTooManyRequests)
 	}
 
 	_, err := SearchHotelByName(context.Background(), "Hotel Sacher, Vienna", lookupCheckIn, lookupCheckOut, "USD")

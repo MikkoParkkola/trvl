@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
@@ -98,7 +99,12 @@ func TestGoogleCall_Events(t *testing.T) {
 // TestGoogleCooldownErr: the cooldown constructor carries both sentinels and
 // the canonical text; a plain refusal carries no marker.
 func TestGoogleCooldownErr(t *testing.T) {
-	err := googleCooldownErr("google hotel search", http.StatusTooManyRequests)
+	// A local, primed client: the constructor's probe must never leave the test.
+	roomLookupWorld(t, googleRoutes{answer(429), answer(429), answer(429)}, true)
+	err := googleCooldownErr(context.Background(), DefaultClient(), "google hotel search", http.StatusTooManyRequests)
+	if !strings.Contains(err.Error(), "retry after") {
+		t.Fatalf("googleCooldownErr = %v, want the retry time", err)
+	}
 	if !errors.Is(err, batchexec.ErrRefused) || !errors.Is(err, models.ErrRateLimited) || !googleCooldown(err) {
 		t.Fatalf("googleCooldownErr = %v, want ErrRefused, ErrRateLimited and a cooldown", err)
 	}
