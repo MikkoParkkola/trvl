@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -321,9 +322,41 @@ func cloneGroundSearchResult(shared *models.GroundSearchResult) *models.GroundSe
 				seatsLeft := *route.SeatsLeft
 				routeCopy.SeatsLeft = &seatsLeft
 			}
+			routeCopy.Sources = slices.Clone(route.Sources)
+			if route.Confidence != nil {
+				c := *route.Confidence
+				c.Signals = slices.Clone(c.Signals)
+				routeCopy.Confidence = &c
+			}
+			if route.SeaState != nil {
+				sea := *route.SeaState
+				routeCopy.SeaState = &sea
+			}
 			cp.Routes[i] = routeCopy
 		}
 	}
+	cp.ProviderStatuses = slices.Clone(shared.ProviderStatuses)
+	cp.Completeness.Missing = slices.Clone(shared.Completeness.Missing)
+	// The saving and destination are set rarely and nest deeply; a JSON copy
+	// keeps them private without tracking every field they hold.
+	cp.HackSaving = jsonClone(shared.HackSaving)
+	cp.Destination = jsonClone(shared.Destination)
+	return &cp
+}
+
+// jsonClone returns a deep copy of *v through JSON, or a shallow copy of *v
+// if it cannot be encoded. nil stays nil.
+func jsonClone[T any](v *T) *T {
+	if v == nil {
+		return nil
+	}
+	if data, err := json.Marshal(v); err == nil {
+		var cp T
+		if json.Unmarshal(data, &cp) == nil {
+			return &cp
+		}
+	}
+	cp := *v
 	return &cp
 }
 

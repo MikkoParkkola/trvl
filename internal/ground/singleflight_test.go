@@ -368,3 +368,43 @@ func TestDoGroundSearchSingleflight_ShortCallerDeadlineDoesNotPoisonSharedWork(t
 		t.Fatalf("callCount = %d, want 2 executions after the timed-out winner stops", got)
 	}
 }
+
+// A caller (a detector in a savings pass, an MCP handler) that edits any
+// nested part of its copy leaves the shared result, and so every other caller
+// and the cache, unchanged.
+func TestCloneGroundSearchResult_NestedFieldsArePrivate(t *testing.T) {
+	shared := &models.GroundSearchResult{
+		Success: true,
+		Routes: []models.GroundRoute{{
+			Provider:   "ferryhopper",
+			Sources:    []models.PriceSource{{Provider: "ferryhopper", Price: 48}},
+			Confidence: &models.Confidence{Label: "high", Signals: []string{"live"}},
+			SeaState:   &models.SeaState{WaveHeight: 1.5},
+		}},
+		ProviderStatuses: []models.ProviderStatus{{ID: "ferryhopper", Status: models.StatusOK}},
+		Completeness:     models.Completeness{Missing: []string{"dfds"}},
+		HackSaving:       &models.HackSaving{Type: "t", Risks: []string{"r"}},
+		Destination:      &models.DestinationInfo{Holidays: []models.Holiday{{Name: "h"}}},
+	}
+
+	c := cloneGroundSearchResult(shared)
+	c.Routes[0].Sources[0].Price = 1
+	c.Routes[0].Confidence.Label = "changed"
+	c.Routes[0].Confidence.Signals[0] = "changed"
+	c.Routes[0].SeaState.WaveHeight = 9
+	c.ProviderStatuses[0].Status = models.StatusError
+	c.Completeness.Missing[0] = "changed"
+	c.HackSaving.Risks[0] = "changed"
+	c.Destination.Holidays[0].Name = "changed"
+
+	r := shared.Routes[0]
+	if r.Sources[0].Price != 48 || r.Confidence.Label != "high" || r.Confidence.Signals[0] != "live" || r.SeaState.WaveHeight != 1.5 {
+		t.Errorf("route fields changed through the copy: %+v %+v %+v", r.Sources[0], *r.Confidence, *r.SeaState)
+	}
+	if shared.ProviderStatuses[0].Status != models.StatusOK || shared.Completeness.Missing[0] != "dfds" {
+		t.Errorf("statuses changed through the copy: %+v %v", shared.ProviderStatuses, shared.Completeness.Missing)
+	}
+	if shared.HackSaving.Risks[0] != "r" || shared.Destination.Holidays[0].Name != "h" {
+		t.Errorf("saving or destination changed through the copy: %v %v", shared.HackSaving.Risks, shared.Destination.Holidays)
+	}
+}
