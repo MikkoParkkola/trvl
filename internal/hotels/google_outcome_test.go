@@ -108,3 +108,14 @@ func TestGoogleCooldownErr(t *testing.T) {
 		t.Fatalf("a 403 refusal %v must not claim a cooldown", c.refusal())
 	}
 }
+
+// TestGoogleOutcome_SettledIsFinal: once the lookup holds its answer, a later
+// Google refusal cannot have hidden anything it needs, so it is not recorded.
+func TestGoogleOutcome_SettledIsFinal(t *testing.T) {
+	var out googleOutcome
+	out.merge(callOf([2]any{http.StatusOK, nil}), true)
+	out.merge(callOf([2]any{http.StatusTooManyRequests, nil}), false)
+	if err := out.Err(); err != nil {
+		t.Fatalf("Err() = %v, want nil: the lookup was already settled", err)
+	}
+}

@@ -74,15 +74,18 @@ func (c googleCall) refusal() error {
 }
 
 type googleOutcome struct {
-	err error
+	err     error
+	settled bool
 }
 
 // merge folds one call into the lookup's outcome. settled is the caller's
 // decision that it holds the target's Google data (or, for a by-name lookup,
-// that Google answered for this exact hotel); it alone clears a refusal.
+// that Google answered for this exact hotel); it alone clears a refusal, and it
+// is final: once the lookup holds its answer, a later refusal cannot have
+// hidden anything it needs.
 func (o *googleOutcome) merge(c googleCall, settled bool) {
-	if settled {
-		o.err = nil
+	if settled || o.settled {
+		o.err, o.settled = nil, true
 		return
 	}
 	if r := c.refusal(); r != nil {
