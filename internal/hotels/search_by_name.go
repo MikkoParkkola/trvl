@@ -377,6 +377,8 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 			}
 			continue
 		}
+		// A returned result is the latest answer: an earlier failure is stale.
+		lastErr = nil
 		// The latest Google answer wins (nil when Google answered).
 		googleErr = googleStatusErr(result)
 		if len(result.Hotels) == 0 {

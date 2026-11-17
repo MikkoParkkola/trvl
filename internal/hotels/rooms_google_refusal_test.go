@@ -3,6 +3,7 @@ package hotels
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/breaker"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -390,5 +392,27 @@ func TestSearchHotelByName_OnlyA429SaysCooldown(t *testing.T) {
 				t.Fatalf("err = %v\nmentions a cooldown: %v, want %v", err, got, tc.wantCooldown)
 			}
 		})
+	}
+}
+
+// TestSearchHotelByName_LaterAnswerDropsAStaleRefusal: the city search failed
+// outright with a rate limit, then Google answered the property searches with
+// a normal page that lacks the hotel. The latest answer wins: the miss must
+// not carry the earlier rate limit. (The Google fetch is stubbed because the
+// real client's cooldown would refuse the later searches.)
+func TestSearchHotelByName_LaterAnswerDropsAStaleRefusal(t *testing.T) {
+	roomLookupWorld(t, googleRoutes{shortEntity, answer(404), noSacherPage}, false)
+	orig := fetchHotelPageFullFn
+	t.Cleanup(func() { fetchHotelPageFullFn = orig })
+	fetchHotelPageFullFn = func(_ context.Context, _ *batchexec.Client, loc string, _ HotelSearchOptions, _ int, _ string) (parseResult, error) {
+		if !strings.Contains(loc, "Sacher") {
+			return parseResult{}, fmt.Errorf("google hotel search refused (HTTP 429): %w", models.ErrRateLimited)
+		}
+		return parseResult{Hotels: []models.HotelResult{{Name: "Hotel Stefanie", HotelID: "/g/stefanie", Price: 150, Currency: "USD"}}, TotalAvailable: 1}, nil
+	}
+
+	_, err := SearchHotelByName(context.Background(), "Hotel Sacher, Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if !errors.Is(err, ErrNoNameMatch) || errors.Is(err, models.ErrRateLimited) {
+		t.Fatalf("err = %v, want a plain name miss: Google answered after the rate limit", err)
 	}
 }
