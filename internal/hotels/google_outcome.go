@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -138,11 +137,9 @@ func googleCooldownErr(op string, status int) error {
 	return fmt.Errorf("%s refused (HTTP %d): %w: %w", op, status, models.ErrRateLimited, batchexec.ErrRefused)
 }
 
-// googleCooldown reports whether a refusal armed Google's cooldown. The text
-// match covers a message already flattened into a string.
+// googleCooldown reports whether a refusal armed Google's cooldown. Its only
+// callers pass original error values (the recorded refusal, strongerRefusal's
+// inputs), never a flattened status string, so the sentinel is enough.
 func googleCooldown(err error) bool {
-	if err == nil {
-		return false
-	}
-	return errors.Is(err, batchexec.ErrRefused) || strings.Contains(err.Error(), batchexec.ErrRefused.Error())
+	return errors.Is(err, batchexec.ErrRefused)
 }
