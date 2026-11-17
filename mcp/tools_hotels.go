@@ -640,6 +640,7 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		availability.Name = resolvedName
 	}
 
+	var cheapestLine string
 	summary := fmt.Sprintf("Found %d room types at %s (%s to %s).",
 		len(availability.Rooms), availability.Name, checkIn, checkOut)
 	if len(availability.Rooms) == 0 {
@@ -653,10 +654,11 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 			}
 		}
 
-		// Find cheapest room (the room a budget cut keeps).
+		// Find cheapest room.
 		cheapest := summaryCheapestRoom(availability.Rooms)
 		if cheapest.Price > 0 {
-			summary += fmt.Sprintf(" Cheapest: %s %.0f/night (%s).", cheapest.Currency, cheapest.Price, cheapest.Name)
+			cheapestLine = fmt.Sprintf(" Cheapest: %s %.0f/night (%s).", cheapest.Currency, cheapest.Price, cheapest.Name)
+			summary += cheapestLine
 		}
 		if bookingRooms > 0 {
 			summary += fmt.Sprintf(" %d rooms include rich Booking.com data (descriptions, amenities, bed types).", bookingRooms)
@@ -664,14 +666,23 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 	}
 
 	// The summary describes every room found. When the 50 KB budget cuts the
-	// list, rooms go priciest per night first, and the room the summary names
-	// stays.
-	total := len(availability.Rooms)
-	var pin string
+	// list, rooms go priciest per night first (prices compared on one basis
+	// and in one currency), the cheapest per night stays, and the trimmed
+	// summary names that room instead of the raw-price pick.
+	total, nights := len(availability.Rooms), stayNights(checkIn, checkOut)
+	var pin, keptLine string
 	if total > 0 {
-		pin = roomKey(summaryCheapestRoom(availability.Rooms))
+		kept := cheapestRoomPerNight(availability.Rooms, currency, nights)
+		pin = roomKey(kept)
+		if p := roomNightlyIn(kept, currency, nights); !math.IsInf(p, 1) {
+			cur := strings.ToUpper(currency)
+			if cur == "" {
+				cur = kept.Currency
+			}
+			keptLine = fmt.Sprintf(" Cheapest: %s %.0f/night (%s).", cur, p, kept.Name)
+		}
 	}
-	cut := roomCutter(currency, stayNights(checkIn, checkOut), func(r hotels.RoomType) bool { return roomKey(r) == pin })
+	cut := roomCutter(currency, nights, func(r hotels.RoomType) bool { return roomKey(r) == pin })
 	return fitReply(availability.Rooms, cut, func(shown []hotels.RoomType, trimmed bool) (string, any) {
 		view := *availability
 		view.Rooms = shown
@@ -689,7 +700,11 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 			return summary, enriched
 		}
 		enriched.BudgetOmitted = total - len(shown)
-		return summary + budgetNote(len(shown), total, "rooms", ""), enriched
+		trimmedSummary := summary
+		if cheapestLine != "" {
+			trimmedSummary = strings.Replace(summary, cheapestLine, keptLine, 1)
+		}
+		return trimmedSummary + budgetNote(len(shown), total, "rooms", ""), enriched
 	})
 }
 
@@ -713,6 +728,18 @@ func summaryCheapestRoom(rooms []hotels.RoomType) hotels.RoomType {
 		}
 	}
 	return cheapest
+}
+
+// cheapestRoomPerNight is the first room with the lowest roomNightlyIn, the
+// room a budget cut keeps. rooms must not be empty.
+func cheapestRoomPerNight(rooms []hotels.RoomType, currency string, nights int) hotels.RoomType {
+	best := rooms[0]
+	for _, r := range rooms[1:] {
+		if roomNightlyIn(r, currency, nights) < roomNightlyIn(best, currency, nights) {
+			best = r
+		}
+	}
+	return best
 }
 
 // roomKey identifies a room within one list for pinning.

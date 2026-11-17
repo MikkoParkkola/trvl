@@ -216,3 +216,24 @@ func TestReplyBudgetHotelRoomsPinsOneOccurrence(t *testing.T) {
 		t.Errorf("kept %d rooms, want 1", n)
 	}
 }
+
+// Only one room fits. The EUR 150 three-night total (EUR 50 a night) beats
+// EUR 80 a night, so it is the room kept and the room the summary names.
+func TestReplyBudgetHotelRoomsKeepsCheapestPerNight(t *testing.T) {
+	pad := strings.Repeat("r", 15_000)
+	stubRoomList(t, []hotels.RoomType{
+		{Name: "Night 80", Price: 80, NightlyPrice: 80, Currency: "EUR", Provider: "agoda", MaxGuests: 2, Description: pad},
+		{Name: "Stay 150", Price: 150, TotalPrice: 150, Currency: "EUR", Provider: "google", MaxGuests: 2, Description: pad},
+		{Name: "Night 95", Price: 95, NightlyPrice: 95, Currency: "EUR", Provider: "agoda", MaxGuests: 2, Description: pad},
+	})
+	got := callGroundTool(t, "hotel_rooms", mergeArgs(budgetRoomArgs, map[string]any{"check_out": "2027-03-13"}))
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	if names := rowNames(got.structured, "rooms", "name"); len(names) != 1 || names[0] != "Stay 150" {
+		t.Errorf("kept %v, want only Stay 150", names)
+	}
+	if !strings.Contains(got.userText, "EUR 50/night (Stay 150)") {
+		t.Errorf("trimmed summary should name the kept room per night:\n%s", got.userText)
+	}
+}
