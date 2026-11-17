@@ -195,7 +195,9 @@ func TestSearchOebbShop_OneSectionlessConnection(t *testing.T) {
 	if r := by["10:08"]; r.TransfersUnknown || r.Transfers != 1 || len(r.Legs) != 2 {
 		t.Errorf("10:08: transfers %d unknown %v legs %d, want 1 known with 2 legs", r.Transfers, r.TransfersUnknown, len(r.Legs))
 	}
-	oebbNotice(t, err)
+	if n := oebbNotice(t, err); !strings.Contains(n.FixHint, "transfer counts unknown") {
+		t.Errorf("FixHint = %q, want it to say transfer counts are unknown", n.FixHint)
+	}
 }
 
 // TestSearchOebbShop_UnknownTransfersSurviveFailedPrices: when the price step
