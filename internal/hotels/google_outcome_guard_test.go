@@ -27,7 +27,7 @@ func googleOutcomeViolations(fset *token.FileSet, name string, file *ast.File) [
 		case *ast.AssignStmt:
 			for _, lhs := range n.Lhs {
 				if sel, ok := lhs.(*ast.SelectorExpr); ok && base != "google_outcome.go" &&
-					(sel.Sel.Name == "events" || sel.Sel.Name == "settled") {
+					(sel.Sel.Name == "events" || sel.Sel.Name == "settled" || sel.Sel.Name == "err") {
 					report(n, "writes Google outcome state outside google_outcome.go")
 				}
 			}
@@ -99,6 +99,7 @@ func TestGoogleOutcomeGuard_Fixtures(t *testing.T) {
 	fixtures := map[string]string{
 		"state write":     `func f(o *googleOutcome) { o.settled = true }`,
 		"events write":    `func f(c *googleCall) { c.events = nil }`,
+		"err write":       `func f(o *googleOutcome) { o.err = nil }`,
 		"hand-built":      `var o = googleOutcome{err: nil}`,
 		"deleted helper":  `var x = googleStatusErr`,
 		"cooldown text":   `var e = fmt.Errorf("x refused (HTTP 429)")`,
