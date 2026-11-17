@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -202,6 +201,7 @@ func airportTransferOutputSchema() interface{} {
 			"date":             schemaString(),
 			"arrival_time":     schemaString(),
 			"count":            schemaInt(),
+			"budget_omitted":   budgetOmittedSchema(),
 			"exact_matches":    schemaInt(),
 			"city_matches":     schemaInt(),
 			"routes":           groundRoutesOutputSchema(),
@@ -272,12 +272,16 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 	result.Destination = enrichDestination(ctx, to, models.DateRange{CheckIn: date, CheckOut: opts.ReturnDate})
 
 	// trvl sizes the result itself (no limit knob): the best-ranked rows per
-	// direction, then fewer if both copies would still pass the budget.
+	// direction, then fewer while the reply would pass the shared budget.
 	total := len(result.Routes)
 	found, dirs := groundDirectionCounts(result.Routes)
-	shown := capGroundRoutes(result.Routes, groundRowsPerDirection)
-	trimmed := false
-	for {
+	dropRoute := func(rows []models.GroundRoute) ([]models.GroundRoute, bool) {
+		if len(rows) <= 1 {
+			return rows, false
+		}
+		return dropLowestRankedGroundRoute(rows), true
+	}
+	return fitReply(capGroundRoutes(result.Routes, groundRowsPerDirection), dropRoute, func(shown []models.GroundRoute, trimmed bool) (string, any) {
 		resp := groundSearchResponse{GroundSearchResult: result, TotalCount: total, Routes: make([]groundRouteOut, 0, len(shown))}
 		result.Count = len(shown)
 		for _, r := range shown {
@@ -308,29 +312,12 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 		if note := result.Completeness.IncompleteNote(); note != "" {
 			summary += "\n\n" + note
 		}
-
-		content, err := buildAnnotatedContentBlocks(summary, resp)
-		if err != nil {
-			return nil, nil, err
-		}
-		size, err := json.Marshal(ToolCallResult{Content: content, StructuredContent: resp})
-		if err != nil {
-			return nil, nil, fmt.Errorf("marshal result: %w", err)
-		}
-		if len(shown) <= 1 || len(size) < groundResultBudget {
-			return content, resp, nil
-		}
-		shown = dropLowestRankedGroundRoute(shown)
-		trimmed = true
-	}
+		return summary, resp
+	})
 }
 
 // groundRowsPerDirection caps each direction of a search_ground result.
 const groundRowsPerDirection = 20
-
-// groundResultBudget bounds the handler's result; the 2 KB under the 50 KB
-// promise leaves room for the resource links and envelope added afterwards.
-const groundResultBudget = 48_000
 
 // groundDirectionCounts counts routes per direction ("" for one-way) and
 // lists the directions in first-seen order.
@@ -409,34 +396,36 @@ func handleSearchAirportTransfers(ctx context.Context, args map[string]any, elic
 		return []ContentBlock{{Type: "text", Text: msg}}, result, nil
 	}
 
-	summary := buildGroundRouteSummary(
-		fmt.Sprintf("Found %d airport transfer routes from %s to %s on %s", result.Count, result.Airport, result.Destination, result.Date),
-		result.Routes, 10,
-	)
-	if result.ArrivalTime != "" {
-		summary += fmt.Sprintf("\n\nFiltered to departures at or after %s.", result.ArrivalTime)
-	}
-	if result.CityMatches > 0 {
-		summary += fmt.Sprintf("\n\nExact airport matches are listed first (%d exact, %d broader city).", result.ExactMatches, result.CityMatches)
-	}
-	if groundRoutesHaveProvider(result.Routes, "taxi") {
-		summary += "\n\nTaxi fares are estimates based on route distance and typical local tariffs."
-	}
+	total := len(result.Routes)
+	return fitReply(result.Routes, dropTail[models.GroundRoute](nil), func(shown []models.GroundRoute, trimmed bool) (string, any) {
+		view := *result
+		view.Routes, view.Count = shown, len(shown)
+		summary := buildGroundRouteSummary(
+			fmt.Sprintf("Found %d airport transfer routes from %s to %s on %s", result.Count, result.Airport, result.Destination, result.Date),
+			shown, 10,
+		)
+		if trimmed {
+			summary += budgetNote(len(shown), total, "routes", "type, provider or max_price")
+		}
+		if result.ArrivalTime != "" {
+			summary += fmt.Sprintf("\n\nFiltered to departures at or after %s.", result.ArrivalTime)
+		}
+		if result.CityMatches > 0 {
+			summary += fmt.Sprintf("\n\nExact airport matches are listed first (%d exact, %d broader city).", result.ExactMatches, result.CityMatches)
+		}
+		if groundRoutesHaveProvider(shown, "taxi") {
+			summary += "\n\nTaxi fares are estimates based on route distance and typical local tariffs."
+		}
 
-	// Door-to-door comparison card (Option C): enrich the raw routes into a
-	// choosable set of modes with time/price/pros/cons/grounded steps and
-	// cheapest/fastest/best-value/luggage labels. Additive + backward-compatible.
-	comparison := transfer.BuildOptions(result.Routes, result.AirportCode, result.Airport, result.Destination)
-	if len(comparison.Options) > 1 {
-		summary += "\n\nCompare modes and choose what suits you — see cheapest / fastest / best-value / most-luggage-friendly in the structured 'comparison'."
-	}
-	response := airportTransferResponse{AirportTransferResult: result, Comparison: comparison}
-
-	content, err := buildAnnotatedContentBlocks(summary, result)
-	if err != nil {
-		return nil, nil, err
-	}
-	return content, response, nil
+		// Door-to-door comparison card (Option C): enrich the raw routes into a
+		// choosable set of modes with time/price/pros/cons/grounded steps and
+		// cheapest/fastest/best-value/luggage labels. Additive + backward-compatible.
+		comparison := transfer.BuildOptions(shown, result.AirportCode, result.Airport, result.Destination)
+		if len(comparison.Options) > 1 {
+			summary += "\n\nCompare modes and choose what suits you — see cheapest / fastest / best-value / most-luggage-friendly in the structured 'comparison'."
+		}
+		return summary, airportTransferResponse{AirportTransferResult: &view, Comparison: comparison, BudgetOmitted: total - len(shown)}
+	})
 }
 
 // airportTransferResponse extends the legacy AirportTransferResult with the
@@ -445,6 +434,8 @@ func handleSearchAirportTransfers(ctx context.Context, args map[string]any, elic
 type airportTransferResponse struct {
 	*trip.AirportTransferResult
 	Comparison models.TransferComparison `json:"comparison"`
+	// BudgetOmitted counts routes the 50 KB reply budget left out.
+	BudgetOmitted int `json:"budget_omitted,omitempty"`
 }
 
 // enrichFerrySeaState attaches a coarse Open-Meteo Marine sea-state forecast to

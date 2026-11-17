@@ -111,6 +111,24 @@ trvl sizes the result itself; there is no limit argument.
 - **Price labels.** Each route and each price source carries `price_provenance`: `live`, `estimated` or `unavailable`. In the text summary a live fare is unmarked (`EUR 25.00`), an estimate reads `~€22 (est.)`, and a route without a fare reads `price unavailable`. `search_airport_transfers` uses the same labels, so taxi fares read as estimates.
 - **Fields left out of each route** because they repeat it: a `sources` array with one entry, a single leg with the route's own type, provider, stops and times, a leg stop's `city` when the route or the previous leg already names it, and the confidence `rated` and `freshness` fields (`label`, `score`, `basis` and `signals` stay). Routes without legs omit `legs`.
 
+### Result Size (every list tool)
+
+Every tool that returns a list keeps its whole `tools/call` result under 50 KB. That limit covers both the JSON text block and `structuredContent`, which carry the same rows. trvl picks the size itself; there is no limit argument. A reply that fits is unchanged.
+
+When a reply would pass 50 KB, trvl leaves out the lowest-ranked rows until it fits. `budget_omitted` counts the rows left out, `count` is the rows in this response, and the summary says `Showing 19 of 120 hotels; narrow with ...`. The summary still describes everything found: `Found 120 hotels`, the cheapest and the highest rated. Where the cut starts, by tool:
+
+| Tool | What goes first | Always kept |
+|---|---|---|
+| `search_hotels` | hotels from the end of the `sort` order | the lead-in hotel and the highest rated, both named in the summary |
+| `search_flights` | flights from the end of the `sort_by` order | the cheapest flight and the cheapest nonstop |
+| `search_hotels_with_details` | the priciest rooms (each hotel first down to its 10 cheapest), then hotels from the end; `rooms_omitted` counts each hotel's cut rooms, and `room_types` and `accommodation_offers` always name the same rooms | one hotel with its cheapest room |
+| `search_accommodations` | rejected offers, then matched offers from the end, then the evidence rows that repeat `provider_statuses` or a candidate's `detail_errors` | the best matched offer and the candidates |
+| `hotel_rooms` | the priciest rooms | the cheapest room |
+| `hotel_reviews`, `search_airport_transfers` | rows from the end | the first row |
+| `search_ground` | as described above | one route |
+
+`search_accommodations` sends evidence only for the offers in its reply. If a reply is still over 50 KB once only the rows above are left, the tool returns an error that names the 50 KB limit, never an oversized result.
+
 ### Rental Car Filters (`search_cars`)
 
 | Filter | Parameter | Notes |

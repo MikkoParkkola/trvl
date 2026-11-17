@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"math"
+	"slices"
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/hotels"
@@ -15,6 +17,9 @@ import (
 
 var searchHotelsFunc = hotels.SearchHotels
 
+// getHotelReviewsFunc is the review fetch seam, stubbed by offline tests.
+var getHotelReviewsFunc = hotels.GetHotelReviews
+
 type hotelSearchRequest struct {
 	Location string
 	CheckIn  string
@@ -26,6 +31,8 @@ type hotelSearchRequest struct {
 type hotelSearchResponse struct {
 	*models.HotelSearchResult
 	Suggestions []Suggestion `json:"suggestions,omitempty"`
+	// BudgetOmitted counts hotels the 50 KB reply budget left out.
+	BudgetOmitted int `json:"budget_omitted,omitempty"`
 }
 
 // --- Tool definitions ---
@@ -243,23 +250,53 @@ func handleSearchHotels(ctx context.Context, args map[string]any, elicit ElicitF
 	// Build suggestions for progressive disclosure.
 	suggestions := hotelSuggestions(result, req.Options)
 
-	// The orchestrating LLM receives the full hotel list in structuredContent JSON
+	// The orchestrating LLM receives the hotel list in structuredContent JSON
 	// and can select and rank picks without any server-side sampling round-trip.
 	// (curateHotelsViaSampling was removed: sampling is not wired in production.)
-
-	resp := hotelSearchResponse{
-		HotelSearchResult: result,
-		Suggestions:       suggestions,
-	}
-
+	// The summary describes every hotel found; when the 50 KB reply budget cuts
+	// the list, the lowest-ranked rows go first and the hotels the summary
+	// names stay.
 	summary := hotelSummary(result, req.Location)
+	total := len(result.Hotels)
+	pinned := hotelSummaryPins(result.Hotels)
+	return fitReply(result.Hotels, dropTail(func(h models.HotelResult) bool { return pinned[hotelPinKey(h)] }),
+		func(shown []models.HotelResult, trimmed bool) (string, any) {
+			view := *result
+			view.Hotels, view.Count = shown, len(shown)
+			resp := hotelSearchResponse{HotelSearchResult: &view, Suggestions: suggestions}
+			if !trimmed {
+				return summary, resp
+			}
+			resp.BudgetOmitted = total - len(shown)
+			return summary + budgetNote(len(shown), total, "hotels", "stars, min_rating, max_price or property_type, or change sort"), resp
+		})
+}
 
-	content, err := buildAnnotatedContentBlocks(summary, resp)
-	if err != nil {
-		return nil, nil, err
+// hotelSummaryPins marks the hotels hotelSummaryText names (the lead-in and
+// the highest rated) so a budget cut never drops a row the text points at.
+func hotelSummaryPins(list []models.HotelResult) map[string]bool {
+	pins := map[string]bool{}
+	if cheapest := pricefeed.CheapestHotel(list); cheapest.Price > 0 {
+		pins[hotelPinKey(cheapest)] = true
 	}
+	if best := highestRatedHotel(list); best != nil {
+		pins[hotelPinKey(*best)] = true
+	}
+	return pins
+}
 
-	return content, resp, nil
+func hotelPinKey(h models.HotelResult) string { return h.HotelID + "|" + h.Name }
+
+// highestRatedHotel returns the first hotel with the top rating, or nil when
+// none is rated.
+func highestRatedHotel(list []models.HotelResult) *models.HotelResult {
+	var best *models.HotelResult
+	for i := range list {
+		if list[i].Rating > 0 && (best == nil || list[i].Rating > best.Rating) {
+			best = &list[i]
+		}
+	}
+	return best
 }
 
 func handleHotelPrices(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
@@ -397,15 +434,8 @@ func hotelSummaryText(result *models.HotelSearchResult, location string) string 
 			cheapest.Currency, cheapest.Price, cheapest.Name)
 	}
 
-	// Find highest rated.
-	var bestRated *models.HotelResult
-	for i := range result.Hotels {
-		if result.Hotels[i].Rating > 0 {
-			if bestRated == nil || result.Hotels[i].Rating > bestRated.Rating {
-				bestRated = &result.Hotels[i]
-			}
-		}
-	}
+	// Find highest rated (the same pick hotelSummaryPins keeps in a cut reply).
+	bestRated := highestRatedHotel(result.Hotels)
 	if bestRated != nil && (!hasCheapest || bestRated.Name != cheapest.Name) {
 		summary += fmt.Sprintf(" Highest rated: %s (%.1f/10).", bestRated.Name, bestRated.Rating)
 	}
@@ -470,7 +500,7 @@ func handleHotelReviews(ctx context.Context, args map[string]any, elicit ElicitF
 		opts.Sort = "newest"
 	}
 
-	result, err := hotels.GetHotelReviews(ctx, hotelID, opts)
+	result, err := getHotelReviewsFunc(ctx, hotelID, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -484,12 +514,24 @@ func handleHotelReviews(ctx context.Context, args map[string]any, elicit ElicitF
 			result.Summary.AverageRating, result.Summary.TotalReviews)
 	}
 
-	content, err := buildAnnotatedContentBlocks(summary, result)
-	if err != nil {
-		return nil, nil, err
-	}
+	total := len(result.Reviews)
+	return fitReply(result.Reviews, dropTail[models.HotelReview](nil), func(shown []models.HotelReview, trimmed bool) (string, any) {
+		view := *result
+		view.Reviews, view.Count = shown, len(shown)
+		resp := hotelReviewsResponse{HotelReviewResult: &view}
+		if !trimmed {
+			return summary, resp
+		}
+		resp.BudgetOmitted = total - len(shown)
+		return summary + budgetNote(len(shown), total, "reviews", ""), resp
+	})
+}
 
-	return content, result, nil
+// hotelReviewsResponse is the hotel_reviews reply: the review result plus how
+// many reviews the 50 KB reply budget left out.
+type hotelReviewsResponse struct {
+	*models.HotelReviewResult
+	BudgetOmitted int `json:"budget_omitted,omitempty"`
 }
 
 // --- Hotel rooms ---
@@ -625,23 +667,56 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		}
 	}
 
-	content, err := buildAnnotatedContentBlocks(summary, availability)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	// MIK-6232: attach a booking-readiness verdict. Rooms carry refundability +
 	// a classifiable link, so "ready" is reachable here (unlike hotel_prices).
+	// The verdict covers every room found, before any budget cut.
 	readiness := roomsBookingReadiness(availability)
-	enriched := struct {
-		*hotels.RoomAvailability
-		BookingReadiness        string   `json:"booking_readiness,omitempty"`
-		BookingReadinessReasons []string `json:"booking_readiness_reasons,omitempty"`
-	}{
-		RoomAvailability:        availability,
-		BookingReadiness:        string(readiness.Readiness),
-		BookingReadinessReasons: readiness.Reasons,
-	}
+	total := len(availability.Rooms)
+	return fitReply(availability.Rooms, dropPriciestRoom, func(shown []hotels.RoomType, trimmed bool) (string, any) {
+		view := *availability
+		view.Rooms = shown
+		enriched := hotelRoomsResponse{
+			RoomAvailability:        &view,
+			BookingReadiness:        string(readiness.Readiness),
+			BookingReadinessReasons: readiness.Reasons,
+		}
+		if !trimmed {
+			return summary, enriched
+		}
+		enriched.BudgetOmitted = total - len(shown)
+		return summary + budgetNote(len(shown), total, "rooms", ""), enriched
+	})
+}
 
-	return content, enriched, nil
+// hotelRoomsResponse is the hotel_rooms reply: room availability, the
+// booking-readiness verdict, and how many rooms the 50 KB budget left out.
+type hotelRoomsResponse struct {
+	*hotels.RoomAvailability
+	BookingReadiness        string   `json:"booking_readiness,omitempty"`
+	BookingReadinessReasons []string `json:"booking_readiness_reasons,omitempty"`
+	BudgetOmitted           int      `json:"budget_omitted,omitempty"`
+}
+
+// dropPriciestRoom is the budget drop step for room lists: it removes the
+// priciest room (unpriced rooms first), so the cheapest survives to the
+// one-room floor.
+func dropPriciestRoom(rooms []hotels.RoomType) ([]hotels.RoomType, bool) {
+	if len(rooms) <= 1 {
+		return rooms, false
+	}
+	worst := 0
+	for i, r := range rooms {
+		if roomCutRank(r) > roomCutRank(rooms[worst]) {
+			worst = i
+		}
+	}
+	return slices.Delete(rooms, worst, worst+1), true
+}
+
+// roomCutRank orders rooms for dropping: unpriced first, then priciest.
+func roomCutRank(r hotels.RoomType) float64 {
+	if r.Price <= 0 {
+		return math.Inf(1)
+	}
+	return r.Price
 }
