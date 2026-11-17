@@ -68,6 +68,24 @@ func SavingsOff(ctx context.Context, noHacks bool) bool {
 	return noHacks || SavingsPassSuppressed(ctx)
 }
 
+// Seed stores val as the finished result for key in the savings pass carried
+// by ctx, so a Memo call for key returns it without running anything. A key
+// already present keeps its entry. Outside a pass Seed does nothing.
+func Seed[T any](ctx context.Context, key string, val T) {
+	pass, _ := ctx.Value(savingsPassKey{}).(*savingsPass)
+	if pass == nil {
+		return
+	}
+	pass.mu.Lock()
+	defer pass.mu.Unlock()
+	if _, ok := pass.entries[key]; ok {
+		return
+	}
+	e := &memoEntry{done: make(chan struct{}), val: val}
+	close(e.done)
+	pass.entries[key] = e
+}
+
 // Memo runs fn once per key within the savings pass carried by ctx and hands
 // every caller that one result, error included. The call runs under the pass
 // context, so a caller that gives up (its own ctx done) returns its context

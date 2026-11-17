@@ -393,3 +393,17 @@ func TestGeocodeAirportTransferDestination_BiasesAmbiguousDestinations(t *testin
 		t.Fatalf("geocode calls = %v, want biased query only", calls)
 	}
 }
+
+// An equally priced train whose change count is not known must not outrank a
+// known one by passing for direct.
+func TestSortAirportTransferRoutes_KnownTransfersFirst(t *testing.T) {
+	notKnown := models.GroundRoute{Provider: "oebb", Type: "train", Price: 12, TransfersUnknown: true,
+		Departure: models.GroundStop{Time: "2026-11-20T10:00:00"}}
+	known := models.GroundRoute{Provider: "oebb", Type: "train", Price: 12, Transfers: 1,
+		Departure: models.GroundStop{Time: "2026-11-20T10:00:00"}}
+	routes := []airportTransferRoute{{route: notKnown, exact: true}, {route: known, exact: true}}
+	sortAirportTransferRoutes(routes)
+	if routes[0].route.TransfersUnknown {
+		t.Errorf("first route's count is not known; want the known one first")
+	}
+}
