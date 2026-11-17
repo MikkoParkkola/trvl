@@ -14,77 +14,36 @@ const replyBudget = 48_000
 
 // fitReply builds a list tool's reply from rows and, while the marshalled
 // tools/call result (both the JSON text copy and structuredContent) is over
-// replyBudget, applies drop steps until it fits. It finds the fewest steps
-// that fit with a galloping then binary search, so a long list costs a
-// handful of marshals, and every reply it returns was measured. build is told
-// when rows were dropped so its summary can say so. drop returns false at the
-// tool's floor; a floor that still does not fit is a short tool error, never
-// an oversized reply. Each search probe starts again from a clone of rows, so
-// drop may edit the slice it is given and the values in it, but must copy any
-// nested slice before changing it.
+// replyBudget, applies one drop step and measures again. It returns the
+// first reply that fits, so no step is skipped: reply size need not shrink
+// with every step (a pinned row moving into a summary's top rows can add
+// bytes). build is told when rows were dropped so its summary can say so.
+// drop returns false at the tool's floor; if no step fits, the result is a
+// short tool error, never an oversized reply. rows is cloned first, so drop
+// may edit the slice and its values but must copy any nested slice before
+// changing it.
 func fitReply[T any](rows []T, drop func([]T) ([]T, bool), build func(rows []T, trimmed bool) (string, any)) ([]ContentBlock, any, error) {
-	type attempt struct {
-		content []ContentBlock
-		data    any
-		size    int
-	}
-	// try builds the reply after k drop steps and reports how many steps it
-	// could take before the floor.
-	try := func(k int) (attempt, int, error) {
-		cur := slices.Clone(rows)
-		for i := 0; i < k; i++ {
-			next, ok := drop(cur)
-			if !ok {
-				k = i
-				break
-			}
-			cur = next
-		}
-		summary, data := build(cur, k > 0)
+	cur := slices.Clone(rows)
+	trimmed := false
+	for {
+		summary, data := build(cur, trimmed)
 		content, err := buildAnnotatedContentBlocks(summary, data)
 		if err != nil {
-			return attempt{}, k, err
+			return nil, nil, err
 		}
 		raw, err := json.Marshal(ToolCallResult{Content: content, StructuredContent: data})
 		if err != nil {
-			return attempt{}, k, fmt.Errorf("marshal result: %w", err)
+			return nil, nil, fmt.Errorf("marshal result: %w", err)
 		}
-		return attempt{content, data, len(raw)}, k, nil
+		if len(raw) < replyBudget {
+			return content, data, nil
+		}
+		next, ok := drop(cur)
+		if !ok {
+			return nil, nil, fmt.Errorf("the result is %d bytes even at its smallest, over the 50 KB reply budget; narrow the search", len(raw))
+		}
+		cur, trimmed = next, true
 	}
-
-	best, _, err := try(0)
-	if err != nil || best.size < replyBudget {
-		return best.content, best.data, err
-	}
-	// lo is a step count known to be over budget, hi the next one to probe.
-	lo, hi := 0, 1
-	for {
-		a, took, err := try(hi)
-		if err != nil {
-			return nil, nil, err
-		}
-		if a.size < replyBudget {
-			best = a
-			break
-		}
-		if took < hi {
-			return nil, nil, fmt.Errorf("the result is %d bytes even at its smallest, over the 50 KB reply budget; narrow the search", a.size)
-		}
-		lo, hi = hi, hi*2
-	}
-	for hi-lo > 1 {
-		mid := (lo + hi) / 2
-		a, _, err := try(mid)
-		if err != nil {
-			return nil, nil, err
-		}
-		if a.size < replyBudget {
-			best, hi = a, mid
-		} else {
-			lo = mid
-		}
-	}
-	return best.content, best.data, nil
 }
 
 // dropTail returns a drop step for a ranked list: it removes the last row

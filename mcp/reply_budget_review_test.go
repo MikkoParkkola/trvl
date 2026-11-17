@@ -237,3 +237,24 @@ func TestReplyBudgetHotelRoomsKeepsCheapestPerNight(t *testing.T) {
 		t.Errorf("trimmed summary should name the kept room per night:\n%s", got.userText)
 	}
 }
+
+// Reply size need not shrink as rows go: a pinned row promoted into a
+// summary can add bytes. Here only the reply after three drop steps fits,
+// so a search that skips steps would miss it.
+func TestFitReplyFindsFitWhenSizeIsNotMonotone(t *testing.T) {
+	rows := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	build := func(shown []int, trimmed bool) (string, any) {
+		pad := 60_000
+		if len(shown) == 8 {
+			pad = 1_000
+		}
+		return "summary", map[string]any{"rows": shown, "pad": strings.Repeat("p", pad)}
+	}
+	_, data, err := fitReply(rows, dropTail[int](nil), build)
+	if err != nil {
+		t.Fatalf("fitReply error %v; the reply after 3 drops fits", err)
+	}
+	if got := data.(map[string]any)["rows"].([]int); len(got) != 8 {
+		t.Errorf("kept %d rows, want 8", len(got))
+	}
+}
