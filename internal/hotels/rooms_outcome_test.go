@@ -87,3 +87,13 @@ func TestGetRoomAvailability_RelayIsAGoogleCall(t *testing.T) {
 		}
 	})
 }
+
+// TestGetRoomAvailability_EntityRefusalSurvivesLaterAnswers: only the entity
+// page refused (a 403 arms no cooldown); the price RPC failed and the fallback
+// answered without the hotel. Neither settles, so the notice names Google.
+func TestGetRoomAvailability_EntityRefusalSurvivesLaterAnswers(t *testing.T) {
+	roomLookupWorld(t, googleRoutes{answer(http.StatusForbidden), answer(404), noSacherPage}, false)
+	if res := lookupSacherRooms(t); !strings.Contains(res.Notice, googleClause) {
+		t.Fatalf("notice = %q, want the Google Hotels clause", res.Notice)
+	}
+}
