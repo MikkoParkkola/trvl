@@ -107,12 +107,63 @@ func TestSearchByName_SavingsPassReusesOuterRound(t *testing.T) {
 	}
 }
 
-// A nested search for a different date is a different trip: it must still
-// query the provider (the shared round covers only the outer route and date).
-func TestSearchByName_SavingsPassOtherDateStillSearches(t *testing.T) {
+// A nested search for another date or currency is a different query: it must
+// still reach the provider (the shared round covers only the outer one).
+func TestSearchByName_SavingsPassOtherQueryStillSearches(t *testing.T) {
+	cases := []struct{ name, date, currency string }{
+		{"other date", "2027-07-16", "EUR"},
+		{"other currency", "2027-07-15", "GBP"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("TRVL_PREFETCH", "false")
+			calls := stubFerryhopper(t)
+			opts := SearchOptions{Currency: "EUR", ExcludeProviders: allButFerryhopper(), NoCache: true}
+			const from, to, date = "Piraeus", "Santorini", "2027-07-15"
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+
+			solo := opts
+			solo.NoHacks = true
+			if _, err := SearchByName(ctx, from, to, date, solo); err != nil {
+				t.Fatalf("baseline search: %v", err)
+			}
+			perSearch := calls.Swap(0)
+
+			var ran atomic.Bool
+			withComposer(t, func(ctx context.Context, req HackComposeRequest) *models.HackSaving {
+				ran.Store(true)
+				_, _ = SearchByName(ctx, req.Origin, req.Destination, c.date, SearchOptions{
+					Currency:         c.currency,
+					ExcludeProviders: req.ExcludeProviders,
+					NoCache:          req.NoCache,
+				})
+				return nil
+			})
+			if _, err := SearchByName(ctx, from, to, date, opts); err != nil {
+				t.Fatalf("outer search: %v", err)
+			}
+			if !ran.Load() {
+				t.Fatal("the savings pass never ran")
+			}
+			if got := calls.Load(); got != 2*perSearch {
+				t.Errorf("ferryhopper requests = %d, want %d (the outer query plus the %s)", got, 2*perSearch, c.name)
+			}
+		})
+	}
+}
+
+// A search narrowed by type, price cap and browser fallbacks hands that scope
+// to the pass, so a detector repeating it builds the same key and still costs
+// no second provider round.
+func TestSearchByName_SavingsPassReusesScopedRound(t *testing.T) {
 	t.Setenv("TRVL_PREFETCH", "false")
 	calls := stubFerryhopper(t)
-	opts := SearchOptions{Currency: "EUR", ExcludeProviders: allButFerryhopper(), NoCache: true}
+	// The golden route is a EUR 48 ferry, so these filters keep it.
+	opts := SearchOptions{
+		Currency: "EUR", ExcludeProviders: allButFerryhopper(), NoCache: true,
+		Type: "ferry", MaxPrice: 100, AllowBrowserFallbacks: true,
+	}
 	const from, to, date = "Piraeus", "Santorini", "2027-07-15"
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -124,19 +175,32 @@ func TestSearchByName_SavingsPassOtherDateStillSearches(t *testing.T) {
 	}
 	perSearch := calls.Swap(0)
 
+	var nestedRoutes atomic.Int32
+	nestedRoutes.Store(-1)
 	withComposer(t, func(ctx context.Context, req HackComposeRequest) *models.HackSaving {
-		_, _ = SearchByName(ctx, req.Origin, req.Destination, "2027-07-16", SearchOptions{
-			Currency:         req.Currency,
-			ExcludeProviders: req.ExcludeProviders,
-			NoCache:          req.NoCache,
+		res, err := SearchByName(ctx, req.Origin, req.Destination, req.Date, SearchOptions{
+			Currency:              req.Currency,
+			Providers:             req.Providers,
+			ExcludeProviders:      req.ExcludeProviders,
+			NoCache:               req.NoCache,
+			Type:                  req.Type,
+			MaxPrice:              req.MaxPrice,
+			AllowBrowserFallbacks: req.AllowBrowserFallbacks,
 		})
+		if err == nil && res != nil {
+			nestedRoutes.Store(int32(len(res.Routes)))
+		}
 		return nil
 	})
-	if _, err := SearchByName(ctx, from, to, date, opts); err != nil {
-		t.Fatalf("outer search: %v", err)
+	outer, err := SearchByName(ctx, from, to, date, opts)
+	if err != nil || outer == nil || len(outer.Routes) == 0 {
+		t.Fatalf("outer search found nothing, so the pass never ran: err=%v result=%+v", err, outer)
 	}
-	if got := calls.Load(); got != 2*perSearch {
-		t.Errorf("ferryhopper requests = %d, want %d (outer date plus the other date)", got, 2*perSearch)
+	if got := nestedRoutes.Load(); got != int32(len(outer.Routes)) {
+		t.Errorf("nested search saw %d routes, want the outer search's %d", got, len(outer.Routes))
+	}
+	if got := calls.Load(); got != perSearch {
+		t.Errorf("ferryhopper requests = %d for one scoped search plus its savings pass, want %d", got, perSearch)
 	}
 }
 

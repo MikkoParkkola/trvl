@@ -19,12 +19,16 @@ func TestDetectorInputFromGround_CarriesSearchScope(t *testing.T) {
 	in := detectorInputFromGround(ground.HackComposeRequest{
 		Origin: "Prague", Destination: "Vienna", Date: "2026-07-01", Currency: "EUR", NaivePrice: 20,
 		Providers: []string{"flixbus"}, ExcludeProviders: []string{"rome2rio"}, NoCache: true,
+		Type: "bus", MaxPrice: 40, AllowBrowserFallbacks: true,
 	})
 	if in.Origin != "Prague" || in.Destination != "Vienna" || in.Date != "2026-07-01" || in.Currency != "EUR" || in.NaivePrice != 20 {
 		t.Errorf("route fields not mapped: %+v", in)
 	}
 	if strings.Join(in.GroundProviders, ",") != "flixbus" || strings.Join(in.GroundExcludeProviders, ",") != "rome2rio" || !in.NoCache {
 		t.Errorf("scope = providers %v exclude %v nocache %v; want [flixbus] [rome2rio] true", in.GroundProviders, in.GroundExcludeProviders, in.NoCache)
+	}
+	if in.GroundType != "bus" || in.GroundMaxPrice != 40 || !in.GroundAllowBrowserFallbacks || in.search != groundSearch {
+		t.Errorf("type %q max %v fallbacks %v kind %v; want bus 40 true ground", in.GroundType, in.GroundMaxPrice, in.GroundAllowBrowserFallbacks, in.search)
 	}
 }
 
@@ -53,6 +57,11 @@ func (c *scopeCapture) assertScoped(t *testing.T, minCalls int) {
 		if strings.Join(o.Providers, ",") != "flixbus" || strings.Join(o.ExcludeProviders, ",") != "rome2rio" || !o.NoCache {
 			t.Errorf("ground search %d scope = providers %v exclude %v nocache %v; want [flixbus] [rome2rio] true", i, o.Providers, o.ExcludeProviders, o.NoCache)
 		}
+		// Type is not checked: a detector that needs a ferry or a train sets
+		// its own, which is the point of its search.
+		if o.MaxPrice != 40 || !o.AllowBrowserFallbacks {
+			t.Errorf("ground search %d max %v fallbacks %v; want 40 true", i, o.MaxPrice, o.AllowBrowserFallbacks)
+		}
 	}
 }
 
@@ -61,6 +70,9 @@ func scoped(in DetectorInput) DetectorInput {
 	in.GroundProviders = []string{"flixbus"}
 	in.GroundExcludeProviders = []string{"rome2rio"}
 	in.NoCache = true
+	in.GroundType = "bus"
+	in.GroundMaxPrice = 40
+	in.GroundAllowBrowserFallbacks = true
 	return in
 }
 
@@ -156,11 +168,15 @@ func TestGroundHackComposer_CarriesSearchScope(t *testing.T) {
 	compose(context.Background(), ground.HackComposeRequest{
 		Origin: "Prague", Destination: "Vienna", Date: "2026-07-01", Currency: "EUR", NaivePrice: 20,
 		Providers: []string{"flixbus"}, ExcludeProviders: []string{"rome2rio"}, NoCache: true,
+		Type: "bus", MaxPrice: 40, AllowBrowserFallbacks: true,
 	})
 	if got == nil {
 		t.Fatal("composer never ran the detectors")
 	}
 	if strings.Join(got.GroundProviders, ",") != "flixbus" || strings.Join(got.GroundExcludeProviders, ",") != "rome2rio" || !got.NoCache {
 		t.Errorf("detector input scope = providers %v exclude %v nocache %v; want [flixbus] [rome2rio] true", got.GroundProviders, got.GroundExcludeProviders, got.NoCache)
+	}
+	if got.GroundType != "bus" || got.GroundMaxPrice != 40 || !got.GroundAllowBrowserFallbacks {
+		t.Errorf("detector input type %q max %v fallbacks %v; want bus 40 true", got.GroundType, got.GroundMaxPrice, got.GroundAllowBrowserFallbacks)
 	}
 }
