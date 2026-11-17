@@ -261,7 +261,14 @@ func (c Completeness) IncompleteNote() string {
 	if c.MayClaimExhaustive() {
 		return ""
 	}
+	// A provider that answered in part was reached too: "Checked 0 of 1"
+	// beside its results would read as silence.
 	reached := c.Succeeded
+	for _, why := range c.missingWhy {
+		if why == missingPartial {
+			reached++
+		}
+	}
 	total := c.Queried
 	b := strings.Builder{}
 	b.WriteString("Checked ")

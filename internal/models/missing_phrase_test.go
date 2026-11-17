@@ -203,7 +203,7 @@ func TestMissingPhrase_PartialAnswer(t *testing.T) {
 	if c.State != CompletenessPartial {
 		t.Errorf("state = %q, want partial: google_hotels returned 40 results", c.State)
 	}
-	if got, want := c.IncompleteNote(), "Checked 0 of 1 providers; google_hotels answered only in part — results may be incomplete."; got != want {
+	if got, want := c.IncompleteNote(), "Checked 1 of 1 providers; google_hotels answered only in part — results may be incomplete."; got != want {
 		t.Errorf("note:\n got %q\nwant %q", got, want)
 	}
 
@@ -211,10 +211,31 @@ func TestMissingPhrase_PartialAnswer(t *testing.T) {
 		partial,
 		statusFrom("trivago", errors.New("trivago: HTTP 403: forbidden")),
 	})
-	if got, want := mixed.IncompleteNote(), "Checked 0 of 2 providers; trivago refused the request; google_hotels answered only in part — results may be incomplete."; got != want {
+	if got, want := mixed.IncompleteNote(), "Checked 1 of 2 providers; trivago refused the request; google_hotels answered only in part — results may be incomplete."; got != want {
 		t.Errorf("mixed note:\n got %q\nwant %q", got, want)
 	}
 	if mixed.State != CompletenessPartial {
 		t.Errorf("mixed state = %q, want partial", mixed.State)
+	}
+}
+
+// The same single provider with nothing returned still blocks the search: the
+// partial rule moves only a search that got results.
+func TestComputeCompleteness_SingleProviderBlockedOnlyWithoutResults(t *testing.T) {
+	for _, tc := range []struct {
+		results   int
+		wantState string
+		wantNote  string
+	}{
+		{0, CompletenessBlocked, "Checked 0 of 1 providers; google_hotels rate-limited the request — results may be incomplete."},
+		{40, CompletenessPartial, "Checked 1 of 1 providers; google_hotels answered only in part — results may be incomplete."},
+	} {
+		c := ComputeCompleteness([]ProviderStatus{{ID: "google_hotels", Status: StatusRateLimited, Results: tc.results, Error: "HTTP 429"}})
+		if c.State != tc.wantState || c.MayClaimExhaustive() {
+			t.Errorf("results %d: state %q (exhaustive %v), want %q and not exhaustive", tc.results, c.State, c.MayClaimExhaustive(), tc.wantState)
+		}
+		if got := c.IncompleteNote(); got != tc.wantNote {
+			t.Errorf("results %d: note\n got %q\nwant %q", tc.results, got, tc.wantNote)
+		}
 	}
 }
