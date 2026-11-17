@@ -324,3 +324,15 @@ func TestSearchHotelByName_TargetedFailureKeepsTheRefusal(t *testing.T) {
 		t.Fatalf("err = %v, want the city search's block reported as a rate limit", err)
 	}
 }
+
+// TestSearchHotelByName_RefusalSurvivesLaterFailures: no candidate returned
+// hotels. The city search was blocked; the later ones failed for another
+// reason. The lookup's error still reports the block as a rate limit.
+func TestSearchHotelByName_RefusalSurvivesLaterFailures(t *testing.T) {
+	roomLookupWorld(t, googleRoutes{shortEntity, answer(404), blockCityBreakHotel}, false)
+
+	_, err := SearchHotelByName(context.Background(), "Hotel Sacher, Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if !errors.Is(err, models.ErrRateLimited) {
+		t.Fatalf("err = %v, want the city search's block reported as a rate limit", err)
+	}
+}

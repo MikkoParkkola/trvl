@@ -1,6 +1,7 @@
 package hotels
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -89,4 +90,18 @@ func scopedAuxTasks(tasks []hotelAuxTask, scope HotelSearchScope) []hotelAuxTask
 		return tasks
 	}
 	return slices.DeleteFunc(tasks, func(task hotelAuxTask) bool { return task.id != "booking" })
+}
+
+// googleRefusal returns a failed search's error as a rate-limit error when it
+// is refusal-class (429, cooldown, a bot block), and nil for any other
+// failure. Only a refusal may replace a recorded Google outcome: another
+// failure is not a Google answer and must never erase one (#813).
+func googleRefusal(err error) error {
+	if err == nil || models.ClassifyProviderError(err) != models.StatusRateLimited {
+		return nil
+	}
+	if errors.Is(err, models.ErrRateLimited) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", models.ErrRateLimited, err)
 }

@@ -362,8 +362,8 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		searchOpts.Scope = cand.scope
 		r, err := SearchHotelsWithClient(ctx, client, cand.query, searchOpts)
 		if err != nil {
-			if models.ClassifyProviderError(err) == models.StatusRateLimited {
-				googleErr = err
+			if refusal := googleRefusal(err); refusal != nil {
+				googleErr = refusal
 			}
 			continue
 		}

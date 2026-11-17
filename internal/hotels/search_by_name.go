@@ -372,6 +372,9 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 		result, err := SearchHotels(ctx, cand.query, opts)
 		if err != nil {
 			lastErr = err
+			if refusal := googleRefusal(err); refusal != nil {
+				googleErr = refusal
+			}
 			continue
 		}
 		// The latest Google answer wins (nil when Google answered).
@@ -410,8 +413,8 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 					if tErr != nil {
 						// A failed search is not a Google answer: only a
 						// refusal may replace the recorded outcome.
-						if models.ClassifyProviderError(tErr) == models.StatusRateLimited {
-							googleErr = tErr
+						if refusal := googleRefusal(tErr); refusal != nil {
+							googleErr = refusal
 						}
 					} else {
 						// The latest Google answer wins: one that came back
@@ -448,7 +451,11 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 	}
 
 	if lastErr != nil && !sawResults {
-		return nil, fmt.Errorf("hotel name search: %w", lastErr)
+		if refusal := googleRefusal(lastErr); refusal != nil {
+			return nil, fmt.Errorf("hotel name search: %w", refusal)
+		}
+		// A later failure must not hide an earlier Google refusal.
+		return nil, errors.Join(fmt.Errorf("hotel name search: %w", lastErr), googleErr)
 	}
 	// Google's refusal travels with a miss: the hotel may be the one Google
 	// would have returned (#813).
