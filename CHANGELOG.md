@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- A partial search counts a provider that returned results before it was cut off as checked, and names it as having "answered only in part" ("Checked 1 of 1 providers; google_hotels answered only in part"). A search reads as blocked only when no provider returned anything. (#823)
+- A partial search counts a provider that returned results before it was cut off as checked, and names it as having "answered only in part" ("Checked 1 of 1 providers; google_hotels answered only in part — results may be incomplete."). A search reads as blocked only when no provider returned anything. (#823)
 
 ### Fixed
 
