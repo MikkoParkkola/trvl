@@ -86,3 +86,24 @@ func TestFormatRoomsTable_EmptyRoomsKeepsTheNotice(t *testing.T) {
 		t.Fatalf("output = %q, want the notice", out)
 	}
 }
+
+// byNameRefusals are the two by-name refusal sentences: a cooldown and a
+// plain block. mcp/hotel_rooms_refusal_test.go asserts the same pair, so the
+// CLI and MCP say the same thing (#813).
+var byNameRefusals = map[string]error{
+	"cooldown": fmt.Errorf("found %q, but Google Hotels refused requests, so its Google place ID is unknown; retry once Google's cooldown ends: %w", "Hotel Sacher Vienna", models.ErrRateLimited),
+	"blocked":  fmt.Errorf("found %q, but Google Hotels blocked the request, so its Google place ID is unknown; retry later: %w", "Hotel Sacher Vienna", models.ErrRateLimited),
+}
+
+// TestRunRooms_RefusalSentencesMatchMCP: the CLI prints the lookup's refusal
+// sentence unchanged, with no hint of its own.
+func TestRunRooms_RefusalSentencesMatchMCP(t *testing.T) {
+	for name, refusal := range byNameRefusals {
+		t.Run(name, func(t *testing.T) {
+			err := runRoomsWithLookupErr(t, refusal)
+			if want := `hotel rooms: hotel lookup for "Hotel Sacher Wien": ` + refusal.Error(); err == nil || err.Error() != want {
+				t.Fatalf("err = %v\nwant  %s", err, want)
+			}
+		})
+	}
+}
