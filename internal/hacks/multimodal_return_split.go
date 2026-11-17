@@ -20,13 +20,16 @@ var returnSplitGroundSearch = ground.SearchByName
 // detectMultiModalReturnSplit checks whether an open-jaw with a mode swap
 // (fly out, return by ground or vice versa) is cheaper than a round-trip.
 //
-// Saving threshold: EUR 50, consistent with other multimodal detectors.
+// The saving is the fare gap alone: round trip minus the one-way flight and the
+// ground leg. An overnight ground leg's hotel night is described, never added
+// (#819). Threshold: the fare gap must be at least 50 in the shared currency,
+// as in the other multimodal detectors.
 //
 // Cross-currency honesty (mirrors detectSplit): a saving is emitted only when
 // the baseline currency is known and the round-trip flight, the one-way flight
 // used in that direction, and the ground leg all share it. Otherwise the
 // direction is skipped — no conversion, no mislabelled total. The EUR hotel
-// bonus is only folded in when the shared currency is itself EUR.
+// night is only mentioned when the shared currency is itself EUR.
 func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 	if !in.valid() || in.Date == "" || in.ReturnDate == "" {
 		return nil
@@ -130,7 +133,7 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 			if savings >= 50 {
 				overnightNote := ""
 				if hotelBonus > 0 {
-					overnightNote = fmt.Sprintf(" (overnight %s — saves ~%.0f hotel)", bestRoute.routeType, averageHotelCost)
+					overnightNote = fmt.Sprintf(" (overnight %s, also skips a ~%.0f EUR hotel night)", bestRoute.routeType, averageHotelCost)
 				}
 
 				hacks = append(hacks, Hack{
@@ -214,7 +217,7 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 			if savings >= 50 {
 				overnightNote := ""
 				if hotelBonus > 0 {
-					overnightNote = fmt.Sprintf(" (overnight %s — saves ~%.0f hotel)", bestRoute.routeType, averageHotelCost)
+					overnightNote = fmt.Sprintf(" (overnight %s, also skips a ~%.0f EUR hotel night)", bestRoute.routeType, averageHotelCost)
 				}
 
 				hacks = append(hacks, Hack{

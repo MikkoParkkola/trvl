@@ -208,19 +208,6 @@ func TestNearbyHubs(t *testing.T) {
 	}
 }
 
-// TestDetectMultiModalOpenJawGround_overnightBonus: an overnight hub leg's
-// hotel night is described, never added to the fare saving (#819); the
-// detector-level check is TestMultiModalOpenJawGround_SavingIsTheFareGap.
-func TestDetectMultiModalOpenJawGround_overnightBonus(t *testing.T) {
-	hub := nearbyHub{Overnight: true, StaticGroundEUR: 15}
-	flightPrice := 100.0
-	directPrice := 200.0
-	savings := directPrice - (flightPrice + hub.StaticGroundEUR)
-	if want := 85.0; savings != want {
-		t.Errorf("savings = %v, want %v (the fare gap, no hotel night)", savings, want)
-	}
-}
-
 // TestDetectMultiModalOpenJawGround_thresholdFifty verifies the EUR 50 threshold.
 func TestDetectMultiModalOpenJawGround_thresholdFifty(t *testing.T) {
 	// savings=49 → below threshold → should not surface.
