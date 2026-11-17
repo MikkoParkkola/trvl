@@ -134,6 +134,28 @@ type oebbShopConnection struct {
 		Arrival string `json:"arrival"`
 	} `json:"to"`
 	Duration int `json:"duration"` // milliseconds
+	// Switches is the shop's own change count; nil when the answer has none.
+	Switches *int              `json:"switches"`
+	Sections []oebbShopSection `json:"sections"`
+}
+
+// oebbShopSection is one part of a shop connection: a train ("journey") or a
+// walk between platforms or stations.
+type oebbShopSection struct {
+	Type     string       `json:"type"`
+	From     oebbShopStop `json:"from"`
+	To       oebbShopStop `json:"to"`
+	Duration int          `json:"duration"` // milliseconds
+	Category struct {
+		DisplayName string `json:"displayName"`
+		Number      string `json:"number"`
+	} `json:"category"`
+}
+
+type oebbShopStop struct {
+	Name      string `json:"name"`
+	Departure string `json:"departure,omitempty"`
+	Arrival   string `json:"arrival,omitempty"`
 }
 
 // oebbShopTimetableResponse holds the timetable search response.
@@ -458,6 +480,7 @@ func searchOebbShop(ctx context.Context, fromStation, toStation oebbStation, dt 
 
 	bookingURL := buildOebbBookingURL(fromStation, toStation, date)
 	var routes []models.GroundRoute
+	sectionless := 0 // connections with neither sections nor switches
 
 	for _, c := range connections {
 		// Parse departure and arrival from ISO 8601 strings, strip timezone suffix.
@@ -471,6 +494,19 @@ func searchOebbShop(ctx context.Context, fromStation, toStation oebbStation, dt 
 		}
 
 		price := priceByID[c.ID]
+
+		// Changes come from the train sections; the shop's own count stands in
+		// when sections are missing; with neither, the count is not known.
+		legs := oebbShopLegs(c, fromStation, toStation)
+		transfers, transfersUnknown := len(legs)-1, false
+		switch {
+		case len(legs) > 0:
+		case c.Switches != nil:
+			transfers = *c.Switches
+		default:
+			transfers, transfersUnknown = 0, true
+			sectionless++
+		}
 
 		routes = append(routes, models.GroundRoute{
 			Provider:        "oebb",
@@ -489,15 +525,65 @@ func searchOebbShop(ctx context.Context, fromStation, toStation oebbStation, dt 
 				Station: toStation.Name,
 				Time:    arrTime,
 			},
-			BookingURL: bookingURL,
+			Transfers:        transfers,
+			TransfersUnknown: transfersUnknown,
+			Legs:             legs,
+			BookingURL:       bookingURL,
 		})
 	}
 
 	slog.Debug("oebb results", "routes", len(routes))
+	if sectionless > 0 {
+		slog.Warn("oebb shop timetable without train sections", "connections", sectionless, "of", len(connections))
+	}
 	if pricesErr != nil {
-		return routes, oebbPricesNotice(pricesErr)
+		notice := oebbPricesNotice(pricesErr)
+		if sectionless > 0 {
+			notice.FixHint += "; " + oebbTransfersUnknownHint
+		}
+		return routes, notice
+	}
+	if sectionless > 0 {
+		err := fmt.Errorf("oebb shop timetable: %d of %d connections carried no train sections", sectionless, len(connections))
+		return routes, &models.ProviderNotice{
+			Reason:  models.ClassifyProviderReason(err.Error()),
+			FixHint: oebbTransfersUnknownHint,
+			Err:     err,
+		}
 	}
 	return routes, nil
+}
+
+const oebbTransfersUnknownHint = "shop timetable carried no train sections: transfer counts unknown"
+
+// oebbShopLegs builds one train leg per "journey" section of a shop
+// connection. Only the route's two ends have a known city; a change station
+// has just its name. Every leg is a train: the shop is searched trains-only,
+// as the timetable fallback assumes.
+func oebbShopLegs(c oebbShopConnection, from, to oebbStation) []models.GroundLeg {
+	var legs []models.GroundLeg
+	for _, s := range c.Sections {
+		if s.Type != "journey" {
+			continue
+		}
+		dep, arr := oebbShopParseTime(s.From.Departure), oebbShopParseTime(s.To.Arrival)
+		dur := s.Duration / 60000
+		if dur <= 0 {
+			dur = computeDurationMinutes(dep, arr)
+		}
+		legs = append(legs, models.GroundLeg{
+			Type:      "train",
+			Provider:  strings.TrimSpace(s.Category.DisplayName + " " + s.Category.Number),
+			Departure: models.GroundStop{Station: s.From.Name, Time: dep},
+			Arrival:   models.GroundStop{Station: s.To.Name, Time: arr},
+			Duration:  dur,
+		})
+	}
+	if len(legs) > 0 {
+		legs[0].Departure.City = from.City
+		legs[len(legs)-1].Arrival.City = to.City
+	}
+	return legs
 }
 
 // oebbPricesNotice explains departures served without fares because the
