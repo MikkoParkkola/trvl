@@ -8,8 +8,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
+
+// TestSearchHotelByName_NoResultsReportsTheStrongestRefusal: candidate 1 met
+// a cooldown refusal, candidate 2 a plain 403, and nothing answered. The
+// error reports the outcome's strongest refusal, the cooldown, not the later
+// block (grok, #826 rev 6 [6]). The Google fetch is stubbed because the real
+// client's cooldown would skip candidate 2.
+func TestSearchHotelByName_NoResultsReportsTheStrongestRefusal(t *testing.T) {
+	roomLookupWorld(t, googleRoutes{shortEntity, answer(404), noSacherPage}, false)
+	orig := fetchHotelPageFullFn
+	t.Cleanup(func() { fetchHotelPageFullFn = orig })
+	fetchHotelPageFullFn = func(_ context.Context, _ *batchexec.Client, loc string, _ HotelSearchOptions, _ int, _ string) (parseResult, error) {
+		if strings.Contains(loc, "Sacher") {
+			return parseResult{}, batchexec.ErrBlocked
+		}
+		return parseResult{}, googleCooldownErr("google hotel search", http.StatusTooManyRequests)
+	}
+
+	_, err := SearchHotelByName(context.Background(), "Hotel Sacher, Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if !errors.Is(err, batchexec.ErrRefused) || errors.Is(err, batchexec.ErrBlocked) {
+		t.Fatalf("err = %v, want the cooldown alone, not the later plain block", err)
+	}
+}
 
 // TestHasLocality: the place a property answer must carry is matched trimmed,
 // case-folded and on whole words (#826 rev 6 final [5]).

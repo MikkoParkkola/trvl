@@ -460,14 +460,12 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 
 	gErr := google.Err()
 	if lastErr != nil && !sawResults {
-		if gErr == nil || errors.Is(gErr, lastErr) {
-			if gErr == nil {
-				gErr = lastErr
-			}
+		// The outcome's strongest refusal explains a lookup nobody answered; a
+		// later plain failure never displaces a stored cooldown.
+		if gErr != nil {
 			return nil, fmt.Errorf("hotel name search: %w", gErr)
 		}
-		// A later failure must not hide an earlier Google refusal.
-		return nil, errors.Join(fmt.Errorf("hotel name search: %w", lastErr), gErr)
+		return nil, fmt.Errorf("hotel name search: %w", lastErr)
 	}
 	// Google's refusal travels with a miss: the hotel may be the one Google
 	// would have returned (#813).
