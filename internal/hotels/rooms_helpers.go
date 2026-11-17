@@ -240,7 +240,8 @@ func tryEntityPage(ctx context.Context, opts RoomSearchOptions) ([]RoomType, str
 // the remaining prices keep their basis-derived confidence and expose the
 // partner URLs (notably Booking.com) so the downstream exact-room fetch can run.
 func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string, error) {
-	res, err := GetHotelPricesWithOpts(ctx, HotelPriceOpts{
+	// The RPC alone: trySearchPageFallback runs the search fallback for rooms.
+	res, err := hotelPricesRPC(ctx, HotelPriceOpts{
 		HotelID:      opts.HotelID,
 		CheckIn:      opts.CheckIn,
 		CheckOut:     opts.CheckOut,
@@ -248,8 +249,10 @@ func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		Guests:       opts.Guests,
 		ChildrenAges: opts.ChildrenAges,
 		Location:     opts.Location,
-		LocationKind: opts.LocationKind,
 	})
+	if isNoProviderPricesError(err) {
+		return nil, "", nil
+	}
 	if err != nil {
 		return nil, "", err
 	}

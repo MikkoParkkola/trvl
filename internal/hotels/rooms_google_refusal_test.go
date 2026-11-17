@@ -135,6 +135,10 @@ func TestGetRoomAvailability_GoogleRefusalInNotice(t *testing.T) {
 		// Booking supplies the rooms; the refusal exists only in the search's
 		// google_hotels status row.
 		{"search page 429 with Booking rooms", googleRoutes{shortEntity, answer(404), answer(429)}, false, true},
+		// The price RPC has no partner prices, so its fallback search runs;
+		// Google refuses it and Booking prices the hotel. That price is not
+		// Google's.
+		{"empty prices, search 429, Booking match", googleRoutes{shortEntity, emptyPriceRPC(t), answer(429)}, false, true},
 		{"cooldown already armed", googleRoutes{shortEntity, answer(404), noSacherPage}, true, false},
 	}
 	for _, tc := range cases {
