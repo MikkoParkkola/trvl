@@ -1,12 +1,8 @@
 package hotels
 
 import (
-	"errors"
-	"fmt"
 	"slices"
 	"strings"
-
-	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // What a search's location names, a place or one property, and how by-name
@@ -63,25 +59,6 @@ func locationCandidates(hint string, kind LocationKind) []locationCandidate {
 	return out
 }
 
-// googleStatusErr returns the Google Hotels failure a search recorded only in
-// its provider statuses (another provider returned hotels, so the search
-// itself succeeded). A rate-limited row wraps models.ErrRateLimited.
-func googleStatusErr(res *models.HotelSearchResult) error {
-	if res == nil {
-		return nil
-	}
-	for _, ps := range res.ProviderStatuses {
-		if ps.ID != "google_hotels" || ps.Error == "" {
-			continue
-		}
-		if ps.Status == models.StatusRateLimited {
-			return fmt.Errorf("google hotels: %s: %w", ps.Error, models.ErrRateLimited)
-		}
-		return fmt.Errorf("google hotels: %s", ps.Error)
-	}
-	return nil
-}
-
 // scopedAuxTasks keeps the auxiliary providers a scope allows. A property
 // name is not a place: of the auxiliary providers only Booking.com searches it
 // as free text, and its row carries the room URL the rooms lookup needs.
@@ -90,20 +67,6 @@ func scopedAuxTasks(tasks []hotelAuxTask, scope HotelSearchScope) []hotelAuxTask
 		return tasks
 	}
 	return slices.DeleteFunc(tasks, func(task hotelAuxTask) bool { return task.id != "booking" })
-}
-
-// googleRefusal returns a failed search's error as a rate-limit error when it
-// is refusal-class (429, cooldown, a bot block), and nil for any other
-// failure. Only a refusal may replace a recorded Google outcome: another
-// failure is not a Google answer and must never erase one (#813).
-func googleRefusal(err error) error {
-	if err == nil || models.ClassifyProviderError(err) != models.StatusRateLimited {
-		return nil
-	}
-	if errors.Is(err, models.ErrRateLimited) {
-		return err
-	}
-	return fmt.Errorf("%w: %w", models.ErrRateLimited, err)
 }
 
 // queryLocality is the place a by-name query names: the text after its first

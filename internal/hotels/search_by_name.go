@@ -80,7 +80,7 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		res, err := SearchHotels(ctx, query, opts)
+		res, call, err := searchHotelsCall(ctx, DefaultClient(), query, opts)
 		if err != nil {
 			slog.Warn("search_by_name: google hotels failed", "error", logredact.Err(err))
 			googleErr = fmt.Errorf("google hotels: %w", err)
@@ -89,10 +89,10 @@ func SearchHotelsByName(ctx context.Context, name, location, checkIn, checkOut, 
 			}}
 			return
 		}
-		// When another provider returned hotels, SearchHotels succeeds and
-		// keeps a Google failure only as a provider status.
-		if err := googleStatusErr(res); err != nil {
-			googleErr = err
+		// When another provider returned hotels, the search succeeds; Google's
+		// own failure is the run's first request, kept as the original error.
+		if err := call.primaryErr(); err != nil {
+			googleErr = fmt.Errorf("google hotels: %w", err)
 		}
 		resultCh <- providerResult{hotels: res.Hotels, statuses: res.ProviderStatuses}
 	}()

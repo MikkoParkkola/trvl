@@ -62,6 +62,15 @@ func (c googleCall) answered() bool {
 	return false
 }
 
+// primaryErr returns the first request's error when it was not answered: the
+// search's primary Google fetch, which a provider status reports.
+func (c googleCall) primaryErr() error {
+	if len(c.events) == 0 || c.events[0].kind == googleAnswered {
+		return nil
+	}
+	return c.events[0].err
+}
+
 // refusal returns the call's strongest refusal, or nil.
 func (c googleCall) refusal() error {
 	var r error
