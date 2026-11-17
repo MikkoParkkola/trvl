@@ -20,6 +20,10 @@ type hotelWithDetails struct {
 	AccommodationOffers []models.AccommodationOffer `json:"accommodation_offers,omitempty"`
 	RoomTypes           []hotels.RoomType           `json:"room_types,omitempty"`
 	DetailErrors        []hotelDetailError          `json:"detail_errors,omitempty"`
+	// RoomsOmitted counts rooms the 50 KB reply budget left out of this hotel.
+	RoomsOmitted int `json:"rooms_omitted,omitempty"`
+	// checkedAt lets a budget cut rebuild offers with their original timestamp.
+	checkedAt time.Time
 }
 
 type hotelVerifiedRate struct {
@@ -60,7 +64,9 @@ type hotelDetailsSearchResponse struct {
 	MaxDistanceKm    float64                 `json:"max_distance_km,omitempty"`
 	FartherOmitted   int                     `json:"farther_omitted,omitempty"`
 	MonthlyOmitted   int                     `json:"monthly_omitted,omitempty"`
-	Error            string                  `json:"error,omitempty"`
+	// BudgetOmitted counts hotels the 50 KB reply budget left out.
+	BudgetOmitted int    `json:"budget_omitted,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 func searchHotelsWithDetailsTool() ToolDef {
@@ -93,11 +99,12 @@ func hotelDetailsSearchOutputSchema() interface{} {
 		"type": "object",
 		"properties": map[string]interface{}{
 			"success":         schemaBool(),
-			"count":           schemaInt(),
+			"count":           schemaIntDesc("Hotels in this response; budget_omitted counts the hotels the 50 KB result budget left out."),
 			"total_available": schemaInt(),
 			"max_distance_km": schemaNumDesc("Distance cap applied around the city centre (25 by default; absent when none applied)."),
 			"monthly_omitted": schemaIntDesc("Monthly rentals left out of this nightly list: their prices are monthly rents, not nightly rates."),
 			"farther_omitted": schemaIntDesc("Hotels trvl left out for being farther than max_distance_km. Below 25 km Google is also asked for that radius and withholds farther hotels itself, so the count then covers only what trvl removed."),
+			"budget_omitted":  budgetOmittedSchema(),
 			"hotels": schemaArray(map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -125,6 +132,7 @@ func hotelDetailsSearchOutputSchema() interface{} {
 					"verified_rate":        hotelVerifiedRateSchema(),
 					"accommodation_offers": schemaArray(accommodationOfferSchema()),
 					"room_types":           schemaArray(hotelRoomTypeSchema()),
+					"rooms_omitted":        schemaIntDesc("Rooms the 50 KB result budget left out of this hotel; the priciest go first. hotel_rooms lists them all for one hotel."),
 					"detail_errors":        hotelDetailErrorsSchema(),
 					"sources": schemaArray(map[string]interface{}{
 						"type": "object",
@@ -340,8 +348,8 @@ func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, eli
 	hotelsWithDetails := make([]hotelWithDetails, 0, limit)
 	for i := 0; i < limit; i++ {
 		hotel := result.Hotels[i]
-		detailed := hotelWithDetails{HotelResult: hotel}
 		checkedAt := time.Now()
+		detailed := hotelWithDetails{HotelResult: hotel, checkedAt: checkedAt}
 		searchInventoryRooms := roomTypesFromHotelSearchInventory(hotel, need, checkedAt)
 		if hotel.HotelID == "" {
 			if includeRooms && len(searchInventoryRooms) > 0 {
@@ -392,27 +400,7 @@ func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, eli
 		hotelsWithDetails = append(hotelsWithDetails, detailed)
 	}
 
-	resp := hotelDetailsSearchResponse{
-		Success:          result.Success,
-		Count:            len(hotelsWithDetails),
-		TotalAvailable:   result.Count,
-		Hotels:           hotelsWithDetails,
-		ProviderStatuses: result.ProviderStatuses,
-		Completeness:     result.Completeness,
-		Suggestions:      hotelSuggestions(result, req.Options),
-		MaxDistanceKm:    result.MaxDistanceKm,
-		FartherOmitted:   result.FartherOmitted,
-		MonthlyOmitted:   result.MonthlyOmitted,
-		Error:            result.Error,
-	}
-
-	summary := hotelDetailsSummary(resp, req.Location)
-	content, err := buildAnnotatedContentBlocks(summary, resp)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return content, resp, nil
+	return fitHotelDetailsReply(req, result, need, hotelsWithDetails)
 }
 
 func accommodationNeedFromHotelSearchRequest(req hotelSearchRequest) models.AccommodationNeed {

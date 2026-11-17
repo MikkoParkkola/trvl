@@ -31,7 +31,9 @@ type accommodationSearchResponse struct {
 	Destination             *models.DestinationInfo        `json:"destination,omitempty"`
 	MaxDistanceKm           float64                        `json:"max_distance_km,omitempty"`
 	FartherOmitted          int                            `json:"farther_omitted,omitempty"`
-	Error                   string                         `json:"error,omitempty"`
+	// BudgetOmitted counts offers the 50 KB reply budget left out.
+	BudgetOmitted int    `json:"budget_omitted,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 type accommodationCandidate struct {
@@ -148,6 +150,7 @@ func accommodationSearchOutputSchema() interface{} {
 			"total_available":             schemaInt(),
 			"max_distance_km":             schemaNumDesc("Distance cap applied around the city centre (25 by default; absent when none applied)."),
 			"farther_omitted":             schemaIntDesc("Hotels trvl left out for being farther than max_distance_km. Below 25 km Google is also asked for that radius and withholds farther hotels itself, so the count then covers only what trvl removed."),
+			"budget_omitted":              budgetOmittedSchema(),
 			"offers":                      schemaArray(accommodationOfferSchema()),
 			"rejected_offers":             schemaArray(accommodationOfferSchema()),
 			"evidence":                    schemaArray(accommodationEvidenceSchema()),
@@ -433,11 +436,7 @@ func handleSearchAccommodations(ctx context.Context, args map[string]any, elicit
 	// hotel search returns weather, safety, holidays, currency, and country
 	// facts inline, with no extra switch. Silent degrade — never blocks search.
 	resp.Destination = enrichDestination(ctx, req.Location, models.DateRange{CheckIn: req.CheckIn, CheckOut: req.CheckOut})
-	content, err := buildAnnotatedContentBlocks(summary, resp)
-	if err != nil {
-		return nil, nil, err
-	}
-	return content, resp, nil
+	return fitAccommodationReply(resp, summary)
 }
 
 func handleReverifyAccommodation(ctx context.Context, req hotelSearchRequest, need models.AccommodationNeed, args map[string]any) ([]ContentBlock, interface{}, error) {
@@ -499,11 +498,7 @@ func handleReverifyAccommodation(ctx context.Context, req hotelSearchRequest, ne
 			Warnings:       []string{"reverified_before_booking_handoff", "room_level_reverify_failed"},
 			Error:          err.Error(),
 		}
-		content, buildErr := buildAnnotatedContentBlocks(accommodationSearchSummary(resp), resp)
-		if buildErr != nil {
-			return nil, nil, buildErr
-		}
-		return content, resp, nil
+		return fitAccommodationReply(resp, accommodationSearchSummary(resp))
 	}
 
 	var rooms []hotels.RoomType
@@ -577,10 +572,90 @@ func handleReverifyAccommodation(ctx context.Context, req hotelSearchRequest, ne
 		}
 	}
 
-	summary := accommodationSearchSummary(resp)
-	content, buildErr := buildAnnotatedContentBlocks(summary, resp)
-	if buildErr != nil {
-		return nil, nil, buildErr
+	return fitAccommodationReply(resp, accommodationSearchSummary(resp))
+}
+
+// accommodationReplyRow is one row the reply budget may drop: an offer (with
+// its evidence) or an evidence row that belongs to no offer.
+type accommodationReplyRow struct {
+	offer      models.AccommodationOffer
+	matched    bool
+	evidenceAt int // index into the full evidence list; -1 for an offer row
+}
+
+// fitAccommodationReply sends resp within the 50 KB reply budget. Evidence
+// for offers outside the reply never ships: the ledger covers what the reply
+// shows. When the budget cuts, rejected offers go first, then matched offers
+// from the tail, each with its evidence, then the evidence rows that repeat
+// provider_statuses or a candidate's detail_errors. The best matched offer
+// and the candidates always stay. summary describes the full result.
+func fitAccommodationReply(resp accommodationSearchResponse, summary string) ([]ContentBlock, any, error) {
+	rows := make([]accommodationReplyRow, 0, len(resp.Offers)+len(resp.RejectedOffers)+len(resp.Evidence))
+	pinned := false
+	for i, o := range resp.Offers {
+		rows = append(rows, accommodationReplyRow{offer: o, matched: true, evidenceAt: -1})
+		if i == 0 {
+			pinned = true
+			// Unattached evidence sits right after the best offer, so it is the
+			// last thing dropped.
+			for j, e := range resp.Evidence {
+				if e.OfferID == "" {
+					rows = append(rows, accommodationReplyRow{evidenceAt: j})
+				}
+			}
+		}
 	}
-	return content, resp, nil
+	if !pinned {
+		for j, e := range resp.Evidence {
+			if e.OfferID == "" {
+				rows = append(rows, accommodationReplyRow{evidenceAt: j})
+			}
+		}
+	}
+	for _, o := range resp.RejectedOffers {
+		rows = append(rows, accommodationReplyRow{offer: o, evidenceAt: -1})
+	}
+	totalOffers := len(resp.Offers) + len(resp.RejectedOffers)
+	best := func(r accommodationReplyRow) bool {
+		return pinned && r.matched && r.offer.OfferID == resp.Offers[0].OfferID
+	}
+
+	return fitReply(rows, dropTail(best), func(shown []accommodationReplyRow, trimmed bool) (string, any) {
+		view := resp
+		view.Offers = make([]models.AccommodationOffer, 0)
+		view.RejectedOffers = make([]models.AccommodationOffer, 0)
+		view.BookingReadyCount, view.FinalTripCostReadyCount = 0, 0
+		keptOffer, keptEvidence := map[string]bool{}, map[int]bool{}
+		for _, r := range shown {
+			switch {
+			case r.evidenceAt >= 0:
+				keptEvidence[r.evidenceAt] = true
+			case r.matched:
+				keptOffer[r.offer.OfferID] = true
+				view.Offers = append(view.Offers, r.offer)
+				if r.offer.BookingReadyStatus {
+					view.BookingReadyCount++
+				}
+				if r.offer.FinalTripCostReadyStatus {
+					view.FinalTripCostReadyCount++
+				}
+			default:
+				keptOffer[r.offer.OfferID] = true
+				view.RejectedOffers = append(view.RejectedOffers, r.offer)
+			}
+		}
+		view.Evidence = make([]models.AccommodationEvidence, 0, len(resp.Evidence))
+		for i, e := range resp.Evidence {
+			if keptEvidence[i] || (e.OfferID != "" && keptOffer[e.OfferID]) {
+				view.Evidence = append(view.Evidence, e)
+			}
+		}
+		view.Count, view.MatchingCount = len(view.Offers), len(view.Offers)
+		if !trimmed {
+			return summary, view
+		}
+		shownOffers := len(view.Offers) + len(view.RejectedOffers)
+		view.BudgetOmitted = totalOffers - shownOffers
+		return summary + budgetNote(shownOffers, totalOffers, "offers", "max_candidates or max_offers"), view
+	})
 }
