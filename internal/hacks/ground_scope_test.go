@@ -180,3 +180,20 @@ func TestGroundHackComposer_CarriesSearchScope(t *testing.T) {
 		t.Errorf("detector input type %q max %v fallbacks %v; want bus 40 true", got.GroundType, got.GroundMaxPrice, got.GroundAllowBrowserFallbacks)
 	}
 }
+
+// A detector repeating the caller's trip with groundScope as is builds the
+// caller's search: every field of the ground search key comes from the
+// request, currency included, so the repeat joins the outer provider round.
+func TestGroundScope_MatchesCallerSearch(t *testing.T) {
+	req := ground.HackComposeRequest{
+		Origin: "Prague", Destination: "Vienna", Date: "2026-07-01", Currency: "GBP", NaivePrice: 20,
+		Providers: []string{"flixbus"}, ExcludeProviders: []string{"rome2rio"}, NoCache: true,
+		Type: "bus", MaxPrice: 40, AllowBrowserFallbacks: true,
+	}
+	in := detectorInputFromGround(req)
+	o := in.groundScope()
+	if o.Currency != "GBP" || o.Type != "bus" || o.MaxPrice != 40 || !o.AllowBrowserFallbacks || !o.NoCache ||
+		strings.Join(o.Providers, ",") != "flixbus" || strings.Join(o.ExcludeProviders, ",") != "rome2rio" {
+		t.Errorf("groundScope = %+v; want every field of the caller's search", o)
+	}
+}

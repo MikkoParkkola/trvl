@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -107,17 +108,20 @@ func TestSearchByName_SavingsPassReusesOuterRound(t *testing.T) {
 	}
 }
 
-// A nested search for another date or another price cap is a different query:
-// it must still reach the provider (the shared round covers only the outer
-// one). A currency change would also do, but converting the stub's EUR fares
-// fetches a live exchange rate, so the test varies the price cap instead.
+// A nested search that differs from the outer one in any field of the search
+// key is a different query: it must still reach the provider (the shared round
+// covers only the outer one). Currency is the one key field not varied here:
+// converting the stub's EUR fares would fetch a live exchange rate.
 func TestSearchByName_SavingsPassOtherQueryStillSearches(t *testing.T) {
 	cases := []struct {
-		name, date string
-		maxPrice   float64
+		name string
+		vary func(date *string, o *SearchOptions)
 	}{
-		{"other date", "2027-07-16", 0},
-		{"other price cap", "2027-07-15", 100},
+		{"other date", func(d *string, _ *SearchOptions) { *d = "2027-07-16" }},
+		{"provider filter", func(_ *string, o *SearchOptions) { o.Providers = []string{"ferryhopper"} }},
+		{"type", func(_ *string, o *SearchOptions) { o.Type = "ferry" }},
+		{"price cap", func(_ *string, o *SearchOptions) { o.MaxPrice = 100 }},
+		{"browser fallbacks", func(_ *string, o *SearchOptions) { o.AllowBrowserFallbacks = true }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -138,12 +142,10 @@ func TestSearchByName_SavingsPassOtherQueryStillSearches(t *testing.T) {
 			var ran atomic.Bool
 			withComposer(t, func(ctx context.Context, req HackComposeRequest) *models.HackSaving {
 				ran.Store(true)
-				_, _ = SearchByName(ctx, req.Origin, req.Destination, c.date, SearchOptions{
-					Currency:         req.Currency,
-					MaxPrice:         c.maxPrice,
-					ExcludeProviders: req.ExcludeProviders,
-					NoCache:          req.NoCache,
-				})
+				d := req.Date
+				nested := SearchOptions{Currency: req.Currency, ExcludeProviders: req.ExcludeProviders, NoCache: req.NoCache}
+				c.vary(&d, &nested)
+				_, _ = SearchByName(ctx, req.Origin, req.Destination, d, nested)
 				return nil
 			})
 			if _, err := SearchByName(ctx, from, to, date, opts); err != nil {
@@ -153,9 +155,55 @@ func TestSearchByName_SavingsPassOtherQueryStillSearches(t *testing.T) {
 				t.Fatal("the savings pass never ran")
 			}
 			if got := calls.Load(); got != 2*perSearch {
-				t.Errorf("ferryhopper requests = %d, want %d (the outer query plus the %s)", got, 2*perSearch, c.name)
+				t.Errorf("ferryhopper requests = %d, want %d (the outer query plus the one with another %s)", got, 2*perSearch, c.name)
 			}
 		})
+	}
+}
+
+// Detectors searching the same other trip at once inside one pass share a
+// single provider round for it.
+func TestSearchByName_SavingsPassCoalescesConcurrentSearches(t *testing.T) {
+	t.Setenv("TRVL_PREFETCH", "false")
+	calls := stubFerryhopper(t)
+	opts := SearchOptions{Currency: "EUR", ExcludeProviders: allButFerryhopper(), NoCache: true}
+	const from, to, date = "Piraeus", "Santorini", "2027-07-15"
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	solo := opts
+	solo.NoHacks = true
+	if _, err := SearchByName(ctx, from, to, date, solo); err != nil {
+		t.Fatalf("baseline search: %v", err)
+	}
+	perSearch := calls.Swap(0)
+
+	var routes [3]int
+	withComposer(t, func(ctx context.Context, req HackComposeRequest) *models.HackSaving {
+		var wg sync.WaitGroup
+		for i := range routes {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				nested := SearchOptions{Currency: req.Currency, ExcludeProviders: req.ExcludeProviders, NoCache: req.NoCache}
+				if res, err := SearchByName(ctx, req.Origin, req.Destination, "2027-07-16", nested); err == nil && res != nil {
+					routes[i] = len(res.Routes)
+				}
+			}()
+		}
+		wg.Wait()
+		return nil
+	})
+	if _, err := SearchByName(ctx, from, to, date, opts); err != nil {
+		t.Fatalf("outer search: %v", err)
+	}
+	if got := calls.Load(); got != 2*perSearch {
+		t.Errorf("ferryhopper requests = %d, want %d (the outer search plus one shared round for the other date)", got, 2*perSearch)
+	}
+	for i, n := range routes {
+		if n == 0 {
+			t.Errorf("concurrent search %d got no routes", i)
+		}
 	}
 }
 

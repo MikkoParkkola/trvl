@@ -304,10 +304,11 @@ func (in *DetectorInput) valid() bool {
 }
 
 // groundScope is the base of every ground.SearchOptions a detector builds: the
-// caller's provider filter, exclusions, no-cache flag, type and price filters
-// and browser-fallback choice, plus the per-call test override.
+// caller's currency, provider filter, exclusions, no-cache flag, type and
+// price filters and browser-fallback choice, plus the per-call test override.
 func (in *DetectorInput) groundScope() ground.SearchOptions {
 	return ground.SearchOptions{
+		Currency:              in.currency(),
 		Providers:             in.GroundProviders,
 		ExcludeProviders:      in.GroundExcludeProviders,
 		NoCache:               in.NoCache,
