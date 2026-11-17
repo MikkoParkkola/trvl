@@ -165,10 +165,12 @@ func statusAttempted(s string) bool {
 }
 
 // ComputeCompleteness derives the composite completeness from per-provider
-// statuses. blocked when nothing definitive came back; partial when some
-// attempted providers timed out/failed; complete otherwise.
+// statuses. blocked when no attempted provider returned anything; partial when
+// some attempted providers timed out, failed or answered only in part;
+// complete otherwise.
 func ComputeCompleteness(statuses []ProviderStatus) Completeness {
 	c := Completeness{State: CompletenessComplete}
+	partialAnswers := 0 // missing providers that still returned results
 	for _, s := range statuses {
 		if statusAttempted(s.Status) {
 			c.Queried++
@@ -180,10 +182,13 @@ func ComputeCompleteness(statuses []ProviderStatus) Completeness {
 		if why := s.MissingPhrase(); why != "" {
 			c.Missing = append(c.Missing, s.ID)
 			c.missingWhy = append(c.missingWhy, why)
+			if why == missingPartial {
+				partialAnswers++
+			}
 		}
 	}
 	switch {
-	case c.Succeeded == 0 && c.Queried > 0:
+	case c.Succeeded == 0 && partialAnswers == 0 && c.Queried > 0:
 		c.State = CompletenessBlocked
 	case len(c.Missing) > 0:
 		c.State = CompletenessPartial
@@ -199,10 +204,11 @@ const (
 	missingRateLimited = "rate-limited the request"
 	missingServerError = "returned a server error"
 	missingFailed      = "failed"
+	missingPartial     = "answered only in part"
 	missingNotTried    = "not tried (circuit breaker open)"
 )
 
-var missingOrder = []string{missingNoAnswer, missingRefused, missingRateLimited, missingServerError, missingFailed, missingNotTried}
+var missingOrder = []string{missingNoAnswer, missingRefused, missingRateLimited, missingServerError, missingFailed, missingPartial, missingNotTried}
 
 // MissingPhrase says what happened to a provider that gave no usable answer,
 // or "" when it answered or was never attempted. The cause comes from
@@ -217,6 +223,11 @@ func (p ProviderStatus) MissingPhrase() string {
 	case StatusTimeout, StatusFailed, StatusError, StatusRateLimited:
 	default:
 		return ""
+	}
+	// Results before the failure: refused partway (a later page or sort
+	// order), so neither silent nor refused outright.
+	if p.Results > 0 {
+		return missingPartial
 	}
 	switch p.EffectiveReason() {
 	case ReasonTimeout, ReasonDNS, ReasonNetwork:

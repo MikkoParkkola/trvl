@@ -190,3 +190,31 @@ func TestCompleteness_CloneSharesNothing(t *testing.T) {
 		t.Errorf("nil slices became %#v", got)
 	}
 }
+
+// A provider refused partway (a later page or sort order) after returning
+// results answered in part: not silent, not refused outright, and the search
+// is partial, never blocked (t-rooms #826 reports google_hotels this way).
+func TestMissingPhrase_PartialAnswer(t *testing.T) {
+	partial := ProviderStatus{ID: "google_hotels", Status: StatusRateLimited, Results: 40, Error: "google hotels page 2: HTTP 429 Too Many Requests"}
+	if got := partial.MissingPhrase(); got != "answered only in part" {
+		t.Fatalf("MissingPhrase() = %q, want answered only in part", got)
+	}
+	c := ComputeCompleteness([]ProviderStatus{partial})
+	if c.State != CompletenessPartial {
+		t.Errorf("state = %q, want partial: google_hotels returned 40 results", c.State)
+	}
+	if got, want := c.IncompleteNote(), "Checked 0 of 1 providers; google_hotels answered only in part — results may be incomplete."; got != want {
+		t.Errorf("note:\n got %q\nwant %q", got, want)
+	}
+
+	mixed := ComputeCompleteness([]ProviderStatus{
+		partial,
+		statusFrom("trivago", errors.New("trivago: HTTP 403: forbidden")),
+	})
+	if got, want := mixed.IncompleteNote(), "Checked 0 of 2 providers; trivago refused the request; google_hotels answered only in part — results may be incomplete."; got != want {
+		t.Errorf("mixed note:\n got %q\nwant %q", got, want)
+	}
+	if mixed.State != CompletenessPartial {
+		t.Errorf("mixed state = %q, want partial", mixed.State)
+	}
+}
