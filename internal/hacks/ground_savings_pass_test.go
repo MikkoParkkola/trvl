@@ -146,3 +146,22 @@ func TestCurrencyArbitrage_AppliesOnlyWhereItsNoteHolds(t *testing.T) {
 		})
 	}
 }
+
+// #814: the ground roster cannot drift. A detector joins groundDetectors only
+// if its Savings is the caller's ground fare minus the price of a cheaper way
+// to make the same ground trip; whoever adds one updates this pin after
+// checking that criterion.
+func TestGroundDetectors_ReviewedRoster(t *testing.T) {
+	if n := len(groundDetectors()); n != 0 {
+		t.Fatalf("groundDetectors() has %d entries, the reviewed roster has 0: check each against the doc comment, then update this pin", n)
+	}
+}
+
+// Flight searches keep the full roster and still attach a flight saving.
+func TestBestSaving_FlightStillAttachesFlightSaving(t *testing.T) {
+	in := DetectorInput{Origin: "STN", Destination: "VIE", Date: "2026-11-20", Currency: "EUR", NaivePrice: 95}
+	got := BestSaving(context.Background(), in, fixedHacks(ryanairGBPHack()))
+	if got == nil || got.Price != 92 {
+		t.Fatalf("flight search lost its saving: %+v", got)
+	}
+}
