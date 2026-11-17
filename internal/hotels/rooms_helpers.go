@@ -671,9 +671,10 @@ func hasVerifiedRoom(rooms []RoomType) bool {
 		if roomInventoryQuote(r).PriceConfidence == models.PriceConfidenceVerified {
 			return true
 		}
-		// A merged room keeps another seller's verified quote here.
+		// A merged room keeps another seller's verified quote here; it
+		// counts only if it can become the headline.
 		for _, q := range r.InventoryOptions {
-			if q.PriceConfidence == models.PriceConfidenceVerified {
+			if q.PriceConfidence == models.PriceConfidenceVerified && quoteCanHeadline(q) {
 				return true
 			}
 		}
@@ -704,7 +705,10 @@ func roomInventoryQuote(room RoomType) models.RoomInventoryQuote {
 	}
 	nightly := room.NightlyPrice
 	total := room.TotalPrice
-	if nightly == 0 && total == 0 {
+	// Price is the nightly figure when no nightly rate is set, as the room
+	// headline and roomNightlyPrice (mcp) read it, also beside a stay total.
+	// A property-level lead-in beside a total is not a nightly rate.
+	if nightly == 0 && (total == 0 || confidence != models.RoomInventoryMatchPropertyLevelOnly) {
 		nightly = room.Price
 	}
 	return models.RoomInventoryQuote{

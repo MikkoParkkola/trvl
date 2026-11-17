@@ -252,6 +252,13 @@ func quoteCandidate(q models.RoomInventoryQuote) models.Room {
 	}
 }
 
+// quoteCanHeadline reports whether a quote carries a nightly amount the
+// headline can use: the one rule both headline selection and hasVerifiedRoom
+// apply to inventory quotes.
+func quoteCanHeadline(q models.RoomInventoryQuote) bool {
+	return roomHeadlinePrice(quoteCandidate(q)) > 0
+}
+
 // sameProvider reports whether a seller name is the provider tag itself,
 // written for display: "Google Hotels" is google_hotels, "Booking.com" is
 // booking.com.

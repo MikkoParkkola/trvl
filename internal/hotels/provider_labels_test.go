@@ -315,8 +315,8 @@ func TestEnrichHotelRooms_VerifiedQuoteWinsUnderItsSeller(t *testing.T) {
 		}},
 		[]RoomType{{
 			Name: "Double Room", Price: 190, NightlyPrice: 95, TotalPrice: 190, TaxesFeesIncluded: &yes,
-			Currency: "EUR", Provider: "Booking.com", Source: "booking.com",
-			ProviderURL:     "https://www.booking.com/hotel/at/x.html",
+			Currency: "EUR", Provider: "Expedia", Source: "serpapi",
+			ProviderURL:     "https://www.expedia.com/h1",
 			MatchConfidence: models.RoomInventoryMatchExact,
 		}},
 	)
@@ -343,13 +343,71 @@ func TestEnrichHotelRooms_VerifiedQuoteWinsUnderItsSeller(t *testing.T) {
 	models.FinalizeHotelPriceTrust(hotels, "EUR", time.Now(), nil)
 
 	h := hotels[0]
-	if h.HeadlineProvider != "booking.com" || h.Price != 95 || h.PriceConfidence != models.PriceConfidenceVerified {
-		t.Errorf("headline = %v by %q (%s), want Booking's verified 95 under booking.com", h.Price, h.HeadlineProvider, h.PriceConfidence)
+	if h.HeadlineProvider != "serpapi" || h.Price != 95 || h.PriceConfidence != models.PriceConfidenceVerified {
+		t.Errorf("headline = %v by %q (%s), want the verified 95 under serpapi", h.Price, h.HeadlineProvider, h.PriceConfidence)
 	}
-	if h.BookingURL != "https://www.booking.com/hotel/at/x.html" {
-		t.Errorf("BookingURL = %q, want Booking's own link", h.BookingURL)
+	if h.BookingURL != "https://www.expedia.com/h1" {
+		t.Errorf("BookingURL = %q, want the seller's own link", h.BookingURL)
+	}
+	var src *models.PriceSource
+	for i := range h.Sources {
+		if h.Sources[i].Provider == "serpapi" {
+			src = &h.Sources[i]
+		}
+	}
+	if src == nil || src.Seller != "Expedia" || src.Currency != "EUR" || src.PriceBasis != models.PriceBasisTaxInclusiveTotal {
+		t.Errorf("serpapi source = %+v, want seller Expedia, EUR, tax_inclusive_total", src)
 	}
 	if len(h.RoomTypes) != 1 || h.RoomTypes[0].Price != 100 || h.RoomTypes[0].Provider != "Hotels.com" {
 		t.Errorf("room_types = %+v, want the room to keep Hotels.com's 100", h.RoomTypes)
+	}
+}
+
+// TestEnrichHotelRooms_TotalOnlyVerifiedQuoteHeadlines: a second seller's
+// verified rate whose nightly amount is only in Price (TotalPrice set,
+// NightlyPrice 0) still reaches the headline, as the room itself would.
+func TestEnrichHotelRooms_TotalOnlyVerifiedQuoteHeadlines(t *testing.T) {
+	yes := true
+	merged := mergeRoomTypes(
+		[]RoomType{{Name: "Double Room", Price: 100, Currency: "EUR", Provider: "Hotels.com", Source: "google_hotels",
+			ProviderURL: "https://www.hotels.com/ho1", MatchConfidence: models.RoomInventoryMatchExact}},
+		[]RoomType{{Name: "Double Room", Price: 95, TotalPrice: 190, TaxesFeesIncluded: &yes, Currency: "EUR",
+			Provider: "Booking.com", Source: "booking.com", ProviderURL: "https://www.booking.com/hotel/at/x.html",
+			MatchConfidence: models.RoomInventoryMatchExact}},
+	)
+	if !hasVerifiedRoom(merged) {
+		t.Error("a usable verified quote must count as verified")
+	}
+	orig := fetchRoomAvailability
+	t.Cleanup(func() { fetchRoomAvailability = orig })
+	origRM := HotelRateManager
+	t.Cleanup(func() { HotelRateManager = origRM })
+	HotelRateManager = NewRateManager()
+	fetchRoomAvailability = func(context.Context, RoomSearchOptions) (*RoomAvailability, error) {
+		return &RoomAvailability{Success: true, Rooms: merged}, nil
+	}
+	hotels := enrichHotelRooms(context.Background(), []models.HotelResult{{
+		HotelID: "/g/11x", Name: "Hotel X", Price: 120, Currency: "EUR",
+		Sources: []models.PriceSource{{Provider: "google_hotels", Price: 120, Currency: "EUR"}},
+	}}, HotelSearchOptions{EnrichRooms: true, CheckIn: "2026-11-18", CheckOut: "2026-11-20", Currency: "EUR"})
+	models.FinalizeHotelPriceTrust(hotels, "EUR", time.Now(), nil)
+	if h := hotels[0]; h.HeadlineProvider != "booking.com" || h.Price != 95 || h.PriceConfidence != models.PriceConfidenceVerified {
+		t.Errorf("headline = %v by %q (%s), want Booking's verified 95", h.Price, h.HeadlineProvider, h.PriceConfidence)
+	}
+}
+
+// A verified quote that cannot headline (no nightly amount at all) must not
+// count as a verified room, or it would skip the fallbacks for nothing.
+func TestHasVerifiedRoom_IgnoresQuoteThatCannotHeadline(t *testing.T) {
+	rooms := []RoomType{{
+		Name: "Double Room", Price: 100, Currency: "EUR", Provider: "Hotels.com", Source: "google_hotels",
+		MatchConfidence: models.RoomInventoryMatchExact,
+		InventoryOptions: []models.RoomInventoryQuote{{
+			Provider: "Booking.com", Source: "booking.com", TotalPrice: 190, Currency: "EUR",
+			PriceBasis: models.PriceBasisTaxInclusiveTotal, PriceConfidence: models.PriceConfidenceVerified,
+		}},
+	}}
+	if hasVerifiedRoom(rooms) {
+		t.Error("a verified quote with no nightly amount suppressed the fallbacks")
 	}
 }
