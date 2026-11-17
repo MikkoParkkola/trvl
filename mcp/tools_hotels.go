@@ -722,16 +722,19 @@ func roomKey(r hotels.RoomType) string {
 
 // roomCutter returns the budget drop step for a room list: it removes the
 // room that costs the most per night once every price is on one basis and
-// in one currency (roomNightlyIn), never a pinned room, down to one room.
-// pinned may be nil.
+// in one currency (roomNightlyIn), never the first pinned room, down to one
+// room. pinned may be nil.
 func roomCutter(currency string, nights int, pinned func(hotels.RoomType) bool) func([]hotels.RoomType) ([]hotels.RoomType, bool) {
 	return func(rooms []hotels.RoomType) ([]hotels.RoomType, bool) {
 		if len(rooms) <= 1 {
 			return rooms, false
 		}
-		worst, worstPrice := -1, 0.0
+		worst, worstPrice, pinSeen := -1, 0.0, false
 		for i, r := range rooms {
-			if pinned != nil && pinned(r) {
+			// Only the first pinned match is protected: identical rates
+			// share a key, and keeping one of them is enough.
+			if !pinSeen && pinned != nil && pinned(r) {
+				pinSeen = true
 				continue
 			}
 			if p := roomNightlyIn(r, currency, nights); worst < 0 || p > worstPrice {

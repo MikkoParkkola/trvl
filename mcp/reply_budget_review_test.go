@@ -200,3 +200,19 @@ func TestReplyBudgetTransfersMatchCountsAndLabels(t *testing.T) {
 		t.Errorf("exact_matches %d + city_matches %d != %d routes listed", exact, city, len(keys))
 	}
 }
+
+// Three rates share the summary room's name, provider, rate ID, currency and
+// price; only one fits. Pinning must keep one of them, not all three.
+func TestReplyBudgetHotelRoomsPinsOneOccurrence(t *testing.T) {
+	room := hotels.RoomType{Name: "Twin", Price: 60, NightlyPrice: 60, Currency: "EUR", Provider: "booking", MaxGuests: 2,
+		Description: strings.Repeat("r", 15_000)}
+	stubRoomList(t, []hotels.RoomType{room, room, room})
+	got := callGroundTool(t, "hotel_rooms", budgetRoomArgs)
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	assertUnderPromise(t, got)
+	if n := len(rowNames(got.structured, "rooms", "name")); n != 1 {
+		t.Errorf("kept %d rooms, want 1", n)
+	}
+}
