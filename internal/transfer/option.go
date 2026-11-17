@@ -28,13 +28,14 @@ func BuildOptions(routes []models.GroundRoute, airportCode, from, to string) mod
 	opts := make([]models.TransferOption, 0, len(routes))
 	for _, r := range routes {
 		opt := models.TransferOption{
-			Mode:          classifyMode(r),
-			Label:         routeLabel(r),
-			TotalPrice:    r.Price,
-			Currency:      r.Currency,
-			DoorToDoorMin: r.Duration,
-			Changes:       r.Transfers,
-			BookURL:       r.BookingURL,
+			Mode:           classifyMode(r),
+			Label:          routeLabel(r),
+			TotalPrice:     r.Price,
+			Currency:       r.Currency,
+			DoorToDoorMin:  r.Duration,
+			Changes:        r.Transfers,
+			ChangesUnknown: r.TransfersUnknown,
+			BookURL:        r.BookingURL,
 		}
 		// An unavailable price is no price at all; TotalPrice stays as given
 		// (a walk can honestly cost 0) and the flag tells renderers to show no
@@ -183,6 +184,9 @@ func mostLuggageFriendly(opts []models.TransferOption) models.TransferOption {
 		di, dj := doorToDoorRank(sorted[i].Mode), doorToDoorRank(sorted[j].Mode)
 		if di != dj {
 			return di < dj
+		}
+		if sorted[i].ChangesUnknown != sorted[j].ChangesUnknown {
+			return !sorted[i].ChangesUnknown
 		}
 		if sorted[i].Changes != sorted[j].Changes {
 			return sorted[i].Changes < sorted[j].Changes

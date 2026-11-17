@@ -199,6 +199,9 @@ func prepareGroundRows(ctx context.Context, targetCurrency string, routes []mode
 		if r.Transfers > 0 {
 			transfers = fmt.Sprintf("%d", r.Transfers)
 		}
+		if r.TransfersUnknown {
+			transfers = "unknown"
+		}
 
 		depTime := formatGroundTime(r.Departure.Time)
 		arrTime := formatGroundTime(r.Arrival.Time)

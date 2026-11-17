@@ -54,6 +54,8 @@ func annotateProsCons(opts []models.TransferOption) {
 		}
 
 		switch {
+		case o.ChangesUnknown:
+			cons = append(cons, "number of changes unknown")
 		case o.Changes == 0 && o.Mode != "taxi" && o.Mode != "private_transfer":
 			pros = append(pros, "no changes")
 		case o.Changes == 1:

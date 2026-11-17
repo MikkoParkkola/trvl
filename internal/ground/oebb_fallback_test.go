@@ -141,6 +141,10 @@ func serveOebbShop(t *testing.T, prices http.HandlerFunc) func() map[string]stri
 	conn := func(id, dep, arr string) oebbShopConnection {
 		c := oebbShopConnection{ID: id, Duration: 4 * 3600 * 1000}
 		c.From.Departure, c.To.Arrival = dep, arr
+		// One train section: a direct train whose change count is known.
+		c.Sections = []oebbShopSection{{Type: "journey",
+			From: oebbShopStop{Name: "Praha hl.n.", Departure: dep},
+			To:   oebbShopStop{Name: "Wien Hbf", Arrival: arr}}}
 		return c
 	}
 	var mu sync.Mutex
