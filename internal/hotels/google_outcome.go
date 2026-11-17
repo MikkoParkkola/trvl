@@ -151,8 +151,13 @@ func googleCooldownErr(ctx context.Context, client *batchexec.Client, op string,
 	if status != http.StatusTooManyRequests && status != http.StatusOK {
 		return fmt.Errorf("%s refused (HTTP %d): %w", op, status, models.ErrRateLimited)
 	}
-	if _, _, skip := client.Get(ctx, googleCooldownProbeURL); errors.Is(skip, batchexec.ErrRefused) {
-		return fmt.Errorf("%s refused (HTTP %d): %w: %w", op, status, models.ErrRateLimited, skip)
+	_, _, probe := client.Get(ctx, googleCooldownProbeURL)
+	if errors.Is(probe, batchexec.ErrRefused) {
+		return fmt.Errorf("%s refused (HTTP %d): %w: %w", op, status, models.ErrRateLimited, probe)
+	}
+	if probe != nil {
+		// The retry time could not be read; keep why next to the marker.
+		return fmt.Errorf("%s refused (HTTP %d): %w: %w (retry time unread: %w)", op, status, models.ErrRateLimited, batchexec.ErrRefused, probe)
 	}
 	return fmt.Errorf("%s refused (HTTP %d): %w: %w", op, status, models.ErrRateLimited, batchexec.ErrRefused)
 }
