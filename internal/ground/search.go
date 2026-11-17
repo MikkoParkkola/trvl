@@ -69,9 +69,10 @@ type SearchOptions struct {
 	ReturnDate string
 
 	// NoHacks opts out of the auto-composed travel-hacks savings engine. The
-	// engine is ON by default: a normal search also surfaces the single best
-	// cheaper synthesized option (multimodal, cross-border rail, …) in
-	// result.HackSaving. Set NoHacks to run a pure naive search.
+	// engine is ON by default and runs the ground detector roster, which is
+	// empty until a detector prices a cheaper way to make the same ground
+	// trip, so result.HackSaving stays nil today. NoHacks runs a pure naive
+	// search.
 	NoHacks bool
 
 	// SearchOverride replaces the real ground-transport search for this single
