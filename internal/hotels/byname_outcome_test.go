@@ -46,6 +46,8 @@ func TestHasLocality(t *testing.T) {
 		{"Hotel Sacher", "Vienna", false},
 		{"Hotel Viennaland", "Vienna", false},
 		{"Summer Shades hotel, Naoussa, Paros", "Naoussa, Paros", true},
+		// buildLocationCandidates drops commas: the words still match.
+		{"Summer Shades hotel, Naoussa Paros", "Naoussa, Paros", true},
 		{"Summer Shades hotel Paros", "Naoussa, Paros", false},
 	}
 	for _, tc := range cases {
