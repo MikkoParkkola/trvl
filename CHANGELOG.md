@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ground searches no longer subtract a flight hack's saving from a bus or train fare: a Prague to Vienna bus at EUR 15.90 was shown as EUR 13. Ground results carry no `hack_saving`, since no detector measures one on a ground fare. (#815)
 - A ground search's savings pass no longer runs flight lookups, so it can no longer arm the 15-minute Google cooldown that every trvl search on the machine shares. (#814)
 - A ground search queries each provider once. The savings pass used to repeat the search and log every provider failure twice. (#810)
-- Deutsche Bahn prices: the day-best lookup sends one valid request, so a route DB cannot price reads "no fare" instead of "lookup failed" with an HTTP 400. (#811)
+- Deutsche Bahn prices: the day-best lookup sends one valid request, so a route DB cannot price reads "DB sells no fares for this route" instead of "DB's price lookup failed" after an HTTP 400. (#811)
 - ÖBB routes report their real number of changes and their legs; four of five Prague to Vienna trains change at Breclav, Pardubice or Linz but were listed as direct. `max_transfers` now also applies to single-train routes; a route whose change count is only partly known is flagged, keeps its known minimum in the label, and is dropped when that minimum already exceeds the cap. (#809)
 - Flight hacks no longer subtract a hotel night from a flight fare: `night_transport` turned a EUR 150 flight into "price 90" and `ferry_cabin` into "price 65". Both still appear in `trvl hacks`, with their hotel saving. (#819)
 - Multimodal plans no longer subtract a flight hack's saving from an itinerary total that may contain no flight. The `trvl multimodal` help and the MCP tool description no longer promise a saving. (#824)
@@ -1477,7 +1477,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.28.1...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.28.2...HEAD
+[1.28.2]: https://github.com/MikkoParkkola/trvl/compare/v1.28.1...v1.28.2
 [1.28.1]: https://github.com/MikkoParkkola/trvl/compare/v1.28.0...v1.28.1
 [1.28.0]: https://github.com/MikkoParkkola/trvl/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/MikkoParkkola/trvl/compare/v1.26.0...v1.27.0
