@@ -2,7 +2,9 @@ package hotels
 
 import (
 	"context"
+	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,31 +129,112 @@ func TestEnrichHotelRooms_HeadlineNamesFetcher(t *testing.T) {
 	}
 }
 
-// TestMergeRoomTypes_AttributionFollowsHeadlineNumber: when Booking supplies
-// the nightly rate that roomHeadlinePrice publishes, the room is credited to
-// Booking, not to the Google seller whose total price it kept.
-func TestMergeRoomTypes_AttributionFollowsHeadlineNumber(t *testing.T) {
+// TestMergeRoomTypes_OneSellerPerRoom: a priced Google room keeps every price
+// field of its own quote; Booking's numbers (and its taxes-included flag) stay
+// in Booking's inventory quote instead of being spliced in.
+func TestMergeRoomTypes_OneSellerPerRoom(t *testing.T) {
+	yes := true
 	google := []RoomType{{
 		Name: "Double Room", Price: 100, Currency: "EUR",
 		Provider: "Hotels.com", Source: "google_hotels", ProviderURL: "https://www.hotels.com/ho1",
 	}}
 	booking := []RoomType{{
-		Name: "Double Room", Price: 95, NightlyPrice: 95, Currency: "EUR",
-		Provider: "Booking.com", Source: "booking.com", ProviderURL: "https://www.booking.com/hotel/at/x.html",
+		Name: "Double Room", Price: 95, NightlyPrice: 95, TotalPrice: 190, TaxesAndFees: 12, TaxesFeesIncluded: &yes,
+		Currency: "EUR", Provider: "Booking.com", Source: "booking.com", ProviderURL: "https://www.booking.com/hotel/at/x.html",
+		Description: "Quiet courtyard room",
 	}}
 	merged := mergeRoomTypes(google, booking)
 	if len(merged) != 1 {
 		t.Fatalf("merged %d rooms, want 1", len(merged))
 	}
-	src, ok := bestRoomSource([]models.Room{roomTypeToModelRoom(merged[0])})
-	if !ok {
-		t.Fatal("no priced room")
+	m := merged[0]
+	if m.Price != 100 || m.NightlyPrice != 0 || m.TotalPrice != 0 || m.TaxesAndFees != 0 || m.TaxesFeesIncluded != nil {
+		t.Errorf("price fields = price %v nightly %v total %v taxes %v included %v, want Google's quote only",
+			m.Price, m.NightlyPrice, m.TotalPrice, m.TaxesAndFees, m.TaxesFeesIncluded)
 	}
-	if src.Price != 95 {
-		t.Fatalf("published price = %v, want Booking's nightly 95", src.Price)
+	if m.Provider != "Hotels.com" || m.Source != "google_hotels" || m.ProviderURL != "https://www.hotels.com/ho1" {
+		t.Errorf("seller = %q via %q (%s), want Hotels.com via google_hotels", m.Provider, m.ProviderURL, m.Source)
 	}
-	if src.Provider != "booking.com" || src.BookingURL != "https://www.booking.com/hotel/at/x.html" {
-		t.Errorf("published 95 credited to %q via %q, want booking.com and the Booking link", src.Provider, src.BookingURL)
+	if m.Description != "Quiet courtyard room" {
+		t.Errorf("Description = %q: non-price enrichment must still merge", m.Description)
+	}
+	if len(m.InventoryOptions) != 2 || m.InventoryOptions[1].TotalPrice != 190 {
+		t.Errorf("InventoryOptions = %+v, want Booking's 190 quote kept", m.InventoryOptions)
+	}
+	src, _ := bestRoomSource([]models.Room{roomTypeToModelRoom(m)})
+	if src.Price != 100 || src.Provider != "google_hotels" || src.Seller != "Hotels.com" {
+		t.Errorf("published %v by %q (seller %q), want 100 by google_hotels (Hotels.com)", src.Price, src.Provider, src.Seller)
+	}
+	if src.PriceConfidence == models.PriceConfidenceVerified {
+		t.Error("Booking's taxes-included flag verified Google's price")
+	}
+}
+
+// An unpriced Google room takes Booking's whole quote, seller and link included.
+func TestMergeRoomTypes_UnpricedGoogleTakesBookingQuote(t *testing.T) {
+	google := []RoomType{{Name: "Double Room", Currency: "EUR", Provider: "Hotels.com", Source: "google_hotels"}}
+	booking := []RoomType{{
+		Name: "Double Room", Price: 95, NightlyPrice: 95, TotalPrice: 190, Currency: "EUR",
+		Provider: "Booking.com", Source: "booking.com", ProviderURL: "https://www.booking.com/hotel/at/x.html",
+	}}
+	m := mergeRoomTypes(google, booking)[0]
+	if m.Price != 95 || m.NightlyPrice != 95 || m.TotalPrice != 190 || m.Provider != "Booking.com" || m.Source != "booking.com" || m.ProviderURL != "https://www.booking.com/hotel/at/x.html" {
+		t.Errorf("got %+v, want Booking's whole quote", m)
+	}
+}
+
+// TestGetRoomAvailability_WatchSeesOneSellerPerRoom runs the room fetch the
+// room watch uses (cmd/trvl/watch.go and mcp/watch_room_checker.go report each
+// room's Price under its Provider) with a Google room and a same-named Booking
+// room. The watch must see one seller's price under that seller's name.
+func TestGetRoomAvailability_WatchSeesOneSellerPerRoom(t *testing.T) {
+	t.Setenv("GOOGLE_HOTELS_DETAIL_API_BASE", "")
+	origKey := serpapiAPIKeyFunc
+	serpapiAPIKeyFunc = func() string { return "" }
+	t.Cleanup(func() { serpapiAPIKeyFunc = origKey })
+
+	// The Google entity page answers locally with two partner rooms.
+	page := `<html><head><title>Hotel X</title></head><body>` + strings.Repeat("<!-- pad -->", 50) +
+		`<script>AF_initDataCallback({key: 'ds:1', data:[[["Deluxe Suite",120,"EUR","Hotels.com"],["Standard Room",90,"EUR","Expedia"]]]});</script></body></html>`
+	useTestDefaultClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(page))
+	}))
+
+	yes := true
+	origFetch := FetchBookingRooms
+	FetchBookingRooms = func(context.Context, string, string, string, string) ([]RoomType, error) {
+		return []RoomType{{
+			Name: "Deluxe Suite", Price: 95, NightlyPrice: 95, TotalPrice: 190, TaxesFeesIncluded: &yes,
+			Currency: "EUR", Provider: "Booking.com", Source: "booking.com",
+			ProviderURL: "https://www.booking.com/hotel/at/x.html",
+		}}, nil
+	}
+	t.Cleanup(func() { FetchBookingRooms = origFetch })
+
+	av, err := GetRoomAvailabilityWithOpts(context.Background(), RoomSearchOptions{
+		HotelID: "/g/11hotelx", CheckIn: "2026-11-18", CheckOut: "2026-11-20", Currency: "EUR",
+		BookingURL: "https://www.booking.com/hotel/at/x.html",
+	})
+	if err != nil {
+		t.Fatalf("GetRoomAvailabilityWithOpts: %v", err)
+	}
+	var suite *RoomType
+	for i := range av.Rooms {
+		if av.Rooms[i].Name == "Deluxe Suite" {
+			suite = &av.Rooms[i]
+		}
+	}
+	if suite == nil {
+		t.Fatalf("no Deluxe Suite in %+v", av.Rooms)
+	}
+	// What the watch reports: Price under Provider.
+	if suite.Price != 120 || suite.Provider != "Hotels.com" {
+		t.Errorf("watch would report %v under %q, want Hotels.com's 120", suite.Price, suite.Provider)
+	}
+	// What the headline would publish from the same room.
+	src, _ := bestRoomSource([]models.Room{roomTypeToModelRoom(*suite)})
+	if src.Price != 120 || src.Provider != "google_hotels" || src.Seller != "Hotels.com" {
+		t.Errorf("headline would publish %v by %q (seller %q), want 120 by google_hotels (Hotels.com)", src.Price, src.Provider, src.Seller)
 	}
 }
 

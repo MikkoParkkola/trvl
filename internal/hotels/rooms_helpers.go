@@ -610,19 +610,6 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 			if len(br.Amenities) > 0 {
 				enriched.Amenities = mergeStringSlices(enriched.Amenities, br.Amenities)
 			}
-			tookNightly := br.NightlyPrice > 0 && enriched.NightlyPrice == 0
-			if tookNightly {
-				enriched.NightlyPrice = br.NightlyPrice
-			}
-			if br.TotalPrice > 0 && enriched.TotalPrice == 0 {
-				enriched.TotalPrice = br.TotalPrice
-			}
-			if br.TaxesAndFees > 0 && enriched.TaxesAndFees == 0 {
-				enriched.TaxesAndFees = br.TaxesAndFees
-			}
-			if br.TaxesFeesIncluded != nil && enriched.TaxesFeesIncluded == nil {
-				enriched.TaxesFeesIncluded = br.TaxesFeesIncluded
-			}
 			if br.CancellationPolicy != "" && enriched.CancellationPolicy == "" {
 				enriched.CancellationPolicy = br.CancellationPolicy
 			}
@@ -638,14 +625,18 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 			if br.BreakfastIncluded != nil && enriched.BreakfastIncluded == nil {
 				enriched.BreakfastIncluded = br.BreakfastIncluded
 			}
-			// Keep Google price if available; add Booking as secondary.
-			tookPrice := enriched.Price == 0 && br.Price > 0
-			if tookPrice {
+			// One seller's numbers per room: a priced Google room keeps its own
+			// quote, and Booking's stays in InventoryOptions above. Splicing
+			// Booking's nightly, total or taxes-included flag into it made the
+			// headline, the room watch and the confidence tier each read a
+			// different seller. An unpriced Google room takes Booking's whole
+			// quote, seller and link included.
+			if !roomHasPrice(enriched) && roomHasPrice(br) {
 				enriched.Price = br.Price
-			}
-			// The room's quote is its nightly rate, else its price (see
-			// roomHeadlinePrice): credit whichever room supplied that number.
-			if tookNightly || (tookPrice && enriched.NightlyPrice == 0) {
+				enriched.NightlyPrice = br.NightlyPrice
+				enriched.TotalPrice = br.TotalPrice
+				enriched.TaxesAndFees = br.TaxesAndFees
+				enriched.TaxesFeesIncluded = br.TaxesFeesIncluded
 				enriched.Provider = br.Provider
 				enriched.ProviderURL = br.ProviderURL
 				enriched.Source = br.Source
@@ -664,6 +655,11 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 	}
 
 	return merged
+}
+
+// roomHasPrice reports whether a room carries any price of its own.
+func roomHasPrice(r RoomType) bool {
+	return r.Price > 0 || r.NightlyPrice > 0 || r.TotalPrice > 0
 }
 
 // hasVerifiedRoom reports whether any room already carries a verified,
