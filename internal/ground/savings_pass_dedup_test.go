@@ -107,12 +107,17 @@ func TestSearchByName_SavingsPassReusesOuterRound(t *testing.T) {
 	}
 }
 
-// A nested search for another date or currency is a different query: it must
-// still reach the provider (the shared round covers only the outer one).
+// A nested search for another date or another price cap is a different query:
+// it must still reach the provider (the shared round covers only the outer
+// one). A currency change would also do, but converting the stub's EUR fares
+// fetches a live exchange rate, so the test varies the price cap instead.
 func TestSearchByName_SavingsPassOtherQueryStillSearches(t *testing.T) {
-	cases := []struct{ name, date, currency string }{
-		{"other date", "2027-07-16", "EUR"},
-		{"other currency", "2027-07-15", "GBP"},
+	cases := []struct {
+		name, date string
+		maxPrice   float64
+	}{
+		{"other date", "2027-07-16", 0},
+		{"other price cap", "2027-07-15", 100},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -134,7 +139,8 @@ func TestSearchByName_SavingsPassOtherQueryStillSearches(t *testing.T) {
 			withComposer(t, func(ctx context.Context, req HackComposeRequest) *models.HackSaving {
 				ran.Store(true)
 				_, _ = SearchByName(ctx, req.Origin, req.Destination, c.date, SearchOptions{
-					Currency:         c.currency,
+					Currency:         req.Currency,
+					MaxPrice:         c.maxPrice,
 					ExcludeProviders: req.ExcludeProviders,
 					NoCache:          req.NoCache,
 				})
