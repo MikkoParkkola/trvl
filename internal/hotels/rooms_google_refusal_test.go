@@ -250,3 +250,24 @@ func TestSearchHotelByName_RefusalSurvivesANameMiss(t *testing.T) {
 		t.Fatalf("err = %v, want the name miss joined with Google's rate limit", err)
 	}
 }
+
+// TestSearchHotelByName_LaterGoogleAnswerClearsAnEarlierBlock: Google blocked
+// the city search (403) but then answered the hotel query without the hotel.
+// That is an index miss, not a refusal: the match comes back without a
+// Google ID and the caller's index guidance applies.
+func TestSearchHotelByName_LaterGoogleAnswerClearsAnEarlierBlock(t *testing.T) {
+	blockCityAnswerHotel := func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Query().Get("q"), "Sacher") {
+			_, _ = w.Write(fakeHotelPageWithPrices(hotelWithPrice{"Hotel Stefanie", 150}))
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}
+	roomLookupWorld(t, googleRoutes{shortEntity, answer(404), blockCityAnswerHotel}, false)
+	withBookingResult(t, sacherBookingUSD)
+
+	got, err := SearchHotelByName(context.Background(), "Hotel Sacher, Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if err != nil || got == nil || got.HotelID != "4711" {
+		t.Fatalf("got %+v, err = %v; want Booking's match and no error", got, err)
+	}
+}

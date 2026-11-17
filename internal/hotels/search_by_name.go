@@ -374,9 +374,8 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 			lastErr = err
 			continue
 		}
-		if gErr := googleStatusErr(result); gErr != nil {
-			googleErr = gErr
-		}
+		// The latest Google answer wins (nil when Google answered).
+		googleErr = googleStatusErr(result)
 		if len(result.Hotels) == 0 {
 			continue
 		}
@@ -411,9 +410,9 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 					if tErr != nil {
 						googleErr = tErr
 					} else {
-						if gErr := googleStatusErr(targeted); gErr != nil {
-							googleErr = gErr
-						}
+						// The latest Google answer wins: one that came back
+						// clears an earlier block or refusal.
+						googleErr = googleStatusErr(targeted)
 						// A Google-ID row must pass the same name and town rules
 						// as the match it replaces.
 						var google []models.HotelResult
