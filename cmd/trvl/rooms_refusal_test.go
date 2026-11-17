@@ -68,3 +68,17 @@ func TestResolveRoomAvailability_LocationFlagReachesTheRoomHint(t *testing.T) {
 		t.Fatalf("room hint = %q (kind %v), want the hotel query ending in \", Wien\"", got.Location, got.LocationKind)
 	}
 }
+
+// TestFormatRoomsTable_EmptyRoomsKeepsTheNotice (#813): with no rooms, the
+// notice is the only thing that says why, so it must be printed.
+func TestFormatRoomsTable_EmptyRoomsKeepsTheNotice(t *testing.T) {
+	const notice = "Google Hotels room pricing was temporarily unavailable (rate-limited); a retry may surface more room-level offers."
+	out := captureStdout(t, func() {
+		if err := formatRoomsTable(&hotels.RoomAvailability{Success: true, Name: "Hotel Sacher Vienna", Notice: notice}); err != nil {
+			t.Fatalf("formatRoomsTable: %v", err)
+		}
+	})
+	if !strings.Contains(out, notice) {
+		t.Fatalf("output = %q, want the notice", out)
+	}
+}

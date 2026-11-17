@@ -189,6 +189,10 @@ func formatRoomsTable(result *hotels.RoomAvailability) error {
 
 	if len(result.Rooms) == 0 {
 		fmt.Printf("No room types found for %s.\n", name)
+		// With no rooms, the notice is what says why (a refusal, say).
+		if result.Notice != "" {
+			fmt.Printf("Notice: %s\n", result.Notice)
+		}
 		return nil
 	}
 
