@@ -233,3 +233,20 @@ func TestGetRoomAvailability_CityHintKeepsTheFanOut(t *testing.T) {
 		t.Fatalf("Blueground paths = %q, want the Vienna city page", got)
 	}
 }
+
+// TestSearchHotelByName_RefusalSurvivesANameMiss (#813): Google refused and
+// another provider returned only other hotels. The miss may be Google's
+// silence, so the refusal travels with it.
+func TestSearchHotelByName_RefusalSurvivesANameMiss(t *testing.T) {
+	roomLookupWorld(t, googleRoutes{shortEntity, answer(404), answer(429)}, false)
+	withBookingResult(t, models.HotelResult{
+		Name: "Hotel Stefanie", HotelID: "4712", Price: 150, Currency: "USD", Lat: sacherLat, Lon: sacherLon,
+		Sources: []models.PriceSource{{Provider: "booking", Price: 150, Currency: "USD"}},
+	})
+	seedGeoAt(t, "Hotel Sacher Wien", sacherLat, sacherLon)
+
+	_, err := SearchHotelByName(context.Background(), "Hotel Sacher Wien", lookupCheckIn, lookupCheckOut, "USD")
+	if !errors.Is(err, ErrNoNameMatch) || !errors.Is(err, models.ErrRateLimited) {
+		t.Fatalf("err = %v, want the name miss joined with Google's rate limit", err)
+	}
+}

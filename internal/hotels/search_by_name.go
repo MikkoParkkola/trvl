@@ -447,7 +447,9 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 	if lastErr != nil && !sawResults {
 		return nil, fmt.Errorf("hotel name search: %w", lastErr)
 	}
-	return nil, errors.Join(fmt.Errorf("%w: %q", ErrNoNameMatch, query), lastErr)
+	// Google's refusal travels with a miss: the hotel may be the one Google
+	// would have returned (#813).
+	return nil, errors.Join(fmt.Errorf("%w: %q", ErrNoNameMatch, query), lastErr, googleErr)
 }
 
 // buildLocationCandidates generates location search strings from a hotel name query.
