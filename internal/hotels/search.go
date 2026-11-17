@@ -3,9 +3,7 @@ package hotels
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,7 +12,6 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
-	"github.com/MikkoParkkola/trvl/internal/searchctx"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -185,62 +182,13 @@ func SearchHotels(ctx context.Context, location string, opts HotelSearchOptions)
 
 // SearchHotelsWithClient is like SearchHotels but reuses the provided client.
 func SearchHotelsWithClient(ctx context.Context, client *batchexec.Client, location string, opts HotelSearchOptions) (*models.HotelSearchResult, error) {
-	// Every provider gets the English city name; only the Google fetch swaps
-	// in the local form Google resolves (see googleLocation in searchHotelsCore).
-	location = englishHotelCity(location)
-	if opts.CheckIn == "" || opts.CheckOut == "" {
-		return nil, fmt.Errorf("check-in and check-out dates are required")
-	}
-	if opts.Guests <= 0 {
-		opts.Guests = 2
-	}
-	if opts.Currency == "" {
-		opts.Currency = "USD" // Google's default when no currency specified
-	} else {
-		opts.Currency = strings.ToUpper(opts.Currency)
-	}
-
-	// Validate dates.
-	_, err := parseDateArray(opts.CheckIn)
-	if err != nil {
-		return nil, fmt.Errorf("parse check-in date: %w", err)
-	}
-	_, err = parseDateArray(opts.CheckOut)
-	if err != nil {
-		return nil, fmt.Errorf("parse check-out date: %w", err)
-	}
-
-	key := hotelSearchKey(location, opts)
-	return doHotelSearchSingleflight(ctx, key, func(sharedCtx context.Context) (*models.HotelSearchResult, error) {
-		return searchHotelsCore(sharedCtx, client, location, opts)
-	})
-}
-
-func doHotelSearchSingleflight(ctx context.Context, key string, fn func(context.Context) (*models.HotelSearchResult, error)) (*models.HotelSearchResult, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	ch := hotelGroup.DoChan(key, func() (any, error) {
-		sharedCtx, cancel := searchctx.DetachedWithin(ctx, sharedHotelSearchTimeout)
-		defer cancel()
-		return fn(sharedCtx)
-	})
-
-	select {
-	case <-ctx.Done():
-		// The winner keeps running until the detached shared deadline expires; if
-		// the caller times out first, forget the key so later callers do not join
-		// that doomed execution.
-		hotelGroup.Forget(key)
-		return nil, ctx.Err()
-	case res := <-ch:
-		return sharedHotelResult(res.Val, res.Err)
-	}
+	res, _, err := searchHotelsCall(ctx, client, location, opts)
+	return res, err
 }
 
 // searchHotelsCore performs the actual hotel search without singleflight wrapping.
-func searchHotelsCore(ctx context.Context, client *batchexec.Client, location string, opts HotelSearchOptions) (*models.HotelSearchResult, error) {
+// call records every Google request, in order, for the run's caller (#826).
+func searchHotelsCore(ctx context.Context, client *batchexec.Client, location string, opts HotelSearchOptions, call *googleCall) (*models.HotelSearchResult, error) {
 	googleLocation := normalizeHotelCity(location)
 	pageLimit := hotelPageLimit(opts.MaxPages)
 
@@ -302,6 +250,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 
 		// Fetch first page for this sort order (with metadata on the primary sort).
 		firstPage, err := fetchHotelPageFullFn(ctx, client, googleLocation, opts, 0, googleSort)
+		call.note(0, err)
 		if err != nil {
 			if sortIdx == 0 {
 				// Primary Google sort failed. Don't abort the whole search:
@@ -330,6 +279,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		// Paginate within this sort order.
 		for page := 1; page < pageLimit; page++ {
 			pageHotels, err := fetchHotelPage(ctx, client, googleLocation, opts, page*pageSize, googleSort)
+			call.note(0, err)
 			if err != nil {
 				// Non-fatal: keep what we have from previous pages.
 				break
