@@ -239,3 +239,25 @@ func TestComputeCompleteness_SingleProviderBlockedOnlyWithoutResults(t *testing.
 		}
 	}
 }
+
+// Every missing-type status that still returned results is a partial answer
+// with the same completeness JSON; without results it blocks (#832 review).
+func TestComputeCompleteness_PartialAcrossStatuses(t *testing.T) {
+	for _, status := range []string{StatusTimeout, StatusFailed, StatusError, StatusRateLimited} {
+		for _, tc := range []struct {
+			results int
+			want    string
+		}{
+			{40, `{"state":"partial","queried":1,"succeeded":0,"missing":["google_hotels"]}`},
+			{0, `{"state":"blocked","queried":1,"succeeded":0,"missing":["google_hotels"]}`},
+		} {
+			raw, err := json.Marshal(ComputeCompleteness([]ProviderStatus{{ID: "google_hotels", Status: status, Results: tc.results, Error: "page 2: HTTP 503"}}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(raw) != tc.want {
+				t.Errorf("%s, %d results: %s, want %s", status, tc.results, raw, tc.want)
+			}
+		}
+	}
+}
