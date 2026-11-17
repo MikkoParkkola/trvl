@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -264,8 +265,14 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// fields. See MIK-6232.
 	for i := range rooms {
 		rooms[i].Readiness = roomReadiness(rooms[i])
-		// Callers compare sellers by name, so none leaves blank.
+		// Callers compare sellers by name, so none leaves blank: not the
+		// room's, and not a quote's (a blank quote is the room's own seller).
 		rooms[i].Provider = roomSeller(rooms[i])
+		for j := range rooms[i].InventoryOptions {
+			if strings.TrimSpace(rooms[i].InventoryOptions[j].Provider) == "" {
+				rooms[i].InventoryOptions[j].Provider = rooms[i].Provider
+			}
+		}
 	}
 
 	return &RoomAvailability{

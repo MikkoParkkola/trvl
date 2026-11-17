@@ -22,13 +22,22 @@ func googlePricedRoom(seller string) hotels.RoomType {
 
 var rateTermsNeed = models.AccommodationNeed{Adults: 2, Rooms: 1, Currency: "EUR"}
 
-// Another seller's quote never borrows the room's seller-bound fields; the
-// stay fields still fill.
+// Another seller's quote never borrows the room's seller-bound fields, even
+// explicit false values; the stay fields still fill.
 func TestCompleteRoomInventoryQuote_ForeignSellerKeepsItsGaps(t *testing.T) {
 	now := time.Now()
-	foreign := models.RoomInventoryQuote{Provider: "Booking.com", ProviderRoomName: "Double Room", NightlyPrice: 95, Currency: "EUR"}
-	got := completeRoomInventoryQuote(foreign, googlePricedRoom("Hotels.com"), rateTermsNeed, now)
-	if got.Refundable != nil || got.Board != "" || got.TotalPrice != 0 || got.ProviderURL != "" || got.PriceBasis != "" || got.PriceConfidence != "" {
+	no := false
+	room := hotels.RoomType{
+		Name: "Double Room", NightlyPrice: 210, TotalPrice: 420, TaxesAndFees: 30, TaxesFeesIncluded: &no,
+		Currency: "EUR", Provider: "Hotels.com", ProviderURL: "https://www.hotels.com/ho1",
+		MatchConfidence: models.RoomInventoryMatchExact, CancellationPolicy: "Non-refundable",
+		Refundable: &no, FreeCancellation: &no, Board: "room_only", BreakfastIncluded: &no,
+	}
+	foreign := models.RoomInventoryQuote{Provider: "Booking.com", ProviderRoomName: "Double Room", Currency: "EUR"}
+	got := completeRoomInventoryQuote(foreign, room, rateTermsNeed, now)
+	if got.ProviderURL != "" || got.NightlyPrice != 0 || got.TotalPrice != 0 || got.TaxesAndFees != 0 || got.TaxesFeesIncluded != nil ||
+		got.PriceBasis != "" || got.PriceConfidence != "" || got.CancellationPolicy != "" || got.Refundable != nil ||
+		got.FreeCancellation != nil || got.Board != "" || got.BreakfastIncluded != nil {
 		t.Errorf("Booking quote borrowed Hotels.com's fields: %+v", got)
 	}
 	if got.Rooms != 1 || got.CheckedAt.IsZero() || got.Freshness == "" || got.OccupancyAdults != 2 {
@@ -77,5 +86,28 @@ func TestAccommodationOffersFromRooms_ForeignQuoteKeepsItsOwnLink(t *testing.T) 
 	}
 	if o.Refundable != nil || o.Board != "" {
 		t.Errorf("Booking's offer shows Hotels.com's terms: refundable %v board %q", o.Refundable, o.Board)
+	}
+}
+
+// A selected quote whose own room has no link gets none: the hotel's booking
+// link can belong to another seller (#832 review).
+func TestOfferAndVerifiedRate_NoHotelLinkFallback(t *testing.T) {
+	room := googlePricedRoom("Hotels.com")
+	room.ProviderURL = ""
+	hotel := models.HotelResult{Name: "Hotel X", HotelID: "/g/11x", BookingURL: "https://www.booking.com/hotel/at/x.html"}
+	now := time.Now()
+	offers := accommodationOffersFromRooms(hotel, []hotels.RoomType{room}, rateTermsNeed, now)
+	if len(offers) != 1 || offers[0].ProviderURL != "" {
+		t.Errorf("offer link = %+v, want none: the hotel link is another seller's", offers)
+	}
+	if v := verifiedRateFromRooms(hotel, []hotels.RoomType{room}, now); v == nil || v.BookingURL != "" {
+		t.Errorf("verified rate = %+v, want no booking link", v)
+	}
+}
+
+// Seller names and room names normalise the same way.
+func TestSellerKey_MatchesRoomNameNormalisation(t *testing.T) {
+	if sellerKey("  Google   Hotels ") != normalizeName("google hotels") {
+		t.Error("sellerKey and the room-name normaliser disagree")
 	}
 }

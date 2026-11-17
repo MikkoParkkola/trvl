@@ -203,7 +203,12 @@ func TestGetRoomAvailability_EverySellerNamed(t *testing.T) {
 	t.Cleanup(func() { serpapiAPIKeyFunc = origKey })
 	origFetch := FetchBookingRooms
 	FetchBookingRooms = func(context.Context, string, string, string, string) ([]RoomType, error) {
-		return []RoomType{{Name: "Deluxe Suite", Price: 95, NightlyPrice: 95, Currency: "EUR", Provider: "Booking.com", Source: "booking.com"}}, nil
+		return []RoomType{
+			{Name: "Deluxe Suite", Price: 95, NightlyPrice: 95, Currency: "EUR", Provider: "Booking.com", Source: "booking.com"},
+			// Unmatched, so appended as is, with a quote that names no seller.
+			{Name: "Penthouse", Price: 300, NightlyPrice: 300, Currency: "EUR", Provider: "Booking.com", Source: "booking.com",
+				InventoryOptions: []models.RoomInventoryQuote{{NightlyPrice: 300, Currency: "EUR"}}},
+		}, nil
 	}
 	t.Cleanup(func() { FetchBookingRooms = origFetch })
 
@@ -226,5 +231,28 @@ func TestGetRoomAvailability_EverySellerNamed(t *testing.T) {
 				t.Errorf("room %q has a quote with no seller", r.Name)
 			}
 		}
+	}
+}
+
+// An adopted quote is the donor's whole quote: an unpriced room's own
+// currency, rate id and rate plan never mix in beside the donor's price
+// (#832 review).
+func TestMergeRoomTypes_AdoptionTakesTheWholeQuote(t *testing.T) {
+	recipient := RoomType{
+		Name: "Double Room", Currency: "USD", RateID: "g-1", RatePlanName: "Google plan",
+		Provider: "Hotels.com", Source: "google_hotels", Description: "Courtyard view",
+	}
+	donor := RoomType{
+		Name: "Double Room", Price: 95, NightlyPrice: 95, Currency: "EUR", RateID: "b-1", RatePlanName: "Flexible",
+		Provider: "Booking.com", Source: "booking.com", ProviderURL: "https://www.booking.com/hotel/at/x.html",
+		MatchConfidence: models.RoomInventoryMatchExact,
+	}
+	m := mergeRoomTypes([]RoomType{recipient}, []RoomType{donor})[0]
+	if m.Currency != "EUR" || m.RateID != "b-1" || m.RatePlanName != "Flexible" || m.MatchConfidence != models.RoomInventoryMatchExact {
+		t.Errorf("adopted quote = currency %q rate %q plan %q match %q, want Booking's EUR b-1 Flexible exact",
+			m.Currency, m.RateID, m.RatePlanName, m.MatchConfidence)
+	}
+	if m.Name != "Double Room" || m.Description != "Courtyard view" || len(m.InventoryOptions) != 2 {
+		t.Errorf("room identity or enrichment lost: %+v", m)
 	}
 }

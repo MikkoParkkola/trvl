@@ -617,19 +617,7 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 			// seller (#808, #823). An unpriced Google room takes Booking's whole
 			// quote: price, seller, link and rate terms, its own replaced.
 			if !roomHasPrice(enriched) && roomHasPrice(br) {
-				enriched.Price = br.Price
-				enriched.NightlyPrice = br.NightlyPrice
-				enriched.TotalPrice = br.TotalPrice
-				enriched.TaxesAndFees = br.TaxesAndFees
-				enriched.TaxesFeesIncluded = br.TaxesFeesIncluded
-				enriched.Provider = br.Provider
-				enriched.ProviderURL = br.ProviderURL
-				enriched.Source = br.Source
-				enriched.CancellationPolicy = br.CancellationPolicy
-				enriched.Refundable = br.Refundable
-				enriched.FreeCancellation = br.FreeCancellation
-				enriched.Board = br.Board
-				enriched.BreakfastIncluded = br.BreakfastIncluded
+				enriched = adoptQuote(enriched, br)
 			}
 			merged[gr.index] = enriched
 			matched[bKey] = true
@@ -645,6 +633,22 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 	}
 
 	return merged
+}
+
+// adoptQuote is an unpriced room taking the donor's whole quote by
+// construction: every field is the donor's except the room's identity and the
+// details merged into it. A field added to RoomType later follows the donor
+// too, so a quote can never mix two sellers (#808, #823, #832 review).
+func adoptQuote(room, donor RoomType) RoomType {
+	adopted := donor
+	adopted.Name = room.Name
+	adopted.Description = room.Description
+	adopted.BedType = room.BedType
+	adopted.SizeM2 = room.SizeM2
+	adopted.MaxGuests = room.MaxGuests
+	adopted.Amenities = room.Amenities
+	adopted.InventoryOptions = room.InventoryOptions
+	return adopted
 }
 
 // roomSeller is the room's seller, or "Google Hotels" when it names none:

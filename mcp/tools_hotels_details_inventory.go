@@ -40,7 +40,7 @@ func accommodationOffersFromRooms(hotel models.HotelResult, rooms []hotels.RoomT
 			AccommodationType:     offerAccommodationType(hotel, need),
 			RoomName:              canonicalRoomName(room),
 			Provider:              firstNonEmpty(selectedQuote.Provider, room.Provider),
-			ProviderURL:           offerProviderURL(selectedQuote, room, hotel, own),
+			ProviderURL:           offerProviderURL(selectedQuote, room, own),
 			OccupancyAdults:       occupancyAdults,
 			OccupancyChildren:     occupancyChildren,
 			Rooms:                 need.Rooms,
@@ -69,12 +69,13 @@ func accommodationOffersFromRooms(hotel models.HotelResult, rooms []hotels.RoomT
 }
 
 // offerProviderURL is the selected quote's link; only the room's own seller
-// falls back to the room's or the hotel's link.
-func offerProviderURL(q models.RoomInventoryQuote, room hotels.RoomType, hotel models.HotelResult, own bool) string {
+// falls back to the room's link. The hotel's booking link is never used: it
+// can belong to another seller (#832 review).
+func offerProviderURL(q models.RoomInventoryQuote, room hotels.RoomType, own bool) string {
 	if !own {
 		return q.ProviderURL
 	}
-	return firstNonEmpty(q.ProviderURL, room.ProviderURL, hotel.BookingURL)
+	return firstNonEmpty(q.ProviderURL, room.ProviderURL)
 }
 
 // convertRateFunc is a package seam so tests can avoid the live FX feed.
@@ -233,6 +234,12 @@ func quoteFromRoomSeller(quote models.RoomInventoryQuote, room hotels.RoomType) 
 }
 
 func sellerKey(s string) string {
+	return normalizeName(s)
+}
+
+// normalizeName lowercases a name and collapses its spacing, for seller and
+// room-name matching alike.
+func normalizeName(s string) string {
 	return strings.ToLower(strings.Join(strings.Fields(s), " "))
 }
 
@@ -349,7 +356,7 @@ func inventoryCompleteness(quotes []models.RoomInventoryQuote) string {
 }
 
 func canonicalRoomKey(room hotels.RoomType) string {
-	name := strings.ToLower(strings.Join(strings.Fields(room.Name), " "))
+	name := normalizeName(room.Name)
 	if name == "" {
 		return ""
 	}
@@ -357,7 +364,7 @@ func canonicalRoomKey(room hotels.RoomType) string {
 		return "property|" + name
 	}
 	parts := []string{"room", name}
-	if bed := strings.ToLower(strings.Join(strings.Fields(room.BedType), " ")); bed != "" {
+	if bed := normalizeName(room.BedType); bed != "" {
 		parts = append(parts, "bed:"+bed)
 	}
 	if room.MaxGuests > 0 {
@@ -608,7 +615,7 @@ func verifiedRateFromRooms(hotel models.HotelResult, rooms []hotels.RoomType, ch
 		TaxesAndFees:       selected.TaxesAndFees,
 		TaxesFeesIncluded:  selected.TaxesFeesIncluded,
 		Currency:           selected.Currency,
-		BookingURL:         firstNonEmpty(selected.ProviderURL, hotel.BookingURL),
+		BookingURL:         selected.ProviderURL, // never the hotel's link, which can be another seller's
 		PriceBasis:         basis,
 		PriceConfidence:    confidence,
 		RetrievedAt:        checkedAt,
