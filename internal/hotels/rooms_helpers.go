@@ -610,27 +610,12 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 			if len(br.Amenities) > 0 {
 				enriched.Amenities = mergeStringSlices(enriched.Amenities, br.Amenities)
 			}
-			if br.CancellationPolicy != "" && enriched.CancellationPolicy == "" {
-				enriched.CancellationPolicy = br.CancellationPolicy
-			}
-			if br.Refundable != nil && enriched.Refundable == nil {
-				enriched.Refundable = br.Refundable
-			}
-			if br.FreeCancellation != nil && enriched.FreeCancellation == nil {
-				enriched.FreeCancellation = br.FreeCancellation
-			}
-			if br.Board != "" && enriched.Board == "" {
-				enriched.Board = br.Board
-			}
-			if br.BreakfastIncluded != nil && enriched.BreakfastIncluded == nil {
-				enriched.BreakfastIncluded = br.BreakfastIncluded
-			}
-			// One seller's numbers per room: a priced Google room keeps its own
-			// quote, and Booking's stays in InventoryOptions above. Splicing
-			// Booking's nightly, total or taxes-included flag into it made the
-			// headline, the room watch and the confidence tier each read a
-			// different seller. An unpriced Google room takes Booking's whole
-			// quote, seller and link included.
+			// One seller's quote per room: a priced Google room keeps its own
+			// numbers and rate terms, and Booking's stay in InventoryOptions
+			// above. Splicing them made the headline, the room watch, the
+			// confidence tier and the readiness verdict each read a different
+			// seller (#808, #823). An unpriced Google room takes Booking's whole
+			// quote: price, seller, link and rate terms, its own replaced.
 			if !roomHasPrice(enriched) && roomHasPrice(br) {
 				enriched.Price = br.Price
 				enriched.NightlyPrice = br.NightlyPrice
@@ -640,6 +625,11 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 				enriched.Provider = br.Provider
 				enriched.ProviderURL = br.ProviderURL
 				enriched.Source = br.Source
+				enriched.CancellationPolicy = br.CancellationPolicy
+				enriched.Refundable = br.Refundable
+				enriched.FreeCancellation = br.FreeCancellation
+				enriched.Board = br.Board
+				enriched.BreakfastIncluded = br.BreakfastIncluded
 			}
 			merged[gr.index] = enriched
 			matched[bKey] = true
@@ -655,6 +645,16 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 	}
 
 	return merged
+}
+
+// roomSeller is the room's seller, or "Google Hotels" when it names none:
+// only Google's entity-page and partner-price paths leave the seller blank.
+// Every room and quote leaving this package names its seller through it.
+func roomSeller(room RoomType) string {
+	if s := strings.TrimSpace(room.Provider); s != "" {
+		return s
+	}
+	return "Google Hotels"
 }
 
 // roomHasPrice reports whether a room carries any price of its own.
@@ -686,10 +686,7 @@ func hasVerifiedRoom(rooms []RoomType) bool {
 }
 
 func roomInventoryQuote(room RoomType) models.RoomInventoryQuote {
-	provider := strings.TrimSpace(room.Provider)
-	if provider == "" {
-		provider = "Google Hotels"
-	}
+	provider := roomSeller(room)
 	confidence := strings.TrimSpace(room.MatchConfidence)
 	if confidence == "" {
 		confidence = models.RoomInventoryMatchExact

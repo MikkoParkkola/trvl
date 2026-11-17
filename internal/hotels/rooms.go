@@ -264,6 +264,8 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// fields. See MIK-6232.
 	for i := range rooms {
 		rooms[i].Readiness = roomReadiness(rooms[i])
+		// Callers compare sellers by name, so none leaves blank.
+		rooms[i].Provider = roomSeller(rooms[i])
 	}
 
 	return &RoomAvailability{

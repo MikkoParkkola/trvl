@@ -19,7 +19,13 @@ func accommodationOffersFromRooms(hotel models.HotelResult, rooms []hotels.RoomT
 	for _, group := range groups {
 		room := group.selectedRoom
 		selectedQuote := selectedInventoryQuote(group.quotes)
-		basis, confidence := roomPriceTrust(room)
+		// Fallbacks to the room or the hotel describe the room's own seller,
+		// so another seller's quote never inherits them (#823).
+		own := quoteFromRoomSeller(selectedQuote, room)
+		basis, confidence := "", ""
+		if own {
+			basis, confidence = roomPriceTrust(room)
+		}
 		if selectedQuote.PriceBasis != "" {
 			basis = selectedQuote.PriceBasis
 		}
@@ -34,7 +40,7 @@ func accommodationOffersFromRooms(hotel models.HotelResult, rooms []hotels.RoomT
 			AccommodationType:     offerAccommodationType(hotel, need),
 			RoomName:              canonicalRoomName(room),
 			Provider:              firstNonEmpty(selectedQuote.Provider, room.Provider),
-			ProviderURL:           firstNonEmpty(selectedQuote.ProviderURL, room.ProviderURL, hotel.BookingURL),
+			ProviderURL:           offerProviderURL(selectedQuote, room, hotel, own),
 			OccupancyAdults:       occupancyAdults,
 			OccupancyChildren:     occupancyChildren,
 			Rooms:                 need.Rooms,
@@ -60,6 +66,15 @@ func accommodationOffersFromRooms(hotel models.HotelResult, rooms []hotels.RoomT
 		offers = append(offers, models.EvaluateAccommodationOffer(need, offer, checkedAt))
 	}
 	return offers
+}
+
+// offerProviderURL is the selected quote's link; only the room's own seller
+// falls back to the room's or the hotel's link.
+func offerProviderURL(q models.RoomInventoryQuote, room hotels.RoomType, hotel models.HotelResult, own bool) string {
+	if !own {
+		return q.ProviderURL
+	}
+	return firstNonEmpty(q.ProviderURL, room.ProviderURL, hotel.BookingURL)
 }
 
 // convertRateFunc is a package seam so tests can avoid the live FX feed.
@@ -172,18 +187,59 @@ func roomInventoryQuoteFromRoom(room hotels.RoomType, need models.AccommodationN
 	}, room, need, checkedAt)
 }
 
+// completeRoomInventoryQuote fills a quote's gaps from its room. Only a quote
+// from the room's own seller borrows seller-bound fields (link, prices, taxes,
+// price trust, rate terms): another seller's quote keeps its gaps empty, since
+// an unknown term is honest and a borrowed one is not (#823). Stay fields
+// (room name, match, currency, occupancy, rooms, check time) fill for every
+// quote.
 func completeRoomInventoryQuote(quote models.RoomInventoryQuote, room hotels.RoomType, need models.AccommodationNeed, checkedAt time.Time) models.RoomInventoryQuote {
+	own := quoteFromRoomSeller(quote, room)
 	if quote.Provider == "" {
 		quote.Provider = room.Provider
 	}
 	if quote.ProviderRoomName == "" {
 		quote.ProviderRoomName = room.Name
 	}
-	if quote.ProviderURL == "" {
-		quote.ProviderURL = room.ProviderURL
-	}
 	if quote.MatchConfidence == "" {
 		quote.MatchConfidence = roomMatchConfidence(room)
+	}
+	if quote.Currency == "" {
+		quote.Currency = room.Currency
+	}
+	if own {
+		quote = fillSellerFields(quote, room)
+	}
+	if quote.OccupancyAdults == 0 && len(quote.OccupancyChildren) == 0 {
+		quote.OccupancyAdults, quote.OccupancyChildren = roomOccupancyEvidence(room, need)
+	}
+	if quote.Rooms == 0 {
+		quote.Rooms = need.Rooms
+	}
+	if quote.CheckedAt.IsZero() {
+		quote.CheckedAt = checkedAt
+	}
+	if quote.Freshness == "" && !quote.CheckedAt.IsZero() {
+		quote.Freshness = models.ClassifyFreshness(quote.Provider, quote.CheckedAt, checkedAt)
+	}
+	return quote
+}
+
+// quoteFromRoomSeller reports whether a quote is the room's own seller's:
+// no seller named, or the same name ignoring case and spacing. internal/hotels
+// names every room's seller, so two concrete names are compared.
+func quoteFromRoomSeller(quote models.RoomInventoryQuote, room hotels.RoomType) bool {
+	return quote.Provider == "" || sellerKey(quote.Provider) == sellerKey(room.Provider)
+}
+
+func sellerKey(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+}
+
+// fillSellerFields fills a quote's seller-bound gaps from its own seller's room.
+func fillSellerFields(quote models.RoomInventoryQuote, room hotels.RoomType) models.RoomInventoryQuote {
+	if quote.ProviderURL == "" {
+		quote.ProviderURL = room.ProviderURL
 	}
 	if quote.NightlyPrice == 0 {
 		quote.NightlyPrice = roomNightlyPrice(room)
@@ -205,9 +261,6 @@ func completeRoomInventoryQuote(quote models.RoomInventoryQuote, room hotels.Roo
 	if quote.TaxesFeesIncluded == nil {
 		quote.TaxesFeesIncluded = room.TaxesFeesIncluded
 	}
-	if quote.Currency == "" {
-		quote.Currency = room.Currency
-	}
 	if quote.Refundable == nil {
 		quote.Refundable = room.Refundable
 	}
@@ -223,20 +276,8 @@ func completeRoomInventoryQuote(quote models.RoomInventoryQuote, room hotels.Roo
 	if quote.BreakfastIncluded == nil {
 		quote.BreakfastIncluded = room.BreakfastIncluded
 	}
-	if quote.OccupancyAdults == 0 && len(quote.OccupancyChildren) == 0 {
-		quote.OccupancyAdults, quote.OccupancyChildren = roomOccupancyEvidence(room, need)
-	}
-	if quote.Rooms == 0 {
-		quote.Rooms = need.Rooms
-	}
 	if quote.PriceBasis == "" || quote.PriceConfidence == "" {
 		quote.PriceBasis, quote.PriceConfidence = roomPriceTrust(room)
-	}
-	if quote.CheckedAt.IsZero() {
-		quote.CheckedAt = checkedAt
-	}
-	if quote.Freshness == "" && !quote.CheckedAt.IsZero() {
-		quote.Freshness = models.ClassifyFreshness(quote.Provider, quote.CheckedAt, checkedAt)
 	}
 	return quote
 }
