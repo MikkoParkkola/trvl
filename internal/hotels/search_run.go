@@ -60,6 +60,11 @@ func doHotelSearchSingleflight(ctx context.Context, key string, fn func(context.
 	return run.result, err
 }
 
+// hotelSearchRegistered, when set by a test, runs after a caller has joined or
+// started a shared run, so a test can release the run only once every caller
+// is in it. Nil in production.
+var hotelSearchRegistered func()
+
 func doHotelSearchRun(ctx context.Context, key string, fn func(context.Context) (hotelSearchRun, error)) (hotelSearchRun, error) {
 	if err := ctx.Err(); err != nil {
 		return hotelSearchRun{}, err
@@ -70,6 +75,9 @@ func doHotelSearchRun(ctx context.Context, key string, fn func(context.Context) 
 		defer cancel()
 		return fn(sharedCtx)
 	})
+	if hotelSearchRegistered != nil {
+		hotelSearchRegistered()
+	}
 
 	select {
 	case <-ctx.Done():
