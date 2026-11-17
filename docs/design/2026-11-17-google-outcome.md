@@ -34,7 +34,7 @@ The caller decides settled from the data it uses, whether or not a request went 
 
   A matched row with Google's ID but Booking's price does not settle.
 - By-name settles when the target's Google ID is found, or when a property-scoped search answers live. "Property-scoped" means the targeted search and the name-bearing candidates; that counting is decided (a) [9]. A live answer settles even without the hotel, but only when both hold:
-  - the search's query contains the original query's locality: its last comma part, or, with no comma, the whole query itself [2];
+  - the search's query contains every word of the original query's locality, matched trimmed, case-folded and on whole words. The locality is everything after the first comma, or the whole query when it has no comma [2];
   - that search's `googleCall` holds no refusal on any page or sort [3].
 
 ## 2. Mechanism
@@ -69,7 +69,7 @@ The caller decides settled from the data it uses, whether or not a request went 
   - C3': consent retry 403 or 503, which gets `ErrRateLimited` and no marker.
   - `googleCooldown` becomes `errors.Is(err, batchexec.ErrRefused)`.
 - AST guard over internal/hotels non-test files. It fails on:
-  - any assignment to `googleOutcome` or `googleCall` fields outside search_scope.go;
+  - outside google_outcome.go, any write to the outcome's own fields (`googleOutcome`'s `strongest` and `settled`, anything under `googleCall`'s `events`), or taking the address of one;
   - the name `googleStatusErr`;
   - an error built from a `ProviderStatus.Error` string;
   - a "refused (HTTP" refusal outside `googleCooldownErr`;
@@ -100,7 +100,7 @@ The caller decides settled from the data it uses, whether or not a request went 
 - Guard: one negative fixture per banned pattern. A small source snippet that must trip the guard.
 - Existing tests: `LaterGoogleAnswerClearsAnEarlierBlock` and the :470 test keep their current assertions (decision (a)).
 
-Not changed: notice wording, CLI, MCP, batchexec, models, `trvl hotels` output, and the 403/503 "blocked" wording.
+Not changed: notice wording, CLI, batchexec, models, `trvl hotels` output, and the 403/503 "blocked" wording. MCP changes only its empty-rooms summary (section 6, item 4).
 
 ## 5. Rev 6 final (review folded in; no new round)
 
@@ -108,13 +108,13 @@ Not changed: notice wording, CLI, MCP, batchexec, models, `trvl hotels` output, 
 2. Paired CLI and MCP assertions: the by-name cooldown case and the plain-refusal case each give the same sentence on both.
 3. Singleflight tests prove callers still get independently mutable results after the envelope change (the clone at search.go:792).
 4. Pinned: a name-bearing candidate (N1) cannot settle while its own pages or sorts carry a refusal.
-5. Locality matching trims, case-folds and matches on whole tokens. Decided by the lead (review on 706aff4d): the locality is every word after the FIRST comma, and a query settles only if all of them appear in it as whole words. "Naoussa, Paros" needs both words, so "Paros" alone does not settle, and the comma-dropped candidate "Summer Shades hotel, Naoussa Paros" does.
+5. Locality matching follows section 1. The lead decided that rule in the review on 706aff4d. "Naoussa, Paros" needs both words, so "Paros" alone does not settle, and the comma-dropped candidate "Summer Shades hotel, Naoussa Paros" does.
 
 ## 6. Decisions after rev 6 (reviews on 706aff4d and 738ac158)
 
 1. `googleCooldownErr` reads the retry time with a probe through the batchexec client. The probe runs only where batchexec has just armed its cooldown: a 429, or a 200 quota body. There the client answers it locally and nothing leaves the machine. A quota body on any other status armed nothing, so it is a plain refusal with no probe and no cooldown marker.
 2. A read-only batchexec accessor for the retry time would remove the probe. It widens batchexec's API, so it waits for the operator's approval; until then the probe stays.
-3. The guard bans writes to the outcome's own fields, not to every field named `err`. `googleOutcome.err` is renamed `strongest`, and any write through `strongest`, `settled` or `events` outside google_outcome.go fails.
-4. MCP's empty-rooms summary no longer repeats the notice. It gives a short reason and points to the notice, which travels in the same reply. This replaces "MCP" in the not-changed list above.
-5. The CLI and MCP refusal tests read the sentences from one golden file that the hotels package checks against `SearchHotelByName`'s real output. The file is pinned to LF line endings and must hold exactly one cooldown case and one blocked case.
+3. The guard checks the outcome's own fields, not every field named `err`, so `googleOutcome.err` is renamed `strongest`. Outside google_outcome.go it fails on a write through `strongest`, `settled` or `events`, and on taking the address of one, because a write through that alias would slip past.
+4. MCP's empty-rooms summary no longer repeats the notice. It gives a short reason and points to the notice, which travels in the same reply.
+5. The CLI and MCP refusal tests read the sentences from one golden file that the hotels package checks against `SearchHotelByName`'s real output. The file is pinned to LF line endings, every reader drops a CR, and the file must hold exactly one cooldown case and one blocked case.
 6. Room-lookup tests fail on any request their Google router does not route, the probe included.
