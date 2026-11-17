@@ -264,10 +264,12 @@ func TestSearchHotelByName_LaterGoogleAnswerClearsAnEarlierBlock(t *testing.T) {
 	cases := []struct {
 		name            string
 		cityStatus      int
-		bookingForHotel bool // Booking answers only queries naming the hotel
+		bookingFullOnly bool // Booking answers only the full query, the last candidate
 	}{
 		{"403 on the city search", http.StatusForbidden, false},
 		{"503 on the city search", http.StatusServiceUnavailable, false},
+		// The match only turns up at the last candidate, the full query, so
+		// no targeted search runs: the candidate loop itself must clear.
 		{"whole city search failed", http.StatusForbidden, true},
 	}
 	for _, tc := range cases {
@@ -281,9 +283,9 @@ func TestSearchHotelByName_LaterGoogleAnswerClearsAnEarlierBlock(t *testing.T) {
 			}
 			roomLookupWorld(t, googleRoutes{shortEntity, answer(404), failCityAnswerHotel}, false)
 			withBookingResult(t, sacherBookingUSD)
-			if tc.bookingForHotel {
+			if tc.bookingFullOnly {
 				SearchBooking = func(_ context.Context, loc string, _ HotelSearchOptions) ([]models.HotelResult, error) {
-					if strings.Contains(loc, "Sacher") {
+					if strings.Contains(loc, "Sacher,") {
 						return []models.HotelResult{sacherBookingUSD}, nil
 					}
 					return nil, nil
