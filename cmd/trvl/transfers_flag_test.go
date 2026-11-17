@@ -27,4 +27,12 @@ func TestTransfersFlag_CLILabels(t *testing.T) {
 	if strings.Contains(out, "direct") || !strings.Contains(out, "transfers unknown") {
 		t.Errorf("itinerary line = %q, want \"transfers unknown\" and no \"direct\"", out)
 	}
+
+	// A hub change plus a leg whose count is not known: the known part stays.
+	out = captureStdout(t, func() {
+		printItinerary(1, models.RouteItinerary{TotalPrice: 30, Currency: "EUR", TotalDuration: 311, Transfers: 1, TransfersUnknown: true}, "")
+	})
+	if !strings.Contains(out, "1+ transfers") {
+		t.Errorf("itinerary line = %q, want \"1+ transfers\"", out)
+	}
 }

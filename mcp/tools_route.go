@@ -149,7 +149,11 @@ func buildRouteSummary(result *models.RouteSearchResult) string {
 			transferStr = fmt.Sprintf("%d transfers", it.Transfers)
 		}
 		if it.TransfersUnknown {
+			// Transfers is then a lower bound: keep the known part.
 			transferStr = "transfers unknown"
+			if it.Transfers > 0 {
+				transferStr = fmt.Sprintf("%d+ transfers", it.Transfers)
+			}
 		}
 
 		_, _ = fmt.Fprintf(&sb, "Option %d: %s %.0f · %dh%02dm · %s\n",

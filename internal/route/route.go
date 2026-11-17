@@ -434,6 +434,11 @@ func assembleItineraries(paths []path, segResults map[string]*segResult, opts Op
 					continue
 				}
 				it := singleLegItinerary(leg)
+				// Same cap as combineSegments. A count that is not known is
+				// a lower bound: kept (and flagged) unless that bound exceeds it.
+				if opts.MaxTransfers > 0 && it.Transfers > opts.MaxTransfers {
+					continue
+				}
 				itineraries = append(itineraries, it)
 			}
 			continue

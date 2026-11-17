@@ -35,6 +35,10 @@ func TestTransfersFlag_GroundAndRouteReplies(t *testing.T) {
 	if s := buildRouteSummary(result); strings.Contains(s, "direct") || !strings.Contains(s, "transfers unknown") {
 		t.Errorf("route summary = %q, want \"transfers unknown\" and no \"direct\"", s)
 	}
+	result.Itineraries[0].Transfers = 1 // a hub change plus a leg not known
+	if s := buildRouteSummary(result); !strings.Contains(s, "1+ transfers") {
+		t.Errorf("route summary = %q, want \"1+ transfers\"", s)
+	}
 
 	if _, ok := itemProperties(t, groundRoutesOutputSchema())["transfers_unknown"]; !ok {
 		t.Error("ground route schema lacks transfers_unknown")

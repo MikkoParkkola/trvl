@@ -144,7 +144,11 @@ func printItinerary(num int, it models.RouteItinerary, targetCurrency string) {
 		}
 	}
 	if it.TransfersUnknown {
+		// Transfers is then a lower bound: keep the known part.
 		transferStr = "transfers unknown"
+		if it.Transfers > 0 {
+			transferStr = fmt.Sprintf("%d+ transfers", it.Transfers)
+		}
 	}
 
 	fmt.Printf("  %s  %s · %s · %s\n",

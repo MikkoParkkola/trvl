@@ -68,3 +68,26 @@ func TestSortItineraries_ByTransfersPutsKnownFirst(t *testing.T) {
 		t.Errorf("first itinerary's count is not known; want the known one first")
 	}
 }
+
+// A single-leg journey answers to MaxTransfers like a hub route: a known
+// count over the cap is dropped; a count that is not known stays, flagged,
+// because nothing known exceeds the cap.
+func TestAssembleItineraries_SingleLegHonoursMaxTransfers(t *testing.T) {
+	p := []path{{cities: []Hub{{City: "Prague"}, {City: "Vienna"}}}}
+	seg := func(legs ...models.RouteLeg) map[string]*segResult {
+		return map[string]*segResult{"Prague→Vienna": {ground: legs}}
+	}
+	twoChanges := models.RouteLeg{Mode: "train", Provider: "oebb", Transfers: 2, Price: 40}
+	notKnown := models.RouteLeg{Mode: "train", Provider: "oebb", TransfersUnknown: true, Price: 30}
+
+	if its := assembleItineraries(p, seg(twoChanges), Options{MaxTransfers: 1}); len(its) != 0 {
+		t.Errorf("two-change train with MaxTransfers=1: got %d itineraries, want 0", len(its))
+	}
+	if its := assembleItineraries(p, seg(twoChanges), Options{MaxTransfers: 2}); len(its) != 1 {
+		t.Errorf("two-change train with MaxTransfers=2: got %d itineraries, want 1", len(its))
+	}
+	its := assembleItineraries(p, seg(notKnown), Options{MaxTransfers: 1})
+	if len(its) != 1 || !its[0].TransfersUnknown {
+		t.Errorf("count not known with MaxTransfers=1: got %+v, want it kept and flagged", its)
+	}
+}
