@@ -377,17 +377,24 @@ func TestSearchHotelByName_OnlyA429SaysCooldown(t *testing.T) {
 		status       int
 		prime        bool // the cooldown is already armed when the lookup starts
 		wantCooldown bool
+		search       http.HandlerFunc // overrides the status answer when set
 	}{
-		{"Too Many Requests", http.StatusTooManyRequests, false, true},
-		{"Forbidden", http.StatusForbidden, false, false},
-		{"Service Unavailable", http.StatusServiceUnavailable, false, false},
-		{"call skipped inside the cooldown", http.StatusOK, true, true},
+		{"Too Many Requests", http.StatusTooManyRequests, false, true, nil},
+		{"Forbidden", http.StatusForbidden, false, false, nil},
+		{"Service Unavailable", http.StatusServiceUnavailable, false, false, nil},
+		{"call skipped inside the cooldown", http.StatusOK, true, true, nil},
+		// Google's consent wall, then a 429 on the cookie retry: a fresh
+		// refusal that armed the cooldown.
+		{"consent retry 429", 0, false, true, consentThen429},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			search := answer(tc.status)
 			if tc.status == http.StatusOK {
 				search = noSacherPage
+			}
+			if tc.search != nil {
+				search = tc.search
 			}
 			roomLookupWorld(t, googleRoutes{shortEntity, answer(404), search}, tc.prime)
 			withBookingResult(t, sacherBookingUSD)
@@ -463,4 +470,14 @@ func TestSearchHotelByName_LaterAnswerDropsAStaleRefusal(t *testing.T) {
 	if !errors.Is(err, ErrNoNameMatch) || errors.Is(err, models.ErrRateLimited) {
 		t.Fatalf("err = %v, want a plain name miss: Google answered after the rate limit", err)
 	}
+}
+
+// consentThen429 answers like Google behind its EU consent wall: the consent
+// page first, then HTTP 429 on the retry that carries the consent cookie.
+func consentThen429(w http.ResponseWriter, r *http.Request) {
+	if strings.Contains(r.Header.Get("Cookie"), "SOCS=") {
+		w.WriteHeader(http.StatusTooManyRequests)
+		return
+	}
+	_, _ = w.Write([]byte(`<html><form action="https://consent.google.com/save">` + strings.Repeat("<!-- consent -->", 80) + `</form></html>`))
 }
