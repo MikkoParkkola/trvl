@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -135,11 +136,13 @@ func TestSearchByName_SavingsPassOtherQueryStillSearches(t *testing.T) {
 	cases := []struct {
 		name     string
 		vary     func(from, to, date *string, o *SearchOptions)
-		noRounds bool // the varied search runs no provider
+		noRounds bool    // the varied search runs no provider
+		wantGBP  float64 // the varied search's first fare, converted to GBP
 	}{
 		{name: "date", vary: func(_, _, d *string, _ *SearchOptions) { *d = "2027-07-16" }},
 		{name: "origin and destination", vary: func(f, to, _ *string, _ *SearchOptions) { *f, *to = *to, *f }},
-		{name: "currency", vary: func(_, _, _ *string, o *SearchOptions) { o.Currency = "GBP" }},
+		// The stub's EUR 48 ferry at the fixed 0.85 rate.
+		{name: "currency", vary: func(_, _, _ *string, o *SearchOptions) { o.Currency = "GBP" }, wantGBP: 40.8},
 		{name: "provider filter", vary: func(_, _, _ *string, o *SearchOptions) { o.Providers = []string{"ferryhopper"} }},
 		{name: "exclusions", vary: func(_, _, _ *string, o *SearchOptions) {
 			o.ExcludeProviders = append(o.ExcludeProviders, "ferryhopper")
@@ -173,6 +176,7 @@ func TestSearchByName_SavingsPassOtherQueryStillSearches(t *testing.T) {
 
 			var ran atomic.Bool
 			nestedRoutes := -1
+			var nestedFirst models.GroundRoute
 			withComposer(t, func(ctx context.Context, req HackComposeRequest) *models.HackSaving {
 				ran.Store(true)
 				f, to, d := req.Origin, req.Destination, req.Date
@@ -180,6 +184,9 @@ func TestSearchByName_SavingsPassOtherQueryStillSearches(t *testing.T) {
 				c.vary(&f, &to, &d, &nested)
 				if res, err := SearchByName(ctx, f, to, d, nested); err == nil && res != nil {
 					nestedRoutes = len(res.Routes)
+					if len(res.Routes) > 0 {
+						nestedFirst = res.Routes[0]
+					}
 				}
 				return nil
 			})
@@ -188,6 +195,9 @@ func TestSearchByName_SavingsPassOtherQueryStillSearches(t *testing.T) {
 			}
 			if !ran.Load() {
 				t.Fatal("the savings pass never ran")
+			}
+			if c.wantGBP > 0 && (nestedFirst.Currency != "GBP" || math.Abs(nestedFirst.Price-c.wantGBP) > 0.01) {
+				t.Errorf("nested GBP search's first fare = %v %s, want %v GBP", nestedFirst.Price, nestedFirst.Currency, c.wantGBP)
 			}
 			want := 2 * perSearch
 			if c.noRounds {
