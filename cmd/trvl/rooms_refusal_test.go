@@ -31,12 +31,16 @@ func runRoomsWithLookupErr(t *testing.T, lookupErr error) error {
 // TestRunRooms_RateLimitIsNotBlamedOnTheIndex: a Google refusal is reported
 // as itself, without the hint that the hotel is missing from Google's index.
 func TestRunRooms_RateLimitIsNotBlamedOnTheIndex(t *testing.T) {
-	err := runRoomsWithLookupErr(t, fmt.Errorf("found Hotel Sacher Vienna, but Google Hotels refused requests: %w", models.ErrRateLimited))
+	const refusal = "found Hotel Sacher Vienna, but Google Hotels refused requests"
+	err := runRoomsWithLookupErr(t, fmt.Errorf("%s: %w", refusal, models.ErrRateLimited))
 	if err == nil {
 		t.Fatal("want an error")
 	}
-	if strings.Contains(err.Error(), "Smaller or island properties") {
-		t.Fatalf("err = %v\nwant no index hint for a rate limit", err)
+	// The CLI prints the lookup's own sentence, the one MCP returns, and adds
+	// no hint of its own.
+	want := `hotel rooms: hotel lookup for "Hotel Sacher Wien": ` + refusal + ": " + models.ErrRateLimited.Error()
+	if err.Error() != want {
+		t.Fatalf("err = %q\nwant  %q", err, want)
 	}
 	if !errors.Is(err, models.ErrRateLimited) {
 		t.Fatalf("err = %v, want it to keep ErrRateLimited", err)

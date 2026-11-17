@@ -66,6 +66,9 @@ func TestSearchHotels_PropertyScopeAsksGoogleAndBookingOnly(t *testing.T) {
 	if want := []string{"booking", "google_hotels"}; !slices.Equal(ids, want) {
 		t.Errorf("providers asked = %q, want %q", ids, want)
 	}
+	if !slices.ContainsFunc(res.Hotels, func(h models.HotelResult) bool { return h.Name == "Hotel Sacher Wien" }) {
+		t.Fatalf("hotels = %v, want Hotel Sacher Wien before checking distances", hotelNames(res.Hotels))
+	}
 	for _, h := range res.Hotels {
 		if h.DistanceKm != 0 {
 			t.Errorf("%s: DistanceKm = %v, want 0: a hotel name is not a city centre", h.Name, h.DistanceKm)
