@@ -236,10 +236,10 @@ func TestDetectMultiModalOpenJawGround_nonEURTarget_allLegsConvert_correctTotal(
 		t.Errorf("Currency = %q, want USD", h.Currency)
 	}
 	// ZAG ground static estimate 15 EUR -> 16.5 USD; flight leg 165 USD;
-	// total 181.5; direct 550 USD; hotel bonus 60 EUR -> 66 USD;
-	// savings = 550 - 181.5 + 66 = 434.5 -> rounds to 434 (banker's-safe: 434.5
-	// rounds away from zero to 435 per math.Round; verified below).
-	wantSavings := 435.0
+	// total 181.5; direct 550 USD; savings = 550 - 181.5 = 368.5, which
+	// math.Round takes away from zero to 369. The overnight hotel night is
+	// described, not added to the fare saving (#819).
+	wantSavings := 369.0
 	if h.Savings != wantSavings {
 		t.Errorf("Savings = %v, want %v", h.Savings, wantSavings)
 	}
@@ -320,8 +320,9 @@ func TestDetectMultiModalSkipFlight_nonEURTarget_allLegsConvert_correctTotal(t *
 	if h.Currency != "USD" {
 		t.Errorf("Currency = %q, want USD", h.Currency)
 	}
-	// flight 330 USD - ground 110 USD + hotel bonus (60 EUR -> 66 USD) = 286.
-	wantSavings := 286.0
+	// flight 330 USD - ground 110 USD = 220; the hotel night is described,
+	// not added to the fare saving (#819).
+	wantSavings := 220.0
 	if h.Savings != wantSavings {
 		t.Errorf("Savings = %v, want %v", h.Savings, wantSavings)
 	}

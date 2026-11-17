@@ -517,9 +517,7 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 			dCtx, cancel := context.WithTimeout(ctx, currentDetectorTimeout())
 			defer cancel()
 			h := fn(dCtx, in)
-			for i := range h {
-				h[i].basis = in.search
-			}
+			stampBasis(h, in.search)
 			// cutShort is read after the detector returns, and that reading is
 			// deliberately conservative rather than exact. A detector that finished
 			// normally a moment before its allowance expired is recorded as cut

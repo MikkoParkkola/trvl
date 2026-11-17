@@ -347,8 +347,11 @@ func TestLegSpecsForRoute_SingleModeNoLegs(t *testing.T) {
 
 func TestProductionSeamsAndPurePickers(t *testing.T) {
 	planner := NewPlanner(true)
-	if planner.Discover == nil || planner.Price == nil || planner.Hacks == nil || !planner.AllowBrowser {
+	if planner.Discover == nil || planner.Price == nil || !planner.AllowBrowser {
 		t.Fatalf("NewPlanner did not wire production seams: %#v", planner)
+	}
+	if planner.Hacks != nil {
+		t.Fatal("NewPlanner wires a savings annotator; none measures on an itinerary total (#824)")
 	}
 
 	pricer := productionLegPricer(false)
