@@ -378,6 +378,19 @@ func TestEnrichHotelRooms_TotalOnlyVerifiedQuoteHeadlines(t *testing.T) {
 	if !hasVerifiedRoom(merged) {
 		t.Error("a usable verified quote must count as verified")
 	}
+	room := merged[0]
+	if room.Price != 100 || room.NightlyPrice != 0 || room.TotalPrice != 0 || room.TaxesFeesIncluded != nil || room.Provider != "Hotels.com" {
+		t.Errorf("room top-level = price %v nightly %v total %v included %v seller %q, want Hotels.com's 100 unchanged",
+			room.Price, room.NightlyPrice, room.TotalPrice, room.TaxesFeesIncluded, room.Provider)
+	}
+	if len(room.InventoryOptions) != 2 {
+		t.Fatalf("InventoryOptions = %+v, want the Google and Booking quotes", room.InventoryOptions)
+	}
+	q := room.InventoryOptions[1]
+	if q.Provider != "Booking.com" || q.ProviderURL != "https://www.booking.com/hotel/at/x.html" || q.Currency != "EUR" ||
+		q.PriceBasis != models.PriceBasisTaxInclusiveTotal || q.NightlyPrice != 95 || q.TotalPrice != 190 {
+		t.Errorf("Booking quote = %+v, want Booking.com's EUR 95/190 tax_inclusive_total with its own link", q)
+	}
 	orig := fetchRoomAvailability
 	t.Cleanup(func() { fetchRoomAvailability = orig })
 	origRM := HotelRateManager
@@ -409,5 +422,35 @@ func TestHasVerifiedRoom_IgnoresQuoteThatCannotHeadline(t *testing.T) {
 	}}
 	if hasVerifiedRoom(rooms) {
 		t.Error("a verified quote with no nightly amount suppressed the fallbacks")
+	}
+}
+
+// The room's own quote follows the same rule as a second seller's: a
+// tax-inclusive room with only a stay total cannot headline, so it must not
+// count as verified and skip SerpAPI and Agoda (#817 review round 3).
+func TestHasVerifiedRoom_OwnQuoteMustHeadline(t *testing.T) {
+	yes := true
+	rooms := []RoomType{{
+		Name: "Double Room", TotalPrice: 190, TaxesFeesIncluded: &yes, Currency: "EUR",
+		Provider: "Booking.com", Source: "booking.com", MatchConfidence: models.RoomInventoryMatchExact,
+	}}
+	if hasVerifiedRoom(rooms) {
+		t.Error("a total-only room that cannot headline suppressed the fallbacks")
+	}
+}
+
+// A property-level lead-in beside a stay total gets no nightly backfill and
+// does not count as verified.
+func TestRoomInventoryQuote_PropertyLevelLeadInIsNotNightly(t *testing.T) {
+	yes := true
+	room := RoomType{
+		Name: "Property lead-in", Price: 100, TotalPrice: 300, TaxesFeesIncluded: &yes, Currency: "EUR",
+		Provider: "Hotels.com", Source: "google_hotels", MatchConfidence: models.RoomInventoryMatchPropertyLevelOnly,
+	}
+	if q := roomInventoryQuote(room); q.NightlyPrice != 0 {
+		t.Errorf("NightlyPrice = %v, want 0: a lead-in beside a total is not a nightly rate", q.NightlyPrice)
+	}
+	if hasVerifiedRoom([]RoomType{room}) {
+		t.Error("a property-level lead-in counted as a verified room")
 	}
 }

@@ -668,7 +668,9 @@ func roomHasPrice(r RoomType) bool {
 // otherwise sub-verified result.
 func hasVerifiedRoom(rooms []RoomType) bool {
 	for _, r := range rooms {
-		if roomInventoryQuote(r).PriceConfidence == models.PriceConfidenceVerified {
+		// The room's own quote must be able to headline too: a verified stay
+		// total with no nightly amount is no reason to skip the fallbacks.
+		if q := roomInventoryQuote(r); q.PriceConfidence == models.PriceConfidenceVerified && quoteCanHeadline(q) {
 			return true
 		}
 		// A merged room keeps another seller's verified quote here; it
