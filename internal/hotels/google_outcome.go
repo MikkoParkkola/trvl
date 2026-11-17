@@ -137,6 +137,12 @@ func rateLimitWrap(err error) error {
 // now is skipped without dialling (the documented batchexec contract) and
 // returns the skip error with its retry clock; wrapping that error lets the
 // arming refusal say when a retry can work, as the later skips do (#813).
+//
+// Invariant: call it only right after batchexec armed the cooldown. Then the
+// probe is answered locally and no request leaves the machine; called anywhere
+// else, the probe would send a real request to Google. A read-only batchexec
+// accessor for the retry clock is the cleaner option and would remove the
+// probe, but it widens batchexec's API, so it awaits the operator's approval.
 func googleCooldownErr(ctx context.Context, client *batchexec.Client, op string, status int) error {
 	if _, _, skip := client.Get(ctx, googleCooldownProbeURL); errors.Is(skip, batchexec.ErrRefused) {
 		return fmt.Errorf("%s refused (HTTP %d): %w: %w", op, status, models.ErrRateLimited, skip)
