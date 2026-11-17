@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,19 +17,50 @@ import (
 // TestSearchHotelByName_CancelledLastSearchKeepsBoth: the city search was
 // refused, and the lookup's context ended during its last candidate's search.
 // The error carries the cancellation and the refusal (grok, review on 706aff4d).
+//
+// The last candidate's search is a run this test holds open and waits for:
+// the lookup joins it and its deadline ends while it is held. A real slow
+// search would outlive the test, because shared runs are detached from their
+// callers, and race the next test over the package globals.
 func TestSearchHotelByName_CancelledLastSearchKeepsBoth(t *testing.T) {
-	roomLookupWorld(t, googleRoutes{shortEntity, answer(404), func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Query().Get("q"), "Sacher,") {
-			time.Sleep(3 * time.Second) // outlives the lookup's deadline
-		}
-		w.WriteHeader(http.StatusForbidden)
-	}}, false)
-	ctx, cancel := context.WithTimeout(context.Background(), 4500*time.Millisecond)
-	defer cancel()
+	const query = "Hotel Sacher, Vienna"
+	roomLookupWorld(t, googleRoutes{shortEntity, answer(404), answer(http.StatusForbidden)}, false)
 
-	_, err := SearchHotelByName(ctx, "Hotel Sacher, Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	cands := locationCandidates(query, LocationHotelQuery)
+	last := cands[len(cands)-1]
+	key := hotelSearchKey(englishHotelCity(last.query), HotelSearchOptions{
+		CheckIn: lookupCheckIn, CheckOut: lookupCheckOut, Guests: 2, Currency: "USD", Scope: last.scope,
+	})
+	var registered atomic.Int32
+	t.Cleanup(func() { hotelSearchRegistered = nil })
+	hotelSearchRegistered = func() { registered.Add(1) }
+
+	started, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = doHotelSearchRun(context.Background(), key, func(context.Context) (hotelSearchRun, error) {
+			close(started)
+			<-release
+			return hotelSearchRun{result: &models.HotelSearchResult{}}, nil
+		})
+	}()
+	<-started
+	stop := sync.OnceFunc(func() { close(release); <-done })
+	t.Cleanup(stop)
+
+	// Long enough to wait out every pause between candidates.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(len(cands)-1)*2*time.Second+time.Second)
+	defer cancel()
+	_, err := SearchHotelByName(ctx, query, lookupCheckIn, lookupCheckOut, "USD")
+	stop()
+
 	if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, models.ErrRateLimited) {
 		t.Fatalf("err = %v, want the deadline joined with the recorded refusal", err)
+	}
+	// The held run, then one search per candidate: the deadline ended inside
+	// the last one, not in a pause between candidates.
+	if got, want := registered.Load(), int32(len(cands)+1); got != want {
+		t.Fatalf("searches registered = %d, want %d", got, want)
 	}
 }
 
