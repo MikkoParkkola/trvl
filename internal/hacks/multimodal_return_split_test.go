@@ -74,23 +74,17 @@ func TestDetectMultiModalReturnSplit_savingsFormula(t *testing.T) {
 	}
 }
 
-// TestDetectMultiModalReturnSplit_overnightSavings verifies hotel bonus for
-// overnight ground return.
+// TestDetectMultiModalReturnSplit_overnightSavings: an overnight ground
+// return's hotel night is described, never added to the fare saving (#819);
+// the detector-level check is
+// TestMultiModalReturnSplit_OvernightSavingIsTheFareGap.
 func TestDetectMultiModalReturnSplit_overnightSavings(t *testing.T) {
 	rtPrice := 200.0
 	owOutPrice := 120.0
 	groundReturnPrice := 40.0
-	overnight := true
-
-	hotelBonus := 0.0
-	if overnight {
-		hotelBonus = averageHotelCost // 60
-	}
-	totalMixed := owOutPrice + groundReturnPrice
-	savings := rtPrice - totalMixed + hotelBonus // 200 - 160 + 60 = 100
-
-	if savings != 100 {
-		t.Errorf("expected savings=100 with overnight bonus, got %v", savings)
+	savings := rtPrice - (owOutPrice + groundReturnPrice)
+	if savings != 40 {
+		t.Errorf("expected savings=40 (the fare gap, no hotel night), got %v", savings)
 	}
 }
 

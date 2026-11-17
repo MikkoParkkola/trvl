@@ -99,6 +99,7 @@ func buildNightHack(in DetectorInput, r models.GroundRoute, hotelSaving float64)
 
 	return Hack{
 		Type:     "night_transport",
+		basis:    hotelNight, // the saving is a hotel night, not a fare
 		Title:    fmt.Sprintf("Overnight %s saves hotel night", typeStr),
 		Currency: currency,
 		Savings:  roundSavings(hotelSaving),

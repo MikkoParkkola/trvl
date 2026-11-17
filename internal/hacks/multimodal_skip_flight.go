@@ -94,8 +94,10 @@ func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 		return nil
 	}
 
-	// Total saving: flight price − ground price + saved hotel night, all in target.
-	savings := (flightPrice - bestPrice) + hotelBonus
+	// The saving is the fare gap alone, in target. The hotel night the
+	// overnight route also avoids is described, never added: it is not a
+	// lower fare, and BestSaving subtracts Savings from one (#819).
+	savings := flightPrice - bestPrice
 	if savings < 50 {
 		return nil
 	}
@@ -110,12 +112,12 @@ func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 		Savings:  roundSavings(savings),
 		Description: fmt.Sprintf(
 			"Overnight %s %s→%s departs %s arrives %s (%.0f %s) vs flight %.0f %s. "+
-				"Ground saves %.0f on transport + ~%.0f saved hotel night = %.0f total saving.",
+				"Ground saves %.0f on the fare, and travelling overnight also skips a hotel night (about %.0f %s).",
 			bestRoute.routeType, bestRoute.depCity, bestRoute.arrCity,
 			depTime, arrTime,
 			bestRoute.price, currency,
 			flightPrice, currency,
-			flightPrice-bestRoute.price, hotelBonus, savings,
+			savings, hotelBonus, currency,
 		),
 		Risks: []string{
 			"Overnight ground transport is slower; factor in comfort and rest quality",

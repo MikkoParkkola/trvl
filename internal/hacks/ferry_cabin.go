@@ -60,6 +60,7 @@ func detectFerryCabin(_ context.Context, in DetectorInput) []Hack {
 			ferry.operator, in.Origin, in.Destination, ferry.durationHrs, ferry.cabinFromEUR, ferry.hotelAvgEUR, in.Destination),
 		Savings:  roundSavings(savings),
 		Currency: "EUR",
+		basis:    hotelNight, // hotel average minus the cabin, not a fare
 		Steps: []string{
 			fmt.Sprintf("Book %s %s→%s with cabin (from €%.0f)", ferry.operator, in.Origin, in.Destination, ferry.cabinFromEUR),
 			fmt.Sprintf("Departs %s", ferry.frequency),

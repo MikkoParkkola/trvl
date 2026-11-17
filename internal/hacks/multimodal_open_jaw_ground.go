@@ -203,7 +203,9 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 		}
 
 		total := c.flightPrice + c.groundPrice
-		savings := directPrice - total + c.hotelBonus
+		// The fare gap alone: a hotel night not paid is described, never
+		// added to a fare saving (#819).
+		savings := directPrice - total
 		if savings < 50 {
 			continue
 		}

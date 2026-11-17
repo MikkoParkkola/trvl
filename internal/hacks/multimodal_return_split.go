@@ -126,7 +126,7 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 			}
 
 			totalMixed := owOutPrice + bestGroundPrice
-			savings := rtPrice - totalMixed + hotelBonus
+			savings := rtPrice - totalMixed // fare gap only; the hotel night is in the note (#819)
 			if savings >= 50 {
 				overnightNote := ""
 				if hotelBonus > 0 {
@@ -210,7 +210,7 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 			}
 
 			totalMixed := bestGroundPrice + owRetPrice
-			savings := rtPrice - totalMixed + hotelBonus
+			savings := rtPrice - totalMixed // fare gap only; the hotel night is in the note (#819)
 			if savings >= 50 {
 				overnightNote := ""
 				if hotelBonus > 0 {
