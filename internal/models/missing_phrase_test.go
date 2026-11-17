@@ -145,3 +145,26 @@ func TestCompleteness_JSONKeysUnchanged(t *testing.T) {
 		t.Fatalf("completeness JSON keys = %s, want %s", got, want)
 	}
 }
+
+// A timeout recorded with no error text is still silence (#817 review).
+func TestMissingPhrase_TimeoutWithoutErrorText(t *testing.T) {
+	if got := (ProviderStatus{ID: "kiwi", Status: StatusTimeout}).MissingPhrase(); got != "did not respond" {
+		t.Fatalf("MissingPhrase() = %q, want did not respond", got)
+	}
+}
+
+// An explicit Reason wins over the error text, as it does in the JSON.
+func TestMissingPhrase_ExplicitReasonWins(t *testing.T) {
+	cases := []struct {
+		st   ProviderStatus
+		want string
+	}{
+		{ProviderStatus{ID: "a", Status: StatusRateLimited, Reason: ReasonTimeout, Error: "HTTP 403 forbidden"}, "did not respond"},
+		{ProviderStatus{ID: "b", Status: StatusFailed, Reason: ReasonBlocked, Error: "unexpected status 404"}, "refused the request"},
+	}
+	for _, tc := range cases {
+		if got := tc.st.MissingPhrase(); got != tc.want {
+			t.Errorf("%s: MissingPhrase() = %q, want %q", tc.st.ID, got, tc.want)
+		}
+	}
+}

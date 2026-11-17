@@ -404,8 +404,11 @@ func printCoverageBullets(statuses []models.ProviderStatus) {
 			continue
 		}
 		line := fmt.Sprintf("    • %s: %s", s.Name, why)
-		if s.FixHint != "" {
+		switch {
+		case s.FixHint != "":
 			line += " — " + s.FixHint
+		case s.Status != models.StatusCircuitBroken && s.EffectiveReason() == models.ReasonRateLimited:
+			line += " — retryable, try again shortly"
 		}
 		fmt.Println(line)
 	}

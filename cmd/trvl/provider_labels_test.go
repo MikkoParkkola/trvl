@@ -87,3 +87,34 @@ func TestPrintTripPlan_SourceColumnShowsLabel(t *testing.T) {
 		}
 	}
 }
+
+// A real rate limit keeps its retry hint in the trip bullets; a refusal does
+// not get one (#817 review).
+func TestPrintTripPlan_RateLimitBulletKeepsRetryHint(t *testing.T) {
+	models.UseColor = false
+	result := &trip.PlanResult{
+		Success: true, Origin: "HEL", Destination: "VIE",
+		DepartDate: "2026-11-18", ReturnDate: "2026-11-20", Nights: 2, Guests: 1,
+		Hotels: []trip.PlanHotel{{Name: "Hotel X", PerNight: 80, Total: 160, Currency: "EUR"}},
+		HotelProviders: []models.ProviderStatus{
+			{ID: "google_hotels", Name: "Google Hotels", Status: models.StatusCheckedHit, Results: 5},
+			{ID: "hostelworld", Name: "Hostelworld", Status: models.StatusRateLimited, Error: "HTTP 429 Too Many Requests"},
+			{ID: "trivago", Name: "Trivago", Status: models.StatusRateLimited, Error: "trivago: HTTP 403: forbidden"},
+		},
+		Summary: trip.PlanSummary{GrandTotal: 160, Currency: "EUR"},
+	}
+	result.HotelCoverage = models.ComputeCompleteness(result.HotelProviders)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	out := captureStdout(t, func() {
+		if err := printTripPlan(ctx, "", result); err != nil {
+			t.Errorf("printTripPlan: %v", err)
+		}
+	})
+	if want := "• Hostelworld: rate-limited the request — retryable, try again shortly"; !strings.Contains(out, want) {
+		t.Errorf("output missing %q\n--- got ---\n%s", want, out)
+	}
+	if strings.Contains(out, "• Trivago: refused the request — retryable") {
+		t.Errorf("a refusal got the retry hint\n--- got ---\n%s", out)
+	}
+}

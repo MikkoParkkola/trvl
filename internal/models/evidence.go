@@ -217,6 +217,10 @@ func (p ProviderStatus) MissingPhrase() string {
 		return missingRateLimited
 	case ReasonUnavailable:
 		return missingServerError
+	case "":
+		if p.Status == StatusTimeout {
+			return missingNoAnswer // a timeout with no error text is still silence
+		}
 	}
 	return missingFailed
 }
