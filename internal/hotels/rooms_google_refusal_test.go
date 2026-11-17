@@ -255,24 +255,46 @@ func TestSearchHotelByName_RefusalSurvivesANameMiss(t *testing.T) {
 	}
 }
 
-// TestSearchHotelByName_LaterGoogleAnswerClearsAnEarlierBlock: Google blocked
-// the city search (403) but then answered the hotel query without the hotel.
-// That is an index miss, not a refusal: the match comes back without a
-// Google ID and the caller's index guidance applies.
+// TestSearchHotelByName_LaterGoogleAnswerClearsAnEarlierBlock: Google failed
+// the city search (403 or 503, refusal-class) but then answered the hotel
+// query without the hotel. That is an index miss, not a refusal: the match
+// comes back without a Google ID and the caller's index guidance applies.
+// In the last row the whole city search failed, nobody else answering.
 func TestSearchHotelByName_LaterGoogleAnswerClearsAnEarlierBlock(t *testing.T) {
-	blockCityAnswerHotel := func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Query().Get("q"), "Sacher") {
-			_, _ = w.Write(fakeHotelPageWithPrices(hotelWithPrice{"Hotel Stefanie", 150}))
-			return
-		}
-		w.WriteHeader(http.StatusForbidden)
+	cases := []struct {
+		name            string
+		cityStatus      int
+		bookingForHotel bool // Booking answers only queries naming the hotel
+	}{
+		{"403 on the city search", http.StatusForbidden, false},
+		{"503 on the city search", http.StatusServiceUnavailable, false},
+		{"whole city search failed", http.StatusForbidden, true},
 	}
-	roomLookupWorld(t, googleRoutes{shortEntity, answer(404), blockCityAnswerHotel}, false)
-	withBookingResult(t, sacherBookingUSD)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			failCityAnswerHotel := func(w http.ResponseWriter, r *http.Request) {
+				if strings.Contains(r.URL.Query().Get("q"), "Sacher") {
+					_, _ = w.Write(fakeHotelPageWithPrices(hotelWithPrice{"Hotel Stefanie", 150}))
+					return
+				}
+				w.WriteHeader(tc.cityStatus)
+			}
+			roomLookupWorld(t, googleRoutes{shortEntity, answer(404), failCityAnswerHotel}, false)
+			withBookingResult(t, sacherBookingUSD)
+			if tc.bookingForHotel {
+				SearchBooking = func(_ context.Context, loc string, _ HotelSearchOptions) ([]models.HotelResult, error) {
+					if strings.Contains(loc, "Sacher") {
+						return []models.HotelResult{sacherBookingUSD}, nil
+					}
+					return nil, nil
+				}
+			}
 
-	got, err := SearchHotelByName(context.Background(), "Hotel Sacher, Vienna", lookupCheckIn, lookupCheckOut, "USD")
-	if err != nil || got == nil || got.HotelID != "4711" {
-		t.Fatalf("got %+v, err = %v; want Booking's match and no error", got, err)
+			got, err := SearchHotelByName(context.Background(), "Hotel Sacher, Vienna", lookupCheckIn, lookupCheckOut, "USD")
+			if err != nil || got == nil || got.HotelID != "4711" {
+				t.Fatalf("got %+v, err = %v; want Booking's match and no error", got, err)
+			}
+		})
 	}
 }
 
