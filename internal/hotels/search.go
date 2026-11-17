@@ -170,6 +170,8 @@ type HotelSearchOptions struct {
 	// allowlist (TRVL_STEALTH_ALLOWLIST); a requested-but-unauthorized host
 	// runs the normal path and logs a single refusal line. See internal/stealth.
 	Stealth bool
+	// Scope: does the location name a place or a property? See HotelSearchScope.
+	Scope HotelSearchScope
 }
 
 // SearchHotels searches for hotels in the given location.
@@ -574,6 +576,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		}})
 	}
 
+	auxTasks = scopedAuxTasks(auxTasks, opts.Scope)
 	auxOutcomes := collectHotelAuxTasks(ctx, hotelAuxProviderTimeout, auxTasks)
 	var externalResults []models.HotelResult
 	for index, outcome := range auxOutcomes {
@@ -625,7 +628,8 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// Resolve city center coordinates. Used for distance filter/sort and
 	// for computing DistanceKm on every hotel (useful info for the user
 	// even when no distance filter is active).
-	if opts.CenterLat == 0 && opts.CenterLon == 0 {
+	// A property search has no city to centre on.
+	if opts.CenterLat == 0 && opts.CenterLon == 0 && opts.Scope != SearchScopeProperty {
 		lat, lon, err := ResolveLocation(ctx, location)
 		if err == nil {
 			opts.CenterLat = lat

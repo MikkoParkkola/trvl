@@ -580,14 +580,21 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 
 	// Fetch room availability with optional Booking.com enrichment.
 	// Pass the hotel name as a location hint for the search-page fallback
-	// (entity pages now use deferred data loading).
+	// (entity pages now use deferred data loading). It is a hotel query, not
+	// a city; with no hotel_name the hint stays empty and the entity page's
+	// city is used as a place.
+	locationKind := hotels.LocationArea
+	if hotelName != "" {
+		locationKind = hotels.LocationHotelQuery
+	}
 	availability, err := getRoomAvailabilityWithOptsFunc(ctx, hotels.RoomSearchOptions{
-		HotelID:    resolvedID,
-		CheckIn:    checkIn,
-		CheckOut:   checkOut,
-		Currency:   currency,
-		BookingURL: bookingURL,
-		Location:   hotelName,
+		HotelID:      resolvedID,
+		CheckIn:      checkIn,
+		CheckOut:     checkOut,
+		Currency:     currency,
+		BookingURL:   bookingURL,
+		Location:     hotelName,
+		LocationKind: locationKind,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("room availability for %s: %w", resolvedName, err)

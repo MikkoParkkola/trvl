@@ -110,7 +110,11 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 		MustHaveKitchen   bool     `json:"must_have_kitchen"`
 		MustHaveWifi      bool     `json:"must_have_wifi"`
 		MustHaveWorkspace bool     `json:"must_have_workspace"`
+		// An area search and a property search for the same text run
+		// different providers, so they must never share a result.
+		Scope HotelSearchScope `json:"scope"`
 	}{
+		Scope:             opts.Scope,
 		Location:          location,
 		CheckIn:           opts.CheckIn,
 		CheckOut:          opts.CheckOut,

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -30,11 +31,13 @@ func bookingRateLimitNotice(brErr error) string {
 // appendNotice joins a new notice clause onto an existing notice string,
 // space-separated, so multiple degradation cautions (e.g. SerpAPI plus a
 // rate-limited Booking fetch) can coexist without one clobbering the other.
+// A clause already present is not repeated: SerpAPI, the detail relay and the
+// default Google calls all word a Google refusal the same way.
 func appendNotice(existing, add string) string {
 	if existing == "" {
 		return add
 	}
-	if add == "" {
+	if add == "" || strings.Contains(existing, add) {
 		return existing
 	}
 	return existing + " " + add
@@ -105,8 +108,13 @@ func tryAgodaRoomLevel(ctx context.Context, opts RoomSearchOptions) ([]RoomType,
 	searchOpts := roomFallbackSearchOptions(opts)
 	var results []models.HotelResult
 	var lastErr error
-	for _, loc := range buildLocationCandidates(opts.Location) {
-		r, err := SearchAgoda(ctx, loc, searchOpts)
+	for _, cand := range locationCandidates(opts.Location, opts.LocationKind) {
+		// Agoda searches a city: a candidate carrying the hotel name would be
+		// resolved to some city ID by its suggest endpoint (#812).
+		if cand.scope != SearchScopeArea {
+			continue
+		}
+		r, err := SearchAgoda(ctx, cand.query, searchOpts)
 		if err != nil {
 			lastErr = err
 			continue
@@ -190,8 +198,9 @@ func hotelRoomsToRoomTypes(rooms []models.Room, defaultCurrency string) []RoomTy
 // page. Returns nil rooms if the page uses deferred loading (common since
 // mid-2026). The third return value is a location hint extracted from the page
 // (e.g. "Paris") which callers can use as a fallback when no Location was
-// provided in opts.
-func tryEntityPage(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string, string) {
+// provided in opts. The error reports a failed or refused fetch; a short or
+// deferred page is no error.
+func tryEntityPage(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string, string, error) {
 	client := DefaultClient()
 	entityURL := fmt.Sprintf(
 		"https://www.google.com/travel/hotels/entity/%s?q=&dates=%s,%s&hl=en&currency=%s",
@@ -199,8 +208,18 @@ func tryEntityPage(ctx context.Context, opts RoomSearchOptions) ([]RoomType, str
 	)
 
 	status, body, err := client.Get(ctx, entityURL)
-	if err != nil || status != 200 || len(body) < 500 {
-		return nil, "", ""
+	if err != nil {
+		return nil, "", "", googleCallErr("hotel entity page request", err)
+	}
+	// The client answers a Google refusal with its status and a nil error.
+	if batchexec.QuotaRefusal(status, body) {
+		return nil, "", "", fmt.Errorf("google hotel entity page refused (HTTP %d): %w", status, models.ErrRateLimited)
+	}
+	if status != 200 {
+		return nil, "", "", fmt.Errorf("hotel entity page returned status %d", status)
+	}
+	if len(body) < 500 {
+		return nil, "", "", nil
 	}
 
 	page := string(body)
@@ -210,7 +229,7 @@ func tryEntityPage(ctx context.Context, opts RoomSearchOptions) ([]RoomType, str
 	// search-page fallback when opts.Location is empty.
 	location := extractLocationFromPage(page)
 
-	return rooms, hotelName, location
+	return rooms, hotelName, location, nil
 }
 
 // tryBatchExecutePrices fetches Google's live booking-partner price matrix via
@@ -220,7 +239,7 @@ func tryEntityPage(ctx context.Context, opts RoomSearchOptions) ([]RoomType, str
 // room-level "similar" (a real bookable rate without a nameable room identity);
 // the remaining prices keep their basis-derived confidence and expose the
 // partner URLs (notably Booking.com) so the downstream exact-room fetch can run.
-func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string) {
+func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string, error) {
 	res, err := GetHotelPricesWithOpts(ctx, HotelPriceOpts{
 		HotelID:      opts.HotelID,
 		CheckIn:      opts.CheckIn,
@@ -229,11 +248,15 @@ func tryBatchExecutePrices(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		Guests:       opts.Guests,
 		ChildrenAges: opts.ChildrenAges,
 		Location:     opts.Location,
+		LocationKind: opts.LocationKind,
 	})
-	if err != nil || res == nil || len(res.Providers) == 0 {
-		return nil, ""
+	if err != nil {
+		return nil, "", err
 	}
-	return partnersToRoomTypes(res.Providers, opts.Currency), res.Name
+	if res == nil || len(res.Providers) == 0 {
+		return nil, "", nil
+	}
+	return partnersToRoomTypes(res.Providers, opts.Currency), res.Name, nil
 }
 
 // partnersToRoomTypes expands Google's yY52ce partner-price matrix into room
@@ -314,10 +337,12 @@ func roomMatchFromPriceBasis(basis string) string {
 //
 // This function searches by the location associated with the hotel ID,
 // finds the specific hotel by matching its entity ID, and returns a room
-// entry with the hotel's price from the search results.
-func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string) {
+// entry with the hotel's price from the search results. The error is the
+// Google failure the searches met, including one recorded only in a search's
+// provider statuses because another provider returned hotels.
+func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string, error) {
 	if opts.Location == "" {
-		return nil, ""
+		return nil, "", nil
 	}
 
 	searchOpts := roomFallbackSearchOptions(opts)
@@ -325,17 +350,25 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 	// Try multiple location candidates extracted from the hint (e.g.
 	// "Hotel Lutetia, Paris" yields ["Paris", "Hotel Lutetia Paris"]).
 	client := DefaultClient()
-	candidates := buildLocationCandidates(opts.Location)
 	var result *models.HotelSearchResult
-	for _, loc := range candidates {
-		r, err := SearchHotelsWithClient(ctx, client, loc, searchOpts)
-		if err == nil && len(r.Hotels) > 0 {
+	var lastErr error
+	for _, cand := range locationCandidates(opts.Location, opts.LocationKind) {
+		searchOpts.Scope = cand.scope
+		r, err := SearchHotelsWithClient(ctx, client, cand.query, searchOpts)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if gErr := googleStatusErr(r); gErr != nil {
+			lastErr = gErr
+		}
+		if len(r.Hotels) > 0 {
 			result = r
 			break
 		}
 	}
 	if result == nil || len(result.Hotels) == 0 {
-		return nil, ""
+		return nil, "", lastErr
 	}
 
 	// Find target hotel by ID first, then by name as fallback.
@@ -356,7 +389,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		hotel = findBestNameMatch(result.Hotels, opts.Location)
 	}
 	if hotel == nil {
-		return nil, ""
+		return nil, "", lastErr
 	}
 
 	var rooms []RoomType
@@ -428,7 +461,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		}
 	}
 
-	return rooms, hotel.Name
+	return rooms, hotel.Name, lastErr
 }
 
 func roomFallbackSearchOptions(opts RoomSearchOptions) HotelSearchOptions {

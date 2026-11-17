@@ -64,6 +64,9 @@ type RoomSearchOptions struct {
 	Rooms        int    // requested room count
 	BookingURL   string // optional Booking.com hotel URL for rich room data
 	Location     string // optional city/area hint for search-based fallback
+	// LocationKind says whether Location is a place (the default) or the
+	// caller's hotel query ("Hotel Sacher" or "Hotel Sacher, Vienna").
+	LocationKind LocationKind
 }
 
 // GetRoomAvailability fetches room-level pricing for a specific hotel.
@@ -107,9 +110,11 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// Also capture any location hint extracted from the entity page so the
 	// search-page fallback can use it when no Location was provided by the caller
 	// (e.g. raw hotel ID lookups from the CLI or MCP without a name hint).
-	rooms, hotelName, entityLocation := tryEntityPage(ctx, opts)
+	rooms, hotelName, entityLocation, entityErr := tryEntityPage(ctx, opts)
 	if opts.Location == "" && entityLocation != "" {
-		opts.Location = entityLocation
+		// The entity page names the hotel's city: a place, whatever kind of
+		// hint the caller declared for its (empty) Location.
+		opts.Location, opts.LocationKind = entityLocation, LocationArea
 	}
 
 	// Fetch Booking.com rooms to provide room-level data alongside Google's.
@@ -148,8 +153,11 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// room entry. This surfaces the full OTA matrix — including any Booking.com
 	// partner URL, which the downstream exact-room Booking.com fetch needs to
 	// produce a booking-ready offer.
+	var pricesErr error
 	if len(rooms) == 0 {
-		rpcRooms, rpcName := tryBatchExecutePrices(ctx, opts)
+		var rpcRooms []RoomType
+		var rpcName string
+		rpcRooms, rpcName, pricesErr = tryBatchExecutePrices(ctx, opts)
 		if len(rpcRooms) > 0 {
 			rooms = rpcRooms
 			if hotelName == "" {
@@ -157,14 +165,24 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 			}
 		}
 	}
+	googlePriced := len(rooms) > 0
 
 	// Fallback: search for the hotel on the search page by location extracted
 	// from the hotel ID's geocoded area. The search page still has inline
 	// AF_initDataCallback data.
+	var searchErr error
 	if len(rooms) == 0 {
-		rooms, hotelName = trySearchPageFallback(ctx, opts)
+		rooms, hotelName, searchErr = trySearchPageFallback(ctx, opts)
 	}
 	notice := ""
+	// A Google refusal withheld Google's own room pricing, even when the
+	// search fallback found the hotel's rooms through another provider
+	// (#813). One clause, worded as for Agoda and Booking.com.
+	if !googlePriced {
+		for _, err := range []error{entityErr, pricesErr, searchErr} {
+			notice = appendNotice(notice, providerRateLimitNotice("Google Hotels", err))
+		}
+	}
 
 	// Opt-in Google Hotels room-level detail fetch. Google's public yY52ce RPC
 	// returns a null payload to static clients (probed 2026-06-25 — see
@@ -209,7 +227,7 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 				// Keep Google's lead-ins, add SerpAPI's verified rooms.
 				rooms = mergeRoomTypes(rooms, serpRooms)
 			}
-			notice = serpNotice
+			notice = appendNotice(notice, serpNotice)
 			if hotelName == "" {
 				hotelName = serpName
 			}
