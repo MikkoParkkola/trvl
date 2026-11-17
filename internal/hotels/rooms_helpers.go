@@ -1,6 +1,7 @@
 package hotels
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"sort"
@@ -161,6 +162,7 @@ func hotelRoomsToRoomTypes(rooms []models.Room, defaultCurrency string) []RoomTy
 			Currency:           currency,
 			Provider:           r.Provider,
 			ProviderURL:        r.ProviderURL,
+			Source:             r.Source,
 			RateID:             r.RateID,
 			RatePlanName:       r.RatePlanName,
 			MatchConfidence:    r.MatchConfidence,
@@ -289,6 +291,7 @@ func partnersToRoomTypes(providers []models.ProviderPrice, defaultCurrency strin
 			Currency:        currency,
 			Provider:        p.Provider,
 			ProviderURL:     p.ProviderURL,
+			Source:          "google_hotels", // Google fetched it; p.Provider is the seller
 			MatchConfidence: match,
 		})
 	}
@@ -358,7 +361,12 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 	if hotel == nil {
 		return nil, ""
 	}
+	return searchPageRooms(hotel, opts.Currency), hotel.Name
+}
 
+// searchPageRooms turns the hotel matched on the Google search page into room
+// entries: the headline price plus one entry per other priced source.
+func searchPageRooms(hotel *models.HotelResult, defaultCurrency string) []RoomType {
 	var rooms []RoomType
 	// Exactly one bookable price is promoted to room-level: the dated,
 	// occupancy-specific search price (roomFallbackSearchOptions carries
@@ -374,7 +382,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 	if hotel.Price > 0 {
 		currency := hotel.Currency
 		if currency == "" {
-			currency = opts.Currency
+			currency = defaultCurrency
 		}
 		rooms = append(rooms, RoomType{
 			Name:            "Standard Room",
@@ -383,6 +391,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 			Currency:        currency,
 			Provider:        providerFromSources(hotel),
 			ProviderURL:     hotel.BookingURL,
+			Source:          cmp.Or(headlineSource(hotel), "unknown"),
 			MatchConfidence: models.RoomInventoryMatchSimilar,
 		})
 		roomLevelEmitted = true
@@ -408,7 +417,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		if src.Price > 0 && src.Price != hotel.Price {
 			currency := src.Currency
 			if currency == "" {
-				currency = opts.Currency
+				currency = defaultCurrency
 			}
 			match := models.RoomInventoryMatchPropertyLevelOnly
 			nightly := 0.0
@@ -423,12 +432,13 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 				Currency:        currency,
 				Provider:        src.Provider,
 				ProviderURL:     src.BookingURL,
+				Source:          src.Provider, // already a trvl tag: the search wrote it
 				MatchConfidence: match,
 			})
 		}
 	}
 
-	return rooms, hotel.Name
+	return rooms
 }
 
 func roomFallbackSearchOptions(opts RoomSearchOptions) HotelSearchOptions {
@@ -520,9 +530,22 @@ func findLocationTriplet(v any, depth int) string {
 
 // providerFromSources returns the provider display name from the first source
 // entry, or "Google Hotels" as the default.
+// headlineSource is the trvl tag of the quote behind h.Price, or "".
+func headlineSource(h *models.HotelResult) string {
+	if h.HeadlineProvider != "" {
+		return h.HeadlineProvider
+	}
+	if len(h.Sources) > 0 {
+		return h.Sources[0].Provider
+	}
+	return ""
+}
+
+// providerFromSources names the provider of the headline quote for display,
+// the same quote headlineSource tags.
 func providerFromSources(h *models.HotelResult) string {
-	if len(h.Sources) > 0 && h.Sources[0].Provider != "" {
-		return displayProvider(h.Sources[0].Provider)
+	if s := headlineSource(h); s != "" {
+		return displayProvider(s)
 	}
 	return "Google Hotels"
 }
@@ -587,18 +610,6 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 			if len(br.Amenities) > 0 {
 				enriched.Amenities = mergeStringSlices(enriched.Amenities, br.Amenities)
 			}
-			if br.NightlyPrice > 0 && enriched.NightlyPrice == 0 {
-				enriched.NightlyPrice = br.NightlyPrice
-			}
-			if br.TotalPrice > 0 && enriched.TotalPrice == 0 {
-				enriched.TotalPrice = br.TotalPrice
-			}
-			if br.TaxesAndFees > 0 && enriched.TaxesAndFees == 0 {
-				enriched.TaxesAndFees = br.TaxesAndFees
-			}
-			if br.TaxesFeesIncluded != nil && enriched.TaxesFeesIncluded == nil {
-				enriched.TaxesFeesIncluded = br.TaxesFeesIncluded
-			}
 			if br.CancellationPolicy != "" && enriched.CancellationPolicy == "" {
 				enriched.CancellationPolicy = br.CancellationPolicy
 			}
@@ -614,11 +625,21 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 			if br.BreakfastIncluded != nil && enriched.BreakfastIncluded == nil {
 				enriched.BreakfastIncluded = br.BreakfastIncluded
 			}
-			// Keep Google price if available; add Booking as secondary.
-			if enriched.Price == 0 && br.Price > 0 {
+			// One seller's numbers per room: a priced Google room keeps its own
+			// quote, and Booking's stays in InventoryOptions above. Splicing
+			// Booking's nightly, total or taxes-included flag into it made the
+			// headline, the room watch and the confidence tier each read a
+			// different seller. An unpriced Google room takes Booking's whole
+			// quote, seller and link included.
+			if !roomHasPrice(enriched) && roomHasPrice(br) {
 				enriched.Price = br.Price
+				enriched.NightlyPrice = br.NightlyPrice
+				enriched.TotalPrice = br.TotalPrice
+				enriched.TaxesAndFees = br.TaxesAndFees
+				enriched.TaxesFeesIncluded = br.TaxesFeesIncluded
 				enriched.Provider = br.Provider
 				enriched.ProviderURL = br.ProviderURL
+				enriched.Source = br.Source
 			}
 			merged[gr.index] = enriched
 			matched[bKey] = true
@@ -636,14 +657,28 @@ func mergeRoomTypes(google, booking []RoomType) []RoomType {
 	return merged
 }
 
+// roomHasPrice reports whether a room carries any price of its own.
+func roomHasPrice(r RoomType) bool {
+	return r.Price > 0 || r.NightlyPrice > 0 || r.TotalPrice > 0
+}
+
 // hasVerifiedRoom reports whether any room already carries a verified,
 // tax-inclusive room-level price -- the bar SerpAPI would otherwise be
 // consulted to reach. Used to spend SerpAPI quota only when it can upgrade an
 // otherwise sub-verified result.
 func hasVerifiedRoom(rooms []RoomType) bool {
 	for _, r := range rooms {
-		if roomInventoryQuote(r).PriceConfidence == models.PriceConfidenceVerified {
+		// The room's own quote must be able to headline too: a verified stay
+		// total with no nightly amount is no reason to skip the fallbacks.
+		if q := roomInventoryQuote(r); q.PriceConfidence == models.PriceConfidenceVerified && quoteCanHeadline(q) {
 			return true
+		}
+		// A merged room keeps another seller's verified quote here; it
+		// counts only if it can become the headline.
+		for _, q := range r.InventoryOptions {
+			if q.PriceConfidence == models.PriceConfidenceVerified && quoteCanHeadline(q) {
+				return true
+			}
 		}
 	}
 	return false
@@ -672,11 +707,15 @@ func roomInventoryQuote(room RoomType) models.RoomInventoryQuote {
 	}
 	nightly := room.NightlyPrice
 	total := room.TotalPrice
-	if nightly == 0 && total == 0 {
+	// Price is the nightly figure when no nightly rate is set, as the room
+	// headline and roomNightlyPrice (mcp) read it, also beside a stay total.
+	// A property-level lead-in beside a total is not a nightly rate.
+	if nightly == 0 && (total == 0 || confidence != models.RoomInventoryMatchPropertyLevelOnly) {
 		nightly = room.Price
 	}
 	return models.RoomInventoryQuote{
 		Provider:           provider,
+		Source:             room.Source,
 		ProviderRoomName:   room.Name,
 		ProviderRateName:   room.RatePlanName,
 		ProviderURL:        room.ProviderURL,

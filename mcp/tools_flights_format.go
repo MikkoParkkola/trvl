@@ -30,13 +30,9 @@ func flightSummary(result *models.FlightSearchResult, origin, dest string) strin
 		summary += " " + note
 	}
 
-	// Find cheapest.
-	cheapest := result.Flights[0]
-	for _, f := range result.Flights[1:] {
-		if f.Price > 0 && f.Price < cheapest.Price {
-			cheapest = f
-		}
-	}
+	// Find cheapest (the same picks a budget-cut reply keeps).
+	cheapestAt, nonstopAt := flightSummaryPicks(result.Flights)
+	cheapest := result.Flights[cheapestAt]
 	if cheapest.Price > 0 {
 		stopStr := "nonstop"
 		if cheapest.Stops == 1 {
@@ -60,17 +56,8 @@ func flightSummary(result *models.FlightSearchResult, origin, dest string) strin
 	}
 
 	// Check for nonstop options.
-	nonstopCount := 0
-	var cheapestNonstop *models.FlightResult
-	for i := range result.Flights {
-		if result.Flights[i].Stops == 0 {
-			nonstopCount++
-			if cheapestNonstop == nil || result.Flights[i].Price < cheapestNonstop.Price {
-				cheapestNonstop = &result.Flights[i]
-			}
-		}
-	}
-	if nonstopCount > 0 && cheapestNonstop != nil {
+	if nonstopAt >= 0 {
+		cheapestNonstop := &result.Flights[nonstopAt]
 		summary += fmt.Sprintf(" Nonstop options from %s%.0f.", cheapestNonstop.Currency, cheapestNonstop.Price)
 	}
 
@@ -188,4 +175,20 @@ func flightSuggestions(result *models.FlightSearchResult, origin, dest, date str
 	}
 
 	return suggestions
+}
+
+// flightSummaryPicks returns the indices of the flights flightSummary names:
+// the cheapest priced flight (index 0 when none is priced) and the cheapest
+// nonstop (-1 when there is none). list must not be empty.
+func flightSummaryPicks(list []models.FlightResult) (cheapest, nonstop int) {
+	nonstop = -1
+	for i, f := range list {
+		if i > 0 && f.Price > 0 && f.Price < list[cheapest].Price {
+			cheapest = i
+		}
+		if f.Stops == 0 && (nonstop < 0 || f.Price < list[nonstop].Price) {
+			nonstop = i
+		}
+	}
+	return cheapest, nonstop
 }

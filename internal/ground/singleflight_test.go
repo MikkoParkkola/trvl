@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -417,7 +418,21 @@ const refWalkMaxDepth = 16
 
 var timeType = reflect.TypeOf(time.Time{})
 
-// fillRefs sets every value reachable from v, through exported fields, to a
+// structField returns field i of struct v, settable even when unexported: a
+// clone must copy unexported slices and maps too. It is invalid when v is not
+// addressable, which the callers treat as a failure.
+func structField(v reflect.Value, i int) reflect.Value {
+	f := v.Field(i)
+	if v.Type().Field(i).IsExported() {
+		return f
+	}
+	if !f.CanAddr() {
+		return reflect.Value{}
+	}
+	return reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+}
+
+// fillRefs sets every value reachable from v, through every field, to a
 // non-zero value: pointers to new values, slices, arrays and maps to one filled
 // element, strings, numbers and bools to fixed non-zero values. A copy can
 // then be checked for shared references and for equal values. Any kind it
@@ -453,10 +468,11 @@ func fillRefs(t *testing.T, v reflect.Value, path string, depth int) {
 		}
 		for i := 0; i < v.NumField(); i++ {
 			f := v.Type().Field(i)
-			if !f.IsExported() {
-				t.Fatalf("fillRefs: %s.%s is unexported and cannot be checked", path, f.Name)
+			fv := structField(v, i)
+			if !fv.IsValid() {
+				t.Fatalf("fillRefs: %s.%s is unexported and not addressable, so it cannot be checked", path, f.Name)
 			}
-			fillRefs(t, v.Field(i), path+"."+f.Name, depth+1)
+			fillRefs(t, fv, path+"."+f.Name, depth+1)
 		}
 	case reflect.String:
 		v.SetString("x")
@@ -524,10 +540,11 @@ func sharedRefs(t *testing.T, a, b reflect.Value, path string, depth int) []stri
 		}
 		for i := 0; i < a.NumField(); i++ {
 			f := a.Type().Field(i)
-			if !f.IsExported() {
-				t.Fatalf("sharedRefs: %s.%s is unexported and cannot be checked", path, f.Name)
+			av, bv := structField(a, i), structField(b, i)
+			if !av.IsValid() || !bv.IsValid() {
+				t.Fatalf("sharedRefs: %s.%s is unexported and not addressable, so it cannot be checked", path, f.Name)
 			}
-			out = append(out, sharedRefs(t, a.Field(i), b.Field(i), path+"."+f.Name, depth+1)...)
+			out = append(out, sharedRefs(t, av, bv, path+"."+f.Name, depth+1)...)
 		}
 	case reflect.String, reflect.Bool,
 		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
