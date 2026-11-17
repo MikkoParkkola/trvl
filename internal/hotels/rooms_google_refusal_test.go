@@ -366,21 +366,30 @@ func TestSearchHotelByName_RefusalSurvivesLaterFailures(t *testing.T) {
 }
 
 // TestSearchHotelByName_OnlyA429SaysCooldown: every refusal-class answer still
-// ends the lookup in a rate-limit error, but only a 429 armed Google's
-// cooldown. A 403 block or a 503 outage must not send the traveller to wait
-// one out.
+// ends the lookup in a rate-limit error, but only a refusal that armed
+// Google's cooldown (a 429, or a call skipped inside the cooldown) says so. A
+// 403 block or a 503 outage must not send the traveller to wait one out. The
+// claim is read from the lead-in, since a skipped call's own text names the
+// cooldown either way.
 func TestSearchHotelByName_OnlyA429SaysCooldown(t *testing.T) {
 	cases := []struct {
+		name         string
 		status       int
+		prime        bool // the cooldown is already armed when the lookup starts
 		wantCooldown bool
 	}{
-		{http.StatusTooManyRequests, true},
-		{http.StatusForbidden, false},
-		{http.StatusServiceUnavailable, false},
+		{"Too Many Requests", http.StatusTooManyRequests, false, true},
+		{"Forbidden", http.StatusForbidden, false, false},
+		{"Service Unavailable", http.StatusServiceUnavailable, false, false},
+		{"call skipped inside the cooldown", http.StatusOK, true, true},
 	}
 	for _, tc := range cases {
-		t.Run(http.StatusText(tc.status), func(t *testing.T) {
-			roomLookupWorld(t, googleRoutes{shortEntity, answer(404), answer(tc.status)}, false)
+		t.Run(tc.name, func(t *testing.T) {
+			search := answer(tc.status)
+			if tc.status == http.StatusOK {
+				search = noSacherPage
+			}
+			roomLookupWorld(t, googleRoutes{shortEntity, answer(404), search}, tc.prime)
 			withBookingResult(t, sacherBookingUSD)
 			seedGeoAt(t, "Hotel Sacher Wien", sacherLat, sacherLon)
 
@@ -388,8 +397,47 @@ func TestSearchHotelByName_OnlyA429SaysCooldown(t *testing.T) {
 			if !errors.Is(err, models.ErrRateLimited) {
 				t.Fatalf("err = %v, want a rate-limit error", err)
 			}
-			if got := strings.Contains(err.Error(), "cooldown"); got != tc.wantCooldown {
-				t.Fatalf("err = %v\nmentions a cooldown: %v, want %v", err, got, tc.wantCooldown)
+			cooldown := strings.Contains(err.Error(), "Google Hotels refused requests")
+			blocked := strings.Contains(err.Error(), "Google Hotels blocked the request")
+			if cooldown != tc.wantCooldown || blocked == tc.wantCooldown {
+				t.Fatalf("err = %v\ncooldown claim: %v, want %v", err, cooldown, tc.wantCooldown)
+			}
+		})
+	}
+}
+
+// googleQuotaBody is Google's quota refusal carried in an HTTP 200: a wrb.fr
+// row with status 13. The test checks batchexec still reads it as one.
+const googleQuotaBody = ")]}'\n\n[[\"wrb.fr\",null,null,null,null,[13]],[\"di\",34],[\"af.httprm\",33,\"x\",79]]"
+
+// TestGoogleCooldown_RealRefusalErrors builds each cooldown branch's input
+// with the code that writes it in production (the entity-page call and the
+// client's skip inside the cooldown), so rewording either one breaks this
+// test instead of silently flipping the cooldown claim.
+func TestGoogleCooldown_RealRefusalErrors(t *testing.T) {
+	if !batchexec.QuotaRefusal(http.StatusOK, []byte(googleQuotaBody)) {
+		t.Fatal("precondition: batchexec no longer reads the status-13 body as a quota refusal")
+	}
+	opts := RoomSearchOptions{HotelID: sacherPlaceIDRooms, CheckIn: lookupCheckIn, CheckOut: lookupCheckOut, Currency: "USD"}
+	cases := []struct {
+		name   string
+		entity http.HandlerFunc
+		prime  bool
+		want   bool
+	}{
+		{"quota body in an HTTP 200", page([]byte(googleQuotaBody)), false, true},
+		{"call skipped inside the cooldown", shortEntity, true, true},
+		{"403 block", answer(http.StatusForbidden), false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			roomLookupWorld(t, googleRoutes{tc.entity, answer(404), noSacherPage}, tc.prime)
+			_, _, _, err := tryEntityPage(context.Background(), opts)
+			if err == nil {
+				t.Fatal("precondition: want the entity page call to fail")
+			}
+			if got := googleCooldown(err); got != tc.want {
+				t.Fatalf("googleCooldown(%q) = %v, want %v", err, got, tc.want)
 			}
 		})
 	}
