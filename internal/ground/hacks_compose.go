@@ -22,11 +22,16 @@ type HackComposeRequest struct {
 	Date        string
 	Currency    string
 	NaivePrice  float64
-	// Providers, ExcludeProviders and NoCache carry the caller's ground search
-	// scope into the detectors' own ground searches.
-	Providers        []string
-	ExcludeProviders []string
-	NoCache          bool
+	// Providers, ExcludeProviders, NoCache, Type, MaxPrice and
+	// AllowBrowserFallbacks carry the caller's ground search scope into the
+	// detectors' own ground searches, so a detector repeating the caller's
+	// trip builds the caller's key and gets the outer routes.
+	Providers             []string
+	ExcludeProviders      []string
+	NoCache               bool
+	Type                  string
+	MaxPrice              float64
+	AllowBrowserFallbacks bool
 }
 
 // composeHackSaving is the savings-engine seam. It is nil until the hacks package
@@ -99,9 +104,12 @@ func attachGroundHackSaving(ctx context.Context, result *models.GroundSearchResu
 		Currency:    groundHackCurrency(result.Routes, opts.Currency),
 		NaivePrice:  naive,
 		// The detectors' own ground searches keep the caller's scope.
-		Providers:        opts.Providers,
-		ExcludeProviders: opts.ExcludeProviders,
-		NoCache:          opts.NoCache,
+		Providers:             opts.Providers,
+		ExcludeProviders:      opts.ExcludeProviders,
+		NoCache:               opts.NoCache,
+		Type:                  opts.Type,
+		MaxPrice:              opts.MaxPrice,
+		AllowBrowserFallbacks: opts.AllowBrowserFallbacks,
 	}
 
 	// Start a savings pass on the bounded context: the detectors' own flight
@@ -110,6 +118,9 @@ func attachGroundHackSaving(ctx context.Context, result *models.GroundSearchResu
 	tctx, cancel := context.WithTimeout(ctx, hackComposeTimeout)
 	defer cancel()
 	hctx := searchctx.StartSavingsPass(tctx)
+	// A detector's search for this same trip gets these routes from the
+	// pass instead of querying every provider again (#810).
+	searchctx.Seed(hctx, groundPassKey(groundTripKey(from, to, date, opts)), cloneGroundSearchResult(result))
 
 	if saving := composeHackSaving(hctx, req); saving != nil {
 		result.HackSaving = saving

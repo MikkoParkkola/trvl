@@ -3,6 +3,8 @@ package ground
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -366,5 +368,206 @@ func TestDoGroundSearchSingleflight_ShortCallerDeadlineDoesNotPoisonSharedWork(t
 	}
 	if got := callCount.Load(); got != 2 {
 		t.Fatalf("callCount = %d, want 2 executions after the timed-out winner stops", got)
+	}
+}
+
+// A caller (a detector in a savings pass, an MCP handler) that edits any
+// nested part of its copy leaves the shared result, and so every other caller
+// and the cache, unchanged.
+func TestCloneGroundSearchResult_NestedFieldsArePrivate(t *testing.T) {
+	shared := &models.GroundSearchResult{
+		Success: true,
+		Routes: []models.GroundRoute{{
+			Provider:   "ferryhopper",
+			Sources:    []models.PriceSource{{Provider: "ferryhopper", Price: 48}},
+			Confidence: &models.Confidence{Label: "high", Signals: []string{"live"}},
+			SeaState:   &models.SeaState{WaveHeight: 1.5},
+		}},
+		ProviderStatuses: []models.ProviderStatus{{ID: "ferryhopper", Status: models.StatusOK}},
+		Completeness:     models.Completeness{Missing: []string{"dfds"}},
+		HackSaving:       &models.HackSaving{Type: "t", Risks: []string{"r"}},
+		Destination:      &models.DestinationInfo{Holidays: []models.Holiday{{Name: "h"}}},
+	}
+
+	c := cloneGroundSearchResult(shared)
+	c.Routes[0].Sources[0].Price = 1
+	c.Routes[0].Confidence.Label = "changed"
+	c.Routes[0].Confidence.Signals[0] = "changed"
+	c.Routes[0].SeaState.WaveHeight = 9
+	c.ProviderStatuses[0].Status = models.StatusError
+	c.Completeness.Missing[0] = "changed"
+	c.HackSaving.Risks[0] = "changed"
+	c.Destination.Holidays[0].Name = "changed"
+
+	r := shared.Routes[0]
+	if r.Sources[0].Price != 48 || r.Confidence.Label != "high" || r.Confidence.Signals[0] != "live" || r.SeaState.WaveHeight != 1.5 {
+		t.Errorf("route fields changed through the copy: %+v %+v %+v", r.Sources[0], *r.Confidence, *r.SeaState)
+	}
+	if shared.ProviderStatuses[0].Status != models.StatusOK || shared.Completeness.Missing[0] != "dfds" {
+		t.Errorf("statuses changed through the copy: %+v %v", shared.ProviderStatuses, shared.Completeness.Missing)
+	}
+	if shared.HackSaving.Risks[0] != "r" || shared.Destination.Holidays[0].Name != "h" {
+		t.Errorf("saving or destination changed through the copy: %v %v", shared.HackSaving.Risks, shared.Destination.Holidays)
+	}
+}
+
+// refWalkMaxDepth bounds the walk over the result's type tree. Reaching it is
+// a test failure, never a silent stop: a deeper model must raise the bound.
+const refWalkMaxDepth = 16
+
+var timeType = reflect.TypeOf(time.Time{})
+
+// fillRefs sets every value reachable from v, through exported fields, to a
+// non-zero value: pointers to new values, slices, arrays and maps to one filled
+// element, strings, numbers and bools to fixed non-zero values. A copy can
+// then be checked for shared references and for equal values. Any kind it
+// does not handle fails the test.
+func fillRefs(t *testing.T, v reflect.Value, path string, depth int) {
+	t.Helper()
+	if depth > refWalkMaxDepth {
+		t.Fatalf("fillRefs: %s is deeper than %d levels; raise refWalkMaxDepth", path, refWalkMaxDepth)
+	}
+	switch v.Kind() {
+	case reflect.Pointer:
+		v.Set(reflect.New(v.Type().Elem()))
+		fillRefs(t, v.Elem(), path, depth+1)
+	case reflect.Slice:
+		v.Set(reflect.MakeSlice(v.Type(), 1, 1))
+		fillRefs(t, v.Index(0), path+"[0]", depth+1)
+	case reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			fillRefs(t, v.Index(i), fmt.Sprintf("%s[%d]", path, i), depth+1)
+		}
+	case reflect.Map:
+		k := reflect.New(v.Type().Key()).Elem()
+		fillRefs(t, k, path+"{key}", depth+1)
+		e := reflect.New(v.Type().Elem()).Elem()
+		fillRefs(t, e, path+"{value}", depth+1)
+		m := reflect.MakeMap(v.Type())
+		m.SetMapIndex(k, e)
+		v.Set(m)
+	case reflect.Struct:
+		if v.Type() == timeType {
+			v.Set(reflect.ValueOf(time.Date(2027, 7, 15, 9, 0, 0, 0, time.UTC)))
+			return
+		}
+		for i := 0; i < v.NumField(); i++ {
+			f := v.Type().Field(i)
+			if !f.IsExported() {
+				t.Fatalf("fillRefs: %s.%s is unexported and cannot be checked", path, f.Name)
+			}
+			fillRefs(t, v.Field(i), path+"."+f.Name, depth+1)
+		}
+	case reflect.String:
+		v.SetString("x")
+	case reflect.Bool:
+		v.SetBool(true)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v.SetInt(1)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		v.SetUint(1)
+	case reflect.Float32, reflect.Float64:
+		v.SetFloat(1.5)
+	default:
+		t.Fatalf("fillRefs: %s has kind %s, which this walk does not handle", path, v.Kind())
+	}
+}
+
+// sharedRefs lists the paths where a and b point at the same pointee, slice
+// backing array or map. It walks the same kinds fillRefs fills and fails on
+// any other.
+func sharedRefs(t *testing.T, a, b reflect.Value, path string, depth int) []string {
+	t.Helper()
+	if depth > refWalkMaxDepth {
+		t.Fatalf("sharedRefs: %s is deeper than %d levels; raise refWalkMaxDepth", path, refWalkMaxDepth)
+	}
+	var out []string
+	switch a.Kind() {
+	case reflect.Pointer:
+		if a.IsNil() || b.IsNil() {
+			return nil
+		}
+		if a.Pointer() == b.Pointer() {
+			out = append(out, path)
+		}
+		out = append(out, sharedRefs(t, a.Elem(), b.Elem(), path, depth+1)...)
+	case reflect.Slice:
+		if a.Len() == 0 || b.Len() == 0 {
+			return nil
+		}
+		if a.Pointer() == b.Pointer() {
+			out = append(out, path)
+		}
+		for i := 0; i < a.Len() && i < b.Len(); i++ {
+			out = append(out, sharedRefs(t, a.Index(i), b.Index(i), fmt.Sprintf("%s[%d]", path, i), depth+1)...)
+		}
+	case reflect.Array:
+		for i := 0; i < a.Len(); i++ {
+			out = append(out, sharedRefs(t, a.Index(i), b.Index(i), fmt.Sprintf("%s[%d]", path, i), depth+1)...)
+		}
+	case reflect.Map:
+		if a.IsNil() || b.IsNil() {
+			return nil
+		}
+		if a.Pointer() == b.Pointer() {
+			out = append(out, path)
+		}
+		iter := a.MapRange()
+		for iter.Next() {
+			if bv := b.MapIndex(iter.Key()); bv.IsValid() {
+				out = append(out, sharedRefs(t, iter.Value(), bv, path+"{value}", depth+1)...)
+			}
+		}
+	case reflect.Struct:
+		if a.Type() == timeType {
+			return nil
+		}
+		for i := 0; i < a.NumField(); i++ {
+			f := a.Type().Field(i)
+			if !f.IsExported() {
+				t.Fatalf("sharedRefs: %s.%s is unexported and cannot be checked", path, f.Name)
+			}
+			out = append(out, sharedRefs(t, a.Field(i), b.Field(i), path+"."+f.Name, depth+1)...)
+		}
+	case reflect.String, reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+	default:
+		t.Fatalf("sharedRefs: %s has kind %s, which this walk does not handle", path, a.Kind())
+	}
+	return out
+}
+
+// Every pointer, slice, array and map in a ground result, nested ones
+// included, is the caller's own after cloning, and every value is equal. The
+// fill is by reflection, so a field added to the models later fails here
+// until the clone copies it.
+func TestCloneGroundSearchResult_SharesNoReferences(t *testing.T) {
+	shared := &models.GroundSearchResult{}
+	fillRefs(t, reflect.ValueOf(shared).Elem(), "result", 0)
+	c := cloneGroundSearchResult(shared)
+	if got := sharedRefs(t, reflect.ValueOf(c).Elem(), reflect.ValueOf(shared).Elem(), "result", 0); len(got) > 0 {
+		t.Errorf("clone shares these with the original: %v", got)
+	}
+	if !reflect.DeepEqual(c, shared) {
+		t.Errorf("clone differs from the original:\n got %+v\nwant %+v", c, shared)
+	}
+}
+
+// A result whose slices and pointers are nil clones to nil ones, not empty
+// ones: a caller can still tell "no saving" and "no routes" apart.
+func TestCloneGroundSearchResult_KeepsNil(t *testing.T) {
+	for name, shared := range map[string]*models.GroundSearchResult{
+		"empty result":            {},
+		"route with nil contents": {Routes: []models.GroundRoute{{Provider: "flixbus", Legs: []models.GroundLeg{{}}}}},
+		"saving with nil lists":   {HackSaving: &models.HackSaving{Type: "t"}, Destination: &models.DestinationInfo{Location: "x"}},
+	} {
+		if c := cloneGroundSearchResult(shared); !reflect.DeepEqual(c, shared) {
+			t.Errorf("%s: clone = %+v, want %+v", name, c, shared)
+		}
+	}
+	if cloneGroundSearchResult(nil) != nil {
+		t.Error("cloneGroundSearchResult(nil) is not nil")
 	}
 }
