@@ -733,9 +733,7 @@ func cloneHotelSearchResult(shared *models.HotelSearchResult) *models.HotelSearc
 	if shared.ProviderStatuses != nil {
 		cp.ProviderStatuses = append([]models.ProviderStatus(nil), shared.ProviderStatuses...)
 	}
-	if shared.Completeness.Missing != nil {
-		cp.Completeness.Missing = append([]string(nil), shared.Completeness.Missing...)
-	}
+	cp.Completeness = shared.Completeness.Clone()
 	return &cp
 }
 

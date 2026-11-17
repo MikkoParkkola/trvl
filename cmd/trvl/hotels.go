@@ -543,7 +543,7 @@ func hotelSourceLabel(provider string) string {
 		return "Trivago"
 	case "airbnb":
 		return "Airbnb"
-	case "booking":
+	case "booking", "booking.com": // provider runtime id, built-in search tag
 		return "Booking"
 	default:
 		return strings.TrimSpace(provider)

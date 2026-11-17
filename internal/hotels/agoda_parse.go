@@ -88,6 +88,7 @@ func parseAgodaSearch(resp *agodaSearchResponse, opts HotelSearchOptions) []mode
 				Currency:        currency,
 				Provider:        "agoda",
 				ProviderURL:     hr.BookingURL,
+				Source:          "agoda",
 				MatchConfidence: models.RoomInventoryMatchSimilar,
 				PriceBasis:      models.PriceBasisRoomNightly,
 				PriceConfidence: models.PriceConfidenceRoomLevel,

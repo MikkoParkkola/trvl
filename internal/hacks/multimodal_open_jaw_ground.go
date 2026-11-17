@@ -21,7 +21,9 @@ type nearbyHub struct {
 	DestCity string
 	// StaticGroundEUR is a conservative estimate of ground cost (EUR).
 	StaticGroundEUR float64
-	// Overnight is true when the ground leg is typically overnight (adds hotel saving).
+	// Overnight is true when the ground leg is typically overnight; the
+	// description then mentions the hotel night it avoids (never added to
+	// the saving).
 	Overnight bool
 	// Notes describes the ground connection.
 	Notes string
@@ -106,8 +108,10 @@ var nearbyHubs = map[string][]nearbyHub{
 
 // openJawGroundCandidate is the result of pricing one hub-then-ground route:
 // the positioning flight and the ground leg, both already converted into the
-// detector's requested target currency, plus the hotel-night bonus (also
-// pre-converted, only set when the ground leg is overnight).
+// detector's requested target currency. hotelBonus is the hotel night an
+// overnight ground leg avoids, in target, for the description only: it is
+// never part of the saving, and 0 when the leg is not overnight or the EUR
+// estimate has no rate into target.
 type openJawGroundCandidate struct {
 	hub         nearbyHub
 	groundPrice float64
@@ -119,6 +123,10 @@ type openJawGroundCandidate struct {
 // detectMultiModalOpenJawGround checks whether flying to a nearby hub airport
 // and completing the journey by ground transport is cheaper than flying directly
 // to the destination.
+//
+// The saving is the fare gap alone: direct fare minus hub flight and ground
+// leg. An overnight leg's hotel night is described, never added (#819).
+// Threshold: the fare gap must be at least 50 in the requested currency.
 func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack {
 	if !in.valid() || in.Date == "" {
 		return nil
@@ -129,10 +137,11 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 		return nil
 	}
 
-	// All user-visible prices (direct flight, positioning flight, ground leg,
-	// and the hotel-night bonus) are converted into the requested currency
-	// before being combined; a leg that cannot be converted drops its
-	// candidate rather than mixing currencies in the total.
+	// All fares (direct flight, positioning flight, ground leg) are converted
+	// into the requested currency before being combined; a leg that cannot be
+	// converted drops its candidate rather than mixing currencies in the total.
+	// The hotel-night mention is converted separately and left out without a
+	// rate.
 	target := strings.ToUpper(strings.TrimSpace(in.currency()))
 	if target == "" {
 		target = "EUR"
@@ -176,17 +185,13 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 				return
 			}
 
+			// The hotel night is described only, so a missing EUR rate
+			// drops the mention, never the candidate.
 			hotelBonus := 0.0
 			if h.Overnight {
-				bonus, ok := convertCurrency(ctx, averageHotelCost, "EUR", target)
-				if !ok {
-					// The hotel-night saving cannot be honestly expressed in
-					// target; drop the candidate rather than silently omit it
-					// or mix currencies in the displayed saving.
-					ch <- openJawGroundCandidate{}
-					return
+				if bonus, ok := convertCurrency(ctx, averageHotelCost, "EUR", target); ok {
+					hotelBonus = bonus
 				}
-				hotelBonus = bonus
 			}
 
 			ch <- openJawGroundCandidate{hub: h, groundPrice: groundPrice, flightPrice: flightPrice, hotelBonus: hotelBonus, estimated: estimated}
@@ -203,14 +208,16 @@ func detectMultiModalOpenJawGround(ctx context.Context, in DetectorInput) []Hack
 		}
 
 		total := c.flightPrice + c.groundPrice
-		savings := directPrice - total + c.hotelBonus
+		// The fare gap alone: a hotel night not paid is described, never
+		// added to a fare saving (#819).
+		savings := directPrice - total
 		if savings < 50 {
 			continue
 		}
 
 		overnightNote := ""
-		if c.hub.Overnight {
-			overnightNote = fmt.Sprintf(" + saves ~%.0f %s hotel night", c.hotelBonus, currency)
+		if c.hotelBonus > 0 {
+			overnightNote = fmt.Sprintf(" (the overnight leg also skips a hotel night, about %.0f %s)", c.hotelBonus, currency)
 		}
 
 		groundFareNote := ""

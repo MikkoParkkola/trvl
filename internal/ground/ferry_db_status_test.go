@@ -139,7 +139,7 @@ func serveDBFixture(t *testing.T, fixture string, bestPrice http.HandlerFunc) *a
 // TestSearchDeutscheBahn_NoFaresNoticeNamesCarriers replays DB's Praha–Wien
 // answer (captured 2026-11-15): five journeys, none with a fare. DB sells no
 // ticket here, so the routes come back with a notice that names the carriers
-// in DB's own segments, after both day-best request bodies came back empty.
+// in DB's own segments, after the one day-best request came back empty.
 func TestSearchDeutscheBahn_NoFaresNoticeNamesCarriers(t *testing.T) {
 	hits := serveDBFixture(t, "db_fahrplan_praha_8103000_2026-11-15.json", nil)
 
@@ -147,8 +147,8 @@ func TestSearchDeutscheBahn_NoFaresNoticeNamesCarriers(t *testing.T) {
 	if len(routes) != 5 {
 		t.Errorf("routes = %d, want the 5 journeys kept", len(routes))
 	}
-	if n := hits.Load(); n != 2 {
-		t.Errorf("day-best requests = %d, want 2 (body A empty, then body B)", n)
+	if n := hits.Load(); n != 1 {
+		t.Errorf("day-best requests = %d, want 1", n)
 	}
 	var notice *models.ProviderNotice
 	if !errors.As(err, &notice) {
@@ -158,6 +158,25 @@ func TestSearchDeutscheBahn_NoFaresNoticeNamesCarriers(t *testing.T) {
 		if !strings.Contains(notice.FixHint, carrier) {
 			t.Errorf("FixHint = %q, want it to name %s", notice.FixHint, carrier)
 		}
+	}
+}
+
+// TestSearchDeutscheBahn_PragueViennaDayBestNoFares replays both DB answers of
+// 2026-11-17: the journey list without fares, and the day-best endpoint as it
+// answered (200 with no fare for the accepted body, 400 for any other). DB
+// said it sells nothing here, so the notice names the carriers instead of
+// claiming the lookup failed.
+func TestSearchDeutscheBahn_PragueViennaDayBestNoFares(t *testing.T) {
+	handler, _ := dbDayBestReplay(t)
+	serveDBFixture(t, "db_fahrplan_praha_8103000_2026-11-15.json", handler)
+
+	_, err := SearchDeutscheBahn(context.Background(), "Prague", "Vienna", "2026-11-20", "EUR")
+	var notice *models.ProviderNotice
+	if !errors.As(err, &notice) {
+		t.Fatalf("err = %v, want a *models.ProviderNotice", err)
+	}
+	if strings.Contains(notice.FixHint, "lookup failed") || !strings.Contains(notice.FixHint, "Ceske Drahy") {
+		t.Errorf("FixHint = %q, want the no-fares hint naming the carriers", notice.FixHint)
 	}
 }
 
@@ -297,18 +316,6 @@ func TestFerryhopperPortListForm(t *testing.T) {
 	}
 }
 
-// sequencedDayBest answers the day-best endpoint with first, then second.
-func sequencedDayBest(first, second http.HandlerFunc) http.HandlerFunc {
-	var n atomic.Int32
-	return func(w http.ResponseWriter, r *http.Request) {
-		if n.Add(1) == 1 {
-			first(w, r)
-			return
-		}
-		second(w, r)
-	}
-}
-
 var (
 	dayBestEmpty = func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"tagesbestPreisIntervalle":[]}`))
@@ -322,31 +329,37 @@ var (
 	}
 )
 
-// TestFetchDBBestPrice_NoFaresNeedsEveryBodyClean: "DB sells no fares" needs
-// every attempted request body to answer cleanly with an empty interval list.
-// One failed body (or a 200 without the intervals field) makes it a failed
-// lookup; a price from either body wins.
-func TestFetchDBBestPrice_NoFaresNeedsEveryBodyClean(t *testing.T) {
+// TestFetchDBBestPrice_OneRequestAnswers: the lookup sends one request. A
+// clean empty interval list is "DB sells no fares"; a failure, or a 200
+// without the intervals field, is a failed lookup; a fare wins.
+func TestFetchDBBestPrice_OneRequestAnswers(t *testing.T) {
 	for _, c := range []struct {
-		name          string
-		first, second http.HandlerFunc
-		wantPrice     float64
-		wantErr       error // nil: a clean answer
+		name      string
+		answer    http.HandlerFunc
+		wantPrice float64
+		wantErr   error // nil: a clean answer
 	}{
-		{"clean empty, then failed", dayBestEmpty, dayBestFailed, 0, models.ErrRateLimited},
-		{"clean empty twice", dayBestEmpty, dayBestEmpty, 0, nil},
-		{"failed, then priced", dayBestFailed, dayBestPriced, 27.99, nil},
-		{"200 without the intervals field", dayBestNoField, dayBestNoField, 0, models.ErrParseFailed},
+		{"clean empty", dayBestEmpty, 0, nil},
+		{"failed", dayBestFailed, 0, models.ErrRateLimited},
+		{"priced", dayBestPriced, 27.99, nil},
+		{"200 without the intervals field", dayBestNoField, 0, models.ErrParseFailed},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			origClient, origLimiter := dbClient, dbLimiter
 			t.Cleanup(func() { dbClient, dbLimiter = origClient, origLimiter })
 			dbLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-			srv := httptest.NewServer(sequencedDayBest(c.first, c.second))
+			var hits atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				c.answer(w, r)
+			}))
 			t.Cleanup(srv.Close)
 			dbClient = &http.Client{Transport: &redirectTransport{target: srv.URL}, Timeout: 5 * time.Second}
 
 			price, _, err := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
+			if n := hits.Load(); n != 1 {
+				t.Errorf("day-best requests = %d, want 1", n)
+			}
 			if price != c.wantPrice {
 				t.Errorf("price = %v, want %v", price, c.wantPrice)
 			}
@@ -360,16 +373,17 @@ func TestFetchDBBestPrice_NoFaresNeedsEveryBodyClean(t *testing.T) {
 	}
 }
 
-// TestSearchDeutscheBahn_HalfFailedLookupIsNotNoFares: body A answers cleanly
-// empty and body B fails, so DB has not shown it sells nothing.
-func TestSearchDeutscheBahn_HalfFailedLookupIsNotNoFares(t *testing.T) {
-	serveDBFixture(t, "db_fahrplan_praha_8103000_2026-11-15.json", sequencedDayBest(dayBestEmpty, dayBestFailed))
+// TestSearchDeutscheBahn_FailedLookupIsNotNoFares: a day-best request that
+// fails has not shown that DB sells nothing, so the notice says the lookup
+// failed.
+func TestSearchDeutscheBahn_FailedLookupIsNotNoFares(t *testing.T) {
+	serveDBFixture(t, "db_fahrplan_praha_8103000_2026-11-15.json", dayBestFailed)
 	_, err := SearchDeutscheBahn(context.Background(), "Prague", "Vienna", "2026-11-15", "EUR")
 	var notice *models.ProviderNotice
 	if !errors.As(err, &notice) {
 		t.Fatalf("err = %v, want a *models.ProviderNotice", err)
 	}
-	if strings.Contains(notice.FixHint, "sells no fares") {
+	if !strings.Contains(notice.FixHint, "lookup failed") {
 		t.Errorf("FixHint = %q, want the failed-lookup hint", notice.FixHint)
 	}
 }

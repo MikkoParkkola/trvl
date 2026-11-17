@@ -319,6 +319,12 @@ func TestPartnersToRoomTypes(t *testing.T) {
 	if _, dead := byProvider["Dead"]; dead {
 		t.Fatal("zero-price partner must be dropped, not emitted as a free room")
 	}
+	// Google fetched every partner quote; the partner is only the seller (#808).
+	for _, r := range rooms {
+		if r.Source != "google_hotels" {
+			t.Errorf("partner %q room Source = %q, want google_hotels", r.Provider, r.Source)
+		}
+	}
 }
 
 // real, bookable price lead (exact > similar > property-level lead-in), then

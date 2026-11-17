@@ -437,6 +437,10 @@ func sortGroundRoutes(routes []models.GroundRoute) {
 		if a.BookingURL != b.BookingURL {
 			return a.BookingURL < b.BookingURL
 		}
+		// A count that is not known is no evidence of a direct train.
+		if a.TransfersUnknown != b.TransfersUnknown {
+			return !a.TransfersUnknown
+		}
 		if a.Transfers != b.Transfers {
 			return a.Transfers < b.Transfers
 		}

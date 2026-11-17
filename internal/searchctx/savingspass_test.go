@@ -131,3 +131,34 @@ func TestMemo_CallerCancellationDoesNotPoison(t *testing.T) {
 		t.Errorf("later caller got %d, %v; want 42 from the shared call, not the cancellation", v, err)
 	}
 }
+
+func TestSeed_MemoReturnsSeededValue(t *testing.T) {
+	pass := StartSavingsPass(context.Background())
+	Seed(pass, "k", "outer")
+	got, err := Memo(pass, "k", func(context.Context) (string, error) {
+		t.Fatal("Memo ran fn for a seeded key")
+		return "", nil
+	})
+	if err != nil || got != "outer" {
+		t.Fatalf("Memo = %q, %v; want the seeded value", got, err)
+	}
+}
+
+func TestSeed_KeepsExistingEntry(t *testing.T) {
+	pass := StartSavingsPass(context.Background())
+	_, _ = Memo(pass, "k", func(context.Context) (string, error) { return "first", nil })
+	Seed(pass, "k", "second")
+	if got, _ := Memo(pass, "k", func(context.Context) (string, error) { return "third", nil }); got != "first" {
+		t.Fatalf("Memo = %q after Seed on an existing key, want first", got)
+	}
+}
+
+func TestSeed_OutsideOrAcrossPasses(t *testing.T) {
+	Seed(context.Background(), "k", "ignored") // no pass: no-op, no panic
+	a := StartSavingsPass(context.Background())
+	b := StartSavingsPass(context.Background())
+	Seed(a, "k", "from a")
+	if got, _ := Memo(b, "k", func(context.Context) (string, error) { return "from b", nil }); got != "from b" {
+		t.Fatalf("pass b saw %q, want its own result: passes must not share entries", got)
+	}
+}

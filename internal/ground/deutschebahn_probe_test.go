@@ -134,9 +134,9 @@ func TestLiveProbe_DBStationIDs(t *testing.T) {
 }
 
 // TestLiveProbe_DBBestPrice calls the tagesbestpreis endpoint through
-// fetchDBBestPrice (production bodies and headers) for Berlin Hbf to München
+// fetchDBBestPrice (production body and headers) for Berlin Hbf to München
 // Hbf three weeks out, a domestic pair DB always prices, and requires a fare.
-// A zero means both request bodies stopped working or the answer changed shape.
+// A zero means the request body stopped working or the answer changed shape.
 func TestLiveProbe_DBBestPrice(t *testing.T) {
 	testutil.RequireLiveProbe(t)
 	from, okFrom := LookupDBStation("Berlin")

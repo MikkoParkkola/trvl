@@ -226,6 +226,7 @@ func parseGoogleRoomDetail(raw []byte, fallbackCurrency string) ([]RoomType, str
 			Currency:        currency,
 			Provider:        "Google Hotels",
 			ProviderURL:     googleRoomDetailBookingURL(r),
+			Source:          "google_hotels",
 			RatePlanName:    strings.TrimSpace(r.RatePlan),
 			MatchConfidence: match,
 			Board:           strings.TrimSpace(r.Board),

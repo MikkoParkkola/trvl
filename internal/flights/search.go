@@ -672,6 +672,7 @@ func cloneFlightSearchResult(shared *models.FlightSearchResult) *models.FlightSe
 			cp.Flights[i] = flightCopy
 		}
 	}
+	cp.Completeness = shared.Completeness.Clone()
 	return &cp
 }
 

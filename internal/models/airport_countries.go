@@ -27,6 +27,7 @@ var airportCountries = map[string]string{
 	"TLS": "FR", "MRS": "FR", "DBV": "HR", "SPU": "HR", "TIV": "ME",
 	"CFU": "GR", "HER": "GR", "RHO": "GR", "JTR": "GR", "TFS": "ES",
 	"LPA": "ES", "ACE": "ES", "FUE": "ES",
+	"LPL": "GB", "GLA": "GB", "NCL": "GB", "BFS": "GB", "EMA": "GB",
 	// North America
 	"JFK": "US", "EWR": "US", "LGA": "US", "LAX": "US", "SFO": "US",
 	"ORD": "US", "MDW": "US", "ATL": "US", "DFW": "US", "DEN": "US",

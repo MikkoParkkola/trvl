@@ -7,9 +7,10 @@ func flightSearchOutputSchema() interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"success":   schemaBool(),
-			"count":     schemaInt(),
-			"trip_type": schemaString(),
+			"success":        schemaBool(),
+			"count":          schemaIntDesc("Flights in this response; budget_omitted counts the rows the 50 KB result budget left out."),
+			"budget_omitted": budgetOmittedSchema(),
+			"trip_type":      schemaString(),
 			"flights": schemaArray(map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{

@@ -50,15 +50,18 @@ type GroundRoute struct {
 	// cross-currency ranking and MaxPrice filtering (and for PriceForRanking).
 	// Set by the normalize pass in ground search when conversion succeeds.
 	// 0 means "use raw Price" (incomparable across currencies).
-	ComparablePrice float64     `json:"comparable_price,omitempty"`
-	Duration        int         `json:"duration_minutes"`
-	Departure       GroundStop  `json:"departure"`
-	Arrival         GroundStop  `json:"arrival"`
-	Transfers       int         `json:"transfers"`
-	Legs            []GroundLeg `json:"legs"`
-	Amenities       []string    `json:"amenities,omitempty"`
-	SeatsLeft       *int        `json:"seats_left,omitempty"`
-	BookingURL      string      `json:"booking_url"`
+	ComparablePrice float64    `json:"comparable_price,omitempty"`
+	Duration        int        `json:"duration_minutes"`
+	Departure       GroundStop `json:"departure"`
+	Arrival         GroundStop `json:"arrival"`
+	Transfers       int        `json:"transfers"`
+	// TransfersUnknown marks a route whose provider sent no change data:
+	// Transfers is then 0 for "not known", never for "direct".
+	TransfersUnknown bool        `json:"transfers_unknown,omitempty"`
+	Legs             []GroundLeg `json:"legs"`
+	Amenities        []string    `json:"amenities,omitempty"`
+	SeatsLeft        *int        `json:"seats_left,omitempty"`
+	BookingURL       string      `json:"booking_url"`
 	// Sources lists every provider that returned this same physical connection
 	// (mirrors HotelResult). Populated by ResolveGroundSources. Headline Price
 	// is the cheapest across sources.
