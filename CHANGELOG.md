@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.28.3] - 2026-11-17
+
+### Changed
+
+- A partial search counts a provider that returned results before it was cut off as checked, and names it as having "answered only in part" ("Checked 1 of 1 providers; google_hotels answered only in part"). A search reads as blocked only when no provider returned anything. (#823)
+
+### Fixed
+
+- Looking up a hotel by name no longer treats the name as a city. `trvl rooms "Hotel Sacher Wien"`, MCP `hotel_rooms` with `hotel_name` and room watches used to ask seven rental sites for apartments in the "city" Hotel Sacher Wien, and to search Google for "Hotel Sacher Wien, Hotel Sacher Wien". A search for a named hotel now asks only Google Hotels and Booking.com, and the Google query is the name once. (#812)
+- A Google refusal during a room lookup is reported. The notice now opens with "Google Hotels room pricing was temporarily unavailable (rate-limited)" when Google refused and its rooms are missing, instead of naming only Agoda and Booking.com. A later failure from another provider can no longer erase that refusal. (#813)
+- During a Google cooldown, a hotel name lookup returns an error that says Google refused and when a retry can work: `found "Hotel Sacher Wien", but Google Hotels refused requests, so its Google place ID is unknown; retry once Google's cooldown ends: … retry after 13:14:05 CET (in 60s)`. A 403 or 503 reads "Google Hotels blocked the request …; retry later". The CLI no longer blames Google's hotel index for a rate limit, and CLI and MCP print the same sentence. (#813)
+- A merged hotel room keeps only its own seller's refund, cancellation, board and breakfast terms. A Google room without its own price takes Booking.com's whole quote, currency and rate plan included. Another seller's quote never borrows the room's link, price, currency or terms, and a quote without a currency is left out of offers rather than labelled with the room's. (#823)
+
 ## [1.28.2] - 2026-11-17
 
 ### Changed
@@ -1477,7 +1490,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.28.2...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.28.3...HEAD
+[1.28.3]: https://github.com/MikkoParkkola/trvl/compare/v1.28.2...v1.28.3
 [1.28.2]: https://github.com/MikkoParkkola/trvl/compare/v1.28.1...v1.28.2
 [1.28.1]: https://github.com/MikkoParkkola/trvl/compare/v1.28.0...v1.28.1
 [1.28.0]: https://github.com/MikkoParkkola/trvl/compare/v1.27.0...v1.28.0
