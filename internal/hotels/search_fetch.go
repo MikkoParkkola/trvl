@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -110,7 +111,11 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 		MustHaveKitchen   bool     `json:"must_have_kitchen"`
 		MustHaveWifi      bool     `json:"must_have_wifi"`
 		MustHaveWorkspace bool     `json:"must_have_workspace"`
+		// An area search and a property search for the same text run
+		// different providers, so they must never share a result.
+		Scope HotelSearchScope `json:"scope"`
 	}{
+		Scope:             opts.Scope,
 		Location:          location,
 		CheckIn:           opts.CheckIn,
 		CheckOut:          opts.CheckOut,
@@ -231,8 +236,9 @@ func fetchHotelPageFull(ctx context.Context, client *batchexec.Client, location 
 	if status == 403 {
 		return parseResult{}, batchexec.ErrBlocked
 	}
-	if status == 429 {
-		return parseResult{}, fmt.Errorf("google hotel search refused (HTTP 429): %w", models.ErrRateLimited)
+	// A 429 or a 200 quota body armed the client's cooldown.
+	if batchexec.QuotaRefusal(status, body) {
+		return parseResult{}, googleCooldownErr(ctx, client, "google hotel search", status)
 	}
 	if status != 200 {
 		return parseResult{}, fmt.Errorf("hotel search returned status %d", status)
@@ -251,8 +257,12 @@ func fetchHotelPageFull(ctx context.Context, client *batchexec.Client, location 
 		switch {
 		case err2 != nil && errors.Is(err2, batchexec.ErrRefused):
 			return parseResult{}, googleCallErr("hotel search consent retry", err2)
-		case status2 == 429:
-			return parseResult{}, fmt.Errorf("google hotel search refused the consent retry (HTTP 429): %w", models.ErrRateLimited)
+		case err2 == nil && batchexec.QuotaRefusal(status2, body2):
+			return parseResult{}, googleCooldownErr(ctx, client, "google hotel search consent retry", status2)
+		case err2 == nil && (status2 == http.StatusForbidden || status2 == http.StatusServiceUnavailable):
+			// A block or an outage on the retry is a refusal that arms no
+			// cooldown, not a cookie-wall failure.
+			return parseResult{}, fmt.Errorf("google hotel search consent retry returned HTTP %d: %w", status2, models.ErrRateLimited)
 		}
 		if err2 == nil && status2 == 200 && len(body2) >= 1000 && !isGoogleConsentPage(body2) {
 			body = body2

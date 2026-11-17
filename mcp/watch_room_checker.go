@@ -94,11 +94,12 @@ func resolveRoomAvailabilityForWatch(ctx context.Context, hotelQuery, checkIn, c
 	}
 
 	opts := hotels.RoomSearchOptions{
-		HotelID:  hotel.HotelID,
-		CheckIn:  checkIn,
-		CheckOut: checkOut,
-		Currency: currency,
-		Location: hotelQuery,
+		HotelID:      hotel.HotelID,
+		CheckIn:      checkIn,
+		CheckOut:     checkOut,
+		Currency:     currency,
+		Location:     hotelQuery,
+		LocationKind: hotels.LocationHotelQuery,
 	}
 	result, err := getRoomAvailabilityWithOptsFunc(ctx, opts)
 	if err != nil {

@@ -104,18 +104,19 @@ const lockPoll = 10 * time.Millisecond
 
 // beginGoogle serializes Google calls on this client and, when a shared
 // cooldown file is configured, across processes. release must be called when
-// err is nil. refused means the deadline is still in the future and the caller
-// must not dial. err is the context's error if it ended while waiting.
-func (c *Client) beginGoogle(ctx context.Context) (release func(), refused bool, err error) {
+// err is nil. A non-zero refusedUntil is the cooldown deadline, still in the
+// future: the caller must not dial. err is the context's error if it ended
+// while waiting.
+func (c *Client) beginGoogle(ctx context.Context) (release func(), refusedUntil time.Time, err error) {
 	for !c.googleMu.TryLock() {
 		if err := waitPoll(ctx); err != nil {
-			return func() {}, false, err
+			return func() {}, time.Time{}, err
 		}
 	}
 	unlockFile, err := lockRefusalDir(ctx, c.refusalDir)
 	if err != nil {
 		c.googleMu.Unlock()
-		return func() {}, false, err
+		return func() {}, time.Time{}, err
 	}
 	done := func() {
 		unlockFile()
@@ -123,8 +124,9 @@ func (c *Client) beginGoogle(ctx context.Context) (release func(), refused bool,
 	}
 	now := time.Now()
 	if now.Before(c.refuseUntil) {
+		until := c.refuseUntil
 		done()
-		return func() {}, true, nil
+		return func() {}, until, nil
 	}
 	if deadline, ok := c.readRefusalDeadline(); ok && now.Before(deadline) {
 		// A deadline further out than the cap can only come from a clock that
@@ -137,9 +139,9 @@ func (c *Client) beginGoogle(ctx context.Context) (release func(), refused bool,
 		}
 		c.refuseUntil = deadline
 		done()
-		return func() {}, true, nil
+		return func() {}, deadline, nil
 	}
-	return done, false, nil
+	return done, time.Time{}, nil
 }
 
 func waitPoll(ctx context.Context) error {

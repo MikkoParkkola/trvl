@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -58,6 +59,11 @@ func runRooms(cmd *cobra.Command, args []string) error {
 
 	result, err := resolveRoomAvailability(ctx, hotelQuery, checkIn, checkOut, currency, location)
 	if err != nil {
+		// A Google refusal says nothing about the hotel: report it as it is,
+		// with the same text the MCP tool returns (it says when to retry).
+		if errors.Is(err, models.ErrRateLimited) {
+			return fmt.Errorf("hotel rooms: %w", err)
+		}
 		// Smaller and island properties often have no Google Hotel ID in the
 		// index, so room-level lookup can't resolve them. Don't fail silently —
 		// point the traveller at the verification paths that do work there.
@@ -145,14 +151,19 @@ func resolveRoomAvailability(ctx context.Context, hotelQuery, checkIn, checkOut,
 	hint := hotelQuery
 	if searchQuery != hotelQuery {
 		hint = searchQuery
+	} else if location != "" && !strings.Contains(hotelQuery, ",") {
+		// The name already holds the city, but the room lookup reads only the
+		// text after a comma as a place: keep the city the user gave.
+		hint = hotelQuery + ", " + location
 	}
 	opts := hotels.RoomSearchOptions{
-		HotelID:    hotel.HotelID,
-		CheckIn:    checkIn,
-		CheckOut:   checkOut,
-		Currency:   currency,
-		Location:   hint,
-		BookingURL: hotels.BookingSourceURL(*hotel),
+		HotelID:      hotel.HotelID,
+		CheckIn:      checkIn,
+		CheckOut:     checkOut,
+		Currency:     currency,
+		Location:     hint,
+		LocationKind: hotels.LocationHotelQuery,
+		BookingURL:   hotels.BookingSourceURL(*hotel),
 	}
 	result, err := getRoomAvailabilityWithOpts(ctx, opts)
 	if err != nil {
@@ -178,6 +189,10 @@ func formatRoomsTable(result *hotels.RoomAvailability) error {
 
 	if len(result.Rooms) == 0 {
 		fmt.Printf("No room types found for %s.\n", name)
+		// With no rooms, the notice is what says why (a refusal, say).
+		if result.Notice != "" {
+			fmt.Printf("Notice: %s\n", result.Notice)
+		}
 		return nil
 	}
 
