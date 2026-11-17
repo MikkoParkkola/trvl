@@ -17,6 +17,14 @@ import (
 // error built from a ProviderStatus.Error string, a cooldown refusal built by
 // hand, or a Google notice outside the rooms notice line and the out-of-scope
 // SerpAPI source.
+//
+// Limit: this is a tripwire against careless hand-written writes, not the
+// enforcement boundary. It flags direct writes to the outcome's fields, and
+// taking their address, outside google_outcome.go. It is syntactic, so it does
+// not follow local aliases, slice copies or re-slicing:
+// `events := c.events; events[0].err = nil` and `&c.events[:][0]` both pass.
+// Real enforcement would move the outcome types into their own package; the
+// design records that as the upgrade path if hand-written writes ever recur.
 func googleOutcomeViolations(fset *token.FileSet, name string, file *ast.File) []string {
 	var out []string
 	report := func(n ast.Node, what string) {

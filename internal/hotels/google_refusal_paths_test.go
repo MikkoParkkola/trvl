@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // consentWall is a page behind Google's EU consent wall.
@@ -126,7 +127,7 @@ func TestGoogleCooldownErr_KeepsAFailedProbe(t *testing.T) {
 	cancel()
 
 	err := googleCooldownErr(ctx, newTestClient(srv.URL), "google hotel search", http.StatusTooManyRequests)
-	if !errors.Is(err, batchexec.ErrRefused) || !errors.Is(err, context.Canceled) {
-		t.Fatalf("err = %v, want the cooldown marker and the probe's own failure", err)
+	if !errors.Is(err, batchexec.ErrRefused) || !errors.Is(err, models.ErrRateLimited) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want the rate limit, the cooldown marker and the probe's own failure", err)
 	}
 }
