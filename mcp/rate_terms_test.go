@@ -140,3 +140,47 @@ func TestOfferAndVerifiedRate_UseOwnRoomLink(t *testing.T) {
 		t.Errorf("verified rate = %+v, want the room's own link", v)
 	}
 }
+
+// A foreign quote with no currency never reaches an offer: the inventory
+// filter drops a quote without a currency before selection, so it is never
+// converted, labelled, or shown (#832 round 3). The offer stays the room
+// seller's own quote.
+func TestAccommodationOffersFromRooms_DropsForeignQuoteWithoutCurrency(t *testing.T) {
+	orig := convertRateFunc
+	convertRateFunc = func(string, string) (float64, bool) { return 0, false }
+	t.Cleanup(func() { convertRateFunc = orig })
+
+	room := googlePricedRoom("Hotels.com")
+	room.Currency = "USD"
+	room.InventoryOptions = []models.RoomInventoryQuote{
+		{Provider: "Hotels.com", ProviderRoomName: "Double Room", ProviderURL: "https://www.hotels.com/ho1", NightlyPrice: 200, Currency: "USD",
+			MatchConfidence: models.RoomInventoryMatchExact, PriceBasis: models.PriceBasisRoomNightly, PriceConfidence: models.PriceConfidenceRoomLevel},
+		{Provider: "Booking.com", ProviderRoomName: "Double Room", NightlyPrice: 95,
+			MatchConfidence: models.RoomInventoryMatchExact, PriceBasis: models.PriceBasisRoomNightly, PriceConfidence: models.PriceConfidenceRoomLevel},
+	}
+	hotel := models.HotelResult{Name: "Hotel X", HotelID: "/g/11x"}
+	offers := accommodationOffersFromRooms(hotel, []hotels.RoomType{room}, rateTermsNeed, time.Now())
+	if len(offers) != 1 {
+		t.Fatalf("offers = %d, want 1", len(offers))
+	}
+	o := offers[0]
+	if o.Provider != "Hotels.com" || o.NightlyPrice != 200 || o.Currency != "USD" {
+		t.Errorf("offer = %s %v %s, want Hotels.com's own USD 200", o.Provider, o.NightlyPrice, o.Currency)
+	}
+	for _, q := range o.InventoryOptions {
+		if q.Provider == "Booking.com" || q.NightlyPrice == 95 {
+			t.Errorf("currency-less Booking quote reached the offer: %+v", q)
+		}
+	}
+}
+
+// Positive control: the room's own seller's quote with no currency still
+// takes the room's currency.
+func TestCompleteRoomInventoryQuote_OwnQuoteTakesRoomCurrency(t *testing.T) {
+	room := googlePricedRoom("Hotels.com")
+	room.Currency = "USD"
+	got := completeRoomInventoryQuote(models.RoomInventoryQuote{Provider: "Hotels.com", NightlyPrice: 200}, room, rateTermsNeed, time.Now())
+	if got.Currency != "USD" {
+		t.Errorf("own quote currency = %q, want the room's USD", got.Currency)
+	}
+}
