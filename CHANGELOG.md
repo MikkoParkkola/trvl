@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ÖBB routes report their real number of changes and their legs; four of five Prague to Vienna trains change at Breclav, Pardubice or Linz but were listed as direct. `max_transfers` now also applies to single-train routes; a route whose change count is only partly known is flagged, keeps its known minimum in the label, and is dropped when that minimum already exceeds the cap. (#809)
 - Flight hacks no longer subtract a hotel night from a flight fare: `night_transport` turned a EUR 150 flight into "price 90" and `ferry_cabin` into "price 65". Both still appear in `trvl hacks`, with their hotel saving. (#819)
 - Multimodal plans no longer subtract a flight hack's saving from an itinerary total that may contain no flight. The `trvl multimodal` help and the MCP tool description no longer promise a saving. (#824)
-- Cached ground, hotel and flight results no longer share their completeness details with the copy handed to each caller.
+- Cached ground, hotel and flight results no longer share their completeness details with the copy handed to each caller. (#817)
 
 ## [1.28.1] - 2026-11-16
 
