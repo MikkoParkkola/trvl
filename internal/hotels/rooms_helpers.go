@@ -662,10 +662,11 @@ func roomHasPrice(r RoomType) bool {
 	return r.Price > 0 || r.NightlyPrice > 0 || r.TotalPrice > 0
 }
 
-// hasVerifiedRoom reports whether any room already carries a verified,
-// tax-inclusive room-level price -- the bar SerpAPI would otherwise be
-// consulted to reach. Used to spend SerpAPI quota only when it can upgrade an
-// otherwise sub-verified result.
+// hasVerifiedRoom reports whether any room already has a quote that is
+// verified and can become the hotel headline (quoteCanHeadline): the room's own
+// quote or one of its InventoryOptions. That is the bar SerpAPI and Agoda
+// would otherwise be consulted to reach, so their quota is spent only when they
+// can upgrade the result.
 func hasVerifiedRoom(rooms []RoomType) bool {
 	for _, r := range rooms {
 		// The room's own quote must be able to headline too: a verified stay

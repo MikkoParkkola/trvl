@@ -178,6 +178,9 @@ func TestCompleteness_CloneSharesNothing(t *testing.T) {
 	if !reflect.DeepEqual(cp, c) {
 		t.Fatalf("clone differs:\n got %+v\nwant %+v", cp, c)
 	}
+	if len(cp.Missing) == 0 || len(cp.missingWhy) == 0 {
+		t.Fatalf("fixture has no missing providers: %+v", cp)
+	}
 	cp.Missing[0] = "changed"
 	cp.missingWhy[0] = "changed"
 	if c.Missing[0] == "changed" || c.missingWhy[0] == "changed" {
