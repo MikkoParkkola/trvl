@@ -12,6 +12,25 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
+// TestSearchHotelByName_CancelledLastSearchKeepsBoth: the city search was
+// refused, and the lookup's context ended during its last candidate's search.
+// The error carries the cancellation and the refusal (grok, review on 706aff4d).
+func TestSearchHotelByName_CancelledLastSearchKeepsBoth(t *testing.T) {
+	roomLookupWorld(t, googleRoutes{shortEntity, answer(404), func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Query().Get("q"), "Sacher,") {
+			time.Sleep(3 * time.Second) // outlives the lookup's deadline
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}}, false)
+	ctx, cancel := context.WithTimeout(context.Background(), 4500*time.Millisecond)
+	defer cancel()
+
+	_, err := SearchHotelByName(ctx, "Hotel Sacher, Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, models.ErrRateLimited) {
+		t.Fatalf("err = %v, want the deadline joined with the recorded refusal", err)
+	}
+}
+
 // TestSearchHotelByName_NoResultsReportsTheStrongestRefusal: candidate 1 met
 // a cooldown refusal, candidate 2 a plain 403, and nothing answered. The
 // error reports the outcome's strongest refusal, the cooldown, not the later

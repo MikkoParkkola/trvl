@@ -462,8 +462,10 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 	if lastErr != nil && !sawResults {
 		// The outcome's strongest refusal explains a lookup nobody answered; a
 		// later plain failure never displaces a stored cooldown.
+		// A cancellation during the last search travels with it (Join drops
+		// a nil context error).
 		if gErr != nil {
-			return nil, fmt.Errorf("hotel name search: %w", gErr)
+			return nil, errors.Join(fmt.Errorf("hotel name search: %w", gErr), ctx.Err())
 		}
 		return nil, fmt.Errorf("hotel name search: %w", lastErr)
 	}
