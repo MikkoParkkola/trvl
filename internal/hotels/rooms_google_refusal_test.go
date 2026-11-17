@@ -303,3 +303,24 @@ func blockCityBreakHotel(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusForbidden)
 }
+
+// TestSearchHotelByName_TargetedFailureKeepsTheRefusal: Google blocked the
+// city search, where Booking found the hotel; the targeted search then failed
+// for another reason (a broken page, nothing from Booking). That failure is
+// not a Google answer, so the block still decides the outcome.
+func TestSearchHotelByName_TargetedFailureKeepsTheRefusal(t *testing.T) {
+	roomLookupWorld(t, googleRoutes{shortEntity, answer(404), blockCityBreakHotel}, false)
+	origBooking := SearchBooking
+	t.Cleanup(func() { SearchBooking = origBooking })
+	SearchBooking = func(_ context.Context, loc string, _ HotelSearchOptions) ([]models.HotelResult, error) {
+		if strings.Contains(loc, "Sacher") {
+			return nil, nil
+		}
+		return []models.HotelResult{sacherBookingUSD}, nil
+	}
+
+	_, err := SearchHotelByName(context.Background(), "Hotel Sacher, Vienna", lookupCheckIn, lookupCheckOut, "USD")
+	if !errors.Is(err, models.ErrRateLimited) {
+		t.Fatalf("err = %v, want the city search's block reported as a rate limit", err)
+	}
+}

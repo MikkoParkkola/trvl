@@ -408,7 +408,11 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 					opts.Scope = SearchScopeProperty
 					targeted, tErr := SearchHotels(ctx, query, opts)
 					if tErr != nil {
-						googleErr = tErr
+						// A failed search is not a Google answer: only a
+						// refusal may replace the recorded outcome.
+						if models.ClassifyProviderError(tErr) == models.StatusRateLimited {
+							googleErr = tErr
+						}
 					} else {
 						// The latest Google answer wins: one that came back
 						// clears an earlier block or refusal.
