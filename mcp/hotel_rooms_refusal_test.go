@@ -86,9 +86,11 @@ func TestHandleHotelRooms_EmptyRoomsSummaryFollowsTheNotice(t *testing.T) {
 		t.Fatalf("reply = %q\nwant the notice as the reason, not the no-room-data claim", text.String())
 	}
 	// The notice travels in the reply once; the summary points to it instead
-	// of repeating it (muse, review on 738ac158).
-	if summary == "" || strings.Contains(summary, notice) || !strings.Contains(summary, "notice") {
-		t.Fatalf("summary = %q\nwant a short reason that points to the notice", summary)
+	// of repeating it (muse, review on 738ac158), in exactly these words
+	// (grok, review on e0baf88f).
+	const want = "No individual room types found for Hotel Sacher Vienna: a room-price source was rate-limited (see the notice)."
+	if summary != want {
+		t.Fatalf("summary = %q\nwant      %q", summary, want)
 	}
 }
 

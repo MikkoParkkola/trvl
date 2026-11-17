@@ -2,7 +2,9 @@ package hotels
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -108,5 +110,23 @@ func TestGoogleRefusals_RealPaths(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestGoogleCooldownErr_KeepsAFailedProbe: when the retry-time probe fails
+// for a reason other than the cooldown, that failure stays in the chain next
+// to the cooldown marker instead of being dropped (grok, review on e0baf88f).
+// The context is cancelled, so the probe fails before any request is sent.
+func TestGoogleCooldownErr_KeepsAFailedProbe(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("the probe reached the server: %s", r.URL)
+	}))
+	t.Cleanup(srv.Close)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := googleCooldownErr(ctx, newTestClient(srv.URL), "google hotel search", http.StatusTooManyRequests)
+	if !errors.Is(err, batchexec.ErrRefused) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want the cooldown marker and the probe's own failure", err)
 	}
 }
