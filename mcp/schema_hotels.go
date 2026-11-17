@@ -8,7 +8,7 @@ func hotelSearchOutputSchema() interface{} {
 		"type": "object",
 		"properties": map[string]interface{}{
 			"success": schemaBool(),
-			"count":   schemaInt(),
+			"count":   schemaIntDesc("Hotels in this response; budget_omitted counts the rows the 50 KB result budget left out."),
 			"hotels": schemaArray(map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -65,6 +65,7 @@ func hotelSearchOutputSchema() interface{} {
 			"max_distance_km": schemaNumDesc("Distance cap applied around the city centre (25 by default; absent when none applied)."),
 			"monthly_omitted": schemaIntDesc("Monthly rentals left out of this nightly list: their prices are monthly rents, not nightly rates."),
 			"farther_omitted": schemaIntDesc("Hotels trvl left out for being farther than max_distance_km. Below 25 km Google is also asked for that radius and withholds farther hotels itself, so the count then covers only what trvl removed."),
+			"budget_omitted":  budgetOmittedSchema(),
 			"provider_statuses": schemaArrayDesc("Per-provider outcome (Google Hotels / Trivago / Booking / Airbnb / Hostelworld / configured providers). Status may be checked_hit, checked_no_hit, timeout, failed, skipped, disabled, or circuit_broken.", map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -206,8 +207,9 @@ func hotelReviewsOutputSchema() interface{} {
 					"date":   schemaString(),
 				},
 			}),
-			"count": schemaInt(),
-			"error": schemaString(),
+			"count":          schemaIntDesc("Reviews in this response."),
+			"budget_omitted": budgetOmittedSchema(),
+			"error":          schemaString(),
 		},
 		"required": []string{"success"},
 	}
@@ -225,6 +227,7 @@ func hotelRoomsOutputSchema() interface{} {
 			"rooms":                     schemaArray(hotelRoomTypeSchema()),
 			"booking_readiness":         schemaStringDesc("Composite booking-readiness verdict (MIK-6232), one of: ready, caution, unverified. Reachable to 'ready' when one concrete room offer carries every required signal; signals are never combined across rooms. Anything below ready means verify before booking."),
 			"booking_readiness_reasons": schemaStringArrayDesc("Which signals drove the readiness verdict down."),
+			"budget_omitted":            budgetOmittedSchema(),
 			"error":                     schemaString(),
 		},
 		"required": []string{"success"},

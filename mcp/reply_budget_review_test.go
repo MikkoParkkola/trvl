@@ -1,0 +1,371 @@
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/hotels"
+	"github.com/MikkoParkkola/trvl/internal/models"
+	"github.com/MikkoParkkola/trvl/internal/pricefeed"
+	"github.com/MikkoParkkola/trvl/internal/trip"
+)
+
+// Review round 2 (#822): after a cut, every derived field describes the rows
+// shown, or says it describes the full result, and never names a cut row.
+
+func stubRoomList(t *testing.T, rooms []hotels.RoomType) {
+	t.Helper()
+	orig := getRoomAvailabilityWithOptsFunc
+	t.Cleanup(func() { getRoomAvailabilityWithOptsFunc = orig })
+	getRoomAvailabilityWithOptsFunc = func(_ context.Context, opts hotels.RoomSearchOptions) (*hotels.RoomAvailability, error) {
+		return &hotels.RoomAvailability{Success: true, HotelID: opts.HotelID, Name: "Hotel X",
+			CheckIn: opts.CheckIn, CheckOut: opts.CheckOut, Rooms: slices.Clone(rooms)}, nil
+	}
+}
+
+func decodeRooms(t *testing.T, list any) []hotels.RoomType {
+	t.Helper()
+	raw, _ := json.Marshal(list)
+	var rooms []hotels.RoomType
+	if err := json.Unmarshal(raw, &rooms); err != nil {
+		t.Fatal(err)
+	}
+	return rooms
+}
+
+// The only ready room is the priciest, so the cut removes it and the verdict
+// must follow the rooms that remain.
+func TestReplyBudgetHotelRoomsReadinessFromShownRooms(t *testing.T) {
+	rooms := budgetRooms(80, 1000)
+	for i := range rooms {
+		rooms[i].Readiness = hotels.ReadinessCaution
+	}
+	rooms[0].Readiness = hotels.ReadinessReady
+	stubRoomList(t, rooms)
+	got := callGroundTool(t, "hotel_rooms", budgetRoomArgs)
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	shown := decodeRooms(t, got.structured["rooms"])
+	if bodyInt(got.structured, "budget_omitted") == 0 {
+		t.Fatal("fixture should force a cut")
+	}
+	for _, r := range shown {
+		if r.Name == "Room 00" {
+			t.Fatal("the only ready room (Room 00, the priciest) should be cut")
+		}
+	}
+	want := pricefeed.RoomsReadiness(&hotels.RoomAvailability{HotelID: "x", Rooms: shown})
+	if r, _ := got.structured["booking_readiness"].(string); r != string(want.Readiness) {
+		t.Errorf("booking_readiness = %q for %d shown rooms, want %q from the rooms in the reply", r, len(shown), want.Readiness)
+	}
+}
+
+// Prices on different bases and currencies: the cheapest stay is a 3-night
+// total (EUR 150, EUR 50 a night) and a USD room worth EUR 40 a night, both of
+// which a raw-Price comparison ranks as dear.
+func TestReplyBudgetHotelRoomsComparesLikeWithLike(t *testing.T) {
+	origRate := convertRateFunc
+	t.Cleanup(func() { convertRateFunc = origRate })
+	convertRateFunc = func(from, to string) (float64, bool) {
+		if from == "USD" && to == "EUR" {
+			return 0.4, true
+		}
+		return 0, false
+	}
+	rooms := budgetRooms(80, 1000)
+	for i := range rooms {
+		rooms[i].NightlyPrice = rooms[i].Price
+	}
+	rooms = append(rooms,
+		hotels.RoomType{Name: "Stay Total", Price: 150, TotalPrice: 150, Currency: "EUR", Provider: "google", MaxGuests: 2},
+		hotels.RoomType{Name: "USD Room", Price: 100, NightlyPrice: 100, Currency: "USD", Provider: "agoda", MaxGuests: 2},
+	)
+	stubRoomList(t, rooms)
+	args := mergeArgs(budgetRoomArgs, map[string]any{"check_out": "2027-03-13"})
+	got := callGroundTool(t, "hotel_rooms", args)
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	names := rowNames(got.structured, "rooms", "name")
+	for _, want := range []string{"Stay Total", "USD Room"} {
+		if !slices.Contains(names, want) {
+			t.Errorf("%s (cheaper per night once compared like with like) was cut; kept %d rooms", want, len(names))
+		}
+	}
+}
+
+// The verified rate's room is the cheapest by comparable price but the
+// priciest by raw Price; after any cut verified_rate must name a room still
+// listed.
+func TestReplyBudgetDetailsVerifiedRateIsShown(t *testing.T) {
+	stubHotelSearch(t, budgetHotelFixture(5, 300))
+	stubRoomsAndAmenities(t, 80, 300)
+	orig := getRoomAvailabilityWithOptsFunc
+	getRoomAvailabilityWithOptsFunc = func(ctx context.Context, opts hotels.RoomSearchOptions) (*hotels.RoomAvailability, error) {
+		a, err := orig(ctx, opts)
+		// verified_rate picks Room 00 by its total (1); the cut ranks it by
+		// its nightly rate (500), the dearest, so it goes first.
+		a.Rooms[0].TotalPrice, a.Rooms[0].NightlyPrice = 1, 500
+		return a, err
+	}
+	got := callGroundTool(t, "search_hotels_with_details", budgetDetailArgs)
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	rows, _ := got.structured["hotels"].([]any)
+	for i, r := range rows {
+		h, _ := r.(map[string]any)
+		vr, _ := h["verified_rate"].(map[string]any)
+		name, _ := vr["room_name"].(string)
+		rooms := rowNames(h, "room_types", "name")
+		if slices.Contains(rooms, "Room 00") {
+			t.Fatalf("hotel %d kept Room 00; the fixture must force it out", i)
+		}
+		if name == "" || !slices.Contains(rooms, name) {
+			t.Errorf("hotel %d verified_rate names %q; want a non-empty rate for a room still listed", i, name)
+		}
+	}
+}
+
+// Only the last hotel's room lookup fails, and the cut drops that hotel: the
+// summary must still disclose the failure.
+func TestReplyBudgetDetailsKeepsTrimmedHotelErrors(t *testing.T) {
+	stubHotelSearch(t, budgetHotelFixture(5, 9_000))
+	stubRoomsAndAmenities(t, 2, 100)
+	orig := getRoomAvailabilityWithOptsFunc
+	getRoomAvailabilityWithOptsFunc = func(ctx context.Context, opts hotels.RoomSearchOptions) (*hotels.RoomAvailability, error) {
+		if opts.HotelID == "h004" {
+			return nil, errors.New("rooms unavailable")
+		}
+		return orig(ctx, opts)
+	}
+	got := callGroundTool(t, "search_hotels_with_details", budgetDetailArgs)
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	if rows, _ := got.structured["hotels"].([]any); len(rows) >= 5 {
+		t.Fatalf("fixture should force hotels out; kept %d", len(rows))
+	}
+	if !strings.Contains(got.userText, "partial failure") {
+		t.Errorf("summary dropped the cut hotel's failed lookup:\n%s", got.userText)
+	}
+}
+
+// One hotel with 16 rooms slightly over budget keeps every room that fits,
+// not a blanket ten.
+func TestReplyBudgetDetailsNoBlanketFirstCut(t *testing.T) {
+	stubHotelSearch(t, budgetHotelFixture(1, 300))
+	stubRoomsAndAmenities(t, 16, 200)
+	got := callGroundTool(t, "search_hotels_with_details", mergeArgs(budgetDetailArgs, map[string]any{"max_hotels": 1}))
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	assertUnderPromise(t, got)
+	rows, _ := got.structured["hotels"].([]any)
+	h, _ := rows[0].(map[string]any)
+	if n := len(rowNames(h, "room_types", "name")); n <= detailsRoomsFirstCutForTest || n >= 16 {
+		t.Errorf("kept %d of 16 rooms; want more than %d (the reply was only slightly over) and fewer than 16", n, detailsRoomsFirstCutForTest)
+	}
+}
+
+const detailsRoomsFirstCutForTest = 10
+
+// The cheapest and fastest transfer routes sit at the end of the city
+// matches; the cut must keep them, and the match counts must describe the
+// routes listed.
+func TestReplyBudgetTransfersMatchCountsAndLabels(t *testing.T) {
+	orig := searchAirportTransfersFunc
+	t.Cleanup(func() { searchAirportTransfersFunc = orig })
+	searchAirportTransfersFunc = func(context.Context, trip.AirportTransferInput) (*trip.AirportTransferResult, error) {
+		routes := make([]models.GroundRoute, 60)
+		for i := range routes {
+			routes[i] = models.GroundRoute{Provider: "flixbus", Type: "bus", Price: float64(20 + i), Currency: "EUR", Duration: 40 + i,
+				Departure: models.GroundStop{City: "Vienna Airport"}, Arrival: models.GroundStop{City: "Vienna"},
+				BookingURL: budgetTransferURL(i) + "?pad=" + strings.Repeat("u", 1500)}
+		}
+		// Buses and trains up front; taxis only in the tail the cut removes.
+		for i := range routes {
+			switch {
+			case i >= 50 && i < 58:
+				routes[i].Provider, routes[i].Type = "taxi", "taxi"
+			case i%2 == 1:
+				routes[i].Provider, routes[i].Type = "oebb", "train"
+			}
+		}
+		routes[59].Price = 2
+		routes[58].Duration = 5
+		return &trip.AirportTransferResult{Success: true, AirportCode: "VIE", Airport: "Vienna International", AirportCity: "Vienna",
+			Destination: "Vienna", Date: "2027-03-10", Count: 60, ExactMatches: 30, CityMatches: 30, Routes: routes}, nil
+	}
+	got := callGroundTool(t, "search_airport_transfers", budgetTransferArgs)
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	keys := transferKeys(got.structured)
+	for _, want := range []string{budgetTransferURL(59), budgetTransferURL(58)} {
+		if !slices.Contains(keys, want) {
+			t.Errorf("%s (the cheapest or fastest route) was cut", want)
+		}
+	}
+	wantExact := 0
+	for _, k := range keys {
+		var i int
+		if _, err := fmt.Sscanf(k, "https://transfers.example/r%03d", &i); err == nil && i < 30 {
+			wantExact++
+		}
+	}
+	if exact := bodyInt(got.structured, "exact_matches"); exact != wantExact {
+		t.Errorf("exact_matches = %d, want %d exact routes listed", exact, wantExact)
+	}
+	if city := bodyInt(got.structured, "city_matches"); city != len(keys)-wantExact {
+		t.Errorf("city_matches = %d, want %d city routes listed", city, len(keys)-wantExact)
+	}
+	// The modes the listed routes give, plus ride-hail, which the comparison
+	// adds whenever there is a route.
+	listed := []string{"ride_hail"}
+	providers, types := rowNames(got.structured, "routes", "provider"), rowNames(got.structured, "routes", "type")
+	for i := range providers {
+		mode := types[i]
+		if providers[i] == "taxi" {
+			mode = "taxi"
+		}
+		listed = append(listed, mode)
+	}
+	if slices.Contains(listed, "taxi") {
+		t.Fatal("fixture should cut every taxi route")
+	}
+	cmp, _ := got.structured["comparison"].(map[string]any)
+	for _, m := range rowNames(cmp, "options", "mode") {
+		if !slices.Contains(listed, m) {
+			t.Errorf("comparison option mode %q comes from no listed route (listed %v)", m, listed)
+		}
+	}
+	for _, label := range []string{"cheapest_mode", "fastest_mode", "best_value_mode", "most_luggage_friendly_mode"} {
+		if m, _ := cmp[label].(string); m != "" && !slices.Contains(listed, m) {
+			t.Errorf("%s = %q comes from no listed route (listed %v)", label, m, listed)
+		}
+	}
+}
+
+// Three rates share the summary room's name, provider, rate ID, currency and
+// price; only one fits. Pinning must keep one of them, not all three.
+func TestReplyBudgetHotelRoomsPinsOneOccurrence(t *testing.T) {
+	room := hotels.RoomType{Name: "Twin", Price: 60, NightlyPrice: 60, Currency: "EUR", Provider: "booking", MaxGuests: 2,
+		Description: strings.Repeat("r", 15_000)}
+	stubRoomList(t, []hotels.RoomType{room, room, room})
+	got := callGroundTool(t, "hotel_rooms", budgetRoomArgs)
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	assertUnderPromise(t, got)
+	if n := len(rowNames(got.structured, "rooms", "name")); n != 1 {
+		t.Errorf("kept %d rooms, want 1", n)
+	}
+}
+
+// Only one room fits. The EUR 150 three-night total (EUR 50 a night) beats
+// EUR 80 a night, so it is the room kept and the room the summary names.
+func TestReplyBudgetHotelRoomsKeepsCheapestPerNight(t *testing.T) {
+	pad := strings.Repeat("r", 15_000)
+	stubRoomList(t, []hotels.RoomType{
+		{Name: "Night 80", Price: 80, NightlyPrice: 80, Currency: "EUR", Provider: "agoda", MaxGuests: 2, Description: pad},
+		{Name: "Stay 150", Price: 150, TotalPrice: 150, Currency: "EUR", Provider: "google", MaxGuests: 2, Description: pad},
+		{Name: "Night 95", Price: 95, NightlyPrice: 95, Currency: "EUR", Provider: "agoda", MaxGuests: 2, Description: pad},
+	})
+	got := callGroundTool(t, "hotel_rooms", mergeArgs(budgetRoomArgs, map[string]any{"check_out": "2027-03-13"}))
+	if got.isError {
+		t.Fatalf("isError: %s", got.errText)
+	}
+	if names := rowNames(got.structured, "rooms", "name"); len(names) != 1 || names[0] != "Stay 150" {
+		t.Errorf("kept %v, want only Stay 150", names)
+	}
+	if !strings.Contains(got.userText, "EUR 50/night (Stay 150)") {
+		t.Errorf("trimmed summary should name the kept room per night:\n%s", got.userText)
+	}
+}
+
+// Reply size need not shrink as rows go: a pinned row promoted into a
+// summary can add bytes. Here only the reply after three drop steps fits,
+// so a search that skips steps would miss it.
+func TestFitReplyFindsFitWhenSizeIsNotMonotone(t *testing.T) {
+	rows := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	build := func(shown []int, trimmed bool) (string, any) {
+		pad := 60_000
+		if len(shown) == 8 {
+			pad = 1_000
+		}
+		return "summary", map[string]any{"rows": shown, "pad": strings.Repeat("p", pad)}
+	}
+	_, data, err := fitReply(rows, dropTail[int](nil), build)
+	if err != nil {
+		t.Fatalf("fitReply error %v; the reply after 3 drops fits", err)
+	}
+	if got := data.(map[string]any)["rows"].([]int); len(got) != 8 {
+		t.Errorf("kept %d rows, want 8", len(got))
+	}
+}
+
+// fitReply keeps the most rows that fit: here 2 of 10, the first measured fit.
+func TestFitReplyFewestSteps(t *testing.T) {
+	build := func(shown []int, _ bool) (string, any) {
+		return "s", map[string]any{"rows": shown, "pad": strings.Repeat("p", len(shown)*8_000)}
+	}
+	_, data, err := fitReply([]int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, dropTail[int](nil), build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := data.(map[string]any)["rows"].([]int); !slices.Equal(got, []int{0, 1}) {
+		t.Errorf("kept %v, want [0 1]", got)
+	}
+}
+
+// A floor that never fits is the bounded error, after every step was measured.
+func TestFitReplyFloorError(t *testing.T) {
+	calls := 0
+	build := func(shown []int, _ bool) (string, any) {
+		calls++
+		return "s", map[string]any{"pad": strings.Repeat("p", 60_000)}
+	}
+	_, _, err := fitReply([]int{0, 1, 2, 3}, dropTail[int](nil), build)
+	if err == nil || !strings.Contains(err.Error(), "50 KB") {
+		t.Fatalf("err = %v, want the 50 KB budget error", err)
+	}
+	if calls != 4 {
+		t.Errorf("measured %d replies, want 4 (every step down to the floor)", calls)
+	}
+}
+
+// A drop step may edit the rows it is given, and copies a nested slice
+// before changing it, as fitReply's contract asks; the caller's rows and
+// their nested slices stay intact.
+func TestFitReplyLeavesCallerRows(t *testing.T) {
+	type row struct {
+		Name string
+		Tags []string
+	}
+	rows := []row{{"a", []string{"a1"}}, {"b", []string{"b1"}}, {"c", []string{"c1"}}}
+	drop := func(cur []row) ([]row, bool) {
+		if len(cur) <= 1 {
+			return cur, false
+		}
+		cur[0].Name = "edited"
+		cur[0].Tags = slices.Clone(cur[0].Tags)
+		cur[0].Tags[0] = "edited"
+		return cur[:len(cur)-1], true
+	}
+	build := func(shown []row, _ bool) (string, any) {
+		return "s", map[string]any{"pad": strings.Repeat("p", len(shown)*20_000)}
+	}
+	if _, _, err := fitReply(rows, drop, build); err != nil {
+		t.Fatal(err)
+	}
+	if rows[0].Name != "a" || rows[0].Tags[0] != "a1" || len(rows) != 3 {
+		t.Errorf("caller rows changed: %+v", rows)
+	}
+}
