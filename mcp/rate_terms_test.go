@@ -111,3 +111,32 @@ func TestSellerKey_MatchesRoomNameNormalisation(t *testing.T) {
 		t.Error("sellerKey and the room-name normaliser disagree")
 	}
 }
+
+// Currency belongs to the seller's price: another seller's quote with no
+// currency keeps it unknown and keeps its own price (#832 round 2).
+func TestCompleteRoomInventoryQuote_ForeignQuoteKeepsOwnPriceAndNoBorrowedCurrency(t *testing.T) {
+	room := googlePricedRoom("Hotels.com")
+	room.Currency = "USD"
+	got := completeRoomInventoryQuote(models.RoomInventoryQuote{Provider: "Booking.com", NightlyPrice: 95}, room, rateTermsNeed, time.Now())
+	if got.Currency != "" {
+		t.Errorf("Booking's 95 labelled %q, the room seller's currency; want unknown", got.Currency)
+	}
+	if got.NightlyPrice != 95 {
+		t.Errorf("NightlyPrice = %v, want Booking's own 95", got.NightlyPrice)
+	}
+}
+
+// The room's own link is used when the quote has none, and it is the room's,
+// not the hotel's.
+func TestOfferAndVerifiedRate_UseOwnRoomLink(t *testing.T) {
+	room := googlePricedRoom("Hotels.com") // links to https://www.hotels.com/ho1
+	hotel := models.HotelResult{Name: "Hotel X", HotelID: "/g/11x", BookingURL: "https://www.booking.com/hotel/at/x.html"}
+	now := time.Now()
+	offers := accommodationOffersFromRooms(hotel, []hotels.RoomType{room}, rateTermsNeed, now)
+	if len(offers) != 1 || offers[0].ProviderURL != "https://www.hotels.com/ho1" {
+		t.Errorf("offer link = %+v, want the room's own Hotels.com link", offers)
+	}
+	if v := verifiedRateFromRooms(hotel, []hotels.RoomType{room}, now); v == nil || v.BookingURL != "https://www.hotels.com/ho1" {
+		t.Errorf("verified rate = %+v, want the room's own link", v)
+	}
+}

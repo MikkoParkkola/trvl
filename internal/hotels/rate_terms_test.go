@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -232,6 +233,10 @@ func TestGetRoomAvailability_EverySellerNamed(t *testing.T) {
 			}
 		}
 	}
+	// The blank quote on the appended Booking room is Booking's.
+	if q := roomNamedAny(t, av.Rooms, "Penthouse").InventoryOptions; len(q) != 1 || q[0].Provider != "Booking.com" {
+		t.Errorf("Penthouse quote seller = %+v, want Booking.com", q)
+	}
 }
 
 // An adopted quote is the donor's whole quote: an unpriced room's own
@@ -254,5 +259,51 @@ func TestMergeRoomTypes_AdoptionTakesTheWholeQuote(t *testing.T) {
 	}
 	if m.Name != "Double Room" || m.Description != "Courtyard view" || len(m.InventoryOptions) != 2 {
 		t.Errorf("room identity or enrichment lost: %+v", m)
+	}
+}
+
+func roomNamedAny(t *testing.T, rooms []RoomType, name string) RoomType {
+	t.Helper()
+	for _, r := range rooms {
+		if r.Name == name {
+			return r
+		}
+	}
+	t.Fatalf("no %q in %+v", name, rooms)
+	return RoomType{}
+}
+
+// Adoption against a complete expected room: with conflicting recipient and
+// donor fields, every field is the donor's except the room's name and the
+// details merged into it (#832 round 2).
+func TestMergeRoomTypes_AdoptionMatchesExpectedRoom(t *testing.T) {
+	yes, no := true, false
+	recipient := RoomType{
+		Name: "Double Room", Currency: "USD", RateID: "g-1", RatePlanName: "Google plan",
+		Provider: "Hotels.com", Source: "google_hotels", ProviderURL: "https://www.hotels.com/ho1",
+		MatchConfidence: models.RoomInventoryMatchSimilar, Description: "Courtyard view",
+		BedType: "1 double bed", SizeM2: 20, MaxGuests: 2, Amenities: []string{"wifi"},
+		CancellationPolicy: "Hotels.com policy", Refundable: &yes, FreeCancellation: &yes, Board: "half_board", BreakfastIncluded: &yes,
+	}
+	donor := RoomType{
+		Name: "Double Room", Price: 95, NightlyPrice: 95, TotalPrice: 190, TaxesAndFees: 12, TaxesFeesIncluded: &no,
+		Currency: "EUR", RateID: "b-1", RatePlanName: "Flexible",
+		Provider: "Booking.com", Source: "booking.com", ProviderURL: "https://www.booking.com/hotel/at/x.html",
+		MatchConfidence: models.RoomInventoryMatchExact, Description: "Booking text",
+		BedType: "2 single beds", SizeM2: 25, MaxGuests: 3, Amenities: []string{"tv"},
+		CancellationPolicy: "Non-refundable", Refundable: &no, FreeCancellation: &no, Board: "room_only", BreakfastIncluded: &no,
+	}
+	got := mergeRoomTypes([]RoomType{recipient}, []RoomType{donor})[0]
+
+	want := donor
+	want.Name = recipient.Name
+	want.Description = recipient.Description
+	want.BedType = recipient.BedType
+	want.SizeM2 = recipient.SizeM2
+	want.MaxGuests = recipient.MaxGuests
+	want.Amenities = []string{"wifi", "tv"}
+	want.InventoryOptions = []models.RoomInventoryQuote{roomInventoryQuote(recipient), roomInventoryQuote(donor)}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("adopted room:\n got %+v\nwant %+v", got, want)
 	}
 }

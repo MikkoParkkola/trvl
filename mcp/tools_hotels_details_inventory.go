@@ -189,11 +189,11 @@ func roomInventoryQuoteFromRoom(room hotels.RoomType, need models.AccommodationN
 }
 
 // completeRoomInventoryQuote fills a quote's gaps from its room. Only a quote
-// from the room's own seller borrows seller-bound fields (link, prices, taxes,
-// price trust, rate terms): another seller's quote keeps its gaps empty, since
-// an unknown term is honest and a borrowed one is not (#823). Stay fields
-// (room name, match, currency, occupancy, rooms, check time) fill for every
-// quote.
+// from the room's own seller borrows seller-bound fields (link, prices,
+// currency, taxes, price trust, rate terms): another seller's quote keeps its
+// gaps empty, since an unknown term or currency is honest and a borrowed one
+// mislabels the price (#823). Stay fields (room name, match, occupancy, rooms,
+// check time) fill for every quote.
 func completeRoomInventoryQuote(quote models.RoomInventoryQuote, room hotels.RoomType, need models.AccommodationNeed, checkedAt time.Time) models.RoomInventoryQuote {
 	own := quoteFromRoomSeller(quote, room)
 	if quote.Provider == "" {
@@ -204,9 +204,6 @@ func completeRoomInventoryQuote(quote models.RoomInventoryQuote, room hotels.Roo
 	}
 	if quote.MatchConfidence == "" {
 		quote.MatchConfidence = roomMatchConfidence(room)
-	}
-	if quote.Currency == "" {
-		quote.Currency = room.Currency
 	}
 	if own {
 		quote = fillSellerFields(quote, room)
@@ -245,6 +242,9 @@ func normalizeName(s string) string {
 
 // fillSellerFields fills a quote's seller-bound gaps from its own seller's room.
 func fillSellerFields(quote models.RoomInventoryQuote, room hotels.RoomType) models.RoomInventoryQuote {
+	if quote.Currency == "" {
+		quote.Currency = room.Currency
+	}
 	if quote.ProviderURL == "" {
 		quote.ProviderURL = room.ProviderURL
 	}
