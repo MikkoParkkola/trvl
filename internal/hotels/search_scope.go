@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -105,21 +104,4 @@ func googleRefusal(err error) error {
 		return err
 	}
 	return fmt.Errorf("%w: %w", models.ErrRateLimited, err)
-}
-
-// googleCooldown reports whether a Google refusal armed the client's cooldown:
-// an HTTP 429 or a quota body (worded "refused (HTTP n)" wherever the hotels
-// package reports one) or a call skipped inside the cooldown
-// (batchexec.ErrRefused). A 403 block or a 503 outage is refusal-class too but
-// arms none, so its message must not send anyone to wait one out. Matched on
-// text as well, because a provider status keeps only the error's message.
-func googleCooldown(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, batchexec.ErrRefused) {
-		return true
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "refused (HTTP ") || strings.Contains(msg, batchexec.ErrRefused.Error())
 }
