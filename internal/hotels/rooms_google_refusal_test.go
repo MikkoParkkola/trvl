@@ -362,3 +362,33 @@ func TestSearchHotelByName_RefusalSurvivesLaterFailures(t *testing.T) {
 		t.Fatalf("err = %v, want the city search's block reported as a rate limit", err)
 	}
 }
+
+// TestSearchHotelByName_OnlyA429SaysCooldown: every refusal-class answer still
+// ends the lookup in a rate-limit error, but only a 429 armed Google's
+// cooldown. A 403 block or a 503 outage must not send the traveller to wait
+// one out.
+func TestSearchHotelByName_OnlyA429SaysCooldown(t *testing.T) {
+	cases := []struct {
+		status       int
+		wantCooldown bool
+	}{
+		{http.StatusTooManyRequests, true},
+		{http.StatusForbidden, false},
+		{http.StatusServiceUnavailable, false},
+	}
+	for _, tc := range cases {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			roomLookupWorld(t, googleRoutes{shortEntity, answer(404), answer(tc.status)}, false)
+			withBookingResult(t, sacherBookingUSD)
+			seedGeoAt(t, "Hotel Sacher Wien", sacherLat, sacherLon)
+
+			_, err := SearchHotelByName(context.Background(), "Hotel Sacher Wien", lookupCheckIn, lookupCheckOut, "USD")
+			if !errors.Is(err, models.ErrRateLimited) {
+				t.Fatalf("err = %v, want a rate-limit error", err)
+			}
+			if got := strings.Contains(err.Error(), "cooldown"); got != tc.wantCooldown {
+				t.Fatalf("err = %v\nmentions a cooldown: %v, want %v", err, got, tc.wantCooldown)
+			}
+		})
+	}
+}

@@ -437,7 +437,13 @@ func SearchHotelByName(ctx context.Context, query string, checkIn, checkOut, cur
 				// Google's index: report the refusal, not a match the rooms
 				// lookup cannot use (#813).
 				if errors.Is(googleErr, models.ErrRateLimited) {
-					return nil, fmt.Errorf("found %q, but Google Hotels refused requests, so its Google place ID is unknown; retry once Google's cooldown ends: %w", match.Name, googleErr)
+					// Only a 429 or quota refusal armed a cooldown; a 403 or
+					// 503 armed none, so it gets no cooldown claim.
+					what, retry := "blocked the request", "retry later"
+					if googleCooldown(googleErr) {
+						what, retry = "refused requests", "retry once Google's cooldown ends"
+					}
+					return nil, fmt.Errorf("found %q, but Google Hotels %s, so its Google place ID is unknown; %s: %w", match.Name, what, retry, googleErr)
 				}
 			}
 			return match, nil
