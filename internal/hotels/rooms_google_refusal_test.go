@@ -39,6 +39,21 @@ func (g googleRoutes) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// strictGoogle passes the requests routes expects and fails the test on any
+// other, googleCooldownErr's probe included: the client must answer that probe
+// from its own cooldown, so it never reaches a server (#826).
+func strictGoogle(t *testing.T, routes googleRoutes) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if p == "/prime" || strings.HasPrefix(p, "/travel/hotels/") || strings.Contains(p, "batchexecute") {
+			routes.ServeHTTP(w, r)
+			return
+		}
+		t.Errorf("unexpected request to Google: %s", r.URL)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+}
+
 func answer(code int) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(code) }
 }
@@ -67,7 +82,7 @@ func roomLookupWorld(t *testing.T, routes googleRoutes, prime bool) func() int32
 	t.Helper()
 	freshRateManager(t)
 	stubNoFX(t)
-	useTestDefaultClient(t, routes)
+	useTestDefaultClient(t, strictGoogle(t, routes))
 	if prime {
 		if status, _, err := DefaultClient().Get(context.Background(), "https://www.google.com/prime"); err != nil || status != http.StatusTooManyRequests {
 			t.Fatalf("prime the cooldown: status %d, err %v", status, err)

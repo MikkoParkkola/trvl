@@ -99,8 +99,9 @@ func TestGoogleOutcomeGuard_Fixtures(t *testing.T) {
 	fixtures := map[string]string{
 		"state write":     `func f(o *googleOutcome) { o.settled = true }`,
 		"events write":    `func f(c *googleCall) { c.events = nil }`,
-		"err write":       `func f(o *googleOutcome) { o.err = nil }`,
-		"hand-built":      `var o = googleOutcome{err: nil}`,
+		"strongest write": `func f(o *googleOutcome) { o.strongest = nil }`,
+		"event write":     `func f(c *googleCall) { c.events[0].err = nil }`,
+		"hand-built":      `var o = googleOutcome{strongest: nil}`,
 		"deleted helper":  `var x = googleStatusErr`,
 		"cooldown text":   `var e = fmt.Errorf("x refused (HTTP 429)")`,
 		"status string":   `func f(ps models.ProviderStatus) error { return fmt.Errorf("google: %s", ps.Error) }`,
@@ -118,5 +119,20 @@ func TestGoogleOutcomeGuard_Fixtures(t *testing.T) {
 				t.Fatalf("fixture %q passed the guard, want a violation", body)
 			}
 		})
+	}
+}
+
+// TestGoogleOutcomeGuard_UnrelatedErrFieldPasses: the guard bans writes to the
+// outcome's own fields, not to every field that happens to be called err
+// (muse, review on 738ac158).
+func TestGoogleOutcomeGuard_UnrelatedErrFieldPasses(t *testing.T) {
+	const src = "package hotels\ntype probe struct{ err error }\nfunc f(p *probe) { p.err = nil }\n"
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "fixture.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := googleOutcomeViolations(fset, "fixture.go", file); len(got) != 0 {
+		t.Fatalf("an unrelated .err write tripped the guard: %v", got)
 	}
 }

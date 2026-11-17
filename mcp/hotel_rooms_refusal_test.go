@@ -60,11 +60,20 @@ func TestHandleHotelRooms_EmptyRoomsSummaryFollowsTheNotice(t *testing.T) {
 		t.Fatalf("hotel_rooms: %v", err)
 	}
 	var text strings.Builder
+	summary := ""
 	for _, b := range blocks {
 		text.WriteString(b.Text)
+		if strings.Contains(b.Text, "No individual room types found") {
+			summary = b.Text
+		}
 	}
-	if got := text.String(); strings.Contains(got, "may not expose") || !strings.Contains(got, notice) {
-		t.Fatalf("summary = %q\nwant the notice as the reason, not the no-room-data claim", got)
+	if strings.Contains(text.String(), "may not expose") || !strings.Contains(text.String(), notice) {
+		t.Fatalf("reply = %q\nwant the notice as the reason, not the no-room-data claim", text.String())
+	}
+	// The notice travels in the reply once; the summary points to it instead
+	// of repeating it (muse, review on 738ac158).
+	if summary == "" || strings.Contains(summary, notice) || !strings.Contains(summary, "notice") {
+		t.Fatalf("summary = %q\nwant a short reason that points to the notice", summary)
 	}
 }
 

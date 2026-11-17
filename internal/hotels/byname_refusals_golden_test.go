@@ -51,13 +51,20 @@ func TestByNameRefusals_Golden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read golden: %v\nreal sentences:\ncooldown: %s\nblocked: %s", err, got["cooldown"], got["blocked"])
 	}
+	seen := map[string]int{}
 	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
 		name, want, ok := strings.Cut(line, ": ")
 		if !ok {
 			t.Fatalf("malformed golden line %q", line)
 		}
+		seen[name]++
 		if got[name] != want {
 			t.Errorf("%s:\n got  %s\n want %s", name, got[name], want)
 		}
+	}
+	// The CLI and MCP tests check whatever lines the file holds, so a lost or
+	// doubled line would silently change their coverage.
+	if len(seen) != 2 || seen["cooldown"] != 1 || seen["blocked"] != 1 {
+		t.Errorf("golden cases = %v, want exactly one cooldown and one blocked", seen)
 	}
 }
