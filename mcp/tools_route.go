@@ -62,13 +62,14 @@ func routeItinerariesOutputSchema() interface{} {
 	return schemaArray(map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"legs":           schemaArray(map[string]interface{}{"type": "object"}),
-			"total_price":    schemaNum(),
-			"currency":       schemaString(),
-			"total_duration": schemaInt(),
-			"transfers":      schemaInt(),
-			"depart_time":    schemaString(),
-			"arrive_time":    schemaString(),
+			"legs":              schemaArray(map[string]interface{}{"type": "object"}),
+			"total_price":       schemaNum(),
+			"currency":          schemaString(),
+			"total_duration":    schemaInt(),
+			"transfers":         schemaInt(),
+			"transfers_unknown": schemaBoolDesc("True when some leg's provider sent no change data: transfers is then a lower bound, not a count."),
+			"depart_time":       schemaString(),
+			"arrive_time":       schemaString(),
 		},
 	})
 }
@@ -146,6 +147,9 @@ func buildRouteSummary(result *models.RouteSearchResult) string {
 		transferStr := "direct"
 		if it.Transfers > 0 {
 			transferStr = fmt.Sprintf("%d transfers", it.Transfers)
+		}
+		if it.TransfersUnknown {
+			transferStr = "transfers unknown"
 		}
 
 		_, _ = fmt.Fprintf(&sb, "Option %d: %s %.0f · %dh%02dm · %s\n",

@@ -143,6 +143,9 @@ func printItinerary(num int, it models.RouteItinerary, targetCurrency string) {
 			transferStr += "s"
 		}
 	}
+	if it.TransfersUnknown {
+		transferStr = "transfers unknown"
+	}
 
 	fmt.Printf("  %s  %s · %s · %s\n",
 		models.Bold(fmt.Sprintf("Option %d:", num)),
