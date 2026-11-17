@@ -89,8 +89,8 @@ func (c googleCall) refusal() error {
 }
 
 type googleOutcome struct {
-	err     error
-	settled bool
+	strongest error
+	settled   bool
 }
 
 // merge folds one call into the lookup's outcome. settled is the caller's
@@ -100,16 +100,16 @@ type googleOutcome struct {
 // hidden anything it needs.
 func (o *googleOutcome) merge(c googleCall, settled bool) {
 	if settled || o.settled {
-		o.err, o.settled = nil, true
+		o.strongest, o.settled = nil, true
 		return
 	}
 	if r := c.refusal(); r != nil {
-		o.err = strongerRefusal(o.err, r)
+		o.strongest = strongerRefusal(o.strongest, r)
 	}
 }
 
 // Err returns the recorded refusal, wrapping models.ErrRateLimited, or nil.
-func (o *googleOutcome) Err() error { return o.err }
+func (o *googleOutcome) Err() error { return o.strongest }
 
 // strongerRefusal applies the precedence rule: a cooldown-armed refusal
 // (carrying the retry clock) beats a plain one and is never replaced by one;
@@ -138,12 +138,19 @@ func rateLimitWrap(err error) error {
 // returns the skip error with its retry clock; wrapping that error lets the
 // arming refusal say when a retry can work, as the later skips do (#813).
 //
-// Invariant: call it only right after batchexec armed the cooldown. Then the
-// probe is answered locally and no request leaves the machine; called anywhere
-// else, the probe would send a real request to Google. A read-only batchexec
-// accessor for the retry clock is the cleaner option and would remove the
-// probe, but it widens batchexec's API, so it awaits the operator's approval.
+// Invariant: the probe runs only right after batchexec armed the cooldown.
+// Then it is answered locally and no request leaves the machine. batchexec
+// arms only for a 429 or a 200 quota body (its shouldStopGoogle), so a quota
+// body on any other status armed nothing: that is a plain refusal, built here
+// with no probe and no cooldown marker (grok, review on 738ac158). Callers
+// pass a status whose body batchexec.QuotaRefusal accepted. A read-only
+// batchexec accessor for the retry clock is the cleaner option and would
+// remove the probe, but it widens batchexec's API, so it awaits the
+// operator's approval.
 func googleCooldownErr(ctx context.Context, client *batchexec.Client, op string, status int) error {
+	if status != http.StatusTooManyRequests && status != http.StatusOK {
+		return fmt.Errorf("%s refused (HTTP %d): %w", op, status, models.ErrRateLimited)
+	}
 	if _, _, skip := client.Get(ctx, googleCooldownProbeURL); errors.Is(skip, batchexec.ErrRefused) {
 		return fmt.Errorf("%s refused (HTTP %d): %w: %w", op, status, models.ErrRateLimited, skip)
 	}

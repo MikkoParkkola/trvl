@@ -26,8 +26,7 @@ func googleOutcomeViolations(fset *token.FileSet, name string, file *ast.File) [
 		switch n := n.(type) {
 		case *ast.AssignStmt:
 			for _, lhs := range n.Lhs {
-				if sel, ok := lhs.(*ast.SelectorExpr); ok && base != "google_outcome.go" &&
-					(sel.Sel.Name == "events" || sel.Sel.Name == "settled" || sel.Sel.Name == "err") {
+				if base != "google_outcome.go" && writesOutcomeState(lhs) {
 					report(n, "writes Google outcome state outside google_outcome.go")
 				}
 			}
@@ -65,6 +64,32 @@ func googleOutcomeViolations(fset *token.FileSet, name string, file *ast.File) [
 		return true
 	})
 	return out
+}
+
+// writesOutcomeState reports whether an assignment target is, or reaches into,
+// a field only the outcome and its calls own: googleOutcome's strongest and
+// settled, or anything under googleCall's events (an event's err included).
+// The names are the outcome's own, so an unrelated field called err passes
+// without type information (muse, review on 738ac158).
+func writesOutcomeState(e ast.Expr) bool {
+	for {
+		switch x := e.(type) {
+		case *ast.SelectorExpr:
+			switch x.Sel.Name {
+			case "strongest", "settled", "events":
+				return true
+			}
+			e = x.X
+		case *ast.IndexExpr:
+			e = x.X
+		case *ast.StarExpr:
+			e = x.X
+		case *ast.ParenExpr:
+			e = x.X
+		default:
+			return false
+		}
+	}
 }
 
 // TestGoogleOutcomeGuard_Package: no non-test file in package hotels bypasses

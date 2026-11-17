@@ -52,7 +52,7 @@ func TestByNameRefusals_Golden(t *testing.T) {
 		t.Fatalf("read golden: %v\nreal sentences:\ncooldown: %s\nblocked: %s", err, got["cooldown"], got["blocked"])
 	}
 	seen := map[string]int{}
-	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(strings.ReplaceAll(string(raw), "\r", "")), "\n") {
 		name, want, ok := strings.Cut(line, ": ")
 		if !ok {
 			t.Fatalf("malformed golden line %q", line)

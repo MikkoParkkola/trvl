@@ -106,7 +106,7 @@ func byNameRefusals(t *testing.T) map[string]error {
 		t.Fatal(err)
 	}
 	out := map[string]error{}
-	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(strings.ReplaceAll(string(raw), "\r", "")), "\n") {
 		name, sentence, ok := strings.Cut(line, ": ")
 		if !ok {
 			t.Fatalf("malformed golden line %q", line)

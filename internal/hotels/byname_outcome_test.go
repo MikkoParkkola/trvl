@@ -3,6 +3,7 @@ package hotels
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -68,7 +69,8 @@ func TestSearchHotelByName_CancelledLastSearchKeepsBoth(t *testing.T) {
 // a cooldown refusal, candidate 2 a plain 403, and nothing answered. The
 // error reports the outcome's strongest refusal, the cooldown, not the later
 // block (grok, #826 rev 6 [6]). The Google fetch is stubbed because the real
-// client's cooldown would skip candidate 2.
+// client's cooldown would skip candidate 2. The stub hands back a cooldown
+// refusal directly: googleCooldownErr would probe an unarmed client.
 func TestSearchHotelByName_NoResultsReportsTheStrongestRefusal(t *testing.T) {
 	roomLookupWorld(t, googleRoutes{shortEntity, answer(404), noSacherPage}, false)
 	orig := fetchHotelPageFullFn
@@ -77,7 +79,7 @@ func TestSearchHotelByName_NoResultsReportsTheStrongestRefusal(t *testing.T) {
 		if strings.Contains(loc, "Sacher") {
 			return parseResult{}, batchexec.ErrBlocked
 		}
-		return parseResult{}, googleCooldownErr(context.Background(), DefaultClient(), "google hotel search", http.StatusTooManyRequests)
+		return parseResult{}, fmt.Errorf("google hotel search: %w: %w", models.ErrRateLimited, batchexec.ErrRefused)
 	}
 
 	_, err := SearchHotelByName(context.Background(), "Hotel Sacher, Vienna", lookupCheckIn, lookupCheckOut, "USD")

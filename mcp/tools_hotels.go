@@ -660,7 +660,8 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		summary = fmt.Sprintf("No individual room types found for %s. Google Hotels may not expose room-level data for this property.", availability.Name)
 		if availability.Notice != "" {
 			// A withheld price is the reason; don't also blame Google's data.
-			summary = fmt.Sprintf("No individual room types found for %s. %s", availability.Name, availability.Notice)
+			// The notice travels in the reply, so the summary points to it.
+			summary = fmt.Sprintf("No individual room types found for %s: a room-price source was rate-limited (see the notice).", availability.Name)
 		}
 	} else {
 		// Count rooms with rich Booking.com data.
