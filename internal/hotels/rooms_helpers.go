@@ -1,6 +1,7 @@
 package hotels
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"sort"
@@ -390,7 +391,7 @@ func searchPageRooms(hotel *models.HotelResult, defaultCurrency string) []RoomTy
 			Currency:        currency,
 			Provider:        providerFromSources(hotel),
 			ProviderURL:     hotel.BookingURL,
-			Source:          headlineSource(hotel),
+			Source:          cmp.Or(headlineSource(hotel), "unknown"),
 			MatchConfidence: models.RoomInventoryMatchSimilar,
 		})
 		roomLevelEmitted = true
@@ -529,20 +530,22 @@ func findLocationTriplet(v any, depth int) string {
 
 // providerFromSources returns the provider display name from the first source
 // entry, or "Google Hotels" as the default.
-// headlineSource is the trvl tag of the quote behind h.Price.
+// headlineSource is the trvl tag of the quote behind h.Price, or "".
 func headlineSource(h *models.HotelResult) string {
 	if h.HeadlineProvider != "" {
 		return h.HeadlineProvider
 	}
-	if len(h.Sources) > 0 && h.Sources[0].Provider != "" {
+	if len(h.Sources) > 0 {
 		return h.Sources[0].Provider
 	}
-	return "unknown"
+	return ""
 }
 
+// providerFromSources names the provider of the headline quote for display,
+// the same quote headlineSource tags.
 func providerFromSources(h *models.HotelResult) string {
-	if len(h.Sources) > 0 && h.Sources[0].Provider != "" {
-		return displayProvider(h.Sources[0].Provider)
+	if s := headlineSource(h); s != "" {
+		return displayProvider(s)
 	}
 	return "Google Hotels"
 }

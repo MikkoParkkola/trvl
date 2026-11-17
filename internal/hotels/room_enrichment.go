@@ -211,9 +211,9 @@ func bestRoomSource(rooms []models.Room) (models.PriceSource, bool) {
 	if provider == "" {
 		provider = "unknown"
 	}
-	seller := ""
-	if !strings.EqualFold(best.Provider, provider) {
-		seller = best.Provider
+	seller := best.Provider
+	if sameProvider(seller, provider) {
+		seller = "" // the fetcher sold it itself ("Google Hotels" for google_hotels)
 	}
 	return models.PriceSource{
 		Provider:        provider,
@@ -225,6 +225,13 @@ func bestRoomSource(rooms []models.Room) (models.PriceSource, bool) {
 		PriceConfidence: best.PriceConfidence,
 		RetrievedAt:     time.Now(),
 	}, true
+}
+
+// sameProvider reports whether a seller name is the provider tag itself,
+// written for display: "Google Hotels" is google_hotels, "Booking.com" is
+// booking.com.
+func sameProvider(seller, tag string) bool {
+	return strings.EqualFold(strings.ReplaceAll(strings.TrimSpace(seller), " ", "_"), tag)
 }
 
 // roomHeadlinePrice is the per-night price a room contributes to the headline:

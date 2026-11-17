@@ -48,11 +48,18 @@ func TestBestRoomSource_UntaggedRoomIsUnknown(t *testing.T) {
 	}
 }
 
-// When the seller is the fetcher itself, there is no separate seller.
+// When the seller is the fetcher itself, there is no separate seller, also
+// when the seller is the fetcher's display name.
 func TestBestRoomSource_NoSellerWhenFetcherSells(t *testing.T) {
-	src, _ := bestRoomSource([]models.Room{{Name: "Agoda room rate", Price: 50, Currency: "EUR", Provider: "agoda", Source: "agoda"}})
-	if src.Provider != "agoda" || src.Seller != "" {
-		t.Errorf("got provider %q seller %q, want agoda and no seller", src.Provider, src.Seller)
+	for _, tc := range []struct{ seller, source string }{
+		{"agoda", "agoda"},
+		{"Google Hotels", "google_hotels"},
+		{"Booking.com", "booking.com"},
+	} {
+		src, _ := bestRoomSource([]models.Room{{Name: "Room", Price: 50, Currency: "EUR", Provider: tc.seller, Source: tc.source}})
+		if src.Provider != tc.source || src.Seller != "" {
+			t.Errorf("seller %q: got provider %q seller %q, want %s and no seller", tc.seller, src.Provider, src.Seller, tc.source)
+		}
 	}
 }
 
@@ -181,7 +188,10 @@ func TestRoomConvertersTagSource(t *testing.T) {
 
 	check("booking rooms", "booking.com", []RoomType{roomTypeFromBookingOffer(bookingRoomOffer{Name: "Deluxe", Price: 120, Currency: "EUR"}, "https://www.booking.com/hotel/at/x.html", "EUR")})
 
-	check("serpapi", "serpapi", roomTypesFromSerpAPIHotel(&serpapi.Hotel{Name: "Hotel X", TotalRate: serpapi.Rate{Extracted: 300}}, "EUR"))
+	check("serpapi fallback", "serpapi", roomTypesFromSerpAPIHotel(&serpapi.Hotel{Name: "Hotel X", TotalRate: serpapi.Rate{Extracted: 300}}, "EUR"))
+	check("serpapi offer", "serpapi", roomTypesFromSerpAPIHotel(&serpapi.Hotel{Name: "Hotel X", Prices: []serpapi.PriceOption{
+		{Source: "Expedia", RatePerNight: serpapi.Rate{Extracted: 120}, TotalRate: serpapi.Rate{Extracted: 240}},
+	}}, "EUR"))
 
 	agoda := parseAgodaSearch(loadAgodaSearchFixture(t), HotelSearchOptions{})
 	if len(agoda) == 0 || len(agoda[0].RoomTypes) == 0 {
@@ -191,12 +201,18 @@ func TestRoomConvertersTagSource(t *testing.T) {
 
 	sp := searchPageRooms(&models.HotelResult{
 		Price: 140, Currency: "EUR", HeadlineProvider: "trivago",
+		// The headline quote is not Sources[0]: seller and tag must still agree.
 		Sources: []models.PriceSource{
-			{Provider: "trivago", Price: 140, Currency: "EUR"},
 			{Provider: "booking.com", Price: 150, Currency: "EUR"},
+			{Provider: "trivago", Price: 140, Currency: "EUR"},
 		},
 	}, "EUR")
 	if len(sp) != 2 || sp[0].Source != "trivago" || sp[1].Source != "booking.com" {
 		t.Errorf("search page rooms: got %+v, want sources trivago (headline) and booking.com", sp)
+	}
+	// The headline room names the same quote it is tagged with, so no seller
+	// other than the fetcher appears.
+	if src, _ := bestRoomSource([]models.Room{roomTypeToModelRoom(sp[0])}); src.Provider != "trivago" || src.Seller != "" {
+		t.Errorf("search page headline: provider %q seller %q, want trivago and no seller", src.Provider, src.Seller)
 	}
 }
