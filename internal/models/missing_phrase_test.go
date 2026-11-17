@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -166,5 +167,23 @@ func TestMissingPhrase_ExplicitReasonWins(t *testing.T) {
 		if got := tc.st.MissingPhrase(); got != tc.want {
 			t.Errorf("%s: MissingPhrase() = %q, want %q", tc.st.ID, got, tc.want)
 		}
+	}
+}
+
+// Clone shares no slice with the original, the unexported phrases included,
+// and keeps nil slices nil.
+func TestCompleteness_CloneSharesNothing(t *testing.T) {
+	c := ComputeCompleteness(mixedStatuses())
+	cp := c.Clone()
+	if !reflect.DeepEqual(cp, c) {
+		t.Fatalf("clone differs:\n got %+v\nwant %+v", cp, c)
+	}
+	cp.Missing[0] = "changed"
+	cp.missingWhy[0] = "changed"
+	if c.Missing[0] == "changed" || c.missingWhy[0] == "changed" {
+		t.Error("clone shares a slice with the original")
+	}
+	if got := (Completeness{}).Clone(); got.Missing != nil || got.missingWhy != nil {
+		t.Errorf("nil slices became %#v", got)
 	}
 }

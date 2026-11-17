@@ -9,6 +9,7 @@ package models
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 )
 
@@ -132,6 +133,15 @@ type Completeness struct {
 	// missingWhy[i] says what happened to Missing[i] (see MissingPhrase). It
 	// stays out of JSON: provider_statuses already carries the detail.
 	missingWhy []string
+}
+
+// Clone returns a copy that shares no slice with c; nil slices stay nil.
+// Cached search results hand out copies, and every slice here, the unexported
+// one included, must be the copy's own.
+func (c Completeness) Clone() Completeness {
+	c.Missing = slices.Clone(c.Missing)
+	c.missingWhy = slices.Clone(c.missingWhy)
+	return c
 }
 
 // statusDefinitive reports whether a status represents a definitive answer

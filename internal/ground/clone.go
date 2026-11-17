@@ -41,7 +41,7 @@ func cloneGroundSearchResult(shared *models.GroundSearchResult) *models.GroundSe
 		}
 	}
 	cp.ProviderStatuses = slices.Clone(shared.ProviderStatuses)
-	cp.Completeness.Missing = slices.Clone(shared.Completeness.Missing)
+	cp.Completeness = shared.Completeness.Clone()
 	cp.HackSaving = cloneHackSaving(shared.HackSaving)
 	cp.Destination = cloneDestination(shared.Destination)
 	return &cp
