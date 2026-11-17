@@ -115,26 +115,33 @@ func TestFetchDBBestPrice_WarnCarriesBoundedRedactedExcerpt(t *testing.T) {
 	}
 }
 
-// TestFetchDBBestPrice_WarnExcerptIsExactly200Bytes: byte 200 of DB's error
-// answer is logged, byte 201 is not.
+// TestFetchDBBestPrice_WarnExcerptIsExactly200Bytes: the logged excerpt is
+// DB's first 200 bytes, byte for byte; one byte more or less fails.
 func TestFetchDBBestPrice_WarnExcerptIsExactly200Bytes(t *testing.T) {
 	var buf bytes.Buffer
 	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
-	const last, next = "LASTBYTEMARK", "OVERMARK"
+	// A literal, not dbErrorExcerptBytes: the test must not move with the cut.
+	const wantBytes = 200
 	head := `{"code":"VALIDIERUNG",`
 	// Dots, not letters: a long letter run could read as a token to the
-	// scrubber and be masked together with the marker.
-	errBody := head + strings.Repeat(".", dbErrorExcerptBytes-len(head)-len(last)) + last + next + strings.Repeat(".", 100)
+	// scrubber and be masked. A distinct byte sits on each side of the cut.
+	errBody := head + strings.Repeat(".", wantBytes-len(head)-1) + "L" + "N" + strings.Repeat(".", 100)
 	useDBDayBestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(errBody))
 	})
 
 	_, _, _ = fetchDBBestPrice(context.Background(), "5400014", "8103000", "2026-11-20")
-	if logged := buf.String(); !strings.Contains(logged, last) || strings.Contains(logged, next) {
-		t.Errorf("warning = %q, want the excerpt to end exactly at byte %d", logged, dbErrorExcerptBytes)
+	var record struct {
+		Body string `json:"body"`
+	}
+	if err := json.Unmarshal(bytes.SplitN(buf.Bytes(), []byte("\n"), 2)[0], &record); err != nil {
+		t.Fatalf("warning is not one JSON record: %v (%q)", err, buf.String())
+	}
+	if want := errBody[:wantBytes]; record.Body != want {
+		t.Errorf("logged excerpt = %d bytes %q\nwant the first %d bytes %q", len(record.Body), record.Body, len(want), want)
 	}
 }

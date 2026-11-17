@@ -216,8 +216,8 @@ func TestSearchOebbShop_WalkBetweenTrainsIsNoLeg(t *testing.T) {
 		t.Fatalf("SearchOebb: %v", err)
 	}
 	r := oebbRoutesByDeparture(t, routes)["10:21"]
-	if r.Transfers != 1 || len(r.Legs) != 2 || r.Legs[0].Provider != "EC 333" || r.Legs[1].Provider != "RJX 65" {
-		t.Errorf("10:21: transfers %d legs %+v, want 1 change and the two trains only", r.Transfers, r.Legs)
+	if r.Transfers != 1 || r.TransfersUnknown || len(r.Legs) != 2 || r.Legs[0].Provider != "EC 333" || r.Legs[1].Provider != "RJX 65" {
+		t.Errorf("10:21: transfers %d (not known %v) legs %+v, want 1 known change and the two trains only", r.Transfers, r.TransfersUnknown, r.Legs)
 	}
 }
 

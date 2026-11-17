@@ -90,4 +90,25 @@ func TestAssembleItineraries_SingleLegHonoursMaxTransfers(t *testing.T) {
 	if len(its) != 1 || !its[0].TransfersUnknown {
 		t.Errorf("count not known with MaxTransfers=1: got %+v, want it kept and flagged", its)
 	}
+
+	// Not known, but the known lower bound already exceeds the cap: dropped.
+	overBound := models.RouteLeg{Mode: "train", Provider: "oebb", Transfers: 2, TransfersUnknown: true, Price: 30}
+	if its := assembleItineraries(p, seg(overBound), Options{MaxTransfers: 1}); len(its) != 0 {
+		t.Errorf("lower bound 2 with MaxTransfers=1: got %d itineraries, want 0", len(its))
+	}
+}
+
+// A hub route whose known part (a mode change plus a known leg change)
+// already exceeds the cap is dropped even though one count is not known.
+func TestCombineSegments_DropsLowerBoundOverCap(t *testing.T) {
+	p := path{cities: []Hub{{City: "Helsinki"}, {City: "Prague"}, {City: "Vienna"}}}
+	segResults := map[string]*segResult{
+		"Helsinki→Prague": {flights: []models.RouteLeg{{Mode: "flight", Provider: "Finnair",
+			Departure: "2026-11-20T06:00:00", Arrival: "2026-11-20T08:00:00", Duration: 120, Price: 90, Currency: "EUR"}}},
+		"Prague→Vienna": {ground: []models.RouteLeg{{Mode: "train", Provider: "oebb", Transfers: 1, TransfersUnknown: true,
+			Departure: "2026-11-20T10:21:00", Arrival: "2026-11-20T15:32:00", Duration: 311, Price: 30, Currency: "EUR"}}},
+	}
+	if its := combineSegments(p, segResults, Options{MaxTransfers: 1}); len(its) != 0 {
+		t.Errorf("lower bound 2 (hub change + 1) with MaxTransfers=1: got %d itineraries, want 0", len(its))
+	}
 }
