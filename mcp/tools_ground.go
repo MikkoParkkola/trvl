@@ -282,8 +282,10 @@ func handleSearchGround(ctx context.Context, args map[string]any, elicit ElicitF
 		return dropLowestRankedGroundRoute(rows), true
 	}
 	return fitReply(capGroundRoutes(result.Routes, groundRowsPerDirection), dropRoute, func(shown []models.GroundRoute, trimmed bool) (string, any) {
-		resp := groundSearchResponse{GroundSearchResult: result, TotalCount: total, Routes: make([]groundRouteOut, 0, len(shown))}
-		result.Count = len(shown)
+		// A copy per probe: fitReply builds several candidate replies.
+		view := *result
+		view.Count = len(shown)
+		resp := groundSearchResponse{GroundSearchResult: &view, TotalCount: total, Routes: make([]groundRouteOut, 0, len(shown))}
 		for _, r := range shown {
 			resp.Routes = append(resp.Routes, compactGroundRoute(r))
 		}
@@ -396,22 +398,42 @@ func handleSearchAirportTransfers(ctx context.Context, args map[string]any, elic
 		return []ContentBlock{{Type: "text", Text: msg}}, result, nil
 	}
 
+	// Rows are indices into result.Routes. The cheapest and the fastest route
+	// are pinned, so the comparison's cheapest and fastest labels are the
+	// same as for the full list; the match counts and the rest of the
+	// comparison describe the routes listed.
 	total := len(result.Routes)
-	return fitReply(result.Routes, dropTail[models.GroundRoute](nil), func(shown []models.GroundRoute, trimmed bool) (string, any) {
+	idx := make([]int, total)
+	for i := range idx {
+		idx[i] = i
+	}
+	cheapestAt, fastestAt := transferPicks(result.Routes)
+	pinned := func(i int) bool { return i == cheapestAt || i == fastestAt }
+	return fitReply(idx, dropTail(pinned), func(rows []int, trimmed bool) (string, any) {
 		view := *result
-		view.Routes, view.Count = shown, len(shown)
+		view.Routes = make([]models.GroundRoute, len(rows))
+		view.ExactMatches = 0
+		for j, i := range rows {
+			view.Routes[j] = result.Routes[i]
+			if i < result.ExactMatches {
+				view.ExactMatches++
+			}
+		}
+		view.Count, view.CityMatches = len(rows), len(rows)-view.ExactMatches
+		shown := view.Routes
 		summary := buildGroundRouteSummary(
 			fmt.Sprintf("Found %d airport transfer routes from %s to %s on %s", result.Count, result.Airport, result.Destination, result.Date),
 			shown, 10,
 		)
 		if trimmed {
-			summary += budgetNote(len(shown), total, "routes", "type, provider or max_price")
+			summary += budgetNote(len(shown), total, "routes", "type, provider or max_price") +
+				" The match counts and the comparison cover the routes listed; the cheapest and fastest routes are always among them."
 		}
 		if result.ArrivalTime != "" {
 			summary += fmt.Sprintf("\n\nFiltered to departures at or after %s.", result.ArrivalTime)
 		}
-		if result.CityMatches > 0 {
-			summary += fmt.Sprintf("\n\nExact airport matches are listed first (%d exact, %d broader city).", result.ExactMatches, result.CityMatches)
+		if view.CityMatches > 0 {
+			summary += fmt.Sprintf("\n\nExact airport matches are listed first (%d exact, %d broader city).", view.ExactMatches, view.CityMatches)
 		}
 		if groundRoutesHaveProvider(shown, "taxi") {
 			summary += "\n\nTaxi fares are estimates based on route distance and typical local tariffs."
@@ -426,6 +448,23 @@ func handleSearchAirportTransfers(ctx context.Context, args map[string]any, elic
 		}
 		return summary, airportTransferResponse{AirportTransferResult: &view, Comparison: comparison, BudgetOmitted: total - len(shown)}
 	})
+}
+
+// transferPicks returns the indices of the routes behind the comparison's
+// cheapest and fastest labels: the first lowest positive price and the first
+// shortest positive duration (transfer.BuildOptions copies both from the
+// route), or -1.
+func transferPicks(routes []models.GroundRoute) (cheapest, fastest int) {
+	cheapest, fastest = -1, -1
+	for i, r := range routes {
+		if r.Price > 0 && (cheapest < 0 || r.Price < routes[cheapest].Price) {
+			cheapest = i
+		}
+		if r.Duration > 0 && (fastest < 0 || r.Duration < routes[fastest].Duration) {
+			fastest = i
+		}
+	}
+	return cheapest, fastest
 }
 
 // airportTransferResponse extends the legacy AirportTransferResult with the

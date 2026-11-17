@@ -68,9 +68,18 @@ func TestReplyBudgetHotelDetails(t *testing.T) {
 		if o := bodyInt(h, "rooms_omitted"); o != 80-len(rooms) {
 			t.Errorf("hotel %d rooms_omitted = %d, want %d", i, o, 80-len(rooms))
 		}
-		for _, offer := range rowNames(h, "accommodation_offers", "room_name") {
+		offers := rowNames(h, "accommodation_offers", "room_name")
+		if len(offers) == 0 {
+			t.Errorf("hotel %d has no accommodation_offers", i)
+		}
+		for _, offer := range offers {
 			if !slices.Contains(rooms, offer) {
 				t.Errorf("hotel %d offer %q names a room the cut removed from room_types", i, offer)
+			}
+		}
+		for _, room := range rooms {
+			if !slices.Contains(offers, room) {
+				t.Errorf("hotel %d room %q has no offer", i, room)
 			}
 		}
 	}
@@ -127,7 +136,7 @@ func TestReplyBudgetHotelRooms(t *testing.T) {
 	if !strings.Contains(got.userText, fmt.Sprintf("Showing %d of 80 rooms", len(rooms))) {
 		t.Errorf("summary should say Showing %d of 80 rooms:\n%s", len(rooms), got.userText)
 	}
-	assertTextCopyMatches(t, got, "rooms", "name")
+	assertTextCopyMatches(t, got)
 }
 
 func TestReplyBudgetHotelRoomsFloor(t *testing.T) {

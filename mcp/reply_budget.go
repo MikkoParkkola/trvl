@@ -12,59 +12,94 @@ import (
 // itself: there is no limit knob.
 const replyBudget = 48_000
 
-// replyFirstCut is how many rows a reply over budget drops to in one step,
-// before dropping one row at a time, so a 300-row list is not re-marshalled
-// 300 times. It only applies once a reply is over budget.
-const replyFirstCut = 40
-
 // fitReply builds a list tool's reply from rows and, while the marshalled
 // tools/call result (both the JSON text copy and structuredContent) is over
-// replyBudget, drops rows and builds again. build is told once rows have been
-// dropped so its summary can say so. drop returns false at the tool's floor;
-// a floor that still does not fit is a short tool error, never an oversized
-// reply.
+// replyBudget, applies drop steps until it fits. It finds the fewest steps
+// that fit with a galloping then binary search, so a long list costs a
+// handful of marshals, and every reply it returns was measured. build is told
+// when rows were dropped so its summary can say so. drop returns false at the
+// tool's floor; a floor that still does not fit is a short tool error, never
+// an oversized reply. Each search probe starts again from a clone of rows, so
+// drop may edit the slice it is given and the values in it, but must copy any
+// nested slice before changing it.
 func fitReply[T any](rows []T, drop func([]T) ([]T, bool), build func(rows []T, trimmed bool) (string, any)) ([]ContentBlock, any, error) {
-	rows = slices.Clone(rows)
-	trimmed := false
-	for {
-		summary, data := build(rows, trimmed)
+	type attempt struct {
+		content []ContentBlock
+		data    any
+		size    int
+	}
+	// try builds the reply after k drop steps and reports how many steps it
+	// could take before the floor.
+	try := func(k int) (attempt, int, error) {
+		cur := slices.Clone(rows)
+		for i := 0; i < k; i++ {
+			next, ok := drop(cur)
+			if !ok {
+				k = i
+				break
+			}
+			cur = next
+		}
+		summary, data := build(cur, k > 0)
 		content, err := buildAnnotatedContentBlocks(summary, data)
 		if err != nil {
-			return nil, nil, err
+			return attempt{}, k, err
 		}
 		raw, err := json.Marshal(ToolCallResult{Content: content, StructuredContent: data})
 		if err != nil {
-			return nil, nil, fmt.Errorf("marshal result: %w", err)
+			return attempt{}, k, fmt.Errorf("marshal result: %w", err)
 		}
-		if len(raw) < replyBudget {
-			return content, data, nil
-		}
-		var ok bool
-		if rows, ok = drop(rows); !ok {
-			return nil, nil, fmt.Errorf("the result is %d bytes even at its smallest, over the 50 KB reply budget; narrow the search", len(raw))
-		}
-		trimmed = true
+		return attempt{content, data, len(raw)}, k, nil
 	}
+
+	best, _, err := try(0)
+	if err != nil || best.size < replyBudget {
+		return best.content, best.data, err
+	}
+	// lo is a step count known to be over budget, hi the next one to probe.
+	lo, hi := 0, 1
+	for {
+		a, took, err := try(hi)
+		if err != nil {
+			return nil, nil, err
+		}
+		if a.size < replyBudget {
+			best = a
+			break
+		}
+		if took < hi {
+			return nil, nil, fmt.Errorf("the result is %d bytes even at its smallest, over the 50 KB reply budget; narrow the search", a.size)
+		}
+		lo, hi = hi, hi*2
+	}
+	for hi-lo > 1 {
+		mid := (lo + hi) / 2
+		a, _, err := try(mid)
+		if err != nil {
+			return nil, nil, err
+		}
+		if a.size < replyBudget {
+			best, hi = a, mid
+		} else {
+			lo = mid
+		}
+	}
+	return best.content, best.data, nil
 }
 
-// dropTail returns a drop step for a ranked list: it removes rows from the
-// end, skipping pinned ones, down to replyFirstCut on the first step and one
-// row at a time after that. pinned may be nil.
+// dropTail returns a drop step for a ranked list: it removes the last row
+// that is not pinned. pinned may be nil.
 func dropTail[T any](pinned func(T) bool) func([]T) ([]T, bool) {
 	return func(rows []T) ([]T, bool) {
 		if len(rows) <= 1 {
 			return rows, false
 		}
-		target := min(len(rows)-1, replyFirstCut)
-		removed := false
-		for i := len(rows) - 1; i >= 0 && len(rows) > target; i-- {
-			if pinned != nil && pinned(rows[i]) {
-				continue
+		for i := len(rows) - 1; i >= 0; i-- {
+			if pinned == nil || !pinned(rows[i]) {
+				return slices.Delete(rows, i, i+1), true
 			}
-			rows = slices.Delete(rows, i, i+1)
-			removed = true
 		}
-		return rows, removed
+		return rows, false
 	}
 }
 

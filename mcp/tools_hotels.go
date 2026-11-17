@@ -6,6 +6,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/hotels"
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -652,13 +653,8 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 			}
 		}
 
-		// Find cheapest room.
-		cheapest := availability.Rooms[0]
-		for _, r := range availability.Rooms[1:] {
-			if r.Price > 0 && (cheapest.Price == 0 || r.Price < cheapest.Price) {
-				cheapest = r
-			}
-		}
+		// Find cheapest room (the room a budget cut keeps).
+		cheapest := summaryCheapestRoom(availability.Rooms)
 		if cheapest.Price > 0 {
 			summary += fmt.Sprintf(" Cheapest: %s %.0f/night (%s).", cheapest.Currency, cheapest.Price, cheapest.Name)
 		}
@@ -667,14 +663,23 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		}
 	}
 
-	// MIK-6232: attach a booking-readiness verdict. Rooms carry refundability +
-	// a classifiable link, so "ready" is reachable here (unlike hotel_prices).
-	// The verdict covers every room found, before any budget cut.
-	readiness := roomsBookingReadiness(availability)
+	// The summary describes every room found. When the 50 KB budget cuts the
+	// list, rooms go priciest per night first, and the room the summary names
+	// stays.
 	total := len(availability.Rooms)
-	return fitReply(availability.Rooms, dropPriciestRoom, func(shown []hotels.RoomType, trimmed bool) (string, any) {
+	var pin string
+	if total > 0 {
+		pin = roomKey(summaryCheapestRoom(availability.Rooms))
+	}
+	cut := roomCutter(currency, stayNights(checkIn, checkOut), func(r hotels.RoomType) bool { return roomKey(r) == pin })
+	return fitReply(availability.Rooms, cut, func(shown []hotels.RoomType, trimmed bool) (string, any) {
 		view := *availability
 		view.Rooms = shown
+		// MIK-6232: attach a booking-readiness verdict. Rooms carry
+		// refundability + a classifiable link, so "ready" is reachable here
+		// (unlike hotel_prices). It is judged on the rooms in this reply only,
+		// so it never rests on a room the budget cut.
+		readiness := roomsBookingReadiness(&view)
 		enriched := hotelRoomsResponse{
 			RoomAvailability:        &view,
 			BookingReadiness:        string(readiness.Readiness),
@@ -697,26 +702,83 @@ type hotelRoomsResponse struct {
 	BudgetOmitted           int      `json:"budget_omitted,omitempty"`
 }
 
-// dropPriciestRoom is the budget drop step for room lists: it removes the
-// priciest room (unpriced rooms first), so the cheapest survives to the
-// one-room floor.
-func dropPriciestRoom(rooms []hotels.RoomType) ([]hotels.RoomType, bool) {
-	if len(rooms) <= 1 {
-		return rooms, false
-	}
-	worst := 0
-	for i, r := range rooms {
-		if roomCutRank(r) > roomCutRank(rooms[worst]) {
-			worst = i
+// summaryCheapestRoom is the room the hotel_rooms summary names as cheapest:
+// the lowest positive headline price, else the first room. rooms must not be
+// empty.
+func summaryCheapestRoom(rooms []hotels.RoomType) hotels.RoomType {
+	cheapest := rooms[0]
+	for _, r := range rooms[1:] {
+		if r.Price > 0 && (cheapest.Price == 0 || r.Price < cheapest.Price) {
+			cheapest = r
 		}
 	}
-	return slices.Delete(rooms, worst, worst+1), true
+	return cheapest
 }
 
-// roomCutRank orders rooms for dropping: unpriced first, then priciest.
-func roomCutRank(r hotels.RoomType) float64 {
-	if r.Price <= 0 {
+// roomKey identifies a room within one list for pinning.
+func roomKey(r hotels.RoomType) string {
+	return fmt.Sprintf("%s|%s|%s|%s|%g", r.Name, r.Provider, r.RateID, r.Currency, r.Price)
+}
+
+// roomCutter returns the budget drop step for a room list: it removes the
+// room that costs the most per night once every price is on one basis and
+// in one currency (roomNightlyIn), never a pinned room, down to one room.
+// pinned may be nil.
+func roomCutter(currency string, nights int, pinned func(hotels.RoomType) bool) func([]hotels.RoomType) ([]hotels.RoomType, bool) {
+	return func(rooms []hotels.RoomType) ([]hotels.RoomType, bool) {
+		if len(rooms) <= 1 {
+			return rooms, false
+		}
+		worst, worstPrice := -1, 0.0
+		for i, r := range rooms {
+			if pinned != nil && pinned(r) {
+				continue
+			}
+			if p := roomNightlyIn(r, currency, nights); worst < 0 || p > worstPrice {
+				worst, worstPrice = i, p
+			}
+		}
+		if worst < 0 {
+			return rooms, false
+		}
+		return slices.Delete(rooms, worst, worst+1), true
+	}
+}
+
+// roomNightlyIn puts a room's price on one basis for comparison: the nightly
+// rate, else the stay total over the nights, else the headline price,
+// converted into currency when the room is quoted in another. A room with no
+// price, or no rate into currency, is +Inf: it cannot be compared, so a cut
+// takes it first.
+func roomNightlyIn(r hotels.RoomType, currency string, nights int) float64 {
+	p := r.NightlyPrice
+	if p <= 0 && r.TotalPrice > 0 {
+		p = r.TotalPrice / float64(max(nights, 1))
+	}
+	if p <= 0 {
+		p = r.Price
+	}
+	if p <= 0 {
 		return math.Inf(1)
 	}
-	return r.Price
+	have, want := strings.ToUpper(strings.TrimSpace(r.Currency)), strings.ToUpper(strings.TrimSpace(currency))
+	if have != "" && want != "" && have != want {
+		rate, ok := convertRateFunc(have, want)
+		if !ok {
+			return math.Inf(1)
+		}
+		p *= rate
+	}
+	return p
+}
+
+// stayNights counts the nights between two ISO dates (layout 2006-01-02);
+// 1 when either date does not parse or the stay is not positive.
+func stayNights(checkIn, checkOut string) int {
+	in, errIn := time.Parse("2006-01-02", checkIn)
+	out, errOut := time.Parse("2006-01-02", checkOut)
+	if errIn != nil || errOut != nil || !out.After(in) {
+		return 1
+	}
+	return int(out.Sub(in).Hours() / 24)
 }

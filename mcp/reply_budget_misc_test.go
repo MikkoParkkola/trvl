@@ -48,7 +48,7 @@ func TestReplyBudgetHotelReviews(t *testing.T) {
 	if !strings.Contains(got.userText, fmt.Sprintf("Showing %d of 200 reviews", len(authors))) {
 		t.Errorf("summary should say Showing %d of 200 reviews:\n%s", len(authors), got.userText)
 	}
-	assertTextCopyMatches(t, got, "reviews", "author")
+	assertTextCopyMatches(t, got)
 }
 
 func TestReplyBudgetHotelReviewsFloor(t *testing.T) {

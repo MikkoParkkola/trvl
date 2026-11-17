@@ -93,9 +93,7 @@ func TestReplyBudgetSearchFlights(t *testing.T) {
 				!strings.Contains(got.userText, "50 KB") {
 				t.Errorf("summary should describe all 200 and say Showing %d of 200 flights and the 50 KB budget:\n%s", len(keys), got.userText)
 			}
-			if via == "search_flights" {
-				assertTextCopyMatches(t, got, "flights", "booking_url")
-			}
+			assertTextCopyMatches(t, got)
 		})
 	}
 }
@@ -115,6 +113,11 @@ func TestReplyBudgetFlightsUnderBudgetUnchanged(t *testing.T) {
 	if strings.Contains(got.userText, "Showing") || strings.Contains(got.userText, "50 KB") {
 		t.Errorf("under-budget summary changed:\n%s", got.userText)
 	}
+	want := []string{budgetFlightURL(0), budgetFlightURL(1), budgetFlightURL(2), budgetFlightURL(3), budgetFlightURL(4)}
+	if keys := flightKeys(got.structured); !slices.Equal(keys, want) {
+		t.Errorf("under-budget flights = %v, want all five in search order", keys)
+	}
+	assertTextCopyMatches(t, got)
 }
 
 func TestReplyBudgetFlightsFloor(t *testing.T) {

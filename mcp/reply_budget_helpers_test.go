@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -44,17 +45,17 @@ func assertUnderPromise(t *testing.T, c groundCall) {
 	}
 }
 
-// assertTextCopyMatches checks that the assistant JSON copy carries the same
-// rows as structuredContent, so a content-only client sees the same cut.
-func assertTextCopyMatches(t *testing.T, c groundCall, list, key string) {
+// assertTextCopyMatches checks that the assistant JSON copy is the tool's
+// whole structured body, so a content-only client sees the same reply,
+// through the travel router too.
+func assertTextCopyMatches(t *testing.T, c groundCall) {
 	t.Helper()
 	var text map[string]any
 	if err := json.Unmarshal([]byte(c.assistant), &text); err != nil {
 		t.Fatalf("assistant copy is not JSON: %v", err)
 	}
-	got, want := strings.Join(rowNames(text, list, key), "|"), strings.Join(rowNames(c.structured, list, key), "|")
-	if got != want {
-		t.Errorf("text copy %s rows differ from structuredContent", list)
+	if !reflect.DeepEqual(text, replyBody(t, c)) {
+		t.Errorf("assistant JSON copy differs from the structured body")
 	}
 }
 

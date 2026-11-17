@@ -405,8 +405,8 @@ func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, eli
 	for _, h := range hotelsWithDetails {
 		totalRooms += len(h.RoomTypes)
 	}
-	return fitReply(hotelsWithDetails, detailsDropStep(need), func(shown []hotelWithDetails, trimmed bool) (string, any) {
-		resp := hotelDetailsSearchResponse{
+	newResp := func(shown []hotelWithDetails) hotelDetailsSearchResponse {
+		return hotelDetailsSearchResponse{
 			Success:          result.Success,
 			Count:            len(shown),
 			TotalAvailable:   result.Count,
@@ -420,7 +420,22 @@ func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, eli
 			BudgetOmitted:    len(hotelsWithDetails) - len(shown),
 			Error:            result.Error,
 		}
-		summary := hotelDetailsSummary(resp, req.Location)
+	}
+	// The summary describes the full enrichment, failed lookups included,
+	// even when the budget cuts hotels or rooms; the note says what is shown.
+	summary := hotelDetailsSummary(newResp(hotelsWithDetails), req.Location)
+	cut := detailsDropStep(roomCutter(req.Options.Currency, stayNights(req.CheckIn, req.CheckOut), nil))
+	return fitReply(hotelsWithDetails, cut, func(shown []hotelWithDetails, trimmed bool) (string, any) {
+		// Offers and verified_rate are rebuilt from the rooms kept, so
+		// room_types, accommodation_offers and verified_rate always name the
+		// same rooms. shown is this probe's own copy.
+		for i := range shown {
+			if h := &shown[i]; h.RoomsOmitted > 0 {
+				h.AccommodationOffers = accommodationOffersFromRooms(h.HotelResult, h.RoomTypes, need, h.checkedAt)
+				h.VerifiedRate = verifiedRateFromRooms(h.HotelResult, h.RoomTypes, h.checkedAt)
+			}
+		}
+		resp := newResp(shown)
 		if !trimmed {
 			return summary, resp
 		}
@@ -433,43 +448,24 @@ func handleSearchHotelsWithDetails(ctx context.Context, args map[string]any, eli
 	})
 }
 
-// detailsRoomsFirstCut is how many cheapest rooms each hotel keeps on the first
-// budget cut, before rooms go one at a time.
-const detailsRoomsFirstCut = 10
-
 // detailsDropStep is the budget drop step for search_hotels_with_details.
 // Rooms go before hotels, since comparing the shortlisted hotels is the point
-// of the tool: first every hotel down to its detailsRoomsFirstCut cheapest
-// rooms, then the priciest room of the hotel listing the most, then hotels
-// from the tail. Offers are rebuilt from the rooms kept, so room_types and
-// accommodation_offers always name the same rooms. Floor: one hotel with
-// one room.
-func detailsDropStep(need models.AccommodationNeed) func([]hotelWithDetails) ([]hotelWithDetails, bool) {
-	trimTo := func(h *hotelWithDetails, n int) {
-		rooms := slices.Clone(h.RoomTypes)
-		for len(rooms) > n {
-			rooms, _ = dropPriciestRoom(rooms)
-		}
-		h.RoomsOmitted += len(h.RoomTypes) - len(rooms)
-		h.RoomTypes = rooms
-		h.AccommodationOffers = accommodationOffersFromRooms(h.HotelResult, rooms, need, h.checkedAt)
-	}
+// of the tool: the priciest room (by cutRoom) of the hotel listing the most,
+// then hotels from the tail. Floor: one hotel with one room.
+func detailsDropStep(cutRoom func([]hotels.RoomType) ([]hotels.RoomType, bool)) func([]hotelWithDetails) ([]hotelWithDetails, bool) {
 	return func(rows []hotelWithDetails) ([]hotelWithDetails, bool) {
-		cut, most := false, -1
+		most := -1
 		for i := range rows {
-			if len(rows[i].RoomTypes) > detailsRoomsFirstCut {
-				trimTo(&rows[i], detailsRoomsFirstCut)
-				cut = true
-			}
 			if len(rows[i].RoomTypes) > 1 && (most < 0 || len(rows[i].RoomTypes) > len(rows[most].RoomTypes)) {
 				most = i
 			}
 		}
 		switch {
-		case cut:
-			return rows, true
 		case most >= 0:
-			trimTo(&rows[most], len(rows[most].RoomTypes)-1)
+			h := &rows[most]
+			rooms, _ := cutRoom(slices.Clone(h.RoomTypes))
+			h.RoomsOmitted += len(h.RoomTypes) - len(rooms)
+			h.RoomTypes = rooms
 			return rows, true
 		case len(rows) > 1:
 			return rows[:len(rows)-1], true

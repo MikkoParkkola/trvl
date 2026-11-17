@@ -83,7 +83,7 @@ func TestReplyBudgetSearchAccommodations(t *testing.T) {
 	if !strings.Contains(got.userText, "Showing") || !strings.Contains(got.userText, "50 KB") {
 		t.Errorf("summary should say what the 50 KB budget left out:\n%s", got.userText)
 	}
-	assertTextCopyMatches(t, got, "offers", "offer_id")
+	assertTextCopyMatches(t, got)
 }
 
 func TestReplyBudgetAccommodationsFloor(t *testing.T) {

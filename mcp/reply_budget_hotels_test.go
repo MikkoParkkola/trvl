@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -99,9 +101,7 @@ func TestReplyBudgetSearchHotels(t *testing.T) {
 			if !strings.Contains(got.userText, "Found 300 hotels") {
 				t.Errorf("summary should still describe all 300 found:\n%s", got.userText)
 			}
-			if via == "search_hotels" {
-				assertTextCopyMatches(t, got, "hotels", "name")
-			}
+			assertTextCopyMatches(t, got)
 		})
 	}
 }
@@ -146,6 +146,16 @@ func TestReplyBudgetHotelsUnderBudgetUnchanged(t *testing.T) {
 	if strings.Contains(got.userText, "Showing") || strings.Contains(got.userText, "50 KB") {
 		t.Errorf("under-budget summary changed:\n%s", got.userText)
 	}
+	// Every field of every row ships as the search returned it.
+	raw, _ := json.Marshal(budgetHotelFixture(5, 200))
+	var want any
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.structured["hotels"], want) {
+		t.Errorf("under-budget hotel rows differ from the search result")
+	}
+	assertTextCopyMatches(t, got)
 }
 
 // TestReplyBudgetHotelsFloor drives the cut to its floor: only the two pinned
