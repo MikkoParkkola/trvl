@@ -340,13 +340,12 @@ func roomMatchFromPriceBasis(basis string) string {
 //
 // This function searches by the location associated with the hotel ID,
 // finds the specific hotel by matching its entity ID, and returns a room
-// entry with the hotel's price from the search results. googleErr is Google's
-// outcome before the fallback; the returned error is that outcome after it.
-// Only a Google answer (a search's Google status, which may record a refusal
-// even when another provider returned hotels) or another refusal replaces it.
-func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions, googleErr error) ([]RoomType, string, error) {
+// entry with the hotel's price from the search results. Every search's Google
+// events go into the lookup's outcome; the one that supplies the target's
+// Google-priced row settles it (#826 design rev 6).
+func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions, google *googleOutcome) ([]RoomType, string) {
 	if opts.Location == "" {
-		return nil, "", googleErr
+		return nil, ""
 	}
 
 	searchOpts := roomFallbackSearchOptions(opts)
@@ -355,26 +354,18 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions, googleEr
 	// "Hotel Lutetia, Paris" yields ["Paris", "Hotel Lutetia Paris"]).
 	client := DefaultClient()
 	var result *models.HotelSearchResult
-	// A returned result's Google status replaces googleErr (nil when Google
-	// answered); a failed search replaces it only with a refusal, so another
-	// failure never erases one (#813).
+	var resultCall googleCall
 	for _, cand := range locationCandidates(opts.Location, opts.LocationKind) {
 		searchOpts.Scope = cand.scope
-		r, err := SearchHotelsWithClient(ctx, client, cand.query, searchOpts)
-		if err != nil {
-			if refusal := googleRefusal(err); refusal != nil {
-				googleErr = refusal
-			}
-			continue
-		}
-		googleErr = googleStatusErr(r)
-		if len(r.Hotels) > 0 {
-			result = r
+		r, call, err := searchHotelsCall(ctx, client, cand.query, searchOpts)
+		if err == nil && len(r.Hotels) > 0 {
+			result, resultCall = r, call
 			break
 		}
+		google.merge(call, false)
 	}
-	if result == nil || len(result.Hotels) == 0 {
-		return nil, "", googleErr
+	if result == nil {
+		return nil, ""
 	}
 
 	// Find target hotel by ID first, then by name as fallback.
@@ -394,8 +385,11 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions, googleEr
 		// which can be used as a fuzzy match query.
 		hotel = findBestNameMatch(result.Hotels, opts.Location)
 	}
+	// Only a price from Google itself is Google's data; a row matched by its
+	// Google ID but priced by Booking settles nothing.
+	google.merge(resultCall, hotel != nil && googlePriced(*hotel))
 	if hotel == nil {
-		return nil, "", googleErr
+		return nil, ""
 	}
 
 	var rooms []RoomType
@@ -467,7 +461,17 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions, googleEr
 		}
 	}
 
-	return rooms, hotel.Name, googleErr
+	return rooms, hotel.Name
+}
+
+// googlePriced reports whether a search row carries a price from Google.
+func googlePriced(h models.HotelResult) bool {
+	for _, src := range h.Sources {
+		if src.Provider == "google_hotels" && src.Price > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func roomFallbackSearchOptions(opts RoomSearchOptions) HotelSearchOptions {

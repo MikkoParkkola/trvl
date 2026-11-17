@@ -153,14 +153,20 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// room entry. This surfaces the full OTA matrix — including any Booking.com
 	// partner URL, which the downstream exact-room Booking.com fetch needs to
 	// produce a booking-ready offer.
-	// googleErr is the outcome of the last Google call that ran: an answer
-	// clears an earlier block, and a refusal stays visible even when the
-	// search fallback finds the rooms through another provider (#813).
-	googleErr := entityErr
+	// google is this lookup's one Google outcome (#813, #826 design rev 6).
+	// Each Google call is merged with the caller's settled decision: a call
+	// whose Google data the result uses clears a refusal; otherwise the call's
+	// refusal is recorded and no other event can erase it.
+	var google googleOutcome
+	var entityCall googleCall
+	entityCall.note(0, entityErr)
+	google.merge(entityCall, len(rooms) > 0)
 	if len(rooms) == 0 {
-		var rpcRooms []RoomType
-		var rpcName string
-		rpcRooms, rpcName, googleErr = tryBatchExecutePrices(ctx, opts)
+		rpcRooms, rpcName, rpcErr := tryBatchExecutePrices(ctx, opts)
+		var rpcCall googleCall
+		rpcCall.note(0, rpcErr)
+		// Partner prices are Google's data, cached or live.
+		google.merge(rpcCall, len(rpcRooms) > 0)
 		if len(rpcRooms) > 0 {
 			rooms = rpcRooms
 			if hotelName == "" {
@@ -173,10 +179,12 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// from the hotel ID's geocoded area. The search page still has inline
 	// AF_initDataCallback data. Without a location it asks nobody.
 	if len(rooms) == 0 && opts.Location != "" {
-		rooms, hotelName, googleErr = trySearchPageFallback(ctx, opts, googleErr)
+		var name string
+		rooms, name = trySearchPageFallback(ctx, opts, &google)
+		if name != "" {
+			hotelName = name
+		}
 	}
-	// One clause, worded as for Agoda and Booking.com.
-	notice := providerRateLimitNotice("Google Hotels", googleErr)
 
 	// Opt-in Google Hotels room-level detail fetch. Google's public yY52ce RPC
 	// returns a null payload to static clients (probed 2026-06-25 — see
@@ -188,7 +196,9 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// and merge so any existing lead-ins stay while the bookability sort leads
 	// with the real room rate.
 	if googleRoomDetailConfigured() && (len(rooms) == 0 || !hasVerifiedRoom(rooms)) {
-		detailRooms, detailName, detailNotice := tryGoogleRoomDetail(ctx, opts)
+		detailRooms, detailName, detailCall := tryGoogleRoomDetail(ctx, opts)
+		// Relay rates are Google's data.
+		google.merge(detailCall, len(detailRooms) > 0)
 		if len(detailRooms) > 0 {
 			if len(rooms) == 0 {
 				rooms = detailRooms
@@ -198,11 +208,11 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 			if hotelName == "" {
 				hotelName = detailName
 			}
-		} else if detailNotice != "" {
-			// Room data was withheld by a retryable bot-wall, not absent.
-			notice = appendNotice(notice, detailNotice)
 		}
 	}
+	// One Google clause, decided after every Google call, worded as for Agoda
+	// and Booking.com.
+	notice := providerRateLimitNotice("Google Hotels", google.Err())
 
 	// SerpAPI is the richest room source we have (named rooms, verified
 	// tax-inclusive prices, refundability) but every lookup spends metered
