@@ -173,7 +173,7 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// from the hotel ID's geocoded area. The search page still has inline
 	// AF_initDataCallback data. Without a location it asks nobody.
 	if len(rooms) == 0 && opts.Location != "" {
-		rooms, hotelName, googleErr = trySearchPageFallback(ctx, opts)
+		rooms, hotelName, googleErr = trySearchPageFallback(ctx, opts, googleErr)
 	}
 	// One clause, worded as for Agoda and Booking.com.
 	notice := providerRateLimitNotice("Google Hotels", googleErr)

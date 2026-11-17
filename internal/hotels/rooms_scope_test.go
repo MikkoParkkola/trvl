@@ -144,7 +144,7 @@ func TestGoogleRoomCalls_ReportRefusal(t *testing.T) {
 			_, _, err := tryBatchExecutePrices(context.Background(), opts)
 			return err
 		},
-		"search page": func() error { _, _, err := trySearchPageFallback(context.Background(), opts); return err },
+		"search page": func() error { _, _, err := trySearchPageFallback(context.Background(), opts, nil); return err },
 	}
 	for name, call := range calls {
 		for _, prime := range []bool{false, true} {

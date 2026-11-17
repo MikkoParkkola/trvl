@@ -340,12 +340,13 @@ func roomMatchFromPriceBasis(basis string) string {
 //
 // This function searches by the location associated with the hotel ID,
 // finds the specific hotel by matching its entity ID, and returns a room
-// entry with the hotel's price from the search results. The error is the
-// Google failure the searches met, including one recorded only in a search's
-// provider statuses because another provider returned hotels.
-func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomType, string, error) {
+// entry with the hotel's price from the search results. googleErr is Google's
+// outcome before the fallback; the returned error is that outcome after it.
+// Only a Google answer (a search's Google status, which may record a refusal
+// even when another provider returned hotels) or another refusal replaces it.
+func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions, googleErr error) ([]RoomType, string, error) {
 	if opts.Location == "" {
-		return nil, "", nil
+		return nil, "", googleErr
 	}
 
 	searchOpts := roomFallbackSearchOptions(opts)
@@ -354,10 +355,9 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 	// "Hotel Lutetia, Paris" yields ["Paris", "Hotel Lutetia Paris"]).
 	client := DefaultClient()
 	var result *models.HotelSearchResult
-	// googleErr is Google's recorded outcome. A returned result's Google
-	// status replaces it (nil when Google answered); a failed search replaces
-	// it only with a refusal, so another failure never erases one (#813).
-	var googleErr error
+	// A returned result's Google status replaces googleErr (nil when Google
+	// answered); a failed search replaces it only with a refusal, so another
+	// failure never erases one (#813).
 	for _, cand := range locationCandidates(opts.Location, opts.LocationKind) {
 		searchOpts.Scope = cand.scope
 		r, err := SearchHotelsWithClient(ctx, client, cand.query, searchOpts)

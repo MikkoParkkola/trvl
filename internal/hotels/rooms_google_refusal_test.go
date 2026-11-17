@@ -481,3 +481,15 @@ func consentThen429(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = w.Write([]byte(`<html><form action="https://consent.google.com/save">` + strings.Repeat("<!-- consent -->", 80) + `</form></html>`))
 }
+
+// TestGetRoomAvailability_FallbackWithoutGoogleAnswerKeepsTheRefusal: the
+// price RPC was blocked, then every fallback search failed without a Google
+// answer (a page too short to parse, nobody else answering). Only a Google
+// answer may replace the recorded refusal, so the notice still names Google.
+func TestGetRoomAvailability_FallbackWithoutGoogleAnswerKeepsTheRefusal(t *testing.T) {
+	roomLookupWorld(t, googleRoutes{shortEntity, answer(http.StatusForbidden), page([]byte("<html></html>"))}, false)
+	res := lookupSacherRooms(t)
+	if !strings.Contains(res.Notice, googleClause) {
+		t.Fatalf("notice = %q, want the Google Hotels clause", res.Notice)
+	}
+}
