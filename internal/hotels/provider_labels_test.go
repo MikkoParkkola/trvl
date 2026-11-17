@@ -299,3 +299,57 @@ func TestRoomConvertersTagSource(t *testing.T) {
 		t.Errorf("search page headline: provider %q seller %q, want trivago and no seller", src.Provider, src.Seller)
 	}
 }
+
+// TestEnrichHotelRooms_VerifiedQuoteWinsUnderItsSeller: a merged room keeps one
+// seller's numbers, so a second seller's verified quote lives in
+// InventoryOptions. It must still compete for the headline as its own
+// candidate, credited to its own seller and fetcher, and must count as a
+// verified room so later paid fallbacks are skipped (#817 review).
+func TestEnrichHotelRooms_VerifiedQuoteWinsUnderItsSeller(t *testing.T) {
+	yes := true
+	merged := mergeRoomTypes(
+		[]RoomType{{
+			Name: "Double Room", Price: 100, Currency: "EUR",
+			Provider: "Hotels.com", Source: "google_hotels", ProviderURL: "https://www.hotels.com/ho1",
+			MatchConfidence: models.RoomInventoryMatchExact,
+		}},
+		[]RoomType{{
+			Name: "Double Room", Price: 190, NightlyPrice: 95, TotalPrice: 190, TaxesFeesIncluded: &yes,
+			Currency: "EUR", Provider: "Booking.com", Source: "booking.com",
+			ProviderURL:     "https://www.booking.com/hotel/at/x.html",
+			MatchConfidence: models.RoomInventoryMatchExact,
+		}},
+	)
+	if !hasVerifiedRoom(merged) {
+		t.Error("hasVerifiedRoom ignores the verified Booking quote, so SerpAPI quota would still be spent")
+	}
+
+	orig := fetchRoomAvailability
+	t.Cleanup(func() { fetchRoomAvailability = orig })
+	origRM := HotelRateManager
+	t.Cleanup(func() { HotelRateManager = origRM })
+	HotelRateManager = NewRateManager()
+	fetchRoomAvailability = func(context.Context, RoomSearchOptions) (*RoomAvailability, error) {
+		return &RoomAvailability{Success: true, Rooms: merged}, nil
+	}
+
+	hotels := []models.HotelResult{{
+		HotelID: "/g/11x", Name: "Hotel X", Price: 120, Currency: "EUR",
+		Sources: []models.PriceSource{{Provider: "google_hotels", Price: 120, Currency: "EUR"}},
+	}}
+	hotels = enrichHotelRooms(context.Background(), hotels, HotelSearchOptions{
+		EnrichRooms: true, CheckIn: "2026-11-18", CheckOut: "2026-11-20", Currency: "EUR",
+	})
+	models.FinalizeHotelPriceTrust(hotels, "EUR", time.Now(), nil)
+
+	h := hotels[0]
+	if h.HeadlineProvider != "booking.com" || h.Price != 95 || h.PriceConfidence != models.PriceConfidenceVerified {
+		t.Errorf("headline = %v by %q (%s), want Booking's verified 95 under booking.com", h.Price, h.HeadlineProvider, h.PriceConfidence)
+	}
+	if h.BookingURL != "https://www.booking.com/hotel/at/x.html" {
+		t.Errorf("BookingURL = %q, want Booking's own link", h.BookingURL)
+	}
+	if len(h.RoomTypes) != 1 || h.RoomTypes[0].Price != 100 || h.RoomTypes[0].Provider != "Hotels.com" {
+		t.Errorf("room_types = %+v, want the room to keep Hotels.com's 100", h.RoomTypes)
+	}
+}

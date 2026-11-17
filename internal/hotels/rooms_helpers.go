@@ -671,6 +671,12 @@ func hasVerifiedRoom(rooms []RoomType) bool {
 		if roomInventoryQuote(r).PriceConfidence == models.PriceConfidenceVerified {
 			return true
 		}
+		// A merged room keeps another seller's verified quote here.
+		for _, q := range r.InventoryOptions {
+			if q.PriceConfidence == models.PriceConfidenceVerified {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -703,6 +709,7 @@ func roomInventoryQuote(room RoomType) models.RoomInventoryQuote {
 	}
 	return models.RoomInventoryQuote{
 		Provider:           provider,
+		Source:             room.Source,
 		ProviderRoomName:   room.Name,
 		ProviderRateName:   room.RatePlanName,
 		ProviderURL:        room.ProviderURL,

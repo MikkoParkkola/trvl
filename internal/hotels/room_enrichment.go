@@ -115,8 +115,9 @@ func enrichHotelRooms(ctx context.Context, hotels []models.HotelResult, opts Hot
 
 	const concurrency = 3
 	type result struct {
-		index int
-		rooms []models.Room
+		index      int
+		rooms      []models.Room
+		candidates []models.Room // rooms plus each seller's quote, for the headline
 	}
 
 	fetch := fetchRoomAvailability
@@ -157,10 +158,15 @@ func enrichHotelRooms(ctx context.Context, hotels []models.HotelResult, opts Hot
 			}
 
 			rooms := make([]models.Room, 0, len(av.Rooms))
+			candidates := make([]models.Room, 0, len(av.Rooms))
 			for _, rt := range av.Rooms {
 				rooms = append(rooms, roomTypeToModelRoom(rt))
+				candidates = append(candidates, roomTypeToModelRoom(rt))
+				for _, q := range rt.InventoryOptions {
+					candidates = append(candidates, quoteCandidate(q))
+				}
 			}
-			results <- result{index: i, rooms: rooms}
+			results <- result{index: i, rooms: rooms, candidates: candidates}
 		}(idx)
 	}
 
@@ -174,7 +180,7 @@ func enrichHotelRooms(ctx context.Context, hotels []models.HotelResult, opts Hot
 		// Feed the strongest drilled room into the price sources so the
 		// verified room price can win the headline when the caller re-runs
 		// FinalizeHotelPriceTrust (the "verified leads" rule).
-		if src, ok := bestRoomSource(r.rooms); ok {
+		if src, ok := bestRoomSource(r.candidates); ok {
 			hotels[r.index].Sources = append(hotels[r.index].Sources, src)
 		}
 	}
@@ -225,6 +231,25 @@ func bestRoomSource(rooms []models.Room) (models.PriceSource, bool) {
 		PriceConfidence: best.PriceConfidence,
 		RetrievedAt:     time.Now(),
 	}, true
+}
+
+// quoteCandidate turns one seller's inventory quote into a headline candidate.
+// A merged room keeps one seller's numbers, so another seller's quote (say a
+// verified Booking rate on a Google-priced room) competes on its own, credited
+// to its own seller and fetcher. Price stays 0: a quote with only a stay total
+// has no nightly rate to headline.
+func quoteCandidate(q models.RoomInventoryQuote) models.Room {
+	return models.Room{
+		Name:            q.ProviderRoomName,
+		NightlyPrice:    q.NightlyPrice,
+		TotalPrice:      q.TotalPrice,
+		Currency:        q.Currency,
+		Provider:        q.Provider,
+		ProviderURL:     q.ProviderURL,
+		Source:          q.Source,
+		PriceBasis:      q.PriceBasis,
+		PriceConfidence: q.PriceConfidence,
+	}
 }
 
 // sameProvider reports whether a seller name is the provider tag itself,
