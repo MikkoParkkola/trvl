@@ -226,11 +226,9 @@ type Hack struct {
 	// ranked candidates. Advisory-only hacks leave this empty. Never invent.
 	ConcreteCandidates []models.FlightResult `json:"-"`
 
-	// basis is the kind of search whose roster produced this hack; DetectAll
-	// stamps it. BestSaving only applies a hack to a search of the same kind.
-	// The stamp records roster membership, not proof that the saving is
-	// measured on that search's fare: that is the entry criterion a detector
-	// must meet to join a roster (see groundDetectors).
+	// basis is the kind of search whose roster produced this hack (stamped by
+	// DetectAll); BestSaving applies a hack only to a search of that kind. It
+	// records roster membership, not proof: see groundDetectors' criterion.
 	basis searchKind
 }
 
@@ -343,34 +341,6 @@ var stopoverPrograms = map[string]StopoverProgram{
 
 // detectFn is the signature for individual hack detectors.
 type detectFn func(ctx context.Context, in DetectorInput) []Hack
-
-// searchKind is the kind of naive search a savings pass runs against.
-type searchKind int
-
-const (
-	flightSearch searchKind = iota // zero value: flight search
-	groundSearch
-)
-
-// groundDetectors is the roster a ground search's savings pass runs. A
-// detector belongs here only if its Savings is the caller's ground fare minus
-// the price of a cheaper way to make the same ground trip. None qualifies
-// today: the flight detectors measure against their own flight fare,
-// night_transport and ferry_cabin save a hotel night, and the ground
-// advisories (throwaway_ground, cross_border_rail, regional_pass,
-// eurostar_return) report no saving. A ground search therefore attaches no
-// saving rather than a fabricated one.
-func groundDetectors() []detectFn {
-	return nil
-}
-
-// rosterFor returns the detectors a search of kind k runs.
-func rosterFor(k searchKind) []detectFn {
-	if k == groundSearch {
-		return groundDetectors()
-	}
-	return currentDetectorRoster()()
-}
 
 // allDetectors returns the full registered set of detectors that DetectAll runs
 // in parallel. It is the single source of truth for the detector roster:
