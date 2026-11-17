@@ -21,8 +21,8 @@ func multimodalPlanCmd() *cobra.Command {
 
 Rome2Rio DISCOVERS candidate mode-chains a single-mode search would never
 surface; trvl then PRICES each leg with its existing flight and ground
-providers, ASSEMBLES the legs into one true total, RANKS by that total, and
-ANNOTATES any travel-hack saving. Legs that cannot be priced fall back to
+providers, ASSEMBLES the legs into one true total, and RANKS by that total.
+Legs that cannot be priced fall back to
 Rome2Rio's indicative range and are clearly labelled as estimates — never a
 fabricated fare.
 
