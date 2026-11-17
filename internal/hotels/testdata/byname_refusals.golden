@@ -1,0 +1,2 @@
+cooldown: found "Hotel Sacher Wien", but Google Hotels refused requests, so its Google place ID is unknown; retry once Google's cooldown ends: hotel search request: upstream provider rate-limited or temporarily unavailable: google refused further requests until the cooldown ends; retry after <clock>)
+blocked: found "Hotel Sacher Wien", but Google Hotels blocked the request, so its Google place ID is unknown; retry later: upstream provider rate-limited or temporarily unavailable: request blocked (403)

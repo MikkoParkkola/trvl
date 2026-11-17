@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -87,18 +89,37 @@ func TestFormatRoomsTable_EmptyRoomsKeepsTheNotice(t *testing.T) {
 	}
 }
 
-// byNameRefusals are the two by-name refusal sentences: a cooldown and a
-// plain block. mcp/hotel_rooms_refusal_test.go asserts the same pair, so the
-// CLI and MCP say the same thing (#813).
-var byNameRefusals = map[string]error{
-	"cooldown": fmt.Errorf("found %q, but Google Hotels refused requests, so its Google place ID is unknown; retry once Google's cooldown ends: %w", "Hotel Sacher Vienna", models.ErrRateLimited),
-	"blocked":  fmt.Errorf("found %q, but Google Hotels blocked the request, so its Google place ID is unknown; retry later: %w", "Hotel Sacher Vienna", models.ErrRateLimited),
+// goldenRefusal is one of the real by-name refusal sentences, read from the
+// golden file the hotels package checks against SearchHotelByName's actual
+// output, and it keeps the rate-limit sentinel as that error does (#813).
+type goldenRefusal string
+
+func (g goldenRefusal) Error() string { return string(g) }
+func (g goldenRefusal) Unwrap() error { return models.ErrRateLimited }
+
+// byNameRefusals loads the cooldown and blocked sentences; the CLI and MCP
+// tests read the same file, so both are held to the same real text.
+func byNameRefusals(t *testing.T) map[string]error {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "internal", "hotels", "testdata", "byname_refusals.golden"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]error{}
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		name, sentence, ok := strings.Cut(line, ": ")
+		if !ok {
+			t.Fatalf("malformed golden line %q", line)
+		}
+		out[name] = goldenRefusal(sentence)
+	}
+	return out
 }
 
 // TestRunRooms_RefusalSentencesMatchMCP: the CLI prints the lookup's refusal
 // sentence unchanged, with no hint of its own.
 func TestRunRooms_RefusalSentencesMatchMCP(t *testing.T) {
-	for name, refusal := range byNameRefusals {
+	for name, refusal := range byNameRefusals(t) {
 		t.Run(name, func(t *testing.T) {
 			err := runRoomsWithLookupErr(t, refusal)
 			if want := `hotel rooms: hotel lookup for "Hotel Sacher Wien": ` + refusal.Error(); err == nil || err.Error() != want {

@@ -3,7 +3,8 @@ package mcp
 import (
 	"context"
 	"errors"
-	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,11 +12,31 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-// byNameRefusals mirrors cmd/trvl/rooms_refusal_test.go: the same two by-name
-// refusal sentences, so the CLI and MCP are held to the same text (#813).
-var byNameRefusals = map[string]error{
-	"cooldown": fmt.Errorf("found %q, but Google Hotels refused requests, so its Google place ID is unknown; retry once Google's cooldown ends: %w", "Hotel Sacher Vienna", models.ErrRateLimited),
-	"blocked":  fmt.Errorf("found %q, but Google Hotels blocked the request, so its Google place ID is unknown; retry later: %w", "Hotel Sacher Vienna", models.ErrRateLimited),
+// goldenRefusal is one of the real by-name refusal sentences, read from the
+// golden file the hotels package checks against SearchHotelByName's actual
+// output, and it keeps the rate-limit sentinel as that error does (#813).
+type goldenRefusal string
+
+func (g goldenRefusal) Error() string { return string(g) }
+func (g goldenRefusal) Unwrap() error { return models.ErrRateLimited }
+
+// byNameRefusals loads the cooldown and blocked sentences; the CLI and MCP
+// tests read the same file, so both are held to the same real text.
+func byNameRefusals(t *testing.T) map[string]error {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "internal", "hotels", "testdata", "byname_refusals.golden"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]error{}
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		name, sentence, ok := strings.Cut(line, ": ")
+		if !ok {
+			t.Fatalf("malformed golden line %q", line)
+		}
+		out[name] = goldenRefusal(sentence)
+	}
+	return out
 }
 
 // TestHandleHotelRooms_EmptyRoomsSummaryFollowsTheNotice: with no rooms and a
@@ -52,7 +73,7 @@ func TestHandleHotelRooms_EmptyRoomsSummaryFollowsTheNotice(t *testing.T) {
 func TestHandleHotelRooms_RefusalSentencesMatchCLI(t *testing.T) {
 	orig := searchHotelByNameFunc
 	t.Cleanup(func() { searchHotelByNameFunc = orig })
-	for name, refusal := range byNameRefusals {
+	for name, refusal := range byNameRefusals(t) {
 		t.Run(name, func(t *testing.T) {
 			searchHotelByNameFunc = func(context.Context, string, string, string, string) (*models.HotelResult, error) {
 				return nil, refusal
