@@ -354,23 +354,27 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 	// "Hotel Lutetia, Paris" yields ["Paris", "Hotel Lutetia Paris"]).
 	client := DefaultClient()
 	var result *models.HotelSearchResult
-	var lastErr error
+	// googleErr is Google's recorded outcome. A returned result's Google
+	// status replaces it (nil when Google answered); a failed search replaces
+	// it only with a refusal, so another failure never erases one (#813).
+	var googleErr error
 	for _, cand := range locationCandidates(opts.Location, opts.LocationKind) {
 		searchOpts.Scope = cand.scope
 		r, err := SearchHotelsWithClient(ctx, client, cand.query, searchOpts)
 		if err != nil {
-			lastErr = err
+			if models.ClassifyProviderError(err) == models.StatusRateLimited {
+				googleErr = err
+			}
 			continue
 		}
-		// The latest Google answer wins (nil when Google answered).
-		lastErr = googleStatusErr(r)
+		googleErr = googleStatusErr(r)
 		if len(r.Hotels) > 0 {
 			result = r
 			break
 		}
 	}
 	if result == nil || len(result.Hotels) == 0 {
-		return nil, "", lastErr
+		return nil, "", googleErr
 	}
 
 	// Find target hotel by ID first, then by name as fallback.
@@ -391,7 +395,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		hotel = findBestNameMatch(result.Hotels, opts.Location)
 	}
 	if hotel == nil {
-		return nil, "", lastErr
+		return nil, "", googleErr
 	}
 
 	var rooms []RoomType
@@ -463,7 +467,7 @@ func trySearchPageFallback(ctx context.Context, opts RoomSearchOptions) ([]RoomT
 		}
 	}
 
-	return rooms, hotel.Name, lastErr
+	return rooms, hotel.Name, googleErr
 }
 
 func roomFallbackSearchOptions(opts RoomSearchOptions) HotelSearchOptions {

@@ -139,6 +139,10 @@ func TestGetRoomAvailability_GoogleRefusalInNotice(t *testing.T) {
 		// Google refuses it and Booking prices the hotel. That price is not
 		// Google's.
 		{"empty prices, search 429, Booking match", googleRoutes{shortEntity, emptyPriceRPC(t), answer(429)}, false, true},
+		// The city search is blocked; a later candidate fails for another
+		// reason. That failure is not a Google answer and must not erase the
+		// recorded block.
+		{"city search 403, then a broken page", googleRoutes{shortEntity, answer(404), blockCityBreakHotel}, false, false},
 		{"cooldown already armed", googleRoutes{shortEntity, answer(404), noSacherPage}, true, false},
 	}
 	for _, tc := range cases {
@@ -288,4 +292,14 @@ func TestGetRoomAvailability_NoGoogleClauseWhenFallbackPricedFromGoogle(t *testi
 	if strings.Contains(res.Notice, googleClause) {
 		t.Fatalf("notice = %q, want no Google Hotels clause: Google priced the hotel", res.Notice)
 	}
+}
+
+// blockCityBreakHotel blocks the city search (403) and answers a query
+// naming the hotel with a page too short to parse.
+func blockCityBreakHotel(w http.ResponseWriter, r *http.Request) {
+	if strings.Contains(r.URL.Query().Get("q"), "Sacher") {
+		_, _ = w.Write([]byte("<html></html>"))
+		return
+	}
+	w.WriteHeader(http.StatusForbidden)
 }
