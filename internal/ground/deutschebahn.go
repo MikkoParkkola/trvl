@@ -5,15 +5,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
-
-	"github.com/MikkoParkkola/trvl/internal/logredact"
 
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
@@ -75,9 +75,10 @@ var dbStations = map[string]DBStation{
 	"essen":      {EVA: "8000098", Name: "Essen Hbf", City: "Essen", Country: "DE"},
 	"aachen":     {EVA: "8000001", Name: "Aachen Hbf", City: "Aachen", Country: "DE"},
 
-	// Austria
-	"vienna":    {EVA: "8101003", Name: "Wien Hbf", City: "Vienna", Country: "AT"},
-	"wien":      {EVA: "8101003", Name: "Wien Hbf", City: "Vienna", Country: "AT"},
+	// Austria. Wien Hbf is 8103000: DB resolves 8101003 (Wien Hbf's UIC code)
+	// to Wien Blumental, adding a local hop to every journey.
+	"vienna":    {EVA: "8103000", Name: "Wien Hbf", City: "Vienna", Country: "AT"},
+	"wien":      {EVA: "8103000", Name: "Wien Hbf", City: "Vienna", Country: "AT"},
 	"salzburg":  {EVA: "8100002", Name: "Salzburg Hbf", City: "Salzburg", Country: "AT"},
 	"innsbruck": {EVA: "8100108", Name: "Innsbruck Hbf", City: "Innsbruck", Country: "AT"},
 
@@ -98,8 +99,10 @@ var dbStations = map[string]DBStation{
 	"prague": {EVA: "5400014", Name: "Praha hl.n.", City: "Prague", Country: "CZ"},
 	"praha":  {EVA: "5400014", Name: "Praha hl.n.", City: "Prague", Country: "CZ"},
 
-	// Poland
-	"warsaw": {EVA: "5100028", Name: "Warszawa Centralna", City: "Warsaw", Country: "PL"},
+	// Poland (names as DB spells them)
+	"warsaw": {EVA: "5100065", Name: "Warszawa Centralna", City: "Warsaw", Country: "PL"},
+	"krakow": {EVA: "5100028", Name: "Krakow Glowny", City: "Krakow", Country: "PL"},
+	"kraków": {EVA: "5100028", Name: "Krakow Glowny", City: "Krakow", Country: "PL"},
 
 	// Hungary
 	"budapest": {EVA: "5500017", Name: "Budapest-Keleti", City: "Budapest", Country: "HU"},
@@ -234,6 +237,14 @@ type dbAbschnitt struct {
 	ProduktGattung    string            `json:"produktGattung"`
 	Verkehrsmittel    *dbVerkehrsmittel `json:"verkehrsmittel,omitempty"`
 	Halte             []dbHalt          `json:"halte"`
+	AttributNotizen   []dbNotiz         `json:"attributNotizen,omitempty"`
+}
+
+// dbNotiz is a segment attribute note; key "OP" names the operating
+// carrier(s), comma-separated ("Ceske Drahy, Österreichische Bundesbahnen").
+type dbNotiz struct {
+	Key  string `json:"key"`
+	Text string `json:"text"`
 }
 
 type dbVerkehrsmittel struct {
@@ -254,142 +265,15 @@ type dbHalt struct {
 	Gleis         string `json:"gleis"`
 }
 
-// dbBestPriceResponse represents the response from the tagesbestpreis endpoint.
-type dbBestPriceResponse struct {
-	TagesbestPreisIntervalle []dbBestPriceInterval `json:"tagesbestPreisIntervalle"`
-}
-
-type dbBestPriceInterval struct {
-	AngebotsPreis *dbPreis `json:"angebotsPreis,omitempty"`
-}
-
-// fetchDBBestPrice queries the DB tagesbestpreis endpoint for cross-border routes
-// that return no price from the standard fahrplan search. Returns (price, currency).
-// Returns (0, "") on any error so callers can skip gracefully.
-func fetchDBBestPrice(ctx context.Context, fromEVA, toEVA, date string) (float64, string) {
-	fromLid := fmt.Sprintf("A=1@L=%s@", fromEVA)
-	toLid := fmt.Sprintf("A=1@L=%s@", toEVA)
-
-	// reiseDatum must be a full datetime; use 06:00 departure.
-	reiseDatum := date + "T06:00:00"
-
-	// Format A — matches the fahrplan request structure (with required fields).
-	reqBodyA := map[string]any{
-		"autonomeReservierung":              false,
-		"klasse":                            "KLASSE_2",
-		"reservierungsKontingenteVorhanden": false,
-		"fahrverguenstigungen": map[string]any{
-			"deutschlandTicketVorhanden":       false,
-			"nurDeutschlandTicketVerbindungen": false,
-		},
-		"reisendenProfil": map[string]any{
-			"reisende": []map[string]any{
-				{
-					"ermaessigungen": []string{"KEINE_ERMAESSIGUNG KLASSENLOS"},
-					"reisendenTyp":   "ERWACHSENER",
-				},
-			},
-		},
-		"reiseHin": map[string]any{
-			"wunsch": map[string]any{
-				"abgangsLocationId": fromLid,
-				"zielLocationId":    toLid,
-				"verkehrsmittel":    []string{"ALL"},
-				"zeitWunsch": map[string]any{
-					"reiseDatum":   reiseDatum,
-					"zeitPunktArt": "ABFAHRT",
-				},
-			},
-		},
-	}
-
-	// Format B — simpler flat structure.
-	reqBodyB := map[string]any{
-		"abgangsLocationId": fromLid,
-		"zielLocationId":    toLid,
-		"klasse":            "KLASSE_2",
-		"reisende": []map[string]any{
-			{
-				"ermaessigungen": []string{"KEINE_ERMAESSIGUNG KLASSENLOS"},
-				"reisendenTyp":   "ERWACHSENER",
-			},
-		},
-		"reiseDatum": date,
-	}
-
-	contentType := "application/x.db.vendo.mob.verbindungssuche.v9+json"
-
-	for _, reqBody := range []map[string]any{reqBodyA, reqBodyB} {
-		body, err := json.Marshal(reqBody)
-		if err != nil {
-			continue
-		}
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, dbBestPriceEndpoint, bytes.NewReader(body))
-		if err != nil {
-			continue
-		}
-		req.Header.Set("Content-Type", contentType)
-		req.Header.Set("Accept", contentType)
-		req.Header.Set("Accept-Language", "en")
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36")
-		req.Header.Set("X-Correlation-ID", generateCorrelationID())
-
-		resp, err := dbClient.Do(req)
-		if err != nil {
-			slog.Debug("db tagesbestpreis request failed", "err", logredact.Err(err))
-			continue
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusOK {
-			if _, drainErr := io.Copy(io.Discard, io.LimitReader(resp.Body, 256)); drainErr != nil {
-				slog.Debug("db tagesbestpreis response drain failed", "error", logredact.Err(drainErr))
-			}
-			slog.Debug("db tagesbestpreis non-200", "status", resp.StatusCode)
-			continue
-		}
-
-		respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
-		if err != nil {
-			continue
-		}
-
-		var bpResp dbBestPriceResponse
-		if err := json.Unmarshal(respBody, &bpResp); err != nil {
-			slog.Debug("db tagesbestpreis decode failed", "err", logredact.Err(err))
-			continue
-		}
-
-		// Find cheapest price across all intervals.
-		var bestPrice float64
-		var bestCur string
-		for _, itv := range bpResp.TagesbestPreisIntervalle {
-			if itv.AngebotsPreis != nil && itv.AngebotsPreis.Betrag > 0 {
-				if bestPrice == 0 || itv.AngebotsPreis.Betrag < bestPrice {
-					bestPrice = itv.AngebotsPreis.Betrag
-					bestCur = strings.ToUpper(itv.AngebotsPreis.Waehrung)
-				}
-			}
-		}
-		if bestPrice > 0 {
-			return bestPrice, bestCur
-		}
-		break
-	}
-
-	return 0, ""
-}
-
 // SearchDeutscheBahn searches Deutsche Bahn for train journeys between two cities.
 func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromStation, ok := LookupDBStation(from)
 	if !ok {
-		return nil, fmt.Errorf("no DB station for %q", from)
+		return nil, fmt.Errorf("no DB station for %q: %w", from, models.ErrNotApplicable)
 	}
 	toStation, ok := LookupDBStation(to)
 	if !ok {
-		return nil, fmt.Errorf("no DB station for %q", to)
+		return nil, fmt.Errorf("no DB station for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if currency == "" {
@@ -435,6 +319,11 @@ func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		if bytes.Contains(respBody, []byte("OPS_BLOCKED")) {
+			// DB's bot wall (HTTP 452 {"code":"OPS_BLOCKED"}) refused this
+			// client: retryable, not a broken endpoint.
+			return nil, fmt.Errorf("db search: HTTP %d OPS_BLOCKED: %w", resp.StatusCode, models.ErrRateLimited)
+		}
 		return nil, fmt.Errorf("db search: HTTP %d: %s", resp.StatusCode, respBody)
 	}
 
@@ -459,7 +348,8 @@ func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([
 	slog.Debug("db routes", "count", len(routes))
 
 	// For cross-border routes the fahrplan endpoint often returns price=0.
-	// Try tagesbestpreis as a fallback for any route with missing price.
+	// Try tagesbestpreis as a fallback for any route with missing price. The
+	// day's best price is not this departure's fare, so it is an estimate.
 	needsBestPrice := false
 	for _, r := range routes {
 		if r.Price == 0 {
@@ -467,13 +357,16 @@ func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([
 			break
 		}
 	}
+	var bestPriceErr error
 	if needsBestPrice {
-		bp, bpCur := fetchDBBestPrice(ctx, fromStation.EVA, toStation.EVA, date)
+		bp, bpCur, err := fetchDBBestPrice(ctx, fromStation.EVA, toStation.EVA, date)
+		bestPriceErr = err
 		if bp > 0 {
 			slog.Debug("db tagesbestpreis fallback", "price", bp, "currency", bpCur)
 			for i := range routes {
 				if routes[i].Price == 0 {
 					routes[i].Price = bp
+					routes[i].PriceProvenance = models.PriceEstimated
 					if bpCur != "" {
 						routes[i].Currency = bpCur
 					}
@@ -482,7 +375,69 @@ func SearchDeutscheBahn(ctx context.Context, from, to, date, currency string) ([
 		}
 	}
 
+	if len(routes) > 0 && !anyGroundRoutePriced(routes) {
+		if bestPriceErr != nil {
+			return routes, dbPriceLookupNotice(bestPriceErr)
+		}
+		return routes, dbNoFaresNotice(dbResp.Verbindungen)
+	}
 	return routes, nil
+}
+
+func anyGroundRoutePriced(routes []models.GroundRoute) bool {
+	for _, r := range routes {
+		if r.Price > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// dbPriceLookupNotice explains journeys served without fares because every
+// day-best lookup failed: DB did not say it sells nothing.
+func dbPriceLookupNotice(err error) *models.ProviderNotice {
+	return &models.ProviderNotice{
+		Reason:  models.ClassifyProviderReason(err.Error()),
+		FixHint: "DB's price lookup failed: fares unavailable",
+		Err:     err,
+	}
+}
+
+// dbNoFaresNotice explains journeys DB lists but sells no fare for (cross-border
+// trains run by other carriers): it names the carriers from DB's own "OP"
+// segment notes, sorted, or falls back to a generic hint.
+func dbNoFaresNotice(verbindungen []dbVerbindung) *models.ProviderNotice {
+	seen := map[string]bool{}
+	var carriers []string
+	for _, v := range verbindungen {
+		segments := v.VerbindungsAbschnitte
+		if v.Verbindung != nil {
+			segments = append(append([]dbAbschnitt(nil), segments...), v.Verbindung.VerbindungsAbschnitte...)
+		}
+		for _, seg := range segments {
+			for _, n := range seg.AttributNotizen {
+				if n.Key != "OP" {
+					continue
+				}
+				for _, c := range strings.Split(n.Text, ",") {
+					if c = strings.TrimSpace(c); c != "" && !seen[c] {
+						seen[c] = true
+						carriers = append(carriers, c)
+					}
+				}
+			}
+		}
+	}
+	hint := "DB sells no fares for this route; book with the operating rail carrier"
+	if len(carriers) > 0 {
+		slices.Sort(carriers)
+		hint = "DB sells no fares for this route; book with " + strings.Join(carriers, ", ")
+	}
+	return &models.ProviderNotice{
+		Reason:  models.ReasonOther,
+		FixHint: hint,
+		Err:     errors.New("db: no journey carries a fare"),
+	}
 }
 
 // parseDBVerbindungen converts raw DB API connections into GroundRoute models.
@@ -594,16 +549,17 @@ func parseDBVerbindungen(verbindungen []dbVerbindung, fromStation, toStation DBS
 		if len(abschnitte) > 0 && len(first.Halte) > 0 && first.Halte[0].Ort != nil {
 			depStation = first.Halte[0].Ort.Name
 		}
-		if len(abschnitte) > 0 && len(last.Halte) > 0 && last.Halte[len(last.Halte)-1].Ort != nil {
-			arrStation = last.Halte[len(last.Halte)-1].Ort.Name
+		if end := dbFinalHalt(abschnitte); end != nil {
+			arrStation = end.Name
 		}
 
 		route := models.GroundRoute{
-			Provider: "db",
-			Type:     "train",
-			Price:    price,
-			Currency: priceCurrency,
-			Duration: duration,
+			Provider:        "db",
+			Type:            "train",
+			Price:           price,
+			PriceProvenance: livePrice(price), // a fare DB quoted for this journey
+			Currency:        priceCurrency,
+			Duration:        duration,
 			Departure: models.GroundStop{
 				City:    fromStation.City,
 				Station: depStation,
@@ -622,6 +578,19 @@ func parseDBVerbindungen(verbindungen []dbVerbindung, fromStation, toStation DBS
 		routes = append(routes, route)
 	}
 	return routes
+}
+
+// dbFinalHalt is the last stop of a journey's last section: the station DB
+// actually routes the traveller to. Nil when the response carries no stop.
+func dbFinalHalt(abschnitte []dbAbschnitt) *dbOrt {
+	if len(abschnitte) == 0 {
+		return nil
+	}
+	halte := abschnitte[len(abschnitte)-1].Halte
+	if len(halte) == 0 {
+		return nil
+	}
+	return halte[len(halte)-1].Ort
 }
 
 // computeDurationMinutes computes the duration in minutes between two ISO 8601 time strings.

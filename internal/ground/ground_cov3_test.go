@@ -45,6 +45,9 @@ func TestSearchOebb_MockHappyPath(t *testing.T) {
 							Arrival string `json:"arrival"`
 						}{Arrival: "2026-07-01T12:13:00+02:00"},
 						Duration: 15180000, // 253 min in ms
+						Sections: []oebbShopSection{{Type: "journey",
+							From: oebbShopStop{Name: "Wien Hbf", Departure: "2026-07-01T08:00:00+02:00"},
+							To:   oebbShopStop{Name: "München Hbf", Arrival: "2026-07-01T12:13:00+02:00"}}},
 					},
 				},
 			})
@@ -319,72 +322,6 @@ func TestSearchRenfe_MockNoPricesForDate(t *testing.T) {
 // SearchSnalltaget via httptest (was 0%)
 // ============================================================
 
-func TestSearchSnalltaget_MockHappyPath(t *testing.T) {
-	origClient := snalltagetClient
-	origLimiter := snalltagetLimiter
-	t.Cleanup(func() {
-		snalltagetClient = origClient
-		snalltagetLimiter = origLimiter
-	})
-	snalltagetLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(snalltagetTripsResponse{
-			Trips: []snalltagetTrip{
-				{
-					DepartureTime: "2026-07-01T18:00:00",
-					ArrivalTime:   "2026-07-02T06:30:00",
-					Duration:      750,
-					Origin:        snalltagetTripStop{Name: "Stockholm Central"},
-					Destination:   snalltagetTripStop{Name: "Malmö C"},
-					Prices: []snalltagetPrice{
-						{Amount: 299, Currency: "SEK", Class: "2nd"},
-						{Amount: 499, Currency: "SEK", Class: "1st"},
-					},
-					Segments: []snalltagetSegment{
-						{
-							DepartureTime: "2026-07-01T18:00:00",
-							ArrivalTime:   "2026-07-02T06:30:00",
-							Origin:        snalltagetTripStop{Name: "Stockholm Central"},
-							Destination:   snalltagetTripStop{Name: "Malmö C"},
-							TrainNumber:   "SN 101",
-							Operator:      "Snälltåget",
-						},
-					},
-				},
-			},
-		})
-	}))
-	defer srv.Close()
-
-	snalltagetClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	routes, err := SearchSnalltaget(context.Background(), "Stockholm", "Malmö", "2026-07-01", "SEK")
-	if err != nil {
-		t.Fatalf("SearchSnalltaget: %v", err)
-	}
-	if len(routes) != 1 {
-		t.Fatalf("expected 1 route, got %d", len(routes))
-	}
-	r := routes[0]
-	if r.Provider != "snalltaget" {
-		t.Errorf("provider = %q, want snalltaget", r.Provider)
-	}
-	if r.Price != 299 {
-		t.Errorf("price = %v, want 299", r.Price)
-	}
-	if r.Currency != "SEK" {
-		t.Errorf("currency = %q, want SEK", r.Currency)
-	}
-	if len(r.Legs) != 1 {
-		t.Fatalf("expected 1 leg, got %d", len(r.Legs))
-	}
-}
-
 func TestSearchSnalltaget_MockUnknownCity(t *testing.T) {
 	_, err := SearchSnalltaget(context.Background(), "NoSuchCityXYZ", "Malmö", "2026-07-01", "SEK")
 	if err == nil {
@@ -396,107 +333,6 @@ func TestSearchSnalltaget_MockUnknownToCity(t *testing.T) {
 	_, err := SearchSnalltaget(context.Background(), "Stockholm", "NoSuchCityXYZ", "2026-07-01", "SEK")
 	if err == nil {
 		t.Fatal("expected error for unknown to city")
-	}
-}
-
-func TestSearchSnalltaget_MockDefaultCurrency(t *testing.T) {
-	origClient := snalltagetClient
-	origLimiter := snalltagetLimiter
-	t.Cleanup(func() {
-		snalltagetClient = origClient
-		snalltagetLimiter = origLimiter
-	})
-	snalltagetLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(snalltagetTripsResponse{})
-	}))
-	defer srv.Close()
-
-	snalltagetClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	// Empty currency defaults to SEK.
-	routes, err := SearchSnalltaget(context.Background(), "Stockholm", "Malmö", "2026-07-01", "")
-	if err != nil {
-		t.Fatalf("SearchSnalltaget: %v", err)
-	}
-	_ = routes
-}
-
-func TestSearchSnalltaget_MockNon200(t *testing.T) {
-	origClient := snalltagetClient
-	origLimiter := snalltagetLimiter
-	t.Cleanup(func() {
-		snalltagetClient = origClient
-		snalltagetLimiter = origLimiter
-	})
-	snalltagetLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	defer srv.Close()
-
-	snalltagetClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	// Non-200 returns nil routes, no error (graceful degradation).
-	routes, err := SearchSnalltaget(context.Background(), "Stockholm", "Malmö", "2026-07-01", "SEK")
-	if err != nil {
-		t.Fatalf("SearchSnalltaget: %v", err)
-	}
-	if len(routes) != 0 {
-		t.Errorf("expected 0 routes for 403, got %d", len(routes))
-	}
-}
-
-func TestSearchSnalltaget_MockDataKey(t *testing.T) {
-	origClient := snalltagetClient
-	origLimiter := snalltagetLimiter
-	t.Cleanup(func() {
-		snalltagetClient = origClient
-		snalltagetLimiter = origLimiter
-	})
-	snalltagetLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		// Use "data" key instead of "trips".
-		_ = json.NewEncoder(w).Encode(snalltagetTripsResponse{
-			Data: []snalltagetTrip{
-				{
-					DepartureTime: "2026-07-01T18:00:00",
-					ArrivalTime:   "2026-07-02T06:30:00",
-					Duration:      750,
-					Fares: []snalltagetPrice{
-						{Amount: 199, Currency: "SEK"},
-					},
-				},
-			},
-		})
-	}))
-	defer srv.Close()
-
-	snalltagetClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	routes, err := SearchSnalltaget(context.Background(), "Stockholm", "Malmö", "2026-07-01", "SEK")
-	if err != nil {
-		t.Fatalf("SearchSnalltaget: %v", err)
-	}
-	if len(routes) != 1 {
-		t.Fatalf("expected 1 route via data key, got %d", len(routes))
-	}
-	if routes[0].Price != 199 {
-		t.Errorf("price = %v, want 199", routes[0].Price)
 	}
 }
 

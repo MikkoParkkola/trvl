@@ -79,6 +79,10 @@ trvl rooms "Hotel Lutetia Paris" --checkin 2027-06-15 --checkout 2027-06-18
 
 **Price position:** `trvl prices` shows where the current rate sits in that property's observed price history (low / typical / high). Available in `--format json` as `price_position`.
 
+**Distance:** `trvl hotels` lists hotels within 25 km of the city centre and says how many farther ones it left out; `--max-distance 40` widens the radius and `--max-distance 0` removes it. Hotels without coordinates are always kept.
+
+**Price labels:** the headline price is the most trusted quote, and `headline_provider` in `--format json` names whose it is (`cheapest_source` can name a cheaper lead-in from another site). A hotel with no usable quote carries `price_provenance: "unavailable"`.
+
 **Booking readiness:** `trvl prices` and `trvl rooms` show a readiness verdict (ready / caution / unverified) composed from verified price, stable link, confirmed property identity, and known refundability. Any unknown signal downgrades the verdict conservatively. In `--format json` the fields are `booking_readiness` and `booking_readiness_reasons`.
 
 `ready` is reachable from `trvl rooms` when one concrete room offer has a real
@@ -189,7 +193,7 @@ trvl multi-city HEL --visit BCN,ROM,PAR --dates 2027-07-01,2027-07-21
 
 ### Buses, Trains & Ferries
 
-Searches 22 providers in parallel: FlixBus (buses, pan-European), RegioJet (buses+trains, CZ/SK/AT/HU/DE/PL), Eurostar/Snap (trains, London↔Paris/Brussels/Amsterdam/Cologne), Deutsche Bahn (trains, all European rail), ÖBB (shop/HAFAS API), NS (Dutch railways), VR (Finnish railways, via Digitransit API), SNCF (trains, French TGV/TER), Trainline (aggregated rail across major European operators), Transitous.org (transit routing, pan-European), Renfe (Spanish AVE high-speed API), Trenitalia (Italian high-speed + regional rail, lefrecce.it BFF), Italo (Italian high-speed rail, NTV — AGV/EVO), European Sleeper (night trains Brussels↔Berlin↔Prague + Amsterdam/Rotterdam/Antwerp/Dresden), Snälltåget (Swedish night trains Stockholm↔Malmö/Åre/Berlin, Sqills S3 API), Tallink (Baltic Sea ferries, live API), Viking Line (Baltic Sea ferries), Eckerö Line (Helsinki↔Tallinn, live Magento API), Finnlines (Helsinki↔Travemünde, Naantali↔Kapellskär, GraphQL API), Stena Line (North Sea + Baltic ferries), DFDS (North Sea + Baltic ferries, live availability API), and Ferryhopper (33 countries, 190+ ferry operators, via MCP). Airport transfers also add taxi fare estimates for door-to-door comparisons.
+Searches 22 providers in parallel: FlixBus (buses, pan-European), RegioJet (buses+trains, CZ/SK/AT/HU/DE/PL), Eurostar/Snap (trains, London↔Paris/Brussels/Amsterdam/Cologne), Deutsche Bahn (trains, all European rail), ÖBB (shop/HAFAS API), NS (Dutch railways), VR (Finnish railways, via Digitransit API), SNCF (trains, French TGV/TER), Trainline (aggregated rail across major European operators), Transitous.org (transit routing, pan-European), Renfe (Spanish AVE high-speed API), Trenitalia (Italian high-speed + regional rail, lefrecce.it BFF), Italo (Italian high-speed rail, NTV — AGV/EVO), European Sleeper (night trains Brussels↔Amsterdam↔Berlin↔Prague, Paris↔Berlin, Brussels↔Milan), Snälltåget (trains Stockholm↔Malmö↔Copenhagen↔Hamburg↔Berlin and the Åre night train, booking-app API), Tallink (Baltic Sea ferries, live API), Viking Line (Baltic Sea ferries), Eckerö Line (Helsinki↔Tallinn, live Magento API), Finnlines (Helsinki↔Travemünde, Naantali↔Kapellskär, GraphQL API), Stena Line (North Sea + Baltic ferries), DFDS (North Sea + Baltic ferries, live availability API), and Ferryhopper (33 countries, 190+ ferry operators, via MCP). Airport transfers also add taxi fare estimates for door-to-door comparisons.
 
 API routes are the default path. If you want trvl to try browser/curl/cookie-assisted fallbacks for protected providers such as SNCF or Trainline, pass `--allow-browser-fallbacks` (or set `TRVL_ALLOW_BROWSER_FALLBACKS=true`).
 

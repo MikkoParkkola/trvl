@@ -59,7 +59,9 @@ jobs:
   goreleaser:
     if: github.event_name != 'workflow_dispatch'
     needs: security-gate
-    runs-on: macos-14
+    # GitHub retired the macOS 14 images on 2026-11-02; macos-26 is the
+    # newest arm64 image, so the darwin smoke test still builds an arm64 binary.
+    runs-on: macos-26
     permissions:
       contents: write  # create the GitHub release and upload assets
       id-token: write  # cosign keyless signing via Sigstore needs OIDC token
@@ -74,10 +76,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Must satisfy go.mod (>= 1.27.3 for stdlib CVE fixes); goreleaser
+          # Must satisfy go.mod (>= 1.27.4 for stdlib CVE fixes); goreleaser
           # resolves the module path with GOTOOLCHAIN=local, so the runner's Go
-          # itself has to be 1.27.3, not just the build toolchain.
-          go-version: "1.27.3"
+          # itself has to be 1.27.4, not just the build toolchain.
+          go-version: "1.27.4"
 
       # Install GoReleaser before cosign is on PATH so the action only performs
       # checksum verification while installing the release tool.
@@ -118,7 +120,7 @@ jobs:
       - name: Build snapshot binary for smoke test
         run: goreleaser build --single-target --snapshot --clean
         env:
-          GOTOOLCHAIN: "go1.27.3"
+          GOTOOLCHAIN: "go1.27.4"
 
       - name: Smoke-test packaged binary (gate release on a working CLI)
         run: |

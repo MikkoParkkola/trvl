@@ -126,23 +126,22 @@ func buildRenfeBookingURL(from, to RenfeStation, date string) string {
 
 // SearchRenfe searches Renfe for train fares between two cities using the
 // Renfe public REST API (wsrestcorp.renfe.es/api/wsrviajeros/vhi_priceCalendar).
+// The calendar answers one minimum fare per day and no train times, so the
+// route is an estimated day minimum without times, priced in Renfe's EUR
+// whatever currency was asked for; the merge pass converts it.
 func SearchRenfe(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromStation, ok := LookupRenfeStation(from)
 	if !ok {
-		return nil, fmt.Errorf("no Renfe station for %q", from)
+		return nil, fmt.Errorf("no Renfe station for %q: %w", from, models.ErrNotApplicable)
 	}
 	toStation, ok := LookupRenfeStation(to)
 	if !ok {
-		return nil, fmt.Errorf("no Renfe station for %q", to)
+		return nil, fmt.Errorf("no Renfe station for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	// Both must have numeric IDs for the REST API.
 	if fromStation.Numeric == "" || toStation.Numeric == "" {
-		return nil, fmt.Errorf("renfe: no numeric station ID for route %q -> %q", from, to)
-	}
-
-	if currency == "" {
-		currency = "EUR"
+		return nil, fmt.Errorf("renfe: no numeric station ID for route %q -> %q: %w", from, to, models.ErrNotApplicable)
 	}
 
 	// Validate date format.
@@ -184,7 +183,8 @@ func SearchRenfe(ctx context.Context, from, to, date, currency string) ([]models
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("renfe: HTTP %d: %s", resp.StatusCode, respBody)
+		slog.Debug("renfe calendar refused", "status", resp.StatusCode, "body", string(respBody))
+		return nil, httpStatusError("renfe", "calendar", resp.StatusCode)
 	}
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 5*1024*1024))
@@ -195,7 +195,7 @@ func SearchRenfe(ctx context.Context, from, to, date, currency string) ([]models
 
 	var apiResp renfePriceCalendarResponse
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("renfe decode: %w", err)
+		return nil, fmt.Errorf("renfe decode: %v: %w", err, models.ErrParseFailed)
 	}
 
 	bookingURL := buildRenfeBookingURL(fromStation, toStation, date)
@@ -209,14 +209,14 @@ func SearchRenfe(ctx context.Context, from, to, date, currency string) ([]models
 			continue
 		}
 		routes = append(routes, models.GroundRoute{
-			Provider: "renfe",
-			Type:     "train",
-			Price:    entry.MinPrice,
-			Currency: strings.ToUpper(currency),
+			Provider:        "renfe",
+			Type:            "train",
+			Price:           entry.MinPrice,
+			Currency:        "EUR",
+			PriceProvenance: models.PriceEstimated, // the day's cheapest train, not one departure
 			Departure: models.GroundStop{
 				City:    fromStation.City,
 				Station: fromStation.Name,
-				Time:    date + "T00:00:00",
 			},
 			Arrival: models.GroundStop{
 				City:    toStation.City,

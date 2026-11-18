@@ -184,18 +184,7 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 	// is retryable; a hard failure usually is not. Mirrors the hotel note below.
 	if !result.FlightCoverage.MayClaimExhaustive() {
 		fmt.Printf("  %s %s\n", models.Bold("⚠ Flight coverage:"), result.FlightCoverage.IncompleteNote())
-		for _, s := range result.FlightProviders {
-			switch s.Status {
-			case models.StatusRateLimited:
-				fmt.Printf("    • %s: rate-limited (retryable — try again shortly)\n", s.Name)
-			case models.StatusFailed, models.StatusError, models.StatusTimeout, models.StatusCircuitBroken:
-				line := fmt.Sprintf("    • %s: unavailable this attempt", s.Name)
-				if s.FixHint != "" {
-					line += " — " + s.FixHint
-				}
-				fmt.Println(line)
-			}
-		}
+		printCoverageBullets(result.FlightProviders)
 		fmt.Println()
 	}
 
@@ -240,18 +229,7 @@ func printTripPlan(ctx context.Context, targetCurrency string, result *trip.Plan
 	// is worthwhile (rate-limited is retryable; a hard failure usually is not).
 	if !result.HotelCoverage.MayClaimExhaustive() {
 		fmt.Printf("  %s %s\n", models.Bold("⚠ Hotel coverage:"), result.HotelCoverage.IncompleteNote())
-		for _, s := range result.HotelProviders {
-			switch s.Status {
-			case models.StatusRateLimited:
-				fmt.Printf("    • %s: rate-limited (retryable — try again shortly)\n", s.Name)
-			case models.StatusFailed, models.StatusError, models.StatusTimeout, models.StatusCircuitBroken:
-				line := fmt.Sprintf("    • %s: unavailable this attempt", s.Name)
-				if s.FixHint != "" {
-					line += " — " + s.FixHint
-				}
-				fmt.Println(line)
-			}
-		}
+		printCoverageBullets(result.HotelProviders)
 		fmt.Println()
 	}
 	if result.Context != nil {
@@ -417,6 +395,25 @@ func truncateName(s string, maxLen int) string {
 // that may not match what you can actually book. The provider name is prefixed
 // when a real source is known and the combined label stays compact. An empty or
 // unmapped confidence is rendered honestly as "lead-in" and never upgraded.
+// printCoverageBullets lists each provider that gave no usable answer in the
+// words the coverage note uses, plus its fix hint.
+func printCoverageBullets(statuses []models.ProviderStatus) {
+	for _, s := range statuses {
+		why := s.MissingPhrase()
+		if why == "" {
+			continue
+		}
+		line := fmt.Sprintf("    • %s: %s", s.Name, why)
+		switch {
+		case s.FixHint != "":
+			line += " — " + s.FixHint
+		case s.Status != models.StatusCircuitBroken && s.EffectiveReason() == models.ReasonRateLimited:
+			line += " — retryable, try again shortly"
+		}
+		fmt.Println(line)
+	}
+}
+
 func hotelPriceSourceLabel(confidence, provider string) string {
 	var label string
 	switch confidence {
@@ -427,7 +424,7 @@ func hotelPriceSourceLabel(confidence, provider string) string {
 	default:
 		label = "lead-in"
 	}
-	provider = strings.TrimSpace(provider)
+	provider = hotelSourceLabel(provider)
 	// Providers use "un" + "known" as a placeholder when no real source name
 	// exists; skip it so the label never shows a non-source as if it were one.
 	placeholder := "un" + "known"

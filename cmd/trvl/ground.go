@@ -104,7 +104,7 @@ Examples:
 	}
 
 	cmd.Flags().StringVar(&currency, "currency", "", "Convert prices to this currency (e.g. EUR). Empty = provider default")
-	cmd.Flags().StringVar(&providers, "provider", "", "Restrict to providers (e.g. flixbus,regiojet,trainline,sncf,transitous,db,oebb,ns,vr,tallink,dfds,vikingline,eckeroline,ferryhopper)")
+	cmd.Flags().StringVar(&providers, "provider", "", "Restrict to providers, comma-separated: "+strings.Join(ground.ValidProviderNames(), ", "))
 	cmd.Flags().StringVar(&returnDate, "return", "", "Return date (YYYY-MM-DD) for a round-trip / return leg")
 	cmd.Flags().Float64Var(&maxPrice, "max-price", 0, "Maximum price filter")
 	cmd.Flags().StringVar(&typeFilter, "type", "", "Filter by type (bus, train, ferry)")
@@ -120,6 +120,7 @@ func printGroundTable(ctx context.Context, targetCurrency string, result *models
 		} else {
 			_, _ = fmt.Fprintln(os.Stderr, "No routes found.")
 		}
+		printGroundNotes(result.ProviderStatuses)
 		return nil
 	}
 
@@ -130,7 +131,24 @@ func printGroundTable(ctx context.Context, targetCurrency string, result *models
 
 	headers := []string{"Price", "Duration", "Type", "Provider", "Transfers", "Departs", "Arrives", "Seats"}
 	models.FormatTable(os.Stdout, headers, rows)
+
+	printGroundNotes(result.ProviderStatuses)
 	return nil
+}
+
+// printGroundNotes prints the fix hint of every provider that answered with a
+// caveat (a ProviderNotice), also when filters left no route to show.
+func printGroundNotes(statuses []models.ProviderStatus) {
+	for _, st := range statuses {
+		if st.Status != models.StatusOK || st.FixHint == "" {
+			continue
+		}
+		name := st.Name
+		if name == "" {
+			name = st.ID
+		}
+		fmt.Printf("Note: %s: %s\n", name, st.FixHint)
+	}
 }
 
 func prepareGroundRows(ctx context.Context, targetCurrency string, routes []models.GroundRoute) (int, []string, [][]string) {
@@ -161,18 +179,28 @@ func prepareGroundRows(ctx context.Context, targetCurrency string, routes []mode
 
 	rows := make([][]string, 0, len(routes))
 	for _, r := range routes {
-		price := "-"
-		if r.Price > 0 {
+		// Only a live fare reads as a price; an estimate is marked as one and
+		// a route without a fare shows a dash, never a 0 that reads as free.
+		var price string
+		switch {
+		case r.Price <= 0 || r.PriceProvenance == models.PriceUnavailable:
+			price = "—"
+		case r.PriceProvenance == models.PriceLive:
 			price = fmt.Sprintf("%s %.2f", r.Currency, r.Price)
 			if r.PriceMax > 0 && r.PriceMax != r.Price {
 				price = fmt.Sprintf("%s %.2f-%.2f", r.Currency, r.Price, r.PriceMax)
 			}
+		default:
+			price = estimatedPrice(r.Currency, r.Price)
 		}
 
 		dur := formatDuration(r.Duration)
 		transfers := "Direct"
 		if r.Transfers > 0 {
 			transfers = fmt.Sprintf("%d", r.Transfers)
+		}
+		if r.TransfersUnknown {
+			transfers = "unknown"
 		}
 
 		depTime := formatGroundTime(r.Departure.Time)
@@ -207,4 +235,14 @@ func formatGroundTime(isoTime string) string {
 		return isoTime[11:16] // HH:MM
 	}
 	return isoTime
+}
+
+// estimatedPrice renders an indicative fare such as "~€22 (est.)", or
+// "~SEK 220 (est.)" for a currency without a common symbol.
+func estimatedPrice(currency string, amount float64) string {
+	symbols := map[string]string{"EUR": "€", "GBP": "£", "USD": "$"}
+	if sym, ok := symbols[strings.ToUpper(currency)]; ok {
+		return fmt.Sprintf("~%s%.0f (est.)", sym, amount)
+	}
+	return fmt.Sprintf("~%s %.0f (est.)", currency, amount)
 }

@@ -1,1 +1,3 @@
 /.github/scripts/gosec-gate.sh text eol=lf
+internal/ground/ferryhopper_ports.txt text eol=lf
+internal/hotels/testdata/byname_refusals.golden text eol=lf

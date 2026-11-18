@@ -3,6 +3,7 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/models"
 	"golang.org/x/time/rate"
 )
 
@@ -278,13 +280,13 @@ func TestFetchDFDSAvailability_ViaTransport_NonOK(t *testing.T) {
 	}
 
 	routeInfo := dfdsRouteInfo{RouteCode: "NOOSL-DKCPH", SalesOwner: 19}
-	// Non-200 → non-fatal → returns true (assume available)
+	// D2: a 503 is a typed failure, never an assumed sailing.
 	available, _, err := fetchDFDSAvailability(context.Background(), routeInfo, "2026-08-15")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, models.ErrRateLimited) {
+		t.Fatalf("err = %v, want it to wrap models.ErrRateLimited", err)
 	}
-	if !available {
-		t.Error("expected available=true for non-200 (non-fatal path)")
+	if available {
+		t.Error("a failed availability check reported the date available")
 	}
 }
 

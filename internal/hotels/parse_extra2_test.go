@@ -289,7 +289,7 @@ func TestParseOrganicHotel_AllFields(t *testing.T) {
 	entry[1] = "Full Hotel"
 	entry[2] = []any{[]any{51.5074, -0.1278}}
 	entry[3] = []any{"5-star hotel", 5.0}
-	entry[6] = []any{nil, []any{[]any{350.0, 0.0}, nil, nil, "GBP"}}
+	entry[6] = []any{nil, []any{[]any{900.0, 0.0}, nil, nil, "GBP"}, []any{nil, []any{"£350", nil, 350.0, nil, 350.0}}}
 	entry[7] = []any{[]any{4.8, 2000.0}}
 	entry[9] = "ChIJ123abc"
 	entry[11] = []any{"123 London Road"}

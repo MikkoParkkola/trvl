@@ -149,6 +149,7 @@ func SearchBlueground(ctx context.Context, location string, opts HotelSearchOpti
 			price, currency, minStay := parseBluegroundDetail(dbody)
 			if price > 0 {
 				h.Price = price
+				h.PriceBasis = models.PriceBasisMonthly // lowestRent is a monthly rent
 				if currency != "" {
 					h.Currency = currency
 				}
@@ -157,6 +158,7 @@ func SearchBlueground(ctx context.Context, location string, opts HotelSearchOpti
 					Price:      price,
 					Currency:   h.Currency,
 					BookingURL: h.BookingURL,
+					PriceBasis: models.PriceBasisMonthly,
 				}}
 			}
 			if minStay > 0 {

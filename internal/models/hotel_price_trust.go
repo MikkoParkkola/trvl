@@ -1,6 +1,7 @@
 package models
 
 import (
+	"math"
 	"strings"
 	"time"
 )
@@ -10,31 +11,43 @@ const (
 	PriceBasisRoomNightly       = "room_nightly"
 	PriceBasisRoomTotal         = "room_total"
 	PriceBasisTaxInclusiveTotal = "tax_inclusive_total"
+	// PriceBasisMonthly is a monthly rent (mid-term rental providers), never a
+	// nightly rate.
+	PriceBasisMonthly = "monthly"
 
 	PriceConfidenceUnverified = "unverified"
 	PriceConfidenceRoomLevel  = "room_level"
 	PriceConfidenceVerified   = "verified"
 
 	PriceWarningMixedSourceCurrencies = "mixed_source_currencies"
+	// PriceWarningCurrencyNotConverted marks a headline left in its source
+	// currency because conversion into the requested currency failed.
+	PriceWarningCurrencyNotConverted = "currency_not_converted"
 )
 
-// FinalizeHotelPriceTrust fills source-level trust metadata, chooses a primary
-// price from comparable currencies, and mirrors that source's trust fields onto
-// the hotel. Search results should call this after all providers have merged.
-func FinalizeHotelPriceTrust(hotels []HotelResult, preferredCurrency string, now time.Time) {
+// FinalizeHotelPriceTrust fills source-level trust metadata, chooses the
+// primary source (trust tier, then requested currency, then price), converts
+// it into the requested currency for the headline, and mirrors that source's
+// trust fields onto the hotel. Search results should call this after all
+// providers have merged.
+//
+// convert turns amount from one currency into another and reports success. It
+// is injected because models cannot import the package that holds exchange
+// rates; nil means no conversion is available.
+func FinalizeHotelPriceTrust(hotels []HotelResult, preferredCurrency string, now time.Time, convert func(amount float64, from, to string) (float64, bool)) {
 	if now.IsZero() {
 		now = time.Now()
 	}
 	preferredCurrency = strings.ToUpper(strings.TrimSpace(preferredCurrency))
 
 	for i := range hotels {
-		FinalizeHotelResultPriceTrust(&hotels[i], preferredCurrency, now)
+		FinalizeHotelResultPriceTrust(&hotels[i], preferredCurrency, now, convert)
 	}
 }
 
 // FinalizeHotelResultPriceTrust is the single-result form used by tests and
 // detail handlers.
-func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now time.Time) {
+func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now time.Time, convert func(amount float64, from, to string) (float64, bool)) {
 	if h == nil {
 		return
 	}
@@ -53,9 +66,30 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 	}
 
 	h.Sources = finalizePriceSources(h.Sources, now)
-	if selected, ok := selectPrimaryHotelSource(h.Sources, preferredCurrency, h.Currency); ok {
+	preferredCurrency = strings.ToUpper(strings.TrimSpace(preferredCurrency))
+	h.Sources = dropSubFloorQuotes(h.Sources, preferredCurrency, convert)
+	if selected, ok := selectPrimaryHotelSource(h.Sources, preferredCurrency, h.Currency, convert); ok {
+		// Sources stay provider quotes in the provider's currency; only the
+		// headline is converted. A failed conversion keeps the quote's own
+		// currency and says so rather than relabelling the number.
 		h.Price = selected.Price
 		h.Currency = selected.Currency
+		// The headline credits the quote the trust rule picked; cheapest_source
+		// below may name a cheaper, less trusted one.
+		h.HeadlineProvider = selected.Provider
+		h.PriceProvenance = ""
+		h.PriceWarnings = withoutString(h.PriceWarnings, PriceWarningCurrencyNotConverted)
+		if preferredCurrency != "" && h.Currency != preferredCurrency {
+			if amount, ok := convertPrice(convert, h.Price, h.Currency, preferredCurrency); ok {
+				h.Price, h.Currency = amount, preferredCurrency
+			} else {
+				h.PriceWarnings = appendUniqueString(h.PriceWarnings, PriceWarningCurrencyNotConverted)
+			}
+		}
+		// Savings are displayed in the headline's currency ("saves EUR 20"),
+		// but merge computed them in whichever currency had the most quotes.
+		// Restate them in the headline currency, or drop them if they cannot be.
+		h.Savings, h.CheapestSource = savingsIn(h.Sources, h.Currency, convert)
 		if selected.BookingURL != "" {
 			h.BookingURL = selected.BookingURL
 		}
@@ -63,6 +97,14 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 		h.PriceConfidence = selected.PriceConfidence
 		h.RetrievedAt = selected.RetrievedAt
 		h.Freshness = selected.Freshness
+	} else {
+		// No source carries a usable price: say so on the hotel. Price-0
+		// sources stay unstamped; they are not quotes.
+		h.HeadlineProvider = ""
+		h.PriceProvenance = PriceUnavailable
+		// No number stays behind to sort first or take the cheapest line.
+		h.Price, h.ComparablePrice = 0, 0
+		h.Savings, h.CheapestSource = 0, ""
 	}
 	if h.PropertyType == "" {
 		h.PropertyType = InferHotelPropertyType(*h)
@@ -70,6 +112,41 @@ func FinalizeHotelResultPriceTrust(h *HotelResult, preferredCurrency string, now
 	if hasMixedSourceCurrencies(h.Sources) {
 		h.PriceWarnings = appendUniqueString(h.PriceWarnings, PriceWarningMixedSourceCurrencies)
 	}
+}
+
+// priceFloorUnits is the smallest amount that counts as a quote, in units of
+// the requested currency: EUR 1 for a EUR search, roughly that for USD or GBP.
+// Anything below (a 0.01 ARS placeholder becomes EUR 0.0000059) is not a price.
+// The check uses the requested currency because the search converts into it
+// anyway; a fixed EUR floor would fetch a new exchange rate on every search.
+const priceFloorUnits = 1.0
+
+// dropSubFloorQuotes removes priced sources worth less than priceFloorUnits in
+// the requested currency, so a placeholder never resurfaces in sources[] or
+// room data. Price-0 sources stay: they carry provenance, not a quote. With no
+// rate for a source, it is judged in its own currency.
+func dropSubFloorQuotes(sources []PriceSource, target string, convert func(amount float64, from, to string) (float64, bool)) []PriceSource {
+	// Without a requested currency (merge-time finalize) there is no unit to
+	// judge against: keep every quote until the search's finalize judges it.
+	if len(sources) == 0 || target == "" {
+		return sources
+	}
+	out := make([]PriceSource, 0, len(sources))
+	for _, s := range sources {
+		if s.Price > 0 {
+			amount := s.Price
+			if target != "" && !strings.EqualFold(s.Currency, target) {
+				if converted, ok := convertPrice(convert, s.Price, s.Currency, target); ok {
+					amount = converted
+				}
+			}
+			if amount < priceFloorUnits {
+				continue
+			}
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 func finalizePriceSources(sources []PriceSource, now time.Time) []PriceSource {
@@ -131,20 +208,113 @@ func priceBasisRank(basis string) int {
 	}
 }
 
-func selectPrimaryHotelSource(sources []PriceSource, preferredCurrency, currentCurrency string) (PriceSource, bool) {
+func selectPrimaryHotelSource(sources []PriceSource, preferredCurrency, currentCurrency string, convert func(amount float64, from, to string) (float64, bool)) (PriceSource, bool) {
 	preferredCurrency = strings.ToUpper(strings.TrimSpace(preferredCurrency))
 	currentCurrency = strings.ToUpper(strings.TrimSpace(currentCurrency))
-	if selected, ok := bestSourceInCurrency(sources, preferredCurrency); ok {
+	tier := topTrustTier(sources)
+	if selected, ok := bestSourceInCurrency(tier, preferredCurrency); ok {
 		return selected, true
 	}
-	if selected, ok := bestSourceInCurrency(sources, currentCurrency); ok {
+	if selected, ok := cheapestConverted(tier, preferredCurrency, convert); ok {
 		return selected, true
 	}
-	bestCurrency := mostRepresentedSourceCurrency(sources)
-	if selected, ok := bestSourceInCurrency(sources, bestCurrency); ok {
+	if selected, ok := bestSourceInCurrency(tier, currentCurrency); ok {
+		return selected, true
+	}
+	if selected, ok := bestSourceInCurrency(tier, mostRepresentedSourceCurrency(sources)); ok {
+		return selected, true
+	}
+	if selected, ok := bestSourceInCurrency(tier, mostRepresentedSourceCurrency(tier)); ok {
 		return selected, true
 	}
 	return PriceSource{}, false
+}
+
+// topTrustTier keeps the priced sources at the highest trust tier: price
+// confidence first, then price basis. Trust is decided before currency so a
+// verified total in a foreign currency beats an unverified teaser in the
+// requested one.
+func topTrustTier(sources []PriceSource) []PriceSource {
+	var tier []PriceSource
+	bestConf, bestBasis := 0, -1
+	for _, s := range sources {
+		if s.Price <= 0 || strings.TrimSpace(s.Currency) == "" {
+			continue
+		}
+		conf, basis := priceConfidenceRank(s.PriceConfidence), priceBasisRank(s.PriceBasis)
+		switch {
+		case conf > bestConf || (conf == bestConf && basis > bestBasis):
+			tier = []PriceSource{s}
+			bestConf, bestBasis = conf, basis
+		case conf == bestConf && basis == bestBasis:
+			tier = append(tier, s)
+		}
+	}
+	return tier
+}
+
+// cheapestConverted compares sources by their price converted into currency,
+// skipping any the converter cannot handle. Ties break on provider name.
+func cheapestConverted(sources []PriceSource, currency string, convert func(amount float64, from, to string) (float64, bool)) (PriceSource, bool) {
+	if currency == "" || convert == nil {
+		return PriceSource{}, false
+	}
+	var selected PriceSource
+	selectedAmount := 0.0
+	found := false
+	for _, s := range sources {
+		amount, ok := convertPrice(convert, s.Price, s.Currency, currency)
+		if !ok {
+			continue
+		}
+		if !found || amount < selectedAmount || (amount == selectedAmount && s.Provider < selected.Provider) {
+			selected, selectedAmount, found = s, amount, true
+		}
+	}
+	return selected, found
+}
+
+// savingsIn is the spread between the cheapest and dearest quotes once
+// converted into currency, and the cheapest provider. Quotes the converter
+// cannot handle are left out; fewer than two comparable quotes means none.
+func savingsIn(sources []PriceSource, currency string, convert func(amount float64, from, to string) (float64, bool)) (float64, string) {
+	minPrice, maxPrice := math.MaxFloat64, 0.0
+	cheapest, n := "", 0
+	for _, s := range sources {
+		if s.Price <= 0 {
+			continue
+		}
+		amount, ok := convertPrice(convert, s.Price, s.Currency, currency)
+		if !ok {
+			continue
+		}
+		n++
+		if amount < minPrice || (amount == minPrice && s.Provider < cheapest) {
+			minPrice, cheapest = amount, s.Provider
+		}
+		if amount > maxPrice {
+			maxPrice = amount
+		}
+	}
+	spread := math.Round(maxPrice - minPrice)
+	if n < 2 || spread <= 0 {
+		return 0, ""
+	}
+	return spread, cheapest
+}
+
+// convertPrice treats a missing converter, a reported failure, and a
+// non-positive result alike: there is no converted price.
+func convertPrice(convert func(amount float64, from, to string) (float64, bool), amount float64, from, to string) (float64, bool) {
+	from = strings.ToUpper(strings.TrimSpace(from))
+	if from == to {
+		return amount, true
+	}
+	if convert == nil {
+		return 0, false
+	}
+	converted, ok := convert(amount, from, to)
+	return converted, ok && converted > 0
 }
 
 // bestSourceInCurrency picks the headline source within a single currency by
@@ -213,6 +383,18 @@ func appendUniqueString(values []string, value string) []string {
 		}
 	}
 	return append(values, value)
+}
+
+// withoutString returns values minus value, never writing into values: hotel
+// copies made during merges can share the same backing array.
+func withoutString(values []string, value string) []string {
+	var out []string
+	for _, v := range values {
+		if v != value {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // InferHotelPropertyType gives callers a conservative machine-readable type

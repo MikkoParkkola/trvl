@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // Requirement describes the visa/entry requirement for a passport→destination pair.
@@ -34,10 +36,10 @@ func Lookup(passport, destination string) Result {
 		return Result{Error: "both passport and destination country codes are required"}
 	}
 
-	if _, ok := countryNames[passport]; !ok {
+	if _, ok := models.CountryNames[passport]; !ok {
 		return Result{Error: fmt.Sprintf("unknown passport country code %q", passport)}
 	}
-	if _, ok := countryNames[destination]; !ok {
+	if _, ok := models.CountryNames[destination]; !ok {
 		return Result{Error: fmt.Sprintf("unknown destination country code %q", destination)}
 	}
 
@@ -105,7 +107,7 @@ func Lookup(passport, destination string) Result {
 
 // CountryName returns the display name for an ISO country code.
 func CountryName(code string) string {
-	if name, ok := countryNames[strings.ToUpper(code)]; ok {
+	if name, ok := models.CountryNames[strings.ToUpper(code)]; ok {
 		return name
 	}
 	return code
@@ -113,8 +115,8 @@ func CountryName(code string) string {
 
 // ListCountries returns all known country codes sorted alphabetically.
 func ListCountries() []string {
-	codes := make([]string, 0, len(countryNames))
-	for code := range countryNames {
+	codes := make([]string, 0, len(models.CountryNames))
+	for code := range models.CountryNames {
 		codes = append(codes, code)
 	}
 	sort.Strings(codes)
@@ -269,31 +271,4 @@ var bilateral = map[string]Requirement{
 	"NO→US": {Passport: "NO", Destination: "US", Status: "e-visa", MaxStay: "90 days", Notes: "ESTA required under Visa Waiver Program."},
 	"DK→US": {Passport: "DK", Destination: "US", Status: "e-visa", MaxStay: "90 days", Notes: "ESTA required under Visa Waiver Program."},
 	"CH→US": {Passport: "CH", Destination: "US", Status: "e-visa", MaxStay: "90 days", Notes: "ESTA required under Visa Waiver Program."},
-}
-
-// countryNames maps ISO 3166-1 alpha-2 codes to country names.
-var countryNames = map[string]string{
-	"AL": "Albania", "AR": "Argentina", "AT": "Austria", "AU": "Australia",
-	"AZ": "Azerbaijan", "BA": "Bosnia and Herzegovina", "BE": "Belgium",
-	"BG": "Bulgaria", "BH": "Bahrain", "BR": "Brazil", "CA": "Canada",
-	"CH": "Switzerland", "CL": "Chile", "CN": "China", "CO": "Colombia",
-	"CR": "Costa Rica", "CU": "Cuba", "CY": "Cyprus", "CZ": "Czech Republic",
-	"DE": "Germany", "DK": "Denmark", "EE": "Estonia", "EG": "Egypt",
-	"ES": "Spain", "ET": "Ethiopia", "FI": "Finland", "FR": "France",
-	"GB": "United Kingdom", "GE": "Georgia", "GR": "Greece", "HK": "Hong Kong",
-	"HR": "Croatia", "HU": "Hungary", "ID": "Indonesia", "IE": "Ireland",
-	"IL": "Israel", "IN": "India", "IS": "Iceland", "IT": "Italy",
-	"JO": "Jordan", "JP": "Japan", "KE": "Kenya", "KH": "Cambodia",
-	"KR": "South Korea", "KW": "Kuwait", "LA": "Laos", "LI": "Liechtenstein",
-	"LK": "Sri Lanka", "LT": "Lithuania", "LU": "Luxembourg", "LV": "Latvia",
-	"MA": "Morocco", "ME": "Montenegro", "MG": "Madagascar", "MK": "North Macedonia",
-	"MM": "Myanmar", "MT": "Malta", "MV": "Maldives", "MX": "Mexico",
-	"MY": "Malaysia", "MZ": "Mozambique", "NL": "Netherlands", "NO": "Norway",
-	"NP": "Nepal", "NZ": "New Zealand", "OM": "Oman", "PA": "Panama",
-	"PE": "Peru", "PH": "Philippines", "PL": "Poland", "PT": "Portugal",
-	"QA": "Qatar", "RO": "Romania", "RS": "Serbia", "RU": "Russia",
-	"RW": "Rwanda", "SA": "Saudi Arabia", "SE": "Sweden", "SG": "Singapore",
-	"SI": "Slovenia", "SK": "Slovakia", "TH": "Thailand", "TR": "Turkey",
-	"TW": "Taiwan", "TZ": "Tanzania", "UA": "Ukraine", "AE": "United Arab Emirates",
-	"US": "United States", "UZ": "Uzbekistan", "VN": "Vietnam", "ZA": "South Africa",
 }

@@ -40,9 +40,10 @@ func TestTryGoogleRoomDetailUnconfiguredIsNoOp(t *testing.T) {
 	googleRoomDetailEnabled = true
 	defer func() { googleRoomDetailEnabled = prev }()
 
-	rooms, name, notice := tryGoogleRoomDetail(context.Background(), RoomSearchOptions{
+	rooms, name, detailCall := tryGoogleRoomDetail(context.Background(), RoomSearchOptions{
 		HotelID: "0x123:0x456", CheckIn: "2026-07-25", CheckOut: "2026-07-26", Currency: "EUR",
 	})
+	notice := providerRateLimitNotice("Google Hotels", detailCall.refusal())
 	if rooms != nil || name != "" || notice != "" {
 		t.Fatalf("unconfigured fetch should be a silent no-op, got rooms=%d name=%q notice=%q", len(rooms), name, notice)
 	}
@@ -51,9 +52,10 @@ func TestTryGoogleRoomDetailUnconfiguredIsNoOp(t *testing.T) {
 func TestTryGoogleRoomDetailDisabledIsNoOp(t *testing.T) {
 	t.Setenv("GOOGLE_HOTELS_DETAIL_API_BASE", "https://relay.example/google-hotels")
 	// googleRoomDetailEnabled is false in the suite (TestMain); the gate must win.
-	rooms, name, notice := tryGoogleRoomDetail(context.Background(), RoomSearchOptions{
+	rooms, name, detailCall := tryGoogleRoomDetail(context.Background(), RoomSearchOptions{
 		HotelID: "0x123:0x456", CheckIn: "2026-07-25", CheckOut: "2026-07-26", Currency: "EUR",
 	})
+	notice := providerRateLimitNotice("Google Hotels", detailCall.refusal())
 	if rooms != nil || name != "" || notice != "" {
 		t.Fatalf("disabled fetch should be a silent no-op, got rooms=%d name=%q notice=%q", len(rooms), name, notice)
 	}
@@ -178,13 +180,14 @@ func TestTryGoogleRoomDetailConfiguredAgainstMock(t *testing.T) {
 	googleRoomDetailEnabled = true
 	defer func() { googleRoomDetailEnabled = prev }()
 
-	rooms, name, notice := tryGoogleRoomDetail(context.Background(), RoomSearchOptions{
+	rooms, name, detailCall := tryGoogleRoomDetail(context.Background(), RoomSearchOptions{
 		HotelID:  "0x123:0x456",
 		CheckIn:  "2026-07-25",
 		CheckOut: "2026-07-27",
 		Guests:   2,
 		Currency: "EUR",
 	})
+	notice := providerRateLimitNotice("Google Hotels", detailCall.refusal())
 	if notice != "" {
 		t.Fatalf("happy path should carry no notice, got %q", notice)
 	}
@@ -208,9 +211,10 @@ func TestTryGoogleRoomDetailBotWallClassifiesRateLimited(t *testing.T) {
 	googleRoomDetailEnabled = true
 	defer func() { googleRoomDetailEnabled = prev }()
 
-	rooms, _, notice := tryGoogleRoomDetail(context.Background(), RoomSearchOptions{
+	rooms, _, detailCall := tryGoogleRoomDetail(context.Background(), RoomSearchOptions{
 		HotelID: "0x123:0x456", CheckIn: "2026-07-25", CheckOut: "2026-07-26", Currency: "EUR",
 	})
+	notice := providerRateLimitNotice("Google Hotels", detailCall.refusal())
 	if len(rooms) != 0 {
 		t.Fatalf("bot-wall should yield no rooms, got %d", len(rooms))
 	}

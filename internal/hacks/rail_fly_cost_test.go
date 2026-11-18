@@ -35,7 +35,7 @@ func TestRailFlyInjectsConcreteCandidateViaSeam(t *testing.T) {
 		return &models.FlightSearchResult{Success: true, Flights: []models.FlightResult{{Price: 210, Currency: "EUR", Legs: []models.FlightLeg{{DepartureAirport: models.AirportInfo{Code: "ZWE"}}}}}}, nil
 	})
 	withRailGroundSearcher(t, func(_ context.Context, _, _, _ string, _ ground.SearchOptions) (*models.GroundSearchResult, error) {
-		return &models.GroundSearchResult{Success: true, Count: 1, Routes: []models.GroundRoute{{Provider: "eurostar", Type: "train", Price: 0, Currency: "EUR"}}}, nil
+		return &models.GroundSearchResult{Success: true, Count: 1, Routes: []models.GroundRoute{{Provider: "eurostar", Type: "train", Price: 0, PriceProvenance: models.PriceLive, Currency: "EUR"}}}, nil
 	})
 
 	hacks := DetectRailFlyArbitrage(context.Background(), "AMS", "BCN", "2026-07-01", "")
@@ -64,12 +64,12 @@ func TestResolveRailLegCost_bundledFreeWithLiveStandalone(t *testing.T) {
 			Success: true,
 			Count:   1,
 			Routes: []models.GroundRoute{
-				{Provider: "eurostar", Type: "train", Price: 39, Currency: "EUR"},
+				{Provider: "eurostar", Type: "train", Price: 39, PriceProvenance: models.PriceLive, Currency: "EUR"},
 			},
 		}, nil
 	})
 
-	leg := resolveRailLegCost(context.Background(), "AMS", testRailFlyStation, "2026-05-01")
+	leg := resolveRailLegCost(context.Background(), "AMS", testRailFlyStation, "2026-05-01", ground.SearchOptions{})
 	if leg.Cost != 0 {
 		t.Errorf("bundled rail leg Cost = %v, want 0 (included in ticket)", leg.Cost)
 	}
@@ -89,12 +89,12 @@ func TestResolveRailLegCost_aliasOriginChargesRealLeg(t *testing.T) {
 			Success: true,
 			Count:   1,
 			Routes: []models.GroundRoute{
-				{Provider: "eurostar", Type: "train", Price: 39, Currency: "EUR"},
+				{Provider: "eurostar", Type: "train", Price: 39, PriceProvenance: models.PriceLive, Currency: "EUR"},
 			},
 		}, nil
 	})
 
-	leg := resolveRailLegCost(context.Background(), "ANR", testRailFlyStation, "2026-05-01")
+	leg := resolveRailLegCost(context.Background(), "ANR", testRailFlyStation, "2026-05-01", ground.SearchOptions{})
 	if leg.Cost != 39 {
 		t.Errorf("alias-origin rail leg Cost = %v, want 39 (real paid leg)", leg.Cost)
 	}
@@ -112,7 +112,7 @@ func TestResolveRailLegCost_aliasOriginErrorEstimateIsCharged(t *testing.T) {
 		return nil, errors.New("ground provider timeout")
 	})
 
-	leg := resolveRailLegCost(context.Background(), "ANR", testRailFlyStation, "2026-05-01")
+	leg := resolveRailLegCost(context.Background(), "ANR", testRailFlyStation, "2026-05-01", ground.SearchOptions{})
 	if !leg.Estimated {
 		t.Error("alias-origin provider error should degrade to a charged estimate")
 	}
@@ -127,13 +127,13 @@ func TestStandaloneRailQuote_liveQuoteWins(t *testing.T) {
 			Success: true,
 			Count:   2,
 			Routes: []models.GroundRoute{
-				{Provider: "eurostar", Type: "train", Price: 59, Currency: "EUR"},
-				{Provider: "ns", Type: "train", Price: 42, Currency: "EUR"}, // cheapest
+				{Provider: "eurostar", Type: "train", Price: 59, PriceProvenance: models.PriceLive, Currency: "EUR"},
+				{Provider: "ns", Type: "train", Price: 42, PriceProvenance: models.PriceLive, Currency: "EUR"}, // cheapest
 			},
 		}, nil
 	})
 
-	leg := standaloneRailQuote(context.Background(), testRailFlyStation, "2026-05-01")
+	leg := standaloneRailQuote(context.Background(), testRailFlyStation, "2026-05-01", ground.SearchOptions{})
 	if leg.Estimated {
 		t.Error("expected a live (non-estimated) quote")
 	}
@@ -151,7 +151,7 @@ func TestStandaloneRailQuote_providerErrorDegradesToEstimate(t *testing.T) {
 		return nil, errors.New("ground provider timeout")
 	})
 
-	leg := standaloneRailQuote(context.Background(), testRailFlyStation, "2026-05-01")
+	leg := standaloneRailQuote(context.Background(), testRailFlyStation, "2026-05-01", ground.SearchOptions{})
 	if !leg.Estimated {
 		t.Error("provider error should degrade to an estimate (Estimated=true)")
 	}
@@ -168,7 +168,7 @@ func TestStandaloneRailQuote_emptyResultDegradesToEstimate(t *testing.T) {
 		return &models.GroundSearchResult{Success: true, Count: 0, Routes: nil}, nil
 	})
 
-	leg := standaloneRailQuote(context.Background(), testRailFlyStation, "2026-05-01")
+	leg := standaloneRailQuote(context.Background(), testRailFlyStation, "2026-05-01", ground.SearchOptions{})
 	if !leg.Estimated {
 		t.Error("empty route list should degrade to an estimate")
 	}

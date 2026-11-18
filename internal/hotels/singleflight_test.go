@@ -562,3 +562,21 @@ func TestSharedHotelResult_ClonesPartialErrorResult(t *testing.T) {
 		t.Fatalf("shared provider status = %q, want %q", shared.ProviderStatuses[0].Status, "partial")
 	}
 }
+
+// A cached result's completeness is the caller's own: the clone shares no
+// slice with it and keeps the same per-provider wording (#817 review).
+func TestCloneHotelSearchResult_CompletenessIsCallerPrivate(t *testing.T) {
+	shared := &models.HotelSearchResult{Completeness: models.ComputeCompleteness([]models.ProviderStatus{
+		{ID: "google_hotels", Status: models.StatusCheckedHit, Results: 3},
+		{ID: "blueground", Status: models.StatusFailed, Error: "blueground fetch: unexpected status 404"},
+	})}
+	want := shared.Completeness.IncompleteNote()
+	c := cloneHotelSearchResult(shared)
+	if got := c.Completeness.IncompleteNote(); got != want {
+		t.Fatalf("clone note = %q, want %q", got, want)
+	}
+	c.Completeness.Missing[0] = "changed"
+	if shared.Completeness.Missing[0] != "blueground" {
+		t.Errorf("clone shares Missing with the cached result: %v", shared.Completeness.Missing)
+	}
+}

@@ -158,7 +158,7 @@ func detectMultiModalPositioning(ctx context.Context, in DetectorInput) []Hack {
 		go func() {
 			defer wg.Done()
 
-			groundPrice, ok, estimated := groundLegPriceInTarget(ctx, h.OriginCity, h.HubCity, in.Date, h.GroundType, h.StaticGroundEUR, target, in.GroundSearchOverride)
+			groundPrice, ok, estimated := groundLegPriceInTarget(ctx, &in, h.OriginCity, h.HubCity, h.GroundType, h.StaticGroundEUR, target)
 			if !ok {
 				ch <- multiModalCandidate{}
 				return

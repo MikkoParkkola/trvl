@@ -36,8 +36,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikkoParkkola/trvl/internal/logredact"
-
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -289,35 +287,32 @@ func fetchDFDSAvailability(ctx context.Context, routeInfo dfdsRouteInfo, date st
 		dfdsAvailabilityBase, routeInfo.SalesOwner, routeInfo.RouteCode,
 	)
 
+	// Fail closed: a sailing is only shown once DFDS confirmed the date, so any
+	// failure to check is an error, never an assumed sailing.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return true, false, err
+		return false, false, fmt.Errorf("dfds availability request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := dfdsClient.Do(req)
 	if err != nil {
-		// Network failure: return schedule without availability check.
-		slog.Debug("dfds availability: network error", "route", routeInfo.RouteCode, "err", logredact.Err(err))
-		return true, false, nil
+		return false, false, fmt.Errorf("dfds availability: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		slog.Debug("dfds availability: non-200", "status", resp.StatusCode, "body", string(body))
-		return true, false, nil // non-fatal
+		return false, false, httpStatusError("dfds", "availability", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 32*1024))
 	if err != nil {
-		return true, false, nil // non-fatal
+		return false, false, fmt.Errorf("dfds availability read: %w", err)
 	}
 
 	var avail dfdsAvailabilityResponse
 	if err := json.Unmarshal(body, &avail); err != nil {
-		slog.Debug("dfds availability: decode error", "err", logredact.Err(err))
-		return true, false, nil // non-fatal
+		return false, false, fmt.Errorf("dfds availability decode: %v: %w", err, models.ErrParseFailed)
 	}
 
 	// If dates are empty, the route is inactive for this period; still return the
@@ -355,16 +350,16 @@ func fetchDFDSAvailability(ctx context.Context, routeInfo dfdsRouteInfo, date st
 
 // SearchDFDS searches DFDS for ferry crossings between two cities on a given date.
 // It queries the DFDS availability API to confirm the date is operational, then
-// attempts to fetch live prices via browser page read. Falls back to hardcoded
-// reference prices when browser reading fails.
+// shows the route's reference price (an estimate) only on a confirmed date. A
+// failed availability check is an error, never a fabricated sailing.
 func SearchDFDS(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromPort, ok := LookupDFDSPort(from)
 	if !ok {
-		return nil, fmt.Errorf("dfds: no port for %q", from)
+		return nil, fmt.Errorf("dfds: no port for %q: %w", from, models.ErrNotApplicable)
 	}
 	toPort, ok := LookupDFDSPort(to)
 	if !ok {
-		return nil, fmt.Errorf("dfds: no port for %q", to)
+		return nil, fmt.Errorf("dfds: no port for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if currency == "" {
@@ -378,7 +373,7 @@ func SearchDFDS(ctx context.Context, from, to, date, currency string) ([]models.
 	key := fromPort.Code + "-" + toPort.Code
 	routeInfo, ok := dfdsRoutes[key]
 	if !ok {
-		return nil, fmt.Errorf("dfds: no route for %s→%s", fromPort.Code, toPort.Code)
+		return nil, fmt.Errorf("dfds: no route for %s→%s: %w", fromPort.Code, toPort.Code, models.ErrNotApplicable)
 	}
 
 	if err := dfdsLimiter.Wait(ctx); err != nil {
@@ -390,7 +385,7 @@ func SearchDFDS(ctx context.Context, from, to, date, currency string) ([]models.
 	// Check availability via API.
 	available, isOffer, err := fetchDFDSAvailability(ctx, routeInfo, date)
 	if err != nil {
-		slog.Debug("dfds availability error", "err", logredact.Err(err))
+		return nil, err
 	}
 	if !available {
 		slog.Debug("dfds: date unavailable", "route", routeInfo.RouteCode, "date", date)

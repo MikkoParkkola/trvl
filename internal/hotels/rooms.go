@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
@@ -21,9 +22,12 @@ type RoomType struct {
 	Currency          string  `json:"currency"`
 	Provider          string  `json:"provider,omitempty"`
 	ProviderURL       string  `json:"provider_url,omitempty"`
-	RateID            string  `json:"rate_id,omitempty"`
-	RatePlanName      string  `json:"rate_plan_name,omitempty"`
-	MatchConfidence   string  `json:"match_confidence,omitempty"`
+	// Source is the trvl provider that fetched this room; Provider is the
+	// seller it reported. Internal only.
+	Source          string `json:"-"`
+	RateID          string `json:"rate_id,omitempty"`
+	RatePlanName    string `json:"rate_plan_name,omitempty"`
+	MatchConfidence string `json:"match_confidence,omitempty"`
 	// Readiness is the composed booking-readiness verdict (ready|caution|
 	// unverified) from roomReadiness: one trustworthy gate over the scattered
 	// price, link-durability, identity, and refundability signals. See MIK-6232.
@@ -64,6 +68,9 @@ type RoomSearchOptions struct {
 	Rooms        int    // requested room count
 	BookingURL   string // optional Booking.com hotel URL for rich room data
 	Location     string // optional city/area hint for search-based fallback
+	// LocationKind says whether Location is a place (the default) or the
+	// caller's hotel query ("Hotel Sacher" or "Hotel Sacher, Vienna").
+	LocationKind LocationKind
 }
 
 // GetRoomAvailability fetches room-level pricing for a specific hotel.
@@ -107,9 +114,11 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// Also capture any location hint extracted from the entity page so the
 	// search-page fallback can use it when no Location was provided by the caller
 	// (e.g. raw hotel ID lookups from the CLI or MCP without a name hint).
-	rooms, hotelName, entityLocation := tryEntityPage(ctx, opts)
+	rooms, hotelName, entityLocation, entityErr := tryEntityPage(ctx, opts)
 	if opts.Location == "" && entityLocation != "" {
-		opts.Location = entityLocation
+		// The entity page names the hotel's city: a place, whatever kind of
+		// hint the caller declared for its (empty) Location.
+		opts.Location, opts.LocationKind = entityLocation, LocationArea
 	}
 
 	// Fetch Booking.com rooms to provide room-level data alongside Google's.
@@ -148,8 +157,20 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// room entry. This surfaces the full OTA matrix — including any Booking.com
 	// partner URL, which the downstream exact-room Booking.com fetch needs to
 	// produce a booking-ready offer.
+	// google is this lookup's one Google outcome (#813, #826 design rev 6).
+	// Each Google call is merged with the caller's settled decision: a call
+	// whose Google data the result uses clears a refusal; otherwise the call's
+	// refusal is recorded and no other event can erase it.
+	var google googleOutcome
+	var entityCall googleCall
+	entityCall.note(0, entityErr)
+	google.merge(entityCall, len(rooms) > 0)
 	if len(rooms) == 0 {
-		rpcRooms, rpcName := tryBatchExecutePrices(ctx, opts)
+		rpcRooms, rpcName, rpcErr := tryBatchExecutePrices(ctx, opts)
+		var rpcCall googleCall
+		rpcCall.note(0, rpcErr)
+		// Partner prices are Google's data, cached or live.
+		google.merge(rpcCall, len(rpcRooms) > 0)
 		if len(rpcRooms) > 0 {
 			rooms = rpcRooms
 			if hotelName == "" {
@@ -160,11 +181,14 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 
 	// Fallback: search for the hotel on the search page by location extracted
 	// from the hotel ID's geocoded area. The search page still has inline
-	// AF_initDataCallback data.
-	if len(rooms) == 0 {
-		rooms, hotelName = trySearchPageFallback(ctx, opts)
+	// AF_initDataCallback data. Without a location it asks nobody.
+	if len(rooms) == 0 && opts.Location != "" {
+		var name string
+		rooms, name = trySearchPageFallback(ctx, opts, &google)
+		if name != "" {
+			hotelName = name
+		}
 	}
-	notice := ""
 
 	// Opt-in Google Hotels room-level detail fetch. Google's public yY52ce RPC
 	// returns a null payload to static clients (probed 2026-06-25 — see
@@ -176,7 +200,9 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// and merge so any existing lead-ins stay while the bookability sort leads
 	// with the real room rate.
 	if googleRoomDetailConfigured() && (len(rooms) == 0 || !hasVerifiedRoom(rooms)) {
-		detailRooms, detailName, detailNotice := tryGoogleRoomDetail(ctx, opts)
+		detailRooms, detailName, detailCall := tryGoogleRoomDetail(ctx, opts)
+		// Relay rates are Google's data.
+		google.merge(detailCall, len(detailRooms) > 0)
 		if len(detailRooms) > 0 {
 			if len(rooms) == 0 {
 				rooms = detailRooms
@@ -186,11 +212,11 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 			if hotelName == "" {
 				hotelName = detailName
 			}
-		} else if detailNotice != "" {
-			// Room data was withheld by a retryable bot-wall, not absent.
-			notice = appendNotice(notice, detailNotice)
 		}
 	}
+	// One Google clause, decided after every Google call, worded as for Agoda
+	// and Booking.com.
+	notice := providerRateLimitNotice("Google Hotels", google.Err())
 
 	// SerpAPI is the richest room source we have (named rooms, verified
 	// tax-inclusive prices, refundability) but every lookup spends metered
@@ -209,7 +235,7 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 				// Keep Google's lead-ins, add SerpAPI's verified rooms.
 				rooms = mergeRoomTypes(rooms, serpRooms)
 			}
-			notice = serpNotice
+			notice = appendNotice(notice, serpNotice)
 			if hotelName == "" {
 				hotelName = serpName
 			}
@@ -261,6 +287,14 @@ func GetRoomAvailabilityWithOpts(ctx context.Context, opts RoomSearchOptions) (*
 	// fields. See MIK-6232.
 	for i := range rooms {
 		rooms[i].Readiness = roomReadiness(rooms[i])
+		// Callers compare sellers by name, so none leaves blank: not the
+		// room's, and not a quote's (a blank quote is the room's own seller).
+		rooms[i].Provider = roomSeller(rooms[i])
+		for j := range rooms[i].InventoryOptions {
+			if strings.TrimSpace(rooms[i].InventoryOptions[j].Provider) == "" {
+				rooms[i].InventoryOptions[j].Provider = rooms[i].Provider
+			}
+		}
 	}
 
 	return &RoomAvailability{

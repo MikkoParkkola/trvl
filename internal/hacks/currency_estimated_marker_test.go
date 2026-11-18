@@ -25,7 +25,7 @@ const estimatedFareMarker = "estimated fare"
 func chLiveGroundResult(price float64, currency string) *models.GroundSearchResult {
 	return &models.GroundSearchResult{
 		Success: true,
-		Routes:  []models.GroundRoute{{Provider: "flixbus", Type: "bus", Price: price, Currency: currency}},
+		Routes:  []models.GroundRoute{{Provider: "flixbus", Type: "bus", Price: price, Currency: currency, PriceProvenance: models.PriceLive}},
 	}
 }
 

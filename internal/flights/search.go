@@ -155,7 +155,7 @@ func SearchFlights(ctx context.Context, origin, destination, date string, opts S
 	return SearchFlightsWithClient(ctx, DefaultClient(), origin, destination, date, opts)
 }
 
-// flightSearchKey builds a singleflight dedup key from the search parameters.
+// flightSearchKey builds the options part of flightQueryKey from the search parameters.
 //
 // suppressAFKLM is part of the key because it changes which providers a result
 // includes. Today the one-way singleflight path never sees it set (it is only
@@ -185,9 +185,9 @@ func canonicalStringSlice(values []string) string {
 	return strings.Join(sorted, ",")
 }
 
-// SearchFlightsWithClient is like SearchFlights but accepts a pre-built client,
-// useful for reusing connections across multiple requests.
-func SearchFlightsWithClient(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) (*models.FlightSearchResult, error) {
+// searchFlightsWithClient is SearchFlightsWithClient without the savings-pass
+// memo.
+func searchFlightsWithClient(ctx context.Context, client *batchexec.Client, origin, destination, date string, opts SearchOptions) (*models.FlightSearchResult, error) {
 	// A per-call override takes over entirely, bypassing validation, caching,
 	// and every provider — the same contract the old package-level function
 	// variables in internal/hacks gave test callers, but carried as ordinary
@@ -218,7 +218,7 @@ func SearchFlightsWithClient(ctx context.Context, client *batchexec.Client, orig
 		return searchRoundTripComposed(ctx, client, origin, destination, date, opts)
 	}
 
-	key := flightSearchKey(origin, destination, date, opts)
+	key := flightQueryKey(ctx, client, origin, destination, date, opts)
 	result, err := doFlightSearchSingleflight(ctx, key, func(sharedCtx context.Context) (*models.FlightSearchResult, error) {
 		return searchFlightsCore(sharedCtx, client, origin, destination, date, opts)
 	})
@@ -672,6 +672,7 @@ func cloneFlightSearchResult(shared *models.FlightSearchResult) *models.FlightSe
 			cp.Flights[i] = flightCopy
 		}
 	}
+	cp.Completeness = shared.Completeness.Clone()
 	return &cp
 }
 

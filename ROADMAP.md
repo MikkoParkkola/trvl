@@ -4,7 +4,11 @@ Living roadmap. Sequenced by ROI and dependency, not by wishlist size. Each item
 
 ## Shipped
 
-- **v1.27.0** (2026-10-10): current release line. Partial searches name the providers that failed everywhere results are shown, trip plans never label an unconverted price with the requested currency, and the default test suite runs offline. See [CHANGELOG.md](CHANGELOG.md).
+- **v1.28.3** (2026-11-17): current release line. Looking up a hotel by name no longer treats the name as a city, a Google refusal during a room lookup is reported with when a retry can work, and each hotel seller's quote keeps its own terms, link and currency. See [CHANGELOG.md](CHANGELOG.md).
+- **v1.28.2** (2026-11-17): Prices and savings are measured on the fare they are subtracted from: no flight hack lowers a bus fare, and no hotel night lowers a flight. Every MCP list tool stays under 50 KB, partial searches say what each missing provider did, ÖBB routes show their changes, and a Deutsche Bahn route DB cannot price says "DB sells no fares for this route; book with …" instead of "DB's price lookup failed: fares unavailable". See [CHANGELOG.md](CHANGELOG.md).
+- **v1.28.1** (2026-11-16): the first published 1.28 release. It carries every v1.28.0 change; the release workflow now runs on macOS 26 because GitHub retired the macOS 14 runners on 2026-11-02. See [CHANGELOG.md](CHANGELOG.md).
+- **v1.28.0** (2026-11-16): tagged but never published; its changes shipped in v1.28.1. Ground prices say whether they are live fares or estimates, and providers that do not serve a route show as skipped instead of failed. MCP `search_ground` returns the best routes per direction within a 50 KB result. Hotels credit the provider whose price is shown, cap lists at 25 km from the centre, and a hotel can be found by name across city aliases such as Wien and Vienna. See [CHANGELOG.md](CHANGELOG.md).
+- **v1.27.0** (2026-10-10): Partial searches name the providers that failed everywhere results are shown, trip plans never label an unconverted price with the requested currency, and the default test suite runs offline. See [CHANGELOG.md](CHANGELOG.md).
 - **v1.26.0** (2026-10-06): Agents can discover each capability's arguments through `travel`, and every provider status says why a provider did not answer. See [CHANGELOG.md](CHANGELOG.md) and the [GitHub release](https://github.com/MikkoParkkola/trvl/releases/tag/v1.26.0).
 - **v1.25.0** (2026-10-01): The daily heartbeat defaults to `https://telemetry.revaluator.ai/v1/heartbeat`. `TRVL_TELEMETRY_ENDPOINT` replaces that URL. The receiver stores the five body fields and does not store the connection address. See [CHANGELOG.md](CHANGELOG.md) and the [GitHub release](https://github.com/MikkoParkkola/trvl/releases/tag/v1.25.0).
 - **v1.24.0** (2026-09-27): `trvl open-jaw` prices one flight and one ground leg in a single currency. `search_flights` accepts `seat_preference` and writes it onto an existing Kiwi or KLM booking URL. A bucket list of Iceland or the Balkans ranks those arrivals higher, and discover drops an excluded city before the shortlist. MCP compatibility stays 2026-07-28 and 2025-11-25. See [CHANGELOG.md](CHANGELOG.md) and the [GitHub release](https://github.com/MikkoParkkola/trvl/releases/tag/v1.24.0).
@@ -27,7 +31,7 @@ Living roadmap. Sequenced by ROI and dependency, not by wishlist size. Each item
 
 ## Next
 
-v1.27.0 is the current release. New work starts as a scoped issue with acceptance criteria; the [issue tracker](https://github.com/MikkoParkkola/trvl/issues) is the live source of truth.
+v1.28.3 is the current release. New work starts as a scoped issue with acceptance criteria; the [issue tracker](https://github.com/MikkoParkkola/trvl/issues) is the live source of truth.
 
 ## Meta
 

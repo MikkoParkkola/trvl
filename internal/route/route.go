@@ -394,17 +394,19 @@ func searchGroundLeg(ctx context.Context, from, to Hub, date string, opts Option
 			currency = convertedCurrency
 		}
 		legs = append(legs, models.RouteLeg{
-			Mode:       r.Type,
-			Provider:   r.Provider,
-			From:       from.City,
-			To:         to.City,
-			Departure:  r.Departure.Time,
-			Arrival:    r.Arrival.Time,
-			Duration:   r.Duration,
-			Price:      price,
-			Currency:   currency,
-			Transfers:  r.Transfers,
-			BookingURL: r.BookingURL,
+			Mode:      r.Type,
+			Provider:  r.Provider,
+			From:      from.City,
+			To:        to.City,
+			Departure: r.Departure.Time,
+			Arrival:   r.Arrival.Time,
+			Duration:  r.Duration,
+			Price:     price,
+			Currency:  currency,
+			Transfers: r.Transfers,
+			// The provider may not know the count; the leg must not pass for direct.
+			TransfersUnknown: r.TransfersUnknown,
+			BookingURL:       r.BookingURL,
 		})
 	}
 	return legs
@@ -432,6 +434,11 @@ func assembleItineraries(paths []path, segResults map[string]*segResult, opts Op
 					continue
 				}
 				it := singleLegItinerary(leg)
+				// Same cap as combineSegments. A count that is not known is
+				// a lower bound: kept (and flagged) unless that bound exceeds it.
+				if opts.MaxTransfers > 0 && it.Transfers > opts.MaxTransfers {
+					continue
+				}
 				itineraries = append(itineraries, it)
 			}
 			continue
@@ -444,16 +451,18 @@ func assembleItineraries(paths []path, segResults map[string]*segResult, opts Op
 	return itineraries
 }
 
-// singleLegItinerary wraps a single leg into an itinerary.
+// singleLegItinerary wraps a single leg into an itinerary. Its changes are the
+// leg's own, as combineSegments counts them for hub routes.
 func singleLegItinerary(leg models.RouteLeg) models.RouteItinerary {
 	return models.RouteItinerary{
-		Legs:          []models.RouteLeg{leg},
-		TotalPrice:    leg.Price,
-		Currency:      leg.Currency,
-		TotalDuration: leg.Duration,
-		Transfers:     0,
-		DepartTime:    leg.Departure,
-		ArriveTime:    leg.Arrival,
+		Legs:             []models.RouteLeg{leg},
+		TotalPrice:       leg.Price,
+		Currency:         leg.Currency,
+		TotalDuration:    leg.Duration,
+		Transfers:        leg.Transfers,
+		TransfersUnknown: leg.TransfersUnknown,
+		DepartTime:       leg.Departure,
+		ArriveTime:       leg.Arrival,
 	}
 }
 
@@ -522,8 +531,11 @@ func combineSegments(p path, segResults map[string]*segResult, opts Options) []m
 				Currency:      currency,
 				TotalDuration: totalDuration,
 				Transfers:     transfers,
-				DepartTime:    l1.Departure,
-				ArriveTime:    l2.Arrival,
+				// A leg's count that is not known makes the total a lower
+				// bound; the MaxTransfers check above cannot prove it exceeded.
+				TransfersUnknown: l1.TransfersUnknown || l2.TransfersUnknown,
+				DepartTime:       l1.Departure,
+				ArriveTime:       l2.Arrival,
 			})
 		}
 	}
@@ -565,7 +577,10 @@ func paretoFilter(its []models.RouteItinerary) []models.RouteItinerary {
 			if i == j {
 				continue
 			}
-			if b.TotalPrice <= a.TotalPrice &&
+			// A count that is not known cannot be shown no worse, so with one on
+			// either side nothing dominates on transfers and both stay.
+			known := !a.TransfersUnknown && !b.TransfersUnknown
+			if known && b.TotalPrice <= a.TotalPrice &&
 				b.TotalDuration <= a.TotalDuration &&
 				b.Transfers <= a.Transfers &&
 				(b.TotalPrice < a.TotalPrice || b.TotalDuration < a.TotalDuration || b.Transfers < a.Transfers) {
@@ -634,6 +649,9 @@ func sortItineraries(its []models.RouteItinerary, opts Options) {
 			}
 			return its[i].TotalDuration < its[j].TotalDuration
 		case "transfers":
+			if its[i].TransfersUnknown != its[j].TransfersUnknown {
+				return !its[i].TransfersUnknown
+			}
 			if its[i].Transfers == its[j].Transfers {
 				return its[i].TotalPrice < its[j].TotalPrice
 			}

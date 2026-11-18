@@ -213,47 +213,152 @@ func foldFlightSource(dst *FlightResult, src FlightResult) {
 	dst.Savings = savings
 }
 
-func foldGroundSource(dst *GroundRoute, src GroundRoute) {
-	now := time.Now()
-	dst.Sources = append(dst.Sources, PriceSource{
-		Provider:    src.Provider,
-		Price:       src.Price,
-		MaxPrice:    src.PriceMax,
-		Currency:    src.Currency,
-		BookingURL:  src.BookingURL,
-		RetrievedAt: now,
-		Freshness:   ClassifyFreshness(src.Provider, now, now),
-	})
-	price, cur, prov, url, savings := recomputeSourceEconomics(dst.Sources)
-	if price > 0 {
-		dst.Price = price
-		dst.Currency = cur
-		dst.Provider = prov
-		dst.BookingURL = url
-		// Fare-risk attributes must travel with the cheapest headline price so a
-		// consumer never ranks the cheapest provider while reading another
-		// provider's amenities / seats / terms (Frankenfare fix).
-		if prov == src.Provider {
-			dst.PriceMax = src.PriceMax
-			dst.Amenities = src.Amenities
-			dst.SeatsLeft = src.SeatsLeft
-			dst.Confidence = src.Confidence
-			dst.ComparablePrice = src.ComparablePrice
-		}
-	}
-	dst.CheapestSource = prov
-	dst.Savings = savings
-}
-
 // ResolveFlightSources collapses duplicate itineraries across providers into one
 // FlightResult each, carrying every provider as a PriceSource, cheapest headline.
 func ResolveFlightSources(flights []FlightResult) []FlightResult {
 	return ResolveSources(flights, FlightIdentityKey, foldFlightSource)
 }
 
-// ResolveGroundSources does the same for ground connections.
+// ResolveGroundSources collapses the same ground connection returned by
+// several providers into one route carrying every provider as a PriceSource.
+// The first occurrence keeps its place and its identity fields; every headline
+// field comes from the single winning source (see groundHeadline). Routes with
+// no identity key pass through unchanged.
 func ResolveGroundSources(routes []GroundRoute) []GroundRoute {
-	return ResolveSources(routes, GroundIdentityKey, foldGroundSource)
+	out := make([]GroundRoute, 0, len(routes))
+	groups := map[string]int{}
+	var members [][]GroundRoute
+	for _, r := range routes {
+		k := GroundIdentityKey(r)
+		if k == "" {
+			out = append(out, r)
+			members = append(members, nil)
+			continue
+		}
+		if p, ok := groups[k]; ok {
+			members[p] = append(members[p], r)
+			continue
+		}
+		groups[k] = len(out)
+		out = append(out, r)
+		members = append(members, []GroundRoute{r})
+	}
+	for i, m := range members {
+		if m != nil {
+			out[i] = resolveGroundGroup(m)
+		}
+	}
+	return out
+}
+
+// resolveGroundGroup builds one route from every provider's copy of it.
+func resolveGroundGroup(m []GroundRoute) GroundRoute {
+	now := time.Now()
+	dst := m[0]
+	dst.Sources = make([]PriceSource, 0, len(m))
+	for _, r := range m {
+		dst.Sources = append(dst.Sources, PriceSource{
+			Provider:        r.Provider,
+			Price:           r.Price,
+			MaxPrice:        r.PriceMax,
+			Currency:        r.Currency,
+			BookingURL:      r.BookingURL,
+			RetrievedAt:     now,
+			Freshness:       groundSourceFreshness(r, now),
+			Provenance:      r.PriceProvenance,
+			ComparablePrice: r.ComparablePrice,
+		})
+	}
+	w, savings := groundHeadline(m)
+	dst.Savings = savings
+	if w < 0 {
+		dst.CheapestSource = ""
+		return dst
+	}
+	win := m[w]
+	dst.Price, dst.Currency, dst.Provider, dst.BookingURL = win.Price, win.Currency, win.Provider, win.BookingURL
+	dst.PriceMax, dst.Amenities, dst.SeatsLeft = win.PriceMax, win.Amenities, win.SeatsLeft
+	dst.Confidence, dst.ComparablePrice, dst.PriceProvenance = win.Confidence, win.ComparablePrice, win.PriceProvenance
+	dst.CheapestSource = win.Provider
+	return dst
+}
+
+// groundSourceFreshness: only a live fare has a retrieval age worth judging;
+// an estimate is static and an unavailable price has none.
+func groundSourceFreshness(r GroundRoute, now time.Time) string {
+	switch {
+	case r.Price <= 0 || r.PriceProvenance == PriceUnavailable:
+		return ""
+	case r.PriceProvenance == PriceLive:
+		return ClassifyFreshness(r.Provider, now, now)
+	default:
+		return FreshnessStatic
+	}
+}
+
+// groundHeadline picks the winning copy of one ground connection and the
+// savings inside its group. Priced routes compete in one unit: the comparable
+// group (ComparablePrice set by the normalise pass) when it is non-empty,
+// otherwise the dominant raw currency. Inside that unit a live fare beats an
+// estimate, and price decides within a tier. Savings is measured in the same
+// unit and tier, so an estimate never reads as a saving against a live fare.
+// Returns -1 when no copy is priced.
+func groundHeadline(m []GroundRoute) (winner int, savings float64) {
+	comparable := false
+	for _, r := range m {
+		if r.Price > 0 && r.ComparablePrice > 0 {
+			comparable = true
+			break
+		}
+	}
+	var domU string
+	if !comparable {
+		srcs := make([]PriceSource, len(m))
+		for i, r := range m {
+			srcs[i] = PriceSource{Price: r.Price, Currency: r.Currency}
+		}
+		domU = strings.ToUpper(strings.TrimSpace(dominantCurrency(srcs)))
+	}
+	amount := func(r GroundRoute) float64 {
+		if comparable {
+			return r.ComparablePrice
+		}
+		return r.Price
+	}
+	inUnit := func(r GroundRoute) bool {
+		if r.Price <= 0 {
+			return false
+		}
+		if comparable {
+			return r.ComparablePrice > 0
+		}
+		return strings.ToUpper(strings.TrimSpace(r.Currency)) == domU
+	}
+	tier := func(r GroundRoute) int {
+		if r.PriceProvenance == PriceLive {
+			return 0
+		}
+		return 1
+	}
+	winner = -1
+	for i, r := range m {
+		if !inUnit(r) {
+			continue
+		}
+		if winner < 0 || tier(r) < tier(m[winner]) || (tier(r) == tier(m[winner]) && amount(r) < amount(m[winner])) {
+			winner = i
+		}
+	}
+	if winner < 0 {
+		return -1, 0
+	}
+	maxAmt := 0.0
+	for _, r := range m {
+		if inUnit(r) && tier(r) == tier(m[winner]) && amount(r) > maxAmt {
+			maxAmt = amount(r)
+		}
+	}
+	return winner, maxAmt - amount(m[winner])
 }
 
 // SortFlightsByPrice is a stable cheapest-first sort helper (price 0 sinks last).

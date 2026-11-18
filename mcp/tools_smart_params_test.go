@@ -29,7 +29,14 @@ func stubTarget(t *testing.T, s *Server, name string) *map[string]any {
 // serialized result, so assertions see exactly what an MCP client sees.
 func callTravel(t *testing.T, s *Server, args map[string]any) (text string, structured map[string]any, isError bool) {
 	t.Helper()
-	resp := s.HandleRequest(jsonRequest(t, "tools/call", 1, map[string]any{"name": "travel", "arguments": args}))
+	return callTool(t, s, "travel", args)
+}
+
+// callTool sends a real tools/call for any tool name and returns the
+// serialized result.
+func callTool(t *testing.T, s *Server, name string, args map[string]any) (text string, structured map[string]any, isError bool) {
+	t.Helper()
+	resp := s.HandleRequest(jsonRequest(t, "tools/call", 1, map[string]any{"name": name, "arguments": args}))
 	if resp == nil {
 		t.Fatal("nil response")
 	}

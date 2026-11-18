@@ -3,7 +3,6 @@ package ground
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,10 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikkoParkkola/trvl/internal/breaker"
 	"github.com/MikkoParkkola/trvl/internal/cache"
 	"github.com/MikkoParkkola/trvl/internal/destinations"
-	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/searchctx"
 	"golang.org/x/sync/singleflight"
@@ -55,53 +52,6 @@ func rateLimitedDo(ctx context.Context, limiter *rate.Limiter, req *http.Request
 	return httpClient.Do(req)
 }
 
-// providerResult holds the outcome of a single provider search goroutine.
-type providerResult struct {
-	routes []models.GroundRoute
-	err    error
-	name   string
-}
-
-// groundBreaker protects the provider fan-out: a provider that fails (network
-// error, timeout, rate-limit) DefaultThreshold times in a row is skipped for
-// the cooldown instead of being retried on every search, then probed again once
-// the cooldown elapses. It is keyed by provider name and shared across searches
-// by design — a provider's recent health carries between requests. A
-// "not applicable for this route" answer is healthy, not a failure, so it never
-// trips the breaker.
-var groundBreaker = breaker.New()
-
-// errCircuitBroken marks a provider call skipped because its breaker is open.
-// It is a deliberate skip, not a fresh failure, so the result aggregator
-// reports it as a circuit_broken status without counting it as an error.
-var errCircuitBroken = errors.New("skipped: recent failures tripped the circuit breaker")
-
-// launchProvider starts a provider search in a new goroutine, sending the
-// result to the results channel when done. The shared groundBreaker gates the
-// call: a tripped provider is skipped without touching the network, and each
-// real outcome feeds the breaker (a genuine failure advances it toward
-// tripping; a healthy or not-applicable response closes it).
-func launchProvider(wg *sync.WaitGroup, results chan<- providerResult, name string, fn func() ([]models.GroundRoute, error)) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if groundBreaker.Tripped(name) {
-			results <- providerResult{name: name, err: errCircuitBroken}
-			return
-		}
-		routes, err := fn()
-		// A not-applicable answer (no route for this origin/destination) is a
-		// healthy "nothing to sell" response, not a provider failure, so it must
-		// not push the breaker toward tripping.
-		if err != nil && !isProviderNotApplicable(err) {
-			groundBreaker.RecordFailure(name)
-		} else {
-			groundBreaker.RecordSuccess(name)
-		}
-		results <- providerResult{routes: routes, err: err, name: name}
-	}()
-}
-
 // SearchOptions configures a ground transport search.
 type SearchOptions struct {
 	Currency              string   // Default: EUR
@@ -119,9 +69,10 @@ type SearchOptions struct {
 	ReturnDate string
 
 	// NoHacks opts out of the auto-composed travel-hacks savings engine. The
-	// engine is ON by default: a normal search also surfaces the single best
-	// cheaper synthesized option (multimodal, cross-border rail, …) in
-	// result.HackSaving. Set NoHacks to run a pure naive search.
+	// engine is ON by default and runs the ground detector roster, which is
+	// empty until a detector prices a cheaper way to make the same ground
+	// trip, so result.HackSaving stays nil today. NoHacks runs a pure naive
+	// search.
 	NoHacks bool
 
 	// SearchOverride replaces the real ground-transport search for this single
@@ -158,96 +109,6 @@ func providerEnabled(name string, include, exclude []string) bool {
 	return false
 }
 
-// currencyConverter converts amount from->to, returning the converted amount
-// and a non-empty status/ok signal. Injected so unit tests never hit the network.
-type currencyConverter func(ctx context.Context, amount float64, from, to string) (converted float64, ok bool)
-
-// normalizeGroundCurrencies best-effort converts every route's price into the
-// target currency for comparable ranking. On success it mutates Price+Currency
-// to the target AND sets ComparablePrice. On failure it leaves the route in its
-// original currency and ComparablePrice stays 0 (=> incomparable).
-func normalizeGroundCurrencies(ctx context.Context, routes []models.GroundRoute, target string, conv currencyConverter) {
-	tU := strings.ToUpper(strings.TrimSpace(target))
-	if tU == "" || conv == nil {
-		return
-	}
-	for i := range routes {
-		r := &routes[i]
-		if r.Price <= 0 {
-			continue
-		}
-		cU := strings.ToUpper(strings.TrimSpace(r.Currency))
-		if cU == tU {
-			r.ComparablePrice = r.Price // already in target
-			continue
-		}
-		if converted, ok := conv(ctx, r.Price, r.Currency, target); ok && converted > 0 {
-			r.Price = converted
-			r.Currency = target
-			r.ComparablePrice = converted
-		}
-		// else: leave as-is, ComparablePrice=0 => incomparable tail
-	}
-}
-
-// sortGroundRoutes performs the stable cross-currency comparable-price sort
-// (used by search and directly by unit tests for determinism verification).
-func sortGroundRoutes(routes []models.GroundRoute) {
-	sort.SliceStable(routes, func(i, j int) bool {
-		a, b := routes[i], routes[j]
-		ac, bc := a.ComparablePrice > 0, b.ComparablePrice > 0
-		if ac != bc {
-			return ac
-		}
-		if ac && bc {
-			pa := a.PriceForRanking()
-			pb := b.PriceForRanking()
-			ra, rb := pa > 0, pb > 0
-			if ra != rb {
-				return ra
-			}
-			if ra && pa != pb {
-				return pa < pb
-			}
-		} else {
-			au, bu := strings.ToUpper(strings.TrimSpace(a.Currency)), strings.ToUpper(strings.TrimSpace(b.Currency))
-			if au != bu {
-				return au < bu
-			}
-			pa, pb := a.Price, b.Price
-			ra, rb := pa > 0, pb > 0
-			if ra != rb {
-				return ra
-			}
-			if ra && pa != pb {
-				return pa < pb
-			}
-		}
-		if a.Duration != b.Duration {
-			return a.Duration < b.Duration
-		}
-		if a.Departure.Time != b.Departure.Time {
-			return a.Departure.Time < b.Departure.Time
-		}
-		if a.Arrival.Time != b.Arrival.Time {
-			return a.Arrival.Time < b.Arrival.Time
-		}
-		if a.Provider != b.Provider {
-			return a.Provider < b.Provider
-		}
-		if a.BookingURL != b.BookingURL {
-			return a.BookingURL < b.BookingURL
-		}
-		if a.Transfers != b.Transfers {
-			return a.Transfers < b.Transfers
-		}
-		if a.Type != b.Type {
-			return a.Type < b.Type
-		}
-		return false
-	})
-}
-
 // SearchByName searches all providers for ground transport between two cities
 // given by name. Resolves city names to provider-specific IDs automatically.
 func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions) (*models.GroundSearchResult, error) {
@@ -256,6 +117,15 @@ func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions
 	// gives test callers. See SearchOptions.SearchOverride.
 	if opts.SearchOverride != nil {
 		return opts.SearchOverride(ctx, from, to, date, opts)
+	}
+
+	// A misspelled provider name is an error, not a search that runs nothing.
+	var err error
+	if opts.Providers, err = ValidateProviderNames(opts.Providers); err != nil {
+		return nil, err
+	}
+	if opts.ExcludeProviders, err = ValidateProviderNames(opts.ExcludeProviders); err != nil {
+		return nil, err
 	}
 
 	if opts.Currency == "" {
@@ -272,46 +142,71 @@ func SearchByName(ctx context.Context, from, to, date string, opts SearchOptions
 
 	allowBrowserFallbacks := browserFallbacksEnabled(opts)
 
-	// Build cache key from search parameters.
+	// Build cache key from search parameters. savingsoff keeps a result without a
+	// saving (opted out, or inside a savings pass) from reaching a search that
+	// attaches one, through the cache or the shared in-flight call.
 	providerKey := groundProviderKey(opts)
-	cacheKey := cache.Key("ground", fmt.Sprintf("%s|%s|%s|%s|%s|%.2f|%s|%t", from, to, date, opts.Currency, providerKey, opts.MaxPrice, opts.Type, allowBrowserFallbacks))
+	tripKey := groundTripKey(from, to, date, opts)
+	cacheKey := cache.Key("ground", fmt.Sprintf("%s|savingsoff=%t", tripKey, searchctx.SavingsOff(ctx, opts.NoHacks)))
 
-	negKey, negEligible := groundNegKey(from, to, date, opts, providerKey)
+	search := func(ctx context.Context) (*models.GroundSearchResult, error) {
+		negKey, negEligible := groundNegKey(from, to, date, opts, providerKey)
 
-	// Check cache unless bypassed.
-	if !opts.NoCache {
-		if data, ok := groundCache.Get(cacheKey); ok {
-			var cached models.GroundSearchResult
-			if err := json.Unmarshal(data, &cached); err == nil {
-				slog.Debug("ground cache hit", "from", from, "to", to, "date", date)
+		// Check cache unless bypassed.
+		if !opts.NoCache {
+			if data, ok := groundCache.Get(cacheKey); ok {
+				var cached models.GroundSearchResult
+				if err := json.Unmarshal(data, &cached); err == nil {
+					slog.Debug("ground cache hit", "from", from, "to", to, "date", date)
+					maybePrefetchGround(ctx, from, to, date, opts)
+					return &cached, nil
+				}
+			}
+
+			// Negative-result cache: a recent CLEAN "no service" short-circuits the
+			// whole provider fan-out for this route+month. Only unfiltered searches
+			// participate (negEligible).
+			if negEligible && negCacheEnabled() && groundNegCache.Seen(negKey) {
+				slog.Debug("ground negative cache hit", "from", from, "to", to, "date", date)
 				maybePrefetchGround(ctx, from, to, date, opts)
-				return &cached, nil
+				return negCacheHitResult(opts), nil
 			}
 		}
 
-		// Negative-result cache: a recent CLEAN "no service" short-circuits the
-		// whole provider fan-out for this route+month. Only unfiltered searches
-		// participate (negEligible).
-		if negEligible && negCacheEnabled() && groundNegCache.Seen(negKey) {
-			slog.Debug("ground negative cache hit", "from", from, "to", to, "date", date)
-			maybePrefetchGround(ctx, from, to, date, opts)
-			return &models.GroundSearchResult{Success: false, Count: 0}, nil
-		}
+		// Deduplicate concurrent identical in-flight searches. The cache check above
+		// already handles TTL-based reuse; singleflight only coalesces truly concurrent
+		// requests that both missed the cache.
+		result, err := doGroundSearchSingleflight(ctx, cacheKey, func(sharedCtx context.Context) (*models.GroundSearchResult, error) {
+			return searchByNameCore(sharedCtx, from, to, date, opts, cacheKey, allowBrowserFallbacks)
+		})
+
+		// Speculative prefetch: warm the cache for the likely next query. Best-effort
+		// and non-blocking.
+		maybePrefetchGround(ctx, from, to, date, opts)
+
+		return result, err
 	}
 
-	// Deduplicate concurrent identical in-flight searches. The cache check above
-	// already handles TTL-based reuse; singleflight only coalesces truly concurrent
-	// requests that both missed the cache.
-	result, err := doGroundSearchSingleflight(ctx, cacheKey, func(sharedCtx context.Context) (*models.GroundSearchResult, error) {
-		return searchByNameCore(sharedCtx, from, to, date, opts, cacheKey, allowBrowserFallbacks)
-	})
-
-	// Speculative prefetch: warm the cache for the likely next query. Best-effort
-	// and non-blocking.
-	maybePrefetchGround(ctx, from, to, date, opts)
-
-	return result, err
+	// Inside a savings pass, a search for the same trip shares one result per
+	// pass: the outer search seeds it (attachGroundHackSaving), so a detector
+	// repeating the caller's route gets those routes without a second
+	// provider round and without waiting on the call it runs inside (#810).
+	if searchctx.InSavingsPass(ctx) {
+		res, err := searchctx.Memo(ctx, groundPassKey(tripKey), search)
+		return cloneGroundSearchResult(res), err
+	}
+	return search(ctx)
 }
+
+// groundTripKey identifies one ground trip and its search scope: route, date,
+// currency, provider filters, price and type filters, browser fallbacks. The
+// cache key appends savingsoff to it; the savings-pass memo uses it as is.
+func groundTripKey(from, to, date string, opts SearchOptions) string {
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%.2f|%s|%t|x=%s", from, to, date, opts.Currency, groundProviderKey(opts), opts.MaxPrice, opts.Type, browserFallbacksEnabled(opts), groundExcludeKey(opts))
+}
+
+// groundPassKey is the savings-pass memo key for a ground trip.
+func groundPassKey(tripKey string) string { return "ground|" + tripKey }
 
 // searchRoundTripByName composes a round-trip ground itinerary from two one-way
 // searches: the outbound (from->to on date) and the inbound (to->from on
@@ -395,42 +290,10 @@ func sharedGroundResult(v any, err error) (*models.GroundSearchResult, error) {
 	return cloneGroundSearchResult(v.(*models.GroundSearchResult)), nil
 }
 
-func cloneGroundSearchResult(shared *models.GroundSearchResult) *models.GroundSearchResult {
-	if shared == nil {
-		return nil
-	}
-
-	// singleflight.Do shares the winner's *GroundSearchResult pointer across
-	// concurrent callers. MCP handlers can post-filter Routes and rewrite Count,
-	// so each caller needs a private copy of the result header and nested mutable
-	// slices/pointers to avoid racing on shared state.
-	cp := *shared
-	if shared.Routes != nil {
-		cp.Routes = make([]models.GroundRoute, len(shared.Routes))
-		for i, route := range shared.Routes {
-			routeCopy := route
-			if route.Amenities != nil {
-				routeCopy.Amenities = append([]string(nil), route.Amenities...)
-			}
-			if route.Legs != nil {
-				routeCopy.Legs = make([]models.GroundLeg, len(route.Legs))
-				for j, leg := range route.Legs {
-					legCopy := leg
-					if leg.Amenities != nil {
-						legCopy.Amenities = append([]string(nil), leg.Amenities...)
-					}
-					routeCopy.Legs[j] = legCopy
-				}
-			}
-			if route.SeatsLeft != nil {
-				seatsLeft := *route.SeatsLeft
-				routeCopy.SeatsLeft = &seatsLeft
-			}
-			cp.Routes[i] = routeCopy
-		}
-	}
-	return &cp
-}
+// convertGroundCurrency converts route fares into the search currency. A
+// variable so offline tests can supply fixed rates instead of fetching live
+// ones.
+var convertGroundCurrency = destinations.ConvertCurrency
 
 // searchByNameCore performs the actual ground search without singleflight wrapping.
 func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOptions, cacheKey string, allowBrowserFallbacks bool) (*models.GroundSearchResult, error) {
@@ -441,13 +304,33 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		return providerEnabled(name, opts.Providers, opts.ExcludeProviders)
 	}
 
+	// Rows for providers asked for by name that were not launched: their route
+	// gate says they do not serve the pair, or a required key is missing.
+	// An unfiltered search lists only the providers it queried.
+	var gated []models.ProviderStatus
+	explicit := len(opts.Providers) > 0
+	notServed := func(name string) {
+		if explicit {
+			gated = append(gated, models.ProviderStatus{ID: name, Name: name, Status: models.StatusSkipped, Reason: models.ReasonRouteNotServed})
+		}
+	}
+	notConfigured := func(name string) {
+		if explicit {
+			gated = append(gated, models.ProviderStatus{ID: name, Name: name, Status: models.StatusNotConfigured, FixHint: "set DISTRIBUSION_API_KEY to enable this provider"})
+		}
+	}
+
 	// Distribusion — ground transport GDS covering bus, ferry, train, airport transfers.
 	// Placed first (before individual providers) since it aggregates 2,000+ carriers.
 	// Requires DISTRIBUSION_API_KEY to be set; silently skipped otherwise.
-	if useProvider("distribusion") && HasDistribusionKey() {
-		launchProvider(&wg, results, "distribusion", func() ([]models.GroundRoute, error) {
-			return SearchDistribusion(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("distribusion") {
+		if HasDistribusionKey() {
+			launchProvider(&wg, results, "distribusion", func() ([]models.GroundRoute, error) {
+				return SearchDistribusion(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notConfigured("distribusion")
+		}
 	}
 
 	// FlixBus
@@ -479,7 +362,16 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	// Eurostar — only if both cities have Eurostar stations.
 	// Search both Snap (last-minute deals) and regular fares in parallel so the
 	// user sees both options (e.g. "eurostar snap GBP 39" and "eurostar GBP 130").
-	if (useProvider("eurostar") || useProvider("eurostar snap")) && HasEurostarRoute(from, to) {
+	// Each name launches only when it was asked for (or nothing was filtered).
+	wantSnap, wantRegular := useProvider("eurostar snap"), useProvider("eurostar")
+	if (wantSnap || wantRegular) && !HasEurostarRoute(from, to) {
+		if wantSnap {
+			notServed("eurostar snap")
+		}
+		if wantRegular {
+			notServed("eurostar")
+		}
+	} else if wantSnap || wantRegular {
 		// Eurostar cheapestFaresSearch needs a date range (not a single day).
 		// Use the requested date as start, +7 days as end.
 		endDate := date // fallback
@@ -491,147 +383,226 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		// before travel and only on specific routes (see eurostarSnapRoutes).
 		// Search today→today+14 so Snap deals surface regardless of the
 		// user's search date.
-		if HasEurostarSnapRoute(from, to) {
+		if wantSnap && HasEurostarSnapRoute(from, to) {
 			snapStart := time.Now().Format("2006-01-02")
 			snapEnd := time.Now().AddDate(0, 0, 14).Format("2006-01-02")
 			launchProvider(&wg, results, "eurostar snap", func() ([]models.GroundRoute, error) {
 				return SearchEurostar(ctx, from, to, snapStart, snapEnd, opts.Currency, true)
 			})
+		} else if wantSnap {
+			notServed("eurostar snap")
 		}
 
 		// Regular fares goroutine.
-		launchProvider(&wg, results, "eurostar", func() ([]models.GroundRoute, error) {
-			return SearchEurostar(ctx, from, to, date, endDate, opts.Currency, false)
-		})
+		if wantRegular {
+			launchProvider(&wg, results, "eurostar", func() ([]models.GroundRoute, error) {
+				return SearchEurostar(ctx, from, to, date, endDate, opts.Currency, false)
+			})
+		}
 	}
 
 	// NS (Dutch Railways) — only if at least one city has an NS station.
-	if useProvider("ns") && (HasNSStation(from) || HasNSStation(to)) {
-		launchProvider(&wg, results, "ns", func() ([]models.GroundRoute, error) {
-			return SearchNS(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("ns") {
+		if HasNSStation(from) || HasNSStation(to) {
+			launchProvider(&wg, results, "ns", func() ([]models.GroundRoute, error) {
+				return SearchNS(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("ns")
+		}
 	}
 
 	// Deutsche Bahn — if at least one city has a DB station (covers most European rail).
-	if useProvider("db") && (HasDBStation(from) || HasDBStation(to)) {
-		launchProvider(&wg, results, "db", func() ([]models.GroundRoute, error) {
-			return SearchDeutscheBahn(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("db") {
+		if HasDBStation(from) || HasDBStation(to) {
+			launchProvider(&wg, results, "db", func() ([]models.GroundRoute, error) {
+				return SearchDeutscheBahn(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("db")
+		}
 	}
 
 	// SNCF — only if at least one city is French.
-	if useProvider("sncf") && HasSNCFRoute(from, to) {
-		launchProvider(&wg, results, "sncf", func() ([]models.GroundRoute, error) {
-			return SearchSNCF(ctx, from, to, date, opts.Currency, allowBrowserFallbacks)
-		})
+	if useProvider("sncf") {
+		if HasSNCFRoute(from, to) {
+			launchProvider(&wg, results, "sncf", func() ([]models.GroundRoute, error) {
+				return SearchSNCF(ctx, from, to, date, opts.Currency, allowBrowserFallbacks)
+			})
+		} else {
+			notServed("sncf")
+		}
 	}
 
 	// Trainline — train aggregator (covers SNCF, Eurostar, DB, Trenitalia, etc.)
-	if useProvider("trainline") && HasTrainlineStation(from) && HasTrainlineStation(to) {
-		launchProvider(&wg, results, "trainline", func() ([]models.GroundRoute, error) {
-			return SearchTrainline(ctx, from, to, date, opts.Currency, allowBrowserFallbacks)
-		})
+	if useProvider("trainline") {
+		if HasTrainlineStation(from) && HasTrainlineStation(to) {
+			launchProvider(&wg, results, "trainline", func() ([]models.GroundRoute, error) {
+				return SearchTrainline(ctx, from, to, date, opts.Currency, allowBrowserFallbacks)
+			})
+		} else {
+			notServed("trainline")
+		}
 	}
 
 	// ÖBB (Austrian Federal Railways) — Austria and neighbouring countries.
-	if useProvider("oebb") && HasOebbRoute(from, to) {
-		launchProvider(&wg, results, "oebb", func() ([]models.GroundRoute, error) {
-			return SearchOebb(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("oebb") {
+		if HasOebbRoute(from, to) {
+			launchProvider(&wg, results, "oebb", func() ([]models.GroundRoute, error) {
+				return SearchOebb(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("oebb")
+		}
 	}
 
 	// Digitransit (VR Finnish Railways) — only if at least one city has a Finnish station.
-	if (useProvider("digitransit") || useProvider("vr")) && (HasDigitransitStation(from) || HasDigitransitStation(to)) {
-		launchProvider(&wg, results, "vr", func() ([]models.GroundRoute, error) {
-			return SearchDigitransit(ctx, from, to, date, opts.Currency)
-		})
+	// vr and digitransit name the same provider: excluding either suppresses it.
+	vrExcluded := !providerEnabled("vr", nil, opts.ExcludeProviders) || !providerEnabled("digitransit", nil, opts.ExcludeProviders)
+	if !vrExcluded && (useProvider("digitransit") || useProvider("vr")) {
+		if HasDigitransitStation(from) || HasDigitransitStation(to) {
+			launchProvider(&wg, results, "vr", func() ([]models.GroundRoute, error) {
+				return SearchDigitransit(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("vr")
+		}
 	}
 
 	// Renfe (Spain) — only if at least one city has a Renfe station (Spanish rail).
-	if useProvider("renfe") && HasRenfeRoute(from, to) {
-		launchProvider(&wg, results, "renfe", func() ([]models.GroundRoute, error) {
-			return SearchRenfe(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("renfe") {
+		if HasRenfeRoute(from, to) {
+			launchProvider(&wg, results, "renfe", func() ([]models.GroundRoute, error) {
+				return SearchRenfe(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("renfe")
+		}
 	}
 
 	// Trenitalia — only if both cities are Italian (high-speed + regional).
-	if useProvider("trenitalia") && HasTrenitaliaRoute(from, to) {
-		launchProvider(&wg, results, "trenitalia", func() ([]models.GroundRoute, error) {
-			return SearchTrenitalia(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("trenitalia") {
+		if HasTrenitaliaRoute(from, to) {
+			launchProvider(&wg, results, "trenitalia", func() ([]models.GroundRoute, error) {
+				return SearchTrenitalia(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("trenitalia")
+		}
 	}
 
 	// Italo (NTV) — only if both cities are on Italo's high-speed network.
-	if useProvider("italo") && HasItaloRoute(from, to) {
-		launchProvider(&wg, results, "italo", func() ([]models.GroundRoute, error) {
-			return SearchItalo(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("italo") {
+		if HasItaloRoute(from, to) {
+			launchProvider(&wg, results, "italo", func() ([]models.GroundRoute, error) {
+				return SearchItalo(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("italo")
+		}
 	}
 
 	// Tallink/Silja Line — ferry routes in the Baltic Sea.
-	if useProvider("tallink") && HasTallinkRoute(from, to) {
-		launchProvider(&wg, results, "tallink", func() ([]models.GroundRoute, error) {
-			return SearchTallink(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("tallink") {
+		if HasTallinkRoute(from, to) {
+			launchProvider(&wg, results, "tallink", func() ([]models.GroundRoute, error) {
+				return SearchTallink(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("tallink")
+		}
 	}
 
 	// Stena Line — ferry routes across the North Sea and Baltic Sea.
-	if useProvider("stenaline") && HasStenaLineRoute(from, to) {
-		launchProvider(&wg, results, "stenaline", func() ([]models.GroundRoute, error) {
-			return SearchStenaLine(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("stenaline") {
+		if HasStenaLineRoute(from, to) {
+			launchProvider(&wg, results, "stenaline", func() ([]models.GroundRoute, error) {
+				return SearchStenaLine(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("stenaline")
+		}
 	}
 
 	// DFDS — ferry routes across the North Sea and Baltic Sea.
-	if useProvider("dfds") && HasDFDSRoute(from, to) {
-		launchProvider(&wg, results, "dfds", func() ([]models.GroundRoute, error) {
-			return SearchDFDS(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("dfds") {
+		if HasDFDSRoute(from, to) {
+			launchProvider(&wg, results, "dfds", func() ([]models.GroundRoute, error) {
+				return SearchDFDS(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("dfds")
+		}
 	}
 
 	// Viking Line — ferry routes in the Baltic Sea (Helsinki–Tallinn, Helsinki–Stockholm,
 	// Turku–Stockholm, Stockholm–Mariehamn).
-	if useProvider("vikingline") && HasVikingLineRoute(from, to) {
-		launchProvider(&wg, results, "vikingline", func() ([]models.GroundRoute, error) {
-			return SearchVikingLine(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("vikingline") {
+		if HasVikingLineRoute(from, to) {
+			launchProvider(&wg, results, "vikingline", func() ([]models.GroundRoute, error) {
+				return SearchVikingLine(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("vikingline")
+		}
 	}
 
 	// Eckerö Line — Helsinki ↔ Tallinn ferry (M/S Finlandia).
-	if useProvider("eckeroline") && HasEckeroLineRoute(from, to) {
-		launchProvider(&wg, results, "eckeroline", func() ([]models.GroundRoute, error) {
-			return SearchEckeroLine(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("eckeroline") {
+		if HasEckeroLineRoute(from, to) {
+			launchProvider(&wg, results, "eckeroline", func() ([]models.GroundRoute, error) {
+				return SearchEckeroLine(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("eckeroline")
+		}
 	}
 
 	// Finnlines — Helsinki ↔ Travemünde, Naantali ↔ Kapellskär, Malmö ↔ Świnoujście.
-	if useProvider("finnlines") && HasFinnlinesRoute(from, to) {
-		launchProvider(&wg, results, "finnlines", func() ([]models.GroundRoute, error) {
-			return SearchFinnlines(ctx, from, to, date, opts.Currency)
-		})
+	if useProvider("finnlines") {
+		if HasFinnlinesRoute(from, to) {
+			launchProvider(&wg, results, "finnlines", func() ([]models.GroundRoute, error) {
+				return SearchFinnlines(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("finnlines")
+		}
 	}
 
-	// Ferryhopper — Greek ferry aggregator (Aegean, Ionian, Adriatic seas).
-	// Uses the public Ferryhopper MCP endpoint; no API key required.
-	// Accepts free-form location names so it is always attempted.
+	// Ferryhopper — ferry aggregator (Aegean, Ionian, Adriatic, Baltic and more).
+	// Uses the public Ferryhopper MCP endpoint; no API key required. Launched
+	// only when both ends match a Ferryhopper port: its resolver answers any
+	// name, so an inland pair would come back as a fuzzy foreign port.
 	if useProvider("ferryhopper") {
-		launchProvider(&wg, results, "ferryhopper", func() ([]models.GroundRoute, error) {
-			return SearchFerryhopper(ctx, from, to, date, opts.Currency)
-		})
+		if HasFerryhopperRoute(from, to) {
+			launchProvider(&wg, results, "ferryhopper", func() ([]models.GroundRoute, error) {
+				return SearchFerryhopper(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("ferryhopper")
+		}
 	}
 
-	// European Sleeper — night train Brussels→Amsterdam→Berlin→Dresden→Prague.
-	if useProvider("european_sleeper") && HasEuropeanSleeperRoute(from, to) {
-		launchProvider(&wg, results, "european_sleeper", func() ([]models.GroundRoute, error) {
-			return SearchEuropeanSleeper(ctx, from, to, date, opts.Currency)
-		})
+	// European Sleeper — night trains Brussels–Amsterdam–Berlin–Prague, Paris–Berlin, Brussels–Milan.
+	if useProvider("european_sleeper") {
+		if HasEuropeanSleeperRoute(from, to) {
+			launchProvider(&wg, results, "european_sleeper", func() ([]models.GroundRoute, error) {
+				return SearchEuropeanSleeper(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("european_sleeper")
+		}
 	}
 
-	// Snälltåget — Swedish night trains (Stockholm→Malmö, Stockholm→Åre, Stockholm→Berlin).
-	if useProvider("snalltaget") && HasSnalltagetRoute(from, to) {
-		launchProvider(&wg, results, "snalltaget", func() ([]models.GroundRoute, error) {
-			return SearchSnalltaget(ctx, from, to, date, opts.Currency)
-		})
+	// Snälltåget — Stockholm–Malmö–Copenhagen–Hamburg–Berlin and the Åre night train.
+	if useProvider("snalltaget") {
+		if HasSnalltagetRoute(from, to) {
+			launchProvider(&wg, results, "snalltaget", func() ([]models.GroundRoute, error) {
+				return SearchSnalltaget(ctx, from, to, date, opts.Currency)
+			})
+		} else {
+			notServed("snalltaget")
+		}
 	}
 
 	// Transitous — coordinate-based, always available as a fallback.
@@ -647,57 +618,12 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		close(results)
 	}()
 
-	var allRoutes []models.GroundRoute
-	var errors []string
-	var statuses []models.ProviderStatus
-	for r := range results {
-		if r.err != nil {
-			if r.err == errCircuitBroken {
-				// Deliberately skipped: the provider has been failing and its
-				// breaker is open. Report it honestly, but it is not a fresh
-				// error so it does not drag the search toward "partial".
-				slog.Debug("ground provider circuit-broken", "provider", r.name)
-				statuses = append(statuses, models.ProviderStatus{
-					ID:      r.name,
-					Name:    r.name,
-					Status:  models.StatusCircuitBroken,
-					Error:   "skipped: recent failures tripped the circuit breaker",
-					FixHint: "wait for the cooldown to elapse, then it retries automatically",
-				})
-				continue
-			}
-			if isProviderNotApplicable(r.err) {
-				slog.Debug("ground provider not applicable", "provider", r.name, "reason", logredact.Err(r.err))
-				// Attempted but no applicable route for this origin/destination —
-				// not a failure, so it must not drag Completeness toward "partial".
-				statuses = append(statuses, models.ProviderStatus{
-					ID:     r.name,
-					Name:   r.name,
-					Status: models.StatusSkipped,
-				})
-			} else {
-				slog.Warn("ground provider error", "provider", r.name, "error", logredact.Err(r.err))
-				errors = append(errors, fmt.Sprintf("%s: %v", r.name, r.err))
-				statuses = append(statuses, models.ProviderStatus{
-					ID:     r.name,
-					Name:   r.name,
-					Status: models.ClassifyProviderError(r.err),
-					Error:  r.err.Error(),
-				})
-			}
-			continue
-		}
-		allRoutes = append(allRoutes, r.routes...)
-		statuses = append(statuses, models.ProviderStatus{
-			ID:      r.name,
-			Name:    r.name,
-			Status:  models.StatusOK,
-			Results: len(r.routes),
-		})
+	allRoutes, failures, statuses := collectGroundResults(results)
+	launched := len(statuses)
+	if len(gated) > 0 {
+		statuses = append(statuses, gated...)
+		sort.Slice(statuses, func(i, j int) bool { return statuses[i].ID < statuses[j].ID })
 	}
-	// Deterministic order: the channel drains concurrently, so sort by id for
-	// stable JSON output (and stable tests).
-	sort.Slice(statuses, func(i, j int) bool { return statuses[i].ID < statuses[j].ID })
 
 	// Normalize currencies for truthful cross-currency ranking BEFORE filter
 	// (so MaxPrice uses comparable numbers) and BEFORE resolve. Target mirrors
@@ -714,7 +640,7 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 	}
 	if target != "" {
 		conv := func(ctx context.Context, amount float64, from, to string) (float64, bool) {
-			amt, status := destinations.ConvertCurrency(ctx, amount, from, to)
+			amt, status := convertGroundCurrency(ctx, amount, from, to)
 			// Faithful adaptation of ConvertCurrency + flights normalize convention:
 			// success when returned status matches the requested to-currency and amt > 0.
 			if amt > 0 && strings.EqualFold(strings.TrimSpace(status), strings.TrimSpace(to)) {
@@ -725,9 +651,12 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		normalizeGroundCurrencies(ctx, allRoutes, target, conv)
 	}
 
-	// Filter/deduplicate in one pass while preserving the current semantics:
-	// unavailable routes are removed first, then duplicate routes are suppressed
-	// before MaxPrice and Type filters are applied.
+	// Fail-closed provenance: only parsers mark a fare live; a priced route
+	// without a provenance is estimated and Price 0 is unavailable.
+	classifyGroundProvenance(allRoutes)
+
+	// Filter/deduplicate in one pass: RegioJet sold-out rows are removed first,
+	// then duplicate routes are suppressed before MaxPrice and Type filters.
 	allRoutes = filterGroundRoutes(allRoutes, opts)
 
 	// Collapse the same physical connection returned by multiple providers into
@@ -746,8 +675,8 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		ProviderStatuses: statuses,
 		Completeness:     models.ComputeCompleteness(statuses),
 	}
-	if len(allRoutes) == 0 && len(errors) > 0 {
-		result.Error = strings.Join(errors, "; ")
+	if len(allRoutes) == 0 && len(failures) > 0 {
+		result.Error = strings.Join(failures, "; ")
 	}
 
 	// Auto-compose the savings engine: surface the single best cheaper
@@ -762,10 +691,11 @@ func searchByNameCore(ctx context.Context, from, to, date string, opts SearchOpt
 		}
 	}
 
-	// Negative-result cache: mark a route as "no service" only on a CLEAN empty —
-	// zero routes AND no provider errors/timeouts. A run with any error is left
-	// uncached so it retries. Filtered searches are excluded by groundNegKey.
-	if !opts.NoCache && len(allRoutes) == 0 && len(errors) == 0 && negCacheEnabled() {
+	// Negative-result cache: mark "no service" only when at least one provider
+	// was queried and every provider answered that it never serves the pair.
+	// A date-specific empty answer, an error or a timeout proves nothing about
+	// the pair, so it is left uncached and retried.
+	if !opts.NoCache && launched > 0 && allNotServed(statuses) && negCacheEnabled() {
 		if negKey, ok := groundNegKey(from, to, date, opts, groundProviderKey(opts)); ok {
 			groundNegCache.Mark(negKey)
 		}

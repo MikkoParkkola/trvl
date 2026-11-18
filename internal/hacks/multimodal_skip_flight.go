@@ -7,23 +7,28 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // detectMultiModalSkipFlight checks whether skipping the flight entirely and
-// taking an overnight ground option (bus or train) is cheaper, factoring in the
-// saved hotel night.
+// taking an overnight ground option (bus or train) is cheaper.
 //
-// Threshold: net saving must exceed 50 (in the requested currency) before this
-// hack is surfaced.
+// The saving is the fare gap alone: flight fare minus ground fare, in the
+// requested currency. The hotel night an overnight route also avoids is
+// described, never added (#819).
+//
+// Threshold: the fare gap must be at least 50 (in the requested currency)
+// before this hack is surfaced.
 func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 	if !in.valid() || in.Date == "" {
 		return nil
 	}
 
-	// The flight price, every ground route's price, and the flat EUR hotel
-	// estimate are each converted into the requested target currency before
-	// being combined; anything that cannot be converted drops the whole
-	// candidate rather than mixing currencies in one saving figure.
+	// The flight price and every ground route's price are converted into the
+	// requested target currency before being combined; a fare that cannot be
+	// converted drops its candidate rather than mixing currencies in one
+	// saving figure. The hotel-night mention is converted separately and
+	// simply left out without a rate.
 	target := strings.ToUpper(strings.TrimSpace(in.currency()))
 	if target == "" {
 		target = "EUR"
@@ -43,10 +48,9 @@ func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 	// Ground search — any mode.
 	originCity := cityFromCode(in.Origin)
 	destCity := cityFromCode(in.Destination)
-	groundResult, err := ground.SearchByName(ctx, originCity, destCity, in.Date, ground.SearchOptions{
-		Currency:       target,
-		SearchOverride: in.GroundSearchOverride,
-	})
+	opts := in.groundScope()
+	opts.Currency = target
+	groundResult, err := ground.SearchByName(ctx, originCity, destCity, in.Date, opts)
 	if err != nil || !groundResult.Success || len(groundResult.Routes) == 0 {
 		return nil
 	}
@@ -56,7 +60,8 @@ func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 	var bestRoute *groundRoute
 	for i := range groundResult.Routes {
 		r := &groundResult.Routes[i]
-		if r.Price <= 0 {
+		// Only a live fare backs a saving; an estimate is not a quote.
+		if r.Price <= 0 || r.PriceProvenance != models.PriceLive {
 			continue
 		}
 		if !isOvernightRoute(r.Departure.Time, r.Arrival.Time) {
@@ -86,15 +91,18 @@ func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 		return nil
 	}
 
-	// The saved hotel night is a flat EUR estimate; convert it into target
-	// before adding it to a saving figure already expressed in target.
-	hotelBonus, ok := convertCurrency(ctx, averageHotelCost, "EUR", target)
-	if !ok {
-		return nil
+	// The hotel night is a flat EUR estimate, mentioned in the description
+	// only. Without a rate into target the mention is left out; the fare
+	// saving stands either way.
+	hotelNote := ""
+	if bonus, ok := convertCurrency(ctx, averageHotelCost, "EUR", target); ok {
+		hotelNote = fmt.Sprintf(", and travelling overnight also skips a hotel night (about %.0f %s)", bonus, target)
 	}
 
-	// Total saving: flight price − ground price + saved hotel night, all in target.
-	savings := (flightPrice - bestPrice) + hotelBonus
+	// The saving is the fare gap alone, in target. The hotel night the
+	// overnight route also avoids is described, never added: it is not a
+	// lower fare, and BestSaving subtracts Savings from one (#819).
+	savings := flightPrice - bestPrice
 	if savings < 50 {
 		return nil
 	}
@@ -109,12 +117,12 @@ func detectMultiModalSkipFlight(ctx context.Context, in DetectorInput) []Hack {
 		Savings:  roundSavings(savings),
 		Description: fmt.Sprintf(
 			"Overnight %s %s→%s departs %s arrives %s (%.0f %s) vs flight %.0f %s. "+
-				"Ground saves %.0f on transport + ~%.0f saved hotel night = %.0f total saving.",
+				"Ground saves %.0f on the fare%s.",
 			bestRoute.routeType, bestRoute.depCity, bestRoute.arrCity,
 			depTime, arrTime,
 			bestRoute.price, currency,
 			flightPrice, currency,
-			flightPrice-bestRoute.price, hotelBonus, savings,
+			savings, hotelNote,
 		),
 		Risks: []string{
 			"Overnight ground transport is slower; factor in comfort and rest quality",

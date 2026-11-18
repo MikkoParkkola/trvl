@@ -211,7 +211,7 @@ func TestHotelPriceTrustFallsBackToMostRepresentedCurrency(t *testing.T) {
 		},
 	}
 
-	FinalizeHotelResultPriceTrust(&hotel, "JPY", now)
+	FinalizeHotelResultPriceTrust(&hotel, "JPY", now, nil)
 	if hotel.Currency != "USD" || hotel.Price != 120 || hotel.PriceConfidence != PriceConfidenceVerified {
 		t.Fatalf("selected headline = %.0f %s/%s", hotel.Price, hotel.Currency, hotel.PriceConfidence)
 	}

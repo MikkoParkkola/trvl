@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -181,7 +182,7 @@ func searchHotelByNameTool() ToolDef {
 			},
 			Required: []string{"name", "check_in", "check_out"},
 		},
-		OutputSchema: hotelSearchOutputSchema(),
+		OutputSchema: hotelByNameOutputSchema(),
 		Annotations: &ToolAnnotations{
 			Title:          "Search Hotel by Name",
 			ReadOnlyHint:   true,
@@ -190,6 +191,19 @@ func searchHotelByNameTool() ToolDef {
 		},
 	}
 }
+
+// hotelByNameOutputSchema is the hotel search schema plus the two fields this
+// tool adds to its response.
+func hotelByNameOutputSchema() interface{} {
+	schema := hotelSearchOutputSchema().(map[string]interface{})
+	props := schema["properties"].(map[string]interface{})
+	props["search_name"] = schemaStringDesc("Property name the lookup searched for.")
+	props["notice"] = schemaStringDesc("Set when no hotel matched the name: what was searched and any provider error that came with the miss.")
+	return schema
+}
+
+// searchHotelsByNameFunc is the by-name lookup; a variable so tests can stub it.
+var searchHotelsByNameFunc = hotels.SearchHotelsByName
 
 func handleSearchHotelByName(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
 	name := argString(args, "name")
@@ -209,15 +223,24 @@ func handleSearchHotelByName(ctx context.Context, args map[string]any, elicit El
 		return nil, nil, err
 	}
 
-	results, err := hotels.SearchHotelsByName(ctx, name, location, checkIn, checkOut, currency)
+	results, statuses, err := searchHotelsByNameFunc(ctx, name, location, checkIn, checkOut, currency)
+	// "No hotel by that name" is an answer: an empty success whose notice
+	// names the property and any provider failure that came with the miss.
+	var notice string
+	if errors.Is(err, hotels.ErrNoNameMatch) {
+		notice = strings.ReplaceAll(err.Error(), "\n", "; ")
+		results, err = []models.HotelResult{}, nil
+	}
 	if err != nil {
 		return nil, nil, err
 	}
 
 	result := &models.HotelSearchResult{
-		Success: true,
-		Count:   len(results),
-		Hotels:  results,
+		Success:          true,
+		Count:            len(results),
+		Hotels:           results,
+		ProviderStatuses: statuses,
+		Completeness:     models.ComputeCompleteness(statuses),
 	}
 
 	displayLoc := name
@@ -225,14 +248,19 @@ func handleSearchHotelByName(ctx context.Context, args map[string]any, elicit El
 		displayLoc = name + " in " + location
 	}
 	summary := hotelSummary(result, displayLoc)
+	if notice != "" {
+		summary = notice
+	}
 
 	type byNameResponse struct {
 		*models.HotelSearchResult
 		SearchName string `json:"search_name"`
+		Notice     string `json:"notice,omitempty"`
 	}
 	resp := byNameResponse{
 		HotelSearchResult: result,
 		SearchName:        name,
+		Notice:            notice,
 	}
 
 	content, err := buildAnnotatedContentBlocks(summary, resp)

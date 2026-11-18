@@ -445,6 +445,8 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		// (MIK-7989); dropping them made failed providers invisible.
 		ProviderStatuses []models.ProviderStatus `json:"provider_statuses,omitempty"`
 		Completeness     models.Completeness     `json:"completeness,omitempty"`
+		// BudgetOmitted counts flights the 50 KB reply budget left out.
+		BudgetOmitted int `json:"budget_omitted,omitempty"`
 	}
 	resp := enrichedFlightSearchResult{
 		Success:          result.Success,
@@ -472,12 +474,31 @@ func handleSearchFlights(ctx context.Context, args map[string]any, elicit Elicit
 		}
 	}
 
-	content, err := buildAnnotatedContentBlocks(flightSummary(result, origin, dest), resp)
-	if err != nil {
-		return nil, nil, err
+	// The summary describes every flight found; when the 50 KB reply budget
+	// cuts the list, the lowest-ranked rows go first and the flights the
+	// summary names stay. Rows are indices into enrichedFlights.
+	summary := flightSummary(result, origin, dest)
+	idx := make([]int, len(enrichedFlights))
+	pinned := map[int]bool{}
+	for i := range idx {
+		idx[i] = i
 	}
-
-	return content, resp, nil
+	if len(result.Flights) > 0 {
+		cheapest, nonstop := flightSummaryPicks(result.Flights)
+		pinned[cheapest], pinned[nonstop] = true, true
+	}
+	return fitReply(idx, dropTail(func(i int) bool { return pinned[i] }), func(shown []int, trimmed bool) (string, any) {
+		view := resp
+		if !trimmed {
+			return summary, view
+		}
+		view.Flights = make([]enrichedFlight, len(shown))
+		for j, i := range shown {
+			view.Flights[j] = enrichedFlights[i]
+		}
+		view.Count, view.BudgetOmitted = len(shown), len(enrichedFlights)-len(shown)
+		return summary + budgetNote(len(shown), len(enrichedFlights), "flights", "max_stops, airline, max_price or sort_by"), view
+	})
 }
 
 // bookingContext is the time-and-place context attached to a flight search

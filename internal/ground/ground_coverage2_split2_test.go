@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -136,161 +135,6 @@ func TestFetchFinnlinesProducts_MockGraphQLError(t *testing.T) {
 }
 
 // ============================================================
-// SearchEuropeanSleeper via httptest (additional cases, was 0%)
-// ============================================================
-
-func TestSearchEuropeanSleeper_MockHappyPath2(t *testing.T) {
-	origClient := europeanSleeperClient
-	origLimiter := europeanSleeperLimiter
-	t.Cleanup(func() {
-		europeanSleeperClient = origClient
-		europeanSleeperLimiter = origLimiter
-	})
-	europeanSleeperLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(europeanSleeperTripsResponse{
-			Trips: []europeanSleeperTrip{
-				{
-					DepartureTime: "2026-07-01T19:22:00",
-					ArrivalTime:   "2026-07-02T07:30:00",
-					Duration:      728,
-					Prices: []europeanSleeperPrice{
-						{Amount: 49.0, Currency: "EUR", Class: "seat"},
-						{Amount: 99.0, Currency: "EUR", Class: "couchette"},
-					},
-					Segments: []europeanSleeperSegment{
-						{
-							DepartureTime: "2026-07-01T19:22:00",
-							ArrivalTime:   "2026-07-02T07:30:00",
-							Origin:        europeanSleeperTripStop{Name: "Brussels-Midi"},
-							Destination:   europeanSleeperTripStop{Name: "Prague hl.n."},
-							TrainNumber:   "NJ 40421",
-							Operator:      "European Sleeper",
-						},
-					},
-				},
-			},
-		})
-	}))
-	defer srv.Close()
-
-	europeanSleeperClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	routes, err := SearchEuropeanSleeper(context.Background(), "Brussels", "Prague", "2026-07-01", "EUR")
-	if err != nil {
-		t.Fatalf("SearchEuropeanSleeper: %v", err)
-	}
-	if len(routes) == 0 {
-		t.Fatal("expected at least 1 route")
-	}
-	r := routes[0]
-	if r.Provider != "european_sleeper" {
-		t.Errorf("provider = %q, want european_sleeper", r.Provider)
-	}
-	if r.Price != 49.0 {
-		t.Errorf("price = %v, want 49.0", r.Price)
-	}
-}
-
-func TestSearchEuropeanSleeper_MockNon200(t *testing.T) {
-	origClient := europeanSleeperClient
-	origLimiter := europeanSleeperLimiter
-	t.Cleanup(func() {
-		europeanSleeperClient = origClient
-		europeanSleeperLimiter = origLimiter
-	})
-	europeanSleeperLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	defer srv.Close()
-
-	europeanSleeperClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	routes, err := SearchEuropeanSleeper(context.Background(), "Brussels", "Prague", "2026-07-01", "EUR")
-	if err != nil {
-		t.Fatalf("expected nil error for non-200 (graceful), got: %v", err)
-	}
-	if len(routes) != 0 {
-		t.Errorf("expected empty routes for non-200, got %d", len(routes))
-	}
-}
-
-func TestSearchEuropeanSleeper_UnknownStation2(t *testing.T) {
-	_, err := SearchEuropeanSleeper(context.Background(), "NoSuchCityABC", "Prague", "2026-07-01", "EUR")
-	if err == nil {
-		t.Fatal("expected error for unknown station")
-	}
-}
-
-func TestSearchEuropeanSleeper_MockDefaultCurrency(t *testing.T) {
-	origClient := europeanSleeperClient
-	origLimiter := europeanSleeperLimiter
-	t.Cleanup(func() {
-		europeanSleeperClient = origClient
-		europeanSleeperLimiter = origLimiter
-	})
-	europeanSleeperLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.RawQuery, "currency=EUR") {
-			t.Errorf("expected currency=EUR in query, got: %s", r.URL.RawQuery)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(europeanSleeperTripsResponse{Trips: nil})
-	}))
-	defer srv.Close()
-
-	europeanSleeperClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	_, err := SearchEuropeanSleeper(context.Background(), "Brussels", "Prague", "2026-07-01", "")
-	if err != nil {
-		t.Fatalf("SearchEuropeanSleeper: %v", err)
-	}
-}
-
-func TestSearchEuropeanSleeper_MockEmptyTrips(t *testing.T) {
-	origClient := europeanSleeperClient
-	origLimiter := europeanSleeperLimiter
-	t.Cleanup(func() {
-		europeanSleeperClient = origClient
-		europeanSleeperLimiter = origLimiter
-	})
-	europeanSleeperLimiter = rate.NewLimiter(rate.Limit(1000), 1)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(europeanSleeperTripsResponse{Trips: nil})
-	}))
-	defer srv.Close()
-
-	europeanSleeperClient = &http.Client{
-		Transport: &redirectTransport{target: srv.URL},
-		Timeout:   5 * time.Second,
-	}
-
-	routes, err := SearchEuropeanSleeper(context.Background(), "Brussels", "Prague", "2026-07-01", "EUR")
-	if err != nil {
-		t.Fatalf("SearchEuropeanSleeper: %v", err)
-	}
-	if len(routes) != 0 {
-		t.Errorf("expected 0 routes for empty trips, got %d", len(routes))
-	}
-}
-
-// ============================================================
 // SearchDigitransit — additional coverage (was 16.7%)
 // ============================================================
 
@@ -365,9 +209,10 @@ func TestSearchDigitransit_MockHappyPath2(t *testing.T) {
 // Additional edge case coverage
 // ============================================================
 
+// D3: a deadline is a timeout, never "provider does not serve this route".
 func TestIsProviderNotApplicable_ContextDeadline(t *testing.T) {
-	if !isProviderNotApplicable(context.DeadlineExceeded) {
-		t.Error("expected true for context.DeadlineExceeded")
+	if isProviderNotApplicable(context.DeadlineExceeded) {
+		t.Error("context.DeadlineExceeded must not be not-applicable (it is a timeout)")
 	}
 }
 
@@ -395,8 +240,8 @@ func TestFilterUnavailableGroundRoutes_MixedProviders(t *testing.T) {
 		{Provider: "db", Price: 25},
 	}
 	result := filterUnavailableGroundRoutes(routes)
-	if len(result) != 2 {
-		t.Errorf("expected 2 routes, got %d", len(result))
+	if len(result) != 3 {
+		t.Errorf("expected 3 routes (zero price kept as unavailable), got %d", len(result))
 	}
 }
 

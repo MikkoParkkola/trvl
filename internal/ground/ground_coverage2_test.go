@@ -3,12 +3,14 @@ package ground
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/models"
 	"golang.org/x/time/rate"
 )
 
@@ -37,7 +39,10 @@ func TestFetchDBBestPrice_MockHappyPath(t *testing.T) {
 		Timeout:   5 * time.Second,
 	}
 
-	price, cur := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
+	price, cur, err := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
+	if err != nil {
+		t.Fatalf("fetchDBBestPrice: %v", err)
+	}
 	if price != 29.90 {
 		t.Errorf("price = %v, want 29.90", price)
 	}
@@ -70,7 +75,10 @@ func TestFetchDBBestPrice_MockNoPrices(t *testing.T) {
 		Timeout:   5 * time.Second,
 	}
 
-	price, cur := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
+	price, cur, err := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
+	if err != nil {
+		t.Errorf("err = %v, want nil: DB answered cleanly with no price", err)
+	}
 	if price != 0 {
 		t.Errorf("price = %v, want 0", price)
 	}
@@ -98,9 +106,12 @@ func TestFetchDBBestPrice_MockHTTPError(t *testing.T) {
 		Timeout:   5 * time.Second,
 	}
 
-	price, _ := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
+	price, _, err := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
 	if price != 0 {
 		t.Errorf("price = %v, want 0 for HTTP error", price)
+	}
+	if !errors.Is(err, models.ErrRateLimited) {
+		t.Errorf("err = %v, want an HTTP 500 typed as models.ErrRateLimited", err)
 	}
 }
 
@@ -401,13 +412,13 @@ func TestFetchDFDSAvailability_MockDecodeError(t *testing.T) {
 	}
 
 	routeInfo := dfdsRouteInfo{RouteCode: "CPHO-OSFO", SalesOwner: 19}
+	// D2: an undecodable answer is a parse failure, never an assumed sailing.
 	avail, _, err := fetchDFDSAvailability(context.Background(), routeInfo, "2026-07-01")
-	if err != nil {
-		t.Fatalf("expected nil error (non-fatal), got: %v", err)
+	if !errors.Is(err, models.ErrParseFailed) {
+		t.Fatalf("err = %v, want it to wrap models.ErrParseFailed", err)
 	}
-	// Decode error is non-fatal; returns available=true.
-	if !avail {
-		t.Error("expected available=true on decode error (non-fatal)")
+	if avail {
+		t.Error("an undecodable availability answer reported the date available")
 	}
 }
 
