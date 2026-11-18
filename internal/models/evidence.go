@@ -9,6 +9,7 @@ package models
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 )
 
@@ -48,6 +49,31 @@ var ErrRateLimited = errors.New("upstream provider rate-limited or temporarily u
 // parse failure means the provider is unreliable this attempt and should count
 // toward the circuit breaker, whereas an honest empty result must not.
 var ErrParseFailed = errors.New("provider response could not be parsed (response shape changed)")
+
+// ErrNotApplicable marks a provider that does not serve the requested pair:
+// no station, port or route for it in a static table, or a lookup that
+// answered cleanly with no match (an empty Trenitalia station search). Ground
+// search classifies "not served" with errors.Is on this sentinel alone, never
+// by message text, and maps it to a skipped status, never to a failure.
+var ErrNotApplicable = errors.New("provider does not serve this route")
+
+// ProviderNotice is a non-fatal provider caveat: routes may still be present,
+// and FixHint tells the caller what would improve the answer. Reason is one of
+// the Reason* constants; Err is the underlying cause.
+type ProviderNotice struct {
+	Reason  string
+	FixHint string
+	Err     error
+}
+
+func (n *ProviderNotice) Error() string {
+	if n.Err != nil {
+		return n.Err.Error()
+	}
+	return n.Reason
+}
+
+func (n *ProviderNotice) Unwrap() error { return n.Err }
 
 // ClassifyProviderError maps an error to a provider status. A typed rate-limit
 // (ErrRateLimited) wins first so a 429/challenge never renders as a hard parse
@@ -104,6 +130,18 @@ type Completeness struct {
 	Queried   int      `json:"queried"`           // providers actually attempted (excludes skipped/not_configured)
 	Succeeded int      `json:"succeeded"`         // providers that returned a definitive answer (hit or no-hit)
 	Missing   []string `json:"missing,omitempty"` // provider ids that timed out or failed
+	// missingWhy[i] says what happened to Missing[i] (see MissingPhrase). It
+	// stays out of JSON: provider_statuses already carries the detail.
+	missingWhy []string
+}
+
+// Clone returns a copy that shares no slice with c; nil slices stay nil.
+// Cached search results hand out copies, and every slice here, the unexported
+// one included, must be the copy's own.
+func (c Completeness) Clone() Completeness {
+	c.Missing = slices.Clone(c.Missing)
+	c.missingWhy = slices.Clone(c.missingWhy)
+	return c
 }
 
 // statusDefinitive reports whether a status represents a definitive answer
@@ -127,10 +165,12 @@ func statusAttempted(s string) bool {
 }
 
 // ComputeCompleteness derives the composite completeness from per-provider
-// statuses. blocked when nothing definitive came back; partial when some
-// attempted providers timed out/failed; complete otherwise.
+// statuses. blocked when no attempted provider returned anything; partial when
+// some attempted providers timed out, failed or answered only in part;
+// complete otherwise.
 func ComputeCompleteness(statuses []ProviderStatus) Completeness {
 	c := Completeness{State: CompletenessComplete}
+	partialAnswers := 0 // missing providers that still returned results
 	for _, s := range statuses {
 		if statusAttempted(s.Status) {
 			c.Queried++
@@ -139,17 +179,71 @@ func ComputeCompleteness(statuses []ProviderStatus) Completeness {
 			c.Succeeded++
 			continue
 		}
-		if s.Status == StatusTimeout || s.Status == StatusFailed || s.Status == StatusError || s.Status == StatusCircuitBroken || s.Status == StatusRateLimited {
+		if why := s.MissingPhrase(); why != "" {
 			c.Missing = append(c.Missing, s.ID)
+			c.missingWhy = append(c.missingWhy, why)
+			if why == missingPartial {
+				partialAnswers++
+			}
 		}
 	}
 	switch {
-	case c.Succeeded == 0 && c.Queried > 0:
+	case c.Succeeded == 0 && partialAnswers == 0 && c.Queried > 0:
 		c.State = CompletenessBlocked
 	case len(c.Missing) > 0:
 		c.State = CompletenessPartial
 	}
 	return c
+}
+
+// Phrases for a provider that gave no usable answer, in the order
+// IncompleteNote lists them. Each reads for one provider or several.
+const (
+	missingNoAnswer    = "did not respond"
+	missingRefused     = "refused the request"
+	missingRateLimited = "rate-limited the request"
+	missingServerError = "returned a server error"
+	missingFailed      = "failed"
+	missingPartial     = "answered only in part"
+	missingNotTried    = "not tried (circuit breaker open)"
+)
+
+var missingOrder = []string{missingNoAnswer, missingRefused, missingRateLimited, missingServerError, missingFailed, missingPartial, missingNotTried}
+
+// MissingPhrase says what happened to a provider that gave no usable answer,
+// or "" when it answered or was never attempted. The cause comes from
+// EffectiveReason, which ignores URLs: ClassifyProviderError reads the raw
+// text, so a 404 on a URL containing "503" arrives as rate_limited. Anything
+// without a specific cause is "failed", which is true of every outcome and
+// never claims the provider was silent.
+func (p ProviderStatus) MissingPhrase() string {
+	switch p.Status {
+	case StatusCircuitBroken:
+		return missingNotTried
+	case StatusTimeout, StatusFailed, StatusError, StatusRateLimited:
+	default:
+		return ""
+	}
+	// Results before the failure: refused partway (a later page or sort
+	// order), so neither silent nor refused outright.
+	if p.Results > 0 {
+		return missingPartial
+	}
+	switch p.EffectiveReason() {
+	case ReasonTimeout, ReasonDNS, ReasonNetwork:
+		return missingNoAnswer
+	case ReasonBlocked:
+		return missingRefused
+	case ReasonRateLimited:
+		return missingRateLimited
+	case ReasonUnavailable:
+		return missingServerError
+	case "":
+		if p.Status == StatusTimeout {
+			return missingNoAnswer // a timeout with no error text is still silence
+		}
+	}
+	return missingFailed
 }
 
 // MayClaimExhaustive reports whether the renderer is allowed to assert
@@ -167,7 +261,14 @@ func (c Completeness) IncompleteNote() string {
 	if c.MayClaimExhaustive() {
 		return ""
 	}
+	// A provider that answered in part was reached too: "Checked 0 of 1"
+	// beside its results would read as silence.
 	reached := c.Succeeded
+	for _, why := range c.missingWhy {
+		if why == missingPartial {
+			reached++
+		}
+	}
 	total := c.Queried
 	b := strings.Builder{}
 	b.WriteString("Checked ")
@@ -175,10 +276,21 @@ func (c Completeness) IncompleteNote() string {
 	b.WriteString(" of ")
 	b.WriteString(itoa(total))
 	b.WriteString(" providers")
-	if len(c.Missing) > 0 {
-		b.WriteString("; ")
-		b.WriteString(strings.Join(c.Missing, ", "))
-		b.WriteString(" did not respond")
+	groups := map[string][]string{}
+	for i, id := range c.Missing {
+		why := missingFailed // built without statuses: no detail to word
+		if i < len(c.missingWhy) {
+			why = c.missingWhy[i]
+		}
+		groups[why] = append(groups[why], id)
+	}
+	for _, why := range missingOrder {
+		if ids := groups[why]; len(ids) > 0 {
+			b.WriteString("; ")
+			b.WriteString(strings.Join(ids, ", "))
+			b.WriteString(" ")
+			b.WriteString(why)
+		}
 	}
 	b.WriteString(" — results may be incomplete.")
 	return b.String()

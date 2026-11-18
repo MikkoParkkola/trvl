@@ -288,11 +288,11 @@ func trainlineDoWithRetry(ctx context.Context, makeReq func() (*http.Request, er
 func SearchTrainline(ctx context.Context, from, to, date, currency string, allowBrowserFallbacks bool) ([]models.GroundRoute, error) {
 	fromID, ok := LookupTrainlineStation(from)
 	if !ok {
-		return nil, fmt.Errorf("no Trainline station for %q", from)
+		return nil, fmt.Errorf("no Trainline station for %q: %w", from, models.ErrNotApplicable)
 	}
 	toID, ok := LookupTrainlineStation(to)
 	if !ok {
-		return nil, fmt.Errorf("no Trainline station for %q", to)
+		return nil, fmt.Errorf("no Trainline station for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	dateTime, err := models.ParseDate(date)
@@ -630,12 +630,13 @@ func parseTrainlineResults(resp trainlineJourneySearchResponse, from, to, date, 
 		}
 
 		route := models.GroundRoute{
-			Provider:  "trainline",
-			Type:      routeType,
-			Price:     price,
-			Currency:  cur,
-			Duration:  duration,
-			Transfers: transfers,
+			Provider:        "trainline",
+			Type:            routeType,
+			Price:           price,
+			PriceProvenance: livePrice(price), // cheapest ticket of this journey
+			Currency:        cur,
+			Duration:        duration,
+			Transfers:       transfers,
 			Departure: models.GroundStop{
 				City: from,
 				Time: j.DepartureTime,

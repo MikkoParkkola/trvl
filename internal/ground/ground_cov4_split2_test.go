@@ -14,31 +14,19 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func TestIsProviderNotApplicable_DFDSRoute(t *testing.T) {
-	err := fmt.Errorf("no DFDS route from X to Y")
-	if !isProviderNotApplicable(err) {
-		t.Errorf("dfds route error should be not-applicable")
-	}
-}
-
-func TestIsProviderNotApplicable_StenaLineRoute(t *testing.T) {
-	err := fmt.Errorf("no Stena Line route")
-	if !isProviderNotApplicable(err) {
-		t.Errorf("stena route error should be not-applicable")
-	}
-}
-
+// D3: a limiter wait that would pass the deadline is a timeout, not a
+// "provider does not serve this route" answer.
 func TestIsProviderNotApplicable_RateLimiterExceed_v2(t *testing.T) {
 	err := fmt.Errorf("rate limiter: rate: Wait(n=1) would exceed context deadline")
-	if !isProviderNotApplicable(err) {
-		t.Errorf("rate limiter exceed error should be not-applicable")
+	if isProviderNotApplicable(err) {
+		t.Errorf("rate limiter exceed error must not be not-applicable (it is a timeout)")
 	}
 }
 
 func TestIsProviderNotApplicable_ContextDeadline_v2(t *testing.T) {
 	err := fmt.Errorf("context deadline exceeded")
-	if !isProviderNotApplicable(err) {
-		t.Errorf("context deadline should be not-applicable")
+	if isProviderNotApplicable(err) {
+		t.Errorf("context deadline must not be not-applicable (it is a timeout)")
 	}
 }
 
@@ -71,6 +59,11 @@ func TestFilterGroundRoutes_MaxPrice_v2(t *testing.T) {
 		{Provider: "tallink", Type: "ferry", Price: 30.0, Departure: models.GroundStop{Time: "T1"}, Arrival: models.GroundStop{Time: "T2"}},
 		{Provider: "tallink", Type: "ferry", Price: 50.0, Departure: models.GroundStop{Time: "T3"}, Arrival: models.GroundStop{Time: "T4"}},
 	}
+	// State after the normalise pass, which sets ComparablePrice for every
+	// priced route in the target currency; the budget is checked against it.
+	for i := range routes {
+		routes[i].ComparablePrice = routes[i].Price
+	}
 	opts := SearchOptions{MaxPrice: 40.0}
 	got := filterGroundRoutes(routes, opts)
 	if len(got) != 1 {
@@ -96,17 +89,18 @@ func TestFilterGroundRoutes_TypeFilter_v2(t *testing.T) {
 	}
 }
 
-func TestFilterGroundRoutes_ZeroPriceNonSchedule(t *testing.T) {
-	// Zero-price route from non-schedule-only provider should be dropped.
+func TestFilterGroundRoutes_RegioJetSoldOutDropped(t *testing.T) {
+	// A RegioJet Price 0 row is sold out and dropped; any other unpriced
+	// route is kept and shown as unavailable.
 	routes := []models.GroundRoute{
-		{Provider: "flixbus", Type: "bus", Price: 0, Departure: models.GroundStop{Time: "T1"}, Arrival: models.GroundStop{Time: "T2"}},
+		{Provider: "regiojet", Type: "bus", Price: 0, Departure: models.GroundStop{Time: "T1"}, Arrival: models.GroundStop{Time: "T2"}},
 		{Provider: "tallink", Type: "ferry", Price: 0, Departure: models.GroundStop{Time: "T3"}, Arrival: models.GroundStop{Time: "T4"}},
 	}
 	opts := SearchOptions{}
 	got := filterGroundRoutes(routes, opts)
-	// flixbus with price 0 → dropped; tallink with price 0 → kept (schedule-only)
+	// regiojet with price 0 → dropped; tallink with price 0 → kept as unavailable
 	if len(got) != 1 {
-		t.Errorf("expected 1 (schedule-only tallink), got %d", len(got))
+		t.Fatalf("expected 1 (tallink kept as unavailable), got %d", len(got))
 	}
 	if got[0].Provider != "tallink" {
 		t.Errorf("expected tallink, got %q", got[0].Provider)
@@ -151,10 +145,10 @@ func TestShouldKeepGroundRoute_ZeroPriceScheduleOnly(t *testing.T) {
 	}
 }
 
-func TestShouldKeepGroundRoute_ZeroPriceNonSchedule(t *testing.T) {
-	r := models.GroundRoute{Provider: "flixbus", Price: 0}
+func TestShouldKeepGroundRoute_RegioJetSoldOutDropped(t *testing.T) {
+	r := models.GroundRoute{Provider: "regiojet", Price: 0}
 	if shouldKeepGroundRoute(r) {
-		t.Error("non-schedule-only flixbus with price 0 should be dropped")
+		t.Error("regiojet with price 0 is sold out and should be dropped")
 	}
 }
 
@@ -314,13 +308,13 @@ func TestGeocodeCity_NonOKStatus(t *testing.T) {
 func TestFilterUnavailableGroundRoutes_v2(t *testing.T) {
 	routes := []models.GroundRoute{
 		{Provider: "flixbus", Price: 15.0}, // kept (price > 0)
-		{Provider: "flixbus", Price: 0},    // dropped (non-schedule, zero price)
+		{Provider: "flixbus", Price: 0},    // kept as unavailable (D1)
 		{Provider: "db", Price: 0},         // kept (schedule-only)
 		{Provider: "transitous", Price: 0}, // kept (schedule-only)
 	}
 	got := filterUnavailableGroundRoutes(routes)
-	if len(got) != 3 {
-		t.Errorf("expected 3 routes, got %d", len(got))
+	if len(got) != 4 {
+		t.Errorf("expected 4 routes (zero price kept as unavailable), got %d", len(got))
 	}
 }
 

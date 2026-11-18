@@ -198,7 +198,7 @@ func TestHotelsCmd_Flags(t *testing.T) {
 		{"min-price", "0"},
 		{"max-price", "0"},
 		{"min-rating", "0"},
-		{"max-distance", "0"},
+		{"max-distance", "25"}, // trvl caps hotel lists at 25 km unless told otherwise
 	}
 	for _, tt := range flags {
 		f := cmd.Flags().Lookup(tt.name)

@@ -77,7 +77,7 @@ func TestParseHotelSearchResponse(t *testing.T) {
 	hotel1[1] = "Hotel Kamp"
 	hotel1[2] = []any{[]any{60.168, 24.941}}
 	hotel1[3] = []any{"5-star hotel", 5.0}
-	hotel1[6] = []any{nil, []any{[]any{189.0, 0.0}, nil, nil, "USD"}}
+	hotel1[6] = []any{nil, []any{[]any{400.0, 0.0}, nil, nil, "USD"}, []any{nil, []any{"$189", nil, 189.0, nil, 189.0}}}
 	hotel1[7] = []any{[]any{4.6, 1523.0}}
 	hotel1[9] = "/g/11b6d4_v_4"
 
@@ -86,7 +86,7 @@ func TestParseHotelSearchResponse(t *testing.T) {
 	hotel2[1] = "Scandic Grand Central Helsinki"
 	hotel2[2] = []any{[]any{60.170, 24.943}}
 	hotel2[3] = []any{"4-star hotel", 4.0}
-	hotel2[6] = []any{nil, []any{[]any{129.0, 0.0}, nil, nil, "USD"}}
+	hotel2[6] = []any{nil, []any{[]any{400.0, 0.0}, nil, nil, "USD"}, []any{nil, []any{"$129", nil, 129.0, nil, 129.0}}}
 	hotel2[7] = []any{[]any{4.3, 892.0}}
 	hotel2[9] = "/g/11c6rk8_qb"
 
@@ -390,7 +390,7 @@ func TestParseOrganicHotel(t *testing.T) {
 		[]any{51.5074, -0.1278}, // [lat, lon]
 	}
 	entry[3] = []any{"3-star hotel", 3.0}
-	entry[6] = []any{nil, []any{[]any{150.0, 0.0}, nil, nil, "EUR"}}
+	entry[6] = []any{nil, []any{[]any{300.0, 0.0}, nil, nil, "EUR"}, []any{nil, []any{"€150", nil, 150.0, nil, 150.0}}}
 	entry[7] = []any{[]any{4.2, 500.0}}
 	entry[9] = "0x123:0x456"
 

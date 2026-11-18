@@ -2,12 +2,36 @@ package hotels
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
+
+// ErrPriceNoData means Google's price call answered without a payload and no
+// fallback (SerpAPI, search page) produced a price either. It is a failure the
+// caller can name, not a successful empty result.
+var ErrPriceNoData = errors.New("price service returned no data")
+
+// priceFallback resolves a payload-less price answer (SerpAPI, then the search
+// page); a variable so tests can count and stub it. Assigned in init because
+// the fallback's search path refers back to this lookup.
+var priceFallback func(context.Context, HotelPriceOpts) *models.HotelPriceResult
+
+func init() { priceFallback = tryPriceFallback }
+
+// googleCallErr wraps a failed Google Hotels call. A call refused because an
+// earlier quota refusal is still cooling down (batchexec.ErrRefused) is a rate
+// limit, so it wraps models.ErrRateLimited; wrapped bare, an MCP gateway
+// labels it a bad parameter.
+func googleCallErr(op string, err error) error {
+	if errors.Is(err, batchexec.ErrRefused) {
+		return fmt.Errorf("%s: %w: %w", op, models.ErrRateLimited, err)
+	}
+	return fmt.Errorf("%s: %w", op, err)
+}
 
 // isNoProviderPricesError reports whether err is the routine "Google's
 // payload contained no booking partner prices" outcome we want to surface
@@ -41,6 +65,9 @@ type HotelPriceOpts struct {
 // function first tries the optional SerpAPI selected-property detail path. If no
 // key is configured and a Location hint is provided, it can fall back to the
 // Google Hotels search page, but only when it can match the requested property.
+// When every path comes back empty it fails with ErrPriceNoData. Google quota
+// refusals (HTTP 429, wrb.fr status 13, an active cooldown) wrap
+// models.ErrRateLimited.
 //
 // Dates should be in YYYY-MM-DD format.
 func GetHotelPrices(ctx context.Context, hotelID string, checkIn, checkOut string, currency string) (*models.HotelPriceResult, error) {
@@ -55,6 +82,28 @@ func GetHotelPrices(ctx context.Context, hotelID string, checkIn, checkOut strin
 // GetHotelPricesWithOpts is like GetHotelPrices but accepts a full
 // HotelPriceOpts struct including an optional Location for fallback.
 func GetHotelPricesWithOpts(ctx context.Context, opts HotelPriceOpts) (*models.HotelPriceResult, error) {
+	if opts.Currency == "" {
+		opts.Currency = "USD"
+	}
+	res, err := hotelPricesRPC(ctx, opts)
+	// "no provider prices found" is the routine payload-less answer (wrb.fr
+	// status 3). Try the fallback chain; if it also comes back empty, say so
+	// as a failure rather than an empty success.
+	if isNoProviderPricesError(err) {
+		if fallback := priceFallback(ctx, opts); fallback != nil {
+			applyLinkDurability(fallback)
+			return fallback, nil
+		}
+		return nil, fmt.Errorf("hotel %s: %w", opts.HotelID, ErrPriceNoData)
+	}
+	return res, err
+}
+
+// hotelPricesRPC is Google's partner-price RPC alone, without the fallback
+// chain. The rooms lookup calls it directly: its own search fallback reads
+// Google's provider status, where a refusal behind another provider's price
+// would otherwise be lost (#813).
+func hotelPricesRPC(ctx context.Context, opts HotelPriceOpts) (*models.HotelPriceResult, error) {
 	if opts.HotelID == "" {
 		return nil, fmt.Errorf("hotel ID is required")
 	}
@@ -79,11 +128,14 @@ func GetHotelPricesWithOpts(ctx context.Context, opts HotelPriceOpts) (*models.H
 
 	status, body, err := client.BatchExecute(ctx, encoded)
 	if err != nil {
-		return nil, fmt.Errorf("hotel price request: %w", err)
+		return nil, googleCallErr("hotel price request", err)
 	}
 
 	if status == 403 {
 		return nil, batchexec.ErrBlocked
+	}
+	if batchexec.QuotaRefusal(status, body) {
+		return nil, googleCooldownErr(ctx, client, "google hotel prices", status)
 	}
 	if status != 200 {
 		return nil, fmt.Errorf("hotel price lookup returned status %d", status)
@@ -99,23 +151,6 @@ func GetHotelPricesWithOpts(ctx context.Context, opts HotelPriceOpts) (*models.H
 
 	providers, err := ParseHotelPriceResponse(entries)
 	if err != nil {
-		// "no provider prices found" is a routine outcome. Fall back to
-		// the search-page price when we have a location hint.
-		if isNoProviderPricesError(err) {
-			fallback := tryPriceFallback(ctx, opts)
-			if fallback != nil {
-				applyLinkDurability(fallback)
-				return fallback, nil
-			}
-			return &models.HotelPriceResult{
-				Success:   true,
-				HotelID:   opts.HotelID,
-				CheckIn:   opts.CheckIn,
-				CheckOut:  opts.CheckOut,
-				Providers: nil,
-				Notice:    "no live booking partners returned prices for this hotel and date range",
-			}, nil
-		}
 		return nil, fmt.Errorf("parse hotel prices: %w", err)
 	}
 

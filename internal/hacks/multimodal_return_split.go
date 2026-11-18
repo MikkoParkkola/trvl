@@ -7,6 +7,7 @@ import (
 
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // returnSplitFlightSearch is the flight search seam (overridable in tests).
@@ -19,13 +20,16 @@ var returnSplitGroundSearch = ground.SearchByName
 // detectMultiModalReturnSplit checks whether an open-jaw with a mode swap
 // (fly out, return by ground or vice versa) is cheaper than a round-trip.
 //
-// Saving threshold: EUR 50, consistent with other multimodal detectors.
+// The saving is the fare gap alone: round trip minus the one-way flight and the
+// ground leg. An overnight ground leg's hotel night is described, never added
+// (#819). Threshold: the fare gap must be at least 50 in the shared currency,
+// as in the other multimodal detectors.
 //
 // Cross-currency honesty (mirrors detectSplit): a saving is emitted only when
 // the baseline currency is known and the round-trip flight, the one-way flight
 // used in that direction, and the ground leg all share it. Otherwise the
 // direction is skipped — no conversion, no mislabelled total. The EUR hotel
-// bonus is only folded in when the shared currency is itself EUR.
+// night is only mentioned when the shared currency is itself EUR.
 func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 	if !in.valid() || in.Date == "" || in.ReturnDate == "" {
 		return nil
@@ -73,9 +77,9 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 
 	// Ground return: destination → origin. The request stays EUR; the guard
 	// checks the route's own reported Currency, never the requested one.
-	groundResult, err := returnSplitGroundSearch(ctx, destCity, originCity, in.ReturnDate, ground.SearchOptions{
-		Currency: "EUR",
-	})
+	groundOpts := in.groundScope()
+	groundOpts.Currency = "EUR"
+	groundResult, err := returnSplitGroundSearch(ctx, destCity, originCity, in.ReturnDate, groundOpts)
 
 	var hacks []Hack
 
@@ -86,7 +90,8 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 
 		for i := range groundResult.Routes {
 			r := &groundResult.Routes[i]
-			if r.Price <= 0 {
+			// Only a live fare backs a saving; an estimate is not a quote.
+			if r.Price <= 0 || r.PriceProvenance != models.PriceLive {
 				continue
 			}
 			// Only consider routes in the baseline currency. Selecting the
@@ -124,11 +129,11 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 			}
 
 			totalMixed := owOutPrice + bestGroundPrice
-			savings := rtPrice - totalMixed + hotelBonus
+			savings := rtPrice - totalMixed // fare gap only; the hotel night is in the note (#819)
 			if savings >= 50 {
 				overnightNote := ""
 				if hotelBonus > 0 {
-					overnightNote = fmt.Sprintf(" (overnight %s — saves ~%.0f hotel)", bestRoute.routeType, averageHotelCost)
+					overnightNote = fmt.Sprintf(" (overnight %s, also skips a ~%.0f EUR hotel night)", bestRoute.routeType, averageHotelCost)
 				}
 
 				hacks = append(hacks, Hack{
@@ -164,16 +169,15 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 
 	// Direction 2: take ground out, fly back.
 	// Only viable when there is a known ground route origin→destination.
-	groundOutResult, gerr := returnSplitGroundSearch(ctx, originCity, destCity, in.Date, ground.SearchOptions{
-		Currency: "EUR",
-	})
+	groundOutResult, gerr := returnSplitGroundSearch(ctx, originCity, destCity, in.Date, groundOpts)
 	if gerr == nil && groundOutResult != nil && groundOutResult.Success && len(groundOutResult.Routes) > 0 {
 		var bestGroundPrice float64
 		var bestRoute *groundRoute
 
 		for i := range groundOutResult.Routes {
 			r := &groundOutResult.Routes[i]
-			if r.Price <= 0 {
+			// Only a live fare backs a saving; an estimate is not a quote.
+			if r.Price <= 0 || r.PriceProvenance != models.PriceLive {
 				continue
 			}
 			// Only consider routes in the baseline currency (see dir1).
@@ -209,11 +213,11 @@ func detectMultiModalReturnSplit(ctx context.Context, in DetectorInput) []Hack {
 			}
 
 			totalMixed := bestGroundPrice + owRetPrice
-			savings := rtPrice - totalMixed + hotelBonus
+			savings := rtPrice - totalMixed // fare gap only; the hotel night is in the note (#819)
 			if savings >= 50 {
 				overnightNote := ""
 				if hotelBonus > 0 {
-					overnightNote = fmt.Sprintf(" (overnight %s — saves ~%.0f hotel)", bestRoute.routeType, averageHotelCost)
+					overnightNote = fmt.Sprintf(" (overnight %s, also skips a ~%.0f EUR hotel night)", bestRoute.routeType, averageHotelCost)
 				}
 
 				hacks = append(hacks, Hack{

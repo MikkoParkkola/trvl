@@ -69,8 +69,9 @@ type PlanHotel struct {
 	// turns this into an honest label so users can see whether a shown price is
 	// a real per-night rate or just a search-result teaser.
 	PriceConfidence string `json:"price_confidence,omitempty"`
-	// PriceSource is the provider name behind the chosen Price (e.g. "Agoda",
-	// "Booking.com"), carried through for display alongside the confidence label.
+	// PriceSource is the provider id behind the chosen Price (the hotel's
+	// headline_provider, e.g. "google_hotels", "booking.com"); renderers map it
+	// to a display label.
 	PriceSource string `json:"price_source,omitempty"`
 }
 

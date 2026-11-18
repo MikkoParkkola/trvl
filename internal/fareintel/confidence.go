@@ -62,6 +62,9 @@ type ConfidenceInput struct {
 	// SeparateTickets marks a synthetic book-direct / self-connect itinerary whose
 	// legs are booked on separate tickets — inherently less certain to hold.
 	SeparateTickets bool
+	// PriceProvenance classifies a ground price (live|estimated|unavailable);
+	// "" for flights and hotels.
+	PriceProvenance models.PriceProvenance
 
 	// Optional historical price context. Provide DealSamples (dealquality) and/or
 	// FareHistory (fareintel.Analyze) to add a price-position signal. Omit both
@@ -74,6 +77,11 @@ type ConfidenceInput struct {
 func ScoreConfidence(in ConfidenceInput) models.Confidence {
 	if in.Price <= 0 {
 		return models.UnratedConfidence("no price to assess")
+	}
+	// An estimated ground price (static table, day-best, range low) is not a
+	// quote for the shown departure, so its bookability is never rated.
+	if in.PriceProvenance == models.PriceEstimated {
+		return models.UnratedConfidence("estimated fare")
 	}
 
 	now := in.Now
@@ -294,6 +302,11 @@ func basisFor(c models.Confidence) string {
 func distinctSourceCount(sources []models.PriceSource, headline string) int {
 	seen := map[string]struct{}{}
 	for _, s := range sources {
+		// An estimated or unavailable ground source is not a quote, so it never
+		// corroborates; sources without a provenance (flights, hotels) count.
+		if s.Provenance != "" && s.Provenance != models.PriceLive {
+			continue
+		}
 		id := strings.ToLower(strings.TrimSpace(s.Provider))
 		if id == "" {
 			continue

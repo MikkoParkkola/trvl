@@ -38,15 +38,19 @@ func detectNightTransport(ctx context.Context, in DetectorInput) []Hack {
 		return nil
 	}
 
-	result, err := ground.SearchByName(ctx, cityFromCode(in.Origin), cityFromCode(in.Destination), in.Date, ground.SearchOptions{
-		Currency: in.currency(),
-	})
+	opts := in.groundScope()
+	opts.Currency = in.currency()
+	result, err := ground.SearchByName(ctx, cityFromCode(in.Origin), cityFromCode(in.Destination), in.Date, opts)
 	if err != nil || !result.Success || len(result.Routes) == 0 {
 		return nil
 	}
 
 	var hacks []Hack
 	for _, r := range result.Routes {
+		// Only a live fare backs a saving; an estimate is not a quote.
+		if r.PriceProvenance != models.PriceLive {
+			continue
+		}
 		if !isOvernightRoute(r.Departure.Time, r.Arrival.Time) {
 			continue
 		}
@@ -95,6 +99,7 @@ func buildNightHack(in DetectorInput, r models.GroundRoute, hotelSaving float64)
 
 	return Hack{
 		Type:     "night_transport",
+		basis:    hotelNight, // the saving is a hotel night, not a fare
 		Title:    fmt.Sprintf("Overnight %s saves hotel night", typeStr),
 		Currency: currency,
 		Savings:  roundSavings(hotelSaving),

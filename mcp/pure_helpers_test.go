@@ -75,29 +75,31 @@ func TestBuildGroundRouteSummary(t *testing.T) {
 	t.Parallel()
 	routes := []models.GroundRoute{
 		{
-			Provider:  "FlixBus",
-			Type:      "bus",
-			Price:     25.00,
-			Currency:  "EUR",
-			Duration:  120,
-			Transfers: 0,
-			Departure: models.GroundStop{City: "Prague", Time: "2026-04-10T08:00"},
-			Arrival:   models.GroundStop{City: "Vienna", Time: "2026-04-10T10:00"},
+			Provider:        "FlixBus",
+			Type:            "bus",
+			Price:           25.00,
+			Currency:        "EUR",
+			PriceProvenance: models.PriceLive,
+			Duration:        120,
+			Transfers:       0,
+			Departure:       models.GroundStop{City: "Prague", Time: "2026-04-10T08:00"},
+			Arrival:         models.GroundStop{City: "Vienna", Time: "2026-04-10T10:00"},
 		},
 		{
-			Provider:  "RegioJet",
-			Type:      "train",
-			Price:     19.00,
-			PriceMax:  29.00,
-			Currency:  "EUR",
-			Duration:  240,
-			Transfers: 1,
-			Departure: models.GroundStop{City: "Prague", Time: "2026-04-10T09:00"},
-			Arrival:   models.GroundStop{City: "Vienna", Time: "2026-04-10T13:00"},
+			Provider:        "RegioJet",
+			Type:            "train",
+			Price:           19.00,
+			PriceMax:        29.00,
+			Currency:        "EUR",
+			PriceProvenance: models.PriceLive,
+			Duration:        240,
+			Transfers:       1,
+			Departure:       models.GroundStop{City: "Prague", Time: "2026-04-10T09:00"},
+			Arrival:         models.GroundStop{City: "Vienna", Time: "2026-04-10T13:00"},
 		},
 	}
 
-	got := buildGroundRouteSummary("Prague to Vienna", routes)
+	got := buildGroundRouteSummary("Prague to Vienna", routes, 10)
 	if !strings.Contains(got, "Prague to Vienna") {
 		t.Error("summary should contain header")
 	}
@@ -129,7 +131,7 @@ func TestBuildGroundRouteSummary_ZeroPrice(t *testing.T) {
 			Arrival:   models.GroundStop{City: "B", Time: "11:00"},
 		},
 	}
-	got := buildGroundRouteSummary("test", routes)
+	got := buildGroundRouteSummary("test", routes, 10)
 	if !strings.Contains(got, "price unavailable") {
 		t.Error("zero price should show 'price unavailable'")
 	}
@@ -149,7 +151,7 @@ func TestBuildGroundRouteSummary_SeatsLeft(t *testing.T) {
 			Arrival:   models.GroundStop{City: "B", Time: "11:00"},
 		},
 	}
-	got := buildGroundRouteSummary("test", routes)
+	got := buildGroundRouteSummary("test", routes, 10)
 	if !strings.Contains(got, "3 seats left") {
 		t.Error("should show seats left when <= 10")
 	}
@@ -168,7 +170,7 @@ func TestBuildGroundRouteSummary_Amenities(t *testing.T) {
 			Arrival:   models.GroundStop{City: "B", Time: "11:00"},
 		},
 	}
-	got := buildGroundRouteSummary("test", routes)
+	got := buildGroundRouteSummary("test", routes, 10)
 	if !strings.Contains(got, "wifi") {
 		t.Error("should show amenities")
 	}
@@ -187,7 +189,7 @@ func TestBuildGroundRouteSummary_TruncatesAt10(t *testing.T) {
 			Arrival:   models.GroundStop{City: "B", Time: "11:00"},
 		}
 	}
-	got := buildGroundRouteSummary("test", routes)
+	got := buildGroundRouteSummary("test", routes, 10)
 	if !strings.Contains(got, "5 more routes") {
 		t.Error("should show overflow count for >10 routes")
 	}

@@ -87,6 +87,21 @@ var finnlinesOvernightRoutes = map[string]bool{
 	"DETRV-SEMMA": true, // Travemünde → Malmö (~9-15h, overnight sailings)
 }
 
+// finnlinesRoutes lists the port pairs a Finnlines line sails, both
+// directions, keyed "DEPARTURE-ARRIVAL". Two known ports with no line between
+// them (Naantali–Travemünde, Malmö–Kapellskär) are not served. Helsinki–
+// Świnoujście comes from finnlinesOvernightRoutes and was not re-verified live:
+// the booking API answered WAFForbiddenException to the 2026-11-16 probe.
+var finnlinesRoutes = map[string]bool{
+	"FIHEL-DETRV": true, "DETRV-FIHEL": true, // Helsinki–Travemünde
+	"FINLI-SEKPS": true, "SEKPS-FINLI": true, // Naantali–Kapellskär
+	"FINLI-FILAN": true, "FILAN-FINLI": true, // Naantali–Långnäs (same line)
+	"FILAN-SEKPS": true, "SEKPS-FILAN": true, // Långnäs–Kapellskär (same line)
+	"SEMMA-DETRV": true, "DETRV-SEMMA": true, // Malmö–Travemünde
+	"SEMMA-PLSWI": true, "PLSWI-SEMMA": true, // Malmö–Świnoujście
+	"FIHEL-PLSWI": true, "PLSWI-FIHEL": true, // Helsinki–Świnoujście
+}
+
 // isFinnlinesOvernightRoute returns true if the route typically requires cabin accommodation.
 func isFinnlinesOvernightRoute(fromCode, toCode string) bool {
 	return finnlinesOvernightRoutes[fromCode+"-"+toCode]
@@ -286,9 +301,11 @@ func HasFinnlinesPort(city string) bool {
 	return ok
 }
 
-// HasFinnlinesRoute returns true if both cities have Finnlines ports.
+// HasFinnlinesRoute returns true if a Finnlines line joins the two cities' ports.
 func HasFinnlinesRoute(from, to string) bool {
-	return HasFinnlinesPort(from) && HasFinnlinesPort(to)
+	fromPort, okFrom := LookupFinnlinesPort(from)
+	toPort, okTo := LookupFinnlinesPort(to)
+	return okFrom && okTo && finnlinesRoutes[fromPort.Code+"-"+toPort.Code]
 }
 
 // finnlinesTimetableResponse is a single timetable entry from the GraphQL response.
@@ -411,11 +428,14 @@ func parseFinnlinesCrossingMinutes(s string) int {
 func SearchFinnlines(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromPort, ok := LookupFinnlinesPort(from)
 	if !ok {
-		return nil, fmt.Errorf("finnlines: no port for %q", from)
+		return nil, fmt.Errorf("finnlines: no port for %q: %w", from, models.ErrNotApplicable)
 	}
 	toPort, ok := LookupFinnlinesPort(to)
 	if !ok {
-		return nil, fmt.Errorf("finnlines: no port for %q", to)
+		return nil, fmt.Errorf("finnlines: no port for %q: %w", to, models.ErrNotApplicable)
+	}
+	if !finnlinesRoutes[fromPort.Code+"-"+toPort.Code] {
+		return nil, fmt.Errorf("finnlines: no route for %s→%s: %w", fromPort.Code, toPort.Code, models.ErrNotApplicable)
 	}
 
 	if _, err := models.ParseDate(date); err != nil {
@@ -547,11 +567,12 @@ func SearchFinnlines(ctx context.Context, from, to, date, currency string) ([]mo
 		}
 
 		routes = append(routes, models.GroundRoute{
-			Provider: "finnlines",
-			Type:     "ferry",
-			Price:    price,
-			Currency: "EUR",
-			Duration: duration,
+			Provider:        "finnlines",
+			Type:            "ferry",
+			Price:           price,
+			Currency:        "EUR",
+			PriceProvenance: livePrice(price), // a per-sailing charge from the API
+			Duration:        duration,
 			Departure: models.GroundStop{
 				City:    fromPort.City,
 				Station: fromPort.Name + finnlinesShipSuffix(e.ShipName),

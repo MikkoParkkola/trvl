@@ -416,7 +416,8 @@ func TestLooksLikeGoogleHotelID_ColonFormat(t *testing.T) {
 		input string
 		want  bool
 	}{
-		{"abc:123", true},
+		{"abc:123", false}, // another provider's id, not a hex feature ID
+		{"0xabc:0x123", true},
 		{"foo:bar baz", false},
 		{"no-colon-here", false},
 		{"two:colons:here", false},

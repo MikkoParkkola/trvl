@@ -56,7 +56,7 @@ func TestCaptureBookingFixture(t *testing.T) {
 	}
 	t.Logf("wrote apollo fixture, len=%d", len(blob))
 
-	hotels, err := parseBookingApollo(blob, "EUR")
+	hotels, err := parseBookingApollo(blob, "EUR", 1)
 	if err != nil {
 		t.Fatalf("parse captured apollo: %v", err)
 	}

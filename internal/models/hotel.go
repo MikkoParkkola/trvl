@@ -30,13 +30,22 @@ func IsAdultsOnly(name, description string) bool {
 }
 
 // PriceSource tracks which provider found a result at what price.
-// When multiple providers return the same hotel, all sources are preserved
-// and the lowest price becomes the primary HotelResult.Price.
+// When multiple providers return the same hotel, all sources are preserved and
+// the most trusted quote (price confidence, then basis) becomes the headline
+// HotelResult.Price, named by HotelResult.HeadlineProvider.
 type PriceSource struct {
-	Provider        string  `json:"provider"` // "google_hotels", "trivago", "airbnb", "booking"
-	Price           float64 `json:"price"`
-	MaxPrice        float64 `json:"max_price,omitempty"` // highest room/block price (when available)
-	Currency        string  `json:"currency"`
+	Provider string `json:"provider"` // "google_hotels", "trivago", "airbnb", "booking"
+	// Seller is the party offering this quote when it differs from the trvl
+	// provider that fetched it, e.g. "Hotels.com" in Google's partner list.
+	Seller   string  `json:"seller,omitempty"`
+	Price    float64 `json:"price"`
+	MaxPrice float64 `json:"max_price,omitempty"` // highest room/block price (when available)
+	Currency string  `json:"currency"`
+	// Provenance classifies Price for ground sources (live|estimated|unavailable).
+	Provenance PriceProvenance `json:"price_provenance,omitempty"`
+	// ComparablePrice is Price converted to the search's comparison currency
+	// (ground sources); 0 when it could not be converted.
+	ComparablePrice float64 `json:"comparable_price,omitempty"`
 	RoomCount       int     `json:"room_count,omitempty"` // distinct room types (when available)
 	BookingURL      string  `json:"booking_url,omitempty"`
 	PriceBasis      string  `json:"price_basis,omitempty"`      // lead_in|room_nightly|room_total|tax_inclusive_total
@@ -52,15 +61,18 @@ type PriceSource struct {
 // which rates are shown. Rich room data enables LLM reasoning about
 // room selection ("which room has a balcony?", "cheapest with breakfast?").
 type Room struct {
-	Name               string   `json:"name"`            // e.g. "Standard Double Room", "Superior Suite"
-	Price              float64  `json:"price,omitempty"` // price for this room type (for the searched guest count)
-	NightlyPrice       float64  `json:"nightly_price,omitempty"`
-	TotalPrice         float64  `json:"total_price,omitempty"`
-	TaxesAndFees       float64  `json:"taxes_and_fees,omitempty"`
-	TaxesFeesIncluded  *bool    `json:"taxes_fees_included,omitempty"`
-	Currency           string   `json:"currency,omitempty"`
-	Provider           string   `json:"provider,omitempty"`
-	ProviderURL        string   `json:"provider_url,omitempty"`
+	Name              string  `json:"name"`            // e.g. "Standard Double Room", "Superior Suite"
+	Price             float64 `json:"price,omitempty"` // price for this room type (for the searched guest count)
+	NightlyPrice      float64 `json:"nightly_price,omitempty"`
+	TotalPrice        float64 `json:"total_price,omitempty"`
+	TaxesAndFees      float64 `json:"taxes_and_fees,omitempty"`
+	TaxesFeesIncluded *bool   `json:"taxes_fees_included,omitempty"`
+	Currency          string  `json:"currency,omitempty"`
+	Provider          string  `json:"provider,omitempty"`
+	ProviderURL       string  `json:"provider_url,omitempty"`
+	// Source is the trvl provider that fetched this room ("google_hotels",
+	// "agoda", ...); Provider is the seller it reported. Internal only.
+	Source             string   `json:"-"`
 	RateID             string   `json:"rate_id,omitempty"`
 	RatePlanName       string   `json:"rate_plan_name,omitempty"`
 	MatchConfidence    string   `json:"match_confidence,omitempty"`
@@ -85,7 +97,7 @@ type HotelResult struct {
 	Rating      float64 `json:"rating"`
 	ReviewCount int     `json:"review_count"`
 	Stars       int     `json:"stars"`
-	Price       float64 `json:"price"` // Lowest price across all sources
+	Price       float64 `json:"price"` // Headline price: the most trusted source quote (see HeadlineProvider)
 	Currency    string  `json:"currency"`
 	// ComparablePrice is the headline price converted to a common target currency
 	// for cross-currency ranking and Min/MaxPrice filtering (and PriceForRanking).
@@ -116,6 +128,12 @@ type HotelResult struct {
 	RetrievedAt     time.Time     `json:"retrieved_at,omitempty"`     // checked time for primary Price
 	Freshness       string        `json:"freshness,omitempty"`        // freshness for primary Price
 	PriceWarnings   []string      `json:"price_warnings,omitempty"`   // machine-readable caveats, e.g. mixed_source_currencies
+	// HeadlineProvider names the source whose quote is the headline Price,
+	// picked by the trust rule (confidence, then basis); CheapestSource can
+	// name a different, cheaper but less trusted quote.
+	HeadlineProvider string `json:"headline_provider,omitempty"`
+	// PriceProvenance is "unavailable" when no source carries a usable price.
+	PriceProvenance PriceProvenance `json:"price_provenance,omitempty"`
 	// Confidence is an honest bookability assessment of the headline Price
 	// (innovation #3). Nil when not scored; an unrated Confidence means trvl
 	// lacked the signal to judge — it is never a fabricated number.
@@ -151,7 +169,13 @@ type HotelSearchResult struct {
 	// holidays, currency, country facts) for the searched location. Additive and
 	// silently degrading — absent when the lookup fails; never blocks the search.
 	Destination *DestinationInfo `json:"destination,omitempty"`
-	Error       string           `json:"error,omitempty"`
+	// MaxDistanceKm is the distance cap applied around the city centre (25 km
+	// unless the caller set one); FartherOmitted counts the hotels it left out.
+	MaxDistanceKm  float64 `json:"max_distance_km,omitempty"`
+	FartherOmitted int     `json:"farther_omitted,omitempty"`
+	// MonthlyOmitted counts monthly rentals a nightly hotel list left out.
+	MonthlyOmitted int    `json:"monthly_omitted,omitempty"`
+	Error          string `json:"error,omitempty"`
 }
 
 // ProviderPrice represents a single booking provider's price for a hotel.

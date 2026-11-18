@@ -120,12 +120,14 @@ func accommodationOfferEvidence(need models.AccommodationNeed, hotel models.Hote
 }
 
 func accommodationEvidenceProvider(hotel models.HotelResult, offer models.AccommodationOffer) string {
-	return firstNonEmpty(offer.Provider, hotel.CheapestSource, accommodationHotelProvider(hotel))
+	return firstNonEmpty(offer.Provider, accommodationHotelProvider(hotel))
 }
 
+// accommodationHotelProvider credits the provider whose quote is the headline
+// price; cheapest_source can name a cheaper, less trusted quote.
 func accommodationHotelProvider(hotel models.HotelResult) string {
-	if hotel.CheapestSource != "" {
-		return hotel.CheapestSource
+	if hotel.HeadlineProvider != "" {
+		return hotel.HeadlineProvider
 	}
 	if len(hotel.Sources) > 0 && hotel.Sources[0].Provider != "" {
 		return hotel.Sources[0].Provider
@@ -485,22 +487,16 @@ func accommodationVerificationCandidateScore(hotel models.HotelResult, need mode
 }
 
 // accommodationHotelIDIsGooglePlaceID reports whether the hotel carries a
-// Google place ID ("/g/..." or "ChIJ..."), the only ID shape the Google
+// Google hotel ID (models.IsGoogleHotelID), the only shape the Google
 // price/detail RPCs can resolve into an exact-room partner matrix.
 func accommodationHotelIDIsGooglePlaceID(hotel models.HotelResult) bool {
-	id := strings.TrimSpace(hotel.HotelID)
-	return strings.HasPrefix(id, "/g/") || strings.HasPrefix(id, "ChIJ")
+	return models.IsGoogleHotelID(hotel.HotelID)
 }
 
+// accommodationHotelIDSupportsRoomLookup keys on the ID the Google room RPC
+// resolves, not on which provider won the headline.
 func accommodationHotelIDSupportsRoomLookup(hotel models.HotelResult) bool {
-	if strings.TrimSpace(hotel.HotelID) == "" {
-		return false
-	}
-	provider := strings.ToLower(accommodationHotelProvider(hotel))
-	if provider == "" || provider == "google_hotels" || provider == "google hotels" {
-		return true
-	}
-	return len(hotel.Sources) == 0 && hotel.CheapestSource == ""
+	return accommodationHotelIDIsGooglePlaceID(hotel)
 }
 
 func accommodationBookingURLSupportsRoomLookup(rawURL string) bool {
@@ -702,6 +698,10 @@ func accommodationEvidenceHasWarning(evidence []models.AccommodationEvidence, wa
 }
 
 func accommodationSearchSummary(resp accommodationSearchResponse) string {
+	return accommodationSearchSummaryText(resp) + hotelFartherNote(resp.FartherOmitted, resp.MaxDistanceKm, resp.ProviderStatuses)
+}
+
+func accommodationSearchSummaryText(resp accommodationSearchResponse) string {
 	location := resp.Need.Location
 	if location == "" {
 		location = "requested location"

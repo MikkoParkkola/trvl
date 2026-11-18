@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -9,11 +10,48 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/fareintel"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
+// DefaultMaxDistanceKm is the distance cap the hotel list entry points (trvl
+// hotels, MCP search_hotels, search_accommodations, search_hotels_with_details)
+// apply when the caller sets none. Lookups of one named hotel set no cap.
+const DefaultMaxDistanceKm = 25
+
+// SendsGoogleRadius reports whether a cap goes to Google as a server-side
+// radius (lrad): only when tighter than the default. Google then withholds
+// farther hotels itself, so farther_omitted covers only what trvl removed.
+func SendsGoogleRadius(capKm float64) bool {
+	return capKm > 0 && capKm < DefaultMaxDistanceKm
+}
+
+// GoogleRadiusApplied reports whether this search's Google answer was narrowed
+// by that radius: the cap was sent and Google answered (checked_hit or
+// checked_no_hit). A failed, timed-out or skipped Google withheld nothing.
+func GoogleRadiusApplied(capKm float64, statuses []models.ProviderStatus) bool {
+	if !SendsGoogleRadius(capKm) {
+		return false
+	}
+	for _, st := range statuses {
+		if st.ID == "google_hotels" && (st.Status == models.StatusCheckedHit || st.Status == models.StatusCheckedNoHit) {
+			return true
+		}
+	}
+	return false
+}
+
 // filterHotels applies all post-fetch filters to hotel results.
 func filterHotels(hotels []models.HotelResult, opts HotelSearchOptions) []models.HotelResult {
+	filtered, _ := filterHotelsCounted(hotels, opts)
+	return filtered
+}
+
+// filterHotelsCounted is filterHotels that also counts the hotels the distance
+// cap left out (the 100 km outlier ceiling is not counted: those are listings
+// from another city, not farther hotels).
+func filterHotelsCounted(hotels []models.HotelResult, opts HotelSearchOptions) ([]models.HotelResult, int) {
+	farther := 0
 	filtered := hotels[:0]
 	for _, h := range hotels {
 		// Stars filter: h.Stars==0 means Google didn't annotate this hotel
@@ -51,6 +89,14 @@ func filterHotels(hotels []models.HotelResult, opts HotelSearchOptions) []models
 				continue
 			}
 		}
+		if len(opts.Amenities) > 0 && !hasAllAmenities(h.Amenities, opts.Amenities) {
+			continue
+		}
+		if opts.Brand != "" && !strings.Contains(strings.ToLower(h.Name), strings.ToLower(opts.Brand)) {
+			continue
+		}
+		// Distance runs last so farther counts only hotels every other filter
+		// passed.
 		if h.Lat != 0 && h.Lon != 0 && opts.CenterLat != 0 {
 			dist := Haversine(opts.CenterLat, opts.CenterLon, h.Lat, h.Lon)
 			// Hard geo-outlier ceiling: reject hotels >100km from city
@@ -60,18 +106,13 @@ func filterHotels(hotels []models.HotelResult, opts HotelSearchOptions) []models
 				continue
 			}
 			if opts.MaxDistanceKm > 0 && dist > opts.MaxDistanceKm {
+				farther++
 				continue
 			}
 		}
-		if len(opts.Amenities) > 0 && !hasAllAmenities(h.Amenities, opts.Amenities) {
-			continue
-		}
-		if opts.Brand != "" && !strings.Contains(strings.ToLower(h.Name), strings.ToLower(opts.Brand)) {
-			continue
-		}
 		filtered = append(filtered, h)
 	}
-	return filtered
+	return filtered, farther
 }
 
 // priceComparableToTarget reports whether a hotel's ranking price can be
@@ -351,6 +392,11 @@ func hotelProviderStatusFromResults(id, name string, results int) models.Provide
 }
 
 func hotelProviderStatusFromError(id, name string, err error) models.ProviderStatus {
+	// A provider that does not serve the place answered honestly: skipped,
+	// never failed. Classified by the sentinel alone, as ground search does.
+	if errors.Is(err, models.ErrNotApplicable) {
+		return models.ProviderStatus{ID: id, Name: name, Status: models.StatusSkipped, Reason: models.ReasonCityNotServed}
+	}
 	status := models.ClassifyProviderError(err)
 	return models.ProviderStatus{
 		ID:     id,
@@ -502,3 +548,33 @@ func normalizeHotelCurrencies(ctx context.Context, hotels []models.HotelResult, 
 //
 // Strategy: Google Hotels returns listings when searching by city/area, not hotel
 // names. We extract a location context from the query (text after comma, or last
+
+// annotateHotelConfidence attaches an honest bookability Confidence to every
+// hotel (innovation #3), scored via the shared fareintel scorer from the
+// property's price freshness, provider reliability, multi-source corroboration,
+// and price-basis verification. Hotels with no usable signal are left unrated,
+// never faked.
+func annotateHotelConfidence(hotels []models.HotelResult, now time.Time) {
+	for i := range hotels {
+		h := &hotels[i]
+		// Score the quote the headline shows, not the cheapest one.
+		provider := h.HeadlineProvider
+		if provider == "" && len(h.Sources) > 0 {
+			provider = h.Sources[0].Provider
+		}
+		retrievedAt := h.RetrievedAt
+		if retrievedAt.IsZero() {
+			retrievedAt = now
+		}
+		c := fareintel.ScoreConfidence(fareintel.ConfidenceInput{
+			Price:             h.Price,
+			Currency:          h.Currency,
+			Provider:          provider,
+			RetrievedAt:       retrievedAt,
+			Now:               now,
+			Sources:           h.Sources,
+			PriceVerification: h.PriceConfidence,
+		})
+		h.Confidence = &c
+	}
+}

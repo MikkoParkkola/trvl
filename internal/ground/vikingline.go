@@ -174,11 +174,11 @@ func vikinglineFormatDateTime(date, timeStr string, dayOffset int) string {
 func SearchVikingLine(ctx context.Context, from, to, date, currency string) ([]models.GroundRoute, error) {
 	fromPort, ok := LookupVikingLinePort(from)
 	if !ok {
-		return nil, fmt.Errorf("vikingline: no port for %q", from)
+		return nil, fmt.Errorf("vikingline: no port for %q: %w", from, models.ErrNotApplicable)
 	}
 	toPort, ok := LookupVikingLinePort(to)
 	if !ok {
-		return nil, fmt.Errorf("vikingline: no port for %q", to)
+		return nil, fmt.Errorf("vikingline: no port for %q: %w", to, models.ErrNotApplicable)
 	}
 
 	if currency == "" {
@@ -194,8 +194,7 @@ func SearchVikingLine(ctx context.Context, from, to, date, currency string) ([]m
 	key := fromPort.Code + "-" + toPort.Code
 	sailings, ok := vikinglineSchedules[key]
 	if !ok || len(sailings) == 0 {
-		slog.Debug("vikingline: no schedule for route", "key", key)
-		return nil, nil
+		return nil, fmt.Errorf("vikingline: no sailing %s: %w", key, models.ErrNotApplicable)
 	}
 
 	slog.Debug("vikingline reference schedule", "from", fromPort.City, "to", toPort.City, "date", date, "sailings", len(sailings))

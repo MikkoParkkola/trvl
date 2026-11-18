@@ -16,7 +16,7 @@ func liveRailQuote(price float64, provider string) func(context.Context, string,
 		return &models.GroundSearchResult{
 			Success: true,
 			Count:   1,
-			Routes:  []models.GroundRoute{{Provider: provider, Type: "train", Price: price, Currency: "EUR"}},
+			Routes:  []models.GroundRoute{{Provider: provider, Type: "train", Price: price, PriceProvenance: models.PriceLive, Currency: "EUR"}},
 		}, nil
 	}
 }
@@ -91,7 +91,7 @@ func TestRailFlyBundleSingleTotal(t *testing.T) {
 	)
 	// Alias origin (ANR != hub AMS) so the rail leg is a real charged cost that
 	// must fold into the single total.
-	h := composeRailFlyBundle(context.Background(), "ANR", "BCN", "2026-05-01", "", testRailFlyStation, flightCost, baseline, "EUR")
+	h := composeRailFlyBundle(context.Background(), "ANR", "BCN", "2026-05-01", "", testRailFlyStation, flightCost, baseline, "EUR", ground.SearchOptions{})
 
 	if h.Bundle == nil {
 		t.Fatal("composed hack must carry a bundle")
@@ -137,7 +137,7 @@ func TestRailFlyBundleLegTimingAndGuarantee(t *testing.T) {
 	withRailGroundSearcher(t, liveRailQuote(39, "eurostar"))
 
 	// Hub origin (AMS == hub): the connection is an airline-guaranteed Air&Rail.
-	hub := composeRailFlyBundle(context.Background(), "AMS", "BCN", "2026-05-01", "", testRailFlyStation, 240, 300, "EUR")
+	hub := composeRailFlyBundle(context.Background(), "AMS", "BCN", "2026-05-01", "", testRailFlyStation, 240, 300, "EUR", ground.SearchOptions{})
 	if hub.Bundle == nil {
 		t.Fatal("hub bundle must be present")
 	}
@@ -168,7 +168,7 @@ func TestRailFlyBundleLegTimingAndGuarantee(t *testing.T) {
 	}
 
 	// Alias origin (ANR != hub): the rail leg is a self-transfer, not guaranteed.
-	alias := composeRailFlyBundle(context.Background(), "ANR", "BCN", "2026-05-01", "", testRailFlyStation, 240, 300, "EUR")
+	alias := composeRailFlyBundle(context.Background(), "ANR", "BCN", "2026-05-01", "", testRailFlyStation, 240, 300, "EUR", ground.SearchOptions{})
 	if alias.Bundle.ConnectionGuaranteed {
 		t.Error("alias-origin connection must NOT be guaranteed (self-transfer)")
 	}
@@ -182,7 +182,7 @@ func TestRailFlyBundleLegTimingAndGuarantee(t *testing.T) {
 func TestRailFlyBundleRoundTripHasReturnLegs(t *testing.T) {
 	withRailGroundSearcher(t, railProviderError())
 
-	h := composeRailFlyBundle(context.Background(), "ANR", "BCN", "2026-05-01", "2026-05-08", testRailFlyStation, 200, 400, "EUR")
+	h := composeRailFlyBundle(context.Background(), "ANR", "BCN", "2026-05-01", "2026-05-08", testRailFlyStation, 200, 400, "EUR", ground.SearchOptions{})
 	if h.Bundle == nil || len(h.Bundle.Legs) != 4 {
 		t.Fatalf("round-trip bundle should have 4 legs, got %d", len(h.Bundle.Legs))
 	}
@@ -210,7 +210,7 @@ func TestOpenJawRailReturn(t *testing.T) {
 		flyInto    = "BCN"
 		trainOut   = "GRO"
 	)
-	h := composeOpenJawRailReturn(context.Background(), origin, flyInto, trainOut, flightCost, baseline, "EUR", "2026-05-01", "2026-05-08")
+	h := composeOpenJawRailReturn(context.Background(), origin, flyInto, trainOut, flightCost, baseline, "EUR", "2026-05-01", "2026-05-08", ground.SearchOptions{})
 
 	if h.Type != "open_jaw_rail_return" {
 		t.Errorf("Type = %q, want open_jaw_rail_return", h.Type)
@@ -252,7 +252,7 @@ func TestOpenJawRailReturn(t *testing.T) {
 func TestOpenJawRailReturn_liveQuoteWins(t *testing.T) {
 	withRailGroundSearcher(t, liveRailQuote(48, "renfe"))
 
-	h := composeOpenJawRailReturn(context.Background(), "HEL", "BCN", "GRO", 150, 400, "EUR", "2026-05-01", "2026-05-08")
+	h := composeOpenJawRailReturn(context.Background(), "HEL", "BCN", "GRO", 150, 400, "EUR", "2026-05-01", "2026-05-08", ground.SearchOptions{})
 	ret := h.Bundle.Legs[1]
 	if ret.Estimated {
 		t.Error("with a live quote the rail return should not be flagged Estimated")

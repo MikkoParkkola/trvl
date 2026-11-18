@@ -44,19 +44,24 @@ type GroundRoute struct {
 	Price     float64 `json:"price"`
 	PriceMax  float64 `json:"price_max,omitempty"` // RegioJet gives price ranges
 	Currency  string  `json:"currency"`
+	// PriceProvenance classifies Price: live, estimated or unavailable.
+	PriceProvenance PriceProvenance `json:"price_provenance,omitempty"`
 	// ComparablePrice is the price converted to a common target currency for
 	// cross-currency ranking and MaxPrice filtering (and for PriceForRanking).
 	// Set by the normalize pass in ground search when conversion succeeds.
 	// 0 means "use raw Price" (incomparable across currencies).
-	ComparablePrice float64     `json:"comparable_price,omitempty"`
-	Duration        int         `json:"duration_minutes"`
-	Departure       GroundStop  `json:"departure"`
-	Arrival         GroundStop  `json:"arrival"`
-	Transfers       int         `json:"transfers"`
-	Legs            []GroundLeg `json:"legs"`
-	Amenities       []string    `json:"amenities,omitempty"`
-	SeatsLeft       *int        `json:"seats_left,omitempty"`
-	BookingURL      string      `json:"booking_url"`
+	ComparablePrice float64    `json:"comparable_price,omitempty"`
+	Duration        int        `json:"duration_minutes"`
+	Departure       GroundStop `json:"departure"`
+	Arrival         GroundStop `json:"arrival"`
+	Transfers       int        `json:"transfers"`
+	// TransfersUnknown marks a route whose provider sent no change data:
+	// Transfers is then 0 for "not known", never for "direct".
+	TransfersUnknown bool        `json:"transfers_unknown,omitempty"`
+	Legs             []GroundLeg `json:"legs"`
+	Amenities        []string    `json:"amenities,omitempty"`
+	SeatsLeft        *int        `json:"seats_left,omitempty"`
+	BookingURL       string      `json:"booking_url"`
 	// Sources lists every provider that returned this same physical connection
 	// (mirrors HotelResult). Populated by ResolveGroundSources. Headline Price
 	// is the cheapest across sources.

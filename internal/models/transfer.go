@@ -5,17 +5,23 @@ package models
 // more GroundRoute values by internal/transfer.BuildOptions. The user chooses
 // among options by their own priority; trvl does not impose a single "best".
 type TransferOption struct {
-	Mode            string   `json:"mode"`  // "airport_express","metro","taxi","ride_hail","private_transfer","bus","train","mixed"
-	Label           string   `json:"label"` // human label, e.g. "Aerobus A1"
-	TotalPrice      float64  `json:"total_price"`
-	PriceIsEstimate bool     `json:"price_is_estimate"`
-	Currency        string   `json:"currency"`
-	DoorToDoorMin   int      `json:"door_to_door_minutes"`
-	Changes         int      `json:"changes"`
-	Pros            []string `json:"pros"`
-	Cons            []string `json:"cons"`
-	Steps           []Step   `json:"steps"`
-	BookURL         string   `json:"book_url,omitempty"`
+	Mode            string  `json:"mode"`  // "airport_express","metro","taxi","ride_hail","private_transfer","bus","train","mixed"
+	Label           string  `json:"label"` // human label, e.g. "Aerobus A1"
+	TotalPrice      float64 `json:"total_price"`
+	PriceIsEstimate bool    `json:"price_is_estimate"`
+	// PriceUnavailable means no fare is known for this option; TotalPrice is
+	// then not a price (a walk may still cost 0), so renderers show no total.
+	PriceUnavailable bool   `json:"price_unavailable,omitempty"`
+	Currency         string `json:"currency"`
+	DoorToDoorMin    int    `json:"door_to_door_minutes"`
+	Changes          int    `json:"changes"`
+	// ChangesUnknown means the route gave no change data: Changes is then
+	// 0 for "not known", so renderers must not call the option direct.
+	ChangesUnknown bool     `json:"changes_unknown,omitempty"`
+	Pros           []string `json:"pros"`
+	Cons           []string `json:"cons"`
+	Steps          []Step   `json:"steps"`
+	BookURL        string   `json:"book_url,omitempty"`
 }
 
 // Step is one instruction in a TransferOption. Grounded=false means the step

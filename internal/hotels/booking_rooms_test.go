@@ -424,15 +424,22 @@ func TestMergeRoomTypes(t *testing.T) {
 	if merged[0].BedType != "1 double bed" {
 		t.Errorf("merged[0].BedType = %q, want 1 double bed", merged[0].BedType)
 	}
-	if merged[0].TotalPrice != 250 {
-		t.Errorf("merged[0].TotalPrice = %v, want enriched total price", merged[0].TotalPrice)
+	// One seller's numbers per room: the Google room is priced, so Booking's
+	// 250 total is not spliced onto Google's 120. It stays in Booking's
+	// inventory quote below (#808 follow-up).
+	if merged[0].TotalPrice != 0 {
+		t.Errorf("merged[0].TotalPrice = %v, want 0 (Booking's total stays in its own quote)", merged[0].TotalPrice)
 	}
-	if merged[0].Board != "breakfast_included" {
-		t.Errorf("merged[0].Board = %q, want breakfast_included", merged[0].Board)
+	// Booking's rate terms stay with Booking's quote: the priced Google room
+	// keeps only its own (#823).
+	if merged[0].Board != "" || merged[0].Refundable != nil {
+		t.Errorf("merged[0] took Booking's terms: board %q refundable %v", merged[0].Board, merged[0].Refundable)
 	}
-	assertBoolPtr(t, "merged[0].Refundable", merged[0].Refundable, true)
 	if len(merged[0].InventoryOptions) != 2 {
 		t.Fatalf("merged[0].InventoryOptions = %#v, want Google + Booking quotes", merged[0].InventoryOptions)
+	}
+	if q := merged[0].InventoryOptions[1]; q.Board != "breakfast_included" || q.Refundable == nil || !*q.Refundable {
+		t.Errorf("Booking quote lost its terms: board %q refundable %v", q.Board, q.Refundable)
 	}
 	if merged[0].InventoryOptions[1].Provider != "Booking.com" || merged[0].InventoryOptions[1].MatchConfidence != models.RoomInventoryMatchExact {
 		t.Fatalf("booking inventory quote = %#v, want exact Booking.com quote", merged[0].InventoryOptions[1])
