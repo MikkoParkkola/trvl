@@ -183,7 +183,7 @@ func tryWAFSolve(ctx context.Context, pc *providerClient, auth *AuthConfig, stat
 		return nil, false
 	}
 	// Reject 202 challenge pages — still a WAF interstitial despite being 2xx.
-	if isAkamaiChallenge(resp2.StatusCode, body2) {
+	if isAkamaiChallenge(resp2.StatusCode, resp2.Header, body2) {
 		return nil, false
 	}
 	return extractAuthValues(ctx, pc, auth, resp2, body2), true
@@ -386,27 +386,40 @@ func applyURLExtractions(ctx context.Context, client *http.Client, extractions m
 	return matched
 }
 
-// isAkamaiChallenge reports whether an HTTP response looks like an Akamai (or
-// AWS WAF) JavaScript challenge page. These are characterised by HTTP 202
-// status paired with body markers such as "window.aws", "reportChallengeError",
-// or "challenge.js" script references. An HTTP 202 WITHOUT these markers is
-// treated as a legitimate response (some APIs use 202 Accepted).
-func isAkamaiChallenge(statusCode int, body []byte) bool {
+// isAkamaiChallenge reports whether an HTTP response is an Akamai or AWS WAF
+// challenge. AWS WAF marks its Challenge with x-amzn-waf-action: challenge,
+// which settles it whatever the status or body. Without that header, a 202 is
+// one unless its trimmed body starts with '{' or '[': AWS WAF answers its
+// Challenge with 202 and adds the HTML/JS interstitial only when the request
+// accepts text/html, so an API call gets an empty 202 (#837). A 202 carrying a
+// JSON object or array is a real Accepted (an async job acknowledgement). Preflight (needsBrowserCookieFallback) and the native
+// Booking path (bookingWAFChallenged) go further and read every 202 as a WAF
+// answer by status alone; search responses keep the JSON exception.
+func isAkamaiChallenge(statusCode int, header http.Header, body []byte) bool {
+	if strings.EqualFold(header.Get(wafActionHeader), "challenge") {
+		return true
+	}
 	if statusCode != http.StatusAccepted {
 		return false
 	}
-	// Short-circuit: if the body parses as valid JSON with no challenge markers,
-	// it is a real 202 Accepted response (e.g. async job acknowledgement).
-	// Challenge pages are always HTML, never JSON.
 	trimmed := bytes.TrimSpace(body)
-	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
-		return false
+	return len(trimmed) == 0 || (trimmed[0] != '{' && trimmed[0] != '[')
+}
+
+// wafActionHeader is the header AWS WAF sets on a Challenge or CAPTCHA answer.
+const wafActionHeader = "x-amzn-waf-action"
+
+// wafActionNote returns "; x-amzn-waf-action: <value>" when the response
+// carries that header with one of AWS WAF's documented values, so a challenge
+// error records the evidence. Any other value is dropped: the provider host
+// controls this header, and error text is classified by substring, so a value
+// like "timeout" would relabel the challenge.
+func wafActionNote(header http.Header) string {
+	switch v := strings.ToLower(strings.TrimSpace(header.Get(wafActionHeader))); v {
+	case "challenge", "captcha":
+		return "; " + wafActionHeader + ": " + v
 	}
-	// Look for challenge page signatures in HTML.
-	return bytes.Contains(body, []byte("challenge.js")) ||
-		bytes.Contains(body, []byte("window.aws")) ||
-		bytes.Contains(body, []byte("reportChallengeError")) ||
-		bytes.Contains(body, []byte("awswaf"))
+	return ""
 }
 
 // decompressBody reads and decompresses the response body based on the

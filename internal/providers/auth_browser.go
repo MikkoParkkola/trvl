@@ -41,7 +41,7 @@ func tryBrowserCookieRetry(ctx context.Context, pc *providerClient, auth *AuthCo
 	}
 	// Reject 202 challenge pages — they are in the 2xx range but are WAF
 	// interstitials, not real responses.
-	if isAkamaiChallenge(resp2.StatusCode, body2) {
+	if isAkamaiChallenge(resp2.StatusCode, resp2.Header, body2) {
 		return nil, false
 	}
 	return extractAuthValues(ctx, pc, auth, resp2, body2), true
@@ -200,7 +200,7 @@ func finishEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig
 		return nil, false
 	}
 	// Reject 202 challenge pages — still a WAF interstitial despite being 2xx.
-	if isAkamaiChallenge(resp2.StatusCode, body2) {
+	if isAkamaiChallenge(resp2.StatusCode, resp2.Header, body2) {
 		slog.Warn("browser escape hatch: preflight retry returned another challenge page",
 			"provider", pc.config.ID)
 		return nil, false

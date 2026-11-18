@@ -267,10 +267,10 @@ func TestProvider(ctx context.Context, cfg *ProviderConfig, location string, lat
 
 	// Detect Akamai/WAF challenge pages that use HTTP 202 (which is in the
 	// 2xx success range but is actually an interstitial challenge page).
-	if isAkamaiChallenge(resp.StatusCode, body) {
+	if isAkamaiChallenge(resp.StatusCode, resp.Header, body) {
 		snippet := describeBody(body, resp, 500)
 		result.BodySnippet = snippet
-		result.Error = fmt.Sprintf("request: http %d WAF/JS challenge page detected — provider needs browser cookie refresh", resp.StatusCode)
+		result.Error = fmt.Sprintf("request: http %d WAF/JS challenge page detected — provider needs browser cookie refresh%s", resp.StatusCode, wafActionNote(resp.Header))
 		return result
 	}
 
@@ -453,7 +453,7 @@ func runTestPreflight(ctx context.Context, pc *providerClient, cfg *ProviderConf
 		tier = ""
 		if applied := applyBrowserCookies(pc, cfg.Auth.PreflightURL, cfg.Cookies.Browser); applied {
 			resp2, body2, err2 := doPreflightRequest(ctx, pc.client, cfg.Auth)
-			if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 && !isAkamaiChallenge(resp2.StatusCode, body2) {
+			if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 && !isAkamaiChallenge(resp2.StatusCode, resp2.Header, body2) {
 				resp, body = resp2, body2
 				result.HTTPStatus = resp.StatusCode
 				snippet = string(body)
@@ -477,7 +477,7 @@ func runTestPreflight(ctx context.Context, pc *providerClient, cfg *ProviderConf
 				u, _ := url.Parse(cfg.Auth.PreflightURL)
 				pc.client.Jar.SetCookies(u, []*http.Cookie{cookie})
 				resp2, body2, err2 := doPreflightRequest(ctx, pc.client, cfg.Auth)
-				if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 && !isAkamaiChallenge(resp2.StatusCode, body2) {
+				if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 && !isAkamaiChallenge(resp2.StatusCode, resp2.Header, body2) {
 					resp, body = resp2, body2
 					result.HTTPStatus = resp.StatusCode
 					snippet = string(body)
@@ -508,7 +508,7 @@ func runTestPreflight(ctx context.Context, pc *providerClient, cfg *ProviderConf
 				// re-issue preflight once more here only
 				// to capture the body for diagnostics.
 				resp2, body2, err2 := doPreflightRequest(ctx, pc.client, cfg.Auth)
-				if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 && !isAkamaiChallenge(resp2.StatusCode, body2) {
+				if err2 == nil && resp2.StatusCode >= 200 && resp2.StatusCode < 300 && !isAkamaiChallenge(resp2.StatusCode, resp2.Header, body2) {
 					resp, body = resp2, body2
 					result.HTTPStatus = resp.StatusCode
 					snippet = string(body)

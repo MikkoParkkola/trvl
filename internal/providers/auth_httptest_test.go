@@ -599,11 +599,12 @@ func TestIsAkamaiChallenge_Extended(t *testing.T) {
 		{"202 with JSON (not challenge)", 202, `{"status":"accepted"}`, false},
 		{"202 with JSON array (not challenge)", 202, `[{"id":1}]`, false},
 		{"200 with challenge markers (wrong status)", 200, `<script src="challenge.js"></script>`, false},
-		{"202 empty body", 202, ``, false},
+		// Flipped for #837: AWS WAF answers a Challenge 202 without the HTML interstitial unless Accept has text/html (docs.aws.amazon.com/waf/latest/developerguide/waf-captcha-and-challenge-actions.html).
+		{"202 empty body", 202, ``, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := isAkamaiChallenge(tc.status, []byte(tc.body))
+			got := isAkamaiChallenge(tc.status, nil, []byte(tc.body))
 			if got != tc.want {
 				t.Errorf("isAkamaiChallenge(%d, %q) = %v, want %v", tc.status, tc.body, got, tc.want)
 			}
