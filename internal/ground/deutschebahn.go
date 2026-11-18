@@ -436,9 +436,13 @@ func dbNoFaresNotice(verbindungen []dbVerbindung) *models.ProviderNotice {
 	return &models.ProviderNotice{
 		Reason:  models.ReasonOther,
 		FixHint: hint,
-		Err:     errors.New("db: no journey carries a fare"),
+		Err:     errDBNoFares,
 	}
 }
+
+// errDBNoFares marks DB's answer that lists journeys but sells no fare, so a
+// caller can tell it from a failed search with errors.Is.
+var errDBNoFares = errors.New("db: no journey carries a fare")
 
 // parseDBVerbindungen converts raw DB API connections into GroundRoute models.
 func parseDBVerbindungen(verbindungen []dbVerbindung, fromStation, toStation DBStation, currency string) []models.GroundRoute {
