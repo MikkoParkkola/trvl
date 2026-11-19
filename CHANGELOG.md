@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A provider whose config sets `cookies.source` to `"none"` no longer has your browser cookies read by the automatic cookie retry during challenge recovery. The interactive browser escape hatch is a separate opt-in (`browser_escape_hatch`) and still reads cookies when a provider enables it.
-- A misspelled `cookies.source` (for example `"nnoe"`) no longer allows the automatic cookie retry to read browser cookies. That retry reads cookies only when the source is empty, `"preflight"` or `"browser"`, and `configure_provider` refuses any other value and names the allowed ones.
+- A misspelled `cookies.source` (for example `"nnoe"`) no longer allows the automatic cookie retry to read browser cookies. That retry reads cookies only when the source is empty, `"preflight"` or `"browser"`, and provider validation rejects any other value.
 - Booking.com's own search reports a bot wall that survives a fresh token with reason `blocked`, and a 503 that persists with reason `unavailable` (both with status `rate_limited`), instead of a plain failure.
 - A search closes its first response when a retry or recovery step replaces it, so long-running sessions no longer hold network connections open.
 - Wizz Air searches use API version 29.25.0.
