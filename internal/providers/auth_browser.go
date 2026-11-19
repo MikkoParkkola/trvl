@@ -322,6 +322,17 @@ func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool
 	if pc == nil || pc.client == nil {
 		return false
 	}
+	// A provider that declares cookies.source "none" gets no browser cookies
+	// from this function, the one door every recovery retry goes through (#840).
+	// The interactive escape hatch reads cookies on its own, behind its own
+	// browser_escape_hatch opt-in. An empty source keeps the default-on policy:
+	// configure_provider fills it with "preflight", and skeleton-built Booking
+	// configs rely on this read.
+	if pc.config != nil && pc.config.Cookies.Source == "none" {
+		slog.Debug("refusing browser cookies: provider declares cookies.source none",
+			"provider", pc.config.ID, "url", logredact.URL(targetURL))
+		return false
+	}
 	// The URL this runs for is caller-supplied and is NOT always the endpoint
 	// the user consented to: cfg.Auth.PreflightURL rides in the same
 	// configure_provider call, is never shown in the consent elicitation, and
