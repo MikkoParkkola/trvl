@@ -148,6 +148,15 @@ func fetchBookingSearch(ctx context.Context, searchURL string) (string, error) {
 		if status == 200 {
 			return string(body), nil
 		}
+		// Still refused with a fresh token: a bot wall, retryable, never a
+		// failed provider (#842). A 503 stays transient but keeps neutral words,
+		// since it may be Booking's own outage rather than its WAF.
+		if status == 503 {
+			return "", fmt.Errorf("booking search returned status 503 after token re-harvest: %w", models.ErrRateLimited)
+		}
+		if bookingWAFChallenged(status) {
+			return "", fmt.Errorf("booking search: WAF challenge persisted after token re-harvest (status %d): %w", status, models.ErrRateLimited)
+		}
 		return "", fmt.Errorf("booking search returned status %d after token re-harvest", status)
 	}
 
