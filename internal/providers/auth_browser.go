@@ -322,15 +322,18 @@ func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool
 	if pc == nil || pc.client == nil {
 		return false
 	}
-	// A provider that declares cookies.source "none" gets no browser cookies
-	// from this function, the one door every recovery retry goes through (#840).
-	// The interactive escape hatch reads cookies on its own, behind its own
-	// browser_escape_hatch opt-in. An empty source keeps the default-on policy:
-	// configure_provider fills it with "preflight", and skeleton-built Booking
-	// configs rely on this read.
-	if pc.config != nil && pc.config.Cookies.Source == "none" {
-		slog.Debug("refusing browser cookies: provider declares cookies.source none",
-			"provider", pc.config.ID, "url", logredact.URL(targetURL))
+	// Only a provider whose cookies.source permits it gets browser cookies from
+	// this function, the one door every recovery retry goes through: "" (the
+	// default-on policy; configure_provider fills it with "preflight", and
+	// skeleton-built Booking configs rely on this read), "preflight" and
+	// "browser". Anything else is refused: "none" by declaration (#840), and a
+	// typo such as "nnoe" because a privacy setting must fail closed (#844).
+	// Configs loaded from disk skip Validate, so this check is the one that
+	// holds on every path. The interactive escape hatch reads cookies on its
+	// own, behind its own browser_escape_hatch opt-in.
+	if pc.config != nil && !cookieSourceAllowsBrowserRead(pc.config.Cookies.Source) {
+		slog.Debug("refusing browser cookies: provider's cookies.source does not allow it",
+			"provider", pc.config.ID, "source", pc.config.Cookies.Source, "url", logredact.URL(targetURL))
 		return false
 	}
 	// The URL this runs for is caller-supplied and is NOT always the endpoint
