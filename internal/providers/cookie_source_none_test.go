@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -64,27 +65,34 @@ func TestApplyBrowserCookies_HonoursSourceNone(t *testing.T) {
 // challenge on a provider with no declared source still does.
 func TestChallengeRecoveryHonoursSourceNone(t *testing.T) {
 	t.Setenv(AllowLocalEnv, "1")
-	for source, wantRead := range map[string]bool{"none": false, "": true} {
-		t.Run("source="+source, func(t *testing.T) {
-			// A 202 challenge page with a marker but no challenge.js URL, so the
-			// WAF solver gives up without a network fetch.
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", "text/html")
-				w.WriteHeader(http.StatusAccepted)
-				_, _ = w.Write([]byte(`<html><script>window.aws = {}</script></html>`))
-			}))
-			defer srv.Close()
-			rt, cfg := newCanaryProvider(t, srv.URL)
-			cfg.Cookies = CookieConfig{Source: source, Browser: "chrome"}
-			u, _ := url.Parse(srv.URL)
-			reads := stubBrowserReader(t, u.Hostname())
+	// Both challenge bodies carry no challenge.js URL, so the WAF solver gives
+	// up without a network fetch. The empty one is Booking's answer (#837).
+	for _, body := range []string{`<html><script>window.aws = {}</script></html>`, ""} {
+		for source, wantRead := range map[string]bool{"none": false, "": true} {
+			t.Run(fmt.Sprintf("source=%q/body=%dB", source, len(body)), func(t *testing.T) {
+				testChallengeRecoveryReads(t, source, body, wantRead)
+			})
+		}
+	}
+}
 
-			if _, err := rt.searchProvider(context.Background(), cfg, "Kyoto", 35.0, 135.7, "2026-06-01", "2026-06-03", "EUR", 2, nil); err == nil {
-				t.Fatal("searchProvider succeeded on a challenge page")
-			}
-			if got := reads.Load(); (got > 0) != wantRead {
-				t.Errorf("browser store read %d times during challenge recovery, want read=%v", got, wantRead)
-			}
-		})
+func testChallengeRecoveryReads(t *testing.T, source, body string, wantRead bool) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+	rt, cfg := newCanaryProvider(t, srv.URL)
+	cfg.Cookies = CookieConfig{Source: source, Browser: "chrome"}
+	u, _ := url.Parse(srv.URL)
+	reads := stubBrowserReader(t, u.Hostname())
+
+	if _, err := rt.searchProvider(context.Background(), cfg, "Kyoto", 35.0, 135.7, "2026-06-01", "2026-06-03", "EUR", 2, nil); err == nil {
+		t.Fatal("searchProvider succeeded on a challenge page")
+	}
+	if got := reads.Load(); (got > 0) != wantRead {
+		t.Errorf("browser store read %d times during challenge recovery, want read=%v", got, wantRead)
 	}
 }

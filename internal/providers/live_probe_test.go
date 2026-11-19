@@ -3,10 +3,13 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
 // Live probe tests — opt-in via TRVL_TEST_LIVE_PROBES=1.
@@ -319,6 +322,12 @@ func TestLiveProbe_Booking(t *testing.T) {
 	if !result.Success {
 		if result.AuthTier == "" || result.AuthTier == "browser-cookies-only" {
 			t.Logf("Booking.com needs browser cookies. Visit booking.com in your browser to seed cookies.")
+		}
+		// A bot-wall answer (403, WAF challenge, empty 202) is edge noise on
+		// a datacenter IP, not a changed API: the class provider statuses
+		// report as rate_limited.
+		if models.ClassifyProviderError(errors.New(result.Error)) == models.StatusRateLimited {
+			t.Skipf("Booking.com blocked this client at step %q: %s", result.Step, result.Error)
 		}
 		t.Errorf("Booking.com probe failed at step %q: %s", result.Step, result.Error)
 	}
