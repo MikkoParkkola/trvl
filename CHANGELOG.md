@@ -11,13 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- When Booking.com answers a search with an empty or non-JSON HTTP 202 (the AWS WAF challenge), trvl treats it as the challenge it is: it runs the existing recovery, browser cookies first, and if that fails the provider status says `blocked` instead of "response_parse: unexpected end of JSON input". The same holds when that answer follows a 429 retry. In an interactive run, a provider that allows the browser escape hatch can now reach that flow, which may open a browser window, as other challenges already do. An `x-amzn-waf-action: challenge` header now counts as a challenge whatever the body is.
+- When Booking.com answers a search with an empty or non-JSON HTTP 202 (the AWS WAF challenge), trvl treats it as the challenge it is: it runs the existing recovery, browser cookies first, and if that fails the provider status carries reason `blocked` (status `rate_limited`) instead of a JSON parse error ("unexpected end of JSON input"). The same holds when that answer follows a 429 retry. In an interactive run, a provider that allows the browser escape hatch can now reach that flow, which may open a browser window, as other challenges already do. An `x-amzn-waf-action: challenge` header now counts as a challenge whatever the body is.
 
 ### Fixed
 
-- A provider whose config sets `cookies.source` to `"none"` never has your browser cookies read during challenge recovery.
-- A misspelled `cookies.source` (for example `"nnoe"`) no longer allows browser cookie reads. Recovery reads cookies only when the source is empty, `"preflight"` or `"browser"`, and `configure_provider` refuses any other value and names the allowed ones.
-- Booking.com's own search reports a bot wall that survives a fresh token as `blocked`, and a 503 that persists as `unavailable`, instead of a plain failure.
+- A provider whose config sets `cookies.source` to `"none"` no longer has your browser cookies read by the automatic cookie retry during challenge recovery. The interactive browser escape hatch is a separate opt-in (`browser_escape_hatch`) and still reads cookies when a provider enables it.
+- A misspelled `cookies.source` (for example `"nnoe"`) no longer allows the automatic cookie retry to read browser cookies. That retry reads cookies only when the source is empty, `"preflight"` or `"browser"`, and `configure_provider` refuses any other value and names the allowed ones.
+- Booking.com's own search reports a bot wall that survives a fresh token with reason `blocked`, and a 503 that persists with reason `unavailable` (both with status `rate_limited`), instead of a plain failure.
 - A search closes its first response when a retry or recovery step replaces it, so long-running sessions no longer hold network connections open.
 - Wizz Air searches use API version 29.25.0.
 - The Deutsche Bahn station-ID live probe accepts DB's "DB sells no fares for this route" answer instead of reporting a false failure.
