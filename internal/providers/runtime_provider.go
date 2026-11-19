@@ -391,7 +391,11 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", redactError(err))
 	}
-	defer func() { _ = resp.Body.Close() }()
+	// Close this first body, not whatever resp holds at return: the 429 retry
+	// loop and the challenge-recovery retries replace resp, and doSearchRequest
+	// closes each replacement itself (#846).
+	firstBody := resp.Body
+	defer func() { _ = firstBody.Close() }()
 
 	body, err := decompressBody(resp, maxResponseBytes)
 	if err != nil {
