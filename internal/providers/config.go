@@ -240,6 +240,15 @@ type CookieConfig struct {
 	Browser string `json:"browser,omitempty"` // browser name when source is "browser"
 }
 
+// cookieSourceAllowsBrowserRead reports whether a provider's cookies.source
+// lets the runtime read the user's browser cookies for it. Three values allow
+// it: "preflight", "browser", and "" (the default-on policy; configure_provider
+// fills it with "preflight"). Any value outside those three refuses, "none" and
+// typos alike (#840, #844).
+func cookieSourceAllowsBrowserRead(source string) bool {
+	return source == "" || source == "preflight" || source == "browser"
+}
+
 // ConsentRecord tracks user consent for a provider domain.
 type ConsentRecord struct {
 	Granted   bool      `json:"granted"`
@@ -335,6 +344,9 @@ func (c *ProviderConfig) Validate() error {
 	}
 	if c.RateLimit.RequestsPerSecond > 100 {
 		return fmt.Errorf("provider config: rate_limit.requests_per_second must be <= 100, got %v (higher rates risk IP bans)", c.RateLimit.RequestsPerSecond)
+	}
+	if src := c.Cookies.Source; src != "none" && !cookieSourceAllowsBrowserRead(src) {
+		return fmt.Errorf("provider config: cookies.source %q is not one of none, preflight, browser", src)
 	}
 
 	return nil
