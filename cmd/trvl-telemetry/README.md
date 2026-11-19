@@ -9,10 +9,10 @@ file, one JSON object per line.
 
 ## What it accepts
 
-A heartbeat is a small JSON object with exactly these fields and nothing else:
+A heartbeat is a small JSON object with these fields and nothing else. `install_date` and `machine_id` are optional, so an older client that omits them is still accepted:
 
 ```json
-{"project":"trvl","event":"heartbeat","version":"1.2.3","runtime":"linux/amd64/go1.26.9","install_id":"<hex>"}
+{"project":"trvl","event":"heartbeat","version":"1.2.3","runtime":"linux/amd64/go1.26.9","install_id":"<hex>","install_date":"2026-11-12","machine_id":"<32 hex>"}
 ```
 
 The collector rejects anything that does not fit the contract:
@@ -21,7 +21,7 @@ The collector rejects anything that does not fit the contract:
 - not `application/json` -> 415
 - body over 2 KB -> 413
 - any field outside the allowed set -> 400 (this is the identity-leak guard)
-- malformed JSON or a missing required field -> 400
+- malformed JSON, a missing required field, an `install_date` that is not a real calendar day, or a `machine_id` that is not 32 lowercase hex characters -> 400
 
 A valid heartbeat gets a `204 No Content`. The collector never reads or stores
 the client IP, hostname, or any request header. Only the payload fields above
