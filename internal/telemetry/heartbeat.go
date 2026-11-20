@@ -244,6 +244,8 @@ func installID(dir string) string {
 
 func installDate(dir string, now time.Time) string {
 	path := filepath.Join(dir, "install-date")
+	// #nosec G304 -- the file name is constant and dir is trvl's local telemetry
+	// state directory.
 	if data, err := os.ReadFile(path); err == nil {
 		if day := strings.TrimSpace(string(data)); validDay(day) {
 			return day
@@ -277,6 +279,7 @@ func validDay(day string) bool {
 func machineID(home string) string {
 	dir := filepath.Join(home, ".revaluator")
 	path := filepath.Join(dir, "machine-id")
+	// #nosec G304 -- path is the fixed machine-id file under the user's home.
 	if data, err := os.ReadFile(path); err == nil {
 		id := strings.TrimSpace(string(data))
 		if machineIDOK(id) {
@@ -298,7 +301,7 @@ func machineID(home string) string {
 	if err != nil {
 		return ""
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = os.Remove(tmp.Name()) }()
 	_, werr := tmp.WriteString(id)
 	if cerr := tmp.Close(); werr != nil || cerr != nil {
 		return ""
