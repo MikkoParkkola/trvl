@@ -352,6 +352,55 @@ func TestStateFiles_ReplaceALinkNotItsTarget(t *testing.T) {
 	})
 }
 
+// A hard link is a regular file, so only the id's own format keeps a linked
+// private file out of the heartbeat: anything but a generated id is replaced,
+// and the file the link shares stays as it was.
+func TestInstallID_HardLinkedPrivateFileIsNotSent(t *testing.T) {
+	dir := t.TempDir()
+	private := filepath.Join(t.TempDir(), "notes")
+	if err := os.WriteFile(private, []byte("my-secret-token-value"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(private, filepath.Join(dir, installIDFile)); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	id, created := installID(dir)
+	if id == "my-secret-token-value" || !machineIDOK(id) || !created {
+		t.Fatalf("install id = %q created=%v, want a fresh generated id", id, created)
+	}
+	if got, _ := os.ReadFile(private); string(got) != "my-secret-token-value" {
+		t.Fatalf("the linked private file changed to %q", got)
+	}
+}
+
+// readState accepts a small regular file and nothing else.
+func TestReadState_Bounds(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, n int) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(strings.Repeat("a", n)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	if v, ok := readState(write("max", maxStateFile)); !ok || len(v) != maxStateFile {
+		t.Fatalf("a %d-byte file must read: ok=%v len=%d", maxStateFile, ok, len(v))
+	}
+	if _, ok := readState(write("over", maxStateFile+1)); ok {
+		t.Fatalf("a %d-byte file must read as absent", maxStateFile+1)
+	}
+	sub := filepath.Join(dir, "sub")
+	if err := os.Mkdir(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := readState(sub); ok {
+		t.Fatal("a directory must read as absent")
+	}
+	if _, ok := readState(filepath.Join(dir, "missing")); ok {
+		t.Fatal("a missing file must read as absent")
+	}
+}
+
 // Deleting the install id resets the install: the new id gets a new day, not
 // the one stored for the id it replaced.
 func TestInstallIdentity_NewIDDropsTheOldDay(t *testing.T) {

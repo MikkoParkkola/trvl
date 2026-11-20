@@ -27,6 +27,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -227,8 +228,13 @@ func installIdentity(dir string, now time.Time) (id, day string) {
 const maxStateFile = 256
 
 // readState returns the trimmed contents of a small regular state file. A
-// missing file, a link, a directory or device, or anything larger than
-// maxStateFile reads as absent, so its target is never sent or trusted.
+// missing file, a symbolic link, a directory or device, or anything larger than
+// maxStateFile reads as absent. The opened file must be the very file the
+// Lstat saw, so a swap to a link between the two checks is caught, and the
+// read itself is capped. A hard link is a regular file and passes: callers
+// that send a value also check its format.
+// ponytail: a path swapped to a FIFO in that window can still block the open;
+// O_NONBLOCK|O_NOFOLLOW would close it but has no portable spelling here.
 func readState(path string) (string, bool) {
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Size() > maxStateFile {
@@ -236,7 +242,16 @@ func readState(path string) (string, bool) {
 	}
 	// #nosec G304 -- callers pass a fixed state-file name under trvl's or the
 	// user's own state directory, checked above to be a small regular file.
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = f.Close() }()
+	opened, err := f.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+		return "", false
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxStateFile+1))
 	if err != nil || len(data) > maxStateFile {
 		return "", false
 	}
@@ -248,7 +263,9 @@ func readState(path string) (string, bool) {
 // created reports that this call generated the id.
 func installID(dir string) (id string, created bool) {
 	path := filepath.Join(dir, installIDFile)
-	if id, ok := readState(path); ok && id != "" {
+	// Only the generated format is accepted: a hard link is a regular file, so
+	// the format is what keeps a linked private file out of the heartbeat.
+	if id, ok := readState(path); ok && machineIDOK(id) {
 		return id, false
 	}
 	var buf [16]byte
