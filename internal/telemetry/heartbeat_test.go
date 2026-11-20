@@ -129,7 +129,7 @@ func TestHeartbeat_Timeout(t *testing.T) {
 // TestHeartbeat_PayloadSize proves the real payload is well under the 2KB cap
 // and that an oversize payload is rejected rather than sent.
 func TestHeartbeat_PayloadSize(t *testing.T) {
-	raw, err := json.Marshal(buildPayload("1.2.3", "0123456789abcdef0123456789abcdef", "", ""))
+	raw, err := json.Marshal(buildPayload("1.2.3", "0123456789abcdef0123456789abcdef", "2026-11-20", "fedcba9876543210fedcba9876543210"))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -369,11 +369,78 @@ func TestInstallDate_OldIDFileGivesItsDay(t *testing.T) {
 	if err := os.Chtimes(idPath, old, old); err != nil {
 		t.Fatal(err)
 	}
-	if got := installDate(dir); got != "2026-09-30" {
+	if got := installDate(dir, time.Now()); got != "2026-09-30" {
 		t.Fatalf("install date for an existing install = %q, want 2026-09-30", got)
 	}
 	stored, err := os.ReadFile(filepath.Join(dir, "install-date"))
 	if err != nil || strings.TrimSpace(string(stored)) != "2026-09-30" {
 		t.Fatalf("install date not persisted: %q, %v", stored, err)
+	}
+}
+
+// writeIDFile creates the install id file with the given modification time.
+func writeIDFile(t *testing.T, dir string, mtime time.Time) {
+	t.Helper()
+	idPath := filepath.Join(dir, installIDFile)
+	if err := os.WriteFile(idPath, []byte("abc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(idPath, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An id file written seconds before UTC midnight belongs to that day, even
+// when the first send reads the clock just after midnight.
+func TestInstallDate_NewIDFileAcrossMidnightKeepsItsDay(t *testing.T) {
+	dir := t.TempDir()
+	writeIDFile(t, dir, time.Date(2026, 11, 19, 23, 59, 59, 0, time.UTC))
+	now := time.Date(2026, 11, 20, 0, 0, 1, 0, time.UTC)
+	if got := installDate(dir, now); got != "2026-11-19" {
+		t.Fatalf("install date across midnight = %q, want 2026-11-19", got)
+	}
+}
+
+// A stored valid day wins over the id file, so the day never drifts.
+func TestInstallDate_StoredDayIsKept(t *testing.T) {
+	dir := t.TempDir()
+	writeIDFile(t, dir, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
+	if err := os.WriteFile(filepath.Join(dir, "install-date"), []byte("2026-10-01\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := installDate(dir, time.Now()); got != "2026-10-01" {
+		t.Fatalf("stored install date = %q, want 2026-10-01", got)
+	}
+}
+
+// A corrupt stored day is replaced with the id file's day and rewritten.
+func TestInstallDate_CorruptFileIsReplaced(t *testing.T) {
+	dir := t.TempDir()
+	writeIDFile(t, dir, time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC))
+	path := filepath.Join(dir, "install-date")
+	for _, bad := range []string{"garbage", "2026-02-30", "2026-9-30", ""} {
+		if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := installDate(dir, time.Now()); got != "2026-09-30" {
+			t.Fatalf("install date over corrupt %q = %q, want 2026-09-30", bad, got)
+		}
+		if stored, _ := os.ReadFile(path); strings.TrimSpace(string(stored)) != "2026-09-30" {
+			t.Fatalf("corrupt %q not rewritten: %q", bad, stored)
+		}
+	}
+}
+
+// With no id file, or one stamped in the future by a skewed clock, the day
+// comes from the caller's clock.
+func TestInstallDate_NoOrFutureIDFileUsesNow(t *testing.T) {
+	now := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	if got := installDate(t.TempDir(), now); got != "2026-11-20" {
+		t.Fatalf("install date without an id file = %q, want 2026-11-20", got)
+	}
+	dir := t.TempDir()
+	writeIDFile(t, dir, now.Add(48*time.Hour))
+	if got := installDate(dir, now); got != "2026-11-20" {
+		t.Fatalf("install date with a future id file = %q, want 2026-11-20", got)
 	}
 }

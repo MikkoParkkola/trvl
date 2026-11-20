@@ -51,7 +51,10 @@ function screen(method, pathname, contentType) {
 function validDay(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
+  // setUTCFullYear, not Date.UTC: Date.UTC maps years 0-99 to 1900-1999,
+  // which would reject days the Go receiver accepts.
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
   return (
     date.getUTCFullYear() === year &&
     date.getUTCMonth() === month - 1 &&

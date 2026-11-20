@@ -47,6 +47,27 @@ func TestServeHTTP_Validation(t *testing.T) {
 			wantStatus:  http.StatusNoContent,
 		},
 		{
+			name:        "null install day and machine id are accepted",
+			method:      http.MethodPost,
+			contentType: "application/json",
+			body:        `{"project":"trvl","event":"heartbeat","version":"1.2.3","runtime":"x","install_date":null,"machine_id":null}`,
+			wantStatus:  http.StatusNoContent,
+		},
+		{
+			name:        "a two-digit-year install day is accepted, as by the Worker",
+			method:      http.MethodPost,
+			contentType: "application/json",
+			body:        `{"project":"trvl","event":"heartbeat","version":"1.2.3","runtime":"x","install_date":"0050-01-01"}`,
+			wantStatus:  http.StatusNoContent,
+		},
+		{
+			name:        "an install day with a trailing newline is rejected",
+			method:      http.MethodPost,
+			contentType: "application/json",
+			body:        `{"project":"trvl","event":"heartbeat","version":"1.2.3","runtime":"x","install_date":"2026-11-20\n"}`,
+			wantStatus:  http.StatusBadRequest,
+		},
+		{
 			name:        "an impossible install day is rejected",
 			method:      http.MethodPost,
 			contentType: "application/json",

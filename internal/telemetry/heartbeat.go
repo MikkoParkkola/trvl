@@ -107,7 +107,7 @@ func dialHeartbeat(ctx context.Context, version, url string) {
 	// Claim the slot up-front: failure-open daily cap (one attempt / 24h max).
 	_ = markSent(dir, time.Now())
 	id := installID(dir)
-	installed := installDate(dir)
+	installed := installDate(dir, time.Now())
 	machine := ""
 	if home, err := os.UserHomeDir(); err == nil {
 		machine = machineID(home)
@@ -242,21 +242,21 @@ func installID(dir string) string {
 	return id
 }
 
-func installDate(dir string) string {
+func installDate(dir string, now time.Time) string {
 	path := filepath.Join(dir, "install-date")
 	if data, err := os.ReadFile(path); err == nil {
-		day := strings.TrimSpace(string(data))
-		if _, err := time.Parse("2006-01-02", day); err == nil && day == timeMust(day) {
+		if day := strings.TrimSpace(string(data)); validDay(day) {
 			return day
 		}
 	}
-	day := time.Now().UTC().Format("2006-01-02")
-	if info, err := os.Stat(filepath.Join(dir, installIDFile)); err == nil && !info.ModTime().IsZero() {
-		// A brand-new id file is this process. Keep today's UTC date from the
-		// caller clock only when the file was just written; an older file's
-		// modification time is the original install.
-		if time.Since(info.ModTime()) > 2*time.Minute {
-			day = info.ModTime().UTC().Format("2006-01-02")
+	// The id file's modification time is the install day: for an id this process
+	// just wrote it is the write instant, so a first send that reads the clock
+	// after UTC midnight still dates the install to the day before. A future
+	// time can only come from a skewed clock, so it falls back to now.
+	day := now.UTC().Format(dayLayout)
+	if info, err := os.Stat(filepath.Join(dir, installIDFile)); err == nil {
+		if mt := info.ModTime(); !mt.IsZero() && !mt.After(now) {
+			day = mt.UTC().Format(dayLayout)
 		}
 	}
 	if err := os.MkdirAll(dir, 0o700); err == nil {
@@ -265,12 +265,13 @@ func installDate(dir string) string {
 	return day
 }
 
-func timeMust(day string) string {
-	parsed, err := time.Parse("2006-01-02", day)
-	if err != nil {
-		return ""
-	}
-	return parsed.Format("2006-01-02")
+const dayLayout = "2006-01-02"
+
+// validDay accepts a real calendar day in the 2006-01-02 layout, nothing else;
+// the same rule as cmd/trvl-telemetry and the Worker receiver.
+func validDay(day string) bool {
+	parsed, err := time.Parse(dayLayout, day)
+	return err == nil && parsed.Format(dayLayout) == day
 }
 
 func machineID(home string) string {
@@ -312,10 +313,15 @@ func machineID(home string) string {
 		}
 	}
 	// The existing file is corrupt, or this filesystem has no hard links: replace it.
-	// ponytail: two first runs repairing a corrupt file at the same moment can each
-	// return their own id once; the next run reads the survivor. A lock file would
-	// close it, and is not worth it for a once-per-machine repair.
+	// Two repairs at the same moment both rename; the last one wins, so report
+	// what is on disk afterwards rather than this process's own candidate.
 	if err := os.Rename(tmp.Name(), path); err == nil {
+		// #nosec G304 -- path is the fixed machine-id file under the user's home.
+		if data, err := os.ReadFile(path); err == nil {
+			if onDisk := strings.TrimSpace(string(data)); machineIDOK(onDisk) {
+				return onDisk
+			}
+		}
 		return id
 	}
 	return ""

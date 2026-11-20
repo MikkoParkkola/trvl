@@ -334,6 +334,31 @@ test("install date and machine id are stored, and a bad value is rejected", asyn
   }
 });
 
+// The Go receiver (cmd/trvl-telemetry validDay) round-trips time.Parse: years
+// 0000-0099 are real days there, and a trailing newline is not. Same here.
+test("install date checks match the Go receiver at the edges", () => {
+  const body = (installDate) =>
+    JSON.stringify({ project: "trvl", event: "heartbeat", install_date: installDate });
+  for (const day of ["0050-01-01", "0000-02-29", "2024-02-29"]) {
+    const res = decide("POST", "/v1/heartbeat", "application/json", body(day));
+    assert.equal(res.status, 204, day);
+  }
+  for (const day of ["2026-11-20\n", " 2026-11-20", "2026-11-31", "2026-1-20"]) {
+    const res = decide("POST", "/v1/heartbeat", "application/json", body(day));
+    assert.equal(res.status, 400, JSON.stringify(day));
+  }
+});
+
+test("null install date and machine id count as not sent", () => {
+  const res = decide(
+    "POST",
+    "/v1/heartbeat",
+    "application/json",
+    '{"project":"trvl","event":"heartbeat","install_date":null,"machine_id":null}',
+  );
+  assert.equal(res.status, 204);
+});
+
 test("a storage failure returns 500 and does not echo the payload", async () => {
   const env = {
     HEARTBEAT: {
