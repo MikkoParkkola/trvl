@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -37,7 +38,7 @@ func TestHeartbeat_DailyCap(t *testing.T) {
 // TestHeartbeat_PayloadFields locks the wire contract: exactly the documented
 // fields, with no surprise additions that could carry identity.
 func TestHeartbeat_PayloadFields(t *testing.T) {
-	p := buildPayload("1.2.3", "abc123")
+	p := buildPayload("1.2.3", "abc123", "2026-10-02", "0123456789abcdef0123456789abcdef")
 	if p.Project != "trvl" || p.Event != "heartbeat" || p.Version != "1.2.3" {
 		t.Fatalf("unexpected payload: %+v", p)
 	}
@@ -53,7 +54,13 @@ func TestHeartbeat_PayloadFields(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	allowed := map[string]bool{"project": true, "event": true, "version": true, "runtime": true, "install_id": true}
+	allowed := map[string]bool{
+		"project": true, "event": true, "version": true, "runtime": true,
+		"install_id": true, "install_date": true, "machine_id": true,
+	}
+	if m["install_date"] != "2026-10-02" || m["machine_id"] != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("cohort fields missing: %+v", m)
+	}
 	for k := range m {
 		if !allowed[k] {
 			t.Fatalf("unexpected field %q in payload (possible identity leak)", k)
@@ -110,7 +117,7 @@ func TestHeartbeat_Timeout(t *testing.T) {
 
 	client := &http.Client{Timeout: 50 * time.Millisecond}
 	start := time.Now()
-	err := sendWithClient(context.Background(), srv.URL, client, buildPayload("1.0.0", "id"))
+	err := sendWithClient(context.Background(), srv.URL, client, buildPayload("1.0.0", "id", "", ""))
 	if err == nil {
 		t.Fatal("hanging collector must surface a timeout error to the caller")
 	}
@@ -122,7 +129,7 @@ func TestHeartbeat_Timeout(t *testing.T) {
 // TestHeartbeat_PayloadSize proves the real payload is well under the 2KB cap
 // and that an oversize payload is rejected rather than sent.
 func TestHeartbeat_PayloadSize(t *testing.T) {
-	raw, err := json.Marshal(buildPayload("1.2.3", "0123456789abcdef0123456789abcdef"))
+	raw, err := json.Marshal(buildPayload("1.2.3", "0123456789abcdef0123456789abcdef", "2026-11-20", "fedcba9876543210fedcba9876543210"))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -130,7 +137,7 @@ func TestHeartbeat_PayloadSize(t *testing.T) {
 		t.Fatalf("payload %d bytes exceeds cap %d", len(raw), maxPayloadSize)
 	}
 
-	huge := buildPayload(string(make([]byte, maxPayloadSize+1)), "id")
+	huge := buildPayload(string(make([]byte, maxPayloadSize+1)), "id", "", "")
 	if err := sendWithClient(context.Background(), "http://127.0.0.1:0", http.DefaultClient, huge); err != errPayloadTooLarge {
 		t.Fatalf("oversize payload: want errPayloadTooLarge, got %v", err)
 	}
@@ -144,7 +151,7 @@ func TestHeartbeat_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := sendWithClient(context.Background(), srv.URL, http.DefaultClient, buildPayload("1.0.0", "id")); err != nil {
+	if err := sendWithClient(context.Background(), srv.URL, http.DefaultClient, buildPayload("1.0.0", "id", "", "")); err != nil {
 		t.Fatalf("5xx must be swallowed (failure-open), got %v", err)
 	}
 }
@@ -167,7 +174,7 @@ func TestHeartbeat_SendPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := sendWithClient(context.Background(), srv.URL, http.DefaultClient, buildPayload("9.9.9", "deadbeef")); err != nil {
+	if err := sendWithClient(context.Background(), srv.URL, http.DefaultClient, buildPayload("9.9.9", "deadbeef", "", "")); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 	select {
@@ -285,5 +292,156 @@ func clearEnv(t *testing.T) {
 		"TRVL_DISABLE_UPDATE_CHECK", "DO_NOT_TRACK", "NO_TELEMETRY", "TRVL_NO_TELEMETRY",
 	} {
 		t.Setenv(k, "")
+	}
+}
+
+func TestMachineID_StableAndPersisted(t *testing.T) {
+	home := t.TempDir()
+	first := machineID(home)
+	if !machineIDOK(first) {
+		t.Fatalf("machine id %q is not 32 lowercase hex characters", first)
+	}
+	if second := machineID(home); second != first {
+		t.Fatalf("machine id not stable: %q != %q", first, second)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".revaluator", "machine-id"))
+	if err != nil || strings.TrimSpace(string(data)) != first {
+		t.Fatalf("machine id not persisted: %q, %v", data, err)
+	}
+}
+
+func TestMachineID_CorruptFileIsReplaced(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".revaluator")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "machine-id"), []byte("not-an-id"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id := machineID(home)
+	if !machineIDOK(id) {
+		t.Fatalf("corrupt file not replaced, got %q", id)
+	}
+	if again := machineID(home); again != id {
+		t.Fatalf("replacement not persisted: %q != %q", again, id)
+	}
+}
+
+// Two products starting at once on a fresh machine must agree on one id.
+func TestMachineID_ConcurrentFirstRunsAgree(t *testing.T) {
+	for round := 0; round < 20; round++ {
+		home := t.TempDir()
+		const n = 8
+		ids := make(chan string, n)
+		start := make(chan struct{})
+		for i := 0; i < n; i++ {
+			go func() {
+				<-start
+				ids <- machineID(home)
+			}()
+		}
+		close(start)
+		want := ""
+		for i := 0; i < n; i++ {
+			got := <-ids
+			if want == "" {
+				want = got
+			}
+			if got != want || !machineIDOK(got) {
+				t.Fatalf("round %d: concurrent first runs disagree: %q vs %q", round, got, want)
+			}
+		}
+		data, _ := os.ReadFile(filepath.Join(home, ".revaluator", "machine-id"))
+		if strings.TrimSpace(string(data)) != want {
+			t.Fatalf("round %d: returned %q but stored %q", round, want, data)
+		}
+	}
+}
+
+func TestInstallDate_OldIDFileGivesItsDay(t *testing.T) {
+	dir := t.TempDir()
+	idPath := filepath.Join(dir, installIDFile)
+	if err := os.WriteFile(idPath, []byte("abc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(idPath, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if got := installDate(dir, time.Now()); got != "2026-09-30" {
+		t.Fatalf("install date for an existing install = %q, want 2026-09-30", got)
+	}
+	stored, err := os.ReadFile(filepath.Join(dir, "install-date"))
+	if err != nil || strings.TrimSpace(string(stored)) != "2026-09-30" {
+		t.Fatalf("install date not persisted: %q, %v", stored, err)
+	}
+}
+
+// writeIDFile creates the install id file with the given modification time.
+func writeIDFile(t *testing.T, dir string, mtime time.Time) {
+	t.Helper()
+	idPath := filepath.Join(dir, installIDFile)
+	if err := os.WriteFile(idPath, []byte("abc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(idPath, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An id file written seconds before UTC midnight belongs to that day, even
+// when the first send reads the clock just after midnight.
+func TestInstallDate_NewIDFileAcrossMidnightKeepsItsDay(t *testing.T) {
+	dir := t.TempDir()
+	writeIDFile(t, dir, time.Date(2026, 11, 19, 23, 59, 59, 0, time.UTC))
+	now := time.Date(2026, 11, 20, 0, 0, 1, 0, time.UTC)
+	if got := installDate(dir, now); got != "2026-11-19" {
+		t.Fatalf("install date across midnight = %q, want 2026-11-19", got)
+	}
+}
+
+// A stored valid day wins over the id file, so the day never drifts.
+func TestInstallDate_StoredDayIsKept(t *testing.T) {
+	dir := t.TempDir()
+	writeIDFile(t, dir, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
+	if err := os.WriteFile(filepath.Join(dir, "install-date"), []byte("2026-10-01\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := installDate(dir, time.Now()); got != "2026-10-01" {
+		t.Fatalf("stored install date = %q, want 2026-10-01", got)
+	}
+}
+
+// A corrupt stored day is replaced with the id file's day and rewritten.
+func TestInstallDate_CorruptFileIsReplaced(t *testing.T) {
+	dir := t.TempDir()
+	writeIDFile(t, dir, time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC))
+	path := filepath.Join(dir, "install-date")
+	now := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	for _, bad := range []string{"garbage", "2026-02-30", "2026-9-30", ""} {
+		if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := installDate(dir, now); got != "2026-09-30" {
+			t.Fatalf("install date over corrupt %q = %q, want 2026-09-30", bad, got)
+		}
+		if stored, _ := os.ReadFile(path); strings.TrimSpace(string(stored)) != "2026-09-30" {
+			t.Fatalf("corrupt %q not rewritten: %q", bad, stored)
+		}
+	}
+}
+
+// With no id file, or one stamped in the future by a skewed clock, the day
+// comes from the caller's clock.
+func TestInstallDate_NoOrFutureIDFileUsesNow(t *testing.T) {
+	now := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	if got := installDate(t.TempDir(), now); got != "2026-11-20" {
+		t.Fatalf("install date without an id file = %q, want 2026-11-20", got)
+	}
+	dir := t.TempDir()
+	writeIDFile(t, dir, now.Add(48*time.Hour))
+	if got := installDate(dir, now); got != "2026-11-20" {
+		t.Fatalf("install date with a future id file = %q, want 2026-11-20", got)
 	}
 }

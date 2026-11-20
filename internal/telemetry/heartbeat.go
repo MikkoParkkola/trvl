@@ -5,7 +5,9 @@ package telemetry
 // A released build emits at most one heartbeat per install per day to
 // https://telemetry.revaluator.ai/v1/heartbeat. A non-empty
 // TRVL_TELEMETRY_ENDPOINT replaces that URL. The JSON body never contains an
-// IP, hostname, username, or any host identity. Cloudflare terminates TLS for
+// IP, hostname, or username. install_date is the UTC day the install id was
+// created. machine_id is a random id shared by products on this machine, not
+// a name or an account. Cloudflare terminates TLS for
 // the default host, so Cloudflare can see the connection address. The receiver
 // does not copy that address into the stored record. It does store the city
 // name and country code from Cloudflare's geolocation of the connection.
@@ -29,6 +31,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,15 +62,17 @@ var optOutEnvs = []string{"DO_NOT_TRACK", "NO_TELEMETRY", "TRVL_NO_TELEMETRY"}
 
 var errPayloadTooLarge = errors.New("telemetry: payload exceeds size cap")
 
-// heartbeatPayload is the entire wire contract. No IP, host, or identity field
-// exists in the body. The connection itself still reveals the caller IP to
+// heartbeatPayload is the entire wire contract. No IP, hostname, or username
+// is in the body. The connection itself still reveals the caller IP to
 // whoever terminates TLS for the URL from endpoint.
 type heartbeatPayload struct {
-	Project   string `json:"project"`
-	Event     string `json:"event"`
-	Version   string `json:"version"`
-	Runtime   string `json:"runtime"`
-	InstallID string `json:"install_id,omitempty"`
+	Project     string `json:"project"`
+	Event       string `json:"event"`
+	Version     string `json:"version"`
+	Runtime     string `json:"runtime"`
+	InstallID   string `json:"install_id,omitempty"`
+	InstallDate string `json:"install_date,omitempty"`
+	MachineID   string `json:"machine_id,omitempty"`
 }
 
 // HeartbeatInBackground fires a daily anonymous heartbeat in a detached
@@ -102,7 +107,12 @@ func dialHeartbeat(ctx context.Context, version, url string) {
 	// Claim the slot up-front: failure-open daily cap (one attempt / 24h max).
 	_ = markSent(dir, time.Now())
 	id := installID(dir)
-	go func() { _ = send(ctx, url, buildPayload(version, id)) }()
+	installed := installDate(dir, time.Now())
+	machine := ""
+	if home, err := os.UserHomeDir(); err == nil {
+		machine = machineID(home)
+	}
+	go func() { _ = send(ctx, url, buildPayload(version, id, installed, machine)) }()
 }
 
 // suppressed reports whether the heartbeat must not fire. Under `go test` it is
@@ -140,13 +150,15 @@ func endpoint() string {
 	return defaultEndpoint
 }
 
-func buildPayload(version, id string) heartbeatPayload {
+func buildPayload(version, id, installed, machine string) heartbeatPayload {
 	return heartbeatPayload{
-		Project:   projectID,
-		Event:     heartbeatEvent,
-		Version:   version,
-		Runtime:   runtime.GOOS + "/" + runtime.GOARCH + "/" + runtime.Version(),
-		InstallID: id,
+		Project:     projectID,
+		Event:       heartbeatEvent,
+		Version:     version,
+		Runtime:     runtime.GOOS + "/" + runtime.GOARCH + "/" + runtime.Version(),
+		InstallID:   id,
+		InstallDate: installed,
+		MachineID:   machine,
 	}
 }
 
@@ -228,6 +240,109 @@ func installID(dir string) string {
 		_ = os.WriteFile(path, []byte(id), 0o600)
 	}
 	return id
+}
+
+func installDate(dir string, now time.Time) string {
+	path := filepath.Join(dir, "install-date")
+	// #nosec G304 -- the file name is constant and dir is trvl's local telemetry
+	// state directory.
+	if data, err := os.ReadFile(path); err == nil {
+		if day := strings.TrimSpace(string(data)); validDay(day) {
+			return day
+		}
+	}
+	// The id file's modification time is the install day: for an id this process
+	// just wrote it is the write instant, so a first send that reads the clock
+	// after UTC midnight still dates the install to the day before. A future
+	// time can only come from a skewed clock, so it falls back to now.
+	day := now.UTC().Format(dayLayout)
+	if info, err := os.Stat(filepath.Join(dir, installIDFile)); err == nil {
+		if mt := info.ModTime(); !mt.IsZero() && !mt.After(now) {
+			day = mt.UTC().Format(dayLayout)
+		}
+	}
+	if err := os.MkdirAll(dir, 0o700); err == nil {
+		_ = os.WriteFile(path, []byte(day), 0o600)
+	}
+	return day
+}
+
+const dayLayout = "2006-01-02"
+
+// validDay accepts a real calendar day in the 2006-01-02 layout, nothing else;
+// the same rule as cmd/trvl-telemetry and the Worker receiver.
+func validDay(day string) bool {
+	parsed, err := time.Parse(dayLayout, day)
+	return err == nil && parsed.Format(dayLayout) == day
+}
+
+func machineID(home string) string {
+	dir := filepath.Join(home, ".revaluator")
+	path := filepath.Join(dir, "machine-id")
+	// #nosec G304 -- path is the fixed machine-id file under the user's home.
+	if data, err := os.ReadFile(path); err == nil {
+		id := strings.TrimSpace(string(data))
+		if machineIDOK(id) {
+			return id
+		}
+	}
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return ""
+	}
+	id := hex.EncodeToString(buf[:])
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return ""
+	}
+	// Products can start together on a fresh machine. Write the id to a private
+	// temp file, then hard-link it into place: the link succeeds for exactly one
+	// writer, and every other one reads that winner's complete id back.
+	tmp, err := os.CreateTemp(dir, "machine-id-*")
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	_, werr := tmp.WriteString(id)
+	if cerr := tmp.Close(); werr != nil || cerr != nil {
+		return ""
+	}
+	if err := os.Link(tmp.Name(), path); err == nil {
+		return id
+	}
+	// #nosec G304 -- path is the fixed machine-id file under the user's home.
+	if data, err := os.ReadFile(path); err == nil {
+		if winner := strings.TrimSpace(string(data)); machineIDOK(winner) {
+			return winner
+		}
+	}
+	// The existing file is corrupt, or this filesystem has no hard links: replace it.
+	// Two repairs at the same moment both rename; the last one wins, so report
+	// what is on disk afterwards rather than this process's own candidate.
+	// ponytail: a repair that reads before the other's rename still reports its
+	// own id once; the next run reads the survivor. A lock file would close it,
+	// and is not worth it for a once-per-machine repair.
+	if err := os.Rename(tmp.Name(), path); err == nil {
+		// #nosec G304 -- path is the fixed machine-id file under the user's home.
+		if data, err := os.ReadFile(path); err == nil {
+			if onDisk := strings.TrimSpace(string(data)); machineIDOK(onDisk) {
+				return onDisk
+			}
+		}
+		return id
+	}
+	return ""
+}
+
+func machineIDOK(value string) bool {
+	if len(value) != 32 {
+		return false
+	}
+	for _, r := range value {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func cacheDir() (string, error) {
