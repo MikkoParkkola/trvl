@@ -318,6 +318,9 @@ func machineID(home string) string {
 	// The existing file is corrupt, or this filesystem has no hard links: replace it.
 	// Two repairs at the same moment both rename; the last one wins, so report
 	// what is on disk afterwards rather than this process's own candidate.
+	// ponytail: a repair that reads before the other's rename still reports its
+	// own id once; the next run reads the survivor. A lock file would close it,
+	// and is not worth it for a once-per-machine repair.
 	if err := os.Rename(tmp.Name(), path); err == nil {
 		// #nosec G304 -- path is the fixed machine-id file under the user's home.
 		if data, err := os.ReadFile(path); err == nil {

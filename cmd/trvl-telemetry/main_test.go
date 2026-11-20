@@ -61,6 +61,13 @@ func TestServeHTTP_Validation(t *testing.T) {
 			wantStatus:  http.StatusNoContent,
 		},
 		{
+			name:        "the year-0 leap day is accepted, as by the Worker",
+			method:      http.MethodPost,
+			contentType: "application/json",
+			body:        `{"project":"trvl","event":"heartbeat","version":"1.2.3","runtime":"x","install_date":"0000-02-29"}`,
+			wantStatus:  http.StatusNoContent,
+		},
+		{
 			name:        "an install day with a trailing newline is rejected",
 			method:      http.MethodPost,
 			contentType: "application/json",

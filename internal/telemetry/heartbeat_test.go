@@ -418,11 +418,12 @@ func TestInstallDate_CorruptFileIsReplaced(t *testing.T) {
 	dir := t.TempDir()
 	writeIDFile(t, dir, time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC))
 	path := filepath.Join(dir, "install-date")
+	now := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
 	for _, bad := range []string{"garbage", "2026-02-30", "2026-9-30", ""} {
 		if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if got := installDate(dir, time.Now()); got != "2026-09-30" {
+		if got := installDate(dir, now); got != "2026-09-30" {
 			t.Fatalf("install date over corrupt %q = %q, want 2026-09-30", bad, got)
 		}
 		if stored, _ := os.ReadFile(path); strings.TrimSpace(string(stored)) != "2026-09-30" {
