@@ -425,8 +425,13 @@ func TestInstallID_LinkCountSurvivesAnUnlinkMidRead(t *testing.T) {
 	removed := false
 	testHookAfterOpen = func(string) { removed = os.Remove(private) == nil }
 	t.Cleanup(func() { testHookAfterOpen = nil })
-	if id, _ := installID(dir); id == secret {
-		t.Fatalf("install id = the secret %q after its other name was removed mid-read", id)
+	id, created := installID(dir)
+	testHookAfterOpen = nil
+	if id == secret || !machineIDOK(id) || !created {
+		t.Fatalf("install id = %q created=%v after the other name was removed mid-read, want a fresh id", id, created)
+	}
+	if got, _ := readState(filepath.Join(dir, installIDFile)); got != id {
+		t.Fatalf("install-id on disk = %q, want the returned id %q", got, id)
 	}
 	// Unix lets the other name go while install-id is open (the case that
 	// lowers the live count); Windows refuses because os.Open grants no

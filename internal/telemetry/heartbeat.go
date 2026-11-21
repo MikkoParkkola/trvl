@@ -241,7 +241,8 @@ func readState(path string) (string, bool) {
 }
 
 // testHookAfterOpen, when non-nil, runs after readStateLinks opens a file, so
-// a test can replace the path at exactly that point. Nil in production.
+// a test can remove another name of that open file at exactly that point.
+// Nil in production.
 var testHookAfterOpen func(path string)
 
 // readStateLinks is readState plus the link count of the very file whose
