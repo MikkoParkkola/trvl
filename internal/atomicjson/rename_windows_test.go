@@ -9,6 +9,21 @@ import (
 	"testing"
 )
 
+// os.Rename replaces an existing file on Windows, so an ordinary write over an
+// existing store succeeds without any delete-first fallback.
+func TestWriteReplacesAnExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "store.json")
+	if err := os.WriteFile(path, []byte(`{"v":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteBytes(path, []byte(`{"v":2}`)); err != nil {
+		t.Fatalf("replacing an existing file: %v", err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != `{"v":2}` {
+		t.Fatalf("after replace = %q, %v; want the new contents", got, err)
+	}
+}
+
 // A failed publishing rename must leave the existing file in place. The temp
 // file is held open without FILE_SHARE_DELETE, so MoveFileEx fails with a
 // sharing violation while the destination itself stays deletable: a
