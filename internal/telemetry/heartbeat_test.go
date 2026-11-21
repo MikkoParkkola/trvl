@@ -429,10 +429,10 @@ func TestInstallID_LinkCountSurvivesAnUnlinkMidRead(t *testing.T) {
 	id, created := installID(dir)
 	testHookAfterOpen = nil
 	if !ran {
-		t.Fatal("the after-open hook never ran, so nothing was removed mid-read")
+		t.Fatal("the after-open hook never ran")
 	}
 	if id == secret || !machineIDOK(id) || !created {
-		t.Fatalf("install id = %q created=%v after the other name was removed mid-read, want a fresh id", id, created)
+		t.Fatalf("install id = %q created=%v (other name removed mid-read: %v, on %s), want a fresh id", id, created, removed, runtime.GOOS)
 	}
 	if got, _ := readState(filepath.Join(dir, installIDFile)); got != id {
 		t.Fatalf("install-id on disk = %q, want the returned id %q", got, id)
