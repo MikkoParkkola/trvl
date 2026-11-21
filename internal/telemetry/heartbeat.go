@@ -260,15 +260,18 @@ func readStateLinks(path string) (string, uint64, bool) {
 		return "", 0, false
 	}
 	defer func() { _ = f.Close() }()
+	// Count links before anything else can happen to the file: removing
+	// another name later lowers the live count, and an open handle does not
+	// stop that on Windows any more than on unix.
+	links, ok := linkCount(f, info)
+	if !ok {
+		return "", 0, false
+	}
 	if hook := testHookAfterOpen; hook != nil {
 		hook(path)
 	}
 	opened, err := f.Stat()
 	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
-		return "", 0, false
-	}
-	links, ok := linkCount(f, info)
-	if !ok {
 		return "", 0, false
 	}
 	data, err := io.ReadAll(io.LimitReader(f, maxStateFile+1))

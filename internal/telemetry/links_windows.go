@@ -8,8 +8,10 @@ import (
 )
 
 // linkCount returns how many names the open file f has, asked of its own
-// handle. os.Open does not grant FILE_SHARE_DELETE, so no other name of the
-// file can be removed while it is open and the count cannot drop mid-read.
+// handle, so the count belongs to the file being read. Another name can still
+// be removed while f is open (CI showed DeleteFile succeeding even though
+// os.Open grants no FILE_SHARE_DELETE), so readStateLinks asks right after
+// the open, before anything else happens to the file.
 func linkCount(f *os.File, _ os.FileInfo) (uint64, bool) {
 	var d syscall.ByHandleFileInformation
 	if err := syscall.GetFileInformationByHandle(syscall.Handle(f.Fd()), &d); err != nil {

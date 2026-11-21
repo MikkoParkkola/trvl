@@ -410,9 +410,8 @@ func TestInstallID_HardLinkedHexSecretIsNotSent(t *testing.T) {
 }
 
 // The link count must describe the file whose contents are returned, as it was
-// when found. On unix, unlinking the secret's other name after install-id is
-// opened drops its live count to 1, and must not make it pass; Windows refuses
-// that unlink while the file is open.
+// when found. Unlinking the secret's other name after install-id is opened
+// drops its live count to 1 on every platform, and must not make it pass.
 func TestInstallID_LinkCountSurvivesAnUnlinkMidRead(t *testing.T) {
 	dir := t.TempDir()
 	private := filepath.Join(t.TempDir(), "api-key")
@@ -437,11 +436,9 @@ func TestInstallID_LinkCountSurvivesAnUnlinkMidRead(t *testing.T) {
 	if got, _ := readState(filepath.Join(dir, installIDFile)); got != id {
 		t.Fatalf("install-id on disk = %q, want the returned id %q", got, id)
 	}
-	// Unix lets the other name go while install-id is open (the case that
-	// lowers the live count); Windows refuses because os.Open grants no
-	// FILE_SHARE_DELETE. Either way the hook must have run as expected.
-	if want := runtime.GOOS != "windows"; removed != want {
-		t.Fatalf("removing the other name mid-read: removed=%v, want %v on %s", removed, want, runtime.GOOS)
+	// The race only means something if the other name really went.
+	if !removed {
+		t.Fatalf("removing the other name mid-read failed on %s, so the race was not exercised", runtime.GOOS)
 	}
 }
 
