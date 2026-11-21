@@ -2,8 +2,8 @@
 // permissions. It is the single implementation of the temp-file + fsync + rename
 // pattern that was previously copy-pasted across every ~/.trvl store (watch,
 // trips, dategrid, probecache, dealquality, providers, ...). Centralising it
-// means the security-sensitive bits — 0600 file perms, 0700 dir, atomic rename,
-// the Windows rename-over-existing fallback — are written correctly once.
+// means the security-sensitive bits — 0600 file perms, 0700 dir, atomic rename
+// that never deletes the existing file on failure — are written correctly once.
 package atomicjson
 
 import (
@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 )
 
 // testHookBeforeRename, when non-nil, is called with the fully written temp
@@ -89,14 +88,10 @@ func WriteBytes(path string, b []byte) error {
 	}
 
 	if err := os.Rename(tmpPath, path); err != nil {
-		// Windows cannot rename over an existing file; remove then retry.
-		if runtime.GOOS == "windows" {
-			_ = os.Remove(path)
-			if err2 := os.Rename(tmpPath, path); err2 == nil {
-				cleanup = false
-				return nil
-			}
-		}
+		// os.Rename already replaces an existing file on Windows (MoveFileEx
+		// with MOVEFILE_REPLACE_EXISTING), so a failure is a sharing violation
+		// or a permission error. Keep the existing file and report it: deleting
+		// it first and retrying loses the stored state when the retry fails too.
 		return err
 	}
 	cleanup = false
