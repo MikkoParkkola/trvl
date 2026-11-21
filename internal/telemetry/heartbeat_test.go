@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -377,6 +378,9 @@ func TestInstallID_HardLinkedPrivateFileIsNotSent(t *testing.T) {
 	if id == "my-secret-token-value" || !machineIDOK(id) || !created {
 		t.Fatalf("install id = %q created=%v, want a fresh generated id", id, created)
 	}
+	if got, _ := readState(filepath.Join(dir, installIDFile)); got != id {
+		t.Fatalf("install-id on disk = %q, want the returned id %q", got, id)
+	}
 	if got, _ := os.ReadFile(private); string(got) != "my-secret-token-value" {
 		t.Fatalf("the linked private file changed to %q", got)
 	}
@@ -428,6 +432,37 @@ func TestReadState_Bounds(t *testing.T) {
 	}
 	if _, ok := readState(filepath.Join(dir, "missing")); ok {
 		t.Fatal("a missing file must read as absent")
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(write("target", 10), link); err == nil {
+		if _, ok := readState(link); ok {
+			t.Fatal("a symbolic link must read as absent")
+		}
+	}
+}
+
+// An id that cannot be saved is not a new install: the stored day stays.
+func TestInstallIdentity_UnsavedIDKeepsTheDay(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permissions do not block writes on Windows")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, installDateFile), []byte("2026-01-01"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	id, created := installID(dir)
+	if created || !machineIDOK(id) {
+		t.Fatalf("unsaved id: %q created=%v, want a generated id with created=false", id, created)
+	}
+	if _, err := os.Stat(filepath.Join(dir, installIDFile)); err == nil {
+		t.Skip("directory is writable despite 0500 (running as root)")
+	}
+	if _, day := installIdentity(dir, time.Now()); day != "2026-01-01" {
+		t.Fatalf("install day after an unsaved id = %q, want the stored 2026-01-01", day)
 	}
 }
 

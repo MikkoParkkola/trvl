@@ -260,7 +260,8 @@ func readState(path string) (string, bool) {
 
 // installID returns a stable random per-install id, generating and persisting
 // one on first use. Best-effort: any failure returns "" (the field is omitted).
-// created reports that this call generated the id.
+// created reports that this call generated the id and saved it; an id that
+// could not be saved is still returned, with created false.
 func installID(dir string) (id string, created bool) {
 	path := filepath.Join(dir, installIDFile)
 	// Only a generated id that is the sole name of its file is accepted: a hard
