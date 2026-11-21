@@ -89,9 +89,10 @@ func WriteBytes(path string, b []byte) error {
 
 	if err := os.Rename(tmpPath, path); err != nil {
 		// os.Rename already replaces an existing file on Windows (MoveFileEx
-		// with MOVEFILE_REPLACE_EXISTING), so a failure is a sharing violation
-		// or a permission error. Keep the existing file and report it: deleting
-		// it first and retrying loses the stored state when the retry fails too.
+		// with MOVEFILE_REPLACE_EXISTING), so deleting the destination cannot
+		// make a failed rename succeed. Keep the existing file and report the
+		// error: deleting first and retrying loses the stored state whenever
+		// the retry fails too.
 		return err
 	}
 	cleanup = false
