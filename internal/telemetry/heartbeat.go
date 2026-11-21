@@ -245,8 +245,8 @@ func readState(path string) (string, bool) {
 var testHookAfterOpen func(path string)
 
 // readStateLinks is readState plus the link count of the very file whose
-// contents it returns, both taken from one open handle so no swap of the path
-// can pair one file's contents with another file's count.
+// contents it returns: the count is bound to that file (see linkCount), so no
+// swap of the path can pair one file's contents with another file's count.
 func readStateLinks(path string) (string, uint64, bool) {
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Size() > maxStateFile {

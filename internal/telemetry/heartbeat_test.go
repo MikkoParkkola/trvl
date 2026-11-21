@@ -422,10 +422,17 @@ func TestInstallID_LinkCountSurvivesAnUnlinkMidRead(t *testing.T) {
 	if err := os.Link(private, filepath.Join(dir, installIDFile)); err != nil {
 		t.Skipf("hard links unavailable: %v", err)
 	}
-	testHookAfterOpen = func(string) { _ = os.Remove(private) }
+	removed := false
+	testHookAfterOpen = func(string) { removed = os.Remove(private) == nil }
 	t.Cleanup(func() { testHookAfterOpen = nil })
 	if id, _ := installID(dir); id == secret {
 		t.Fatalf("install id = the secret %q after its other name was removed mid-read", id)
+	}
+	// Unix lets the other name go while install-id is open (the case that
+	// lowers the live count); Windows refuses because os.Open grants no
+	// FILE_SHARE_DELETE. Either way the hook must have run as expected.
+	if want := runtime.GOOS != "windows"; removed != want {
+		t.Fatalf("removing the other name mid-read: removed=%v, want %v on %s", removed, want, runtime.GOOS)
 	}
 }
 
