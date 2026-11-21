@@ -338,6 +338,15 @@ func TestStateFiles_ReplaceALinkNotItsTarget(t *testing.T) {
 			t.Fatalf("markSent wrote through a link to %q", got)
 		}
 	})
+	t.Run("heartbeat", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, heartbeatFile)
+		target := symlinkOrSkip(t, path)
+		if err := markSent(dir, time.Now()); err != nil {
+			t.Fatalf("markSent: %v", err)
+		}
+		assertLinkReplaced(t, path, target)
+	})
 	t.Run("machine-id", func(t *testing.T) {
 		home := t.TempDir()
 		if err := os.MkdirAll(filepath.Join(home, ".revaluator"), 0o700); err != nil {

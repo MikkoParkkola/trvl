@@ -273,8 +273,9 @@ func installID(dir string) (id string, created bool) {
 		return "", false
 	}
 	id = hex.EncodeToString(buf[:])
-	_ = atomicjson.WriteBytes(path, []byte(id))
-	return id, true
+	// created means a new install now exists on disk; an unsaved id is reported
+	// but leaves the stored install day alone.
+	return id, atomicjson.WriteBytes(path, []byte(id)) == nil
 }
 
 func installDate(dir string, now time.Time) string {
