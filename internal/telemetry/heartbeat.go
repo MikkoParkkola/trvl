@@ -240,8 +240,9 @@ func readState(path string) (string, bool) {
 	return value, ok
 }
 
-// testHookAfterOpen, when non-nil, runs after readStateLinks opens a file, so
-// a test can remove another name of that open file at exactly that point.
+// testHookAfterOpen, when non-nil, runs after readStateLinks has opened a file
+// and counted its links, so a test can remove another name of that open file
+// at exactly that point.
 // Nil in production.
 var testHookAfterOpen func(path string)
 
@@ -260,9 +261,10 @@ func readStateLinks(path string) (string, uint64, bool) {
 		return "", 0, false
 	}
 	defer func() { _ = f.Close() }()
-	// Count links before anything else can happen to the file: removing
-	// another name later lowers the live count, and an open handle does not
-	// stop that on Windows any more than on unix.
+	// Count links as soon as the file is open: removing another name later
+	// lowers the live count, and an open handle does not stop that on Windows
+	// any more than on unix. A name removed in the instant between the open
+	// and this count is not seen.
 	links, ok := linkCount(f, info)
 	if !ok {
 		return "", 0, false
