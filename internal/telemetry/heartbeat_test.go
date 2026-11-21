@@ -410,8 +410,9 @@ func TestInstallID_HardLinkedHexSecretIsNotSent(t *testing.T) {
 }
 
 // The link count must describe the file whose contents are returned, as it was
-// when found: unlinking the secret's other name after install-id is opened
-// drops its live count to 1, and must not make it pass.
+// when found. On unix, unlinking the secret's other name after install-id is
+// opened drops its live count to 1, and must not make it pass; Windows refuses
+// that unlink while the file is open.
 func TestInstallID_LinkCountSurvivesAnUnlinkMidRead(t *testing.T) {
 	dir := t.TempDir()
 	private := filepath.Join(t.TempDir(), "api-key")
@@ -422,11 +423,14 @@ func TestInstallID_LinkCountSurvivesAnUnlinkMidRead(t *testing.T) {
 	if err := os.Link(private, filepath.Join(dir, installIDFile)); err != nil {
 		t.Skipf("hard links unavailable: %v", err)
 	}
-	removed := false
-	testHookAfterOpen = func(string) { removed = os.Remove(private) == nil }
+	ran, removed := false, false
+	testHookAfterOpen = func(string) { ran, removed = true, os.Remove(private) == nil }
 	t.Cleanup(func() { testHookAfterOpen = nil })
 	id, created := installID(dir)
 	testHookAfterOpen = nil
+	if !ran {
+		t.Fatal("the after-open hook never ran, so nothing was removed mid-read")
+	}
 	if id == secret || !machineIDOK(id) || !created {
 		t.Fatalf("install id = %q created=%v after the other name was removed mid-read, want a fresh id", id, created)
 	}
