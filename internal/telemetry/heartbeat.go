@@ -263,9 +263,10 @@ func readState(path string) (string, bool) {
 // created reports that this call generated the id.
 func installID(dir string) (id string, created bool) {
 	path := filepath.Join(dir, installIDFile)
-	// Only the generated format is accepted: a hard link is a regular file, so
-	// the format is what keeps a linked private file out of the heartbeat.
-	if id, ok := readState(path); ok && machineIDOK(id) {
+	// Only a generated id that is the sole name of its file is accepted: a hard
+	// link is a regular file and may even hold 32 hex characters (an API key),
+	// while trvl itself only ever replaces install-id and never links it.
+	if id, ok := readState(path); ok && machineIDOK(id) && soleLink(path) {
 		return id, false
 	}
 	var buf [16]byte

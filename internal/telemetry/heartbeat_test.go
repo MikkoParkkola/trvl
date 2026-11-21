@@ -382,6 +382,27 @@ func TestInstallID_HardLinkedPrivateFileIsNotSent(t *testing.T) {
 	}
 }
 
+// A hard-linked file that happens to hold 32 hex characters (an API key, a
+// token) passes the format check, so install-id must also be the only link to
+// its contents: trvl only ever replaces it, never links it.
+func TestInstallID_HardLinkedHexSecretIsNotSent(t *testing.T) {
+	dir := t.TempDir()
+	private := filepath.Join(t.TempDir(), "api-key")
+	secret := "00112233445566778899aabbccddeeff"
+	if err := os.WriteFile(private, []byte(secret), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(private, filepath.Join(dir, installIDFile)); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	if id, _ := installID(dir); id == secret || !machineIDOK(id) {
+		t.Fatalf("install id = %q, want a fresh id, not the hard-linked secret", id)
+	}
+	if got, _ := os.ReadFile(private); string(got) != secret {
+		t.Fatalf("the linked private file changed to %q", got)
+	}
+}
+
 // readState accepts a small regular file and nothing else.
 func TestReadState_Bounds(t *testing.T) {
 	dir := t.TempDir()
