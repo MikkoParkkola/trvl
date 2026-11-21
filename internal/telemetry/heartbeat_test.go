@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -269,15 +270,253 @@ func TestHeartbeat_NoNetworkOnImport(t *testing.T) {
 
 func TestInstallID_StableAndPersisted(t *testing.T) {
 	dir := t.TempDir()
-	first := installID(dir)
-	if first == "" {
-		t.Fatal("install id must be generated")
+	first, created := installID(dir)
+	if first == "" || !created {
+		t.Fatalf("install id must be generated on first use: %q created=%v", first, created)
 	}
-	if second := installID(dir); second != first {
-		t.Fatalf("install id not stable: %q != %q", first, second)
+	if second, again := installID(dir); second != first || again {
+		t.Fatalf("install id not stable: %q != %q (created=%v)", first, second, again)
 	}
 	if _, err := os.Stat(filepath.Join(dir, installIDFile)); err != nil {
 		t.Fatalf("install id not persisted: %v", err)
+	}
+}
+
+// symlinkOrSkip points link at a fresh file outside dir holding "precious" and
+// returns that target. Windows without the symlink privilege skips.
+func symlinkOrSkip(t *testing.T, link string) string {
+	t.Helper()
+	target := filepath.Join(t.TempDir(), "precious")
+	if err := os.WriteFile(target, []byte("precious"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	return target
+}
+
+// assertLinkReplaced checks the state file at path is now a regular file and
+// the file the link pointed at was not written through.
+func assertLinkReplaced(t *testing.T, path, target string) {
+	t.Helper()
+	if got, _ := os.ReadFile(target); string(got) != "precious" {
+		t.Fatalf("writing %s changed the link target to %q", filepath.Base(path), got)
+	}
+	if info, err := os.Lstat(path); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("%s is not a regular file after the write: %v", filepath.Base(path), err)
+	}
+}
+
+// A state file that is a link is replaced, never written through: the file it
+// points at keeps its contents, and a link's target is never read as a value.
+func TestStateFiles_ReplaceALinkNotItsTarget(t *testing.T) {
+	t.Run("install-date", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, installDateFile)
+		target := symlinkOrSkip(t, path)
+		if day := installDate(dir, time.Now()); !validDay(day) {
+			t.Fatalf("install date = %q", day)
+		}
+		assertLinkReplaced(t, path, target)
+	})
+	t.Run("install-id", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, installIDFile)
+		target := symlinkOrSkip(t, path)
+		if id, _ := installID(dir); id == "precious" || id == "" {
+			t.Fatalf("install id = %q, want a fresh id, not the link target's contents", id)
+		}
+		assertLinkReplaced(t, path, target)
+	})
+	t.Run("heartbeat temp", func(t *testing.T) {
+		dir := t.TempDir()
+		target := symlinkOrSkip(t, filepath.Join(dir, heartbeatFile+".tmp"))
+		if err := markSent(dir, time.Now()); err != nil {
+			t.Fatalf("markSent: %v", err)
+		}
+		if got, _ := os.ReadFile(target); string(got) != "precious" {
+			t.Fatalf("markSent wrote through a link to %q", got)
+		}
+	})
+	t.Run("heartbeat", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, heartbeatFile)
+		target := symlinkOrSkip(t, path)
+		if err := markSent(dir, time.Now()); err != nil {
+			t.Fatalf("markSent: %v", err)
+		}
+		assertLinkReplaced(t, path, target)
+	})
+	t.Run("machine-id", func(t *testing.T) {
+		home := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(home, ".revaluator"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(home, ".revaluator", "machine-id")
+		target := symlinkOrSkip(t, path)
+		if id := machineID(home); !machineIDOK(id) {
+			t.Fatalf("machine id = %q", id)
+		}
+		assertLinkReplaced(t, path, target)
+	})
+}
+
+// A hard link is a regular file, so only the id's own format keeps a linked
+// private file out of the heartbeat: anything but a generated id is replaced,
+// and the file the link shares stays as it was.
+func TestInstallID_HardLinkedPrivateFileIsNotSent(t *testing.T) {
+	dir := t.TempDir()
+	private := filepath.Join(t.TempDir(), "notes")
+	if err := os.WriteFile(private, []byte("my-secret-token-value"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(private, filepath.Join(dir, installIDFile)); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	id, created := installID(dir)
+	if id == "my-secret-token-value" || !machineIDOK(id) || !created {
+		t.Fatalf("install id = %q created=%v, want a fresh generated id", id, created)
+	}
+	if got, _ := readState(filepath.Join(dir, installIDFile)); got != id {
+		t.Fatalf("install-id on disk = %q, want the returned id %q", got, id)
+	}
+	if got, _ := os.ReadFile(private); string(got) != "my-secret-token-value" {
+		t.Fatalf("the linked private file changed to %q", got)
+	}
+}
+
+// A hard-linked file that happens to hold 32 hex characters (an API key, a
+// token) passes the format check, so install-id must also be the only link to
+// its contents: trvl only ever replaces it, never links it.
+func TestInstallID_HardLinkedHexSecretIsNotSent(t *testing.T) {
+	dir := t.TempDir()
+	private := filepath.Join(t.TempDir(), "api-key")
+	secret := "00112233445566778899aabbccddeeff"
+	if err := os.WriteFile(private, []byte(secret), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(private, filepath.Join(dir, installIDFile)); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	if id, created := installID(dir); id == secret || !machineIDOK(id) || !created {
+		t.Fatalf("install id = %q created=%v, want a fresh id, not the hard-linked secret", id, created)
+	} else if got, _ := readState(filepath.Join(dir, installIDFile)); got != id {
+		t.Fatalf("install-id on disk = %q, want the returned id %q", got, id)
+	}
+	if got, _ := os.ReadFile(private); string(got) != secret {
+		t.Fatalf("the linked private file changed to %q", got)
+	}
+}
+
+// The link count must describe the file whose contents are returned, as it was
+// when found. Unlinking the secret's other name after install-id is opened
+// drops its live count to 1 on every platform, and must not make it pass.
+func TestInstallID_LinkCountSurvivesAnUnlinkMidRead(t *testing.T) {
+	dir := t.TempDir()
+	private := filepath.Join(t.TempDir(), "api-key")
+	secret := "00112233445566778899aabbccddeeff"
+	if err := os.WriteFile(private, []byte(secret), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(private, filepath.Join(dir, installIDFile)); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	ran, removed := false, false
+	testHookAfterOpen = func(string) { ran, removed = true, os.Remove(private) == nil }
+	t.Cleanup(func() { testHookAfterOpen = nil })
+	id, created := installID(dir)
+	testHookAfterOpen = nil
+	if !ran {
+		t.Fatal("the after-open hook never ran")
+	}
+	if id == secret || !machineIDOK(id) || !created {
+		t.Fatalf("install id = %q created=%v (other name removed mid-read: %v, on %s), want a fresh id", id, created, removed, runtime.GOOS)
+	}
+	if got, _ := readState(filepath.Join(dir, installIDFile)); got != id {
+		t.Fatalf("install-id on disk = %q, want the returned id %q", got, id)
+	}
+	// The race only means something if the other name really went.
+	if !removed {
+		t.Fatalf("removing the other name mid-read failed on %s, so the race was not exercised", runtime.GOOS)
+	}
+}
+
+// readState accepts a small regular file and nothing else.
+func TestReadState_Bounds(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, n int) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(strings.Repeat("a", n)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	if v, ok := readState(write("max", maxStateFile)); !ok || len(v) != maxStateFile {
+		t.Fatalf("a %d-byte file must read: ok=%v len=%d", maxStateFile, ok, len(v))
+	}
+	if _, ok := readState(write("over", maxStateFile+1)); ok {
+		t.Fatalf("a %d-byte file must read as absent", maxStateFile+1)
+	}
+	sub := filepath.Join(dir, "sub")
+	if err := os.Mkdir(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := readState(sub); ok {
+		t.Fatal("a directory must read as absent")
+	}
+	if _, ok := readState(filepath.Join(dir, "missing")); ok {
+		t.Fatal("a missing file must read as absent")
+	}
+	link := filepath.Join(dir, "link")
+	symlinkOrSkip(t, link)
+	if _, ok := readState(link); ok {
+		t.Fatal("a symbolic link must read as absent")
+	}
+}
+
+// An id that cannot be saved is not a new install: the stored day stays.
+func TestInstallIdentity_UnsavedIDKeepsTheDay(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permissions do not block writes on Windows")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, installDateFile), []byte("2026-01-01"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if probe, err := os.CreateTemp(dir, "probe"); err == nil {
+		_ = probe.Close()
+		_ = os.Remove(probe.Name())
+		t.Skip("directory is writable despite 0500 (running as root)")
+	}
+	id, created := installID(dir)
+	if created || !machineIDOK(id) {
+		t.Fatalf("unsaved id: %q created=%v, want a generated id with created=false", id, created)
+	}
+	if _, day := installIdentity(dir, time.Now()); day != "2026-01-01" {
+		t.Fatalf("install day after an unsaved id = %q, want the stored 2026-01-01", day)
+	}
+}
+
+// Deleting the install id resets the install: the new id gets a new day, not
+// the one stored for the id it replaced.
+func TestInstallIdentity_NewIDDropsTheOldDay(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, installDateFile), []byte("2026-01-01"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	id, day := installIdentity(dir, now)
+	if id == "" || day == "2026-01-01" || !validDay(day) {
+		t.Fatalf("after a reset: id=%q day=%q, want a new id dated by its creation", id, day)
+	}
+	again, sameDay := installIdentity(dir, now.Add(72*time.Hour))
+	if again != id || sameDay != day {
+		t.Fatalf("second call: id=%q day=%q, want %q %q", again, sameDay, id, day)
 	}
 }
 

@@ -27,6 +27,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -35,6 +36,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/atomicjson"
 	"github.com/MikkoParkkola/trvl/internal/selfupdate"
 )
 
@@ -44,8 +46,9 @@ const (
 
 	// heartbeatFile is the daily-cap timestamp cache in ~/.trvl, matching the
 	// per-user state dir the rest of trvl uses (selfupdate, prefs, providers).
-	heartbeatFile = "heartbeat"
-	installIDFile = "install-id"
+	heartbeatFile   = "heartbeat"
+	installIDFile   = "install-id"
+	installDateFile = "install-date"
 
 	sendInterval   = 24 * time.Hour
 	maxPayloadSize = 2048
@@ -106,8 +109,7 @@ func dialHeartbeat(ctx context.Context, version, url string) {
 	}
 	// Claim the slot up-front: failure-open daily cap (one attempt / 24h max).
 	_ = markSent(dir, time.Now())
-	id := installID(dir)
-	installed := installDate(dir, time.Now())
+	id, installed := installIdentity(dir, time.Now())
 	machine := ""
 	if home, err := os.UserHomeDir(); err == nil {
 		machine = machineID(home)
@@ -194,76 +196,131 @@ func sendWithClient(ctx context.Context, url string, client *http.Client, p hear
 // dueForSend reports whether 24h have elapsed since the last recorded send (or
 // there is no record yet). Read errors are treated as "due" — best-effort.
 func dueForSend(dir string, now time.Time) bool {
-	// #nosec G304 -- heartbeatFile is constant and dir is trvl's local telemetry
-	// state directory.
-	data, err := os.ReadFile(filepath.Join(dir, heartbeatFile))
-	if err != nil {
+	stamp, ok := readState(filepath.Join(dir, heartbeatFile))
+	if !ok {
 		return true
 	}
-	last, err := time.Parse(time.RFC3339, string(bytes.TrimSpace(data)))
+	last, err := time.Parse(time.RFC3339, stamp)
 	if err != nil {
 		return true
 	}
 	return now.Sub(last) >= sendInterval
 }
 
-// markSent records now as the last-send timestamp (0600, atomic rename).
+// markSent records now as the last-send timestamp (0600, atomic rename that
+// replaces a link at the path instead of writing through it).
 func markSent(dir string, now time.Time) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
+	return atomicjson.WriteBytes(filepath.Join(dir, heartbeatFile), []byte(now.UTC().Format(time.RFC3339)))
+}
+
+// installIdentity returns the install id and the day it was created. A new id
+// (first run, or an id file deleted to reset the install) starts a new install,
+// so a day stored for the id it replaced is dropped first.
+func installIdentity(dir string, now time.Time) (id, day string) {
+	id, created := installID(dir)
+	if created {
+		_ = os.Remove(filepath.Join(dir, installDateFile))
 	}
-	path := filepath.Join(dir, heartbeatFile)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(now.UTC().Format(time.RFC3339)), 0o600); err != nil {
-		return err
+	return id, installDate(dir, now)
+}
+
+// maxStateFile bounds a telemetry state read; every value written is far smaller.
+const maxStateFile = 256
+
+// readState returns the trimmed contents of a small regular state file. A
+// missing file, a symbolic link, a directory or device, or anything larger than
+// maxStateFile reads as absent. The opened file must be the very file the
+// Lstat saw, so a swap to a link between the two checks is caught, and the
+// read itself is capped. A hard link is a regular file and passes; a caller
+// that must refuse one uses readStateLinks.
+// ponytail: a path swapped to a FIFO in that window can still block the open;
+// O_NONBLOCK|O_NOFOLLOW would close it but has no portable spelling here.
+func readState(path string) (string, bool) {
+	value, _, ok := readStateLinks(path)
+	return value, ok
+}
+
+// testHookAfterOpen, when non-nil, runs after readStateLinks has opened a file
+// and counted its links, so a test can remove another name of that open file
+// at exactly that point.
+// Nil in production.
+var testHookAfterOpen func(path string)
+
+// readStateLinks is readState plus the link count of the very file whose
+// contents it returns: the count is bound to that file (see linkCount), so no
+// swap of the path can pair one file's contents with another file's count.
+func readStateLinks(path string) (string, uint64, bool) {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maxStateFile {
+		return "", 0, false
 	}
-	return os.Rename(tmp, path)
+	// #nosec G304 -- callers pass a fixed state-file name under trvl's or the
+	// user's own state directory, checked above to be a small regular file.
+	f, err := os.Open(path)
+	if err != nil {
+		return "", 0, false
+	}
+	defer func() { _ = f.Close() }()
+	// Count links as soon as the file is open: removing another name later
+	// lowers the live count, and an open handle does not stop that on Windows
+	// any more than on unix. A name removed in the instant between the open
+	// and this count is not seen.
+	links, ok := linkCount(f, info)
+	if !ok {
+		return "", 0, false
+	}
+	if hook := testHookAfterOpen; hook != nil {
+		hook(path)
+	}
+	opened, err := f.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+		return "", 0, false
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxStateFile+1))
+	if err != nil || len(data) > maxStateFile {
+		return "", 0, false
+	}
+	return strings.TrimSpace(string(data)), links, true
 }
 
 // installID returns a stable random per-install id, generating and persisting
 // one on first use. Best-effort: any failure returns "" (the field is omitted).
-func installID(dir string) string {
+// created reports that this call generated the id and saved it; an id that
+// could not be saved is still returned, with created false.
+func installID(dir string) (id string, created bool) {
 	path := filepath.Join(dir, installIDFile)
-	// #nosec G304 -- installIDFile is constant and dir is trvl's local telemetry
-	// state directory.
-	if data, err := os.ReadFile(path); err == nil {
-		if id := string(bytes.TrimSpace(data)); id != "" {
-			return id
-		}
+	// Only a generated id that is the sole name of its file is accepted: a hard
+	// link is a regular file and may even hold 32 hex characters (an API key),
+	// while trvl itself only ever replaces install-id and never links it.
+	if id, links, ok := readStateLinks(path); ok && links == 1 && machineIDOK(id) {
+		return id, false
 	}
 	var buf [16]byte
 	if _, err := rand.Read(buf[:]); err != nil {
-		return ""
+		return "", false
 	}
-	id := hex.EncodeToString(buf[:])
-	if err := os.MkdirAll(dir, 0o700); err == nil {
-		_ = os.WriteFile(path, []byte(id), 0o600)
-	}
-	return id
+	id = hex.EncodeToString(buf[:])
+	// created means a new install now exists on disk; an unsaved id is reported
+	// but leaves the stored install day alone.
+	return id, atomicjson.WriteBytes(path, []byte(id)) == nil
 }
 
 func installDate(dir string, now time.Time) string {
-	path := filepath.Join(dir, "install-date")
-	// #nosec G304 -- the file name is constant and dir is trvl's local telemetry
-	// state directory.
-	if data, err := os.ReadFile(path); err == nil {
-		if day := strings.TrimSpace(string(data)); validDay(day) {
-			return day
-		}
+	path := filepath.Join(dir, installDateFile)
+	if day, ok := readState(path); ok && validDay(day) {
+		return day
 	}
 	// The id file's modification time is the install day: for an id this process
 	// just wrote it is the write instant, so a first send that reads the clock
 	// after UTC midnight still dates the install to the day before. A future
 	// time can only come from a skewed clock, so it falls back to now.
 	day := now.UTC().Format(dayLayout)
-	if info, err := os.Stat(filepath.Join(dir, installIDFile)); err == nil {
+	if info, err := os.Lstat(filepath.Join(dir, installIDFile)); err == nil {
 		if mt := info.ModTime(); !mt.IsZero() && !mt.After(now) {
 			day = mt.UTC().Format(dayLayout)
 		}
 	}
-	if err := os.MkdirAll(dir, 0o700); err == nil {
-		_ = os.WriteFile(path, []byte(day), 0o600)
-	}
+	_ = atomicjson.WriteBytes(path, []byte(day))
 	return day
 }
 
@@ -279,12 +336,8 @@ func validDay(day string) bool {
 func machineID(home string) string {
 	dir := filepath.Join(home, ".revaluator")
 	path := filepath.Join(dir, "machine-id")
-	// #nosec G304 -- path is the fixed machine-id file under the user's home.
-	if data, err := os.ReadFile(path); err == nil {
-		id := strings.TrimSpace(string(data))
-		if machineIDOK(id) {
-			return id
-		}
+	if id, ok := readState(path); ok && machineIDOK(id) {
+		return id
 	}
 	var buf [16]byte
 	if _, err := rand.Read(buf[:]); err != nil {
@@ -309,11 +362,8 @@ func machineID(home string) string {
 	if err := os.Link(tmp.Name(), path); err == nil {
 		return id
 	}
-	// #nosec G304 -- path is the fixed machine-id file under the user's home.
-	if data, err := os.ReadFile(path); err == nil {
-		if winner := strings.TrimSpace(string(data)); machineIDOK(winner) {
-			return winner
-		}
+	if winner, ok := readState(path); ok && machineIDOK(winner) {
+		return winner
 	}
 	// The existing file is corrupt, or this filesystem has no hard links: replace it.
 	// Two repairs at the same moment both rename; the last one wins, so report
@@ -322,11 +372,8 @@ func machineID(home string) string {
 	// own id once; the next run reads the survivor. A lock file would close it,
 	// and is not worth it for a once-per-machine repair.
 	if err := os.Rename(tmp.Name(), path); err == nil {
-		// #nosec G304 -- path is the fixed machine-id file under the user's home.
-		if data, err := os.ReadFile(path); err == nil {
-			if onDisk := strings.TrimSpace(string(data)); machineIDOK(onDisk) {
-				return onDisk
-			}
+		if onDisk, ok := readState(path); ok && machineIDOK(onDisk) {
+			return onDisk
 		}
 		return id
 	}

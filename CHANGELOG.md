@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The daily heartbeat also carries the UTC day the install id was created (for an install made before this release, the day its id file was last written) and a random machine id shared by products on the same machine. Neither holds an IP, hostname, or username. The receiver accepts both as optional fields.
 
+### Fixed
+
+- The heartbeat's state files in `~/.trvl` (install id, install date, last-send time) are written by an atomic replace. A state file that is a symbolic link is now replaced instead of written through, and a link, directory or oversized file there is never read as a value, so the file a link points to is neither overwritten nor sent as the install id.
+- Deleting `~/.trvl/install-id` to reset an install now also resets its install date.
+
 ## [1.28.4] - 2026-11-19
 
 ### Changed
