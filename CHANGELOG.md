@@ -7,14 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.28.5] - 2026-11-21
+
 ### Changed
 
-- The daily heartbeat also carries the UTC day the install id was created (for an install made before this release, the day its id file was last written) and a random machine id shared by products on the same machine. Neither holds an IP, hostname, or username. The receiver accepts both as optional fields.
+- The daily heartbeat also carries the UTC day the install id was created (for an install made before this release, the day its id file was last written) and a random machine id shared by products on the same machine. Neither holds an IP, hostname, or username. The receiver accepts both as optional fields (#850).
 
 ### Fixed
 
-- The heartbeat's state files in `~/.trvl` (install id, install date, last-send time) are written by an atomic replace. A state file that is a symbolic link is now replaced instead of written through, and a link, directory or oversized file there is never read as a value, so the file a link points to is neither overwritten nor sent as the install id.
-- Deleting `~/.trvl/install-id` to reset an install now also resets its install date.
+- The heartbeat's state files in `~/.trvl` (install id, install date, last-send time) are written by an atomic replace. A state file that is a symbolic link is now replaced instead of written through, and a link, directory or oversized file there is never read as a value, so the file a link points to is neither overwritten nor sent as the install id (#853).
+- Deleting `~/.trvl/install-id` to reset an install now also resets its install date (#853).
+- An install id file that shares its contents with another file through a hard link (for example one linked to an API key) is never sent: trvl uses the id only when the file is the sole link to its contents, counted when the file is found, so removing the other name while trvl reads it does not make it pass. trvl then writes a fresh id in its place and leaves the other file untouched (#853).
+- On Windows, a save that fails no longer deletes the existing file. This applies to every store trvl writes this way, including watches, trips, preferences and provider state; the previous file stays as it was and the error is reported (#854).
 
 ## [1.28.4] - 2026-11-19
 
@@ -1514,7 +1518,8 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.28.4...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.28.5...HEAD
+[1.28.5]: https://github.com/MikkoParkkola/trvl/compare/v1.28.4...v1.28.5
 [1.28.4]: https://github.com/MikkoParkkola/trvl/compare/v1.28.3...v1.28.4
 [1.28.3]: https://github.com/MikkoParkkola/trvl/compare/v1.28.2...v1.28.3
 [1.28.2]: https://github.com/MikkoParkkola/trvl/compare/v1.28.1...v1.28.2
