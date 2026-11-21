@@ -7,18 +7,13 @@ import (
 	"syscall"
 )
 
-// soleLink reports whether path is the only name of its file. A link count it
-// cannot read counts as shared, so the caller refuses the value.
-func soleLink(path string) bool {
-	// #nosec G304 -- path is a fixed telemetry state file the caller just read.
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = f.Close() }()
+// linkCount returns how many names the open file f has, asked of its own
+// handle. os.Open does not grant FILE_SHARE_DELETE, so no other name of the
+// file can be removed while it is open and the count cannot drop mid-read.
+func linkCount(f *os.File, _ os.FileInfo) (uint64, bool) {
 	var d syscall.ByHandleFileInformation
 	if err := syscall.GetFileInformationByHandle(syscall.Handle(f.Fd()), &d); err != nil {
-		return false
+		return 0, false
 	}
-	return d.NumberOfLinks == 1
+	return uint64(d.NumberOfLinks), true
 }

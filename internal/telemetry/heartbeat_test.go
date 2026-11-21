@@ -399,11 +399,33 @@ func TestInstallID_HardLinkedHexSecretIsNotSent(t *testing.T) {
 	if err := os.Link(private, filepath.Join(dir, installIDFile)); err != nil {
 		t.Skipf("hard links unavailable: %v", err)
 	}
-	if id, _ := installID(dir); id == secret || !machineIDOK(id) {
-		t.Fatalf("install id = %q, want a fresh id, not the hard-linked secret", id)
+	if id, created := installID(dir); id == secret || !machineIDOK(id) || !created {
+		t.Fatalf("install id = %q created=%v, want a fresh id, not the hard-linked secret", id, created)
+	} else if got, _ := readState(filepath.Join(dir, installIDFile)); got != id {
+		t.Fatalf("install-id on disk = %q, want the returned id %q", got, id)
 	}
 	if got, _ := os.ReadFile(private); string(got) != secret {
 		t.Fatalf("the linked private file changed to %q", got)
+	}
+}
+
+// The link count must describe the file whose contents are returned, as it was
+// when found: unlinking the secret's other name after install-id is opened
+// drops its live count to 1, and must not make it pass.
+func TestInstallID_LinkCountSurvivesAnUnlinkMidRead(t *testing.T) {
+	dir := t.TempDir()
+	private := filepath.Join(t.TempDir(), "api-key")
+	secret := "00112233445566778899aabbccddeeff"
+	if err := os.WriteFile(private, []byte(secret), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(private, filepath.Join(dir, installIDFile)); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	testHookAfterOpen = func(string) { _ = os.Remove(private) }
+	t.Cleanup(func() { testHookAfterOpen = nil })
+	if id, _ := installID(dir); id == secret {
+		t.Fatalf("install id = the secret %q after its other name was removed mid-read", id)
 	}
 }
 
@@ -434,10 +456,9 @@ func TestReadState_Bounds(t *testing.T) {
 		t.Fatal("a missing file must read as absent")
 	}
 	link := filepath.Join(dir, "link")
-	if err := os.Symlink(write("target", 10), link); err == nil {
-		if _, ok := readState(link); ok {
-			t.Fatal("a symbolic link must read as absent")
-		}
+	symlinkOrSkip(t, link)
+	if _, ok := readState(link); ok {
+		t.Fatal("a symbolic link must read as absent")
 	}
 }
 
@@ -454,12 +475,14 @@ func TestInstallIdentity_UnsavedIDKeepsTheDay(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if probe, err := os.CreateTemp(dir, "probe"); err == nil {
+		_ = probe.Close()
+		_ = os.Remove(probe.Name())
+		t.Skip("directory is writable despite 0500 (running as root)")
+	}
 	id, created := installID(dir)
 	if created || !machineIDOK(id) {
 		t.Fatalf("unsaved id: %q created=%v, want a generated id with created=false", id, created)
-	}
-	if _, err := os.Stat(filepath.Join(dir, installIDFile)); err == nil {
-		t.Skip("directory is writable despite 0500 (running as root)")
 	}
 	if _, day := installIdentity(dir, time.Now()); day != "2026-01-01" {
 		t.Fatalf("install day after an unsaved id = %q, want the stored 2026-01-01", day)

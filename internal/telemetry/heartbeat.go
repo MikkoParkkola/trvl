@@ -231,31 +231,50 @@ const maxStateFile = 256
 // missing file, a symbolic link, a directory or device, or anything larger than
 // maxStateFile reads as absent. The opened file must be the very file the
 // Lstat saw, so a swap to a link between the two checks is caught, and the
-// read itself is capped. A hard link is a regular file and passes: callers
-// that send a value also check its format.
+// read itself is capped. A hard link is a regular file and passes; a caller
+// that must refuse one uses readStateLinks.
 // ponytail: a path swapped to a FIFO in that window can still block the open;
 // O_NONBLOCK|O_NOFOLLOW would close it but has no portable spelling here.
 func readState(path string) (string, bool) {
+	value, _, ok := readStateLinks(path)
+	return value, ok
+}
+
+// testHookAfterOpen, when non-nil, runs after readStateLinks opens a file, so
+// a test can replace the path at exactly that point. Nil in production.
+var testHookAfterOpen func(path string)
+
+// readStateLinks is readState plus the link count of the very file whose
+// contents it returns, both taken from one open handle so no swap of the path
+// can pair one file's contents with another file's count.
+func readStateLinks(path string) (string, uint64, bool) {
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Size() > maxStateFile {
-		return "", false
+		return "", 0, false
 	}
 	// #nosec G304 -- callers pass a fixed state-file name under trvl's or the
 	// user's own state directory, checked above to be a small regular file.
 	f, err := os.Open(path)
 	if err != nil {
-		return "", false
+		return "", 0, false
 	}
 	defer func() { _ = f.Close() }()
+	if hook := testHookAfterOpen; hook != nil {
+		hook(path)
+	}
 	opened, err := f.Stat()
 	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
-		return "", false
+		return "", 0, false
+	}
+	links, ok := linkCount(f, info)
+	if !ok {
+		return "", 0, false
 	}
 	data, err := io.ReadAll(io.LimitReader(f, maxStateFile+1))
 	if err != nil || len(data) > maxStateFile {
-		return "", false
+		return "", 0, false
 	}
-	return strings.TrimSpace(string(data)), true
+	return strings.TrimSpace(string(data)), links, true
 }
 
 // installID returns a stable random per-install id, generating and persisting
@@ -267,7 +286,7 @@ func installID(dir string) (id string, created bool) {
 	// Only a generated id that is the sole name of its file is accepted: a hard
 	// link is a regular file and may even hold 32 hex characters (an API key),
 	// while trvl itself only ever replaces install-id and never links it.
-	if id, ok := readState(path); ok && machineIDOK(id) && soleLink(path) {
+	if id, links, ok := readStateLinks(path); ok && links == 1 && machineIDOK(id) {
 		return id, false
 	}
 	var buf [16]byte

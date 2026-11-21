@@ -7,13 +7,15 @@ import (
 	"syscall"
 )
 
-// soleLink reports whether path is the only name of its file. A link count it
-// cannot read counts as shared, so the caller refuses the value.
-func soleLink(path string) bool {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return false
+// linkCount returns how many names the file had when readStateLinks first
+// looked at it (before, the Lstat result). The open is bound to that same file
+// by os.SameFile, so this is the count of the file being read. It is taken
+// before the open on purpose: replacing or unlinking another name afterwards
+// lowers the live count, which would let a linked file pass as unlinked.
+func linkCount(_ *os.File, before os.FileInfo) (uint64, bool) {
+	st, ok := before.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
 	}
-	st, ok := info.Sys().(*syscall.Stat_t)
-	return ok && st.Nlink == 1
+	return uint64(st.Nlink), true
 }
