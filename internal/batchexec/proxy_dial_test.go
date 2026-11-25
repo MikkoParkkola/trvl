@@ -50,7 +50,7 @@ func startConnectProxy(t *testing.T, backend, reply string) *connectProxy {
 }
 
 func (p *connectProxy) serve(client net.Conn) {
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	req, err := http.ReadRequest(bufio.NewReader(client))
 	if err != nil || req.Method != http.MethodConnect {
 		return
@@ -65,7 +65,7 @@ func (p *connectProxy) serve(client net.Conn) {
 	if err != nil {
 		return
 	}
-	defer upstream.Close()
+	defer func() { _ = upstream.Close() }()
 	go func() { _, _ = io.Copy(upstream, client) }()
 	_, _ = io.Copy(client, upstream)
 }

@@ -66,23 +66,40 @@ func dialRawVia(ctx context.Context, network, addr string, proxyURL *neturl.URL)
 
 // connectTunnel asks the proxy on conn for a tunnel to addr and returns once
 // conn carries the destination's bytes.
+//
+// The exchange ends at proxyTunnelTimeout or the context's deadline, whichever
+// is sooner, and at once when the context is cancelled.
 func connectTunnel(ctx context.Context, conn net.Conn, addr string) error {
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		deadline = time.Now().Add(proxyTunnelTimeout)
+	limit := time.Now().Add(proxyTunnelTimeout)
+	if ctxLimit, set := ctx.Deadline(); set && ctxLimit.Before(limit) {
+		limit = ctxLimit
 	}
-	if err := conn.SetDeadline(deadline); err != nil {
-		return fmt.Errorf("proxy connect: %w", err)
+	// fail reports the cancellation itself when the context ended the
+	// exchange, rather than the i/o timeout it was turned into.
+	fail := func(cause error) error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			cause = ctxErr
+		}
+		return fmt.Errorf("proxy connect: %w", cause)
 	}
+	if err := conn.SetDeadline(limit); err != nil {
+		return fail(err)
+	}
+	// Cancelling the context pulls the deadline to now, which unblocks the
+	// pending write or read below.
+	unwatch := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
+	defer unwatch()
 	if _, err := fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", addr, addr); err != nil {
-		return fmt.Errorf("proxy connect: %w", err)
+		return fail(err)
 	}
 	reader := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
 	if err != nil {
-		return fmt.Errorf("proxy connect: %w", err)
+		return fail(err)
 	}
-	_ = resp.Body.Close()
+	// Decide on the status alone and leave the body unread: closing it would
+	// drain a sized body, so a proxy that announces one and stalls would hold
+	// an already known refusal until the deadline. The caller closes conn.
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("proxy connect: %s", resp.Status)
 	}
@@ -92,8 +109,13 @@ func connectTunnel(ctx context.Context, conn net.Conn, addr string) error {
 	if reader.Buffered() > 0 {
 		return errors.New("proxy connect: unexpected data after the proxy response")
 	}
+	// A cancel that fired after the read has queued a deadline of now, which
+	// would land on the TLS handshake once the reset below is done.
+	if !unwatch() {
+		return fail(ctx.Err())
+	}
 	if err := conn.SetDeadline(time.Time{}); err != nil {
-		return fmt.Errorf("proxy connect: %w", err)
+		return fail(err)
 	}
 	return nil
 }
