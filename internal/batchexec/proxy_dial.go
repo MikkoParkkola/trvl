@@ -40,8 +40,8 @@ func dialRawVia(ctx context.Context, network, addr string, proxyURL *neturl.URL)
 	if proxyURL == nil {
 		return dialer.DialContext(ctx, network, addr)
 	}
-	// Same limits as the guarded provider transport, so one proxy setting
-	// behaves the same way across the binary.
+	// Refuse the proxy forms the guarded provider transport refuses. Its
+	// private-address check on the proxy hop is not applied here (see README).
 	if proxyURL.User != nil {
 		return nil, errors.New("authenticated proxies are not supported")
 	}

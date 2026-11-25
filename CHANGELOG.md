@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Behind an HTTP proxy, Google Flights and Hotels now work. Their client makes its own TLS connection and used to go straight to the destination, ignoring `HTTPS_PROXY`, so where the proxy is the only way out it failed with a DNS or network error. It now opens a `CONNECT` tunnel through the proxy, follows `NO_PROXY`, and still connects directly when no proxy applies. Eurostar, SNCF, Trainline and Eckerö Line use the same client, so they now reach the network through the proxy as well. Cancelling a search ends a stalled proxy handshake at once (#796; thanks @gillesforli).
+
 ## [1.28.5] - 2026-11-21
 
 ### Changed

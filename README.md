@@ -165,7 +165,7 @@ That relaxes the proxy hop only. Destinations are still refused on private addre
 
 Authenticated proxies (`http://user:pass@host`) are not supported.
 
-The Google Flights and Hotels client makes its own Chrome-like TLS connection, and tunnels it through the same proxy with `CONNECT`. It only ever connects to Google's fixed hosts, so it does not resolve or pin the destination itself and does not apply the private-address check to the proxy.
+Google Flights and Hotels, Eurostar, SNCF, Trainline and Eckerö Line go through a client that builds its own Chrome-like TLS connection; it tunnels that connection through the same proxy with `CONNECT`. This client resolves no destination itself and pins none, and the private-address check is not applied to its proxy hop.
 
 ### If you run trvl on a cloud server
 
