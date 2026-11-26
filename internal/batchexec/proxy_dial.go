@@ -7,11 +7,15 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	neturl "net/url"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/net/http/httpproxy"
+
+	"github.com/MikkoParkkola/trvl/internal/netguard"
 )
 
 // proxyTunnelTimeout bounds the CONNECT exchange when the context carries no
@@ -40,8 +44,8 @@ func dialRawVia(ctx context.Context, network, addr string, proxyURL *neturl.URL)
 	if proxyURL == nil {
 		return dialer.DialContext(ctx, network, addr)
 	}
-	// Refuse the proxy forms the guarded provider transport refuses. Its
-	// private-address check on the proxy hop is not applied here (see README).
+	// Refuse the proxy forms the guarded provider transport refuses, and apply
+	// its private-address rule to the proxy hop (proxyDialControl).
 	if proxyURL.User != nil {
 		return nil, errors.New("authenticated proxies are not supported")
 	}
@@ -53,6 +57,7 @@ func dialRawVia(ctx context.Context, network, addr string, proxyURL *neturl.URL)
 		proxyAddr = net.JoinHostPort(proxyURL.Hostname(), "80")
 	}
 
+	dialer.Control = proxyDialControl
 	conn, err := dialer.DialContext(ctx, "tcp", proxyAddr)
 	if err != nil {
 		return nil, fmt.Errorf("dial proxy: %w", err)
@@ -62,6 +67,28 @@ func dialRawVia(ctx context.Context, network, addr string, proxyURL *neturl.URL)
 		return nil, err
 	}
 	return conn, nil
+}
+
+// proxyDialControl refuses a proxy on a loopback, private or link-local
+// address unless TRVL_ALLOW_PRIVATE_PROXY is set: the rule the provider
+// transport applies to its proxy hop. It runs on the resolved address being
+// dialled, so a proxy hostname cannot resolve its way around it.
+func proxyDialControl(_, address string, _ syscall.RawConn) error {
+	if netguard.PrivateProxyAllowed() {
+		return nil
+	}
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		host = address
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return fmt.Errorf("%w: proxy address %q cannot be classified", netguard.ErrDestinationRefused, host)
+	}
+	if reason := netguard.RefusedIP(net.IP(ip.WithZone("").AsSlice())); reason != "" {
+		return fmt.Errorf("%w: proxy %s is a %s (set %s=1 to allow it)", netguard.ErrDestinationRefused, host, reason, netguard.AllowPrivateProxyEnv)
+	}
+	return nil
 }
 
 // connectTunnel asks the proxy on conn for a tunnel to addr and returns once

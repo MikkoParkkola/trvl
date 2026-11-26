@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/MikkoParkkola/trvl/internal/netguard"
 )
 
 // TRVL.PROXYSPLIT.1 -- reaching a proxy on a private address must not require
@@ -92,7 +94,7 @@ func TestLocalDestinationOptInImpliesPrivateProxy(t *testing.T) {
 	t.Setenv(AllowLocalEnv, "1")
 	t.Setenv(AllowPrivateProxyEnv, "")
 
-	if !privateProxyAllowed() {
+	if !netguard.PrivateProxyAllowed() {
 		t.Errorf("%s=1 did not imply the proxy opt-in; a user who has allowed private "+
 			"destinations gains nothing from a refused private proxy", AllowLocalEnv)
 	}

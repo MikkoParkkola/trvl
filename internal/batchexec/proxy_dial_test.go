@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/netguard"
 	utls "github.com/refraction-networking/utls"
 )
 
@@ -92,6 +93,7 @@ func testContext(t *testing.T) context.Context {
 // The Chrome handshake itself must run inside the tunnel: the destination
 // name never resolves here, so a completed handshake proves the proxy carried it.
 func TestDialTLSChromeHTTP1_Success_ThroughEnvironmentProxy(t *testing.T) {
+	t.Setenv(netguard.AllowPrivateProxyEnv, "1") // the test proxy is on loopback
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer ts.Close()
 	proxy := startConnectProxy(t, ts.Listener.Addr().String(), tunnelEstablished)
@@ -133,6 +135,7 @@ func TestDialRaw_Success_NoProxyGoesDirect(t *testing.T) {
 }
 
 func TestDialRawVia_Error_ProxyRefuses(t *testing.T) {
+	t.Setenv(netguard.AllowPrivateProxyEnv, "1")
 	proxy := startConnectProxy(t, "", "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
 	conn, err := dialRawVia(testContext(t), "tcp", "example.com:443", proxy.url())
 	if err == nil {

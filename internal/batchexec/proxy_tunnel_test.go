@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MikkoParkkola/trvl/internal/netguard"
 )
 
 // startStallingProxy is a loopback proxy that reads the CONNECT request,
@@ -72,6 +74,7 @@ func dialWithin(t *testing.T, ctx context.Context, proxyURL *neturl.URL, limit t
 // Cancelling a search must end a CONNECT exchange with a silent proxy at once,
 // not when the tunnel deadline expires.
 func TestDialRawVia_Error_CancelStopsSilentProxy(t *testing.T) {
+	t.Setenv(netguard.AllowPrivateProxyEnv, "1") // the test proxy is on loopback
 	proxyURL := startStallingProxy(t, "")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -86,6 +89,7 @@ func TestDialRawVia_Error_CancelStopsSilentProxy(t *testing.T) {
 // A refusal is known from its status line; a sized body the proxy never sends
 // must not turn it into a wait for the deadline.
 func TestDialRawVia_Error_RefusalWithStalledBody(t *testing.T) {
+	t.Setenv(netguard.AllowPrivateProxyEnv, "1")
 	proxyURL := startStallingProxy(t, "HTTP/1.1 403 Forbidden\r\nContent-Length: 10\r\n\r\n")
 
 	err := dialWithin(t, testContext(t), proxyURL, time.Second)
@@ -98,6 +102,7 @@ func TestDialRawVia_Error_RefusalWithStalledBody(t *testing.T) {
 // example.com in this test and the backend's certificate is self-signed, so
 // the handshake is expected to fail; the check is on the CONNECT the proxy got.
 func TestDialTLSChromeH2_ThroughEnvironmentProxy(t *testing.T) {
+	t.Setenv(netguard.AllowPrivateProxyEnv, "1")
 	backend := httptest.NewTLSServer(http.NotFoundHandler())
 	t.Cleanup(backend.Close)
 	tunnel := startConnectProxy(t, backend.Listener.Addr().String(), tunnelEstablished)
@@ -115,5 +120,39 @@ func TestDialTLSChromeH2_ThroughEnvironmentProxy(t *testing.T) {
 	}
 	if want := []string{"example.com:443"}; !slices.Equal(tunnel.requested(), want) {
 		t.Fatalf("CONNECT targets = %v, want %v", tunnel.requested(), want)
+	}
+}
+
+// A proxy on a loopback address needs TRVL_ALLOW_PRIVATE_PROXY, the same rule
+// the provider transport applies; without it the proxy is never connected to.
+func TestDialRawVia_Error_PrivateProxyRefusedByDefault(t *testing.T) {
+	t.Setenv(netguard.AllowPrivateProxyEnv, "")
+	t.Setenv(netguard.AllowLocalEnv, "")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	accepted := make(chan struct{}, 1)
+	go func() {
+		if conn, err := listener.Accept(); err == nil {
+			accepted <- struct{}{}
+			_ = conn.Close()
+		}
+	}()
+
+	proxyURL := &neturl.URL{Scheme: "http", Host: listener.Addr().String()}
+	conn, err := dialRawVia(context.Background(), "tcp", "example.invalid:443", proxyURL)
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("dial through a loopback proxy succeeded without the opt-in")
+	}
+	if !errors.Is(err, netguard.ErrDestinationRefused) {
+		t.Fatalf("err = %v, want ErrDestinationRefused", err)
+	}
+	select {
+	case <-accepted:
+		t.Fatal("the refused proxy still received a connection")
+	case <-time.After(100 * time.Millisecond):
 	}
 }
