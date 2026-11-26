@@ -156,3 +156,27 @@ func TestDialRawVia_Error_PrivateProxyRefusedByDefault(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 }
+
+func TestProxyDialControl_Classification(t *testing.T) {
+	t.Setenv(netguard.AllowPrivateProxyEnv, "")
+	t.Setenv(netguard.AllowLocalEnv, "")
+	for address, wantRefused := range map[string]bool{
+		"8.8.8.8:3128":            false,
+		"[2001:4860::8888]:3128":  false,
+		"127.0.0.1:3128":          true,
+		"10.1.2.3:8080":           true,
+		"[::ffff:192.168.1.5]:80": true,
+		"[fe80::1%en0]:3128":      true,
+		"169.254.169.254:80":      true,
+		"not-an-address:80":       true,
+	} {
+		err := proxyDialControl("tcp", address, nil)
+		if got := errors.Is(err, netguard.ErrDestinationRefused); got != wantRefused {
+			t.Errorf("%s: refused = %v (err %v), want %v", address, got, err, wantRefused)
+		}
+	}
+	t.Setenv(netguard.AllowPrivateProxyEnv, "1")
+	if err := proxyDialControl("tcp", "127.0.0.1:3128", nil); err != nil {
+		t.Errorf("loopback proxy refused with the opt-in set: %v", err)
+	}
+}

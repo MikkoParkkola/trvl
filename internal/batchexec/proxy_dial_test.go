@@ -148,11 +148,15 @@ func TestDialRawVia_Error_ProxyRefuses(t *testing.T) {
 }
 
 func TestDialRawVia_Error_DataAfterProxyResponse(t *testing.T) {
+	t.Setenv(netguard.AllowPrivateProxyEnv, "1")
 	proxy := startConnectProxy(t, "", tunnelEstablished+"unexpected")
 	conn, err := dialRawVia(testContext(t), "tcp", "example.com:443", proxy.url())
 	if err == nil {
 		_ = conn.Close()
 		t.Fatal("expected bytes after the proxy response to fail the dial")
+	}
+	if !strings.Contains(err.Error(), "unexpected data") {
+		t.Fatalf("got %v; want the stray-bytes error", err)
 	}
 }
 
