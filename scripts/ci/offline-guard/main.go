@@ -4,8 +4,8 @@
 // A test that leans on a short timeout, or ignores a provider error, still
 // passes when the network is up, so a leak is invisible in an ordinary run.
 // Detection is at the syscall because an HTTP proxy only sees clients that
-// honour HTTPS_PROXY; the Google client (internal/batchexec) and the fhttp
-// provider transport dial directly.
+// honour HTTPS_PROXY; the fhttp provider transport dials directly, and so does
+// the Google client (internal/batchexec) when no proxy is configured.
 //
 // Counted: a TCP connect to a non-loopback address, a datagram sent to an
 // explicit non-loopback destination, and a write on a UDP socket connected to

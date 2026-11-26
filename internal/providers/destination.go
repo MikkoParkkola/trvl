@@ -9,106 +9,14 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"os"
+
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/MikkoParkkola/trvl/internal/netguard"
 	"golang.org/x/net/http/httpproxy"
 )
-
-// AllowLocalEnv opts a process back in to provider destinations that the
-// default policy refuses: loopback, private, link-local and unspecified
-// addresses.
-//
-// It exists for one case only -- pointing trvl at a mock provider running on
-// the developer's own machine -- which is why it is an environment variable
-// and not a provider config field. A config field would travel with the config:
-// anyone who could hand trvl a provider could also hand it the permission to
-// reach that provider's internal network. The env var can only be set by
-// whoever starts the process, which is the person entitled to decide that
-// localhost is a legitimate destination here.
-const AllowLocalEnv = "TRVL_ALLOW_LOCAL_PROVIDERS"
-
-// AllowPrivateProxyEnv opts in to reaching an HTTP proxy on a private address.
-//
-// Separate from AllowLocalEnv on purpose. A corporate HTTP_PROXY is almost
-// always RFC1918, so without this the only way to use one was to allow private
-// DESTINATIONS as well -- which is exactly the control that keeps a redirect or
-// a hostile DNS answer away from the cloud metadata address. Wanting to obey
-// your employer's egress policy should not require switching off the guard
-// against server-side request forgery.
-//
-// This one relaxes the PROXY hop only. The destination is still checked first
-// and still refused on a private address unless AllowLocalEnv is also set.
-const AllowPrivateProxyEnv = "TRVL_ALLOW_PRIVATE_PROXY"
-
-// ErrDestinationRefused is the sentinel behind every refusal in this file.
-//
-// It is returned from a net.Dialer.Control hook, so a caller sees it wrapped:
-// *url.Error -> *net.OpError -> this. Both of those wrappers implement Unwrap,
-// so errors.Is(err, ErrDestinationRefused) holds through the whole chain, and
-// callers must ask that question rather than matching on message text.
-var ErrDestinationRefused = errors.New("destination refused by policy")
-
-// localDestinationsAllowed reports whether the operator has opted in to local
-// destinations. Read per call rather than cached at init so a test can set it
-// with t.Setenv, and so a long-running process picks it up the same way it
-// picks up the consent variables.
-func localDestinationsAllowed() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(AllowLocalEnv))) {
-	case "", "0", "false":
-		return false
-	default:
-		return true
-	}
-}
-
-// privateProxyAllowed reports whether the operator has opted in to reaching a
-// proxy on a private address. AllowLocalEnv implies it: someone who has already
-// allowed private destinations cannot be protected by refusing a private proxy.
-func privateProxyAllowed() bool {
-	if localDestinationsAllowed() {
-		return true
-	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(AllowPrivateProxyEnv))) {
-	case "", "0", "false":
-		return false
-	default:
-		return true
-	}
-}
-
-// refusedIP reports the reason an IP is off limits, or "" if it is allowed.
-//
-// The list is deliberately about *reachability*, not about a blocklist of
-// known-sensitive addresses. 169.254.169.254 -- the cloud metadata address
-// every SSRF write-up names -- is refused here because it is link-local, not
-// because it is enumerated; enumerating it would leave every sibling address
-// on the same interface open.
-func refusedIP(ip net.IP) string {
-	// An IPv4-mapped IPv6 address (::ffff:127.0.0.1) answers false to the
-	// IsLoopback etc. checks in its 16-byte form on some paths, so fold it to
-	// its 4-byte form first and ask about that.
-	if v4 := ip.To4(); v4 != nil {
-		ip = v4
-	}
-	switch {
-	case ip.IsLoopback():
-		return "loopback address"
-	case ip.IsPrivate():
-		return "private address"
-	case ip.IsLinkLocalUnicast(), ip.IsLinkLocalMulticast():
-		// Includes 169.254.169.254 and fe80::/10.
-		return "link-local address"
-	case ip.IsUnspecified():
-		// 0.0.0.0 and :: route to the local host on most stacks.
-		return "unspecified address"
-	case ip.IsInterfaceLocalMulticast(), ip.IsMulticast():
-		return "multicast address"
-	}
-	return ""
-}
 
 // CheckDestinationURL applies the parts of the policy that can be decided from
 // the URL text alone: the scheme, and a host written as an IP literal.
@@ -120,7 +28,7 @@ func refusedIP(ip net.IP) string {
 // and a name that resolves public now can resolve private at request time.
 // Both halves are needed; neither is sufficient.
 func CheckDestinationURL(raw string) error {
-	return checkURLAllowingLocal(raw, localDestinationsAllowed(), AllowLocalEnv)
+	return checkURLAllowingLocal(raw, netguard.LocalDestinationsAllowed(), AllowLocalEnv)
 }
 
 // checkURLAllowingLocal is CheckDestinationURL with the local-address decision
@@ -164,7 +72,7 @@ func checkURLAllowingLocal(raw string, allowLocal bool, optInEnv string) error {
 		return fmt.Errorf("%w: %s resolves to the local host", ErrDestinationRefused, host)
 	}
 	if ip := net.ParseIP(host); ip != nil {
-		if reason := refusedIP(ip); reason != "" {
+		if reason := netguard.RefusedIP(ip); reason != "" {
 			return fmt.Errorf("%w: %s is a %s (set %s=1 to allow it)", ErrDestinationRefused, host, reason, optInEnv)
 		}
 	}
@@ -182,7 +90,7 @@ func checkURLAllowingLocal(raw string, allowLocal bool, optInEnv string) error {
 // arguments and from earlier responses, so they were never seen at
 // registration at all.
 func dialControl(_, address string, _ syscall.RawConn) error {
-	if localDestinationsAllowed() {
+	if netguard.LocalDestinationsAllowed() {
 		return nil
 	}
 	host, _, err := net.SplitHostPort(address)
@@ -208,7 +116,7 @@ func dialControl(_, address string, _ syscall.RawConn) error {
 		// allow is neither.
 		return fmt.Errorf("%w: %q is not an address this policy can classify", ErrDestinationRefused, host)
 	}
-	if reason := refusedIP(ip); reason != "" {
+	if reason := netguard.RefusedIP(ip); reason != "" {
 		return fmt.Errorf("%w: %s is a %s (set %s=1 to allow local providers)", ErrDestinationRefused, host, reason, AllowLocalEnv)
 	}
 	return nil
@@ -339,7 +247,7 @@ func (t *GuardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 	// a corporate one is almost always on a private address -- see
 	// AllowPrivateProxyEnv for why sharing the destination switch was the wrong
 	// control plane.
-	pinnedProxy, _, err := pinHTTPURLAllowingLocal(req.Context(), proxyURL, t.lookup, privateProxyAllowed(), AllowPrivateProxyEnv)
+	pinnedProxy, _, err := pinHTTPURLAllowingLocal(req.Context(), proxyURL, t.lookup, netguard.PrivateProxyAllowed(), AllowPrivateProxyEnv)
 	if err != nil {
 		return nil, fmt.Errorf("proxy: %w", err)
 	}
@@ -361,7 +269,7 @@ func (t *GuardedRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 	// The destination is not thereby unguarded. It was pinned under the strict
 	// policy at the top of this function, and clone.URL is that pinned value:
 	// the check simply already happened, against the right address.
-	transport := directGuardedTransportAllowingLocal(privateProxyAllowed())
+	transport := directGuardedTransportAllowingLocal(netguard.PrivateProxyAllowed())
 	transport.Proxy = func(*http.Request) (*url.URL, error) { return pinnedProxy, nil }
 	if strings.EqualFold(req.URL.Scheme, "https") {
 		transport.TLSClientConfig = &tls.Config{
@@ -395,7 +303,7 @@ func lookupHostIPs(ctx context.Context, host string) ([]net.IP, error) {
 // URL to a selected IP. Validating all answers prevents a mixed public/private
 // DNS response from making safety depend on resolver ordering.
 func pinHTTPURL(ctx context.Context, source *url.URL, lookup lookupIPsFunc) (*url.URL, string, error) {
-	return pinHTTPURLAllowingLocal(ctx, source, lookup, localDestinationsAllowed(), AllowLocalEnv)
+	return pinHTTPURLAllowingLocal(ctx, source, lookup, netguard.LocalDestinationsAllowed(), AllowLocalEnv)
 }
 
 // pinHTTPURLAllowingLocal is pinHTTPURL with the local-address decision handed
@@ -450,7 +358,7 @@ func pinHTTPURLAllowingLocal(ctx context.Context, source *url.URL, lookup lookup
 			return nil, "", fmt.Errorf("%w: %s returned an unclassifiable address", ErrDestinationRefused, host)
 		}
 		if !allowLocal {
-			if reason := refusedIP(address); reason != "" {
+			if reason := netguard.RefusedIP(address); reason != "" {
 				return nil, "", fmt.Errorf("%w: %s resolved to %s, a %s (set %s=1 to allow it)", ErrDestinationRefused, host, address, reason, optInEnv)
 			}
 		}
