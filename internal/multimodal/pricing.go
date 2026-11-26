@@ -7,7 +7,6 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/destinations"
 	"github.com/MikkoParkkola/trvl/internal/flights"
 	"github.com/MikkoParkkola/trvl/internal/ground"
-	"github.com/MikkoParkkola/trvl/internal/hacks"
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
@@ -16,7 +15,11 @@ import (
 //   - DISCOVERY via Rome2Rio (ground.SearchRome2Rio);
 //   - per-leg PRICING via the existing flight and ground searches — never a
 //     reimplemented provider;
-//   - savings ANNOTATION via the travel-hacks engine (hacks.BestSaving).
+//   - no savings ANNOTATION. The travel-hacks detectors measure savings on
+//     flight or ground fares, and an itinerary's total is neither, so
+//     subtracting one from it quotes a price nobody sells (#824). Hacks stays
+//     nil until a detector measures its saving on an itinerary total, across
+//     its legs; that detector brings its own annotator.
 //
 // allowBrowser threads through to Rome2Rio (its live Cloudflare path is gated by
 // --allow-browser-fallbacks) and to the ground leg pricer.
@@ -24,7 +27,6 @@ func NewPlanner(allowBrowser bool) *Planner {
 	return &Planner{
 		Discover:     ground.SearchRome2Rio,
 		Price:        productionLegPricer(allowBrowser),
-		Hacks:        productionHackAnnotator,
 		Convert:      destinations.ConvertCurrency,
 		AllowBrowser: allowBrowser,
 	}
@@ -297,17 +299,4 @@ func flightProvider(f models.FlightResult) string {
 		return f.Provider
 	}
 	return "flights"
-}
-
-// productionHackAnnotator runs the travel-hacks savings engine against the
-// itinerary's true total as the naive baseline. It returns nil unless a strictly
-// cheaper synthesized option exists (BestSaving enforces the honesty contract).
-func productionHackAnnotator(ctx context.Context, from, to, date string, naivePrice float64, currency string) *models.HackSaving {
-	return hacks.BestSaving(ctx, hacks.DetectorInput{
-		Origin:      from,
-		Destination: to,
-		Date:        date,
-		Currency:    currency,
-		NaivePrice:  naivePrice,
-	}, nil)
 }

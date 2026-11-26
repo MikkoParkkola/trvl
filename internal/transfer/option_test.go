@@ -125,3 +125,36 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+// A route without change data becomes an option that says so: no "no
+// changes" pro, and a con naming the gap.
+func TestBuildOptions_ChangesNotKnown(t *testing.T) {
+	cmp := BuildOptions([]models.GroundRoute{{Provider: "oebb", Type: "train", Price: 20, Currency: "EUR",
+		Duration: 300, TransfersUnknown: true}}, "", "", "")
+	if len(cmp.Options) != 1 {
+		t.Fatalf("options = %d, want 1", len(cmp.Options))
+	}
+	o := cmp.Options[0]
+	if !o.ChangesUnknown {
+		t.Errorf("ChangesUnknown = false, want the route's flag carried")
+	}
+	for _, p := range o.Pros {
+		if p == "no changes" {
+			t.Errorf("pros = %v, claim no changes for a count that is not known", o.Pros)
+		}
+	}
+	found := false
+	for _, c := range o.Cons {
+		found = found || c == "number of changes unknown"
+	}
+	if !found {
+		t.Errorf("cons = %v, want \"number of changes unknown\"", o.Cons)
+	}
+}
+
+func TestMostLuggageFriendly_KnownChangesFirst(t *testing.T) {
+	opts := []models.TransferOption{{Mode: "train", ChangesUnknown: true}, {Mode: "train", Changes: 1}}
+	if got := mostLuggageFriendly(opts); got.ChangesUnknown {
+		t.Errorf("picked the option whose changes are not known; want the known one")
+	}
+}

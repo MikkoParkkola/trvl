@@ -45,6 +45,9 @@ func TestSearchOebb_MockHappyPath(t *testing.T) {
 							Arrival string `json:"arrival"`
 						}{Arrival: "2026-07-01T12:13:00+02:00"},
 						Duration: 15180000, // 253 min in ms
+						Sections: []oebbShopSection{{Type: "journey",
+							From: oebbShopStop{Name: "Wien Hbf", Departure: "2026-07-01T08:00:00+02:00"},
+							To:   oebbShopStop{Name: "München Hbf", Arrival: "2026-07-01T12:13:00+02:00"}}},
 					},
 				},
 			})

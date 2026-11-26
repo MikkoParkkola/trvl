@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -16,23 +17,31 @@ import (
 	"github.com/MikkoParkkola/trvl/internal/models"
 )
 
-// hotelCityAliases maps common English city names to the form that Google
-// Hotels actually resolves correctly. Without this, "Prague" returns zero
-// results while "Praha" works fine.
-var hotelCityAliases = map[string]string{
-	"prague":     "Praha",
-	"munich":     "München",
-	"vienna":     "Wien",
-	"cologne":    "Köln",
-	"copenhagen": "København",
-	"warsaw":     "Warszawa",
-	"bucharest":  "București",
-	"gothenburg": "Göteborg",
-	"nuremberg":  "Nürnberg",
+// hotelCityAliases maps common English city names to the form Google Hotels
+// resolves; the table lives in models so address matching shares it.
+var hotelCityAliases = models.CityAliases
+
+// englishCityNames maps each local form in hotelCityAliases back to the
+// English name ("wien" -> "Vienna"), which the side providers' slugs expect.
+var englishCityNames = func() map[string]string {
+	m := make(map[string]string, len(hotelCityAliases))
+	for english, local := range hotelCityAliases {
+		m[strings.ToLower(local)] = strings.ToUpper(english[:1]) + english[1:]
+	}
+	return m
+}()
+
+// englishHotelCity canonicalises a local city name to English at search
+// entry. Passthrough for every other location.
+func englishHotelCity(location string) string {
+	if english, ok := englishCityNames[strings.ToLower(strings.TrimSpace(location))]; ok {
+		return english
+	}
+	return location
 }
 
 // normalizeHotelCity replaces known English city names with the form Google
-// Hotels expects. Passthrough for unknown cities.
+// Hotels expects. Passthrough for other cities. Only the Google fetch uses it.
 func normalizeHotelCity(location string) string {
 	if mapped, ok := hotelCityAliases[strings.ToLower(strings.TrimSpace(location))]; ok {
 		return mapped
@@ -77,6 +86,7 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 		MaxPrice          float64  `json:"max_price"`
 		MinRating         float64  `json:"min_rating"`
 		MaxDistanceKm     float64  `json:"max_distance_km"`
+		StayTerm          StayTerm `json:"stay_term"`
 		Amenities         []string `json:"amenities,omitempty"`
 		CenterLat         float64  `json:"center_lat"`
 		CenterLon         float64  `json:"center_lon"`
@@ -101,7 +111,11 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 		MustHaveKitchen   bool     `json:"must_have_kitchen"`
 		MustHaveWifi      bool     `json:"must_have_wifi"`
 		MustHaveWorkspace bool     `json:"must_have_workspace"`
+		// An area search and a property search for the same text run
+		// different providers, so they must never share a result.
+		Scope HotelSearchScope `json:"scope"`
 	}{
+		Scope:             opts.Scope,
 		Location:          location,
 		CheckIn:           opts.CheckIn,
 		CheckOut:          opts.CheckOut,
@@ -115,6 +129,7 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 		MaxPrice:          opts.MaxPrice,
 		MinRating:         opts.MinRating,
 		MaxDistanceKm:     opts.MaxDistanceKm,
+		StayTerm:          opts.StayTerm,
 		Amenities:         amenities,
 		CenterLat:         opts.CenterLat,
 		CenterLon:         opts.CenterLon,
@@ -142,7 +157,7 @@ func hotelSearchKey(location string, opts HotelSearchOptions) string {
 	}
 	data, err := json.Marshal(key)
 	if err != nil {
-		return fmt.Sprintf("hotel|%s|%s|%s|%d|%s", location, opts.CheckIn, opts.CheckOut, opts.Guests, opts.Currency)
+		return fmt.Sprintf("hotel|%s|%s|%s|%d|%s|stay=%d", location, opts.CheckIn, opts.CheckOut, opts.Guests, opts.Currency, opts.StayTerm)
 	}
 	return "hotel|" + string(data)
 }
@@ -221,8 +236,9 @@ func fetchHotelPageFull(ctx context.Context, client *batchexec.Client, location 
 	if status == 403 {
 		return parseResult{}, batchexec.ErrBlocked
 	}
-	if status == 429 {
-		return parseResult{}, fmt.Errorf("google hotel search refused (HTTP 429): %w", models.ErrRateLimited)
+	// A 429 or a 200 quota body armed the client's cooldown.
+	if batchexec.QuotaRefusal(status, body) {
+		return parseResult{}, googleCooldownErr(ctx, client, "google hotel search", status)
 	}
 	if status != 200 {
 		return parseResult{}, fmt.Errorf("hotel search returned status %d", status)
@@ -241,8 +257,12 @@ func fetchHotelPageFull(ctx context.Context, client *batchexec.Client, location 
 		switch {
 		case err2 != nil && errors.Is(err2, batchexec.ErrRefused):
 			return parseResult{}, googleCallErr("hotel search consent retry", err2)
-		case status2 == 429:
-			return parseResult{}, fmt.Errorf("google hotel search refused the consent retry (HTTP 429): %w", models.ErrRateLimited)
+		case err2 == nil && batchexec.QuotaRefusal(status2, body2):
+			return parseResult{}, googleCooldownErr(ctx, client, "google hotel search consent retry", status2)
+		case err2 == nil && (status2 == http.StatusForbidden || status2 == http.StatusServiceUnavailable):
+			// A block or an outage on the retry is a refusal that arms no
+			// cooldown, not a cookie-wall failure.
+			return parseResult{}, fmt.Errorf("google hotel search consent retry returned HTTP %d: %w", status2, models.ErrRateLimited)
 		}
 		if err2 == nil && status2 == 200 && len(body2) >= 1000 && !isGoogleConsentPage(body2) {
 			body = body2
@@ -311,7 +331,10 @@ func buildTravelURL(location string, opts HotelSearchOptions) string {
 		// Google's rating param is on 0-10 scale (same as our internal scale).
 		query.Set("rating", strconv.FormatFloat(opts.MinRating, 'f', 0, 64))
 	}
-	if opts.MaxDistanceKm > 0 {
+	// Only a cap tighter than the default goes to Google: at the default and
+	// wider, Google returns its normal set so trvl can filter and count every
+	// farther hotel itself (farther_omitted).
+	if SendsGoogleRadius(opts.MaxDistanceKm) {
 		// Google uses meters for the lrad (location radius) parameter.
 		query.Set("lrad", strconv.FormatFloat(opts.MaxDistanceKm*1000, 'f', 0, 64))
 	}

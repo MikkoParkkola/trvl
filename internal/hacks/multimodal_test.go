@@ -208,24 +208,6 @@ func TestNearbyHubs(t *testing.T) {
 	}
 }
 
-// TestDetectMultiModalOpenJawGround_overnightBonus verifies hotel bonus logic.
-func TestDetectMultiModalOpenJawGround_overnightBonus(t *testing.T) {
-	// When Overnight=true the hotel bonus (averageHotelCost) is added.
-	hub := nearbyHub{Overnight: true, StaticGroundEUR: 15}
-	flightPrice := 100.0
-	directPrice := 200.0
-	total := flightPrice + hub.StaticGroundEUR
-	hotelBonus := 0.0
-	if hub.Overnight {
-		hotelBonus = averageHotelCost
-	}
-	savings := directPrice - total + hotelBonus
-	want := 200.0 - 115.0 + 60.0 // = 145
-	if savings != want {
-		t.Errorf("savings = %v, want %v", savings, want)
-	}
-}
-
 // TestDetectMultiModalOpenJawGround_thresholdFifty verifies the EUR 50 threshold.
 func TestDetectMultiModalOpenJawGround_thresholdFifty(t *testing.T) {
 	// savings=49 → below threshold → should not surface.

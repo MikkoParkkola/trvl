@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"math"
+	"slices"
 	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/hotels"
@@ -15,6 +17,9 @@ import (
 
 var searchHotelsFunc = hotels.SearchHotels
 
+// getHotelReviewsFunc is the review fetch seam, stubbed by offline tests.
+var getHotelReviewsFunc = hotels.GetHotelReviews
+
 type hotelSearchRequest struct {
 	Location string
 	CheckIn  string
@@ -26,6 +31,8 @@ type hotelSearchRequest struct {
 type hotelSearchResponse struct {
 	*models.HotelSearchResult
 	Suggestions []Suggestion `json:"suggestions,omitempty"`
+	// BudgetOmitted counts hotels the 50 KB reply budget left out.
+	BudgetOmitted int `json:"budget_omitted,omitempty"`
 }
 
 // --- Tool definitions ---
@@ -134,7 +141,7 @@ func buildHotelSearchRequest(args map[string]any) (hotelSearchRequest, error) {
 		MinPrice:           argFloat(args, "min_price", 0),
 		MaxPrice:           argFloat(args, "max_price", 0),
 		MinRating:          argFloat(args, "min_rating", 0),
-		MaxDistanceKm:      argFloat(args, "max_distance", 0),
+		MaxDistanceKm:      argFloat(args, "max_distance", hotels.DefaultMaxDistanceKm),
 		Amenities:          amenities,
 		EnrichAmenities:    argBool(args, "enrich_amenities", false),
 		EnrichRooms:        argBool(args, "enrich_rooms", true),
@@ -243,23 +250,53 @@ func handleSearchHotels(ctx context.Context, args map[string]any, elicit ElicitF
 	// Build suggestions for progressive disclosure.
 	suggestions := hotelSuggestions(result, req.Options)
 
-	// The orchestrating LLM receives the full hotel list in structuredContent JSON
+	// The orchestrating LLM receives the hotel list in structuredContent JSON
 	// and can select and rank picks without any server-side sampling round-trip.
 	// (curateHotelsViaSampling was removed: sampling is not wired in production.)
-
-	resp := hotelSearchResponse{
-		HotelSearchResult: result,
-		Suggestions:       suggestions,
-	}
-
+	// The summary describes every hotel found; when the 50 KB reply budget cuts
+	// the list, the lowest-ranked rows go first and the hotels the summary
+	// names stay.
 	summary := hotelSummary(result, req.Location)
+	total := len(result.Hotels)
+	pinned := hotelSummaryPins(result.Hotels)
+	return fitReply(result.Hotels, dropTail(func(h models.HotelResult) bool { return pinned[hotelPinKey(h)] }),
+		func(shown []models.HotelResult, trimmed bool) (string, any) {
+			view := *result
+			view.Hotels, view.Count = shown, len(shown)
+			resp := hotelSearchResponse{HotelSearchResult: &view, Suggestions: suggestions}
+			if !trimmed {
+				return summary, resp
+			}
+			resp.BudgetOmitted = total - len(shown)
+			return summary + budgetNote(len(shown), total, "hotels", "stars, min_rating, max_price or property_type, or change sort"), resp
+		})
+}
 
-	content, err := buildAnnotatedContentBlocks(summary, resp)
-	if err != nil {
-		return nil, nil, err
+// hotelSummaryPins marks the hotels hotelSummaryText names (the lead-in and
+// the highest rated) so a budget cut never drops a row the text points at.
+func hotelSummaryPins(list []models.HotelResult) map[string]bool {
+	pins := map[string]bool{}
+	if cheapest := pricefeed.CheapestHotel(list); cheapest.Price > 0 {
+		pins[hotelPinKey(cheapest)] = true
 	}
+	if best := highestRatedHotel(list); best != nil {
+		pins[hotelPinKey(*best)] = true
+	}
+	return pins
+}
 
-	return content, resp, nil
+func hotelPinKey(h models.HotelResult) string { return h.HotelID + "|" + h.Name }
+
+// highestRatedHotel returns the first hotel with the top rating, or nil when
+// none is rated.
+func highestRatedHotel(list []models.HotelResult) *models.HotelResult {
+	var best *models.HotelResult
+	for i := range list {
+		if list[i].Rating > 0 && (best == nil || list[i].Rating > best.Rating) {
+			best = &list[i]
+		}
+	}
+	return best
 }
 
 func handleHotelPrices(ctx context.Context, args map[string]any, elicit ElicitFunc, sampling SamplingFunc, progress ProgressFunc) ([]ContentBlock, interface{}, error) {
@@ -328,18 +365,59 @@ func handleHotelPrices(ctx context.Context, args map[string]any, elicit ElicitFu
 
 // --- Summary builders ---
 
+// hotelFartherNote says how many hotels the distance cap left out and how to
+// bring them back; empty when it left none out.
+func hotelFartherNote(omitted int, capKm float64, statuses []models.ProviderStatus) string {
+	limited := hotels.GoogleRadiusApplied(capKm, statuses)
+	if omitted <= 0 && !limited {
+		return ""
+	}
+	note := fmt.Sprintf(" Google limited its results to %g km, so farther hotels may exist", capKm)
+	if omitted > 0 {
+		noun := "hotels"
+		if omitted == 1 {
+			noun = "hotel"
+		}
+		note = fmt.Sprintf(" Left out %d %s farther than %g km from the centre", omitted, noun, capKm)
+		if limited {
+			note += fmt.Sprintf("; Google limited its results to %g km, so this counts only hotels trvl itself removed", capKm)
+		}
+	}
+	return note + "; set max_distance to include them."
+}
+
 func hotelSummary(result *models.HotelSearchResult, location string) string {
+	return hotelSummaryText(result, location) + hotelMonthlyNote(result.MonthlyOmitted)
+}
+
+// hotelMonthlyNote says how many monthly rentals a nightly list left out and
+// why; empty when none.
+func hotelMonthlyNote(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	noun := "monthly rentals"
+	if n == 1 {
+		noun = "monthly rental"
+	}
+	return fmt.Sprintf(" Left out %d %s: their prices are monthly rents, not nightly rates.", n, noun)
+}
+
+func hotelSummaryText(result *models.HotelSearchResult, location string) string {
 	if !result.Success || result.Count == 0 {
 		if result.Error != "" {
 			return fmt.Sprintf("Hotel search in %s failed: %s", location, result.Error)
 		}
 		if msg, ok := incompleteAbsence("hotels in "+location, result.ProviderStatuses); ok {
-			return msg
+			return msg + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm, result.ProviderStatuses)
 		}
-		return fmt.Sprintf("No hotels found in %s.", location)
+		if result.FartherOmitted > 0 {
+			return fmt.Sprintf("No hotels found within %g km of the centre of %s.%s", result.MaxDistanceKm, location, hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm, result.ProviderStatuses))
+		}
+		return fmt.Sprintf("No hotels found in %s.", location) + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm, result.ProviderStatuses)
 	}
 
-	summary := fmt.Sprintf("Found %d hotels in %s.", result.Count, location)
+	summary := fmt.Sprintf("Found %d hotels in %s.", result.Count, location) + hotelFartherNote(result.FartherOmitted, result.MaxDistanceKm, result.ProviderStatuses)
 
 	// Cheapest headline goes through the currency-cohort guard: a nominally-small
 	// unconverted foreign price must not crown the "Lowest lead-in" line ahead of
@@ -356,31 +434,31 @@ func hotelSummary(result *models.HotelSearchResult, location string) string {
 			cheapest.Currency, cheapest.Price, cheapest.Name)
 	}
 
-	// Find highest rated.
-	var bestRated *models.HotelResult
-	for i := range result.Hotels {
-		if result.Hotels[i].Rating > 0 {
-			if bestRated == nil || result.Hotels[i].Rating > bestRated.Rating {
-				bestRated = &result.Hotels[i]
-			}
-		}
-	}
+	// Find highest rated (the same pick hotelSummaryPins keeps in a cut reply).
+	bestRated := highestRatedHotel(result.Hotels)
 	if bestRated != nil && (!hasCheapest || bestRated.Name != cheapest.Name) {
 		summary += fmt.Sprintf(" Highest rated: %s (%.1f/10).", bestRated.Name, bestRated.Rating)
 	}
-	if bookingCount := countHotelsWithProvider(result.Hotels, "booking"); bookingCount > 0 {
-		summary += fmt.Sprintf(" Includes %d Booking.com match%s.", bookingCount, pluralSuffix(bookingCount))
+	if bookingCount := countHotelsWithProvider(result.Hotels, "booking", "booking.com"); bookingCount > 0 {
+		noun := "matches"
+		if bookingCount == 1 {
+			noun = "match"
+		}
+		summary += fmt.Sprintf(" Includes %d Booking.com %s.", bookingCount, noun)
 	}
 	summary += " Treat search prices as lead-in until verified with room/detail totals."
 
 	return summary
 }
 
-func countHotelsWithProvider(hotels []models.HotelResult, provider string) int {
+// countHotelsWithProvider counts hotels with a source from any of the given
+// provider tags (Booking is "booking.com" from the built-in search and
+// "booking" from the provider runtime).
+func countHotelsWithProvider(hotels []models.HotelResult, providers ...string) int {
 	count := 0
 	for _, hotel := range hotels {
 		for _, source := range hotel.Sources {
-			if source.Provider == provider {
+			if slices.Contains(providers, source.Provider) {
 				count++
 				break
 			}
@@ -429,7 +507,7 @@ func handleHotelReviews(ctx context.Context, args map[string]any, elicit ElicitF
 		opts.Sort = "newest"
 	}
 
-	result, err := hotels.GetHotelReviews(ctx, hotelID, opts)
+	result, err := getHotelReviewsFunc(ctx, hotelID, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -443,12 +521,24 @@ func handleHotelReviews(ctx context.Context, args map[string]any, elicit ElicitF
 			result.Summary.AverageRating, result.Summary.TotalReviews)
 	}
 
-	content, err := buildAnnotatedContentBlocks(summary, result)
-	if err != nil {
-		return nil, nil, err
-	}
+	total := len(result.Reviews)
+	return fitReply(result.Reviews, dropTail[models.HotelReview](nil), func(shown []models.HotelReview, trimmed bool) (string, any) {
+		view := *result
+		view.Reviews, view.Count = shown, len(shown)
+		resp := hotelReviewsResponse{HotelReviewResult: &view}
+		if !trimmed {
+			return summary, resp
+		}
+		resp.BudgetOmitted = total - len(shown)
+		return summary + budgetNote(len(shown), total, "reviews", ""), resp
+	})
+}
 
-	return content, result, nil
+// hotelReviewsResponse is the hotel_reviews reply: the review result plus how
+// many reviews the 50 KB reply budget left out.
+type hotelReviewsResponse struct {
+	*models.HotelReviewResult
+	BudgetOmitted int `json:"budget_omitted,omitempty"`
 }
 
 // --- Hotel rooms ---
@@ -492,6 +582,11 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 	checkOut := argString(args, "check_out")
 	currency := argString(args, "currency")
 	bookingURL := argString(args, "booking_url")
+	// A booking_url outside https booking.com would make the room fetch
+	// refuse the whole lookup; drop it and let the Google fetch run alone.
+	if bookingURL != "" && !hotels.IsBookingRoomsURL(bookingURL) {
+		bookingURL = ""
+	}
 	if currency == "" {
 		currency = "USD"
 	}
@@ -502,6 +597,11 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 
 	if err := models.ValidateDateRange(checkIn, checkOut); err != nil {
 		return nil, nil, err
+	}
+	// Only a Google hotel ID resolves rooms; another provider's id would
+	// fetch nothing, or the wrong property.
+	if hotelID != "" && !models.IsGoogleHotelID(hotelID) {
+		return nil, nil, fmt.Errorf("hotel_id %q is not a Google hotel ID (/g/…, ChIJ… or 0x…:0x…); pass hotel_name to look the hotel up", hotelID)
 	}
 
 	// Resolved property identity. When the caller supplies a hotel_id (from
@@ -514,27 +614,36 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		if err != nil {
 			return nil, nil, fmt.Errorf("hotel lookup for %q: %w", hotelName, err)
 		}
-		if hotel.HotelID == "" {
+		// Only a Google place ID resolves rooms; another provider's id
+		// (Booking's, say) must not be sent as one.
+		if !models.IsGoogleHotelID(hotel.HotelID) {
 			return nil, nil, fmt.Errorf("hotel %q found (%s) but has no Google ID", hotelName, hotel.Name)
 		}
 		resolvedID = hotel.HotelID
 		resolvedName = hotel.Name
-		// Use the booking URL from the search result if the caller didn't provide one.
-		if bookingURL == "" && hotel.BookingURL != "" {
-			bookingURL = hotel.BookingURL
+		// Use the booking source's page if the caller didn't provide one.
+		if bookingURL == "" {
+			bookingURL = hotels.BookingSourceURL(*hotel)
 		}
 	}
 
 	// Fetch room availability with optional Booking.com enrichment.
 	// Pass the hotel name as a location hint for the search-page fallback
-	// (entity pages now use deferred data loading).
+	// (entity pages now use deferred data loading). It is a hotel query, not
+	// a city; with no hotel_name the hint stays empty and the entity page's
+	// city is used as a place.
+	locationKind := hotels.LocationArea
+	if hotelName != "" {
+		locationKind = hotels.LocationHotelQuery
+	}
 	availability, err := getRoomAvailabilityWithOptsFunc(ctx, hotels.RoomSearchOptions{
-		HotelID:    resolvedID,
-		CheckIn:    checkIn,
-		CheckOut:   checkOut,
-		Currency:   currency,
-		BookingURL: bookingURL,
-		Location:   hotelName,
+		HotelID:      resolvedID,
+		CheckIn:      checkIn,
+		CheckOut:     checkOut,
+		Currency:     currency,
+		BookingURL:   bookingURL,
+		Location:     hotelName,
+		LocationKind: locationKind,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("room availability for %s: %w", resolvedName, err)
@@ -544,10 +653,16 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		availability.Name = resolvedName
 	}
 
+	var cheapestLine string
 	summary := fmt.Sprintf("Found %d room types at %s (%s to %s).",
 		len(availability.Rooms), availability.Name, checkIn, checkOut)
 	if len(availability.Rooms) == 0 {
 		summary = fmt.Sprintf("No individual room types found for %s. Google Hotels may not expose room-level data for this property.", availability.Name)
+		if availability.Notice != "" {
+			// A withheld price is the reason; don't also blame Google's data.
+			// The notice travels in the reply, so the summary points to it.
+			summary = fmt.Sprintf("No individual room types found for %s: a room-price source was rate-limited (see the notice).", availability.Name)
+		}
 	} else {
 		// Count rooms with rich Booking.com data.
 		bookingRooms := 0
@@ -558,37 +673,78 @@ func handleHotelRooms(ctx context.Context, args map[string]any, elicit ElicitFun
 		}
 
 		// Find cheapest room.
-		cheapest := availability.Rooms[0]
-		for _, r := range availability.Rooms[1:] {
-			if r.Price > 0 && (cheapest.Price == 0 || r.Price < cheapest.Price) {
-				cheapest = r
-			}
-		}
+		cheapest := summaryCheapestRoom(availability.Rooms)
 		if cheapest.Price > 0 {
-			summary += fmt.Sprintf(" Cheapest: %s %.0f/night (%s).", cheapest.Currency, cheapest.Price, cheapest.Name)
+			cheapestLine = fmt.Sprintf(" Cheapest: %s %.0f/night (%s).", cheapest.Currency, cheapest.Price, cheapest.Name)
+			summary += cheapestLine
 		}
 		if bookingRooms > 0 {
 			summary += fmt.Sprintf(" %d rooms include rich Booking.com data (descriptions, amenities, bed types).", bookingRooms)
 		}
 	}
 
-	content, err := buildAnnotatedContentBlocks(summary, availability)
-	if err != nil {
-		return nil, nil, err
+	// The summary describes every room found. When the 50 KB budget cuts the
+	// list, rooms go priciest per night first (prices compared on one basis
+	// and in one currency), the cheapest per night stays, and the trimmed
+	// summary names that room instead of the raw-price pick.
+	total, nights := len(availability.Rooms), stayNights(checkIn, checkOut)
+	// Rows are indices into availability.Rooms, so exactly one room is
+	// pinned even when identical rates share every field.
+	pinAt, keptLine := -1, ""
+	idx := make([]int, total)
+	for i := range idx {
+		idx[i] = i
 	}
-
-	// MIK-6232: attach a booking-readiness verdict. Rooms carry refundability +
-	// a classifiable link, so "ready" is reachable here (unlike hotel_prices).
-	readiness := roomsBookingReadiness(availability)
-	enriched := struct {
-		*hotels.RoomAvailability
-		BookingReadiness        string   `json:"booking_readiness,omitempty"`
-		BookingReadinessReasons []string `json:"booking_readiness_reasons,omitempty"`
-	}{
-		RoomAvailability:        availability,
-		BookingReadiness:        string(readiness.Readiness),
-		BookingReadinessReasons: readiness.Reasons,
+	if total > 0 {
+		pinAt = cheapestRoomAt(availability.Rooms, currency, nights)
+		kept := availability.Rooms[pinAt]
+		if p := roomNightlyIn(kept, currency, nights); !math.IsInf(p, 1) {
+			cur := strings.ToUpper(currency)
+			if cur == "" {
+				cur = kept.Currency
+			}
+			keptLine = fmt.Sprintf(" Cheapest: %s %.0f/night (%s).", cur, p, kept.Name)
+		}
 	}
-
-	return content, enriched, nil
+	roomsAt := func(rows []int) []hotels.RoomType {
+		out := make([]hotels.RoomType, len(rows))
+		for j, i := range rows {
+			out[j] = availability.Rooms[i]
+		}
+		return out
+	}
+	cut := func(rows []int) ([]int, bool) {
+		if len(rows) <= 1 {
+			return rows, false
+		}
+		j := priciestRoomAt(roomsAt(rows), currency, nights, func(pos int) bool { return rows[pos] == pinAt })
+		if j < 0 {
+			return rows, false
+		}
+		return slices.Delete(rows, j, j+1), true
+	}
+	return fitReply(idx, cut, func(rows []int, trimmed bool) (string, any) {
+		shown := roomsAt(rows)
+		view := *availability
+		view.Rooms = shown
+		// MIK-6232: attach a booking-readiness verdict. Rooms carry
+		// refundability + a classifiable link, so "ready" is reachable here
+		// (unlike hotel_prices). It is judged on the rooms in this reply only,
+		// so it never rests on a room the budget cut.
+		readiness := roomsBookingReadiness(&view)
+		enriched := hotelRoomsResponse{
+			RoomAvailability:        &view,
+			BookingReadiness:        string(readiness.Readiness),
+			BookingReadinessReasons: readiness.Reasons,
+		}
+		if !trimmed {
+			return summary, enriched
+		}
+		enriched.BudgetOmitted = total - len(shown)
+		trimmedSummary := summary
+		if cheapestLine != "" {
+			trimmedSummary = strings.Replace(summary, cheapestLine, keptLine, 1)
+		}
+		return trimmedSummary + budgetNote(len(shown), total, "rooms", ""), enriched
+	})
 }

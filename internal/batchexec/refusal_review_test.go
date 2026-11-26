@@ -92,9 +92,9 @@ func TestBeginGoogleHonoursCancellation(t *testing.T) {
 	dir := t.TempDir()
 	c := NewTestClient("http://127.0.0.1:1")
 	c.refusalDir = dir
-	release, refused, err := c.beginGoogle(context.Background())
-	if err != nil || refused {
-		t.Fatalf("first admission: refused=%v err=%v", refused, err)
+	release, refusedUntil, err := c.beginGoogle(context.Background())
+	if err != nil || !refusedUntil.IsZero() {
+		t.Fatalf("first admission: refusedUntil=%v err=%v", refusedUntil, err)
 	}
 
 	check := func(name string, client *Client) {
@@ -122,10 +122,10 @@ func TestBeginGoogleHonoursCancellation(t *testing.T) {
 	release()
 	for name, client := range map[string]*Client{"same client": c, "other client": other} {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		rel, refused, err := client.beginGoogle(ctx)
+		rel, refusedUntil, err := client.beginGoogle(ctx)
 		cancel()
-		if err != nil || refused {
-			t.Fatalf("%s after release: refused=%v err=%v", name, refused, err)
+		if err != nil || !refusedUntil.IsZero() {
+			t.Fatalf("%s after release: refusedUntil=%v err=%v", name, refusedUntil, err)
 		}
 		rel()
 	}

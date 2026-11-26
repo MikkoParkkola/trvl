@@ -2,19 +2,16 @@ package hotels
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/MikkoParkkola/trvl/internal/batchexec"
 	"github.com/MikkoParkkola/trvl/internal/breaker"
-	"github.com/MikkoParkkola/trvl/internal/fareintel"
 	"github.com/MikkoParkkola/trvl/internal/logredact"
 	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/providers"
-	"github.com/MikkoParkkola/trvl/internal/searchctx"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -97,13 +94,16 @@ type HotelSearchOptions struct {
 	Currency     string // default "USD"
 
 	// Post-fetch filters.
-	MinPrice      float64  // minimum price per night (0 = no filter)
-	MaxPrice      float64  // maximum price per night (0 = no filter)
-	MinRating     float64  // minimum guest rating on 0-10 scale, e.g. 8.0 (0 = no filter)
-	MaxDistanceKm float64  // max km from city center (0 = no filter)
-	Amenities     []string // required amenities, all must match (nil = no filter)
-	CenterLat     float64  // city center latitude (resolved automatically if 0)
-	CenterLon     float64  // city center longitude (resolved automatically if 0)
+	MinPrice      float64 // minimum price per night (0 = no filter)
+	MaxPrice      float64 // maximum price per night (0 = no filter)
+	MinRating     float64 // minimum guest rating on 0-10 scale, e.g. 8.0 (0 = no filter)
+	MaxDistanceKm float64 // max km from city center (0 = no filter)
+	// StayTerm picks which prices the search returns: nightly (the default)
+	// or nightly plus monthly rentals (long-stay accommodation search only).
+	StayTerm  StayTerm
+	Amenities []string // required amenities, all must match (nil = no filter)
+	CenterLat float64  // city center latitude (resolved automatically if 0)
+	CenterLon float64  // city center longitude (resolved automatically if 0)
 
 	// Enrichment options.
 	EnrichAmenities bool // fetch detail pages for top hotels to get full amenity lists
@@ -167,6 +167,8 @@ type HotelSearchOptions struct {
 	// allowlist (TRVL_STEALTH_ALLOWLIST); a requested-but-unauthorized host
 	// runs the normal path and logs a single refusal line. See internal/stealth.
 	Stealth bool
+	// Scope: does the location name a place or a property? See HotelSearchScope.
+	Scope HotelSearchScope
 }
 
 // SearchHotels searches for hotels in the given location.
@@ -180,60 +182,14 @@ func SearchHotels(ctx context.Context, location string, opts HotelSearchOptions)
 
 // SearchHotelsWithClient is like SearchHotels but reuses the provided client.
 func SearchHotelsWithClient(ctx context.Context, client *batchexec.Client, location string, opts HotelSearchOptions) (*models.HotelSearchResult, error) {
-	location = normalizeHotelCity(location)
-	if opts.CheckIn == "" || opts.CheckOut == "" {
-		return nil, fmt.Errorf("check-in and check-out dates are required")
-	}
-	if opts.Guests <= 0 {
-		opts.Guests = 2
-	}
-	if opts.Currency == "" {
-		opts.Currency = "USD" // Google's default when no currency specified
-	} else {
-		opts.Currency = strings.ToUpper(opts.Currency)
-	}
-
-	// Validate dates.
-	_, err := parseDateArray(opts.CheckIn)
-	if err != nil {
-		return nil, fmt.Errorf("parse check-in date: %w", err)
-	}
-	_, err = parseDateArray(opts.CheckOut)
-	if err != nil {
-		return nil, fmt.Errorf("parse check-out date: %w", err)
-	}
-
-	key := hotelSearchKey(location, opts)
-	return doHotelSearchSingleflight(ctx, key, func(sharedCtx context.Context) (*models.HotelSearchResult, error) {
-		return searchHotelsCore(sharedCtx, client, location, opts)
-	})
-}
-
-func doHotelSearchSingleflight(ctx context.Context, key string, fn func(context.Context) (*models.HotelSearchResult, error)) (*models.HotelSearchResult, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	ch := hotelGroup.DoChan(key, func() (any, error) {
-		sharedCtx, cancel := searchctx.DetachedWithin(ctx, sharedHotelSearchTimeout)
-		defer cancel()
-		return fn(sharedCtx)
-	})
-
-	select {
-	case <-ctx.Done():
-		// The winner keeps running until the detached shared deadline expires; if
-		// the caller times out first, forget the key so later callers do not join
-		// that doomed execution.
-		hotelGroup.Forget(key)
-		return nil, ctx.Err()
-	case res := <-ch:
-		return sharedHotelResult(res.Val, res.Err)
-	}
+	res, _, err := searchHotelsCall(ctx, client, location, opts)
+	return res, err
 }
 
 // searchHotelsCore performs the actual hotel search without singleflight wrapping.
-func searchHotelsCore(ctx context.Context, client *batchexec.Client, location string, opts HotelSearchOptions) (*models.HotelSearchResult, error) {
+// call records every Google request, in order, for the run's caller (#826).
+func searchHotelsCore(ctx context.Context, client *batchexec.Client, location string, opts HotelSearchOptions, call *googleCall) (*models.HotelSearchResult, error) {
+	googleLocation := normalizeHotelCity(location)
 	pageLimit := hotelPageLimit(opts.MaxPages)
 
 	// Determine which sort orders to use. When MaxPages is 1 (compound
@@ -293,7 +249,8 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		}
 
 		// Fetch first page for this sort order (with metadata on the primary sort).
-		firstPage, err := fetchHotelPageFullFn(ctx, client, location, opts, 0, googleSort)
+		firstPage, err := fetchHotelPageFullFn(ctx, client, googleLocation, opts, 0, googleSort)
+		call.note(0, err)
 		if err != nil {
 			if sortIdx == 0 {
 				// Primary Google sort failed. Don't abort the whole search:
@@ -321,7 +278,8 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 
 		// Paginate within this sort order.
 		for page := 1; page < pageLimit; page++ {
-			pageHotels, err := fetchHotelPage(ctx, client, location, opts, page*pageSize, googleSort)
+			pageHotels, err := fetchHotelPage(ctx, client, googleLocation, opts, page*pageSize, googleSort)
+			call.note(0, err)
 			if err != nil {
 				// Non-fatal: keep what we have from previous pages.
 				break
@@ -380,6 +338,11 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 						statuses:      []models.ProviderStatus{hotelProviderStatusFromError(id, name, ctxErr)},
 						breakerAction: hotelAuxBreakerFailure,
 					}
+				}
+				if errors.Is(err, models.ErrNotApplicable) {
+					// Not served here: no strike, no reset; nothing was learnt
+					// about the provider's health.
+					return hotelAuxOutcome{statuses: []models.ProviderStatus{hotelProviderStatusFromError(id, name, err)}}
 				}
 				if err != nil {
 					slog.Warn(id+" search failed", "error", logredact.Err(err))
@@ -563,6 +526,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		}})
 	}
 
+	auxTasks = scopedAuxTasks(auxTasks, opts.Scope)
 	auxOutcomes := collectHotelAuxTasks(ctx, hotelAuxProviderTimeout, auxTasks)
 	var externalResults []models.HotelResult
 	for index, outcome := range auxOutcomes {
@@ -598,6 +562,14 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 		return nil, googlePrimaryErr
 	}
 
+	// Monthly rents are not nightly prices: every search but the long-stay one
+	// (StayIncludeMonthly) leaves them out before the headline is picked, so no
+	// caller shows or multiplies a monthly rent as a night. Fail closed: any
+	// other stay term counts as nightly.
+	monthlyOmitted := 0
+	if opts.StayTerm != StayIncludeMonthly {
+		hotels, monthlyOmitted = nightlyOnly(hotels)
+	}
 	models.FinalizeHotelPriceTrust(hotels, opts.Currency, time.Now(), trustConverter(ctx))
 	// FinalizeHotelPriceTrust may refresh Price/Currency from a source, so
 	// re-assert ComparablePrice for any headline already in the target currency.
@@ -606,7 +578,8 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// Resolve city center coordinates. Used for distance filter/sort and
 	// for computing DistanceKm on every hotel (useful info for the user
 	// even when no distance filter is active).
-	if opts.CenterLat == 0 && opts.CenterLon == 0 {
+	// A property search has no city to centre on.
+	if opts.CenterLat == 0 && opts.CenterLon == 0 && opts.Scope != SearchScopeProperty {
 		lat, lon, err := ResolveLocation(ctx, location)
 		if err == nil {
 			opts.CenterLat = lat
@@ -634,7 +607,12 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	}
 
 	// Apply post-filters.
-	hotels = filterHotels(hotels, opts)
+	hotels, farther := filterHotelsCounted(hotels, opts)
+	// The cap is only applied when the centre is known (same test as the filter).
+	appliedCapKm := 0.0
+	if opts.CenterLat != 0 {
+		appliedCapKm = opts.MaxDistanceKm
+	}
 
 	if len(externalResults) > 0 {
 		slog.Info("post-filter hotel counts",
@@ -688,7 +666,7 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 	// provider-specific URLs that were already attached during source merges.
 	for i := range hotels {
 		if hotels[i].BookingURL == "" {
-			hotels[i].BookingURL = buildHotelBookingURL(location, opts.CheckIn, opts.CheckOut)
+			hotels[i].BookingURL = buildHotelBookingURL(googleLocation, opts.CheckIn, opts.CheckOut)
 		}
 	}
 
@@ -704,43 +682,18 @@ func searchHotelsCore(ctx context.Context, client *batchexec.Client, location st
 
 	annotateHotelConfidence(hotels, time.Now())
 
-	return &models.HotelSearchResult{
+	result := &models.HotelSearchResult{
 		Success:          true,
 		Count:            len(hotels),
 		TotalAvailable:   totalAvailable,
+		MaxDistanceKm:    appliedCapKm,
+		FartherOmitted:   farther,
+		MonthlyOmitted:   monthlyOmitted,
 		Hotels:           hotels,
 		ProviderStatuses: providerStatuses,
 		Completeness:     models.ComputeCompleteness(providerStatuses),
-	}, nil
-}
-
-// annotateHotelConfidence attaches an honest bookability Confidence to every
-// hotel (innovation #3), scored via the shared fareintel scorer from the
-// property's price freshness, provider reliability, multi-source corroboration,
-// and price-basis verification. Hotels with no usable signal are left unrated,
-// never faked.
-func annotateHotelConfidence(hotels []models.HotelResult, now time.Time) {
-	for i := range hotels {
-		h := &hotels[i]
-		provider := h.CheapestSource
-		if provider == "" && len(h.Sources) > 0 {
-			provider = h.Sources[0].Provider
-		}
-		retrievedAt := h.RetrievedAt
-		if retrievedAt.IsZero() {
-			retrievedAt = now
-		}
-		c := fareintel.ScoreConfidence(fareintel.ConfidenceInput{
-			Price:             h.Price,
-			Currency:          h.Currency,
-			Provider:          provider,
-			RetrievedAt:       retrievedAt,
-			Now:               now,
-			Sources:           h.Sources,
-			PriceVerification: h.PriceConfidence,
-		})
-		h.Confidence = &c
 	}
+	return result, nil
 }
 
 func cloneHotelSearchResult(shared *models.HotelSearchResult) *models.HotelSearchResult {
@@ -780,9 +733,7 @@ func cloneHotelSearchResult(shared *models.HotelSearchResult) *models.HotelSearc
 	if shared.ProviderStatuses != nil {
 		cp.ProviderStatuses = append([]models.ProviderStatus(nil), shared.ProviderStatuses...)
 	}
-	if shared.Completeness.Missing != nil {
-		cp.Completeness.Missing = append([]string(nil), shared.Completeness.Missing...)
-	}
+	cp.Completeness = shared.Completeness.Clone()
 	return &cp
 }
 

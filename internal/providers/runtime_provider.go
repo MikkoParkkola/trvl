@@ -391,75 +391,23 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", redactError(err))
 	}
-	defer func() { _ = resp.Body.Close() }()
+	// Close this first body, not whatever resp holds at return: the 429 retry
+	// loop and the challenge-recovery retries replace resp, and doSearchRequest
+	// closes each replacement itself (#846).
+	firstBody := resp.Body
+	defer func() { _ = firstBody.Close() }()
 
 	body, err := decompressBody(resp, maxResponseBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 	slog.Debug("search response", "provider", cfg.ID, "status", resp.StatusCode, "body_len", len(body),
-		"content_encoding", resp.Header.Get("Content-Encoding"),
-		"is_challenge", isAkamaiChallenge(resp.StatusCode, body))
+		"content_encoding", resp.Header.Get("Content-Encoding"))
 
-	// Detect Akamai/AWS WAF challenge pages. HTTP 202 is in the 2xx range so
-	// the generic status check below would accept it, but the body is an HTML
-	// challenge page — not the real API response. When detected, run the same
-	// Tier 3/4 escape-hatch cascade that runPreflight uses: browser cookies →
-	// WAF JS solver → browser escape hatch. If any tier succeeds, retry the
-	// main request with the fresh cookies.
-	if isAkamaiChallenge(resp.StatusCode, body) {
-		slog.Info("search response is an Akamai/WAF challenge page, attempting cookie recovery",
-			"provider", cfg.ID, "status", resp.StatusCode)
-
-		recovered := false
-
-		// Tier 3a: re-read cookies from the user's browser.
-		if applyBrowserCookies(pc, endpoint, cfg.Cookies.Browser) {
-			resp2, body2, err2 := doSearchRequest(ctx, pc.client, req)
-			if err2 == nil && !isAkamaiChallenge(resp2.StatusCode, body2) && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
-				resp, body = resp2, body2
-				recovered = true
-				slog.Info("search challenge bypassed via browser cookies", "provider", cfg.ID)
-			}
-		}
-
-		// Tier 3b: WAF JS solver.
-		if !recovered {
-			cookie, wafErr := waf.SolveAWSWAF(ctx, pc.client, endpoint, string(body), nil)
-			if wafErr == nil && cookie != nil {
-				if u, parseErr := url.Parse(endpoint); parseErr == nil {
-					pc.client.Jar.SetCookies(u, []*http.Cookie{cookie})
-				}
-				resp2, body2, err2 := doSearchRequest(ctx, pc.client, req)
-				if err2 == nil && !isAkamaiChallenge(resp2.StatusCode, body2) && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
-					resp, body = resp2, body2
-					recovered = true
-					slog.Info("search challenge bypassed via WAF JS solver", "provider", cfg.ID)
-				}
-			}
-		}
-
-		// Tier 4: browser escape hatch.
-		if !recovered && cfg.Auth != nil && cfg.Auth.BrowserEscapeHatch && isInteractive(ctx) {
-			// No lock held on this path, unlike runPreflight — so commit with
-			// the self-locking variant. Readers hold pc.authMu.RLock.
-			if vals, ok := tryBrowserEscapeHatch(ctx, pc, cfg.Auth); ok {
-				commitAuthValues(pc, vals)
-				resp2, body2, err2 := doSearchRequest(ctx, pc.client, req)
-				if err2 == nil && !isAkamaiChallenge(resp2.StatusCode, body2) && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
-					resp, body = resp2, body2
-					recovered = true
-					slog.Info("search challenge bypassed via browser escape hatch", "provider", cfg.ID)
-				}
-			}
-		}
-
-		if !recovered {
-			return nil, fmt.Errorf("http %d: WAF/JS challenge page — all cookie recovery tiers failed (provider %s)", resp.StatusCode, cfg.ID)
-		}
-	}
-
-	// Retry on HTTP 429 honouring the Retry-After header (MIK-3071).
+	// Retry on HTTP 429 honouring the Retry-After header (MIK-3071). This runs
+	// before the challenge check so that check sees the answer the retries end
+	// with: a 429 whose retry comes back as an empty WAF 202 is still a
+	// challenge, not a parse error (#841).
 	const maxRetries429 = 2
 	for attempt := 0; attempt < maxRetries429 && resp.StatusCode == http.StatusTooManyRequests; attempt++ {
 		delay := RetryAfterOrDefault(resp.Header.Get("Retry-After"), time.Now())
@@ -476,6 +424,64 @@ func (rt *Runtime) searchProvider(ctx context.Context, cfg *ProviderConfig, loca
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return nil, fmt.Errorf("rate limit: %d retries exhausted (http 429): %s", maxRetries429, describeBody(body, resp, 200))
+	}
+
+	// Detect Akamai/AWS WAF challenge pages. HTTP 202 is in the 2xx range so
+	// the generic status check below would accept it, but the body is an HTML
+	// challenge page — not the real API response. When detected, run the same
+	// Tier 3/4 escape-hatch cascade that runPreflight uses: browser cookies →
+	// WAF JS solver → browser escape hatch. If any tier succeeds, retry the
+	// main request with the fresh cookies.
+	if isAkamaiChallenge(resp.StatusCode, resp.Header, body) {
+		slog.Info("search response is an Akamai/WAF challenge page, attempting cookie recovery",
+			"provider", cfg.ID, "status", resp.StatusCode)
+
+		recovered := false
+
+		// Tier 3a: re-read cookies from the user's browser.
+		if applyBrowserCookies(pc, endpoint, cfg.Cookies.Browser) {
+			resp2, body2, err2 := doSearchRequest(ctx, pc.client, req)
+			if err2 == nil && !isAkamaiChallenge(resp2.StatusCode, resp2.Header, body2) && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
+				resp, body = resp2, body2
+				recovered = true
+				slog.Info("search challenge bypassed via browser cookies", "provider", cfg.ID)
+			}
+		}
+
+		// Tier 3b: WAF JS solver.
+		if !recovered {
+			cookie, wafErr := waf.SolveAWSWAF(ctx, pc.client, endpoint, string(body), nil)
+			if wafErr == nil && cookie != nil {
+				if u, parseErr := url.Parse(endpoint); parseErr == nil {
+					pc.client.Jar.SetCookies(u, []*http.Cookie{cookie})
+				}
+				resp2, body2, err2 := doSearchRequest(ctx, pc.client, req)
+				if err2 == nil && !isAkamaiChallenge(resp2.StatusCode, resp2.Header, body2) && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
+					resp, body = resp2, body2
+					recovered = true
+					slog.Info("search challenge bypassed via WAF JS solver", "provider", cfg.ID)
+				}
+			}
+		}
+
+		// Tier 4: browser escape hatch.
+		if !recovered && cfg.Auth != nil && cfg.Auth.BrowserEscapeHatch && isInteractive(ctx) {
+			// No lock held on this path, unlike runPreflight — so commit with
+			// the self-locking variant. Readers hold pc.authMu.RLock.
+			if vals, ok := tryBrowserEscapeHatch(ctx, pc, cfg.Auth); ok {
+				commitAuthValues(pc, vals)
+				resp2, body2, err2 := doSearchRequest(ctx, pc.client, req)
+				if err2 == nil && !isAkamaiChallenge(resp2.StatusCode, resp2.Header, body2) && resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
+					resp, body = resp2, body2
+					recovered = true
+					slog.Info("search challenge bypassed via browser escape hatch", "provider", cfg.ID)
+				}
+			}
+		}
+
+		if !recovered {
+			return nil, fmt.Errorf("http %d: WAF/JS challenge page — all cookie recovery tiers failed (provider %s)%s", resp.StatusCode, cfg.ID, wafActionNote(resp.Header))
+		}
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

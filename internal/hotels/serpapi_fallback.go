@@ -440,6 +440,7 @@ func roomTypesFromSerpAPIHotel(hotel *serpapi.Hotel, currency string) []RoomType
 			TotalPrice:      hotel.TotalPrice(),
 			Currency:        currency,
 			Provider:        serpapiProviderName(serpapiVerifiedSource(hotel)),
+			Source:          "serpapi",
 			MatchConfidence: models.RoomInventoryMatchPropertyLevelOnly,
 		})
 	}
@@ -538,6 +539,7 @@ func roomTypeFromSerpAPIOffer(offer serpapi.PriceOption, room *serpapi.RoomOptio
 		Currency:        currency,
 		Provider:        serpapiProviderName(offer.Source),
 		ProviderURL:     providerURL,
+		Source:          "serpapi",
 		RatePlanName:    offer.Benefits,
 		MatchConfidence: matchConfidence,
 		MaxGuests:       maxGuests,

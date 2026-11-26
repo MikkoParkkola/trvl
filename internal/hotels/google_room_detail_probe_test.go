@@ -73,9 +73,10 @@ func TestProbeGoogleRoomLevelDetail(t *testing.T) {
 
 	// Also exercise the opt-in relay path end-to-end if an operator configured it.
 	if googleRoomDetailConfigured() {
-		rooms, name, notice := tryGoogleRoomDetail(ctx, RoomSearchOptions{
+		rooms, name, detailCall := tryGoogleRoomDetail(ctx, RoomSearchOptions{
 			HotelID: hotelID, CheckIn: checkIn, CheckOut: checkOut, Guests: 2, Currency: "EUR",
 		})
+		notice := providerRateLimitNotice("Google Hotels", detailCall.refusal())
 		t.Logf("[probe relay] rooms=%d name=%q notice=%q", len(rooms), name, notice)
 	}
 }

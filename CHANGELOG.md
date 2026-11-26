@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.28.5] - 2026-11-21
+
+### Changed
+
+- The daily heartbeat also carries the UTC day the install id was created (for an install made before this release, the day its id file was last written) and a random machine id shared by products on the same machine. Neither holds an IP, hostname, or username. The receiver accepts both as optional fields (#850).
+
+### Fixed
+
+- The heartbeat's state files in `~/.trvl` (install id, install date, last-send time) are written by an atomic replace. A state file that is a symbolic link is now replaced instead of written through, and a link, directory or oversized file there is never read as a value, so the file a link points to is neither overwritten nor sent as the install id (#853).
+- Deleting `~/.trvl/install-id` to reset an install now also resets its install date (#853).
+- An install id file that shares its contents with another file through a hard link (for example one linked to an API key) is never sent: trvl uses the id only when the file is the sole link to its contents, counted when the file is found, so removing the other name while trvl reads it does not make it pass. trvl then writes a fresh id in its place and leaves the other file untouched (#853).
+- On Windows, a save that fails no longer deletes the existing file. This applies to every store trvl writes this way, including watches, trips, preferences and provider state; the previous file stays as it was and the error is reported (#854).
+
+## [1.28.4] - 2026-11-19
+
+### Changed
+
+- When Booking.com answers a search with an empty or non-JSON HTTP 202 (the AWS WAF challenge), trvl treats it as the challenge it is: it runs the existing recovery, browser cookies first, and if that fails the provider status carries reason `blocked` (status `rate_limited`) instead of a JSON parse error ("unexpected end of JSON input"). The same holds when that answer follows a 429 retry. In an interactive run, a provider that allows the browser escape hatch can now reach that flow, which may open a browser window, as other challenges already do. An `x-amzn-waf-action: challenge` header now counts as a challenge whatever the body is.
+
+### Fixed
+
+- A provider whose config sets `cookies.source` to `"none"` no longer has your browser cookies read by the automatic cookie retry during challenge recovery. The interactive browser escape hatch is a separate opt-in (`browser_escape_hatch`) and still reads cookies when a provider enables it.
+- A misspelled `cookies.source` (for example `"nnoe"`) no longer allows the automatic cookie retry to read browser cookies. That retry reads cookies only when the source is empty, `"preflight"` or `"browser"`. Provider validation now rejects any `cookies.source` outside `"none"`, `"preflight"` and `"browser"` (empty means the default).
+- Booking.com's own search reports a bot wall that survives a fresh token with reason `blocked`, and a 503 that persists with reason `unavailable` (both with status `rate_limited`), instead of a plain failure.
+- A search closes its first response when a retry or recovery step replaces it, so long-running sessions no longer hold network connections open.
+- Wizz Air searches use API version 29.25.0.
+- The Deutsche Bahn station-ID live probe accepts DB's "DB sells no fares for this route" answer instead of reporting a false failure.
+
+## [1.28.3] - 2026-11-17
+
+### Changed
+
+- A partial search counts a provider that returned results before it was cut off as checked, and names it as having "answered only in part" ("Checked 1 of 1 providers; google_hotels answered only in part — results may be incomplete."). A search reads as blocked only when no provider returned anything. (#823)
+
+### Fixed
+
+- Looking up a hotel by name no longer treats the name as a city. `trvl rooms "Hotel Sacher Wien"`, MCP `hotel_rooms` with `hotel_name` and room watches used to ask seven rental sites for apartments in the "city" Hotel Sacher Wien, and to search Google for "Hotel Sacher Wien, Hotel Sacher Wien". A search for a named hotel now asks only Google Hotels and Booking.com, and the Google query is the name once. (#812)
+- A Google refusal during a room lookup is reported. The notice now opens with "Google Hotels room pricing was temporarily unavailable (rate-limited)" when Google refused and its rooms are missing, instead of naming only Agoda and Booking.com. A later failure from another provider can no longer erase that refusal. (#813)
+- During a Google cooldown, a hotel name lookup returns an error that says Google refused and when a retry can work: `found "Hotel Sacher Wien", but Google Hotels refused requests, so its Google place ID is unknown; retry once Google's cooldown ends: … retry after 13:14:05 CET (in 60s)`. A 403 or 503 reads "Google Hotels blocked the request …; retry later". The CLI no longer blames Google's hotel index for a rate limit, and CLI and MCP print the same sentence. (#813)
+- A merged hotel room keeps only its own seller's refund, cancellation, board and breakfast terms. A Google room without its own price takes Booking.com's whole quote, currency and rate plan included. Another seller's quote never borrows the room's link, price, currency or terms, and a quote without a currency is left out of offers rather than labelled with the room's. (#823)
+
+## [1.28.2] - 2026-11-17
+
+### Changed
+
+- Every MCP list tool now keeps its reply under 50 KB, as `search_ground` already did: airport transfers, hotels, hotel details, hotel rooms, hotel reviews, accommodations (search and reverify) and flights. A Vienna `search_hotels` reply was 319 KB. Over budget, a tool drops rows until the reply fits, reports `budget_omitted` and says `Showing X of N ...; narrow with ...`. A reply that fits is unchanged. Rows the summary names (the cheapest hotel, the cheapest flight, the room a summary quotes) always stay, and derived fields such as readiness, offers and comparison picks are rebuilt from the rows shown. A tool that cannot fit even its smallest reply returns an error naming the 50 KB budget instead of an oversized reply. (#806)
+- A partial search names what happened to each missing provider instead of saying "did not respond" for all of them: "did not respond", "refused the request", "rate-limited the request", "returned a server error", "failed" or "not tried (circuit breaker open)". Trip plans use the same wording. (#807)
+- Hotel `headline_provider` and `sources[].provider` name the trvl provider that fetched the price (`google_hotels`, `booking.com`, `agoda`, `serpapi`), and the seller from Google's partner list moves to the new `sources[].seller`. A merged room keeps one seller's price fields; another seller's quote stays in `inventory_options` and can still become the hotel headline under its own seller and link. Confidence for room-enriched hotels counts Google Hotels once. (#808)
+- The skip-flight, open-jaw ground and return-split hacks now need a fare gap of at least 50 in the search currency. The saved hotel night no longer counts toward that bar; it is described in the hack's text. (#819)
+
+### Fixed
+
+- Ground searches no longer subtract a flight hack's saving from a bus or train fare: a Prague to Vienna bus at EUR 15.90 was shown as EUR 13. Ground results carry no `hack_saving`, since no detector measures one on a ground fare. (#815)
+- A ground search's savings pass no longer runs flight lookups, so it can no longer arm the 15-minute Google cooldown that every trvl search on the machine shares. (#814)
+- A ground search queries each provider once. The savings pass used to repeat the search and log every provider failure twice. (#810)
+- Deutsche Bahn prices: the day-best lookup sends one valid request, so a route DB cannot price reads "DB sells no fares for this route; book with …" instead of "DB's price lookup failed: fares unavailable" after an HTTP 400. (#811)
+- ÖBB routes report their real number of changes and their legs; four of five Prague to Vienna trains change at Breclav, Pardubice or Linz but were listed as direct. `max_transfers` now also applies to single-train routes; a route whose change count is only partly known is flagged, keeps its known minimum in the label, and is dropped when that minimum already exceeds the cap. (#809)
+- Flight hacks no longer subtract a hotel night from a flight fare: `night_transport` turned a EUR 150 flight into "price 90" and `ferry_cabin` into "price 65". Both still appear in `trvl hacks`, with their hotel saving. (#819)
+- Multimodal plans no longer subtract a flight hack's saving from an itinerary total that may contain no flight. The `trvl multimodal` help and the MCP tool description no longer promise a saving. (#824)
+- Cached ground, hotel and flight results no longer share their completeness details with the copy handed to each caller. (#817)
+
+## [1.28.1] - 2026-11-16
+
+### Fixed
+
+- The release workflow builds on macOS 26: GitHub retired the macOS 14 runners on 2026-11-02, so v1.28.0 was tagged but never published. 1.28.1 is the first published 1.28 release and carries every 1.28.0 change listed below.
+
+## [1.28.0] - 2026-11-16
+
 ### Security
 
 - `golang.org/x/crypto` updated to v0.59.0 (was v0.58.0) for GO-2026-5932, which moves the unmaintained `openpgp` packages out of the module; the expired osv-scanner exception for that advisory is removed. `golang.org/x/sync`, `sys`, `term` and `text` move up with it.
@@ -21,10 +90,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP `search_ground` labels prices the same way in its text summary (`~€22 (est.)`, `price unavailable`, live fares unmarked) and declares `price_provenance` on routes and sources in its output schema. `search_airport_transfers` shares the summary, so its taxi estimates now read `~€45 (est.)`.
 - MCP `search_ground` returns at most 20 routes per direction, ranked as before (live fares first), and fewer when the whole result would pass 50 KB. `count` is the number returned and the new `total_count` the number found; the summary says how many more exist and that `type`, `provider` or `max_price` narrow them. On the 53-route test fixture the result shrank from 184 KB to 45 KB.
 - MCP `search_ground` drops repeats from each route: a single-provider `sources` array, a lone leg identical to the route, leg cities already named by the route or the previous leg, and the confidence `rated` and `freshness` fields (`label`, `score`, `basis` and `signals` stay). An empty `legs` is omitted instead of `null`.
+- Hotel results name `headline_provider`, the provider whose quote is the headline price as picked by the trust rule (price confidence, then basis). Confidence scoring, accommodation evidence and trip plans credit it instead of `cheapest_source`, which can name a cheaper lead-in from another site. A hotel with no usable quote carries `price_provenance: "unavailable"`.
+- `trvl hotels` and the MCP hotel list tools (`search_hotels`, `search_accommodations`, `search_hotels_with_details`) keep hotels within 25 km of the city centre unless `--max-distance` or `max_distance` says otherwise (`0` removes the cap). Results carry `max_distance_km` and `farther_omitted`, and summaries say how many farther hotels were left out. A cap under 25 km is also sent to Google, which then withholds farther hotels; the summary says the count covers only what trvl removed. Name lookups, room pricing and trip planning stay uncapped.
+- A hotel provider that does not serve the city is listed as skipped with reason `city_not_served` and no longer counts toward its circuit breaker. Landing, which lists US homes only, answers that way for cities outside the US.
 
 ### Fixed
 
-- Google Flights and Hotels searches honour `HTTPS_PROXY` and `NO_PROXY`: the Google client opened its own TLS connection straight to the destination and ignored the proxy, so it failed with a DNS or network error wherever the proxy is the only way out. It now tunnels through the proxy with `CONNECT`, and connects directly as before when no proxy applies.
+- Finding a hotel by name works across city aliases: `trvl rooms "Hotel Sacher Wien"` now matches Google's "Hotel Sacher Vienna". A candidate named after another town is dropped, a query naming one property reads Google's single-hotel detail view for its place ID, and a merge keeps a Google ID over another provider's. An address counts as city-only when every part is a city, a country or a postcode with a city. Room lookups accept only real Google IDs (`/g/…`, `ChIJ…`, `0x…:0x…`), and the room fetch uses the Booking.com source's own page.
+- Monthly rents from Uniplaces, Wunderflats, Spotahome, Anyplace, Blueground and Flatio (whose listings now price a 30-day stay) no longer appear as nightly hotel prices: they are tagged `monthly`, every hotel search except `search_accommodations` leaves monthly-only results out, so trip plans, trip costs, weekend getaways, price and room lookups and watches never treat a monthly rent as a night. Hotel lists say how many they left out (`monthly_omitted`). `search_accommodations` still searches monthly rentals, labelled `monthly`, but shows only its top few candidates, so they may not appear in its reply. A quote worth less than one unit of the requested currency (EUR 1 in a EUR search), such as a 0.01 ARS placeholder, no longer becomes a headline price, and leaves no price behind.
+- Booking.com prices were stay totals; they are now nightly like every other provider's, so a nightly `--max-price` compares like with like.
+- Hotel side providers (Flatio, Spotahome, Uniplaces, Blueground and the rest) get the English city name, so "Wien" and "Vienna" both reach Vienna; only the Google fetch gets the local form it needs.
+- Ferryhopper runs only when both ends match one of its 1,451 ports, so an inland pair such as Prague to Vienna shows as not served instead of a search its resolver misreads (Prague became Grand Portage, USA).
+- Finnlines and Tallink treat two of their ports with no line between them (Naantali to Travemünde, Helsinki to Riga) as not served.
+- Deutsche Bahn journeys without any fare, such as Praha to Wien, come back with a notice naming the carriers that run them, and the day-best fallback tries its second request format before giving up.
 - Tallink searches decode again: `marketingMessage` became an object in the timetable answer. Its sailing fares are marked `live`.
 - Snälltåget searches the booking app's API (`apiv2.snalltaget.se`) with the site's anonymous guest token instead of a retired host. It returns live per-departure fares in SEK, takes station names from the answer, adds Copenhagen and Hamburg, and links to the current booking page.
 - Renfe returns its price-calendar day minimum as an `estimated` EUR fare with no invented 00:00 departure.
@@ -1440,7 +1518,13 @@ Trust & Discoverability release. The gaps surfaced by @RobertoReale's "Budget Tr
 - Single static binary, zero runtime dependencies
 - MIT license
 
-[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.27.0...HEAD
+[Unreleased]: https://github.com/MikkoParkkola/trvl/compare/v1.28.5...HEAD
+[1.28.5]: https://github.com/MikkoParkkola/trvl/compare/v1.28.4...v1.28.5
+[1.28.4]: https://github.com/MikkoParkkola/trvl/compare/v1.28.3...v1.28.4
+[1.28.3]: https://github.com/MikkoParkkola/trvl/compare/v1.28.2...v1.28.3
+[1.28.2]: https://github.com/MikkoParkkola/trvl/compare/v1.28.1...v1.28.2
+[1.28.1]: https://github.com/MikkoParkkola/trvl/compare/v1.28.0...v1.28.1
+[1.28.0]: https://github.com/MikkoParkkola/trvl/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/MikkoParkkola/trvl/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/MikkoParkkola/trvl/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/MikkoParkkola/trvl/compare/v1.24.0...v1.25.0

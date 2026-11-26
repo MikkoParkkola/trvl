@@ -299,6 +299,7 @@ func parseAnyplaceListings(raw json.RawMessage, fallbackCurrency string) ([]mode
 			Name:         strings.TrimSpace(l.Title),
 			HotelID:      l.ID,
 			Price:        l.Price,
+			PriceBasis:   models.PriceBasisMonthly, // a monthly rent, never a nightly rate
 			Currency:     currency,
 			Address:      strings.TrimSpace(l.Address),
 			ImageURL:     anyplaceAbsURL(l.Photo),
@@ -314,6 +315,7 @@ func parseAnyplaceListings(raw json.RawMessage, fallbackCurrency string) ([]mode
 		h.Sources = []models.PriceSource{{
 			Provider:   "anyplace",
 			Price:      l.Price,
+			PriceBasis: models.PriceBasisMonthly, // a monthly rent, never a nightly rate
 			Currency:   currency,
 			BookingURL: h.BookingURL,
 		}}

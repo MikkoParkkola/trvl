@@ -41,7 +41,7 @@ func tryBrowserCookieRetry(ctx context.Context, pc *providerClient, auth *AuthCo
 	}
 	// Reject 202 challenge pages — they are in the 2xx range but are WAF
 	// interstitials, not real responses.
-	if isAkamaiChallenge(resp2.StatusCode, body2) {
+	if isAkamaiChallenge(resp2.StatusCode, resp2.Header, body2) {
 		return nil, false
 	}
 	return extractAuthValues(ctx, pc, auth, resp2, body2), true
@@ -200,7 +200,7 @@ func finishEscapeHatch(ctx context.Context, pc *providerClient, auth *AuthConfig
 		return nil, false
 	}
 	// Reject 202 challenge pages — still a WAF interstitial despite being 2xx.
-	if isAkamaiChallenge(resp2.StatusCode, body2) {
+	if isAkamaiChallenge(resp2.StatusCode, resp2.Header, body2) {
 		slog.Warn("browser escape hatch: preflight retry returned another challenge page",
 			"provider", pc.config.ID)
 		return nil, false
@@ -320,6 +320,20 @@ func isLiteralOrLocalHost(host string) bool {
 // it, so the provenance is recorded here where it cannot be forgotten.
 func applyBrowserCookies(pc *providerClient, targetURL, browserHint string) bool {
 	if pc == nil || pc.client == nil {
+		return false
+	}
+	// Only a provider whose cookies.source permits it gets browser cookies from
+	// this function, the one door every recovery retry goes through: "" (the
+	// default-on policy; configure_provider fills it with "preflight", and
+	// skeleton-built Booking configs rely on this read), "preflight" and
+	// "browser". Anything else is refused: "none" by declaration (#840), and a
+	// typo such as "nnoe" because a privacy setting must fail closed (#844).
+	// Configs loaded from disk skip Validate, so this check is the one that
+	// holds on every path. The interactive escape hatch reads cookies on its
+	// own, behind its own browser_escape_hatch opt-in.
+	if pc.config != nil && !cookieSourceAllowsBrowserRead(pc.config.Cookies.Source) {
+		slog.Debug("refusing browser cookies: provider's cookies.source does not allow it",
+			"provider", pc.config.ID, "source", pc.config.Cookies.Source, "url", logredact.URL(targetURL))
 		return false
 	}
 	// The URL this runs for is caller-supplied and is NOT always the endpoint

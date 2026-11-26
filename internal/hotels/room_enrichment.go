@@ -2,6 +2,7 @@ package hotels
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,13 +17,22 @@ import (
 // GetRoomAvailabilityWithOpts when the seam is unset.
 var fetchRoomAvailability func(ctx context.Context, opts RoomSearchOptions) (*RoomAvailability, error)
 
-// bookingSourceURL returns the Booking.com hotel URL from a result's price
-// sources, if one is present. It deliberately ignores HotelResult.BookingURL,
-// which is a city-level link backfilled for display and not a per-hotel detail
-// page suitable for room drill-down.
-func bookingSourceURL(h models.HotelResult) string {
+// IsBookingRoomsURL reports whether the room fetch accepts u as a Booking.com
+// page: an https URL on booking.com. Any other makes it refuse the lookup.
+func IsBookingRoomsURL(u string) bool {
+	return bookingHostAllowed(u, bookingCookieSite)
+}
+
+// BookingSourceURL returns the Booking.com hotel page from a result's booking
+// source when it is an https booking.com URL; the room fetch refuses any
+// other, which would fail the whole lookup. It deliberately ignores
+// HotelResult.BookingURL, a display link that may be city-level and is not a
+// per-hotel detail page suitable for room drill-down.
+func BookingSourceURL(h models.HotelResult) string {
 	for _, s := range h.Sources {
-		if s.Provider == "booking" && s.BookingURL != "" {
+		// The search tags SearchBooking results "booking.com"; the provider
+		// runtime writes its config ID, "booking".
+		if (s.Provider == "booking" || s.Provider == "booking.com") && IsBookingRoomsURL(s.BookingURL) {
 			return s.BookingURL
 		}
 	}
@@ -53,6 +63,7 @@ func roomTypeToModelRoom(rt RoomType) models.Room {
 		Currency:           rt.Currency,
 		Provider:           rt.Provider,
 		ProviderURL:        rt.ProviderURL,
+		Source:             rt.Source,
 		RateID:             rt.RateID,
 		RatePlanName:       rt.RatePlanName,
 		MatchConfidence:    rt.MatchConfidence,
@@ -104,8 +115,9 @@ func enrichHotelRooms(ctx context.Context, hotels []models.HotelResult, opts Hot
 
 	const concurrency = 3
 	type result struct {
-		index int
-		rooms []models.Room
+		index      int
+		rooms      []models.Room
+		candidates []models.Room // rooms plus each seller's quote, for the headline
 	}
 
 	fetch := fetchRoomAvailability
@@ -139,17 +151,22 @@ func enrichHotelRooms(ctx context.Context, hotels []models.HotelResult, opts Hot
 				Guests:       opts.Guests,
 				ChildrenAges: opts.ChildrenAges,
 				Rooms:        opts.Rooms,
-				BookingURL:   bookingSourceURL(hotels[i]),
+				BookingURL:   BookingSourceURL(hotels[i]),
 			})
 			if err != nil || av == nil || len(av.Rooms) == 0 {
 				return
 			}
 
 			rooms := make([]models.Room, 0, len(av.Rooms))
+			candidates := make([]models.Room, 0, len(av.Rooms))
 			for _, rt := range av.Rooms {
 				rooms = append(rooms, roomTypeToModelRoom(rt))
+				candidates = append(candidates, roomTypeToModelRoom(rt))
+				for _, q := range rt.InventoryOptions {
+					candidates = append(candidates, quoteCandidate(q))
+				}
 			}
-			results <- result{index: i, rooms: rooms}
+			results <- result{index: i, rooms: rooms, candidates: candidates}
 		}(idx)
 	}
 
@@ -163,7 +180,7 @@ func enrichHotelRooms(ctx context.Context, hotels []models.HotelResult, opts Hot
 		// Feed the strongest drilled room into the price sources so the
 		// verified room price can win the headline when the caller re-runs
 		// FinalizeHotelPriceTrust (the "verified leads" rule).
-		if src, ok := bestRoomSource(r.rooms); ok {
+		if src, ok := bestRoomSource(r.candidates); ok {
 			hotels[r.index].Sources = append(hotels[r.index].Sources, src)
 		}
 	}
@@ -194,12 +211,19 @@ func bestRoomSource(rooms []models.Room) (models.PriceSource, bool) {
 	if !found {
 		return models.PriceSource{}, false
 	}
-	provider := best.Provider
+	// The source credits the trvl provider that fetched the room; the room's
+	// Provider is the seller it reported (#808).
+	provider := best.Source
 	if provider == "" {
-		provider = "google"
+		provider = "unknown"
+	}
+	seller := best.Provider
+	if sameProvider(seller, provider) {
+		seller = "" // the fetcher sold it itself ("Google Hotels" for google_hotels)
 	}
 	return models.PriceSource{
 		Provider:        provider,
+		Seller:          seller,
 		Price:           roomHeadlinePrice(best),
 		Currency:        best.Currency,
 		BookingURL:      best.ProviderURL,
@@ -207,6 +231,39 @@ func bestRoomSource(rooms []models.Room) (models.PriceSource, bool) {
 		PriceConfidence: best.PriceConfidence,
 		RetrievedAt:     time.Now(),
 	}, true
+}
+
+// quoteCandidate turns one seller's inventory quote into a headline candidate.
+// A merged room keeps one seller's numbers, so another seller's quote (say a
+// verified Booking rate on a Google-priced room) competes on its own, credited
+// to its own seller and fetcher. Price stays 0: a quote with only a stay total
+// has no nightly rate to headline.
+func quoteCandidate(q models.RoomInventoryQuote) models.Room {
+	return models.Room{
+		Name:            q.ProviderRoomName,
+		NightlyPrice:    q.NightlyPrice,
+		TotalPrice:      q.TotalPrice,
+		Currency:        q.Currency,
+		Provider:        q.Provider,
+		ProviderURL:     q.ProviderURL,
+		Source:          q.Source,
+		PriceBasis:      q.PriceBasis,
+		PriceConfidence: q.PriceConfidence,
+	}
+}
+
+// quoteCanHeadline reports whether a quote carries a nightly amount the
+// headline can use: the one rule both headline selection and hasVerifiedRoom
+// apply to inventory quotes.
+func quoteCanHeadline(q models.RoomInventoryQuote) bool {
+	return roomHeadlinePrice(quoteCandidate(q)) > 0
+}
+
+// sameProvider reports whether a seller name is the provider tag itself,
+// written for display: "Google Hotels" is google_hotels, "Booking.com" is
+// booking.com.
+func sameProvider(seller, tag string) bool {
+	return strings.EqualFold(strings.ReplaceAll(strings.TrimSpace(seller), " ", "_"), tag)
 }
 
 // roomHeadlinePrice is the per-night price a room contributes to the headline:

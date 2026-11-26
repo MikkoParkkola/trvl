@@ -3,9 +3,9 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/MikkoParkkola/trvl/internal/hotels"
+	"github.com/MikkoParkkola/trvl/internal/models"
 	"github.com/MikkoParkkola/trvl/internal/watch"
 )
 
@@ -30,7 +30,7 @@ import (
 // an entire watch type, introduced by this session's own scheduler fix.
 //
 // This mirrors cmd/trvl/rooms.go's resolveRoomAvailability +
-// looksLikeGoogleHotelID + cmd/trvl/watch.go's liveRoomChecker exactly,
+// the shared models.IsGoogleHotelID check + cmd/trvl/watch.go's liveRoomChecker exactly,
 // reimplemented here rather than shared: cmd/trvl (package main) exports
 // nothing importable from mcp (a different package), and extracting a
 // shared internal package for this logic is a larger, separate
@@ -73,7 +73,7 @@ func (c *liveRoomChecker) CheckRooms(ctx context.Context, w watch.Watch) ([]watc
 // cmd/trvl/watch.go's liveRoomChecker calls the CLI version with
 // location="").
 func resolveRoomAvailabilityForWatch(ctx context.Context, hotelQuery, checkIn, checkOut, currency string) (*hotels.RoomAvailability, error) {
-	if looksLikeGoogleHotelIDForWatch(hotelQuery) {
+	if models.IsGoogleHotelID(hotelQuery) {
 		opts := hotels.RoomSearchOptions{
 			HotelID:  hotelQuery,
 			CheckIn:  checkIn,
@@ -87,16 +87,19 @@ func resolveRoomAvailabilityForWatch(ctx context.Context, hotelQuery, checkIn, c
 	if err != nil {
 		return nil, fmt.Errorf("hotel lookup for %q: %w", hotelQuery, err)
 	}
-	if hotel.HotelID == "" {
+	// Only a Google place ID resolves rooms; another provider's id (Booking's,
+	// say) must not be sent as one.
+	if !models.IsGoogleHotelID(hotel.HotelID) {
 		return nil, fmt.Errorf("hotel %q found (%s) but has no Google ID", hotelQuery, hotel.Name)
 	}
 
 	opts := hotels.RoomSearchOptions{
-		HotelID:  hotel.HotelID,
-		CheckIn:  checkIn,
-		CheckOut: checkOut,
-		Currency: currency,
-		Location: hotelQuery,
+		HotelID:      hotel.HotelID,
+		CheckIn:      checkIn,
+		CheckOut:     checkOut,
+		Currency:     currency,
+		Location:     hotelQuery,
+		LocationKind: hotels.LocationHotelQuery,
 	}
 	result, err := getRoomAvailabilityWithOptsFunc(ctx, opts)
 	if err != nil {
@@ -106,21 +109,4 @@ func resolveRoomAvailabilityForWatch(ctx context.Context, hotelQuery, checkIn, c
 		result.Name = hotel.Name
 	}
 	return result, nil
-}
-
-// looksLikeGoogleHotelIDForWatch is a byte-for-byte copy of
-// cmd/trvl/rooms.go's unexported looksLikeGoogleHotelID (not importable
-// across packages -- see this file's doc comment).
-func looksLikeGoogleHotelIDForWatch(value string) bool {
-	value = strings.TrimSpace(value)
-	if strings.HasPrefix(value, "/g/") {
-		return true
-	}
-
-	upper := strings.ToUpper(value)
-	if strings.HasPrefix(upper, "CHIJ") {
-		return true
-	}
-
-	return strings.Count(value, ":") == 1 && !strings.ContainsAny(value, " \t")
 }

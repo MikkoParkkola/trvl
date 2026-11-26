@@ -325,14 +325,17 @@ func (c *Client) doWithRetryVia(ctx context.Context, httpClient *http.Client, bu
 	}
 	google := probe != nil && probe.URL != nil && isGoogleHost(probe.URL.Hostname())
 	if google {
-		release, refused, err := c.beginGoogle(ctx)
+		release, refusedUntil, err := c.beginGoogle(ctx)
 		if err != nil {
 			return 0, nil, err
 		}
 		defer release()
-		if refused {
+		if !refusedUntil.IsZero() {
 			slog.Debug("google_cooldown", "skipped", true)
-			return 0, nil, ErrRefused
+			// Name when a retry can work, as a clock time with its zone and
+			// as a wait, so a caller in another time zone reads it right.
+			return 0, nil, fmt.Errorf("%w; retry after %s (in %ds)", ErrRefused,
+				refusedUntil.Format("15:04:05 MST"), (time.Until(refusedUntil)+time.Second-1)/time.Second)
 		}
 	}
 

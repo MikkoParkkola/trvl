@@ -82,6 +82,28 @@ func GetHotelPrices(ctx context.Context, hotelID string, checkIn, checkOut strin
 // GetHotelPricesWithOpts is like GetHotelPrices but accepts a full
 // HotelPriceOpts struct including an optional Location for fallback.
 func GetHotelPricesWithOpts(ctx context.Context, opts HotelPriceOpts) (*models.HotelPriceResult, error) {
+	if opts.Currency == "" {
+		opts.Currency = "USD"
+	}
+	res, err := hotelPricesRPC(ctx, opts)
+	// "no provider prices found" is the routine payload-less answer (wrb.fr
+	// status 3). Try the fallback chain; if it also comes back empty, say so
+	// as a failure rather than an empty success.
+	if isNoProviderPricesError(err) {
+		if fallback := priceFallback(ctx, opts); fallback != nil {
+			applyLinkDurability(fallback)
+			return fallback, nil
+		}
+		return nil, fmt.Errorf("hotel %s: %w", opts.HotelID, ErrPriceNoData)
+	}
+	return res, err
+}
+
+// hotelPricesRPC is Google's partner-price RPC alone, without the fallback
+// chain. The rooms lookup calls it directly: its own search fallback reads
+// Google's provider status, where a refusal behind another provider's price
+// would otherwise be lost (#813).
+func hotelPricesRPC(ctx context.Context, opts HotelPriceOpts) (*models.HotelPriceResult, error) {
 	if opts.HotelID == "" {
 		return nil, fmt.Errorf("hotel ID is required")
 	}
@@ -113,7 +135,7 @@ func GetHotelPricesWithOpts(ctx context.Context, opts HotelPriceOpts) (*models.H
 		return nil, batchexec.ErrBlocked
 	}
 	if batchexec.QuotaRefusal(status, body) {
-		return nil, fmt.Errorf("google hotel prices refused (HTTP %d): %w", status, models.ErrRateLimited)
+		return nil, googleCooldownErr(ctx, client, "google hotel prices", status)
 	}
 	if status != 200 {
 		return nil, fmt.Errorf("hotel price lookup returned status %d", status)
@@ -129,16 +151,6 @@ func GetHotelPricesWithOpts(ctx context.Context, opts HotelPriceOpts) (*models.H
 
 	providers, err := ParseHotelPriceResponse(entries)
 	if err != nil {
-		// "no provider prices found" is the routine payload-less answer
-		// (wrb.fr status 3). Try the fallback chain; if it also comes back
-		// empty, say so as a failure rather than an empty success.
-		if isNoProviderPricesError(err) {
-			if fallback := priceFallback(ctx, opts); fallback != nil {
-				applyLinkDurability(fallback)
-				return fallback, nil
-			}
-			return nil, fmt.Errorf("hotel %s: %w", opts.HotelID, ErrPriceNoData)
-		}
 		return nil, fmt.Errorf("parse hotel prices: %w", err)
 	}
 

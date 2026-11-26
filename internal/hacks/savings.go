@@ -30,6 +30,8 @@ func isMoney(v float64) bool {
 // ground searches rather than a separate opt-in command. Honest by construction:
 //
 //   - requires a positive NaivePrice baseline and a valid route;
+//   - only applies a hack from the same kind of search (flight or ground)
+//     as the baseline, so a flight-fare saving never lands on a bus fare;
 //   - only considers hacks with Savings > 0 (a real, lower-priced option);
 //   - rejects any hack claiming to save the entire fare or more (Savings >=
 //     NaivePrice) as a fabricated / mis-priced result;
@@ -72,6 +74,14 @@ func BestSaving(ctx context.Context, in DetectorInput, detect DetectFunc) *model
 	var best *Hack
 	for i := range found {
 		h := &found[i]
+		// A saving from another kind of search's roster was measured on a
+		// different fare (a flight, a hotel night), so subtracting it from
+		// this search's fare would quote a price nobody sells (#815). A hack
+		// with no stamp counts as a flight hack, so a ground search fails
+		// closed on anything that did not come from the ground roster.
+		if h.basis != in.search {
+			continue
+		}
 		hc := strings.ToUpper(strings.TrimSpace(h.Currency))
 		if hc == "" {
 			// A blank currency is only trustworthy while EUR is the migration

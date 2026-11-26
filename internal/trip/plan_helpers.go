@@ -326,7 +326,7 @@ func extractTopHotels(htls []models.HotelResult, nights, n int) []PlanHotel {
 			Lat:             h.Lat,
 			Lon:             h.Lon,
 			PriceConfidence: h.PriceConfidence,
-			PriceSource:     h.CheapestSource,
+			PriceSource:     h.HeadlineProvider,
 		}
 		if len(h.Amenities) > 0 {
 			if len(h.Amenities) > 3 {

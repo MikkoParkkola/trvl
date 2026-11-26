@@ -103,6 +103,7 @@ func roomTypeFromBookingOffer(offer bookingRoomOffer, pageURL, fallbackCurrency 
 		Currency:           offer.Currency,
 		Provider:           "Booking.com",
 		ProviderURL:        firstNonEmptyBookingString(offer.URL, pageURL),
+		Source:             "booking.com", // the tag the built-in Booking search writes
 		MatchConfidence:    models.RoomInventoryMatchExact,
 		MaxGuests:          offer.MaxGuests,
 		Description:        offer.Description,

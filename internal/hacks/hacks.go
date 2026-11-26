@@ -225,6 +225,11 @@ type Hack struct {
 	// are safe to inject into a search result's Flights list as bookable
 	// ranked candidates. Advisory-only hacks leave this empty. Never invent.
 	ConcreteCandidates []models.FlightResult `json:"-"`
+
+	// basis is the kind of search whose roster produced this hack (stamped by
+	// DetectAll); BestSaving applies a hack only to a search of that kind. It
+	// records roster membership, not proof: see groundDetectors' criterion.
+	basis searchKind
 }
 
 // DetectorInput carries all parameters shared across detectors.
@@ -267,6 +272,17 @@ type DetectorInput struct {
 	GroundProviders        []string
 	GroundExcludeProviders []string
 	NoCache                bool
+	// GroundType, GroundMaxPrice and GroundAllowBrowserFallbacks complete that
+	// scope, so a detector repeating the caller's trip builds the caller's
+	// ground search key and shares its provider round.
+	GroundType                  string
+	GroundMaxPrice              float64
+	GroundAllowBrowserFallbacks bool
+
+	// search is the kind of search this input describes. It selects the
+	// detector roster and the hacks BestSaving may apply. Zero is a flight
+	// search, so every caller that does not set it keeps flight behaviour.
+	search searchKind
 }
 
 // currency returns the display currency for this search: the explicit request
@@ -288,14 +304,18 @@ func (in *DetectorInput) valid() bool {
 }
 
 // groundScope is the base of every ground.SearchOptions a detector builds: the
-// caller's provider filter, exclusions and no-cache flag, plus the per-call
-// test override.
+// caller's currency, provider filter, exclusions, no-cache flag, type and
+// price filters and browser-fallback choice, plus the per-call test override.
 func (in *DetectorInput) groundScope() ground.SearchOptions {
 	return ground.SearchOptions{
-		Providers:        in.GroundProviders,
-		ExcludeProviders: in.GroundExcludeProviders,
-		NoCache:          in.NoCache,
-		SearchOverride:   in.GroundSearchOverride,
+		Currency:              in.currency(),
+		Providers:             in.GroundProviders,
+		ExcludeProviders:      in.GroundExcludeProviders,
+		NoCache:               in.NoCache,
+		Type:                  in.GroundType,
+		MaxPrice:              in.GroundMaxPrice,
+		AllowBrowserFallbacks: in.GroundAllowBrowserFallbacks,
+		SearchOverride:        in.GroundSearchOverride,
 	}
 }
 
@@ -465,7 +485,7 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 		return nil, false
 	}
 
-	detectors := currentDetectorRoster()()
+	detectors := rosterFor(in.search)
 
 	// Each detector gets a child context with a per-detector timeout so a
 	// slow API call cannot block the entire hacks response. context.WithTimeout
@@ -497,6 +517,7 @@ func DetectAll(ctx context.Context, in DetectorInput) (hacks []Hack, complete bo
 			dCtx, cancel := context.WithTimeout(ctx, currentDetectorTimeout())
 			defer cancel()
 			h := fn(dCtx, in)
+			stampBasis(h, in.search)
 			// cutShort is read after the detector returns, and that reading is
 			// deliberately conservative rather than exact. A detector that finished
 			// normally a moment before its allowance expired is recorded as cut

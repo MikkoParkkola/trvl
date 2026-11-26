@@ -46,7 +46,7 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.sha }}
       - name: Scan Go dependencies against OSV
-        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+        uses: google/osv-scanner-action/osv-scanner-action@32d3cd482bdadfb38b186c0ad1b031902d55d932 # v2.7.1
         with:
           # --no-call-analysis=all: manifest-only gate, deterministic regardless
           # of the scanner container's bundled Go toolchain (see ci.yaml osv-scan).
@@ -59,7 +59,9 @@ jobs:
   goreleaser:
     if: github.event_name != 'workflow_dispatch'
     needs: security-gate
-    runs-on: macos-14
+    # GitHub retired the macOS 14 images on 2026-11-02; macos-26 is the
+    # newest arm64 image, so the darwin smoke test still builds an arm64 binary.
+    runs-on: macos-26
     permissions:
       contents: write  # create the GitHub release and upload assets
       id-token: write  # cosign keyless signing via Sigstore needs OIDC token
@@ -267,7 +269,7 @@ jobs:
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
       - name: Log in to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

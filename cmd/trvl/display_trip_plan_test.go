@@ -332,7 +332,7 @@ func TestPrintTripPlan_HotelCoverageHonesty(t *testing.T) {
 	for _, want := range []string{
 		"Hotel coverage",       // the caveat header is shown
 		"Google Hotels",        // the rate-limited provider is named
-		"rate-limited",         // and tagged as retryable
+		"refused the request",  // and worded like the coverage note (#807)
 		"Booking.com",          // the hard-failed provider is named
 		"sign in to a browser", // with its actionable fix hint
 	} {
@@ -383,11 +383,11 @@ func TestPrintTripPlan_FlightCoverageHonesty(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		"Flight coverage", // the caveat header is shown
-		"Google Flights",  // the rate-limited provider is named
-		"rate-limited",    // and tagged as retryable
-		"Ryanair",         // the hard-failed provider is named
-		"retry later",     // with its actionable fix hint
+		"Flight coverage",     // the caveat header is shown
+		"Google Flights",      // the rate-limited provider is named
+		"refused the request", // and worded like the coverage note (#807)
+		"Ryanair",             // the hard-failed provider is named
+		"retry later",         // with its actionable fix hint
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("flight coverage output missing %q\n--- got ---\n%s", want, out)
@@ -441,12 +441,12 @@ func TestPrintTripPlan_HotelPriceSourceColumn(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		"Source",      // the new column header
-		"verified",    // verified confidence -> real-rate label
-		"room rate",   // room_level confidence -> real-rate label
-		"lead-in",     // unverified confidence -> honest teaser label
-		"Agoda",       // provider name surfaced for the verified rate
-		"Booking.com", // provider name surfaced for the room rate
+		"Source",    // the new column header
+		"verified",  // verified confidence -> real-rate label
+		"room rate", // room_level confidence -> real-rate label
+		"lead-in",   // unverified confidence -> honest teaser label
+		"Agoda",     // provider name surfaced for the verified rate
+		"Booking",   // provider name surfaced for the room rate
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("hotel price-source output missing %q\n--- got ---\n%s", want, out)

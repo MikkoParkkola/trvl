@@ -114,7 +114,10 @@ type AccommodationOffer struct {
 // "property + provider", because refundability, board, taxes, and occupancy can
 // change the real booking choice for the same room.
 type RoomInventoryQuote struct {
-	Provider           string    `json:"provider,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	// Source is the trvl provider that fetched this quote; Provider is the
+	// seller. Internal only, like Room.Source.
+	Source             string    `json:"-"`
 	ProviderRoomName   string    `json:"provider_room_name,omitempty"`
 	ProviderRateName   string    `json:"provider_rate_name,omitempty"`
 	ProviderURL        string    `json:"provider_url,omitempty"`

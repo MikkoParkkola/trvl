@@ -228,6 +228,7 @@ func parseSpotahomeData(raw []byte, city, fallbackCurrency string) ([]models.Hot
 			Name:         spotahomeName(c),
 			HotelID:      id,
 			Price:        price,
+			PriceBasis:   models.PriceBasisMonthly, // a monthly rent, never a nightly rate
 			Currency:     currency,
 			ImageURL:     spotahomeString(c["mainPhotoUrl"]),
 			BookingURL:   spotahomeListingURL(city, id),
@@ -248,6 +249,7 @@ func parseSpotahomeData(raw []byte, city, fallbackCurrency string) ([]models.Hot
 		h.Sources = []models.PriceSource{{
 			Provider:   "spotahome",
 			Price:      price,
+			PriceBasis: models.PriceBasisMonthly, // a monthly rent, never a nightly rate
 			Currency:   currency,
 			BookingURL: h.BookingURL,
 		}}

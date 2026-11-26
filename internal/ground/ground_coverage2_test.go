@@ -39,7 +39,10 @@ func TestFetchDBBestPrice_MockHappyPath(t *testing.T) {
 		Timeout:   5 * time.Second,
 	}
 
-	price, cur := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
+	price, cur, err := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
+	if err != nil {
+		t.Fatalf("fetchDBBestPrice: %v", err)
+	}
 	if price != 29.90 {
 		t.Errorf("price = %v, want 29.90", price)
 	}
@@ -72,7 +75,10 @@ func TestFetchDBBestPrice_MockNoPrices(t *testing.T) {
 		Timeout:   5 * time.Second,
 	}
 
-	price, cur := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
+	price, cur, err := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
+	if err != nil {
+		t.Errorf("err = %v, want nil: DB answered cleanly with no price", err)
+	}
 	if price != 0 {
 		t.Errorf("price = %v, want 0", price)
 	}
@@ -100,9 +106,12 @@ func TestFetchDBBestPrice_MockHTTPError(t *testing.T) {
 		Timeout:   5 * time.Second,
 	}
 
-	price, _ := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
+	price, _, err := fetchDBBestPrice(context.Background(), "8011160", "8010205", "2026-07-01")
 	if price != 0 {
 		t.Errorf("price = %v, want 0 for HTTP error", price)
+	}
+	if !errors.Is(err, models.ErrRateLimited) {
+		t.Errorf("err = %v, want an HTTP 500 typed as models.ErrRateLimited", err)
 	}
 }
 

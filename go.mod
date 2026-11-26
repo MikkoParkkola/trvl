@@ -8,8 +8,8 @@ require (
 	github.com/bogdanfinn/tls-client v1.18.1
 	github.com/bogdanfinn/utls v1.8.2-barnius
 	github.com/browserutils/kooky v0.2.10
-	github.com/chromedp/cdproto v0.160.0
-	github.com/chromedp/chromedp v0.23.0
+	github.com/chromedp/cdproto v0.160.6
+	github.com/chromedp/chromedp v0.24.0
 	github.com/cloudflare/circl v1.6.5
 	github.com/google/uuid v1.6.0
 	github.com/grafana/sobek v0.0.0-20261005111419-f56574604191
@@ -21,7 +21,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.47.0
 	go.opentelemetry.io/otel/sdk v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
-	golang.org/x/net v0.62.0
+	golang.org/x/net v0.63.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.48.0

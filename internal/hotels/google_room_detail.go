@@ -128,25 +128,26 @@ type googleRoomDetailResponse struct {
 // entries tagged provider "Google Hotels". It returns (nil, "", "") when disabled
 // (test mode) or unconfigured, mirroring the Expedia opt-in pattern — the public
 // yY52ce RPC returns a null payload to static clients. On a retryable bot-wall /
-// rate-limit it returns an honest Notice (third value) so a withheld room price
-// is never mistaken for absent inventory.
-func tryGoogleRoomDetail(ctx context.Context, opts RoomSearchOptions) (rooms []RoomType, hotelName, notice string) {
+// rate-limit it records the refusal in the returned googleCall, which the rooms
+// lookup merges into its one Google outcome, so a withheld room price is never
+// mistaken for absent inventory.
+func tryGoogleRoomDetail(ctx context.Context, opts RoomSearchOptions) (rooms []RoomType, hotelName string, call googleCall) {
 	if !googleRoomDetailEnabled {
-		return nil, "", ""
+		return nil, "", call
 	}
 	base := googleRoomDetailAPIBase()
 	if base == "" {
-		return nil, "", ""
+		return nil, "", call
 	}
 	if strings.TrimSpace(opts.HotelID) == "" {
-		return nil, "", ""
+		return nil, "", call
 	}
 	currency := strings.TrimSpace(opts.Currency)
 	if currency == "" {
 		currency = "USD"
 	}
 	if err := googleRoomDetailLimiter.Wait(ctx); err != nil {
-		return nil, "", ""
+		return nil, "", call
 	}
 
 	q := url.Values{}
@@ -159,33 +160,37 @@ func tryGoogleRoomDetail(ctx context.Context, opts RoomSearchOptions) (rooms []R
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return nil, "", ""
+		return nil, "", call
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "trvl/1.0")
 
 	resp, err := googleRoomDetailClient.Do(req)
 	if err != nil {
-		return nil, "", providerRateLimitNotice("Google Hotels", err)
+		call.note(0, err)
+		return nil, "", call
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusForbidden ||
 		resp.StatusCode == http.StatusUnauthorized ||
 		resp.StatusCode == http.StatusTooManyRequests {
-		// The configured base is still serving a bot challenge, not real JSON.
-		// Classify as retryable so the caller surfaces a Notice, not a hard fail.
-		return nil, "", providerRateLimitNotice("Google Hotels", models.ErrRateLimited)
+		// The configured base is still serving a bot challenge, not real JSON:
+		// a refusal the rooms outcome records, not a hard failure.
+		call.note(0, fmt.Errorf("google room detail relay returned HTTP %d: %w", resp.StatusCode, models.ErrRateLimited))
+		return nil, "", call
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", ""
+		call.note(resp.StatusCode, nil) // a 503 is a refusal; a 404 a failure
+		return nil, "", call
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return nil, "", ""
+		return nil, "", call
 	}
 
 	parsed, name := parseGoogleRoomDetail(body, currency)
-	return parsed, name, ""
+	call.note(http.StatusOK, nil)
+	return parsed, name, call
 }
 
 // parseGoogleRoomDetail maps a Google Hotels room-detail JSON payload to RoomType
@@ -221,6 +226,7 @@ func parseGoogleRoomDetail(raw []byte, fallbackCurrency string) ([]RoomType, str
 			Currency:        currency,
 			Provider:        "Google Hotels",
 			ProviderURL:     googleRoomDetailBookingURL(r),
+			Source:          "google_hotels",
 			RatePlanName:    strings.TrimSpace(r.RatePlan),
 			MatchConfidence: match,
 			Board:           strings.TrimSpace(r.Board),

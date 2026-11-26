@@ -283,6 +283,7 @@ func parseUniplacesOffers(raw json.RawMessage, city, fallbackCurrency string) ([
 			Name:         strings.TrimSpace(ao.Title),
 			HotelID:      o.ID,
 			Price:        price,
+			PriceBasis:   models.PriceBasisMonthly, // a monthly rent, never a nightly rate
 			Currency:     currency,
 			Description:  strings.TrimSpace(ao.Description),
 			Rating:       ao.ReviewsAverage,
@@ -302,6 +303,7 @@ func parseUniplacesOffers(raw json.RawMessage, city, fallbackCurrency string) ([
 		h.Sources = []models.PriceSource{{
 			Provider:   "uniplaces",
 			Price:      price,
+			PriceBasis: models.PriceBasisMonthly, // a monthly rent, never a nightly rate
 			Currency:   currency,
 			BookingURL: h.BookingURL,
 		}}
